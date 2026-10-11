@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+# Cargo rejects globs that match no directory, so members are listed
+# explicitly until F0-04 creates crates/, plugins/ and faretra/.
+members = ["tools/xtask"]
+# Spikes are throwaway experiments with their own manifests.
+exclude = ["spikes"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+authors = ["Alessandro Crugnola <alessandro.crugnola@gmail.com>"]
+repository = "https://github.com/sephiroth74/saetta"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# Explicit: native plugins are isolated with catch_unwind (SECURITY.md).
+panic = "unwind"
+debug = "line-tables-only"
+
+# Release build with full debug info, for Instruments and other profilers.
+[profile.profiling]
+inherits = "release"
+debug = true

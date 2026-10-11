@@ -1,0 +1,8 @@
+[toolchain]
+# Pinned on purpose: bump it in a dedicated commit, never as a side effect.
+channel = "1.99.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+# x86_64-unknown-linux-gnu lets us `cargo check` the platform-independent
+# crates for Linux from macOS (ADR 0011).
+targets = ["aarch64-apple-darwin", "wasm32-wasip2", "x86_64-unknown-linux-gnu"]
