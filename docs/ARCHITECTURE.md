@@ -197,6 +197,7 @@ Versions and maturity must be rechecked when coding starts.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
 - **`unsafe`**: allowed only in the platform, render, font and `pty` crates and in the SIMD fast path of `vt-core`, always with a `// SAFETY:` comment.
+- **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
 - **Common tasks** live in the `justfile`: `just test`, `just lint`, `just bench`, `just fuzz`, `just bundle`.
 - **Language**: all documentation, comments and commit messages are in English.
 - **License**: MIT ([ADR 0010](adr/0010-mit-license.md)).

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-# Cargo rejects globs that match no directory, so members are listed
-# explicitly until F0-04 creates crates/, plugins/ and faretra/.
+# Cargo rejects member globs that match no directory, so a glob is added
+# only once its directory exists.
 members = ["tools/xtask"]
 # Spikes are throwaway experiments with their own manifests.
 exclude = ["spikes"]
@@ -22,7 +22,8 @@ tracing = "0.1.44"
 [profile.release]
 lto = "fat"
 codegen-units = 1
-# Explicit: native plugins are isolated with catch_unwind (SECURITY.md).
+# Explicit because native plugins are isolated with `catch_unwind`, which
+# only works when panics unwind.
 panic = "unwind"
 debug = "line-tables-only"
 

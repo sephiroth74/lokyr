@@ -1,7 +1,4 @@
 //! Build automation for the Saetta workspace, run as `cargo xtask <task>`.
-//!
-//! Tasks are added when the roadmap needs them: `check-deps` in F0-07, then
-//! `gen-dist`, `ucd`, `terminfo` and `bundle`.
 
 use std::process::ExitCode;
 
@@ -20,5 +17,5 @@ fn main() -> ExitCode {
 }
 
 fn print_help() {
-    println!("Usage: cargo xtask <task>\n\nNo tasks yet: `check-deps` arrives in F0-07.");
+    println!("Usage: cargo xtask <task>\n\nNo tasks are available yet.");
 }
