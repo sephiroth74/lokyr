@@ -31,13 +31,20 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Lint the codebase, with warnings as errors.
-lint: fmt-check
+# Run clippy on the workspace, with warnings as errors.
+clippy:
     cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
-# Check the platform-independent crates for Linux.
+# Lint the codebase: formatting, then clippy.
+lint: fmt-check clippy
+
+# Check the platform-independent crates for Linux, from any host.
 check-linux:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
+
+# Test the platform-independent crates on the host (used by the Linux CI job).
+test-portable:
+    cargo test --locked {{ portable }}
 
 # Build the plugin SDK and the built-in plugins for WebAssembly.
 check-wasm:
@@ -51,7 +58,7 @@ deny:
 check-deps:
     cargo xtask check-deps
 
-# Run every check CI runs, in the same order.
+# Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux check-wasm deny check-deps
 
 # Run the benchmarks (not implemented yet).
