@@ -1,0 +1,14 @@
+[package]
+name = "saetta-ui-core"
+description = "Platform-independent UI engine: view trees, layout, widgets, display list"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+saetta-render-core.workspace = true
+saetta-text-core.workspace = true

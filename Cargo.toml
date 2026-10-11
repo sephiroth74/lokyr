@@ -21,8 +21,11 @@ tracing = "0.1.44"
 
 # Internal crates
 saetta-pty = { path = "crates/pty" }
+saetta-render-core = { path = "crates/render-core" }
 saetta-search = { path = "crates/search" }
 saetta-session = { path = "crates/session" }
+saetta-text-core = { path = "crates/text-core" }
+saetta-ui-core = { path = "crates/ui-core" }
 saetta-vt-core = { path = "crates/vt-core" }
 
 [profile.release]

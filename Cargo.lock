@@ -7,6 +7,10 @@ name = "saetta-pty"
 version = "0.1.0"
 
 [[package]]
+name = "saetta-render-core"
+version = "0.1.0"
+
+[[package]]
 name = "saetta-search"
 version = "0.1.0"
 dependencies = [
@@ -19,6 +23,18 @@ version = "0.1.0"
 dependencies = [
  "saetta-pty",
  "saetta-vt-core",
+]
+
+[[package]]
+name = "saetta-text-core"
+version = "0.1.0"
+
+[[package]]
+name = "saetta-ui-core"
+version = "0.1.0"
+dependencies = [
+ "saetta-render-core",
+ "saetta-text-core",
 ]
 
 [[package]]

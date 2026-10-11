@@ -1,0 +1,10 @@
+[package]
+name = "saetta-render-core"
+description = "Rendering interface shared by the GPU backends: Renderer trait and display list"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false

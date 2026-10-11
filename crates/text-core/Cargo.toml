@@ -1,0 +1,10 @@
+[package]
+name = "saetta-text-core"
+description = "Text pipeline shared by the font backends: shaping cache, glyph atlas, sprites"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
