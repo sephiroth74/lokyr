@@ -3,6 +3,45 @@
 version = 4
 
 [[package]]
+name = "faretra-cli"
+version = "0.1.0"
+dependencies = [
+ "faretra-index",
+ "faretra-resolver",
+ "saetta-pkg-model",
+]
+
+[[package]]
+name = "faretra-index"
+version = "0.1.0"
+dependencies = [
+ "saetta-pkg-model",
+]
+
+[[package]]
+name = "faretra-resolver"
+version = "0.1.0"
+dependencies = [
+ "saetta-pkg-model",
+]
+
+[[package]]
+name = "saetta-app"
+version = "0.1.0"
+dependencies = [
+ "saetta-core-actions",
+ "saetta-font-coretext",
+ "saetta-kernel",
+ "saetta-platform-macos",
+ "saetta-plugin-host-wasm",
+ "saetta-render-metal",
+]
+
+[[package]]
+name = "saetta-bench"
+version = "0.1.0"
+
+[[package]]
 name = "saetta-core-actions"
 version = "0.1.0"
 dependencies = [

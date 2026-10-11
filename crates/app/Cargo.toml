@@ -1,0 +1,29 @@
+[package]
+name = "saetta-app"
+description = "The Saetta terminal emulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "saetta"
+path = "src/main.rs"
+
+[features]
+default = ["wasm-plugins"]
+# Support for third-party WebAssembly plugins.
+wasm-plugins = ["dep:saetta-plugin-host-wasm"]
+
+[dependencies]
+saetta-core-actions.workspace = true
+saetta-kernel.workspace = true
+saetta-plugin-host-wasm = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+saetta-font-coretext.workspace = true
+saetta-platform-macos.workspace = true
+saetta-render-metal.workspace = true

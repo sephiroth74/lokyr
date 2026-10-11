@@ -1,0 +1,19 @@
+[package]
+name = "faretra-cli"
+description = "Faretra, the plugin package manager for Saetta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "faretra"
+path = "src/main.rs"
+
+[dependencies]
+faretra-index.workspace = true
+faretra-resolver.workspace = true
+saetta-pkg-model.workspace = true

@@ -2,7 +2,7 @@
 resolver = "3"
 # Cargo rejects member globs that match no directory, so a glob is added
 # only once its directory exists.
-members = ["crates/*", "plugins/*", "tools/*"]
+members = ["crates/*", "faretra/*", "plugins/*", "tools/*"]
 # Spikes are throwaway experiments with their own manifests.
 exclude = ["spikes"]
 
@@ -20,6 +20,8 @@ thiserror = "2.0.21"
 tracing = "0.1.44"
 
 # Internal crates
+faretra-index = { path = "faretra/index" }
+faretra-resolver = { path = "faretra/resolver" }
 saetta-core-actions = { path = "plugins/core-actions" }
 saetta-font-coretext = { path = "crates/font-coretext" }
 saetta-kernel = { path = "crates/kernel" }
