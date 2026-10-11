@@ -17,7 +17,9 @@ repository = "https://github.com/sephiroth74/saetta"
 [workspace.dependencies]
 anyhow = "1.0.104"
 cargo_metadata = "0.23.1"
+serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
+toml = "1.1.8"
 tracing = "0.1.44"
 
 # Internal crates

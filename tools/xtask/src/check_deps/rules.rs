@@ -1,0 +1,274 @@
+//! The dependency rules: their file format, and how they are checked against
+//! a [`Graph`].
+
+use anyhow::{Context, Result};
+use serde::Deserialize;
+
+use super::graph::{Crate, CrateId, Graph};
+
+/// A dependency rule.
+#[derive(Debug)]
+pub struct Rule {
+    /// Short identifier, shown in error messages.
+    pub name: String,
+    /// What the rule guarantees, in one sentence.
+    pub description: String,
+    crates: Vec<Selector>,
+    check: Check,
+}
+
+#[derive(Debug)]
+enum Check {
+    /// No crate may reach a forbidden crate, directly or transitively.
+    Forbid(Vec<Selector>),
+    /// Every direct dependency must be allowed. When `internal_only` is set,
+    /// dependencies outside the workspace are not checked.
+    AllowOnly {
+        allowed: Vec<Selector>,
+        internal_only: bool,
+    },
+    /// Only the listed crates may depend directly on these crates.
+    DependentsOnly(Vec<Selector>),
+}
+
+/// A broken rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Violation {
+    /// Name of the broken rule.
+    pub rule: String,
+    /// What is wrong, including the offending dependency path.
+    pub message: String,
+}
+
+impl Rule {
+    /// Checks the rule against `graph` and returns every violation.
+    pub fn check(&self, graph: &Graph) -> Vec<Violation> {
+        let mut messages = Vec::new();
+        for id in self.subjects(graph) {
+            let krate = graph.krate(id);
+            match &self.check {
+                Check::Forbid(forbidden) => {
+                    if let Some(path) = graph.find_path(id, |c| any_matches(forbidden, c)) {
+                        let target = graph.krate(path[path.len() - 1]);
+                        messages.push(format!(
+                            "`{}` depends on `{}`: {}",
+                            krate.name,
+                            target.name,
+                            graph.render_path(&path),
+                        ));
+                    }
+                }
+                Check::AllowOnly {
+                    allowed,
+                    internal_only,
+                } => {
+                    for &dep in graph.deps(id) {
+                        let dep = graph.krate(dep);
+                        let in_scope = !internal_only || dep.path.is_some();
+                        if in_scope && !any_matches(allowed, dep) {
+                            messages.push(format!(
+                                "`{}` depends on `{}`, which is not allowed",
+                                krate.name, dep.name,
+                            ));
+                        }
+                    }
+                }
+                Check::DependentsOnly(dependents) => {
+                    for parent in graph.ids() {
+                        let parent_crate = graph.krate(parent);
+                        if graph.deps(parent).contains(&id)
+                            && !any_matches(dependents, parent_crate)
+                        {
+                            messages.push(format!(
+                                "`{}` depends on `{}`, which is not allowed",
+                                parent_crate.name, krate.name,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        messages
+            .into_iter()
+            .map(|message| Violation {
+                rule: self.name.clone(),
+                message,
+            })
+            .collect()
+    }
+
+    /// Selectors in `crates` that match no crate of `graph`.
+    pub fn unmatched_selectors(&self, graph: &Graph) -> Vec<&str> {
+        self.crates
+            .iter()
+            .filter(|selector| !graph.ids().any(|id| selector.matches(graph.krate(id))))
+            .map(|selector| selector.pattern.as_str())
+            .collect()
+    }
+
+    /// The crates the rule applies to.
+    fn subjects<'a>(&'a self, graph: &'a Graph) -> impl Iterator<Item = CrateId> + 'a {
+        graph
+            .ids()
+            .filter(|&id| any_matches(&self.crates, graph.krate(id)))
+    }
+}
+
+/// Parses the rules file.
+pub fn parse(text: &str) -> Result<Vec<Rule>> {
+    let file: RulesFile = toml::from_str(text).context("parsing the dependency rules")?;
+    Ok(file.rules.into_iter().map(RuleSpec::into_rule).collect())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RulesFile {
+    #[serde(rename = "rule")]
+    rules: Vec<RuleSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum RuleSpec {
+    Forbid {
+        name: String,
+        description: String,
+        crates: Vec<String>,
+        forbidden: Vec<String>,
+    },
+    AllowOnly {
+        name: String,
+        description: String,
+        crates: Vec<String>,
+        allowed: Vec<String>,
+        #[serde(default)]
+        scope: Scope,
+    },
+    DependentsOnly {
+        name: String,
+        description: String,
+        crates: Vec<String>,
+        dependents: Vec<String>,
+    },
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Scope {
+    #[default]
+    All,
+    Internal,
+}
+
+impl RuleSpec {
+    fn into_rule(self) -> Rule {
+        let (name, description, crates, check) = match self {
+            Self::Forbid {
+                name,
+                description,
+                crates,
+                forbidden,
+            } => (
+                name,
+                description,
+                crates,
+                Check::Forbid(selectors(forbidden)),
+            ),
+            Self::AllowOnly {
+                name,
+                description,
+                crates,
+                allowed,
+                scope,
+            } => (
+                name,
+                description,
+                crates,
+                Check::AllowOnly {
+                    allowed: selectors(allowed),
+                    internal_only: scope == Scope::Internal,
+                },
+            ),
+            Self::DependentsOnly {
+                name,
+                description,
+                crates,
+                dependents,
+            } => (
+                name,
+                description,
+                crates,
+                Check::DependentsOnly(selectors(dependents)),
+            ),
+        };
+        Rule {
+            name,
+            description,
+            crates: selectors(crates),
+            check,
+        }
+    }
+}
+
+/// Selects crates by workspace directory or by package name.
+///
+/// A pattern that contains `/` matches the directory of a workspace member,
+/// relative to the workspace root; any other pattern matches package names.
+/// In both cases `*` matches any run of characters.
+#[derive(Debug, Clone)]
+struct Selector {
+    pattern: String,
+    by_path: bool,
+}
+
+impl Selector {
+    fn new(pattern: String) -> Self {
+        let by_path = pattern.contains('/');
+        Self { pattern, by_path }
+    }
+
+    fn matches(&self, krate: &Crate) -> bool {
+        if self.by_path {
+            krate
+                .path
+                .as_deref()
+                .is_some_and(|path| glob_match(&self.pattern, path))
+        } else {
+            glob_match(&self.pattern, &krate.name)
+        }
+    }
+}
+
+fn selectors(patterns: Vec<String>) -> Vec<Selector> {
+    patterns.into_iter().map(Selector::new).collect()
+}
+
+fn any_matches(selectors: &[Selector], krate: &Crate) -> bool {
+    selectors.iter().any(|selector| selector.matches(krate))
+}
+
+/// Matches `text` against `pattern`, where `*` stands for any run of
+/// characters (possibly empty) and everything else matches literally.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let (pattern, text) = (pattern.as_bytes(), text.as_bytes());
+    let (mut p, mut t) = (0, 0);
+    // Position of the last `*` seen, and the text position it was tried at.
+    let mut backtrack: Option<(usize, usize)> = None;
+    while t < text.len() {
+        if p < pattern.len() && pattern[p] == b'*' {
+            backtrack = Some((p, t));
+            p += 1;
+        } else if p < pattern.len() && pattern[p] == text[t] {
+            p += 1;
+            t += 1;
+        } else if let Some((star, start)) = backtrack {
+            // Let the last `*` swallow one more character and retry.
+            p = star + 1;
+            t = start + 1;
+            backtrack = Some((star, start + 1));
+        } else {
+            return false;
+        }
+    }
+    pattern[p..].iter().all(|&c| c == b'*')
+}

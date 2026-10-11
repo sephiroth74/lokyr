@@ -1,6 +1,6 @@
 //! The dependency graph of the workspace, as seen by the dependency rules.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -103,6 +103,68 @@ impl Graph {
         if !self.deps[from].contains(&to) {
             self.deps[from].push(to);
         }
+    }
+
+    /// All crate ids, in insertion order.
+    pub fn ids(&self) -> std::ops::Range<CrateId> {
+        0..self.crates.len()
+    }
+
+    /// The crate with the given id.
+    pub fn krate(&self, id: CrateId) -> &Crate {
+        &self.crates[id]
+    }
+
+    /// The direct dependencies of a crate.
+    pub fn deps(&self, id: CrateId) -> &[CrateId] {
+        &self.deps[id]
+    }
+
+    /// Number of workspace members.
+    pub fn member_count(&self) -> usize {
+        self.crates.iter().filter(|c| c.path.is_some()).count()
+    }
+
+    /// The shortest dependency path from `from` to a crate accepted by
+    /// `is_target`, both ends included. `from` itself is never a target.
+    pub fn find_path(
+        &self,
+        from: CrateId,
+        is_target: impl Fn(&Crate) -> bool,
+    ) -> Option<Vec<CrateId>> {
+        let mut parent: Vec<Option<CrateId>> = vec![None; self.crates.len()];
+        let mut seen = vec![false; self.crates.len()];
+        let mut queue = VecDeque::from([from]);
+        seen[from] = true;
+        while let Some(current) = queue.pop_front() {
+            for &dep in &self.deps[current] {
+                if seen[dep] {
+                    continue;
+                }
+                seen[dep] = true;
+                parent[dep] = Some(current);
+                if is_target(&self.crates[dep]) {
+                    let mut path = vec![dep];
+                    let mut node = dep;
+                    while let Some(prev) = parent[node] {
+                        path.push(prev);
+                        node = prev;
+                    }
+                    path.reverse();
+                    return Some(path);
+                }
+                queue.push_back(dep);
+            }
+        }
+        None
+    }
+
+    /// Renders a dependency path as `a → b → c`.
+    pub fn render_path(&self, path: &[CrateId]) -> String {
+        path.iter()
+            .map(|&id| self.crates[id].name.as_str())
+            .collect::<Vec<_>>()
+            .join(" → ")
     }
 
     /// Renders the dependencies between workspace members, one member per

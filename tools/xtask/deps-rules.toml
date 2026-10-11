@@ -1,0 +1,112 @@
+# Dependency rules of the workspace, checked by `cargo xtask check-deps`.
+#
+# Crate selectors:
+# - a selector containing `/` matches workspace members by directory,
+#   relative to the workspace root (e.g. `crates/vt-core`, `plugins/*`);
+# - any other selector matches crates by package name (e.g. `tokio`);
+# - `*` matches any run of characters.
+#
+# Rule kinds:
+# - `forbid`: no crate in `crates` may depend on a crate in `forbidden`,
+#   directly or transitively;
+# - `allow-only`: every direct dependency of a crate in `crates` must be in
+#   `allowed`. With `scope = "internal"`, only dependencies on workspace
+#   members are checked;
+# - `dependents-only`: only crates in `dependents` may depend directly on a
+#   crate in `crates`.
+#
+# Every selector in `crates` must match at least one crate, so a renamed or
+# moved crate cannot make a rule pass silently.
+
+[[rule]]
+name = "pure-terminal-core"
+kind = "forbid"
+description = "The terminal core and the search engine depend on no UI, platform or plugin crate, so they can be tested headless and fuzzed."
+crates = ["crates/vt-core", "crates/search"]
+forbidden = [
+    "crates/app",
+    "crates/font-*",
+    "crates/kernel",
+    "crates/platform-*",
+    "crates/plugin-*",
+    "crates/render-*",
+    "crates/text-core",
+    "crates/ui-core",
+    "plugins/*",
+]
+
+[[rule]]
+name = "sdk-stands-alone"
+kind = "allow-only"
+scope = "internal"
+description = "Among workspace crates, the plugin SDK depends only on the WIT definitions, so it can be published and used on its own."
+crates = ["crates/plugin-sdk"]
+allowed = ["crates/plugin-wit"]
+
+[[rule]]
+name = "plugins-use-the-sdk"
+kind = "allow-only"
+description = "Built-in plugins depend only on the plugin SDK (plus the utility crates listed here), which proves the public API is enough to build them."
+crates = ["plugins/*"]
+allowed = ["crates/plugin-sdk"]
+
+[[rule]]
+name = "kernel-only-in-app"
+kind = "dependents-only"
+description = "Only the app depends on the kernel; everything else goes through the plugin SDK."
+crates = ["crates/kernel"]
+dependents = ["crates/app"]
+
+[[rule]]
+name = "app-without-network"
+kind = "forbid"
+description = "The app contains no HTTP, TLS or async-runtime crate: downloading plugins is Faretra's job."
+crates = ["crates/app"]
+forbidden = [
+    "async-std",
+    "curl",
+    "h2",
+    "h3",
+    "hyper",
+    "hyper-*",
+    "isahc",
+    "native-tls",
+    "openssl",
+    "openssl-sys",
+    "reqwest",
+    "rustls",
+    "rustls-*",
+    "smol",
+    "surf",
+    "tokio",
+    "tokio-rustls",
+    "ureq",
+]
+
+[[rule]]
+name = "portable-without-macos"
+kind = "forbid"
+description = "Platform-independent crates use no macOS-only crate, so they keep building for Linux."
+crates = [
+    "crates/*-core",
+    "crates/kernel",
+    "crates/pty",
+    "crates/search",
+    "crates/session",
+    "crates/vt-core",
+]
+forbidden = [
+    "block2",
+    "cocoa",
+    "core-foundation",
+    "core-foundation-sys",
+    "core-graphics",
+    "core-text",
+    "crates/font-coretext",
+    "crates/platform-macos",
+    "crates/render-metal",
+    "dispatch2",
+    "metal",
+    "objc2",
+    "objc2-*",
+]
