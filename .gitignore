@@ -8,6 +8,10 @@ target/
 *.cwasm
 /spikes/**/build/
 
+# Secrets: signing and notarization keys must never be committed
+/private/
+*.p8
+
 # macOS
 .DS_Store
 
