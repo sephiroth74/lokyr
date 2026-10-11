@@ -1,5 +1,11 @@
 package saetta:spike;
 
+/// What the host offers to plugins.
+interface host-log {
+    /// Records a message from the plugin, such as a panic report.
+    log: func(message: string);
+}
+
 /// Calls that measure the cost of crossing into a plugin.
 interface bench {
     /// One node of a flat view tree: `children` holds indices into the list.
@@ -9,6 +15,9 @@ interface bench {
         label: string,
         children: list<u32>,
     }
+
+    /// Prepares the plugin; the host calls it once, right after instantiation.
+    init: func();
 
     /// Does nothing: measures the bare cost of a call.
     noop: func();
@@ -24,5 +33,6 @@ interface bench {
 }
 
 world plugin {
+    import host-log;
     export bench;
 }

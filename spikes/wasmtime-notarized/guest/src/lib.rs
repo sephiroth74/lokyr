@@ -7,10 +7,18 @@ wit_bindgen::generate!({
 });
 
 use exports::saetta::spike::bench::{Guest, Node};
+use saetta::spike::host_log;
 
 struct Bench;
 
 impl Guest for Bench {
+    fn init() {
+        // Replaces the default hook, which reads `RUST_BACKTRACE` from the
+        // environment and prints to stderr; a plugin has neither. The host
+        // gets the report instead, and the panic then aborts into a trap.
+        std::panic::set_hook(Box::new(|info| host_log::log(&info.to_string())));
+    }
+
     fn noop() {}
 
     fn render(n: u32) -> Vec<Node> {

@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use wasmtime::component::{Component, Linker};
+use wasmtime::component::{Component, HasSelf, Linker};
 use wasmtime::{Config, Engine, Result, Store};
 
 use crate::footprint;
@@ -15,6 +15,19 @@ wasmtime::component::bindgen!({
     path: "wit",
     world: "plugin",
 });
+
+/// What the host keeps for one plugin instance.
+#[derive(Debug, Default)]
+struct HostState {
+    /// Messages the plugin sent through `host-log`.
+    logs: Vec<String>,
+}
+
+impl saetta::spike::host_log::Host for HostState {
+    fn log(&mut self, message: String) {
+        self.logs.push(message);
+    }
+}
 
 /// Calls timed for the `noop` latency.
 const NOOP_CALLS: usize = 10_000;
@@ -78,16 +91,19 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
     let deserialize_time = started.elapsed();
     let footprint_deserialized = footprint::current()?;
 
-    // No WASI implementation: imports the guest never calls trap if called.
-    let mut linker = Linker::<()>::new(&engine);
+    // The host's own interfaces first; then, instead of a WASI
+    // implementation, every other import traps if it is ever called.
+    let mut linker = Linker::<HostState>::new(&engine);
+    saetta::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
     linker.define_unknown_imports_as_traps(&component)?;
-    let mut store = Store::new(&engine, ());
+    let mut store = Store::new(&engine, HostState::default());
 
     let started = Instant::now();
     let plugin = Plugin::instantiate(&mut store, &component, &linker)?;
     let instantiate_time = started.elapsed();
     let footprint_instantiated = footprint::current()?;
     let guest = plugin.saetta_spike_bench();
+    guest.call_init(&mut store)?;
 
     let noop = median_of(NOOP_CALLS, || guest.call_noop(&mut store))?;
     let render = median_of(RENDER_CALLS, || {
@@ -115,6 +131,10 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
         Ok(()) => "returned".to_owned(),
         Err(error) => error.root_cause().to_string().replace('"', "'"),
     };
+    let panic_message = store.data().logs.last().map_or_else(
+        || "(none)".to_owned(),
+        |message| message.replace('"', "'").replace('\n', " / "),
+    );
 
     println!("{{");
     println!(r#"  "variant": "cranelift","#);
@@ -151,7 +171,8 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
         footprint_instantiated / 1024
     );
     println!(r#"  "footprint_end_kb": {},"#, footprint_end / 1024);
-    println!(r#"  "panic_outcome": "{panic_outcome}""#);
+    println!(r#"  "panic_outcome": "{panic_outcome}","#);
+    println!(r#"  "panic_message": "{panic_message}""#);
     println!("}}");
     Ok(())
 }
