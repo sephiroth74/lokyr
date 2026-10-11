@@ -214,6 +214,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Question | When to decide |
 |---|---|
 | JIT entitlement or Pulley for wasmtime on macOS | F0 (spike) |
+| How the Wasm host provides WASI to plugins without an async runtime in the app (`wasmtime-wasi` depends on `tokio`) | F0 (spike) |
 | Minimum macOS version (proposed: 14) and Intel Mac support | F0 |
 | Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 |
 | Which themes to bundle, after checking their licenses | F3 |
