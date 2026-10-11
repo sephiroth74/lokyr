@@ -12,3 +12,6 @@ publish = false
 [dependencies]
 saetta-pty.workspace = true
 saetta-vt-core.workspace = true
+
+[lints]
+workspace = true

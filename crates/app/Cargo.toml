@@ -27,3 +27,6 @@ saetta-plugin-host-wasm = { workspace = true, optional = true }
 saetta-font-coretext.workspace = true
 saetta-platform-macos.workspace = true
 saetta-render-metal.workspace = true
+
+[lints]
+workspace = true

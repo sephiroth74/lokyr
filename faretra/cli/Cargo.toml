@@ -17,3 +17,6 @@ path = "src/main.rs"
 faretra-index.workspace = true
 faretra-resolver.workspace = true
 saetta-pkg-model.workspace = true
+
+[lints]
+workspace = true

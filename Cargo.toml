@@ -40,6 +40,32 @@ saetta-text-core = { path = "crates/text-core" }
 saetta-ui-core = { path = "crates/ui-core" }
 saetta-vt-core = { path = "crates/vt-core" }
 
+# Members opt in with `[lints] workspace = true`.
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+# Every `unsafe` block needs a `// SAFETY:` comment.
+undocumented_unsafe_blocks = "deny"
+dbg_macro = "warn"
+# A short list of pedantic lints that catch real mistakes with little noise.
+cloned_instead_of_copied = "warn"
+explicit_iter_loop = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+manual_let_else = "warn"
+map_unwrap_or = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnested_or_patterns = "warn"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

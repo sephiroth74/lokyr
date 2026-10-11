@@ -12,3 +12,6 @@ publish = false
 [dependencies]
 saetta-plugin-sdk.workspace = true
 saetta-plugin-wit.workspace = true
+
+[lints]
+workspace = true

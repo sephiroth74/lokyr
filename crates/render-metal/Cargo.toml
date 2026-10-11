@@ -11,3 +11,6 @@ publish = false
 
 [dependencies]
 saetta-render-core.workspace = true
+
+[lints]
+workspace = true
