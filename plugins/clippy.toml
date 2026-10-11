@@ -1,0 +1,37 @@
+# Clippy settings for the built-in plugins.
+#
+# A plugin must behave the same whether it is linked natively or built as a
+# WebAssembly component. So it never spawns threads, blocks, reads clocks, or
+# touches files, processes or the network directly: the host provides all of
+# these through the plugin SDK.
+#
+# Clippy uses only the nearest clippy.toml. If a workspace-wide clippy.toml
+# is ever added, repeat its settings here.
+
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "plugins must not spawn threads; ask the host for background work" },
+    { path = "std::thread::Builder::spawn", reason = "plugins must not spawn threads; ask the host for background work" },
+    { path = "std::thread::sleep", reason = "plugins must not block; use the SDK timers" },
+    { path = "std::time::Instant::now", reason = "time comes from the host through the SDK" },
+    { path = "std::time::SystemTime::now", reason = "time comes from the host through the SDK" },
+    { path = "std::process::Command::new", reason = "starting processes goes through the SDK and needs a capability" },
+    { path = "std::process::exit", reason = "a plugin must never terminate the host" },
+    { path = "std::fs::read", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::read_to_string", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::write", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::read_dir", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::metadata", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::create_dir_all", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::remove_file", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::remove_dir_all", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::rename", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::copy", reason = "file access goes through the SDK and needs a capability" },
+]
+
+disallowed-types = [
+    { path = "std::fs::File", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::fs::OpenOptions", reason = "file access goes through the SDK and needs a capability" },
+    { path = "std::net::TcpStream", reason = "network access goes through the SDK and needs a capability" },
+    { path = "std::net::TcpListener", reason = "network access goes through the SDK and needs a capability" },
+    { path = "std::net::UdpSocket", reason = "network access goes through the SDK and needs a capability" },
+]
