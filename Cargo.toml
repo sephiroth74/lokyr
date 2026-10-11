@@ -21,13 +21,17 @@ tracing = "0.1.44"
 
 # Internal crates
 saetta-core-actions = { path = "plugins/core-actions" }
+saetta-font-coretext = { path = "crates/font-coretext" }
 saetta-kernel = { path = "crates/kernel" }
 saetta-pkg-model = { path = "crates/pkg-model" }
+saetta-platform-core = { path = "crates/platform-core" }
+saetta-platform-macos = { path = "crates/platform-macos" }
 saetta-plugin-host-wasm = { path = "crates/plugin-host-wasm" }
 saetta-plugin-sdk = { path = "crates/plugin-sdk" }
 saetta-plugin-wit = { path = "crates/plugin-wit" }
 saetta-pty = { path = "crates/pty" }
 saetta-render-core = { path = "crates/render-core" }
+saetta-render-metal = { path = "crates/render-metal" }
 saetta-search = { path = "crates/search" }
 saetta-session = { path = "crates/session" }
 saetta-text-core = { path = "crates/text-core" }

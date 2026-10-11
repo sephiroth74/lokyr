@@ -1,0 +1,13 @@
+[package]
+name = "saetta-font-coretext"
+description = "CoreText font backend for macOS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+saetta-text-core.workspace = true
