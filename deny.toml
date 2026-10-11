@@ -1,0 +1,58 @@
+# cargo-deny checks: advisories, licenses, banned crates and sources.
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the dependency graph of every target the workspace builds for.
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "wasm32-wasip2"]
+all-features = true
+
+[advisories]
+# Vulnerabilities, unmaintained crates and unsound crates are all errors.
+# An exception needs an entry with a written reason, for example
+# { id = "RUSTSEC-0000-0000", reason = "why it does not affect us" }.
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+# The list already covers the licenses of the dependencies we expect to add.
+unused-allowed-license = "allow"
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Internal crates are private and use path dependencies without a version.
+allow-wildcard-paths = true
+deny = [
+    # Only Faretra may use the network or an async runtime: the app never opens
+    # network connections. Crates of Faretra's HTTP stack that depend directly
+    # on these (for example hyper-util) must be added to the wrappers.
+    { crate = "reqwest", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
+    { crate = "hyper", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
+    { crate = "rustls", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
+    { crate = "tokio", wrappers = ["faretra-cli", "faretra-index"], reason = "only Faretra may use an async runtime" },
+    # Not used anywhere: TLS is rustls, and the only async runtime is tokio.
+    { crate = "native-tls", reason = "TLS is provided by rustls" },
+    { crate = "openssl", reason = "TLS is provided by rustls" },
+    { crate = "async-std", reason = "the only async runtime is tokio, in Faretra" },
+    # Plugins and libraries reach the kernel only through the plugin SDK.
+    { crate = "saetta-kernel", wrappers = ["saetta-app"], reason = "only the app may depend on the kernel" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
