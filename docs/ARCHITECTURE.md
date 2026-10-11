@@ -1,0 +1,214 @@
+# Architecture
+
+This document describes Saetta as a whole. Each subsystem has its own document with the details, and the reasons behind each choice are in the [ADRs](adr/).
+
+## Principles
+
+1. **Mechanism in the core, policy in plugins.** The kernel provides data models and fast services. Plugins decide *what* is shown and *how* users interact with it ([ADR 0002](adr/0002-micro-kernel-and-plugins.md)).
+2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md)).
+3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes Wasm.
+4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)).
+5. **No networking in the app.** Downloading and installing is Faretra's job ([ADR 0008](adr/0008-separate-package-manager.md)).
+6. **Budgets are requirements.** Timings and memory have numeric targets that CI checks ([PERFORMANCE.md](PERFORMANCE.md)).
+
+## Layers
+
+```
+                ┌──────────── faretra (separate CLI) ─────────────┐
+                │ resolve · download · verify · install · publish │◀──▶ online registry
+                └───────────────────────┬─────────────────────────┘
+                                        │ writes to disk: store + plugins.lock
+┌───────────────────────────────────────▼────────── saetta (app) ─────────────────────────┐
+│ First-party plugins (static)            │ Third-party plugins (Wasm, sandboxed)          │
+│ tabs · splits · search · themes ·       │ read from disk, activated only when needed     │
+│ theme-iterm2 · core-actions · palette   │                                                │
+├─────────────────────────────────────────┴────────────────────────────────────────────────┤
+│ plugin-sdk ── HostApi (kernel, native)  │  plugin-host-wasm (wasmtime → same HostApi)   │
+├──────────────────────────────────────────────────────────────────────────────────────────┤
+│ KERNEL: workspace + layout tree · commands · keymap · event bus · config                 │
+│         services: search · decorations · triggers                                        │
+├─────────────────────────┬──────────────────────────────┬─────────────────────────────────┤
+│ TERMINAL                │ UI ENGINE                    │ PER-OS BACKENDS (behind traits) │
+│ vt-core · pty ·         │ ui-core (view tree, taffy,   │ platform: macos | wayland | x11 │
+│ session · search        │ AccessKit) · text-core       │ render: metal | gl              │
+│                         │ · render-core                │ font: coretext | freetype       │
+└─────────────────────────┴──────────────────────────────┴─────────────────────────────────┘
+```
+
+| Layer | Crates | Responsibilities |
+|---|---|---|
+| Terminal | `vt-core`, `pty`, `session`, `search` | Parsing, state and grid; child processes; per-pane I/O; search engine. No UI |
+| Kernel | `kernel` | Data model, commands, keymap, events, config, services, native plugin host, window composition |
+| UI engine | `ui-core`, `text-core`, `render-core` | View tree, layout, widgets, text, display list. Platform-independent |
+| Per-OS backends | `platform-*`, `render-*`, `font-*` | Windows and events, GPU, fonts. One crate per OS and engine, behind the traits of the `*-core` crates |
+| Plugins | `plugin-wit`, `plugin-sdk`, `plugin-host-wasm`, `plugins/*` | API, SDK, Wasm host and first-party plugins |
+| Packages | `pkg-model`, `faretra/*`, `registry/*` | Shared formats, package manager, registry |
+
+## Kernel data model
+
+```
+Workspace
+└── Window (id, screen, size, appearance)
+    └── Tab (id, title, color, active pane)
+        └── LayoutTree
+            ├── Split { direction, ratio, a, b }
+            └── Leaf(PaneId)
+                └── Pane (id, profile, cwd) ──▶ Session (pty + process + VT state)
+```
+
+- **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model.
+- **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly.
+- **Identifiers** are opaque `u64` values, never reused during the life of the process.
+- **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them: commands, dividers, mouse interaction. Without that plugin every tab has exactly one pane.
+
+## Threads and data flow
+
+| Thread | Does | Never does |
+|---|---|---|
+| Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Wasm plugin |
+| I/O, one per pane | `read` from the PTY, parsing, grid updates, writing input | Wait for the main thread |
+| Wasm executor | Calls into third-party plugins, with a time budget | Sit on the output path |
+| Workers | Search, reflow of very large scrollbacks, AOT compilation of plugins | Hold the grid lock for long |
+
+**From program output to the screen**
+1. The I/O thread reads at most ~64 KiB from the PTY.
+2. It parses that slice while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
+3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux).
+4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it.
+5. Shaping, display-list construction and GPU command encoding then run without the lock.
+6. If the pane has synchronized output (mode 2026) enabled, the frame waits for the update to finish or for a timeout.
+
+**From a key press to the program**
+1. The native event reaches the main thread. The IME gets it first (composition text, candidates).
+2. The keymap resolves the key combination in the current context (`when`). If a binding matches, the command runs. Otherwise:
+3. The `vt-core` encoder translates the key according to the pane's modes (legacy xterm or kitty keyboard) and queues it for the I/O thread, which writes it to the PTY.
+4. If the terminal was idle, the next frame is drawn immediately instead of waiting for the display link. This is the lowest-latency path.
+
+## Frame pacing
+
+**macOS**
+- **Pacing source**: `NSView.displayLink` (macOS 14+), registered in the *common run-loop modes* so it keeps running during live resize and while menus are open. `CVDisplayLink` is deprecated.
+- **Idle**: the display link runs only when there is something to draw, and stops when idle (zero wakeups).
+- **Live resize**: `presentsWithTransaction = true` plus synchronous drawing, so the content follows the window edge without tearing.
+- **No partial present**: CAMetalLayer redraws the whole drawable every frame. Dirty-row tracking therefore saves CPU time (snapshot, shaping), not GPU time. GPU cost stays low thanks to instanced rendering.
+- **Drawables**: 2 per window (`maximumDrawableCount = 2`), BGRA8, `framebufferOnly = true`. We need to verify this does not block `nextDrawable` at 120 Hz, and switch to 3 if it does.
+
+**Linux** (F7): the same scheme, using Wayland frame callbacks (`wl_surface.frame`) or the Present extension on X11, and `wp_presentation` for measurement.
+
+## Workspace layout
+
+```
+saetta/
+├── Cargo.toml · justfile · deny.toml · rust-toolchain.toml · .github/workflows/
+├── crates/
+│   ├── vt-core/           parser, state, paged grid, scrollback, reflow, input encoding (pure)
+│   ├── pty/               fork+exec, resize; no RawFd in the API (ConPTY later)
+│   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
+│   ├── search/            literal and regex search over the grid
+│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, services; implements HostApi
+│   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
+│   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables
+│   ├── render-core/       Renderer trait, display-list types, shaders
+│   ├── platform-core/     traits: app, windows, events, IME, clipboard, menus, notifications, appearance
+│   ├── platform-macos/    AppKit via objc2 (NSWindow, NSView + CAMetalLayer, NSTextInputClient, NSMenu)
+│   ├── platform-wayland/  (F7) smithay-client-toolkit + calloop, our own CSD
+│   ├── platform-x11/      (F7) x11rb + xkbcommon + xim
+│   ├── render-metal/      objc2-metal
+│   ├── render-gl/         (F7) glow + khronos-egl (GL 3.3 / GLES 3)
+│   ├── font-coretext/     objc2-core-text (discovery, fallback, shaping, rasterization)
+│   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
+│   ├── plugin-wit/        WIT saetta:host@0.1 / saetta:plugin@0.1 — the single source of truth
+│   ├── plugin-sdk/        API for plugin authors (no internal dependencies besides plugin-wit)
+│   ├── plugin-host-wasm/  wasmtime host: capabilities, limits, AOT cache (behind a feature)
+│   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, faretra, registry)
+│   └── app/               the `saetta` binary: kernel + backends for the target + distribution
+├── plugins/               first-party: depend ONLY on plugin-sdk
+│   ├── core-actions/ tabs/ splits/ search/ themes/ theme-iterm2/
+│   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
+│   └── (F5) shell-integration/ blocks/ tmux-cc/ quick-terminal/ triggers/ hints/ images/ …
+├── dist/                  default.toml, minimal.toml
+├── faretra/               cli/ (`faretra` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
+├── registry/              registry-server (v1) + index specification
+├── templates/             templates for `faretra new` (Rust; later Go/C/JS)
+├── tools/                 replay/ (`saetta-replay`) · bench/ · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
+├── fuzz/                  cargo-fuzz: parser, .itermcolors, manifest, archives
+└── docs/                  this documentation (later an mdBook)
+```
+
+### Crate dependencies
+
+```
+app ─┬─▶ kernel ─┬─▶ session ─┬─▶ vt-core
+     │           │            └─▶ pty
+     │           ├─▶ search ───▶ vt-core
+     │           ├─▶ ui-core ──┬─▶ text-core
+     │           │             └─▶ render-core
+     │           ├─▶ plugin-sdk ─▶ plugin-wit        (the kernel implements HostApi)
+     │           └─▶ pkg-model
+     ├─▶ platform-{macos|wayland|x11} ─▶ platform-core
+     ├─▶ render-{metal|gl} ─▶ render-core
+     ├─▶ font-{coretext|freetype} ─▶ text-core
+     ├─▶ plugin-host-wasm ─┬─▶ plugin-sdk          (feature `wasm-plugins`)
+     │                     └─▶ plugin-wit
+     └─▶ plugins/* ─▶ plugin-sdk                     (selected by dist/*.toml)
+
+faretra/* ─▶ pkg-model            registry/* ─▶ pkg-model
+```
+
+### Dependency rules
+
+| Rule | Why | Enforced by |
+|---|---|---|
+| `vt-core` and `search` do not depend on UI, platform or plugins | Headless tests, fuzzing, reuse | `xtask check-deps` |
+| `plugin-sdk` depends only on `plugin-wit` | The SDK must be publishable and usable on its own | `xtask check-deps` |
+| Only `app` depends on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
+| `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
+| First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They must behave as they would in Wasm | clippy in CI; `wasm32-wasip2` builds from F3 |
+| HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `faretra/*` | No networking code in the app | `cargo-deny` (`bans` + `wrappers`) |
+| No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
+| Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | review and `xtask check-deps` |
+| Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job |
+
+The platform, render and font traits are deliberately thin. They describe what the macOS backend needs rather than a lowest common denominator, and the Linux backends will extend them in F7.
+
+## Main libraries
+
+Versions and maturity must be rechecked when coding starts.
+
+| Subsystem | Crates | Notes |
+|---|---|---|
+| macOS | `objc2`, `objc2-app-kit`, `objc2-metal`, `objc2-quartz-core`, `objc2-core-text` | The `metal` crate is deprecated. objc2 changes often; keep its version aligned with the one AccessKit uses |
+| Wayland / X11 (F7) | `smithay-client-toolkit` + `calloop`; `x11rb` + `xkbcommon` + `xim` | |
+| GPU on Linux (F7) | `glow` + `khronos-egl` | |
+| Text | CoreText on macOS (discovery, fallback, shaping, rasterization); `harfrust` + `fontconfig` + `freetype-rs` on Linux (F7) | HarfRust is young: benchmark it against `harfbuzz-sys` before adopting it |
+| Core | `memchr` + `core::arch` for SIMD (`std::simd` is not stable), `regex-automata`, `lz4_flex` | |
+| UI | `taffy`, `accesskit` | |
+| Formats and config | `plist`, `toml_edit` (errors with line and column), `serde`, `ciborium` (CBOR), `notify` | |
+| Plugins | `wasmtime` pinned to an LTS line, `wit-bindgen`, target `wasm32-wasip2` | wasmtime ships a new major version every month |
+| Faretra | `pubgrub`, `reqwest` + `rustls`, `ed25519-dalek`, `zstd`, `tar` | ed25519 signatures before Sigstore |
+| Tests and benchmarks | `insta`, `proptest`, `cargo-fuzz`, `criterion`, `gungraun` (formerly iai-callgrind) | |
+
+## Conventions
+
+- **Toolchain**: stable Rust, pinned in `rust-toolchain.toml`; edition 2024. Targets:
+  - `aarch64-apple-darwin`, plus `x86_64-apple-darwin` if Intel Macs end up supported;
+  - `wasm32-wasip2`;
+  - `x86_64-unknown-linux-gnu`, for the CI job that builds the platform-independent crates.
+- **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
+- **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
+- **`unsafe`**: allowed only in the platform, render, font and `pty` crates and in the SIMD fast path of `vt-core`, always with a `// SAFETY:` comment.
+- **Common tasks** live in the `justfile`: `just test`, `just lint`, `just bench`, `just fuzz`, `just bundle`.
+- **Language**: all documentation, comments and commit messages are in English.
+- **License**: MIT ([ADR 0010](adr/0010-mit-license.md)).
+
+## On-disk paths
+
+| What | macOS | Linux (F7) |
+|---|---|---|
+| Config (`config.toml`, `plugins.toml`, `plugins.lock`, `permissions.toml`, `themes/`) | `~/.config/saetta/` (or `$XDG_CONFIG_HOME/saetta/` if set) | `$XDG_CONFIG_HOME/saetta/` |
+| Installed packages | `~/Library/Application Support/saetta/store/` | `$XDG_DATA_HOME/saetta/store/` |
+| Caches (Wasm AOT, fonts) | `~/Library/Caches/saetta/` | `$XDG_CACHE_HOME/saetta/` |
+| State (saved sessions, search history) | `~/Library/Application Support/saetta/state/` | `$XDG_STATE_HOME/saetta/` |
+| IPC socket | `$TMPDIR/saetta-<uid>/` | `$XDG_RUNTIME_DIR/saetta/` |
+
+On macOS too the config lives in `~/.config`, so it can be versioned with dotfiles, as Ghostty, Alacritty and kitty do.

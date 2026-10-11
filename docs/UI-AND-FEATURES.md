@@ -1,0 +1,271 @@
+# UI engine and main features
+
+This document covers our UI engine and the four features the MVP cannot ship without: tabs, splits, search and iTerm2 themes.
+
+## UI engine
+
+`ui-core` is our small, platform-independent toolkit ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)). It draws all of the chrome on the GPU, into the same drawable as the panes.
+
+**View tree and layout**
+- Plugins describe their UI as a view tree, stored as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#wit)).
+- `taffy` computes the layout, using a subset of flexbox: direction, gap, padding, alignment, sizes, grow.
+- Each new tree is diffed against the previous one by `key`, so only the changed parts are laid out and turned into display-list entries again.
+
+**Widgets**: only the minimum the chrome needs.
+- container, text, icon, spacer;
+- text field with IME, selection and clipboard;
+- virtualized list;
+- menus. Context menus are native `NSMenu`s on macOS and drawn by us on Linux.
+
+**Focus and IME**
+- Focus belongs to exactly one element: a pane or a text field.
+- The platform IME client (`NSTextInputClient`, text-input-v3, XIM) is routed to that element, along with the cursor position for the candidate window.
+
+**Accessibility**
+- AccessKit receives a tree built from the view tree, with a role and a label on every node.
+- Panes expose their visible text and cursor to VoiceOver and AT-SPI.
+
+**Themes**: plugins use tokens (`tab.active.bg`, `search.match`, …) rather than fixed colors, so a theme restyles all the chrome.
+
+**Animations**
+- Host-driven transitions (opacity, position), e.g. when tabs are reordered.
+- The display link runs only while an animation is in progress.
+
+**Display list**
+- Primitives: rectangles (fill, border, radius, shadow), glyph runs from the atlas, images, clips.
+- A pane's instanced cell batch includes the cursor, the selection and decorations (curly, dotted and dashed underlines, strikethrough, overline).
+- A window produces a single display list covering chrome, panes and overlays.
+
+## Tabs
+
+The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handles the tab bar, the commands and the interaction.
+
+### Window integration
+
+**macOS**
+- **Tab bar in the titlebar**: `NSWindow` with `fullSizeContentView`, a transparent titlebar and a hidden title. Our engine draws the tab bar where the titlebar would be.
+- **Native tabs disabled**: `tabbingMode = .disallowed` and `NSWindow.allowsAutomaticWindowTabbing = false`.
+- **Traffic lights**: an empty unified `NSToolbar` vertically centers them on the bar. Moving them by hand means fighting AppKit's relayout.
+- **Moving the window**: dragging the bar calls `performWindowDragWithEvent:`.
+- **Double-click on the bar**: follows the system preference (`AppleActionOnDoubleClick`).
+- **Fullscreen**: the bar appears together with the system titlebar.
+- **Dragging tabs between windows**: our own implementation, using a drag session and a ghost window.
+
+**Linux** (F7)
+- The same bar acts as the CSD titlebar:
+  - window buttons;
+  - `xdg_toplevel.move` when it's dragged;
+  - double-click to maximize;
+  - right-click for `show_window_menu`.
+- When the compositor provides server-side decorations, the bar sits below them.
+
+### Appearance
+
+- **Styles**: `regular`, `compact` and `minimal`, like iTerm2's themes.
+- **Colors**: derived from the terminal theme when not specified (see [iTerm2 themes](#iterm2-themes)).
+- **Per-tab colors**: from the config, from a menu, or from iTerm2's `OSC 6;1;bg;red|green|blue;brightness;N` sequence.
+- **States**: active, inactive and hover, with configurable separators and corner radius.
+
+### Tab contents
+
+- **Title**, in order of priority:
+  1. a name set by the user;
+  2. the title set by the program (OSC 0/2);
+  3. the foreground process plus cwd.
+- **Index** for ⌘1–9 (optional).
+- **Indicators**:
+  - activity (new output in a hidden tab);
+  - bell;
+  - progress (OSC 9;4);
+  - running process;
+  - protected input (Secure Keyboard Entry).
+- **Close button**: always visible, on hover only, or never. Closing asks for confirmation if a process other than the shell is running.
+
+### Interaction
+
+- Click to select, middle-click to close, drag to reorder (animated).
+- Dragging a tab out of the bar turns it into a new window. Dropping it on another window's bar moves it there.
+- Double-click to rename.
+- Context menu: rename, color, close others, move to a new window.
+- When there are too many tabs, each shrinks to a minimum width, and then the bar scrolls.
+
+### Commands and shortcuts
+
+| Command | macOS | Linux (F7) |
+|---|---|---|
+| `tabs.new` | ⌘T | Ctrl+Shift+T |
+| `tabs.close` | ⌘W (closes the pane first when there are splits) | Ctrl+Shift+W |
+| `tabs.next` / `tabs.prev` | ⌘⇧] / ⌘⇧[, ⌃Tab / ⌃⇧Tab | Ctrl+PgDn / Ctrl+PgUp |
+| `tabs.goto { index }` | ⌘1 … ⌘9 | Alt+1 … Alt+9 |
+| `tabs.move { delta }` | ⌘⇧← / ⌘⇧→ | Ctrl+Shift+PgUp / Ctrl+Shift+PgDn |
+| `tabs.rename`, `tabs.set-color`, `tabs.detach` | menu and palette | menu and palette |
+
+```toml
+[plugins.tabs]
+position = "top"          # top | bottom | left
+style = "compact"         # regular | compact | minimal
+hide-when-single = false
+show-index = true
+close-button = "hover"    # always | hover | never
+min-width = 120
+max-width = 260
+```
+
+## Splits
+
+The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands, the dividers and the interaction. Without the plugin, every tab has exactly one pane.
+
+```
+LayoutTree = Split { direction: horizontal | vertical, ratio, a: LayoutTree, b: LayoutTree }
+           | Leaf(PaneId)
+plus an optional zoomed pane
+```
+
+| Command | macOS (same as iTerm2) |
+|---|---|
+| `splits.split { direction = "right" }` | ⌘D |
+| `splits.split { direction = "down" }` | ⌘⇧D |
+| `splits.focus { direction }` | ⌘⌥ + arrows |
+| `splits.focus-next` / `splits.focus-prev` | ⌘] / ⌘[ |
+| `splits.resize { direction, cells }` | ⌃⌘ + arrows |
+| `splits.zoom-toggle` | ⌘⇧↩ |
+| `splits.equalize`, `splits.swap { direction }`, `splits.move-to-tab`, `splits.move-to-window` | palette |
+
+On Linux (F7) the shortcuts use Ctrl+Shift and are defined in `keymap-linux`.
+
+**Behavior**
+- **New panes** inherit the cwd (via OSC 7, which is why basic shell integration already lands in F3) and the profile of the pane they come from.
+- **Inactive panes** are dimmed (`dim-inactive`), as in iTerm2.
+- **Dividers**:
+  - can be dragged, with a grab area wider than the visible line;
+  - reset to 50/50 on double-click.
+- **PTY resizes during a drag** are coalesced: at most one every ~50 ms, plus a final one. This avoids storms of SIGWINCH.
+- **Options**: per-pane titles (`pane-header`), useful with many splits; `focus-follows-mouse`.
+
+```toml
+[plugins.splits]
+divider-width = 1
+dim-inactive = 0.15        # 0 = no dimming
+pane-titles = false
+focus-follows-mouse = false
+```
+
+Alternative layouts, such as kitty's tall, fat, grid and stack, can be added later as other plugins that edit the same tree.
+
+## Search
+
+The kernel's `search` service (the engine) plus the `search` plugin (UI and commands).
+
+### Engine
+
+- **Literal search**: `memchr::memmem` over the text of logical lines. Case-insensitive search has an ASCII fast path plus simple Unicode case folding.
+- **Regex search**:
+  - Forward and reverse lazy DFAs from `regex-automata`, advanced **one cell at a time** as Alacritty does, because `regex-automata` has no chunked-input API.
+  - This avoids building intermediate strings for the whole scrollback.
+- **Whole word**: a boundary filter applied after each match, because Unicode `\b` makes the DFAs give up on non-ASCII text.
+- **Logical lines**: *soft-wrapped* rows count as one line, so words broken at the edge are still found.
+- **Order and cancellation**: the search runs in chunks on a worker thread, starting at the viewport and moving outward so nearby results arrive first. Each keystroke in the find bar cancels the previous search.
+- **Results**:
+  - Stored as stable pins, which stay valid as new output arrives.
+  - At most 100k are kept; past that, only the count.
+- **Target**: 100k lines in ≤ 150 ms ([PERFORMANCE.md](PERFORMANCE.md)).
+
+### UI
+
+- **Find bar**: an overlay on the pane, top right as in iTerm2, with history.
+- **Options**: case (Aa), regex (`.*`), whole word; an "n of m" counter.
+- **Navigation**:
+  - Enter / ⇧Enter;
+  - ⌘G / ⇧⌘G on macOS, F3 / ⇧F3 on Linux;
+  - Esc closes the bar and leaves the current match selected, ready for ⌘C.
+- **Highlighting**: all visible matches (`search.match`) and the current one (`search.current`), plus marks in the scrollbar.
+- **Filter mode**: iTerm2-style, showing only the matching lines. It arrives in F5b, because the renderer must first be able to show an arbitrary list of rows instead of a contiguous window.
+
+```toml
+[plugins.search]
+case = "smart"            # smart | sensitive | insensitive
+regex = false
+highlight-all = true
+wrap-around = true
+```
+
+## iTerm2 themes
+
+The `themes` plugin (model, light/dark switching, picker) plus the `theme-iterm2` plugin (the importer).
+
+### Internal model
+
+| Group | Fields |
+|---|---|
+| Terminal | 16 ANSI colors, 256-color palette (derived or explicit), foreground, background, bold, cursor, cursor text, selection (background and text), link, underline, badge |
+| Search | `search.match`, `search.current` |
+| UI | Tokens for the tab bar; active, inactive and hovered tabs; dividers; overlays; accent; borders |
+| Options | Light/dark variants; `minimum-contrast`, the minimum ratio between text and background (as in iTerm2 and Ghostty) |
+
+UI tokens that are not specified are **derived** from the terminal colors, the way iTerm2 does it:
+
+| Token | Derived from |
+|---|---|
+| Bar background | background mixed 6% toward the foreground |
+| Active tab | background |
+| Inactive tab text | foreground at 60% |
+| Dividers | background mixed 15% toward the foreground |
+| Accent | cursor color |
+
+This gives every imported iTerm2 theme matching tabs right away.
+
+### `.itermcolors` importer
+
+- **Keys read** from the file, which is an XML plist (parsed with the `plist` crate):
+  - `Ansi 0 Color` … `Ansi 15 Color`;
+  - `Foreground Color`, `Background Color`, `Bold Color`;
+  - `Cursor Color`, `Cursor Text Color`, `Cursor Guide Color`;
+  - `Selection Color`, `Selected Text Color`;
+  - `Link Color`, `Badge Color`, `Tab Color`, `Underline Color`.
+- **Color components**: each color has `Red Component`, `Green Component` and `Blue Component` (floats 0–1), an optional `Alpha Component`, and a `Color Space`:
+  - `sRGB`: used as is.
+  - `Calibrated` (Generic RGB): converted to sRGB. On macOS this uses ColorSync or `NSColor` for exact results; elsewhere, a matrix plus a transfer curve.
+  - `P3`: kept in Display P3 when the drawable is P3, converted otherwise.
+  - `Device`, or missing: treated as sRGB.
+- **`(Light)` / `(Dark)` suffixes**: keys from profiles that use separate colors for light and dark mode. They become the theme's two variants.
+- **Missing keys**: sensible defaults (bold = foreground, cursor text = background, derived selection).
+- **Theme locations**: `~/.config/saetta/themes/`, or `themes` packages.
+- **Other formats**: importers for Ghostty, kitty, Alacritty and base16 ship as separate plugins.
+
+### Usage
+
+```toml
+[theme]
+light = "Solarized Light"
+dark = "Dracula"          # file names, as in the iTerm2-Color-Schemes collection
+minimum-contrast = 1.0
+```
+
+- **Light/dark**: with both keys set, the theme follows the system appearance and switches live.
+- **Picker**: the palette has a theme picker with live preview.
+- **Native format**: TOML, with the same fields as the internal model, for anyone who also wants to define UI tokens.
+
+### Verification
+
+- **Full collection**: import the entire iTerm2-Color-Schemes collection with zero errors.
+  - Check RGB values against computed references.
+  - The collection also ships files generated for other terminals, which are useful as a cross-check.
+- **Targeted tests**: for the Light/Dark keys and for each color space.
+- **Licenses**: check each theme's license before bundling it in the app or in a `themes` package.
+
+## Command palette
+
+The `command-palette` plugin (⌘⇧P on macOS, Ctrl+Shift+P on Linux):
+- fuzzy search over registered commands (title, shortcut, plugin), with recent commands first;
+- theme picker with live preview;
+- uses the `window-overlay` slot and an IME-capable text field.
+
+## Basic actions
+
+The `core-actions` plugin:
+- **Clipboard and scrollback**: copy, paste (with the rules in [SECURITY.md](SECURITY.md)), select all, clear the scrollback.
+- **Font and scrolling**: font size (+, −, reset); scroll by line or page, to the top or bottom.
+- **Windows**: new window, close window, quit.
+- **Mouse selection**:
+  - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
+  - copy-on-select is optional.
