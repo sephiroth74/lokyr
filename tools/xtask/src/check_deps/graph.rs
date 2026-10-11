@@ -194,3 +194,53 @@ impl Graph {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A graph of external crates named after their index: `c0`, `c1`, …
+    fn chain(edges: &[(CrateId, CrateId)], size: usize) -> Graph {
+        let mut graph = Graph::default();
+        for id in 0..size {
+            graph.add_crate(&format!("c{id}"), None);
+        }
+        for &(from, to) in edges {
+            graph.add_dep(from, to);
+        }
+        graph
+    }
+
+    #[test]
+    fn find_path_returns_the_shortest_path() {
+        // c0 → c1 → c2 → c3, and a shortcut c0 → c4 → c3.
+        let graph = chain(&[(0, 1), (1, 2), (2, 3), (0, 4), (4, 3)], 5);
+        let path = graph
+            .find_path(0, |c| c.name == "c3")
+            .expect("c3 is reachable");
+        assert_eq!(graph.render_path(&path), "c0 → c4 → c3");
+    }
+
+    #[test]
+    fn find_path_never_targets_the_start() {
+        let graph = chain(&[(0, 1), (1, 0)], 2);
+        assert_eq!(graph.find_path(0, |c| c.name == "c0"), None);
+    }
+
+    #[test]
+    fn duplicate_edges_are_ignored() {
+        let graph = chain(&[(0, 1), (0, 1)], 2);
+        assert_eq!(graph.deps(0), [1]);
+    }
+
+    #[test]
+    fn render_members_shows_only_dependencies_between_members() {
+        let mut graph = Graph::default();
+        let app = graph.add_crate("app", Some("crates/app".to_owned()));
+        let lib = graph.add_crate("lib", Some("crates/lib".to_owned()));
+        let external = graph.add_crate("serde", None);
+        graph.add_dep(app, lib);
+        graph.add_dep(app, external);
+        assert_eq!(graph.render_members(), "app → lib\nlib → —\n");
+    }
+}

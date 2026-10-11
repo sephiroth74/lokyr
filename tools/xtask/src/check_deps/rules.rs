@@ -272,3 +272,228 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     }
     pattern[p..].iter().all(|&c| c == b'*')
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeSet, HashMap};
+
+    use super::*;
+
+    /// Workspace members of the test graph, shaped like the real workspace.
+    const MEMBERS: &[(&str, &str)] = &[
+        ("faretra-cli", "faretra/cli"),
+        ("faretra-index", "faretra/index"),
+        ("faretra-resolver", "faretra/resolver"),
+        ("saetta-app", "crates/app"),
+        ("saetta-bench", "tools/bench"),
+        ("saetta-core-actions", "plugins/core-actions"),
+        ("saetta-font-coretext", "crates/font-coretext"),
+        ("saetta-kernel", "crates/kernel"),
+        ("saetta-pkg-model", "crates/pkg-model"),
+        ("saetta-platform-core", "crates/platform-core"),
+        ("saetta-platform-macos", "crates/platform-macos"),
+        ("saetta-plugin-host-wasm", "crates/plugin-host-wasm"),
+        ("saetta-plugin-sdk", "crates/plugin-sdk"),
+        ("saetta-plugin-wit", "crates/plugin-wit"),
+        ("saetta-pty", "crates/pty"),
+        ("saetta-render-core", "crates/render-core"),
+        ("saetta-render-metal", "crates/render-metal"),
+        ("saetta-search", "crates/search"),
+        ("saetta-session", "crates/session"),
+        ("saetta-text-core", "crates/text-core"),
+        ("saetta-ui-core", "crates/ui-core"),
+        ("saetta-vt-core", "crates/vt-core"),
+        ("xtask", "tools/xtask"),
+    ];
+
+    /// External crates of the test graph.
+    const EXTERNALS: &[&str] = &["hyper", "objc2", "reqwest", "tokio"];
+
+    /// Dependencies of the test graph; they satisfy every rule.
+    const EDGES: &[(&str, &str)] = &[
+        ("faretra-cli", "faretra-index"),
+        ("faretra-cli", "faretra-resolver"),
+        ("faretra-cli", "saetta-pkg-model"),
+        ("faretra-index", "reqwest"),
+        ("faretra-index", "saetta-pkg-model"),
+        ("faretra-resolver", "saetta-pkg-model"),
+        ("hyper", "tokio"),
+        ("reqwest", "hyper"),
+        ("reqwest", "tokio"),
+        ("saetta-app", "saetta-core-actions"),
+        ("saetta-app", "saetta-font-coretext"),
+        ("saetta-app", "saetta-kernel"),
+        ("saetta-app", "saetta-platform-macos"),
+        ("saetta-app", "saetta-plugin-host-wasm"),
+        ("saetta-app", "saetta-render-metal"),
+        ("saetta-core-actions", "saetta-plugin-sdk"),
+        ("saetta-font-coretext", "saetta-text-core"),
+        ("saetta-kernel", "saetta-pkg-model"),
+        ("saetta-kernel", "saetta-plugin-sdk"),
+        ("saetta-kernel", "saetta-search"),
+        ("saetta-kernel", "saetta-session"),
+        ("saetta-kernel", "saetta-ui-core"),
+        ("saetta-platform-macos", "objc2"),
+        ("saetta-platform-macos", "saetta-platform-core"),
+        ("saetta-plugin-host-wasm", "saetta-plugin-sdk"),
+        ("saetta-plugin-host-wasm", "saetta-plugin-wit"),
+        ("saetta-plugin-sdk", "saetta-plugin-wit"),
+        ("saetta-render-metal", "saetta-render-core"),
+        ("saetta-search", "saetta-vt-core"),
+        ("saetta-session", "saetta-pty"),
+        ("saetta-session", "saetta-vt-core"),
+        ("saetta-ui-core", "saetta-render-core"),
+        ("saetta-ui-core", "saetta-text-core"),
+    ];
+
+    /// The test graph, with an optional extra dependency.
+    fn workspace(extra: Option<(&str, &str)>) -> Graph {
+        let mut graph = Graph::default();
+        let mut ids = HashMap::new();
+        for &(name, path) in MEMBERS {
+            ids.insert(name, graph.add_crate(name, Some(path.to_owned())));
+        }
+        for &name in EXTERNALS {
+            ids.insert(name, graph.add_crate(name, None));
+        }
+        for &(from, to) in EDGES.iter().chain(extra.iter()) {
+            graph.add_dep(ids[from], ids[to]);
+        }
+        graph
+    }
+
+    fn real_rules() -> Vec<Rule> {
+        parse(crate::check_deps::RULES).expect("the rules file parses")
+    }
+
+    fn broken_rules(graph: &Graph) -> BTreeSet<String> {
+        real_rules()
+            .iter()
+            .flat_map(|rule| rule.check(graph))
+            .map(|violation| violation.rule)
+            .collect()
+    }
+
+    #[test]
+    fn glob_matches_literals_and_wildcards() {
+        assert!(glob_match("tokio", "tokio"));
+        assert!(!glob_match("tokio", "tokio-util"));
+        assert!(glob_match("objc2-*", "objc2-app-kit"));
+        assert!(!glob_match("objc2-*", "objc2"));
+        assert!(glob_match("objc2*", "objc2"));
+        assert!(glob_match("crates/*-core", "crates/vt-core"));
+        assert!(!glob_match("crates/*-core", "crates/kernel"));
+        assert!(glob_match("*a*b*", "xxaxxbxx"));
+        assert!(!glob_match("*a*b", "xxbxxa"));
+        assert!(glob_match("*", ""));
+        assert!(!glob_match("", "x"));
+    }
+
+    #[test]
+    fn selectors_match_by_directory_or_by_name() {
+        let member = Crate {
+            name: "saetta-vt-core".to_owned(),
+            path: Some("crates/vt-core".to_owned()),
+        };
+        let external = Crate {
+            name: "objc2".to_owned(),
+            path: None,
+        };
+        let by_path = Selector::new("crates/*".to_owned());
+        let by_name = Selector::new("objc2*".to_owned());
+        assert!(by_path.matches(&member));
+        assert!(!by_path.matches(&external));
+        assert!(by_name.matches(&external));
+        assert!(!by_name.matches(&member));
+    }
+
+    #[test]
+    fn the_rules_hold_for_the_workspace_shape() {
+        let graph = workspace(None);
+        for rule in real_rules() {
+            assert_eq!(rule.unmatched_selectors(&graph), Vec::<&str>::new());
+            assert_eq!(rule.check(&graph), Vec::new(), "rule {}", rule.name);
+        }
+    }
+
+    #[test]
+    fn each_rule_catches_its_own_violation() {
+        let cases = [
+            ("pure-terminal-core", ("saetta-vt-core", "saetta-ui-core")),
+            (
+                "sdk-stands-alone",
+                ("saetta-plugin-sdk", "saetta-pkg-model"),
+            ),
+            (
+                "plugins-use-the-sdk",
+                ("saetta-core-actions", "saetta-session"),
+            ),
+            (
+                "kernel-only-in-app",
+                ("saetta-plugin-host-wasm", "saetta-kernel"),
+            ),
+            ("app-without-network", ("saetta-kernel", "tokio")),
+            ("portable-without-macos", ("saetta-session", "objc2")),
+        ];
+        let tested: BTreeSet<&str> = cases.iter().map(|(rule, _)| *rule).collect();
+        let all: BTreeSet<String> = real_rules().into_iter().map(|rule| rule.name).collect();
+        assert_eq!(
+            tested,
+            all.iter().map(String::as_str).collect(),
+            "every rule needs a case"
+        );
+
+        for (rule, edge) in cases {
+            let broken = broken_rules(&workspace(Some(edge)));
+            assert_eq!(
+                broken,
+                BTreeSet::from([rule.to_owned()]),
+                "adding {edge:?} should break only {rule}"
+            );
+        }
+    }
+
+    #[test]
+    fn forbid_reports_the_dependency_path() {
+        let graph = workspace(Some(("saetta-kernel", "tokio")));
+        let messages: Vec<String> = real_rules()
+            .iter()
+            .flat_map(|rule| rule.check(&graph))
+            .map(|violation| violation.message)
+            .collect();
+        assert_eq!(
+            messages,
+            ["`saetta-app` depends on `tokio`: saetta-app → saetta-kernel → tokio"]
+        );
+    }
+
+    #[test]
+    fn unknown_fields_are_rejected() {
+        let text = r#"
+            [[rule]]
+            name = "typo"
+            kind = "forbid"
+            description = "A misspelled field must not be ignored."
+            crates = ["crates/vt-core"]
+            forbiden = ["tokio"]
+        "#;
+        assert!(parse(text).is_err());
+    }
+
+    #[test]
+    fn selectors_that_match_nothing_are_reported() {
+        let text = r#"
+            [[rule]]
+            name = "stale"
+            kind = "dependents-only"
+            description = "Points at a crate that was renamed."
+            crates = ["crates/vt-core", "crates/old-name"]
+            dependents = ["crates/session"]
+        "#;
+        let rules = parse(text).expect("the rule parses");
+        assert_eq!(
+            rules[0].unmatched_selectors(&workspace(None)),
+            ["crates/old-name"]
+        );
+    }
+}
