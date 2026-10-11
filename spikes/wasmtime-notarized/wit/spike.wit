@@ -1,0 +1,25 @@
+package saetta:spike;
+
+/// Calls that measure the cost of crossing into a plugin.
+interface bench {
+    /// One node of a flat view tree: `children` holds indices into the list.
+    record node {
+        key: u32,
+        kind: u8,
+        label: string,
+        children: list<u32>,
+    }
+
+    /// Does nothing: measures the bare cost of a call.
+    noop: func();
+
+    /// Builds a view tree with `n` nodes, like a plugin rendering its UI.
+    render: func(n: u32) -> list<node>;
+
+    /// Runs a CPU-bound loop: measures how fast plugin code executes.
+    work: func(iterations: u32) -> u64;
+}
+
+world plugin {
+    export bench;
+}
