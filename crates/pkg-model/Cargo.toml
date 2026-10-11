@@ -1,0 +1,10 @@
+[package]
+name = "saetta-pkg-model"
+description = "Package formats shared by Saetta, Faretra and the registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
