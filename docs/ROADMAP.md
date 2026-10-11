@@ -220,5 +220,6 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
 | Final names (Saetta and Faretra are provisional) and the registry domain | Before the public 0.1 |
+| Branch protection on `main`: a ruleset that requires the `macos`, `linux` and `wasm` CI checks | When the repository goes public |
 | License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |
