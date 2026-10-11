@@ -198,7 +198,7 @@ Versions and maturity must be rechecked when coding starts.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
 - **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in the SIMD fast path of `vt-core`, and in `plugin-host-wasm` for loading precompiled components (wasmtime's `deserialize` is `unsafe`). Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-wasm` uses `#![deny(unsafe_code)]` and allows that single call site.
 - **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
-- **Common tasks** live in the `justfile`: `just test`, `just lint`, `just bench`, `just fuzz`, `just bundle`.
+- **Common tasks** live in the `justfile`: `just ci` runs every check that CI runs, and `just --list` shows the other recipes.
 - **Language**: all documentation, comments and commit messages are in English.
 - **License**: MIT ([ADR 0010](adr/0010-mit-license.md)).
 
