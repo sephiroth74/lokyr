@@ -1,21 +1,33 @@
 //! Build automation for the Saetta workspace, run as `cargo xtask <task>`.
 
+mod check_deps;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
+    let mut args = std::env::args().skip(1);
+    let result = match args.next().as_deref() {
         None | Some("help" | "-h" | "--help") => {
             print_help();
-            ExitCode::SUCCESS
+            return ExitCode::SUCCESS;
         }
+        Some("check-deps") => check_deps::run(args),
         Some(task) => {
             eprintln!("error: unknown task `{task}`\n");
             print_help();
-            ExitCode::FAILURE
+            return ExitCode::FAILURE;
         }
-    }
+    };
+    result.unwrap_or_else(|error| {
+        eprintln!("error: {error:#}");
+        ExitCode::FAILURE
+    })
 }
 
 fn print_help() {
-    println!("Usage: cargo xtask <task>\n\nNo tasks are available yet.");
+    println!(
+        "Usage: cargo xtask <task>\n\n\
+         Tasks:\n  \
+         check-deps [--print-graph]  check the dependency rules of the workspace"
+    );
 }

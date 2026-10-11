@@ -16,6 +16,7 @@ repository = "https://github.com/sephiroth74/saetta"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+cargo_metadata = "0.23.1"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 
