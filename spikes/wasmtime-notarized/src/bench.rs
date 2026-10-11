@@ -110,6 +110,12 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
 
     let footprint_end = footprint::current()?;
 
+    // Last, because a trap leaves the instance unusable.
+    let panic_outcome = match guest.call_fail(&mut store) {
+        Ok(()) => "returned".to_owned(),
+        Err(error) => error.root_cause().to_string().replace('"', "'"),
+    };
+
     println!("{{");
     println!(r#"  "variant": "cranelift","#);
     println!(r#"  "cached": {cached},"#);
@@ -144,7 +150,8 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
         r#"  "footprint_instantiated_kb": {},"#,
         footprint_instantiated / 1024
     );
-    println!(r#"  "footprint_end_kb": {}"#, footprint_end / 1024);
+    println!(r#"  "footprint_end_kb": {},"#, footprint_end / 1024);
+    println!(r#"  "panic_outcome": "{panic_outcome}""#);
     println!("}}");
     Ok(())
 }

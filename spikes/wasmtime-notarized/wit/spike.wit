@@ -18,6 +18,9 @@ interface bench {
 
     /// Runs a CPU-bound loop: measures how fast plugin code executes.
     work: func(iterations: u32) -> u64;
+
+    /// Panics: shows what the host sees when plugin code fails.
+    fail: func();
 }
 
 world plugin {

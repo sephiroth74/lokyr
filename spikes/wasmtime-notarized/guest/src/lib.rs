@@ -45,6 +45,10 @@ impl Guest for Bench {
         }
         sum
     }
+
+    fn fail() {
+        panic!("the spike guest failed on purpose");
+    }
 }
 
 export!(Bench);
