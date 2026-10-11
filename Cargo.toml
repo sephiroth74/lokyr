@@ -21,7 +21,9 @@ tracing = "0.1.44"
 
 # Internal crates
 saetta-core-actions = { path = "plugins/core-actions" }
+saetta-kernel = { path = "crates/kernel" }
 saetta-pkg-model = { path = "crates/pkg-model" }
+saetta-plugin-host-wasm = { path = "crates/plugin-host-wasm" }
 saetta-plugin-sdk = { path = "crates/plugin-sdk" }
 saetta-plugin-wit = { path = "crates/plugin-wit" }
 saetta-pty = { path = "crates/pty" }

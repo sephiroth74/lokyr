@@ -1,0 +1,17 @@
+[package]
+name = "saetta-kernel"
+description = "The Saetta kernel: workspace model, commands, keymap, events, config, services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+saetta-pkg-model.workspace = true
+saetta-plugin-sdk.workspace = true
+saetta-search.workspace = true
+saetta-session.workspace = true
+saetta-ui-core.workspace = true

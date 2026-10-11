@@ -1,0 +1,14 @@
+[package]
+name = "saetta-plugin-host-wasm"
+description = "Runs third-party Saetta plugins as WebAssembly components"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+saetta-plugin-sdk.workspace = true
+saetta-plugin-wit.workspace = true

@@ -10,8 +10,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "saetta-kernel"
+version = "0.1.0"
+dependencies = [
+ "saetta-pkg-model",
+ "saetta-plugin-sdk",
+ "saetta-search",
+ "saetta-session",
+ "saetta-ui-core",
+]
+
+[[package]]
 name = "saetta-pkg-model"
 version = "0.1.0"
+
+[[package]]
+name = "saetta-plugin-host-wasm"
+version = "0.1.0"
+dependencies = [
+ "saetta-plugin-sdk",
+ "saetta-plugin-wit",
+]
 
 [[package]]
 name = "saetta-plugin-sdk"
