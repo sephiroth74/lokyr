@@ -2,7 +2,7 @@
 resolver = "3"
 # Cargo rejects member globs that match no directory, so a glob is added
 # only once its directory exists.
-members = ["tools/xtask"]
+members = ["crates/*", "tools/*"]
 # Spikes are throwaway experiments with their own manifests.
 exclude = ["spikes"]
 
@@ -18,6 +18,12 @@ repository = "https://github.com/sephiroth74/saetta"
 anyhow = "1.0.104"
 thiserror = "2.0.21"
 tracing = "0.1.44"
+
+# Internal crates
+saetta-pty = { path = "crates/pty" }
+saetta-search = { path = "crates/search" }
+saetta-session = { path = "crates/session" }
+saetta-vt-core = { path = "crates/vt-core" }
 
 [profile.release]
 lto = "fat"
