@@ -1,0 +1,15 @@
+[package]
+name = "spike"
+description = "Throwaway spike: a signed, notarized AppKit app that hosts WebAssembly components"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+objc2 = "0.6.5"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
+
+[profile.release]
+debug = "line-tables-only"
