@@ -7,6 +7,8 @@
 //! - `spike --lua-workloads <workloads.lua> [--no-jit]` (built with the
 //!   `luajit`, `luau` or `luau-jit` feature) times the same work written in
 //!   Lua;
+//! - `spike --lua-limits <workloads.lua> [--no-jit]` runs hostile Lua plugins
+//!   and probes what a plugin can reach;
 //! - `spike --bench <component.wasm> [--cached] [--from-memory]` runs it and
 //!   prints metrics as JSON. `--cached` reuses the compiled artifact of a
 //!   previous run; `--from-memory` loads it into memory instead of mapping
@@ -20,6 +22,8 @@ mod bench;
 mod footprint;
 #[cfg(any(feature = "luajit", feature = "luau"))]
 mod lua_bench;
+#[cfg(any(feature = "luajit", feature = "luau"))]
+mod lua_limits;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -32,6 +36,10 @@ fn main() -> ExitCode {
         #[cfg(any(feature = "luajit", feature = "luau"))]
         [flag, path, rest @ ..] if flag == "--lua-workloads" => {
             lua_bench::workloads(Path::new(path), !rest.iter().any(|flag| flag == "--no-jit"))
+        }
+        #[cfg(any(feature = "luajit", feature = "luau"))]
+        [flag, path, rest @ ..] if flag == "--lua-limits" => {
+            lua_limits::run(Path::new(path), !rest.iter().any(|flag| flag == "--no-jit"))
         }
         [flag, path, options @ ..] if flag == "--bench" => match bench_options(options) {
             Some(options) => bench::run(Path::new(path), options),
