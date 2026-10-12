@@ -66,3 +66,18 @@ build/Spike-Pulley.app/Contents/MacOS/spike --bench build/Spike-Pulley.app/Conte
 build/Spike-Cranelift.app/Contents/MacOS/spike --bench build/Spike-Cranelift.app/Contents/Resources/unknown.wasm --from-memory
 codesign -dv --verbose=4 build/Spike-Pulley.app   # look for "flags=0x10000(runtime)"
 ```
+
+## Notarize, and launch like a download
+
+```sh
+./notarize.sh build/Spike-Pulley.app        # submit, staple, verify with spctl
+./notarize.sh build/Spike-Cranelift.app
+
+# Mark the bundle as downloaded, then launch it through LaunchServices,
+# collecting the JSON metrics from its standard output.
+xattr -r -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" build/Spike-Pulley.app
+app="$PWD/build/Spike-Pulley.app"
+open -W --stdout pulley.json "$app" --args --bench "$app/Contents/Resources/unknown.wasm"
+```
+
+For the Cranelift bundle, add `--from-memory` to the arguments. `notarize.sh` uses the `saetta-notary` keychain profile; `SPIKE_NOTARY_PROFILE` overrides it.
