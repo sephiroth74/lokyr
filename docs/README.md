@@ -9,7 +9,7 @@ Saetta is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 00
 - **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
 - **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Faretra**. Faretra is a separate program from the app, the same way cargo is separate from rustc.
 
-**Status**: design phase, no code yet. This folder holds the architecture, the decisions and the roadmap.
+**Status**: F0, the foundations. The workspace skeleton, CI, the dependency rules and the measurement tools exist; the terminal itself starts in F1. This folder holds the architecture, the decisions and the roadmap.
 
 ## Documents
 
@@ -50,14 +50,14 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 
 | ADR | Decision | Status |
 |---|---|---|
-| [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted |
+| [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted; its wasmtime reasons outdated by 0012 |
 | [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
 | [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012 |
 | [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
-| [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted |
+| [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
-| [0008](adr/0008-separate-package-manager.md) | Faretra as a separate program; no networking code in the app | Accepted |
+| [0008](adr/0008-separate-package-manager.md) | Faretra as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
 | [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before 0.1 |
 | [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted |
