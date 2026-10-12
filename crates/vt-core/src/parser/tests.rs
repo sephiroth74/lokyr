@@ -1,7 +1,7 @@
 //! The behaviour of the parser, case by case. Where it agrees with `vte`,
 //! the reference tests cover every transition too.
 
-use super::{Action, Handler, MAX_PARAMS, Params, Parser, Recorder, StringEnd};
+use super::{Action, Handler, Limits, MAX_PARAMS, Params, Parser, Recorder, StringEnd};
 
 fn parse(input: &[u8]) -> Vec<Action> {
     parse_in_reads(&[input])
@@ -622,4 +622,328 @@ fn dcs_parameters_follow_the_same_rules() {
             end: StringEnd::St,
         }]
     );
+}
+
+/// Records each call on its own, with its own chunk, where [`Recorder`]
+/// merges them.
+#[derive(Default)]
+struct Calls(Vec<String>);
+
+impl Handler for Calls {
+    fn print(&mut self, c: char) {
+        self.0.push(format!("print {c}"));
+    }
+
+    fn execute(&mut self, byte: u8) {
+        self.0.push(format!("execute {byte:#04x}"));
+    }
+
+    fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], final_byte: u8) {
+        self.0.push(format!("csi {}", char::from(final_byte)));
+    }
+
+    fn osc_start(&mut self) {
+        self.0.push("osc_start".to_owned());
+    }
+
+    fn osc_put(&mut self, data: &[u8]) {
+        self.0.push(format!("osc_put {}", data.escape_ascii()));
+    }
+
+    fn osc_end(&mut self, end: StringEnd) {
+        self.0.push(format!("osc_end {end:?}"));
+    }
+
+    fn dcs_start(&mut self, _params: &Params, _intermediates: &[u8], final_byte: u8) {
+        self.0.push(format!("dcs_start {}", char::from(final_byte)));
+    }
+
+    fn dcs_put(&mut self, data: &[u8]) {
+        self.0.push(format!("dcs_put {}", data.escape_ascii()));
+    }
+
+    fn dcs_end(&mut self, end: StringEnd) {
+        self.0.push(format!("dcs_end {end:?}"));
+    }
+
+    fn apc_start(&mut self) {
+        self.0.push("apc_start".to_owned());
+    }
+
+    fn apc_put(&mut self, data: &[u8]) {
+        self.0.push(format!("apc_put {}", data.escape_ascii()));
+    }
+
+    fn apc_end(&mut self, end: StringEnd) {
+        self.0.push(format!("apc_end {end:?}"));
+    }
+}
+
+fn calls_with(limits: Limits, reads: &[&[u8]]) -> Vec<String> {
+    let mut parser = Parser::with_limits(limits);
+    let mut calls = Calls::default();
+    for read in reads {
+        parser.advance(&mut calls, read);
+    }
+    calls.0
+}
+
+fn calls(reads: &[&[u8]]) -> Vec<String> {
+    calls_with(Limits::default(), reads)
+}
+
+/// 4 bytes for every string, and 8 for OSC 52.
+fn small_limits() -> Limits {
+    Limits {
+        osc: 4,
+        osc_commands: vec![(52, 8)],
+        dcs: 4,
+        apc: 4,
+    }
+}
+
+#[test]
+fn payloads_arrive_in_a_chunk_per_read() {
+    assert_eq!(
+        calls(&[b"\x1b]0;ab", b"cd", b"e\x07"]),
+        [
+            "osc_start",
+            "osc_put 0;ab",
+            "osc_put cd",
+            "osc_put e",
+            "osc_end Bel"
+        ]
+    );
+    assert_eq!(
+        calls(&[b"\x1bPqab", b"c\x1b", b"\\"]),
+        ["dcs_start q", "dcs_put ab", "dcs_put c", "dcs_end St"]
+    );
+    assert_eq!(
+        calls(&[b"\x1b_Ga=q;", b"AAAA\x1b\\"]),
+        ["apc_start", "apc_put Ga=q;", "apc_put AAAA", "apc_end St"]
+    );
+}
+
+#[test]
+fn dropped_bytes_split_a_chunk() {
+    // C0 controls in OSC payloads, and DEL in DCS ones.
+    assert_eq!(
+        calls(&[b"\x1b]0;a\x01b\x07"]),
+        ["osc_start", "osc_put 0;a", "osc_put b", "osc_end Bel"]
+    );
+    assert_eq!(
+        calls(&[b"\x1bPqa\x7fb\x1b\\"]),
+        ["dcs_start q", "dcs_put a", "dcs_put b", "dcs_end St"]
+    );
+}
+
+#[test]
+fn terminators_split_across_reads_are_recognized() {
+    let cancelled_dcs = Action::Dcs {
+        params: vec![vec![0]],
+        intermediates: Vec::new(),
+        final_byte: b'q',
+        payload: b"d".to_vec(),
+        end: StringEnd::Cancelled,
+    };
+    let cases: [(&[u8], Vec<Action>); 8] = [
+        (
+            b"\x1b]0;t\x07x",
+            vec![osc(b"0;t", StringEnd::Bel), print("x")],
+        ),
+        (
+            b"\x1b]0;t\x1b\\x",
+            vec![osc(b"0;t", StringEnd::St), print("x")],
+        ),
+        (
+            b"\x1b]0;t\x18x",
+            vec![
+                osc(b"0;t", StringEnd::Cancelled),
+                Action::Execute(0x18),
+                print("x"),
+            ],
+        ),
+        (
+            b"\x1bPqd\x1b\\x",
+            vec![dcs(&[&[0]], b"", b'q', b"d"), print("x")],
+        ),
+        (
+            b"\x1bPqd\x1ax",
+            vec![cancelled_dcs, Action::Execute(0x1A), print("x")],
+        ),
+        (b"\x1b_d\x1b\\x", vec![apc(b"d", StringEnd::St), print("x")]),
+        (
+            b"\x1b_d\x18x",
+            vec![
+                apc(b"d", StringEnd::Cancelled),
+                Action::Execute(0x18),
+                print("x"),
+            ],
+        ),
+        (b"\x1bXd\x1b\\x", vec![print("x")]),
+    ];
+    for (input, expected) in cases {
+        for reads in every_split(input) {
+            assert_eq!(parse_in_reads(&reads), expected, "{reads:02x?}");
+        }
+    }
+}
+
+#[test]
+fn a_payload_at_its_limit_is_delivered() {
+    assert_eq!(
+        calls_with(
+            small_limits(),
+            &[b"\x1b]0;ab\x07\x1bPqabcd\x1b\\\x1b_abcd\x1b\\"]
+        ),
+        [
+            "osc_start",
+            "osc_put 0;ab",
+            "osc_end Bel",
+            "dcs_start q",
+            "dcs_put abcd",
+            "dcs_end St",
+            "apc_start",
+            "apc_put abcd",
+            "apc_end St",
+        ]
+    );
+}
+
+#[test]
+fn a_payload_past_its_limit_ends_at_once_and_the_rest_is_dropped() {
+    // The chunk that would pass the limit is not delivered, the ones before
+    // it are.
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]0;abc\x07x"]),
+        ["osc_start", "osc_end TooLong", "print x"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]0;a", b"bc", b"de\x07x"]),
+        ["osc_start", "osc_put 0;a", "osc_end TooLong", "print x"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1bPqabcde\x1b\\x\x1b_abcde\x1b\\y"]),
+        [
+            "dcs_start q",
+            "dcs_end TooLong",
+            "print x",
+            "apc_start",
+            "apc_end TooLong",
+            "print y",
+        ]
+    );
+}
+
+#[test]
+fn the_rest_of_a_string_past_its_limit_ends_as_the_string_would() {
+    // CAN and SUB are executed, BEL ends only an OSC string, and ESC can
+    // start a new sequence.
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]0;abcde\x18x"]),
+        ["osc_start", "osc_end TooLong", "execute 0x18", "print x"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b_abcde\x07x\x1b\\y"]),
+        ["apc_start", "apc_end TooLong", "print y"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1bPqabcde\x1b[1m"]),
+        ["dcs_start q", "dcs_end TooLong", "csi m"]
+    );
+}
+
+#[test]
+fn osc_commands_can_have_limits_of_their_own() {
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]52;c;ab\x07"]),
+        ["osc_start", "osc_put 52;c;ab", "osc_end Bel"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]52;c;abcd\x07"]),
+        ["osc_start", "osc_end TooLong"]
+    );
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]2;abc\x07"]),
+        ["osc_start", "osc_end TooLong"]
+    );
+    // Until the number is read, the general limit applies.
+    assert_eq!(
+        calls_with(small_limits(), &[b"\x1b]5", b"2;c;ab\x07"]),
+        ["osc_start", "osc_put 5", "osc_put 2;c;ab", "osc_end Bel"]
+    );
+}
+
+#[test]
+fn new_limits_apply_from_the_next_string() {
+    let mut parser = Parser::with_limits(small_limits());
+    let mut calls = Calls::default();
+    parser.advance(&mut calls, b"\x1b]0;ab");
+    parser.set_limits(Limits::default());
+    assert_eq!(parser.limits(), &Limits::default());
+    parser.advance(&mut calls, b"cd\x07\x1b]0;abcd\x07");
+    assert_eq!(
+        calls.0,
+        [
+            "osc_start",
+            "osc_put 0;ab",
+            "osc_end TooLong",
+            "osc_start",
+            "osc_put 0;abcd",
+            "osc_end Bel",
+        ]
+    );
+}
+
+#[test]
+fn a_100_mib_payload_is_dropped_in_constant_memory() {
+    /// Counts what arrives, so that the test keeps nothing either.
+    #[derive(Default)]
+    struct Tally {
+        starts: usize,
+        delivered: usize,
+        ends: Vec<StringEnd>,
+        after_the_end: usize,
+        text: String,
+    }
+
+    impl Handler for Tally {
+        fn print(&mut self, c: char) {
+            self.text.push(c);
+        }
+
+        fn osc_start(&mut self) {
+            self.starts += 1;
+        }
+
+        fn osc_put(&mut self, data: &[u8]) {
+            if self.ends.is_empty() {
+                self.delivered += data.len();
+            } else {
+                self.after_the_end += data.len();
+            }
+        }
+
+        fn osc_end(&mut self, end: StringEnd) {
+            self.ends.push(end);
+        }
+    }
+
+    // The parser's state has a fixed size, and nothing past the limit
+    // reaches the handler, so no one holds the payload.
+    const READ: usize = 64 * 1024;
+    let read = [b'A'; READ];
+    let mut parser = Parser::new();
+    let mut tally = Tally::default();
+    parser.advance(&mut tally, b"\x1b]52;c;");
+    for _ in 0..100 * 1024 * 1024 / READ {
+        parser.advance(&mut tally, &read);
+    }
+    parser.advance(&mut tally, b"\x07done");
+
+    assert_eq!(tally.starts, 1);
+    assert_eq!(tally.ends, [StringEnd::TooLong]);
+    assert!(tally.delivered <= parser.limits().osc_limit(Some(52)));
+    assert_eq!(tally.after_the_end, 0);
+    assert_eq!(tally.text, "done");
 }

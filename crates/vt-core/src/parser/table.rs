@@ -14,7 +14,10 @@
 //! - BEL ends an OSC string, as xterm allows;
 //! - after the `ESC` that ends a control string, a state of its own consumes
 //!   the `\` of ST, which would otherwise reach the handler as an escape
-//!   sequence.
+//!   sequence;
+//! - OSC and APC strings get an ignore state, as DCS strings have one, for
+//!   the rest of a string past its size limit. The parser enters them when
+//!   it ends the string, since the limit is not in the table.
 
 /// The states of the machine.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -33,16 +36,20 @@ pub(crate) enum State {
     DcsPassthrough,
     DcsIgnore,
     OscString,
+    /// The rest of an OSC string past its size limit.
+    OscIgnore,
     /// SOS and PM strings, which are consumed and dropped.
     SosPmString,
     ApcString,
+    /// The rest of an APC string past its size limit.
+    ApcIgnore,
     /// Right after the `ESC` that ended a control string: like
     /// [`State::Escape`], except that `\` completes the string terminator.
     StringEscape,
 }
 
 /// Every state, in the order of the table's rows.
-pub(crate) const STATES: [State; 16] = [
+pub(crate) const STATES: [State; 18] = [
     State::Ground,
     State::Escape,
     State::EscapeIntermediate,
@@ -56,8 +63,10 @@ pub(crate) const STATES: [State; 16] = [
     State::DcsPassthrough,
     State::DcsIgnore,
     State::OscString,
+    State::OscIgnore,
     State::SosPmString,
     State::ApcString,
+    State::ApcIgnore,
     State::StringEscape,
 ];
 
@@ -162,7 +171,9 @@ pub(crate) const fn transition(state: State, byte: u8) -> Transition {
         (OscString, 0x1B) => return to(OscEnd, StringEscape),
         (DcsPassthrough, 0x1B) => return to(DcsEnd, StringEscape),
         (ApcString, 0x1B) => return to(ApcEnd, StringEscape),
-        (DcsIgnore | SosPmString, 0x1B) => return to(Clear, StringEscape),
+        (DcsIgnore | OscIgnore | SosPmString | ApcIgnore, 0x1B) => {
+            return to(Clear, StringEscape);
+        }
         (_, 0x1B) => return to(Clear, Escape),
         _ => {}
     }
@@ -268,6 +279,10 @@ pub(crate) const fn transition(state: State, byte: u8) -> Transition {
             0x00..=0x1F => to(Ignore, OscString),
             _ => to(OscPut, OscString),
         },
+        OscIgnore => match byte {
+            0x07 => to(Ignore, Ground),
+            _ => to(Ignore, OscIgnore),
+        },
         SosPmString => to(Ignore, SosPmString),
         // The payload of an APC string is made of the same bytes as an OSC
         // one, but only ST ends it.
@@ -275,6 +290,7 @@ pub(crate) const fn transition(state: State, byte: u8) -> Transition {
             0x00..=0x1F => to(Ignore, ApcString),
             _ => to(ApcPut, ApcString),
         },
+        ApcIgnore => to(Ignore, ApcIgnore),
     }
 }
 
@@ -310,6 +326,38 @@ mod tests {
                 matches!(next, State::Escape | State::StringEscape),
                 "{state:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_rest_of_a_string_past_its_limit_is_consumed_like_sos_and_pm() {
+        for byte in 0..=u8::MAX {
+            let sos_pm = transition(State::SosPmString, byte);
+            let same_state = |next| Transition {
+                next: if sos_pm.next == State::SosPmString {
+                    next
+                } else {
+                    sos_pm.next
+                },
+                ..sos_pm
+            };
+            assert_eq!(
+                transition(State::ApcIgnore, byte),
+                same_state(State::ApcIgnore),
+                "{byte:#04x}"
+            );
+            let osc = transition(State::OscIgnore, byte);
+            if byte == 0x07 {
+                assert_eq!(
+                    osc,
+                    Transition {
+                        action: Action::Ignore,
+                        next: State::Ground
+                    }
+                );
+            } else {
+                assert_eq!(osc, same_state(State::OscIgnore), "{byte:#04x}");
+            }
         }
     }
 

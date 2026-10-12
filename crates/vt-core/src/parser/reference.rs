@@ -234,7 +234,14 @@ fn every_transition_matches_vte() {
 
 #[test]
 fn the_prefixes_reach_every_state() {
-    for state in STATES {
+    // Only a string past its size limit leads to these, and `vte` has no
+    // limits. They behave like SOS and PM strings, which the table's own
+    // tests check.
+    let past_a_limit = [State::OscIgnore, State::ApcIgnore];
+    for state in STATES
+        .into_iter()
+        .filter(|state| !past_a_limit.contains(state))
+    {
         assert!(
             PREFIXES.iter().any(|&(_, reached)| reached == state),
             "no prefix leads to {state:?}"

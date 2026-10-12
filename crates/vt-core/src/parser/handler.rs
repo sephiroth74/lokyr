@@ -12,16 +12,22 @@ pub enum StringEnd {
     Bel,
     /// CAN or SUB aborted the string.
     Cancelled,
-    /// The payload passed its size limit. The parser dropped the rest, so
-    /// the handler must discard what it received.
+    /// The payload would pass its size limit, set by
+    /// [`Limits`](super::Limits). The parser drops the rest of the string,
+    /// so the handler must discard what it received.
     TooLong,
 }
 
 /// Receives what the parser finds in the byte stream.
 ///
 /// Every method does nothing by default, so a handler implements only what
-/// it needs. A control string arrives as a start, any number of chunks and
-/// an end, and its chunks split the payload at arbitrary points.
+/// it needs.
+///
+/// A control string arrives as a start, any number of chunks and an end.
+/// The parser buffers nothing, so a chunk is a run of payload bytes from a
+/// single read, and chunks split the payload at arbitrary points. A string
+/// that would pass its size limit ends as [`StringEnd::TooLong`], and the
+/// rest of it never reaches the handler.
 #[allow(unused_variables)]
 pub trait Handler {
     /// Prints a character.

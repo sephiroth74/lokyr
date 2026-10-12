@@ -17,17 +17,20 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 
 - **DEC/ANSI state machine**:
   - Paul Williams' model, the same one `vte` uses, implemented with a table computed at compile time.
-  - States: `ground`, `escape`, `escape_intermediate`, `csi_entry`, `csi_param`, `csi_intermediate`, `csi_ignore`, `dcs_entry`, `dcs_param`, `dcs_intermediate`, `dcs_passthrough`, `dcs_ignore`, `osc_string`, `sos_pm_string`, `apc_string`, `string_escape`.
+  - States: `ground`, `escape`, `escape_intermediate`, `csi_entry`, `csi_param`, `csi_intermediate`, `csi_ignore`, `dcs_entry`, `dcs_param`, `dcs_intermediate`, `dcs_passthrough`, `dcs_ignore`, `osc_string`, `osc_ignore`, `sos_pm_string`, `apc_string`, `apc_ignore`, `string_escape`.
   - Changes to the model:
     - C1 controls are recognized only in their 7-bit form, `ESC` followed by a byte, as in other UTF-8 terminals. Bytes from 0x80 up are UTF-8 in text, payload in OSC, DCS and APC strings, and ignored inside sequences.
     - Williams' `sos_pm_apc_string` is split in two: APC strings reach the handler, while SOS and PM strings are dropped.
     - `string_escape` follows the `ESC` that ends a string and consumes the `\` of ST, so the handler does not see it as an escape sequence.
+    - `osc_ignore` and `apc_ignore`, like Williams' `dcs_ignore`, consume the rest of a string past its size limit.
     - Colons separate sub-parameters, BEL also ends OSC strings as in xterm, and DEL is ignored in text.
   - A sequence keeps at most 2 intermediates, its private marker included. No known sequence has more, and one that does is ignored.
 - **Why not `vte`**: it discards the contents of APC strings, which kitty graphics needs.
 - **Streamed payloads**:
-  - OSC, DCS and APC payloads are delivered in pieces (start, chunks, end) to handlers registered per type.
-  - Each type has a size limit (e.g. OSC 52 ≤ 1 MiB, configurable). Past the limit, the payload is dropped without being buffered.
+  - OSC, DCS and APC payloads are delivered in pieces (start, chunks, end). The parser buffers nothing: each run of payload bytes in a read is one chunk. The terminal routes the pieces to handlers registered per type.
+  - Size limits are configurable: 64 KiB for each type of string, and more for the OSC commands that need it, such as 1 MiB for OSC 52 (the clipboard). The parser reads the OSC number, the digits before the first `;`, to pick the limit.
+  - A string that would pass its limit ends at once as `TooLong`, so the handler can free what it holds. The parser consumes the rest without delivering it, so memory stays constant whatever the payload's size.
+  - OSC strings end with ST or BEL, DCS and APC strings with ST, and CAN or SUB cancel any of them. A terminator split across reads is still recognized.
 - **CSI parameters** (DCS parameters follow the same rules):
   - Up to 32 values, sub-parameters included: colons separate sub-parameters (e.g. `4:3` for curly underline, `38:2::r:g:b`), semicolons separate parameters.
   - Past the 32nd value, the values are dropped and the sequence is still dispatched (`vte` ignores such a sequence).

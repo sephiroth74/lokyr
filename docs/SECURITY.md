@@ -26,7 +26,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 | Multi-line paste without bracketed paste | Asks for confirmation | Avoids running commands by accident |
 | OSC 8 hyperlinks | `http`, `https`, `mailto` and `file` only (configurable); the target is shown on hover; opened with ⌘-click or Ctrl-click | No schemes that launch other apps |
 | Notifications from sequences (OSC 9, 777, 99) | Only when the window is not focused, rate-limited | Avoids spam |
-| OSC/DCS/APC payloads | Size limits per type; a memory quota for images (F5c) | Avoids memory exhaustion |
+| OSC/DCS/APC payloads | Size limits per type, 64 KiB, and per OSC command where one needs more, 1 MiB for OSC 52; a memory quota for images (F5c) | Avoids memory exhaustion |
 | Secure Keyboard Entry (macOS) | Automatic when the PTY has ECHO off (password prompts), plus a manual command; a visible indicator | Stops other apps from reading keystrokes |
 
 ## Plugins

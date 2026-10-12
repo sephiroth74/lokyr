@@ -5,6 +5,7 @@
 //! and control strings (OSC, DCS and APC), whose payloads arrive in chunks.
 
 mod handler;
+mod limits;
 mod params;
 mod recorder;
 mod table;
@@ -16,9 +17,11 @@ mod reference;
 mod tests;
 
 pub use handler::{Handler, StringEnd};
+pub use limits::Limits;
 pub use params::{MAX_PARAMS, Params};
 pub use recorder::{Action, Recorder};
 
+use limits::OscNumber;
 use table::{State, TABLE, Transition};
 use utf8::{REPLACEMENT, Step, Utf8Decoder};
 
@@ -34,6 +37,10 @@ const MAX_INTERMEDIATES: usize = 2;
 /// adapted to UTF-8: C1 controls are recognized only in their 7-bit form,
 /// `ESC` followed by a byte. The parser keeps its state from one call to the
 /// next, so the input can be split anywhere.
+///
+/// The parser buffers nothing: the payload of a control string reaches the
+/// handler in chunks, one for each run of payload bytes in a read, and a
+/// string that passes its [`Limits`] is dropped as it arrives.
 ///
 /// ```
 /// use saetta_vt_core::parser::{Action, Parser, Recorder};
@@ -66,32 +73,82 @@ pub struct Parser {
     /// without being dispatched.
     ignoring: bool,
     utf8: Utf8Decoder,
+    limits: Limits,
+    /// How many bytes of its payload the current control string has
+    /// delivered.
+    payload_len: usize,
+    /// The size limit of the current control string.
+    payload_limit: usize,
+    osc_number: OscNumber,
 }
 
 impl Parser {
-    /// A parser in the ground state.
+    /// A parser in the ground state, with the default [`Limits`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// A parser in the ground state, with `limits`.
+    pub fn with_limits(limits: Limits) -> Self {
+        Self {
+            limits,
+            ..Self::default()
+        }
+    }
+
+    /// The size limits of control strings.
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+
+    /// Replaces the size limits of control strings. A string in progress
+    /// keeps the limit it started with.
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
+    }
+
     /// Parses `bytes`, calling `handler` for what they contain.
     pub fn advance<H: Handler>(&mut self, handler: &mut H, bytes: &[u8]) {
-        for &byte in bytes {
+        let mut i = 0;
+        while let Some(&byte) = bytes.get(i) {
             if self.utf8.is_partial() {
                 match self.utf8.resume(byte) {
-                    Step::Partial => continue,
+                    Step::Partial => {
+                        i += 1;
+                        continue;
+                    }
                     Step::Done(c) => {
                         print_decoded(handler, c);
+                        i += 1;
                         continue;
                     }
                     // The byte is parsed below, on its own.
                     Step::Invalid => handler.print(REPLACEMENT),
                 }
             }
-            let Transition { action, next } = TABLE[self.state as usize][usize::from(byte)];
-            self.state = next;
-            self.perform(handler, action, byte);
+            let transition = TABLE[self.state as usize][usize::from(byte)];
+            if let Some(payload) = payload_of(transition.action) {
+                let len = self.run_of(transition, &bytes[i..]);
+                self.put(handler, payload, &bytes[i..i + len]);
+                i += len;
+            } else if transition.action == table::Action::Ignore && transition.next == self.state {
+                i += self.run_of(transition, &bytes[i..]);
+            } else {
+                self.state = transition.next;
+                self.perform(handler, transition.action, byte);
+                i += 1;
+            }
         }
+    }
+
+    /// How many bytes at the start of `bytes` have `transition` in the
+    /// current state.
+    fn run_of(&self, transition: Transition, bytes: &[u8]) -> usize {
+        let row = &TABLE[self.state as usize];
+        bytes
+            .iter()
+            .position(|&byte| row[usize::from(byte)] != transition)
+            .unwrap_or(bytes.len())
     }
 
     fn perform<H: Handler>(&mut self, handler: &mut H, action: table::Action, byte: u8) {
@@ -127,10 +184,11 @@ impl Parser {
                 if self.ignoring {
                     self.state = State::DcsIgnore;
                 } else {
+                    self.start_string(self.limits.dcs);
                     handler.dcs_start(&self.params, self.intermediates(), byte);
                 }
             }
-            DcsPut => handler.dcs_put(&[byte]),
+            DcsPut => self.put(handler, Payload::Dcs, &[byte]),
             DcsEnd => {
                 handler.dcs_end(StringEnd::St);
                 self.clear();
@@ -139,8 +197,12 @@ impl Parser {
                 handler.dcs_end(StringEnd::Cancelled);
                 handler.execute(byte);
             }
-            OscStart => handler.osc_start(),
-            OscPut => handler.osc_put(&[byte]),
+            OscStart => {
+                self.start_string(self.limits.osc);
+                self.osc_number = OscNumber::start();
+                handler.osc_start();
+            }
+            OscPut => self.put(handler, Payload::Osc, &[byte]),
             OscEnd => {
                 handler.osc_end(StringEnd::St);
                 self.clear();
@@ -150,8 +212,11 @@ impl Parser {
                 handler.osc_end(StringEnd::Cancelled);
                 handler.execute(byte);
             }
-            ApcStart => handler.apc_start(),
-            ApcPut => handler.apc_put(&[byte]),
+            ApcStart => {
+                self.start_string(self.limits.apc);
+                handler.apc_start();
+            }
+            ApcPut => self.put(handler, Payload::Apc, &[byte]),
             ApcEnd => {
                 handler.apc_end(StringEnd::St);
                 self.clear();
@@ -160,6 +225,47 @@ impl Parser {
                 handler.apc_end(StringEnd::Cancelled);
                 handler.execute(byte);
             }
+        }
+    }
+
+    fn start_string(&mut self, limit: usize) {
+        self.payload_len = 0;
+        self.payload_limit = limit;
+    }
+
+    /// Delivers `chunk`, a run of payload bytes, unless it takes the string
+    /// past its limit. Then the string ends, and the rest of it is consumed.
+    fn put<H: Handler>(&mut self, handler: &mut H, payload: Payload, chunk: &[u8]) {
+        if payload == Payload::Osc
+            && let Some(limit) = self.osc_number.read(chunk, &self.limits)
+        {
+            self.payload_limit = limit;
+        }
+        // A limit can shrink once the OSC number is known, so the room left
+        // can be none.
+        let room = self.payload_limit.saturating_sub(self.payload_len);
+        if chunk.len() > room {
+            self.state = match payload {
+                Payload::Osc => {
+                    handler.osc_end(StringEnd::TooLong);
+                    State::OscIgnore
+                }
+                Payload::Dcs => {
+                    handler.dcs_end(StringEnd::TooLong);
+                    State::DcsIgnore
+                }
+                Payload::Apc => {
+                    handler.apc_end(StringEnd::TooLong);
+                    State::ApcIgnore
+                }
+            };
+            return;
+        }
+        self.payload_len += chunk.len();
+        match payload {
+            Payload::Osc => handler.osc_put(chunk),
+            Payload::Dcs => handler.dcs_put(chunk),
+            Payload::Apc => handler.apc_put(chunk),
         }
     }
 
@@ -180,6 +286,24 @@ impl Parser {
 
     fn intermediates(&self) -> &[u8] {
         &self.intermediates[..self.intermediate_count]
+    }
+}
+
+/// The control strings whose payload reaches the handler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Payload {
+    Osc,
+    Dcs,
+    Apc,
+}
+
+/// The control string whose payload `action` delivers a byte of.
+fn payload_of(action: table::Action) -> Option<Payload> {
+    match action {
+        table::Action::OscPut => Some(Payload::Osc),
+        table::Action::DcsPut => Some(Payload::Dcs),
+        table::Action::ApcPut => Some(Payload::Apc),
+        _ => None,
     }
 }
 
