@@ -4,16 +4,20 @@
 //! Saetta and on other terminals for comparison.
 
 // `deny` rather than `forbid`: reading another process's statistics goes
-// through `proc_pid_rusage`, which is `unsafe`, and that call site is allowed
-// explicitly.
+// through `proc_pid_rusage` and `proc_name`, which are `unsafe`, and those
+// call sites are allowed explicitly.
 #![deny(unsafe_code)]
 
 #[cfg(target_os = "macos")]
 mod footprint;
 #[cfg(target_os = "macos")]
+mod idle;
+#[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
-mod rusage;
+mod process;
+#[cfg(target_os = "macos")]
+mod sampling;
 
 use std::process::ExitCode;
 
@@ -26,6 +30,8 @@ fn main() -> ExitCode {
         }
         #[cfg(target_os = "macos")]
         Some("memory") => memory::run(args),
+        #[cfg(target_os = "macos")]
+        Some("idle") => idle::run(args),
         Some(probe) => {
             eprintln!("error: unknown probe `{probe}`\n");
             print_help();
@@ -44,6 +50,8 @@ fn print_help() {
          Probes (macOS):\n  \
          memory --pid <pid> [--interval <ms>] [--duration <s>]\n      \
          sample the memory footprint of a process, with and without its GPU\n      \
-         memory; prints JSON, sizes in bytes"
+         memory; prints JSON, sizes in bytes\n  \
+         idle --pid <pid> [--interval <ms>] [--duration <s>]\n      \
+         count how often a process wakes up, over 60 s by default; prints JSON"
     );
 }
