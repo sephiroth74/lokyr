@@ -1,8 +1,11 @@
-//! `saetta-bench memory`: samples the memory footprint of a process.
+//! `saetta-bench memory`: samples the memory footprint of a process, with
+//! and without its GPU memory.
 //!
-//! Prints JSON on standard output: every sample, then a summary. Sizes are in
-//! bytes.
+//! The footprint comes from the kernel, and the GPU memory from Apple's
+//! `footprint` tool, which each sample runs once. Prints JSON on standard
+//! output: every sample, then a summary. Sizes are in bytes.
 
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -10,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
+use crate::footprint::Breakdown;
 use crate::rusage;
 
 /// What the probe samples, and for how long.
@@ -26,7 +30,16 @@ struct Sample {
     /// Time since the first sample.
     elapsed_ms: u128,
     footprint: u64,
+    /// The GPU memory counted in the footprint.
+    gpu: u64,
+    footprint_without_gpu: u64,
     lifetime_peak: u64,
+}
+
+/// The samples, and the breakdown of the last one.
+struct Readings {
+    samples: Vec<Sample>,
+    last: Breakdown,
 }
 
 /// Minimum, median, maximum and last value of a series.
@@ -41,6 +54,10 @@ struct Stats {
 #[derive(Debug, Serialize)]
 struct Summary {
     footprint: Stats,
+    footprint_without_gpu: Stats,
+    gpu: Stats,
+    /// The GPU memory of the last sample, by `footprint` category.
+    gpu_categories: BTreeMap<String, u64>,
     /// The highest footprint over the life of the process, as of the last
     /// sample.
     lifetime_peak: u64,
@@ -49,6 +66,7 @@ struct Summary {
 #[derive(Debug, Serialize)]
 struct Report {
     pid: libc::pid_t,
+    name: String,
     interval_ms: u128,
     duration_s: f64,
     samples: Vec<Sample>,
@@ -58,14 +76,19 @@ struct Report {
 /// Runs the probe with the arguments that follow `memory`.
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let options = parse(args)?;
-    let samples = sample(&options)?;
+    let Readings { samples, last } = sample(&options, Breakdown::of)?;
+    let stats = |value: fn(&Sample) -> u64| Stats::of(samples.iter().map(value));
     let summary = Summary {
-        footprint: Stats::of(samples.iter().map(|sample| sample.footprint))
+        footprint: stats(|sample| sample.footprint).context("no samples")?,
+        footprint_without_gpu: stats(|sample| sample.footprint_without_gpu)
             .context("no samples")?,
+        gpu: stats(|sample| sample.gpu).context("no samples")?,
+        gpu_categories: last.gpu(),
         lifetime_peak: samples.last().map_or(0, |sample| sample.lifetime_peak),
     };
     let report = Report {
         pid: options.pid,
+        name: last.name,
         interval_ms: options.interval.as_millis(),
         duration_s: options.duration.as_secs_f64(),
         samples,
@@ -129,22 +152,30 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
 
 /// Samples the target at the start, then at every interval that fits in the
 /// duration. Each sample is scheduled from the start, so slow readings do not
-/// make the next ones drift.
-fn sample(options: &Options) -> Result<Vec<Sample>> {
+/// make the next ones drift. `breakdown` splits the footprint into
+/// categories, to find the GPU memory.
+fn sample(
+    options: &Options,
+    mut breakdown: impl FnMut(libc::pid_t) -> Result<Breakdown>,
+) -> Result<Readings> {
     let start = Instant::now();
     let mut samples = Vec::new();
     loop {
         let elapsed = start.elapsed();
         let memory = rusage::memory(options.pid)
             .with_context(|| format!("cannot read the memory of process {}", options.pid))?;
+        let last = breakdown(options.pid)?;
+        let gpu = last.gpu().values().sum();
         samples.push(Sample {
             elapsed_ms: elapsed.as_millis(),
             footprint: memory.footprint,
+            gpu,
+            footprint_without_gpu: memory.footprint.saturating_sub(gpu),
             lifetime_peak: memory.lifetime_peak,
         });
         let next = options.interval * u32::try_from(samples.len()).context("too many samples")?;
         if next > options.duration {
-            return Ok(samples);
+            return Ok(Readings { samples, last });
         }
         if let Some(wait) = next.checked_sub(start.elapsed()) {
             thread::sleep(wait);
@@ -239,12 +270,21 @@ mod tests {
     #[test]
     fn samples_cover_the_duration() {
         let pid = libc::pid_t::try_from(std::process::id()).unwrap();
-        let samples = sample(&Options {
+        let fake = |_| {
+            Ok(Breakdown {
+                name: "fake".to_owned(),
+                categories: BTreeMap::from([
+                    ("IOSurface".to_owned(), 4096),
+                    ("Malloc Small".to_owned(), 1 << 20),
+                ]),
+            })
+        };
+        let options = Options {
             pid,
             interval: Duration::from_millis(20),
             duration: Duration::from_millis(60),
-        })
-        .unwrap();
+        };
+        let Readings { samples, last } = sample(&options, fake).unwrap();
         // At 0, 20, 40 and 60 ms.
         assert_eq!(samples.len(), 4);
         assert!(
@@ -252,5 +292,10 @@ mod tests {
                 .windows(2)
                 .all(|pair| pair[0].elapsed_ms <= pair[1].elapsed_ms)
         );
+        for sample in &samples {
+            assert_eq!(sample.gpu, 4096);
+            assert_eq!(sample.footprint_without_gpu, sample.footprint - 4096);
+        }
+        assert_eq!(last.name, "fake");
     }
 }

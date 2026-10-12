@@ -9,6 +9,8 @@
 #![deny(unsafe_code)]
 
 #[cfg(target_os = "macos")]
+mod footprint;
+#[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
 mod rusage;
@@ -41,6 +43,7 @@ fn print_help() {
         "Usage: saetta-bench <probe> [options]\n\n\
          Probes (macOS):\n  \
          memory --pid <pid> [--interval <ms>] [--duration <s>]\n      \
-         sample the memory footprint of a process; prints JSON, sizes in bytes"
+         sample the memory footprint of a process, with and without its GPU\n      \
+         memory; prints JSON, sizes in bytes"
     );
 }
