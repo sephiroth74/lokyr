@@ -51,7 +51,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 |---|---|---|
 | [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted |
 | [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
-| [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; JIT spike in F0 |
+| [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012 |
 | [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011 |
@@ -60,6 +60,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
 | [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before 0.1 |
 | [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted |
+| [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
 
 ## Glossary
 
