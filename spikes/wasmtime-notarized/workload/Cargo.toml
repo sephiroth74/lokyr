@@ -1,0 +1,7 @@
+[package]
+name = "spike-workload"
+description = "Plugin-like workloads, compiled both into the guest and natively into the host"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false

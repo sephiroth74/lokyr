@@ -1196,6 +1196,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "spike-workload",
  "wasmtime",
 ]
 
@@ -1203,8 +1204,13 @@ dependencies = [
 name = "spike-guest"
 version = "0.1.0"
 dependencies = [
+ "spike-workload",
  "wit-bindgen",
 ]
+
+[[package]]
+name = "spike-workload"
+version = "0.1.0"
 
 [[package]]
 name = "stable_deref_trait"

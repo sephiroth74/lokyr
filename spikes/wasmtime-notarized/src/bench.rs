@@ -37,6 +37,14 @@ const RENDER_CALLS: usize = 1_000;
 const RENDER_NODES: u32 = 100;
 /// Iterations of the CPU-bound loop.
 const WORK_ITERATIONS: u32 = 50_000_000;
+/// Lines of the buffer the workloads run on.
+const WORKLOAD_LINES: usize = 5_000;
+/// Lines visible on screen at once.
+const VISIBLE_LINES: usize = 40;
+/// Calls timed per workload.
+const WORKLOAD_CALLS: usize = 20;
+/// The fuzzy query; it matches about one line in sixteen.
+const FUZZY_QUERY: &str = "users500";
 
 /// How guest code runs in this build: native code from Cranelift, or
 /// Pulley bytecode run by wasmtime's interpreter.
@@ -217,6 +225,101 @@ pub fn run(path: &Path, options: Options) -> Result<()> {
     println!(r#"  "panic_message": "{panic_message}""#);
     println!("}}");
     Ok(())
+}
+
+/// Times plugin-like work on a buffer of lines, in the guest and natively,
+/// and prints the medians as JSON.
+pub fn workloads(path: &Path) -> Result<()> {
+    let engine = engine()?;
+    let compiled = engine.precompile_component(&std::fs::read(path)?)?;
+    // SAFETY: the bytes were produced just above by `precompile_component`
+    // with this engine.
+    let component = unsafe { Component::deserialize(&engine, &compiled)? };
+    let mut linker = Linker::<HostState>::new(&engine);
+    saetta::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
+    linker.define_unknown_imports_as_traps(&component)?;
+    let mut store = Store::new(&engine, HostState::default());
+    let plugin = Plugin::instantiate(&mut store, &component, &linker)?;
+    let guest = plugin.saetta_spike_bench();
+    guest.call_init(&mut store)?;
+
+    let lines = spike_workload::sample_lines(WORKLOAD_LINES);
+    let visible = &lines[..VISIBLE_LINES];
+    let bytes: usize = lines.iter().map(String::len).sum();
+
+    let copy = median_of(WORKLOAD_CALLS, || {
+        guest.call_line_count(&mut store, &lines).map(drop)
+    })?;
+    let fuzzy = median_of(WORKLOAD_CALLS, || {
+        guest.call_fuzzy(&mut store, &lines, FUZZY_QUERY).map(drop)
+    })?;
+    let fuzzy_native = median_native(WORKLOAD_CALLS, || native_fuzzy(&lines));
+    let highlight_all = median_of(WORKLOAD_CALLS, || {
+        guest.call_highlight(&mut store, &lines).map(drop)
+    })?;
+    let highlight_all_native = median_native(WORKLOAD_CALLS, || native_highlight(&lines));
+    let highlight_visible = median_of(WORKLOAD_CALLS, || {
+        guest.call_highlight(&mut store, visible).map(drop)
+    })?;
+    let highlight_visible_native = median_native(WORKLOAD_CALLS, || native_highlight(visible));
+
+    let matches = guest.call_fuzzy(&mut store, &lines, FUZZY_QUERY)?;
+    assert_eq!(matches.len(), native_fuzzy(&lines), "guest and host agree");
+    let spans: usize = guest
+        .call_highlight(&mut store, &lines)?
+        .iter()
+        .map(Vec::len)
+        .sum();
+
+    println!("{{");
+    println!(r#"  "variant": "{VARIANT}","#);
+    println!(r#"  "lines": {WORKLOAD_LINES},"#);
+    println!(r#"  "bytes": {bytes},"#);
+    println!(r#"  "fuzzy_matches": {},"#, matches.len());
+    println!(r#"  "spans": {spans},"#);
+    println!(r#"  "copy_lines_us": {:.0},"#, us(copy));
+    println!(r#"  "fuzzy_us": {:.0},"#, us(fuzzy));
+    println!(r#"  "fuzzy_native_us": {:.0},"#, us(fuzzy_native));
+    println!(r#"  "highlight_all_us": {:.0},"#, us(highlight_all));
+    println!(
+        r#"  "highlight_all_native_us": {:.0},"#,
+        us(highlight_all_native)
+    );
+    println!(r#"  "highlight_visible_us": {:.1},"#, us(highlight_visible));
+    println!(
+        r#"  "highlight_visible_native_us": {:.1}"#,
+        us(highlight_visible_native)
+    );
+    println!("}}");
+    Ok(())
+}
+
+/// The guest's fuzzy search, natively: the number of matching lines.
+fn native_fuzzy(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .filter(|line| spike_workload::fuzzy_score(line, FUZZY_QUERY).is_some())
+        .count()
+}
+
+/// The guest's highlighter, natively: the number of spans.
+fn native_highlight(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .map(|line| spike_workload::highlight(line).len())
+        .sum()
+}
+
+/// Times `calls` calls of `work` one by one and returns the median.
+fn median_native<T>(calls: usize, mut work: impl FnMut() -> T) -> Duration {
+    let mut samples = Vec::with_capacity(calls);
+    for _ in 0..calls {
+        let started = Instant::now();
+        black_box(work());
+        samples.push(started.elapsed());
+    }
+    samples.sort_unstable();
+    samples[samples.len() / 2]
 }
 
 /// Times `calls` calls of `call` one by one and returns the median.

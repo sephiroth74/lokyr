@@ -6,7 +6,7 @@ wit_bindgen::generate!({
     world: "plugin",
 });
 
-use exports::saetta::spike::bench::{Guest, Node};
+use exports::saetta::spike::bench::{Guest, Node, Span};
 use saetta::spike::host_log;
 
 struct Bench;
@@ -56,6 +56,31 @@ impl Guest for Bench {
 
     fn fail() {
         panic!("the spike guest failed on purpose");
+    }
+
+    fn line_count(lines: Vec<String>) -> u32 {
+        lines.len() as u32
+    }
+
+    fn fuzzy(lines: Vec<String>, query: String) -> Vec<u32> {
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| spike_workload::fuzzy_score(line, &query).is_some())
+            .map(|(index, _)| index as u32)
+            .collect()
+    }
+
+    fn highlight(lines: Vec<String>) -> Vec<Vec<Span>> {
+        lines
+            .iter()
+            .map(|line| {
+                spike_workload::highlight(line)
+                    .into_iter()
+                    .map(|(start, len, kind)| Span { start, len, kind })
+                    .collect()
+            })
+            .collect()
     }
 }
 

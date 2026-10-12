@@ -2,6 +2,8 @@
 //!
 //! Without arguments it opens the app window. From a terminal:
 //! - `spike --imports <component.wasm>` lists what the component imports;
+//! - `spike --workloads <component.wasm>` times plugin-like work on 5000
+//!   lines, in the guest and natively;
 //! - `spike --bench <component.wasm> [--cached] [--from-memory]` runs it and
 //!   prints metrics as JSON. `--cached` reuses the compiled artifact of a
 //!   previous run; `--from-memory` loads it into memory instead of mapping
@@ -18,6 +20,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.as_slice() {
         [flag, path] if flag == "--imports" => bench::print_imports(Path::new(path)),
+        [flag, path] if flag == "--workloads" => bench::workloads(Path::new(path)),
         [flag, path, options @ ..] if flag == "--bench" => match bench_options(options) {
             Some(options) => bench::run(Path::new(path), options),
             None => {

@@ -17,12 +17,13 @@ libc = "0.2.190"
 objc2 = "0.6.5"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+spike-workload = { path = "workload" }
 # 48 is the current LTS line.
 wasmtime = "48.0.5"
 
 # The spike is its own small workspace: the macOS host and the Wasm guest.
 [workspace]
-members = ["guest"]
+members = ["guest", "workload"]
 
 [profile.release]
 debug = "line-tables-only"

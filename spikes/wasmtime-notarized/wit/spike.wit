@@ -30,6 +30,24 @@ interface bench {
 
     /// Panics: shows what the host sees when plugin code fails.
     fail: func();
+
+    /// A highlighted range of a line.
+    record span {
+        start: u32,
+        len: u32,
+        kind: u8,
+    }
+
+    /// Receives lines and returns their number: measures the cost of copying
+    /// lines into the plugin.
+    line-count: func(lines: list<string>) -> u32;
+
+    /// Fuzzy-matches `query` against every line, like a command palette, and
+    /// returns the indices of the lines that match.
+    fuzzy: func(lines: list<string>, query: string) -> list<u32>;
+
+    /// Splits every line into highlighted spans, like a syntax highlighter.
+    highlight: func(lines: list<string>) -> list<list<span>>;
 }
 
 world plugin {

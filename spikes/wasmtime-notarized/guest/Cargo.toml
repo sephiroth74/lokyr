@@ -10,4 +10,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+spike-workload = { path = "../workload" }
 wit-bindgen = "0.62.0"
