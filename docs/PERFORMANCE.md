@@ -13,14 +13,14 @@
 
 ## Budgets
 
-Figures are for Apple Silicon (M-series), release builds. They are targets to confirm with the F2 prototype. If one turns out to be unrealistic, changing it is an explicit decision, never a silent one.
+Figures are for Apple Silicon (M-series), release builds. They are targets to confirm with the F2 prototype. If one turns out to be unrealistic, changing it is an explicit decision, never a silent one. The [F0 baseline](bench/baseline-F0.md) of existing terminals revised the startup, footprint and idle budgets.
 
 | Metric | Target | How it is measured |
 |---|---|---|
-| First presented frame | ≤ 100 ms warm, ≤ 250 ms cold | Launch mach time → `addPresentedHandler`; for other terminals, `saetta-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
+| First presented frame | ≤ 200 ms warm; cold: set in F2, after measuring with `sudo purge` | Launch mach time → `addPresentedHandler`; for other terminals, `saetta-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
 | Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
-| Idle | 0 wakeups/s; ≤ 2/s with a blinking cursor | `saetta-bench idle`: package idle wakeups, which `top -stats idlew` shows; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
-| Footprint excluding GPU memory | ≤ 30 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `saetta-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
+| Idle | 0 package idle wakeups/s and ≤ 0.5 interrupt wakeups/s; ≤ 2/s with a blinking cursor | `saetta-bench idle`: package idle wakeups, which `top -stats idlew` shows, and interrupt wakeups; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
+| Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `saetta-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
 | Scrollback | ≤ configured limit + 5%; ≈ 8 B per cell | memory tests in CI |
 | GPU memory (accounted separately) | 2 BGRA8 `framebufferOnly` drawables per window (≈ 31 MB each at 3456×2234), none per pane, released when the window is hidden | The GPU categories of `saetta-bench memory`; Instruments (Metal System Trace); DRM `fdinfo` on Linux |
 | Throughput | Within 10% of the faster of Ghostty and Alacritty | vtebench; `cat` of a 1 GB file, headless and on screen |
@@ -45,7 +45,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 **Idle**
 - macOS:
   - `saetta-bench idle --pid <pid> [--interval <ms>] [--duration <s>]` reads the wakeup counters of `proc_pid_rusage` every second, over 60 s by default.
-  - The budget counts package idle wakeups, which bring the CPU out of idle: the counter `top -stats idlew` shows. The probe also reports interrupt wakeups, which count every wakeup caused by an interrupt, such as a timer, whether the CPU was idle or not.
+  - The budget limits two counters: package idle wakeups, which bring the CPU out of idle and which `top -stats idlew` shows, and interrupt wakeups, which count every wakeup caused by an interrupt, such as a timer, whether the CPU was idle or not.
   - `powermetrics --samplers tasks` gives the picture of the whole system.
 - Linux: the change in `voluntary_ctxt_switches` in `/proc/<pid>/status` over 60 s.
 
