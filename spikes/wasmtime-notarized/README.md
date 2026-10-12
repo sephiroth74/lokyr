@@ -1,12 +1,14 @@
 # Spike: wasmtime in a notarized macOS app
 
-A throwaway experiment, kept out of the Cargo workspace. It answers two questions:
+A throwaway experiment, kept out of the Cargo workspace. It answers three questions:
 - Can a notarized app with the hardened runtime run WebAssembly components with wasmtime? This compares Cranelift, which needs a JIT entitlement, with Pulley, wasmtime's interpreter, which needs none.
 - Can the host run components without `wasmtime-wasi`, which would bring `tokio` into the app?
+- How do Lua runtimes (LuaJIT and Luau) compare with WebAssembly for plugins, in speed, sandboxing and entitlements?
 
 The spike is a small Cargo workspace:
 - the root package `spike` is a minimal AppKit app (one window, Quit on ⌘Q), and also the wasmtime host;
-- `guest/` is the WebAssembly component, built against `wit/spike.wit`.
+- `guest/` is the WebAssembly component, built against `wit/spike.wit`;
+- `workload/` holds plugin-like work on terminal lines (fuzzy search, highlighting), compiled into both the guest and the host.
 
 ## Build the guests
 
@@ -27,6 +29,7 @@ cargo build --release
 target/release/spike --imports build/guests/wasip2.wasm          # list the component's imports
 target/release/spike --bench build/guests/unknown.wasm           # compile, cache, run, print JSON metrics
 target/release/spike --bench build/guests/unknown.wasm --cached  # reuse the cached .cwasm
+target/release/spike --workloads build/guests/unknown.wasm       # time the workloads in the guest and natively
 ```
 
 Imports a component never calls are linked as traps, so no WASI implementation is needed. Without arguments, the binary opens the app window.
@@ -81,3 +84,47 @@ open -W --stdout pulley.json "$app" --args --bench "$app/Contents/Resources/unkn
 ```
 
 For the Cranelift bundle, add `--from-memory` to the arguments. `notarize.sh` uses the `saetta-notary` keychain profile; `SPIKE_NOTARY_PROFILE` overrides it.
+
+## Lua runtimes
+
+The same host can run plugins written in Lua instead. Build it with one of these features:
+
+| Feature | Runtime |
+|---|---|
+| `luajit` | LuaJIT 2.1 and its JIT compiler; `--no-jit` turns the compiler off |
+| `luau` | Luau, interpreted |
+| `luau-jit` | Luau and its native code generator; `--no-jit` turns it off |
+
+```sh
+cargo build --release --features luau-jit
+target/release/spike --lua-workloads lua/workloads.lua   # time the workloads, print JSON
+target/release/spike --lua-limits lua/workloads.lua      # hostile plugins and sandbox probes
+./measure-lua.sh [runs]                                  # build the three runtimes, print median tables
+```
+
+`lua/workloads.lua` holds the workloads of `workload/` written in Lua, in two styles:
+- byte loops, with the same algorithms as the Rust code;
+- `string.find` patterns, the way most Lua code is written.
+
+The host checks that every result equals the Rust one.
+
+Plugins run in a plugin state (`lua_bench::new_state`):
+- it holds only the string, table, math and bit libraries, plus utf8 and buffer with Luau;
+- it has none of the functions that load code, read files, change environments or drive the garbage collector.
+
+`--lua-limits` also shows what mlua's `Lua::new()` leaves reachable. It stops runaway code in two ways:
+- a callback that checks the clock while the code runs (a LuaJIT hook, or Luau's interrupt);
+- a watchdog thread that installs the stop only once the deadline has passed.
+
+### Under the hardened runtime
+
+```sh
+./check-lua-hardened.sh   # sign each Lua variant with each entitlement file, run it with the JIT on
+./bundle.sh luau-jit      # build/Spike-LuauJIT.app, signed with entitlements/jit.plist
+```
+
+`bundle.sh` also takes the variants `luajit`, `luajit-hrt`, `luau` and `luau-jit`:
+- the Lua bundles carry `lua/*.lua` in `Contents/Resources`;
+- `luajit-hrt` builds LuaJIT with `LUAJIT_ENABLE_OSX_HRT`, which makes it allocate its machine code with `MAP_JIT`.
+
+LuaJIT as mlua vendors it is killed by the kernel as soon as its JIT runs, with or without `allow-jit`. **macOS then shows a crash dialog, once per run.** The crash reports land in `~/Library/Logs/DiagnosticReports/spike-*.ips`.
