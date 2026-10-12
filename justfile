@@ -8,9 +8,6 @@ alias t := test
 # Platform-independent crates, which must keep building for Linux.
 portable := "-p saetta-vt-core -p saetta-pty -p saetta-session -p saetta-search -p saetta-kernel -p saetta-text-core -p saetta-render-core -p saetta-ui-core -p saetta-platform-core"
 
-# Crates that must also build for WebAssembly.
-wasm := "-p saetta-plugin-sdk -p saetta-core-actions"
-
 # List available commands.
 _default:
     just --list --unsorted
@@ -46,10 +43,6 @@ check-linux:
 test-portable:
     cargo test --locked {{ portable }}
 
-# Build the plugin SDK and the built-in plugins for WebAssembly.
-check-wasm:
-    cargo build --locked --target wasm32-wasip2 {{ wasm }}
-
 # Check advisories, licenses, banned crates and sources.
 deny:
     cargo deny --locked check
@@ -59,7 +52,7 @@ check-deps:
     cargo xtask check-deps
 
 # Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux check-wasm deny check-deps
+ci: lint build test check-linux deny check-deps
 
 # Run the benchmarks (not implemented yet).
 bench:

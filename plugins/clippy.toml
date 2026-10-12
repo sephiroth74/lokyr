@@ -1,9 +1,9 @@
 # Clippy settings for the built-in plugins.
 #
-# A plugin must behave the same whether it is linked natively or built as a
-# WebAssembly component. So it never spawns threads, blocks, reads clocks, or
-# touches files, processes or the network directly: the host provides all of
-# these through the plugin SDK.
+# Built-in plugins follow the same rules as third-party plugins, which run in
+# a sandbox. So they never spawn threads, block, read clocks, or touch files,
+# processes or the network directly: the host provides all of these through
+# the plugin SDK.
 #
 # Clippy uses only the nearest clippy.toml. If a workspace-wide clippy.toml
 # is ever added, repeat its settings here.

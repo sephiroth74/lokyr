@@ -3,7 +3,7 @@
 
 [graph]
 # Check the dependency graph of every target the workspace builds for.
-targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu", "wasm32-wasip2"]
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]
 all-features = true
 
 [advisories]
@@ -49,6 +49,8 @@ deny = [
     { crate = "async-std", reason = "the only async runtime is tokio, in Faretra" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
     { crate = "saetta-kernel", wrappers = ["saetta-app"], reason = "only the app may depend on the kernel" },
+    # Luau, a C++ runtime, stays behind the plugin host and its feature.
+    { crate = "mlua", wrappers = ["saetta-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
 ]
 
 [sources]

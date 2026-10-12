@@ -39,9 +39,9 @@ forbidden = [
 name = "sdk-stands-alone"
 kind = "allow-only"
 scope = "internal"
-description = "Among workspace crates, the plugin SDK depends only on the WIT definitions, so it can be published and used on its own."
+description = "The plugin SDK depends on no other workspace crate, so it can be published and used on its own."
 crates = ["crates/plugin-sdk"]
-allowed = ["crates/plugin-wit"]
+allowed = []
 
 [[rule]]
 name = "plugins-use-the-sdk"

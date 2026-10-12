@@ -20,7 +20,7 @@ This produces two flavors in `build/guests/`:
 - `wasip2.wasm`: built for `wasm32-wasip2`. It imports the WASI interfaces the standard library links in, even though it never calls them.
 - `unknown.wasm`: built for `wasm32-unknown-unknown`, then turned into a component by the toolchain's `wasm-component-ld`. It imports nothing.
 
-The `wasm32-unknown-unknown` target must be installed: `rustup target add wasm32-unknown-unknown`.
+Both targets must be installed, since the workspace toolchain no longer lists them: `rustup target add wasm32-wasip2 wasm32-unknown-unknown`.
 
 ## Run the host from a terminal
 

@@ -1,8 +1,8 @@
-//! SDK for Saetta plugins.
+//! The Saetta plugin API and its Rust SDK.
 //!
-//! The same plugin source builds either as a statically linked native plugin
-//! or as a WebAssembly component for `wasm32-wasip2`. Both targets expose the
-//! same types and follow the same rules: plugins receive owned data, are never
-//! re-entered, and neither spawn threads nor block.
+//! Defines the `HostApi` trait that the host implements, with its types, and
+//! the Rust front end that built-in plugins use. Third-party plugins reach the
+//! same API from Luau. Both follow the same rules: plugins receive owned data,
+//! are never re-entered, and neither spawn threads nor block.
 
 #![forbid(unsafe_code)]

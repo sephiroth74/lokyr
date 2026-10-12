@@ -14,14 +14,14 @@ name = "saetta"
 path = "src/main.rs"
 
 [features]
-default = ["wasm-plugins"]
-# Support for third-party WebAssembly plugins.
-wasm-plugins = ["dep:saetta-plugin-host-wasm"]
+default = ["luau-plugins"]
+# Support for third-party plugins written in Luau.
+luau-plugins = ["dep:saetta-plugin-host-luau"]
 
 [dependencies]
 saetta-core-actions.workspace = true
 saetta-kernel.workspace = true
-saetta-plugin-host-wasm = { workspace = true, optional = true }
+saetta-plugin-host-luau = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 saetta-font-coretext.workspace = true

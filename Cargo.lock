@@ -124,7 +124,7 @@ dependencies = [
  "saetta-font-coretext",
  "saetta-kernel",
  "saetta-platform-macos",
- "saetta-plugin-host-wasm",
+ "saetta-plugin-host-luau",
  "saetta-render-metal",
 ]
 
@@ -173,22 +173,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "saetta-plugin-host-wasm"
+name = "saetta-plugin-host-luau"
 version = "0.1.0"
 dependencies = [
  "saetta-plugin-sdk",
- "saetta-plugin-wit",
 ]
 
 [[package]]
 name = "saetta-plugin-sdk"
-version = "0.1.0"
-dependencies = [
- "saetta-plugin-wit",
-]
-
-[[package]]
-name = "saetta-plugin-wit"
 version = "0.1.0"
 
 [[package]]
