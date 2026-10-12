@@ -17,7 +17,9 @@ repository = "https://github.com/sephiroth74/saetta"
 [workspace.dependencies]
 anyhow = "1.0.104"
 cargo_metadata = "0.23.1"
+libc = "0.2.190"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 thiserror = "2.0.21"
 toml = "1.1.8"
 tracing = "0.1.44"

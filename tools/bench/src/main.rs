@@ -3,24 +3,44 @@
 //! Probes for memory footprint, idle wakeups and startup time, usable on
 //! Saetta and on other terminals for comparison.
 
-#![forbid(unsafe_code)]
+// `deny` rather than `forbid`: reading another process's statistics goes
+// through `proc_pid_rusage`, which is `unsafe`, and that call site is allowed
+// explicitly.
+#![deny(unsafe_code)]
+
+#[cfg(target_os = "macos")]
+mod memory;
+#[cfg(target_os = "macos")]
+mod rusage;
 
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
+    let mut args = std::env::args().skip(1);
+    let result = match args.next().as_deref() {
         None | Some("help" | "-h" | "--help") => {
             print_help();
-            ExitCode::SUCCESS
+            return ExitCode::SUCCESS;
         }
+        #[cfg(target_os = "macos")]
+        Some("memory") => memory::run(args),
         Some(probe) => {
             eprintln!("error: unknown probe `{probe}`\n");
             print_help();
-            ExitCode::FAILURE
+            return ExitCode::FAILURE;
         }
-    }
+    };
+    result.unwrap_or_else(|error| {
+        eprintln!("error: {error:#}");
+        ExitCode::FAILURE
+    })
 }
 
 fn print_help() {
-    println!("Usage: saetta-bench <probe>\n\nNo probes are available yet.");
+    println!(
+        "Usage: saetta-bench <probe> [options]\n\n\
+         Probes (macOS):\n  \
+         memory --pid <pid> [--interval <ms>] [--duration <s>]\n      \
+         sample the memory footprint of a process; prints JSON, sizes in bytes"
+    );
 }
