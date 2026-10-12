@@ -31,6 +31,16 @@ target/release/spike --bench build/guests/unknown.wasm --cached  # reuse the cac
 
 Imports a component never calls are linked as traps, so no WASI implementation is needed. Without arguments, the binary opens the app window.
 
+The default build runs guests as native code compiled by Cranelift. Build with `--features pulley` to run them on Pulley, wasmtime's interpreter, instead.
+
+## Compare the variants
+
+```sh
+./run-bench.sh
+```
+
+The script builds both variants (`build/bin/spike-cranelift` and `build/bin/spike-pulley`) and both guests. It then prints the metrics of each variant on each guest, first with a fresh compilation, then from the cache.
+
 ## Build and sign the app
 
 ```sh

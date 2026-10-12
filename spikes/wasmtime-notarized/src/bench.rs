@@ -38,6 +38,23 @@ const RENDER_NODES: u32 = 100;
 /// Iterations of the CPU-bound loop.
 const WORK_ITERATIONS: u32 = 50_000_000;
 
+/// How guest code runs in this build: native code from Cranelift, or
+/// Pulley bytecode run by wasmtime's interpreter.
+const VARIANT: &str = if cfg!(feature = "pulley") {
+    "pulley"
+} else {
+    "cranelift"
+};
+
+/// The engine configuration of this build's variant.
+fn engine() -> Result<Engine> {
+    let mut config = Config::new();
+    if cfg!(feature = "pulley") {
+        config.target("pulley64")?;
+    }
+    Engine::new(&config)
+}
+
 /// Lists the imports of a component, one per line.
 pub fn print_imports(path: &Path) -> Result<()> {
     let engine = Engine::default();
@@ -65,13 +82,15 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
     let bytes = std::fs::read(path)?;
 
     let started = Instant::now();
-    let engine = Engine::new(&Config::new())?;
+    let engine = engine()?;
     let engine_time = started.elapsed();
     let footprint_engine = footprint::current()?;
 
     let cache_dir = std::env::temp_dir().join("saetta-spike");
     std::fs::create_dir_all(&cache_dir)?;
-    let cache_file = cache_dir.join("guest.cwasm");
+    // One artifact per guest and variant: they are not interchangeable.
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("guest");
+    let cache_file = cache_dir.join(format!("{stem}-{VARIANT}.cwasm"));
     let compile_time = if cached {
         None
     } else {
@@ -137,7 +156,8 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
     );
 
     println!("{{");
-    println!(r#"  "variant": "cranelift","#);
+    println!(r#"  "variant": "{VARIANT}","#);
+    println!(r#"  "guest": "{}","#, path.display());
     println!(r#"  "cached": {cached},"#);
     println!(r#"  "component_bytes": {},"#, bytes.len());
     println!(r#"  "cwasm_bytes": {cwasm_bytes},"#);
