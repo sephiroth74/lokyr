@@ -60,8 +60,9 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0008](adr/0008-separate-package-manager.md) | Faretra as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
 | [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before 0.1 |
-| [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted |
+| [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted; Intel question settled by 0013 |
 | [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
+| [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
 
 ## Glossary
 

@@ -190,7 +190,7 @@ Versions and maturity must be rechecked when coding starts.
 ## Conventions
 
 - **Toolchain**: stable Rust, pinned in `rust-toolchain.toml`; edition 2024. Targets:
-  - `aarch64-apple-darwin`, plus `x86_64-apple-darwin` if Intel Macs end up supported;
+  - `aarch64-apple-darwin` only, with macOS 26 as the deployment target ([ADR 0013](adr/0013-platform-baseline.md));
   - `x86_64-unknown-linux-gnu`, for the CI job that builds the platform-independent crates.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
