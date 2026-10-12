@@ -1,0 +1,74 @@
+{
+  "app": "/Users/taacral1/Documents/git/sephiroth74/rust/saetta/spikes/wasmtime-notarized/build/Spike.app",
+  "executable": "/Users/taacral1/Documents/git/sephiroth74/rust/saetta/spikes/wasmtime-notarized/build/Spike.app/Contents/MacOS/spike",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 35658,
+      "from_start_ms": 172.0,
+      "from_request_ms": 189.8
+    },
+    {
+      "pid": 35663,
+      "from_start_ms": 178.5,
+      "from_request_ms": 196.3
+    },
+    {
+      "pid": 35668,
+      "from_start_ms": 239.9,
+      "from_request_ms": 265.6
+    },
+    {
+      "pid": 35698,
+      "from_start_ms": 202.7,
+      "from_request_ms": 301.0
+    },
+    {
+      "pid": 35709,
+      "from_start_ms": 182.6,
+      "from_request_ms": 202.9
+    },
+    {
+      "pid": 35720,
+      "from_start_ms": 173.4,
+      "from_request_ms": 209.3
+    },
+    {
+      "pid": 35724,
+      "from_start_ms": 181.9,
+      "from_request_ms": 199.2
+    },
+    {
+      "pid": 35755,
+      "from_start_ms": 167.7,
+      "from_request_ms": 186.0
+    },
+    {
+      "pid": 35771,
+      "from_start_ms": 167.0,
+      "from_request_ms": 183.5
+    },
+    {
+      "pid": 35775,
+      "from_start_ms": 170.7,
+      "from_request_ms": 187.0
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 167.0,
+      "p10": 167.0,
+      "median": 175.95,
+      "p90": 202.7,
+      "max": 239.9
+    },
+    "from_request_ms": {
+      "min": 183.5,
+      "p10": 183.5,
+      "median": 197.75,
+      "p90": 265.6,
+      "max": 301.0
+    },
+    "spread": 0.203
+  }
+}

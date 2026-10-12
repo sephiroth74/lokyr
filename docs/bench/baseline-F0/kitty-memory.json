@@ -1,0 +1,111 @@
+{
+  "pid": 31486,
+  "name": "kitty",
+  "interval_ms": 1000,
+  "duration_s": 9.0,
+  "windows": [
+    {
+      "width": 889.0,
+      "height": 612.0
+    }
+  ],
+  "samples": [
+    {
+      "elapsed_ms": 0,
+      "footprint": 188777576,
+      "gpu": 118964224,
+      "footprint_without_gpu": 69813352,
+      "lifetime_peak": 191186000
+    },
+    {
+      "elapsed_ms": 1001,
+      "footprint": 192136296,
+      "gpu": 121307136,
+      "footprint_without_gpu": 70829160,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 2005,
+      "footprint": 189793384,
+      "gpu": 118964224,
+      "footprint_without_gpu": 70829160,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 3004,
+      "footprint": 189793384,
+      "gpu": 118964224,
+      "footprint_without_gpu": 70829160,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 4005,
+      "footprint": 189793384,
+      "gpu": 118964224,
+      "footprint_without_gpu": 70829160,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 5005,
+      "footprint": 189793384,
+      "gpu": 118964224,
+      "footprint_without_gpu": 70829160,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 6005,
+      "footprint": 189727848,
+      "gpu": 118964224,
+      "footprint_without_gpu": 70763624,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 7005,
+      "footprint": 82527336,
+      "gpu": 11763712,
+      "footprint_without_gpu": 70763624,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 8005,
+      "footprint": 82527336,
+      "gpu": 11763712,
+      "footprint_without_gpu": 70763624,
+      "lifetime_peak": 192234600
+    },
+    {
+      "elapsed_ms": 9001,
+      "footprint": 82609256,
+      "gpu": 11763712,
+      "footprint_without_gpu": 70845544,
+      "lifetime_peak": 192234600
+    }
+  ],
+  "summary": {
+    "footprint": {
+      "min": 82527336,
+      "median": 189760616,
+      "max": 192136296,
+      "last": 82609256
+    },
+    "footprint_without_gpu": {
+      "min": 69813352,
+      "median": 70829160,
+      "max": 70845544,
+      "last": 70845544
+    },
+    "gpu": {
+      "min": 11763712,
+      "median": 118964224,
+      "max": 121307136,
+      "last": 11763712
+    },
+    "gpu_categories": {
+      "IOAccelerator": 65536,
+      "IOAccelerator (graphics)": 1228800,
+      "IOSurface": 8323072,
+      "Owned physical footprint (unmapped) (graphics)": 2146304
+    },
+    "lifetime_peak": 192234600
+  }
+}

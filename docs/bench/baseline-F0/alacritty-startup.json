@@ -1,0 +1,74 @@
+{
+  "app": "/Applications/Alacritty.app",
+  "executable": "/Applications/Alacritty.app/Contents/MacOS/alacritty",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 34426,
+      "from_start_ms": 316.3,
+      "from_request_ms": 340.7
+    },
+    {
+      "pid": 34457,
+      "from_start_ms": 318.0,
+      "from_request_ms": 337.8
+    },
+    {
+      "pid": 34466,
+      "from_start_ms": 310.5,
+      "from_request_ms": 330.4
+    },
+    {
+      "pid": 34486,
+      "from_start_ms": 324.4,
+      "from_request_ms": 344.5
+    },
+    {
+      "pid": 34511,
+      "from_start_ms": 312.5,
+      "from_request_ms": 331.1
+    },
+    {
+      "pid": 34524,
+      "from_start_ms": 376.9,
+      "from_request_ms": 403.6
+    },
+    {
+      "pid": 34550,
+      "from_start_ms": 308.5,
+      "from_request_ms": 328.2
+    },
+    {
+      "pid": 34557,
+      "from_start_ms": 299.4,
+      "from_request_ms": 320.2
+    },
+    {
+      "pid": 34569,
+      "from_start_ms": 311.4,
+      "from_request_ms": 330.8
+    },
+    {
+      "pid": 34580,
+      "from_start_ms": 306.2,
+      "from_request_ms": 326.1
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 299.4,
+      "p10": 299.4,
+      "median": 311.95,
+      "p90": 324.4,
+      "max": 376.9
+    },
+    "from_request_ms": {
+      "min": 320.2,
+      "p10": 320.2,
+      "median": 330.95000000000005,
+      "p90": 344.5,
+      "max": 403.6
+    },
+    "spread": 0.08
+  }
+}

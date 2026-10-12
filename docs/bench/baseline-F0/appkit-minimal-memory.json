@@ -1,0 +1,109 @@
+{
+  "pid": 35786,
+  "name": "spike",
+  "interval_ms": 1000,
+  "duration_s": 9.0,
+  "windows": [
+    {
+      "width": 640.0,
+      "height": 432.0
+    }
+  ],
+  "samples": [
+    {
+      "elapsed_ms": 0,
+      "footprint": 20202504,
+      "gpu": 81920,
+      "footprint_without_gpu": 20120584,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 1004,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 2004,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 3005,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 4003,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 5005,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 6003,
+      "footprint": 20022280,
+      "gpu": 81920,
+      "footprint_without_gpu": 19940360,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 7005,
+      "footprint": 20005896,
+      "gpu": 81920,
+      "footprint_without_gpu": 19923976,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 8005,
+      "footprint": 20005896,
+      "gpu": 81920,
+      "footprint_without_gpu": 19923976,
+      "lifetime_peak": 20349960
+    },
+    {
+      "elapsed_ms": 9004,
+      "footprint": 20005896,
+      "gpu": 81920,
+      "footprint_without_gpu": 19923976,
+      "lifetime_peak": 20349960
+    }
+  ],
+  "summary": {
+    "footprint": {
+      "min": 20005896,
+      "median": 20022280,
+      "max": 20202504,
+      "last": 20005896
+    },
+    "footprint_without_gpu": {
+      "min": 19923976,
+      "median": 19940360,
+      "max": 20120584,
+      "last": 19923976
+    },
+    "gpu": {
+      "min": 81920,
+      "median": 81920,
+      "max": 81920,
+      "last": 81920
+    },
+    "gpu_categories": {
+      "IOAccelerator": 65536,
+      "IOAccelerator (graphics)": 16384
+    },
+    "lifetime_peak": 20349960
+  }
+}

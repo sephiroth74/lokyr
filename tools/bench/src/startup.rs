@@ -286,7 +286,9 @@ impl Distribution {
         sorted.sort_by(f64::total_cmp);
         let n = sorted.len();
         let median = if n.is_multiple_of(2) {
-            f64::midpoint(sorted[n / 2 - 1], sorted[n / 2])
+            // The mean of two tenths can land between hundredths, as
+            // 302.54999999999995 for 302.55.
+            (f64::midpoint(sorted[n / 2 - 1], sorted[n / 2]) * 100.0).round() / 100.0
         } else {
             sorted[n / 2]
         };
@@ -359,6 +361,8 @@ mod tests {
             }
         );
         assert_eq!(Distribution::of(std::iter::empty()), None);
+        let pair = Distribution::of([302.5, 302.6].into_iter()).unwrap();
+        assert_eq!(pair.median, 302.55);
     }
 
     #[test]

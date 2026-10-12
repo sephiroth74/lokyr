@@ -1,0 +1,74 @@
+{
+  "app": "/Applications/iTerm.app",
+  "executable": "/Applications/iTerm.app/Contents/MacOS/iTerm2",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 22481,
+      "from_start_ms": 783.7,
+      "from_request_ms": 804.9
+    },
+    {
+      "pid": 22542,
+      "from_start_ms": 813.4,
+      "from_request_ms": 834.5
+    },
+    {
+      "pid": 22810,
+      "from_start_ms": 1248.1,
+      "from_request_ms": 1269.4
+    },
+    {
+      "pid": 22932,
+      "from_start_ms": 850.4,
+      "from_request_ms": 872.7
+    },
+    {
+      "pid": 23066,
+      "from_start_ms": 911.2,
+      "from_request_ms": 932.1
+    },
+    {
+      "pid": 23172,
+      "from_start_ms": 768.5,
+      "from_request_ms": 789.9
+    },
+    {
+      "pid": 23286,
+      "from_start_ms": 775.4,
+      "from_request_ms": 796.6
+    },
+    {
+      "pid": 23394,
+      "from_start_ms": 798.1,
+      "from_request_ms": 820.0
+    },
+    {
+      "pid": 23507,
+      "from_start_ms": 781.8,
+      "from_request_ms": 802.8
+    },
+    {
+      "pid": 23620,
+      "from_start_ms": 783.5,
+      "from_request_ms": 805.8
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 768.5,
+      "p10": 768.5,
+      "median": 790.9000000000001,
+      "p90": 911.2,
+      "max": 1248.1
+    },
+    "from_request_ms": {
+      "min": 789.9,
+      "p10": 789.9,
+      "median": 812.9,
+      "p90": 932.1,
+      "max": 1269.4
+    },
+    "spread": 0.18
+  }
+}

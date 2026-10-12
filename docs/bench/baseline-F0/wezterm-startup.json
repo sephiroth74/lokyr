@@ -1,0 +1,74 @@
+{
+  "app": "/Applications/WezTerm.app",
+  "executable": "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 33549,
+      "from_start_ms": 368.4,
+      "from_request_ms": 391.3
+    },
+    {
+      "pid": 33563,
+      "from_start_ms": 374.6,
+      "from_request_ms": 396.7
+    },
+    {
+      "pid": 33577,
+      "from_start_ms": 380.4,
+      "from_request_ms": 402.9
+    },
+    {
+      "pid": 33599,
+      "from_start_ms": 372.7,
+      "from_request_ms": 394.2
+    },
+    {
+      "pid": 33613,
+      "from_start_ms": 372.2,
+      "from_request_ms": 392.9
+    },
+    {
+      "pid": 33635,
+      "from_start_ms": 361.7,
+      "from_request_ms": 383.4
+    },
+    {
+      "pid": 33650,
+      "from_start_ms": 354.0,
+      "from_request_ms": 374.9
+    },
+    {
+      "pid": 33671,
+      "from_start_ms": 380.3,
+      "from_request_ms": 401.0
+    },
+    {
+      "pid": 33705,
+      "from_start_ms": 358.0,
+      "from_request_ms": 379.7
+    },
+    {
+      "pid": 33727,
+      "from_start_ms": 373.4,
+      "from_request_ms": 395.4
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 354.0,
+      "p10": 354.0,
+      "median": 372.45,
+      "p90": 380.3,
+      "max": 380.4
+    },
+    "from_request_ms": {
+      "min": 374.9,
+      "p10": 374.9,
+      "median": 393.54999999999995,
+      "p90": 401.0,
+      "max": 402.9
+    },
+    "spread": 0.071
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "app": "/System/Applications/Utilities/Terminal.app",
+  "executable": "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 21550,
+      "from_start_ms": 301.7,
+      "from_request_ms": 320.6
+    },
+    {
+      "pid": 21561,
+      "from_start_ms": 303.6,
+      "from_request_ms": 323.1
+    },
+    {
+      "pid": 21574,
+      "from_start_ms": 303.4,
+      "from_request_ms": 322.3
+    },
+    {
+      "pid": 21581,
+      "from_start_ms": 299.8,
+      "from_request_ms": 318.9
+    },
+    {
+      "pid": 21601,
+      "from_start_ms": 316.8,
+      "from_request_ms": 341.4
+    },
+    {
+      "pid": 21607,
+      "from_start_ms": 294.4,
+      "from_request_ms": 314.2
+    },
+    {
+      "pid": 21621,
+      "from_start_ms": 303.4,
+      "from_request_ms": 323.1
+    },
+    {
+      "pid": 21628,
+      "from_start_ms": 300.9,
+      "from_request_ms": 319.5
+    },
+    {
+      "pid": 21664,
+      "from_start_ms": 291.5,
+      "from_request_ms": 310.6
+    },
+    {
+      "pid": 21696,
+      "from_start_ms": 305.0,
+      "from_request_ms": 323.3
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 291.5,
+      "p10": 291.5,
+      "median": 302.54999999999995,
+      "p90": 305.0,
+      "max": 316.8
+    },
+    "from_request_ms": {
+      "min": 310.6,
+      "p10": 310.6,
+      "median": 321.45000000000005,
+      "p90": 323.3,
+      "max": 341.4
+    },
+    "spread": 0.045
+  }
+}
