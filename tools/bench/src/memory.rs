@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::footprint::Breakdown;
 use crate::process;
 use crate::sampling::{self, Options, Stats};
+use crate::windows::{self, Size};
 
 /// One reading of the target's memory.
 #[derive(Debug, Serialize)]
@@ -52,6 +53,9 @@ struct Report {
     name: String,
     interval_ms: u128,
     duration_s: f64,
+    /// The target's windows on screen after the last sample, which GPU
+    /// memory depends on.
+    windows: Vec<Size>,
     samples: Vec<Sample>,
     summary: Summary,
 }
@@ -75,6 +79,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         name: last.name,
         interval_ms: options.interval.as_millis(),
         duration_s: options.duration.as_secs_f64(),
+        windows: windows::sizes(options.pid),
         samples,
         summary,
     };
