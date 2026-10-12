@@ -38,13 +38,13 @@ const RENDER_NODES: u32 = 100;
 /// Iterations of the CPU-bound loop.
 const WORK_ITERATIONS: u32 = 50_000_000;
 /// Lines of the buffer the workloads run on.
-const WORKLOAD_LINES: usize = 5_000;
+pub(crate) const WORKLOAD_LINES: usize = 5_000;
 /// Lines visible on screen at once.
-const VISIBLE_LINES: usize = 40;
+pub(crate) const VISIBLE_LINES: usize = 40;
 /// Calls timed per workload.
-const WORKLOAD_CALLS: usize = 20;
+pub(crate) const WORKLOAD_CALLS: usize = 20;
 /// The fuzzy query; it matches about one line in sixteen.
-const FUZZY_QUERY: &str = "users500";
+pub(crate) const FUZZY_QUERY: &str = "users500";
 
 /// How guest code runs in this build: native code from Cranelift, or
 /// Pulley bytecode run by wasmtime's interpreter.
@@ -295,7 +295,7 @@ pub fn workloads(path: &Path) -> Result<()> {
 }
 
 /// The guest's fuzzy search, natively: the number of matching lines.
-fn native_fuzzy(lines: &[String]) -> usize {
+pub(crate) fn native_fuzzy(lines: &[String]) -> usize {
     lines
         .iter()
         .filter(|line| spike_workload::fuzzy_score(line, FUZZY_QUERY).is_some())
@@ -303,7 +303,7 @@ fn native_fuzzy(lines: &[String]) -> usize {
 }
 
 /// The guest's highlighter, natively: the number of spans.
-fn native_highlight(lines: &[String]) -> usize {
+pub(crate) fn native_highlight(lines: &[String]) -> usize {
     lines
         .iter()
         .map(|line| spike_workload::highlight(line).len())
@@ -311,7 +311,7 @@ fn native_highlight(lines: &[String]) -> usize {
 }
 
 /// Times `calls` calls of `work` one by one and returns the median.
-fn median_native<T>(calls: usize, mut work: impl FnMut() -> T) -> Duration {
+pub(crate) fn median_native<T>(calls: usize, mut work: impl FnMut() -> T) -> Duration {
     let mut samples = Vec::with_capacity(calls);
     for _ in 0..calls {
         let started = Instant::now();
@@ -323,7 +323,7 @@ fn median_native<T>(calls: usize, mut work: impl FnMut() -> T) -> Duration {
 }
 
 /// Times `calls` calls of `call` one by one and returns the median.
-fn median_of(calls: usize, mut call: impl FnMut() -> Result<()>) -> Result<Duration> {
+pub(crate) fn median_of(calls: usize, mut call: impl FnMut() -> Result<()>) -> Result<Duration> {
     let mut samples = Vec::with_capacity(calls);
     for _ in 0..calls {
         let started = Instant::now();
@@ -351,6 +351,6 @@ fn ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e3
 }
 
-fn us(duration: Duration) -> f64 {
+pub(crate) fn us(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1e6
 }
