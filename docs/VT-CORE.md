@@ -16,8 +16,14 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 ## Parser
 
 - **DEC/ANSI state machine**:
-  - Paul Williams' model, the same one `vte` uses, implemented with tables.
-  - States: `ground`, `escape`, `escape_intermediate`, `csi_entry`, `csi_param`, `csi_intermediate`, `csi_ignore`, `dcs_entry`, `dcs_param`, `dcs_intermediate`, `dcs_passthrough`, `dcs_ignore`, `osc_string`, `sos_pm_apc_string`.
+  - Paul Williams' model, the same one `vte` uses, implemented with a table computed at compile time.
+  - States: `ground`, `escape`, `escape_intermediate`, `csi_entry`, `csi_param`, `csi_intermediate`, `csi_ignore`, `dcs_entry`, `dcs_param`, `dcs_intermediate`, `dcs_passthrough`, `dcs_ignore`, `osc_string`, `sos_pm_string`, `apc_string`, `string_escape`.
+  - Changes to the model:
+    - C1 controls are recognized only in their 7-bit form, `ESC` followed by a byte, as in other UTF-8 terminals. Bytes from 0x80 up are UTF-8 in text, payload in OSC, DCS and APC strings, and ignored inside sequences.
+    - Williams' `sos_pm_apc_string` is split in two: APC strings reach the handler, while SOS and PM strings are dropped.
+    - `string_escape` follows the `ESC` that ends a string and consumes the `\` of ST, so the handler does not see it as an escape sequence.
+    - Colons separate sub-parameters, BEL also ends OSC strings as in xterm, and DEL is ignored in text.
+  - A sequence keeps at most 2 intermediates, its private marker included. No known sequence has more, and one that does is ignored.
 - **Why not `vte`**: it discards the contents of APC strings, which kitty graphics needs.
 - **Streamed payloads**:
   - OSC, DCS and APC payloads are delivered in pieces (start, chunks, end) to handlers registered per type.

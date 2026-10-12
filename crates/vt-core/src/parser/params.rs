@@ -1,5 +1,7 @@
 //! The numeric parameters of control sequences.
 
+use std::fmt;
+
 /// The most values that [`Params`] keeps, sub-parameters included. A
 /// sequence with more keeps the first ones.
 pub const MAX_PARAMS: usize = 32;
@@ -8,17 +10,20 @@ pub const MAX_PARAMS: usize = 32;
 ///
 /// Parameters are separated by `;`. A parameter can have sub-parameters,
 /// separated by `:`, as in `38:2::255:0:0`; a parameter and its
-/// sub-parameters form a group. An empty value reads as 0.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// sub-parameters form a group. An empty value reads as 0, so a sequence
+/// without parameters has one: `CSI m` reads as `CSI 0 m`.
+#[derive(Clone, Default)]
 pub struct Params {
     /// Every value, one group after the other.
     values: [u16; MAX_PARAMS],
-    /// How many values each group has.
+    /// How many values each group has, the one being parsed included.
     group_lens: [u8; MAX_PARAMS],
     /// How many values are in use.
     value_count: usize,
-    /// How many groups are in use.
+    /// How many groups are complete.
     group_count: usize,
+    /// The value being parsed, which is not in `values` yet.
+    current: u16,
 }
 
 impl Params {
@@ -28,17 +33,14 @@ impl Params {
     pub fn from_groups(groups: &[&[u16]]) -> Self {
         let mut params = Self::default();
         for &group in groups {
-            let group: &[u16] = if group.is_empty() { &[0] } else { group };
-            let take = group.len().min(MAX_PARAMS - params.value_count);
-            if take == 0 {
-                break;
+            if let Some((&last, rest)) = group.split_last() {
+                for &value in rest {
+                    params.current = value;
+                    params.end_sub_param();
+                }
+                params.current = last;
             }
-            params.values[params.value_count..params.value_count + take]
-                .copy_from_slice(&group[..take]);
-            params.group_lens[params.group_count] =
-                u8::try_from(take).expect("MAX_PARAMS fits in a u8");
-            params.value_count += take;
-            params.group_count += 1;
+            params.end_param();
         }
         params
     }
@@ -48,7 +50,7 @@ impl Params {
         self.group_count
     }
 
-    /// Whether the sequence has no parameters.
+    /// Whether there are no parameters.
     pub fn is_empty(&self) -> bool {
         self.group_count == 0
     }
@@ -63,6 +65,65 @@ impl Params {
             start = end;
             group
         })
+    }
+
+    /// Forgets every parameter, before a new sequence.
+    pub(crate) fn clear(&mut self) {
+        self.value_count = 0;
+        self.group_count = 0;
+        self.group_lens[0] = 0;
+        self.current = 0;
+    }
+
+    /// Appends a decimal digit to the value being parsed. A value too large
+    /// for a `u16` stops at `u16::MAX`.
+    pub(crate) fn push_digit(&mut self, digit: u8) {
+        self.current = self
+            .current
+            .saturating_mul(10)
+            .saturating_add(u16::from(digit));
+    }
+
+    /// Ends the value being parsed, and the parameter with it: `;`, or the
+    /// end of the sequence.
+    pub(crate) fn end_param(&mut self) {
+        self.end_sub_param();
+        // A group whose values were all dropped does not count.
+        if self.group_count < MAX_PARAMS && self.group_lens[self.group_count] > 0 {
+            self.group_count += 1;
+            if self.group_count < MAX_PARAMS {
+                self.group_lens[self.group_count] = 0;
+            }
+        }
+    }
+
+    /// Ends the value being parsed, so that a sub-parameter of the same
+    /// parameter follows: `:`.
+    pub(crate) fn end_sub_param(&mut self) {
+        if self.value_count < MAX_PARAMS {
+            // Every complete group has a value, so `group_count` is at most
+            // `value_count`, which is below `MAX_PARAMS`.
+            self.group_lens[self.group_count] += 1;
+            self.values[self.value_count] = self.current;
+            self.value_count += 1;
+        }
+        self.current = 0;
+    }
+}
+
+/// Parameters are equal when their groups are.
+impl PartialEq for Params {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for Params {}
+
+/// Shows the groups, as in `[[38, 2, 0, 255, 0, 0], [1]]`.
+impl fmt::Debug for Params {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 
@@ -105,5 +166,39 @@ mod tests {
         let params = Params::default();
         assert!(params.is_empty());
         assert_eq!(params.iter().count(), 0);
+    }
+
+    #[test]
+    fn digits_and_separators_build_groups() {
+        // `38:2::255:0:0;1`, then the same sequence again after a clear.
+        let mut params = Params::default();
+        for _ in 0..2 {
+            params.clear();
+            for &byte in b"38:2::255:0:0;1" {
+                match byte {
+                    b':' => params.end_sub_param(),
+                    b';' => params.end_param(),
+                    digit => params.push_digit(digit - b'0'),
+                }
+            }
+            params.end_param();
+            assert_eq!(params, Params::from_groups(&[&[38, 2, 0, 255, 0, 0], &[1]]));
+        }
+    }
+
+    #[test]
+    fn a_large_value_stops_at_the_maximum() {
+        let mut params = Params::default();
+        for digit in [9; 7] {
+            params.push_digit(digit);
+        }
+        params.end_param();
+        assert_eq!(groups(&params), [vec![u16::MAX]]);
+    }
+
+    #[test]
+    fn debug_shows_the_groups() {
+        let params = Params::from_groups(&[&[4, 3], &[1]]);
+        assert_eq!(format!("{params:?}"), "[[4, 3], [1]]");
     }
 }
