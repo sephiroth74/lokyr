@@ -20,7 +20,8 @@ target/
 .vscode/
 *.iml
 
-# Claude Code local state (shared project settings may be committed later)
+# Claude Code: local state and project instructions stay out of the repository
 .claude/settings.local.json
 .claude/.cc-writes/
+CLAUDE.md
 CLAUDE.local.md
