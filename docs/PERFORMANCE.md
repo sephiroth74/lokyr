@@ -20,12 +20,12 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | First presented frame | ≤ 100 ms warm, ≤ 250 ms cold | Launch mach time → `addPresentedHandler`; `wp_presentation` on Linux |
 | Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
 | Idle | 0 wakeups/s; ≤ 2/s with a blinking cursor | `top -stats idlew`, `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
-| Footprint excluding IOSurface/IOAccelerator | ≤ 30 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Wasm plugin; back to baseline ±2 MB after closing tabs | `footprint`, `vmmap --summary`, `TASK_VM_INFO`; on Linux PSS and heaptrack, never RSS |
+| Footprint excluding IOSurface/IOAccelerator | ≤ 30 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `footprint`, `vmmap --summary`, `TASK_VM_INFO`; on Linux PSS and heaptrack, never RSS |
 | Scrollback | ≤ configured limit + 5%; ≈ 8 B per cell | memory tests in CI |
 | GPU memory (accounted separately) | 2 BGRA8 `framebufferOnly` drawables per window (≈ 31 MB each at 3456×2234), none per pane, released when the window is hidden | Instruments (Metal System Trace); DRM `fdinfo` on Linux |
 | Throughput | Within 10% of the faster of Ghostty and Alacritty | vtebench; `cat` of a 1 GB file, headless and on screen |
 | CPU per frame | ≤ 2 ms p99 (4K, 4 panes) | `tracing` spans + signposts |
-| Wasm plugin activation | ≤ 5 ms with the AOT cache | `tracing` spans |
+| Luau plugin activation | ≤ 5 ms, compilation included | `tracing` spans |
 
 ## How to measure
 
@@ -71,7 +71,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Instruction counts for the same scenarios | `gungraun` (callgrind) | Linux CI (valgrind does not run on Apple Silicon) | +3% blocks |
 | End-to-end wall-clock times | `tools/bench` harness | dedicated Mac (self-hosted runner), nightly | +10% opens an issue |
 | Memory: opening and closing tabs, full scrollback | integration tests | macOS and Linux CI | the budgets above |
-| Binary size | `cargo bloat` | CI | a budget per release, with and without Wasm |
+| Binary size | `cargo bloat` | CI | a budget per release, with and without the Luau runtime |
 
 Results history is published (e.g. on bencher.dev, or as JSON in a branch of the repo), so trends are visible and not just jumps.
 
@@ -86,7 +86,8 @@ Results history is published (e.g. on bencher.dev, or as JSON in a branch of the
 | One GPU surface per window; 2 drawables; release when occluded | GPU memory |
 | Display link running only when there is work; immediate draw after idle | Idle, latency |
 | Per-run shaping cache, shared glyph atlas | CPU per frame, memory |
-| Wasm plugins loaded only when needed; lazily created `Engine` | Startup, memory |
+| Luau plugins loaded only when needed; no VM before the first one | Startup, memory |
+| A plugin watchdog that steps in only at the deadline, and runs only while a plugin executes | Idle, CPU per frame |
 | No async runtime in the app | Memory, startup |
 | System allocator; mimalloc only if measurements justify it | Memory |
 

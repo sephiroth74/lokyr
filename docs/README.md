@@ -7,7 +7,7 @@ Saetta is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 00
 - **Fast and light on memory**, with budgets measured in CI ([PERFORMANCE.md](PERFORMANCE.md)).
 - **The best of existing terminals**: the speed and protocols of Ghostty and kitty; the tabs, tmux -CC and triggers of iTerm2; the restraint of Alacritty; the blocks of Warp.
 - **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
-- **An open ecosystem**: third-party plugins are WebAssembly components, installed by **Faretra**. Faretra is a separate program from the app, the same way cargo is separate from rustc.
+- **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Faretra**. Faretra is a separate program from the app, the same way cargo is separate from rustc.
 
 **Status**: design phase, no code yet. This folder holds the architecture, the decisions and the roadmap.
 
@@ -19,7 +19,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Principles, layers, data model, threads, workspace layout, dependency rules, libraries |
 | [VT-CORE.md](VT-CORE.md) | Parser, cells, pages, pins, Unicode, input, PTY, terminfo, supported protocols |
-| [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md) | Extension points, execution model, two-target SDK, WIT, capabilities, lifecycle |
+| [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md) | Extension points, execution model, Rust and Luau front ends, the Luau API, capabilities, lifecycle, limits |
 | [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md) | Faretra, file formats, resolution, installation, index, registry |
 | [UI-AND-FEATURES.md](UI-AND-FEATURES.md) | UI engine, tabs, splits, search, iTerm2 themes, command palette |
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
@@ -39,7 +39,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Search the buffer | Kernel `search` service for the engine, `search` plugin for the UI | [UI-AND-FEATURES](UI-AND-FEATURES.md#search) | F3 |
 | iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
-| Powerful plugin system | Native first-party plugins and Wasm third-party plugins share one API | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
+| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Faretra, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
@@ -68,15 +68,15 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 |---|---|
 | **Kernel** | The core of the app. It owns the data model (windows, tabs, layouts, panes, sessions), commands, keymap, events, config and fast services. It decides nothing about how things look |
 | **First-party plugin** | One of our own plugins, statically linked into the binary. It uses only the public SDK |
-| **Third-party plugin** | A WebAssembly component loaded from disk. It runs in a sandbox with explicit capabilities |
+| **Third-party plugin** | A Luau plugin loaded from disk. It runs in its own sandboxed VM, with explicit capabilities |
 | **Distribution** | The list of first-party plugins compiled into the app (`dist/*.toml`) |
 | **Chrome** | Everything visible besides the terminal text: tab bar, dividers, find bar, palette |
 | **Pane** | An area that shows one terminal. A tab holds one or more panes, arranged by the layout tree |
 | **Session** | The PTY, the child process and the VT state of a pane |
 | **Pin** | A stable reference to a position in the grid. It stays valid across scrolling and reflow |
-| **Capability** | A permission that a Wasm plugin must declare and the user must grant (e.g. `terminal-read`) |
+| **Capability** | A permission that a third-party plugin must declare and the user must grant (e.g. `terminal-read`) |
 | **Slot** | A place in the UI where a plugin can render a view tree (e.g. `tab-bar`) |
-| **HostApi** | The Rust trait the kernel implements. Both plugin transports, native and Wasm, call into it |
+| **HostApi** | The Rust trait the kernel implements. Both front ends of the plugin API, Rust and Luau, call into it |
 
 ## References worth studying
 
@@ -85,6 +85,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 - **kitty**: keyboard and graphics protocols, layouts, kittens.
 - **WezTerm**: the closest existing project (Rust, self-drawn tabs, splits, multiplexer). Also useful for understanding its limits on memory and complexity.
 - **iTerm2**: tabs, triggers, tmux -CC, the `.itermcolors` format, esctest.
-- **Zed and Zellij**: WebAssembly plugins with WIT.
+- **Luau**: sandboxing, interrupting and limiting untrusted scripts, as Roblox does.
+- **Zed**: its extensions repository, the model of registry v0.
 - **Warp**: command + output blocks.
 - **crates.io and pub.dev**: sparse index, verified publishers, package pages.

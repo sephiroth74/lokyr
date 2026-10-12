@@ -5,8 +5,8 @@ This document describes Saetta as a whole. Each subsystem has its own document w
 ## Principles
 
 1. **Mechanism in the core, policy in plugins.** The kernel provides data models and fast services. Plugins decide *what* is shown and *how* users interact with it ([ADR 0002](adr/0002-micro-kernel-and-plugins.md)).
-2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md)).
-3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes Wasm.
+2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones, through a Rust front end instead of a Luau one. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
+3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes the Luau runtime.
 4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)).
 5. **No networking in the app.** Downloading and installing is Faretra's job ([ADR 0008](adr/0008-separate-package-manager.md)).
 6. **Budgets are requirements.** Timings and memory have numeric targets that CI checks ([PERFORMANCE.md](PERFORMANCE.md)).
@@ -19,11 +19,11 @@ This document describes Saetta as a whole. Each subsystem has its own document w
                 └───────────────────────┬─────────────────────────┘
                                         │ writes to disk: store + plugins.lock
 ┌───────────────────────────────────────▼────────── saetta (app) ─────────────────────────┐
-│ First-party plugins (static)            │ Third-party plugins (Wasm, sandboxed)          │
+│ First-party plugins (static)            │ Third-party plugins (Luau, sandboxed)          │
 │ tabs · splits · search · themes ·       │ read from disk, activated only when needed     │
 │ theme-iterm2 · core-actions · palette   │                                                │
 ├─────────────────────────────────────────┴────────────────────────────────────────────────┤
-│ plugin-sdk ── HostApi (kernel, native)  │  plugin-host-wasm (wasmtime → same HostApi)   │
+│ plugin-sdk ── HostApi (kernel, native)  │  plugin-host-luau (Luau VMs → same HostApi)   │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
 │ KERNEL: workspace + layout tree · commands · keymap · event bus · config                 │
 │         services: search · decorations · triggers                                        │
@@ -41,7 +41,7 @@ This document describes Saetta as a whole. Each subsystem has its own document w
 | Kernel | `kernel` | Data model, commands, keymap, events, config, services, native plugin host, window composition |
 | UI engine | `ui-core`, `text-core`, `render-core` | View tree, layout, widgets, text, display list. Platform-independent |
 | Per-OS backends | `platform-*`, `render-*`, `font-*` | Windows and events, GPU, fonts. One crate per OS and engine, behind the traits of the `*-core` crates |
-| Plugins | `plugin-wit`, `plugin-sdk`, `plugin-host-wasm`, `plugins/*` | API, SDK, Wasm host and first-party plugins |
+| Plugins | `plugin-sdk`, `plugin-host-luau`, `plugins/*` | API and Rust SDK, Luau host, first-party plugins |
 | Packages | `pkg-model`, `faretra/*`, `registry/*` | Shared formats, package manager, registry |
 
 ## Kernel data model
@@ -65,10 +65,10 @@ Workspace
 
 | Thread | Does | Never does |
 |---|---|---|
-| Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Wasm plugin |
+| Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Luau plugin |
 | I/O, one per pane | `read` from the PTY, parsing, grid updates, writing input | Wait for the main thread |
-| Wasm executor | Calls into third-party plugins, with a time budget | Sit on the output path |
-| Workers | Search, reflow of very large scrollbacks, AOT compilation of plugins | Hold the grid lock for long |
+| Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
+| Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
 **From program output to the screen**
 1. The I/O thread reads at most ~64 KiB from the PTY.
@@ -117,9 +117,8 @@ saetta/
 │   ├── render-gl/         (F7) glow + khronos-egl (GL 3.3 / GLES 3)
 │   ├── font-coretext/     objc2-core-text (discovery, fallback, shaping, rasterization)
 │   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
-│   ├── plugin-wit/        WIT saetta:host@0.1 / saetta:plugin@0.1 — the single source of truth
-│   ├── plugin-sdk/        API for plugin authors (no internal dependencies besides plugin-wit)
-│   ├── plugin-host-wasm/  wasmtime host: capabilities, limits, AOT cache (behind a feature)
+│   ├── plugin-sdk/        the plugin API (HostApi and its types) and its Rust front end; no internal dependencies
+│   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, faretra, registry)
 │   └── app/               the `saetta` binary: kernel + backends for the target + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
@@ -129,7 +128,7 @@ saetta/
 ├── dist/                  default.toml, minimal.toml
 ├── faretra/               cli/ (`faretra` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
 ├── registry/              registry-server (v1) + index specification
-├── templates/             templates for `faretra new` (Rust; later Go/C/JS)
+├── templates/             templates for `faretra new` (Luau)
 ├── tools/                 replay/ (`saetta-replay`) · bench/ · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
 ├── fuzz/                  cargo-fuzz: parser, .itermcolors, manifest, archives
 └── docs/                  this documentation (later an mdBook)
@@ -143,13 +142,12 @@ app ─┬─▶ kernel ─┬─▶ session ─┬─▶ vt-core
      │           ├─▶ search ───▶ vt-core
      │           ├─▶ ui-core ──┬─▶ text-core
      │           │             └─▶ render-core
-     │           ├─▶ plugin-sdk ─▶ plugin-wit        (the kernel implements HostApi)
+     │           ├─▶ plugin-sdk                      (the kernel implements HostApi)
      │           └─▶ pkg-model
      ├─▶ platform-{macos|wayland|x11} ─▶ platform-core
      ├─▶ render-{metal|gl} ─▶ render-core
      ├─▶ font-{coretext|freetype} ─▶ text-core
-     ├─▶ plugin-host-wasm ─┬─▶ plugin-sdk          (feature `wasm-plugins`)
-     │                     └─▶ plugin-wit
+     ├─▶ plugin-host-luau ─▶ plugin-sdk              (feature `luau-plugins`)
      └─▶ plugins/* ─▶ plugin-sdk                     (selected by dist/*.toml)
 
 faretra/* ─▶ pkg-model            registry/* ─▶ pkg-model
@@ -160,10 +158,11 @@ faretra/* ─▶ pkg-model            registry/* ─▶ pkg-model
 | Rule | Why | Enforced by |
 |---|---|---|
 | `vt-core` and `search` do not depend on UI, platform or plugins | Headless tests, fuzzing, reuse | `xtask check-deps` |
-| `plugin-sdk` depends only on `plugin-wit` | The SDK must be publishable and usable on its own | `xtask check-deps` |
+| `plugin-sdk` depends on no other workspace crate | The SDK must be publishable and usable on its own | `xtask check-deps` |
 | Only `app` depends on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
-| First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They must behave as they would in Wasm | clippy in CI; `wasm32-wasip2` builds from F3 |
+| First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
+| Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |
 | HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `faretra/*` | No networking code in the app | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
 | Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | review and `xtask check-deps` |
@@ -184,7 +183,7 @@ Versions and maturity must be rechecked when coding starts.
 | Core | `memchr` + `core::arch` for SIMD (`std::simd` is not stable), `regex-automata`, `lz4_flex` | |
 | UI | `taffy`, `accesskit` | |
 | Formats and config | `plist`, `toml_edit` (errors with line and column), `serde`, `ciborium` (CBOR), `notify` | |
-| Plugins | `wasmtime` pinned to an LTS line, `wit-bindgen`, target `wasm32-wasip2` | wasmtime ships a new major version every month |
+| Plugins | `mlua` with the `luau` and `luau-jit` features, from vendored sources | Luau ships every week or two; pin it and upgrade deliberately |
 | Faretra | `pubgrub`, `reqwest` + `rustls`, `ed25519-dalek`, `zstd`, `tar` | ed25519 signatures before Sigstore |
 | Tests and benchmarks | `insta`, `proptest`, `cargo-fuzz`, `criterion`, `gungraun` (formerly iai-callgrind) | |
 
@@ -192,11 +191,10 @@ Versions and maturity must be rechecked when coding starts.
 
 - **Toolchain**: stable Rust, pinned in `rust-toolchain.toml`; edition 2024. Targets:
   - `aarch64-apple-darwin`, plus `x86_64-apple-darwin` if Intel Macs end up supported;
-  - `wasm32-wasip2`;
   - `x86_64-unknown-linux-gnu`, for the CI job that builds the platform-independent crates.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
-- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in the SIMD fast path of `vt-core`, and in `plugin-host-wasm` for loading precompiled components (wasmtime's `deserialize` is `unsafe`). Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-wasm` uses `#![deny(unsafe_code)]` and allows that single call site.
+- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in the SIMD fast path of `vt-core`, and in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau` uses `#![deny(unsafe_code)]` and allows those call sites one by one.
 - **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
 - **Common tasks** live in the `justfile`: `just ci` runs every check that CI runs, and `just --list` shows the other recipes.
 - **Language**: all documentation, comments and commit messages are in English.
@@ -208,7 +206,7 @@ Versions and maturity must be rechecked when coding starts.
 |---|---|---|
 | Config (`config.toml`, `plugins.toml`, `plugins.lock`, `permissions.toml`, `themes/`) | `~/.config/saetta/` (or `$XDG_CONFIG_HOME/saetta/` if set) | `$XDG_CONFIG_HOME/saetta/` |
 | Installed packages | `~/Library/Application Support/saetta/store/` | `$XDG_DATA_HOME/saetta/store/` |
-| Caches (Wasm AOT, fonts) | `~/Library/Caches/saetta/` | `$XDG_CACHE_HOME/saetta/` |
+| Caches (fonts, compiled plugins) | `~/Library/Caches/saetta/` | `$XDG_CACHE_HOME/saetta/` |
 | State (saved sessions, search history) | `~/Library/Application Support/saetta/state/` | `$XDG_STATE_HOME/saetta/` |
 | IPC socket | `$TMPDIR/saetta-<uid>/` | `$XDG_RUNTIME_DIR/saetta/` |
 

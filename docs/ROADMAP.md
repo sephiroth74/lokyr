@@ -10,11 +10,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 | Phase | Contents | Exit criteria | Duration |
 |---|---|---|---|
-| F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized wasmtime spike | CI green; ADRs approved; JIT vs. Pulley decided | 2–3 weeks |
+| F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
 | F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `saetta-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette | Every must-have requirement in place | 10–14 weeks |
-| F4 Plugin ecosystem | Wasm host, Wasm SDK, Faretra, registry v0 | Publishing and installing work end to end | 8–10 weeks |
+| F4 Plugin ecosystem | Luau host, Luau API, Faretra, registry v0 | Publishing and installing work end to end | 8–10 weeks |
 | F5a Shell integration and blocks | OSC 133, prompt jumping, Warp-style blocks, ssh integration | Verified in zsh, bash and fish, including over ssh | 4–6 weeks |
 | F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast, IPC | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -32,11 +32,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Tooling**: `justfile`, `rust-toolchain.toml`, workspace lints.
 - **ADRs** reviewed and approved (the ones in [adr/](adr/)).
 - **Budget harness** (`tools/bench`) for startup, idle and memory.
-- **Notarized wasmtime spike**:
-  - A minimal signed and notarized app loads and runs a Wasm component, once with the JIT entitlement and once with Pulley.
-  - Measure time and memory, decide, and update [ADR 0003](adr/0003-native-and-wasm-plugins.md).
+- **Notarized plugin-runtime spikes**:
+  - A minimal signed and notarized app runs plugin-like work in wasmtime (Cranelift and Pulley), LuaJIT and Luau. The Lua runtimes also face hostile plugins.
+  - Measure time and memory, then decide. The decision is [ADR 0012](adr/0012-luau-plugins.md): Luau with its native code generator.
 
-**Exit**: CI green; ADRs approved; JIT vs. Pulley decided.
+**Exit**: CI green; ADRs approved; plugin runtime decided.
 
 ### F1 — Headless VT core
 
@@ -77,7 +77,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F3 — macOS MVP
 
 - **Full kernel**: workspace, layout tree, events, search and decoration services.
-- **Plugin plumbing**: WIT draft, `plugin-sdk` with the native backend, `export_plugin!`, `xtask gen-dist`.
+- **Plugin plumbing**: the `HostApi` draft, `plugin-sdk` with the Rust front end, `export_plugin!`, `xtask gen-dist`.
 - **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
@@ -88,24 +88,24 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - search over 100k lines in ≤ 150 ms;
 - the whole iTerm2-Color-Schemes collection imports, Light/Dark keys and color spaces included;
 - IME works in the find bar;
-- budgets green;
-- every plugin also builds for `wasm32-wasip2`.
+- budgets green.
 
 ### F4 — Plugin ecosystem
 
-- **Wasm host**:
-  - WIT 0.1;
-  - `plugin-host-wasm` with capabilities, limits and the AOT cache;
-  - the SDK's Wasm backend and the conformance suite.
+- **Luau host**:
+  - API 0.1;
+  - `plugin-host-luau`, with one VM per plugin, capabilities, the memory limit and the watchdog;
+  - the Luau front end and its type definitions, generated from the Rust types;
+  - the conformance suite, and the hostile plugins in CI.
 - **Faretra**:
-  - `new`, `build`, `test`, `dev`;
+  - `new`, `check`, `test`, `dev`;
   - `add` from a path, from git, and then from the registry;
   - the shared `pkg-model` formats.
 - **`plugin-manager` plugin**: the in-app UI for Faretra.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors.
 
 **Exit**:
-- the `faretra new → build → dev` loop works;
+- the `faretra new → check → dev` loop works;
 - a published plugin installs on another Mac and activates without a restart;
 - the hostile test plugins are stopped.
 
@@ -141,7 +141,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 ### F6 — Release 1.0
 
-- Stabilize the plugin API as 1.0 (WIT `@since(version = "1.0.0")`).
+- Stabilize the plugin API as 1.0, in both front ends.
 - Complete the docs: user guide, plugin author guide, reference.
 - Fix bugs and harden; reconfirm the license ([ADR 0010](adr/0010-mit-license.md)) and the final names.
 
@@ -173,7 +173,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Version | Contents |
 |---|---|
 | 0.1 | macOS MVP (F3) |
-| 0.2 | Wasm plugins and Faretra (F4) |
+| 0.2 | Luau plugins and Faretra (F4) |
 | 0.3–0.5 | F5a, F5b, F5c |
 | 1.0 | macOS only. Stable plugin API 1.0, complete docs, no open critical bug for three months |
 | 1.x | Linux (F7), registry v1 |
@@ -185,13 +185,13 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | File | Contents |
 |---|---|
 | `Cargo.toml` | Workspace, `[workspace.dependencies]`, `[workspace.lints]`, profiles (`panic = "unwind"`, LTO in release) |
-| `rust-toolchain.toml` | Pinned stable toolchain and targets (`aarch64-apple-darwin`, `wasm32-wasip2`, `x86_64-unknown-linux-gnu` for CI) |
+| `rust-toolchain.toml` | Pinned stable toolchain and targets (`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` for CI) |
 | `deny.toml` | Licenses, advisories, bans (HTTP/TLS and async runtimes only where allowed, via `wrappers`) |
 | `justfile` | `build`, `test`, `lint`, `bench`, `fuzz`, `bundle` |
 | `.github/workflows/ci.yml` | macOS arm64 (everything) and Linux x86_64 (platform-independent crates) |
 | `tools/xtask/src/main.rs` | `check-deps`, later `gen-dist`, `ucd`, `terminfo`, `bundle` |
 | `tools/bench/` | Harness for startup, idle and memory |
-| `spikes/wasmtime-notarized/` | The F0 spike, outside the workspace |
+| `spikes/wasmtime-notarized/` | The F0 plugin-runtime spikes (wasmtime, LuaJIT, Luau), outside the workspace |
 
 **F1**
 
@@ -213,13 +213,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 | Question | When to decide |
 |---|---|
-| JIT entitlement or Pulley for wasmtime on macOS | F0 (spike) |
-| How the Wasm host provides WASI to plugins without an async runtime in the app (`wasmtime-wasi` depends on `tokio`) | F0 (spike) |
 | Minimum macOS version (proposed: 14) and Intel Mac support | F0 |
 | Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 |
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
 | Final names (Saetta and Faretra are provisional) and the registry domain | Before the public 0.1 |
-| Branch protection on `main`: a ruleset that requires the `macos`, `linux` and `wasm` CI checks | When the repository goes public |
+| Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
 | License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |

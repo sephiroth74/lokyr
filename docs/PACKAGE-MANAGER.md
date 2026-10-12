@@ -10,7 +10,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Faretra prov
 |---|---|
 | Resolves versions, downloads, checks signatures and checksums, extracts | Reads `plugins.lock` and the store from disk |
 | Writes `plugins.lock` atomically | Watches the config directory and loads or unloads plugins |
-| Publishes to the registry, manages tokens and owners | Asks the user to confirm capabilities, AOT-compiles, activates |
+| Publishes to the registry, manages tokens and owners | Asks the user to confirm capabilities, compiles, activates |
 | Contains the HTTP/TLS clients | **Contains no networking code** |
 
 - **How it ships**:
@@ -23,10 +23,10 @@ The split is the same as cargo and rustc: the app runs plugins, and Faretra prov
 
 | Command | What it does |
 |---|---|
-| `faretra new <name> [--template rust]` | Scaffolds a plugin: manifest, SDK, tests |
-| `faretra build` | Builds the `wasm32-wasip2` component and checks the world and API version |
+| `faretra new <name>` | Scaffolds a plugin: manifest, Luau sources, the API's type definitions, tests |
+| `faretra check` | Type-checks the Luau sources against the API's definitions, and checks the manifest and the API version |
 | `faretra test` | Runs the plugin in a headless host with simulated events |
-| `faretra dev` | Builds the plugin, reloads it into the running app (over IPC), and repeats on every change |
+| `faretra dev` | Checks the plugin, reloads it into the running app (over IPC), and repeats on every change |
 | `faretra add <plugin>` | Adds a plugin to `plugins.toml` (from the registry, `--path` or `--git`), then resolves and installs |
 | `faretra remove <plugin>` / `faretra update [<plugin>]` | Removes or updates, always through the lockfile |
 | `faretra list` / `search <text>` / `info <plugin>` | Installed plugins, catalog, details (capabilities, compatibility, versions) |
@@ -45,7 +45,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Faretra prov
 
 | `kind` | Contents | Capabilities |
 |---|---|---|
-| `wasm` | A `wasm32-wasip2` component plus assets | As declared |
+| `luau` | Luau sources plus assets | As declared |
 | `themes` | Theme files only (`.itermcolors`, `.toml`) | None: contains no code |
 | `builtin` | Manifests of the first-party plugins in the repo | Not distributed |
 
@@ -57,7 +57,7 @@ The split is the same as cargo and rustc: the app runs plugins, and Faretra prov
 [plugin]
 name = "sephiroth74/search-plus"
 version = "0.1.0"
-kind = "wasm"
+kind = "luau"
 api = "^0.1"                # host API version, like pubspec's `sdk` constraint
 license = "MIT"
 description = "Advanced search with filters and history"
@@ -85,12 +85,12 @@ config-schema = "schema.json"
 |---|---|---|
 | `plugin.name` | yes | `owner/name`: lowercase letters, digits and `-` |
 | `plugin.version` | yes | Semver |
-| `plugin.kind` | yes | `wasm`, `themes` or `builtin` |
-| `plugin.api` | for `wasm` | Constraint on the host API version |
+| `plugin.kind` | yes | `luau`, `themes` or `builtin` |
+| `plugin.api` | for `luau` | Constraint on the host API version |
 | `plugin.license` | yes | SPDX expression |
 | `plugin.description`, `repository`, `homepage`, `keywords`, `authors` | no | Metadata for the registry |
 | `plugin.platforms` | no | Restricts the OSes (e.g. `["macos"]`); all by default |
-| `activation.on` | for `wasm` | Activation events |
+| `activation.on` | for `luau` | Activation events |
 | `capabilities.*` | no | Requested capabilities |
 | `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
@@ -121,7 +121,7 @@ api = "0.1.3"   # app API version used for resolution
 [[package]]
 name = "sephiroth74/search-plus"
 version = "0.1.2"
-kind = "wasm"
+kind = "luau"
 source = "registry+https://registry.example.com"
 checksum = "sha256:9f2c…"
 capabilities = ["terminal-read", "clipboard-write"]
@@ -132,7 +132,7 @@ dependencies = ["saetta/themes 0.3.1"]
 
 ```
 plugin.toml
-plugin.wasm              # kind = "wasm" only
+src/                     # kind = "luau" only: the sources, entry point src/init.luau; never bytecode
 themes/                  # kind = "themes" only
 schema.json              # config schema, if any
 README.md · LICENSE · CHANGELOG.md
@@ -160,7 +160,7 @@ Archive rules:
 3. Verify the SHA-256 checksum (from the index) and the ed25519 signature.
 4. Extract with the archive checks, then atomically rename into `store/<sha256>/`. The store is **content-addressed**: an installed package never changes.
 5. Write the new `plugins.lock` to a temporary file, `fsync` it, and rename it atomically.
-6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks the user to confirm new capabilities, then AOT-compiles and activates. No restart is needed.
+6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks the user to confirm new capabilities, then compiles and activates. No restart is needed.
 
 ## Index (sparse protocol)
 
@@ -179,7 +179,7 @@ Like the crates.io sparse index: one file per package, which plain static hostin
 `GET /index/{owner}/{name}` returns NDJSON, one line per version. Lines are only ever appended; the only field that changes is `yanked`.
 
 ```json
-{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"wasm","api":"^0.1","deps":[{"name":"saetta/themes","req":"^0.3"}],"caps":["terminal-read","clipboard-write"],"cksum":"sha256:9f2c…","sig":"ed25519:…","yanked":false}
+{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"luau","api":"^0.1","deps":[{"name":"saetta/themes","req":"^0.3"}],"caps":["terminal-read","clipboard-write"],"cksum":"sha256:9f2c…","sig":"ed25519:…","yanked":false}
 ```
 
 HTTP caching uses `ETag`/`If-None-Match`. Faretra keeps a local copy of the index for `--offline`.
@@ -198,8 +198,8 @@ HTTP caching uses `ETag`/`If-None-Match`. Faretra keeps a local copy of the inde
 
 - **Repo**: a GitHub repository holds the index and the publishing requests (`submissions/<owner>/<name>.toml`, with the repo URL and a tag).
 - **Publishing = opening a PR.** CI then:
-  - builds the plugin **from source** in a clean container;
-  - validates the manifest, the WIT world, sizes and capabilities;
+  - packages the plugin **from the tagged sources** in a clean container;
+  - checks it as `faretra check` does, runs its tests, and validates the manifest, sizes and capabilities;
   - signs the archive and uploads it to static hosting (object storage + CDN, or GitHub Pages/Releases);
   - appends the index line.
 - **Merging the PR** publishes the version.

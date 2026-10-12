@@ -32,7 +32,8 @@ Out of scope: a process running as the same user with full privileges. It could 
 ## Plugins
 
 - **Capabilities** are declared by the plugin, granted by the user, stored in `permissions.toml`, and revocable ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#capabilities)).
-- **Wasm sandbox** with memory and CPU limits. A plugin that traps is disabled.
+- **Luau sandbox**: one VM per plugin, with only the libraries that compute, a memory limit and a deadline per call. A plugin that fails or misses its deadline is disabled.
+- **Sources only**: packages carry Luau sources, never bytecode, and the host compiles every script itself.
 - **Audit log**: capability requests and grants are recorded and can be reviewed.
 - **Networking** goes through a helper process (`faretra net-helper`) that enforces the allowed hosts. The app has no HTTP client.
 - **First-party plugins** are our own code, reviewed and limited to the SDK.
@@ -43,7 +44,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 - **Archives**: regular files only, no `..` or absolute paths, size limits and a compression-ratio limit.
 - **Store and lockfile**: the store is content-addressed, and the lockfile is written atomically.
 - **Names and versions**: `owner/name` namespaces with `saetta/*` reserved, yanked versions, and security advisories (F7).
-- **Provenance**: in v0 the registry builds plugins from source, so every artifact traces back to a commit.
+- **Provenance**: in v0 the registry packages plugins from their tagged sources, so every artifact traces back to a commit.
 
 Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
 
@@ -78,7 +79,7 @@ Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
     - `NSRemovableVolumesUsageDescription`, `NSNetworkVolumesUsageDescription`.
 - **Signing**:
   - Hardened Runtime and notarization.
-  - The JIT entitlement for wasmtime is added only if the F0 spike chooses it.
+  - One hardened-runtime exception, `com.apple.security.cs.allow-jit`, for Luau's native code generator ([ADR 0012](adr/0012-luau-plugins.md)). Without it, plugins run in Luau's interpreter.
   - No App Sandbox, which is incompatible with a terminal.
 
 ## Supply chain of our own code

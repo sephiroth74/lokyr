@@ -7,7 +7,7 @@ This document covers our UI engine and the four features the MVP cannot ship wit
 `ui-core` is our small, platform-independent toolkit ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)). It draws all of the chrome on the GPU, into the same drawable as the panes.
 
 **View tree and layout**
-- Plugins describe their UI as a view tree, stored as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#wit)).
+- Plugins describe their UI as a view tree, which the host stores as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#the-luau-api)).
 - `taffy` computes the layout, using a subset of flexbox: direction, gap, padding, alignment, sizes, grow.
 - Each new tree is diffed against the previous one by `key`, so only the changed parts are laid out and turned into display-list entries again.
 
