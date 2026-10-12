@@ -3,7 +3,7 @@
 use std::fmt;
 
 /// The most values that [`Params`] keeps, sub-parameters included. A
-/// sequence with more keeps the first ones.
+/// sequence with more keeps the first ones, and is still dispatched.
 pub const MAX_PARAMS: usize = 32;
 
 /// The parameters of a CSI or DCS sequence.
@@ -12,6 +12,8 @@ pub const MAX_PARAMS: usize = 32;
 /// separated by `:`, as in `38:2::255:0:0`; a parameter and its
 /// sub-parameters form a group. An empty value reads as 0, so a sequence
 /// without parameters has one: `CSI m` reads as `CSI 0 m`.
+///
+/// A value too large for a `u16` reads as `u16::MAX`.
 #[derive(Clone, Default)]
 pub struct Params {
     /// Every value, one group after the other.
@@ -65,6 +67,30 @@ impl Params {
             start = end;
             group
         })
+    }
+
+    /// The parameter at `index`, with its sub-parameters.
+    pub fn get(&self, index: usize) -> Option<&[u16]> {
+        self.iter().nth(index)
+    }
+
+    /// The value of the parameter at `index`, without its sub-parameters. A
+    /// missing parameter reads as 0, like an empty one.
+    pub fn value(&self, index: usize) -> u16 {
+        self.get(index)
+            .and_then(<[u16]>::first)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// [`Params::value`], with 0 read as `default`. Most sequences give an
+    /// empty or zero parameter their default meaning: `CSI A`, `CSI 0 A` and
+    /// `CSI 1 A` all move the cursor up one line.
+    pub fn value_or(&self, index: usize, default: u16) -> u16 {
+        match self.value(index) {
+            0 => default,
+            value => value,
+        }
     }
 
     /// Forgets every parameter, before a new sequence.
@@ -194,6 +220,20 @@ mod tests {
         }
         params.end_param();
         assert_eq!(groups(&params), [vec![u16::MAX]]);
+    }
+
+    #[test]
+    fn a_parameter_can_be_read_by_index() {
+        let params = Params::from_groups(&[&[4, 3], &[], &[7]]);
+        assert_eq!(params.get(0), Some([4, 3].as_slice()));
+        assert_eq!(params.get(3), None);
+        assert_eq!([0, 1, 2, 3].map(|index| params.value(index)), [4, 0, 7, 0]);
+    }
+
+    #[test]
+    fn zero_and_missing_values_take_the_default() {
+        let params = Params::from_groups(&[&[0], &[5]]);
+        assert_eq!([0, 1, 2].map(|index| params.value_or(index, 1)), [1, 5, 1]);
     }
 
     #[test]

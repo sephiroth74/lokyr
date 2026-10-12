@@ -8,6 +8,8 @@
 //! - it reports only whether BEL ended an OSC string, and nothing about how
 //!   a DCS string ended;
 //! - it prints DEL;
+//! - it ignores a sequence with more than 32 values, where the parser keeps
+//!   the first 32. No input here has that many;
 //! - it treats bytes from 0x80 to 0x9F as C1 controls in text and ends a
 //!   DCS string at 0x9C, while it drops the bytes from 0x80 up in DCS
 //!   payloads. Those transitions have tests of their own, in `tests.rs`.

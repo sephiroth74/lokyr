@@ -28,7 +28,11 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Streamed payloads**:
   - OSC, DCS and APC payloads are delivered in pieces (start, chunks, end) to handlers registered per type.
   - Each type has a size limit (e.g. OSC 52 ≤ 1 MiB, configurable). Past the limit, the payload is dropped without being buffered.
-- **CSI parameters**: up to 32, with colon-separated sub-parameters (e.g. `4:3` for curly underline, `38:2::r:g:b`).
+- **CSI parameters** (DCS parameters follow the same rules):
+  - Up to 32 values, sub-parameters included: colons separate sub-parameters (e.g. `4:3` for curly underline, `38:2::r:g:b`), semicolons separate parameters.
+  - Past the 32nd value, the values are dropped and the sequence is still dispatched (`vte` ignores such a sequence).
+  - An empty value reads as 0, so `CSI m` has one parameter. Handlers read most parameters with a default that also replaces 0: `CSI A`, `CSI 0 A` and `CSI 1 A` are the same. A value too large for 16 bits reads as 65535.
+  - A private marker (`?`, `>`, `<`, `=`) is valid only as the first byte. Elsewhere it voids the sequence, which is then consumed without being dispatched.
 - **UTF-8**: incremental decoding; invalid sequences become U+FFFD.
 - **Fast path**:
   - A SIMD loop finds the first byte outside `0x20..=0x7E`. It uses `core::arch`: NEON on aarch64, SSE2/AVX2 on x86_64, with a scalar fallback.

@@ -1,7 +1,7 @@
 //! The behaviour of the parser, case by case. Where it agrees with `vte`,
 //! the reference tests cover every transition too.
 
-use super::{Action, Parser, Recorder, StringEnd};
+use super::{Action, Handler, MAX_PARAMS, Params, Parser, Recorder, StringEnd};
 
 fn parse(input: &[u8]) -> Vec<Action> {
     parse_in_reads(&[input])
@@ -343,5 +343,218 @@ fn sequences_can_be_split_across_reads() {
             osc(b"0;title", StringEnd::St),
             print("x"),
         ]
+    );
+}
+
+/// The private markers that can open a CSI or DCS sequence.
+const MARKERS: [u8; 4] = *b"?><=";
+
+/// `count` parameters numbered from 1, separated by `;`.
+fn numbered(count: u16) -> String {
+    let values: Vec<String> = (1..=count).map(|value| value.to_string()).collect();
+    values.join(";")
+}
+
+/// The groups that [`numbered`] makes, as the parser keeps them.
+fn numbered_groups(count: u16) -> Vec<Vec<u16>> {
+    (1..=count).map(|value| vec![value]).collect()
+}
+
+#[test]
+fn colon_colors_keep_their_sub_parameters_in_one_group() {
+    assert_eq!(
+        parse(b"\x1b[38:2::255:128:0m\x1b[48:2:1:1:2:3m\x1b[38:5:196m"),
+        [
+            csi(&[&[38, 2, 0, 255, 128, 0]], b"", b'm'),
+            csi(&[&[48, 2, 1, 1, 2, 3]], b"", b'm'),
+            csi(&[&[38, 5, 196]], b"", b'm'),
+        ]
+    );
+}
+
+#[test]
+fn semicolon_colors_are_separate_parameters() {
+    assert_eq!(
+        parse(b"\x1b[38;2;255;128;0m"),
+        [csi(&[&[38], &[2], &[255], &[128], &[0]], b"", b'm')]
+    );
+}
+
+#[test]
+fn underline_styles_are_sub_parameters() {
+    assert_eq!(
+        parse(b"\x1b[4:3m\x1b[4:0m\x1b[1;4:5;58:2::10:20:30m"),
+        [
+            csi(&[&[4, 3]], b"", b'm'),
+            csi(&[&[4, 0]], b"", b'm'),
+            csi(&[&[1], &[4, 5], &[58, 2, 0, 10, 20, 30]], b"", b'm'),
+        ]
+    );
+}
+
+#[test]
+fn empty_values_read_as_zero() {
+    assert_eq!(
+        parse(b"\x1b[m\x1b[;5H\x1b[5;H\x1b[;;m\x1b[:1m\x1b[1:m\x1b[1::2m"),
+        [
+            csi(&[&[0]], b"", b'm'),
+            csi(&[&[0], &[5]], b"", b'H'),
+            csi(&[&[5], &[0]], b"", b'H'),
+            csi(&[&[0], &[0], &[0]], b"", b'm'),
+            csi(&[&[0, 1]], b"", b'm'),
+            csi(&[&[1, 0]], b"", b'm'),
+            csi(&[&[1, 0, 2]], b"", b'm'),
+        ]
+    );
+}
+
+#[test]
+fn empty_zero_and_missing_values_take_the_default() {
+    /// Reads the first parameter of each sequence with a default of 1, as
+    /// cursor movements do.
+    struct Counts(Vec<u16>);
+
+    impl Handler for Counts {
+        fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _final_byte: u8) {
+            self.0.push(params.value_or(0, 1));
+        }
+    }
+
+    let mut counts = Counts(Vec::new());
+    Parser::new().advance(&mut counts, b"\x1b[A\x1b[0A\x1b[1A\x1b[;A\x1b[3A");
+    assert_eq!(counts.0, [1, 1, 1, 1, 3]);
+}
+
+#[test]
+fn values_too_large_for_a_u16_stop_at_the_maximum() {
+    assert_eq!(
+        parse(b"\x1b[65535;65536;99999999999A\x1b[0007A"),
+        [
+            csi(&[&[u16::MAX], &[u16::MAX], &[u16::MAX]], b"", b'A'),
+            csi(&[&[7]], b"", b'A'),
+        ]
+    );
+}
+
+#[test]
+fn values_past_the_limit_are_dropped_and_the_sequence_still_dispatches() {
+    let input = format!("\x1b[?{}$p\x1b[5A", numbered(40));
+    assert_eq!(
+        parse(input.as_bytes()),
+        [
+            Action::Csi {
+                params: numbered_groups(32),
+                intermediates: b"?$".to_vec(),
+                final_byte: b'p',
+            },
+            csi(&[&[5]], b"", b'A'),
+        ]
+    );
+}
+
+#[test]
+fn sub_parameters_count_towards_the_limit() {
+    // 31 values, then a group of three: only its first value fits.
+    let input = format!("\x1b[{};7:8:9m", numbered(31));
+    let mut groups = numbered_groups(31);
+    groups.push(vec![7]);
+    assert_eq!(
+        parse(input.as_bytes()),
+        [Action::Csi {
+            params: groups,
+            intermediates: Vec::new(),
+            final_byte: b'm',
+        }]
+    );
+
+    // 16 groups of two values fill the limit, and a 17th is dropped whole.
+    let input = format!("\x1b[{}2m", "1:1;".repeat(16));
+    assert_eq!(
+        parse(input.as_bytes()),
+        [Action::Csi {
+            params: vec![vec![1, 1]; MAX_PARAMS / 2],
+            intermediates: Vec::new(),
+            final_byte: b'm',
+        }]
+    );
+}
+
+#[test]
+fn every_private_marker_comes_first_among_the_intermediates() {
+    for marker in MARKERS {
+        let input = [
+            b"\x1b[".as_slice(),
+            &[marker],
+            b"1;2h\x1b[",
+            &[marker],
+            b"u\x1b[",
+            &[marker],
+            b"2026$p\x1bP",
+            &[marker],
+            b"1qdata\x1b\\",
+        ]
+        .concat();
+        assert_eq!(
+            parse(&input),
+            [
+                csi(&[&[1], &[2]], &[marker], b'h'),
+                csi(&[&[0]], &[marker], b'u'),
+                csi(&[&[2026]], &[marker, b'$'], b'p'),
+                dcs(&[&[1]], &[marker], b'q', b"data"),
+            ],
+            "{}",
+            char::from(marker)
+        );
+    }
+}
+
+#[test]
+fn a_misplaced_private_marker_voids_the_sequence() {
+    for marker in MARKERS {
+        // After a parameter, after another marker, and in a DCS string.
+        let input = [
+            b"\x1b[1".as_slice(),
+            &[marker],
+            b"ha\x1b[?",
+            &[marker],
+            b"1hb\x1bP1",
+            &[marker],
+            b"qdata\x1b\\c",
+        ]
+        .concat();
+        assert_eq!(parse(&input), [print("abc")], "{}", char::from(marker));
+    }
+}
+
+#[test]
+fn intermediates_follow_the_parameters() {
+    assert_eq!(
+        parse(b"\x1b[2 q\x1b[61;1\"p\x1b[!p\x1b[>4;2m\x1bP$q\"q\x1b\\"),
+        [
+            csi(&[&[2]], b" ", b'q'),
+            csi(&[&[61], &[1]], b"\"", b'p'),
+            csi(&[&[0]], b"!", b'p'),
+            csi(&[&[4], &[2]], b">", b'm'),
+            dcs(&[&[0]], b"$", b'q', b"\"q"),
+        ]
+    );
+}
+
+#[test]
+fn dcs_parameters_follow_the_same_rules() {
+    assert_eq!(
+        parse(b"\x1bP1;2:3;;qx\x1b\\"),
+        [dcs(&[&[1], &[2, 3], &[0], &[0]], b"", b'q', b"x")]
+    );
+    let input = format!("\x1bP{}qx\x1b\\", numbered(40));
+    assert_eq!(
+        parse(input.as_bytes()),
+        [Action::Dcs {
+            params: numbered_groups(32),
+            intermediates: Vec::new(),
+            final_byte: b'q',
+            payload: b"x".to_vec(),
+            end: StringEnd::St,
+        }]
     );
 }
