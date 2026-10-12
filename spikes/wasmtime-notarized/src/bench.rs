@@ -73,11 +73,23 @@ pub fn print_imports(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// How [`run`] gets the component.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Options {
+    /// Load the artifact a previous run left in the cache, as on every launch
+    /// after the first one, instead of compiling the component.
+    pub cached: bool,
+    /// Read the artifact into anonymous memory instead of mapping the file.
+    /// The hardened runtime treats the two differently.
+    pub from_memory: bool,
+}
+
 /// Runs the guest and prints the metrics as JSON.
-///
-/// With `cached`, the component is loaded from the artifact a previous run
-/// left in the cache, as on every launch after the first one.
-pub fn run(path: &Path, cached: bool) -> Result<()> {
+pub fn run(path: &Path, options: Options) -> Result<()> {
+    let Options {
+        cached,
+        from_memory,
+    } = options;
     let footprint_start = footprint::current()?;
     let bytes = std::fs::read(path)?;
 
@@ -104,9 +116,15 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
     let footprint_compiled = footprint::current()?;
 
     let started = Instant::now();
-    // SAFETY: the file was written by `precompile_component` with an engine
-    // of the same version and configuration, in this run or a previous one.
-    let component = unsafe { Component::deserialize_file(&engine, &cache_file)? };
+    let component = if from_memory {
+        let artifact = std::fs::read(&cache_file)?;
+        // SAFETY: the bytes come from `precompile_component` with an engine of
+        // the same version and configuration, in this run or a previous one.
+        unsafe { Component::deserialize(&engine, &artifact)? }
+    } else {
+        // SAFETY: as above, for the file itself.
+        unsafe { Component::deserialize_file(&engine, &cache_file)? }
+    };
     let deserialize_time = started.elapsed();
     let footprint_deserialized = footprint::current()?;
 
@@ -159,6 +177,10 @@ pub fn run(path: &Path, cached: bool) -> Result<()> {
     println!(r#"  "variant": "{VARIANT}","#);
     println!(r#"  "guest": "{}","#, path.display());
     println!(r#"  "cached": {cached},"#);
+    println!(
+        r#"  "load": "{}","#,
+        if from_memory { "memory" } else { "file" }
+    );
     println!(r#"  "component_bytes": {},"#, bytes.len());
     println!(r#"  "cwasm_bytes": {cwasm_bytes},"#);
     println!(r#"  "engine_ms": {:.3},"#, ms(engine_time));

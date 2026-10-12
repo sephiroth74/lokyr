@@ -44,15 +44,25 @@ The script builds both variants (`build/bin/spike-cranelift` and `build/bin/spik
 ## Build and sign the app
 
 ```sh
-./bundle.sh
+./bundle.sh pulley                                     # build/Spike-Pulley.app, no entitlement exceptions
+./bundle.sh cranelift entitlements/unsigned-memory.plist   # build/Spike-Cranelift.app
 ```
 
-The script builds the release binary, assembles `build/Spike.app` and signs it with the hardened runtime. Two environment variables override the defaults:
-- `SPIKE_SIGN_IDENTITY`: the signing identity;
-- `SPIKE_ENTITLEMENTS`: the entitlements file (default: `entitlements/base.plist`, which grants no exceptions).
+Each bundle contains the host for one variant and the guests, in `Contents/Resources`. It is signed with the hardened runtime and a secure timestamp. `SPIKE_SIGN_IDENTITY` overrides the signing identity.
 
-Check the signature with:
+The `entitlements/` folder holds the variants tested under the hardened runtime:
+
+| File | Exception |
+|---|---|
+| `base.plist` | none |
+| `jit.plist` | `allow-jit` |
+| `unsigned-memory.plist` | `allow-unsigned-executable-memory` |
+| `no-page-protection.plist` | `disable-executable-page-protection` |
+
+Under the hardened runtime, Cranelift works only with `unsigned-memory.plist` (or the broader `no-page-protection.plist`), and only with `--from-memory`. Without it, the kernel kills the process. Pulley works with `base.plist`.
 
 ```sh
-codesign -dv --verbose=4 build/Spike.app   # look for "flags=0x10000(runtime)"
+build/Spike-Pulley.app/Contents/MacOS/spike --bench build/Spike-Pulley.app/Contents/Resources/unknown.wasm
+build/Spike-Cranelift.app/Contents/MacOS/spike --bench build/Spike-Cranelift.app/Contents/Resources/unknown.wasm --from-memory
+codesign -dv --verbose=4 build/Spike-Pulley.app   # look for "flags=0x10000(runtime)"
 ```
