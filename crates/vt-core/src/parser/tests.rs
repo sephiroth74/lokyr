@@ -304,10 +304,75 @@ fn utf8_text_prints() {
 
 #[test]
 fn utf8_characters_can_be_split_across_reads() {
-    assert_eq!(
-        parse_in_reads(&[b"a\xe2", b"\x82", b"\xacb\xf0\x9f", b"\x8e\x89"]),
-        [print("a€b🎉")]
-    );
+    // The first and last character of each length, and of each lead byte
+    // whose second byte has a range of its own. U+0080 to U+009F are left
+    // out, since the parser drops them.
+    let chars = [
+        'A',
+        '\u{7F}',
+        '\u{A0}',
+        '\u{7FF}',
+        '\u{800}',
+        '\u{FFF}',
+        '\u{D000}',
+        '\u{D7FF}',
+        '\u{E000}',
+        '\u{FFFF}',
+        '\u{10000}',
+        '\u{3FFFF}',
+        '\u{40000}',
+        '\u{100000}',
+        '\u{10FFFF}',
+    ];
+    for c in chars {
+        let text = format!("a{c}b");
+        let expected = [print(&text.replace('\u{7F}', ""))];
+        for reads in every_split(text.as_bytes()) {
+            assert_eq!(parse_in_reads(&reads), expected, "{reads:02x?}");
+        }
+    }
+}
+
+#[test]
+fn invalid_utf8_decodes_the_same_at_every_split() {
+    let cases: [(&[u8], Vec<Action>); 7] = [
+        // Characters cut short by ASCII, by another character, and by an
+        // escape sequence.
+        (b"\xe2\x82x", vec![print("\u{FFFD}x")]),
+        (b"\xf0\x9f\xe2\x82\xac", vec![print("\u{FFFD}€")]),
+        (
+            b"\xe2\x82\x1b[m",
+            vec![print("\u{FFFD}"), csi(&[&[0]], b"", b'm')],
+        ),
+        // An overlong form, a surrogate, a value past U+10FFFF, lone bytes.
+        (b"\xc0\xaf", vec![print(&"\u{FFFD}".repeat(2))]),
+        (b"\xed\xa0\x80", vec![print(&"\u{FFFD}".repeat(3))]),
+        (b"\xf4\x90\x80\x80", vec![print(&"\u{FFFD}".repeat(4))]),
+        (b"\x80\xbf\xfe\xff", vec![print(&"\u{FFFD}".repeat(4))]),
+    ];
+    for (input, expected) in cases {
+        for reads in every_split(input) {
+            assert_eq!(parse_in_reads(&reads), expected, "{reads:02x?}");
+        }
+    }
+}
+
+/// Every way to split `input` into reads, one per subset of the gaps
+/// between its bytes.
+fn every_split(input: &[u8]) -> impl Iterator<Item = Vec<&[u8]>> {
+    let gaps = input.len().saturating_sub(1);
+    (0..1_u32 << gaps).map(move |cuts| {
+        let mut reads = Vec::new();
+        let mut start = 0;
+        for end in 1..input.len() {
+            if cuts >> (end - 1) & 1 == 1 {
+                reads.push(&input[start..end]);
+                start = end;
+            }
+        }
+        reads.push(&input[start..]);
+        reads
+    })
 }
 
 #[test]

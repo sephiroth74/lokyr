@@ -33,7 +33,10 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - Past the 32nd value, the values are dropped and the sequence is still dispatched (`vte` ignores such a sequence).
   - An empty value reads as 0, so `CSI m` has one parameter. Handlers read most parameters with a default that also replaces 0: `CSI A`, `CSI 0 A` and `CSI 1 A` are the same. A value too large for 16 bits reads as 65535.
   - A private marker (`?`, `>`, `<`, `=`) is valid only as the first byte. Elsewhere it voids the sequence, which is then consumed without being dispatched.
-- **UTF-8**: incremental decoding; invalid sequences become U+FFFD.
+- **UTF-8**:
+  - Incremental decoding, so a character can be split across reads.
+  - Each maximal subpart of an invalid sequence becomes one U+FFFD, as the Unicode Standard recommends and as Rust's lossy decoding and web browsers do. A character cut short becomes one U+FFFD. Overlong forms, surrogates and values past U+10FFFF become one per byte.
+  - C1 controls encoded in UTF-8 (U+0080 to U+009F) are dropped.
 - **Fast path**:
   - A SIMD loop finds the first byte outside `0x20..=0x7E`. It uses `core::arch`: NEON on aarch64, SSE2/AVX2 on x86_64, with a scalar fallback.
   - Runs of printable ASCII are written straight into the row's cells, respecting margins, autowrap and insert mode.
