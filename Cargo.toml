@@ -18,6 +18,9 @@ repository = "https://github.com/sephiroth74/saetta"
 anyhow = "1.0.104"
 cargo_metadata = "0.23.1"
 libc = "0.2.190"
+# objc2 crates move together: keep their versions aligned.
+objc2-core-foundation = { version = "0.3.2", default-features = false }
+objc2-core-graphics = { version = "0.3.2", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
