@@ -17,7 +17,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 
 | Metric | Target | How it is measured |
 |---|---|---|
-| First presented frame | ≤ 100 ms warm, ≤ 250 ms cold | Launch mach time → `addPresentedHandler`; `wp_presentation` on Linux |
+| First presented frame | ≤ 100 ms warm, ≤ 250 ms cold | Launch mach time → `addPresentedHandler`; for other terminals, `saetta-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
 | Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
 | Idle | 0 wakeups/s; ≤ 2/s with a blinking cursor | `saetta-bench idle`: package idle wakeups, which `top -stats idlew` shows; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
 | Footprint excluding GPU memory | ≤ 30 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `saetta-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
@@ -30,9 +30,13 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 ## How to measure
 
 **Startup**
-- `saetta --bench startup` records when the process started (`proc_pidinfo`) and when the drawable's first `addPresentedHandler` fires. It then exits and prints JSON.
-- Warm: `hyperfine`, with warmup runs.
-- Cold: after `sudo purge` on macOS, or after dropping the page cache on Linux.
+- **Saetta**: `saetta --bench startup` records when the process started (`proc_pidinfo`) and when the drawable's first `addPresentedHandler` fires. It then exits and prints JSON. Warm runs use `hyperfine`, with warmup runs.
+- **Any app**: `saetta-bench startup --app <path> [--runs <n>] [--warmup <n>]`:
+  - launches the app through LaunchServices, as the Dock does, 10 times after 2 warmup runs;
+  - times its first window on screen from the process start, by polling the window server. This approximates the first presented frame, and works for any terminal;
+  - prints the median, the 90th percentile and the spread: the range from the 10th to the 90th percentile, as a fraction of the median;
+  - needs the app not to be running, and the app takes the focus at every launch.
+- **Cold**: after `sudo purge` on macOS, or after dropping the page cache on Linux. With `saetta-bench`, run `sudo purge` before each `startup --runs 1 --warmup 0`.
 
 **Latency**
 - **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`). A p50/p99 histogram is exposed over IPC.
