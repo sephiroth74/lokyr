@@ -1,0 +1,18 @@
+[package]
+name = "saetta-replay"
+description = "Replays a byte stream or a recording into the VT core and prints the screen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+saetta-vt-core.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

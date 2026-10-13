@@ -10,7 +10,7 @@ alias t := test
 fuzz_toolchain := "nightly-2026-10-12"
 
 # Platform-independent crates, which must keep building for Linux.
-portable := "-p saetta-vt-core -p saetta-pty -p saetta-session -p saetta-search -p saetta-kernel -p saetta-text-core -p saetta-render-core -p saetta-ui-core -p saetta-platform-core"
+portable := "-p saetta-vt-core -p saetta-pty -p saetta-session -p saetta-search -p saetta-kernel -p saetta-text-core -p saetta-render-core -p saetta-ui-core -p saetta-platform-core -p saetta-replay"
 
 # List available commands.
 _default:

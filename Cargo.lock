@@ -356,6 +356,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "saetta-replay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "saetta-vt-core",
+ "serde_json",
+]
+
+[[package]]
 name = "saetta-search"
 version = "0.1.0"
 dependencies = [

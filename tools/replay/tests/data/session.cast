@@ -1,0 +1,5 @@
+{"version": 2, "width": 10, "height": 3, "timestamp": 1760000000, "env": {"TERM": "xterm-256color"}}
+[0.010, "o", "$ echo hi\r\n"]
+[0.200, "i", "echo hi\r"]
+[0.210, "o", "hi\r\n$ "]
+[0.500, "o", "0123456789abc"]
