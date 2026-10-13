@@ -1,18 +1,41 @@
 //! The paged grid: cells, rows, pages, the scrollback, and pins into it.
 
+mod arena;
 mod cell;
+mod cell_map;
+mod grapheme;
+mod index;
 mod row;
 mod style;
 
+use thiserror::Error;
+
+use grapheme::GraphemeTable;
+
 pub use cell::{Cell, Content, Semantic, Width};
 pub use row::{Row, RowFlag};
-pub use style::{Color, Rgb, Style, StyleId, StyleTable, TableFull, Underline};
+pub use style::{Color, Rgb, Style, StyleId, StyleTable, Underline};
+
+/// A table of a page has no room left, so the page must grow.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+pub enum TableFull {
+    /// The style table.
+    #[error("the style table is full")]
+    Styles,
+    /// The grapheme table.
+    #[error("the grapheme table is full")]
+    Graphemes,
+}
 
 /// The memory of a standard page, from which its capacity follows.
 pub const PAGE_BYTES: usize = 512 * 1024;
 
 /// How many styles a standard page has room for, the default one aside.
 pub const PAGE_STYLES: u16 = 256;
+
+/// How many cells of a standard page can have a grapheme of several
+/// codepoints.
+pub const PAGE_GRAPHEMES: u16 = 128;
 
 /// How much a page holds: its width, its rows and the capacity of its
 /// tables. The page's memory follows from it.
@@ -24,6 +47,8 @@ pub struct Capacity {
     pub rows: u16,
     /// The styles, the default one aside.
     pub styles: u16,
+    /// The cells with a grapheme of several codepoints.
+    pub graphemes: u16,
 }
 
 impl Capacity {
@@ -35,6 +60,7 @@ impl Capacity {
             cols,
             rows: 0,
             styles: PAGE_STYLES,
+            graphemes: PAGE_GRAPHEMES,
         };
         let row = Self { rows: 1, ..tables }.bytes() - tables.bytes();
         let rows = PAGE_BYTES.saturating_sub(tables.bytes()) / row;
@@ -51,6 +77,22 @@ impl Capacity {
             + rows * size_of::<Row>()
             + rows * usize::from(self.cols) * size_of::<Cell>()
             + StyleTable::memory_for(self.styles)
+            + GraphemeTable::memory_for(self.graphemes)
+    }
+
+    /// This capacity, with twice the room in the table that is `full`.
+    #[must_use]
+    pub fn grown_for(self, full: TableFull) -> Self {
+        match full {
+            TableFull::Styles => Self {
+                styles: self.styles.saturating_mul(2),
+                ..self
+            },
+            TableFull::Graphemes => Self {
+                graphemes: self.graphemes.saturating_mul(2),
+                ..self
+            },
+        }
     }
 }
 
@@ -69,6 +111,7 @@ pub struct Page {
     /// The cells, one row after the other.
     cells: Box<[Cell]>,
     styles: StyleTable,
+    graphemes: GraphemeTable,
 }
 
 impl Page {
@@ -81,6 +124,7 @@ impl Page {
             rows: vec![Row::default(); rows].into_boxed_slice(),
             cells: vec![Cell::EMPTY; rows * usize::from(capacity.cols)].into_boxed_slice(),
             styles: StyleTable::new(capacity.styles),
+            graphemes: GraphemeTable::new(capacity.graphemes),
         }
     }
 
@@ -146,15 +190,50 @@ impl Page {
         &mut self.styles
     }
 
+    /// The codepoints of the grapheme at column `x` of row `y` after the
+    /// first, which the cell holds: none for most cells.
+    pub fn grapheme(&self, y: u16, x: u16) -> &[char] {
+        let index = self.cell_index(y, x);
+        match self.cells[index].content() {
+            Content::Grapheme(_) => self.graphemes.get(Self::key(index)),
+            _ => &[],
+        }
+    }
+
+    /// Adds `c` to the grapheme at column `x` of row `y`, as when a
+    /// combining mark follows a character. The cell must hold a character.
+    pub fn push_codepoint(&mut self, y: u16, x: u16, c: char) -> Result<(), TableFull> {
+        let index = self.cell_index(y, x);
+        let cell = self.cells[index];
+        let first = match cell.content() {
+            Content::Char(first) | Content::Grapheme(first) => first,
+            content => {
+                debug_assert!(false, "{content:?} has no character to add to");
+                return Ok(());
+            }
+        };
+        self.graphemes.push(Self::key(index), c)?;
+        self.cells[index] = cell.with_content(Content::Grapheme(first));
+        let row = self.row_mut(y);
+        row.set(RowFlag::Graphemes, true);
+        row.set(RowFlag::Dirty, true);
+        Ok(())
+    }
+
     /// Puts `cell` at column `x` of row `y`. The cell takes a reference to
     /// its style, which must be in the page's table, and the cell it
-    /// replaces drops one.
+    /// replaces drops one and its grapheme. A cell becomes a grapheme only
+    /// through [`Page::push_codepoint`].
     pub fn set_cell(&mut self, y: u16, x: u16, cell: Cell) {
+        debug_assert!(
+            !matches!(cell.content(), Content::Grapheme(_)),
+            "a grapheme is built with push_codepoint"
+        );
         let index = self.cell_index(y, x);
         let old = self.cells[index];
         // Retain first, in case the old cell holds the last reference.
         self.styles.retain(cell.style());
-        self.styles.release(old.style());
+        self.release(index, old);
         self.cells[index] = cell;
         let row = self.row_mut(y);
         row.set(RowFlag::Dirty, true);
@@ -163,13 +242,12 @@ impl Page {
         }
     }
 
-    /// Empties every cell of row `y`, which drop their styles, and resets
-    /// its metadata. The row is dirty.
+    /// Empties every cell of row `y`, which drop their styles and their
+    /// graphemes, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
-        let range = self.cell_range(y);
-        for cell in &mut self.cells[range] {
-            self.styles.release(cell.style());
-            *cell = Cell::EMPTY;
+        for index in self.cell_range(y) {
+            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
+            self.release(index, cell);
         }
         let row = self.row_mut(y);
         *row = Row::default();
@@ -189,7 +267,9 @@ impl Page {
         let cells = rows * usize::from(self.cols());
         page.cells[..cells].copy_from_slice(&self.cells[..cells]);
         page.styles = self.styles.grown(capacity.styles);
+        page.graphemes = self.graphemes.grown(capacity.graphemes);
         page.capacity.styles = page.styles.capacity() as u16;
+        page.capacity.graphemes = page.graphemes.capacity();
         page
     }
 
@@ -199,6 +279,21 @@ impl Page {
             + size_of_val(&*self.rows)
             + size_of_val(&*self.cells)
             + self.styles.memory()
+            + self.graphemes.memory()
+    }
+
+    /// Drops what `cell`, which was at `index`, held in the tables.
+    fn release(&mut self, index: usize, cell: Cell) {
+        self.styles.release(cell.style());
+        if let Content::Grapheme(_) = cell.content() {
+            self.graphemes.remove(Self::key(index));
+        }
+    }
+
+    /// The key of the cell at `index` in the tables keyed by cell.
+    fn key(index: usize) -> u32 {
+        // A page holds fewer than 2^32 cells: its rows and columns are u16.
+        index as u32
     }
 
     fn row_index(&self, y: u16) -> usize {

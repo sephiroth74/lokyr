@@ -127,10 +127,7 @@ fn clearing_a_row_frees_its_styles_and_resets_it() {
 /// A copy of `page` with twice the room for styles, after checking that it
 /// keeps the cells and stays within its block.
 fn grow(page: &Page) -> Page {
-    let capacity = Capacity {
-        styles: page.capacity().styles.saturating_mul(2),
-        ..page.capacity()
-    };
+    let capacity = page.capacity().grown_for(TableFull::Styles);
     let grown = page.grown(capacity);
     for y in 0..page.len() {
         assert_eq!(grown.cells(y), page.cells(y));
@@ -154,7 +151,7 @@ fn a_page_whose_style_table_fills_up_grows_it() {
         let mut n = 0;
         while let Some(y) = page.push_row() {
             for x in 0..cols {
-                if print(&mut page, y, x, 'x', &nth_style(n)) == Err(TableFull) {
+                if print(&mut page, y, x, 'x', &nth_style(n)) == Err(TableFull::Styles) {
                     page = grow(&page);
                     print(&mut page, y, x, 'x', &nth_style(n)).unwrap();
                 }
@@ -198,4 +195,98 @@ fn a_grown_page_keeps_its_rows_and_their_metadata() {
 #[should_panic(expected = "row 0 is not in use")]
 fn a_row_not_in_use_cannot_be_read() {
     Page::new(Capacity::standard(80)).cells(0);
+}
+
+/// A page of 80 columns with `rows` rows in use.
+fn page_with_rows(rows: u16) -> Page {
+    let mut page = Page::new(Capacity::standard(80));
+    for _ in 0..rows {
+        page.push_row();
+    }
+    page
+}
+
+/// Writes `text` at the start of row `y`, a grapheme per cell, the way the
+/// terminal will: the first codepoint as a character, the others pushed.
+fn print_graphemes(page: &mut Page, y: u16, text: &[&str]) -> Result<(), TableFull> {
+    for (x, grapheme) in (0..).zip(text) {
+        let mut chars = grapheme.chars();
+        let first = chars.next().expect("a grapheme has a codepoint");
+        print(page, y, x, first, &Style::DEFAULT)?;
+        for c in chars {
+            page.push_codepoint(y, x, c)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn codepoints_after_the_first_make_a_grapheme() {
+    let mut page = page_with_rows(1);
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+    print_graphemes(&mut page, 0, &["e\u{301}", "a", family, "\u{2764}\u{FE0F}"]).unwrap();
+    assert_eq!(page.cells(0)[0].content(), Content::Grapheme('e'));
+    assert_eq!(page.grapheme(0, 0), ['\u{301}']);
+    assert_eq!(page.cells(0)[1].content(), Content::Char('a'));
+    assert_eq!(page.grapheme(0, 1), []);
+    let rest: Vec<char> = family.chars().skip(1).collect();
+    assert_eq!(page.grapheme(0, 2), rest, "a cluster longer than a chunk");
+    assert_eq!(page.grapheme(0, 3), ['\u{FE0F}']);
+    assert!(page.row(0).has(RowFlag::Graphemes));
+}
+
+#[test]
+fn overwriting_a_grapheme_frees_its_entry() {
+    let mut page = page_with_rows(1);
+    print_graphemes(&mut page, 0, &["e\u{301}", "o\u{308}"]).unwrap();
+    assert_eq!(page.graphemes.len(), 2);
+    print(&mut page, 0, 0, 'x', &Style::DEFAULT).unwrap();
+    assert_eq!(page.cells(0)[0].content(), Content::Char('x'));
+    assert_eq!(page.grapheme(0, 0), []);
+    assert_eq!(page.graphemes.len(), 1);
+    // The cell can become a grapheme again.
+    page.push_codepoint(0, 0, '\u{302}').unwrap();
+    assert_eq!(page.grapheme(0, 0), ['\u{302}']);
+}
+
+#[test]
+fn clearing_a_row_frees_its_graphemes_only() {
+    let mut page = page_with_rows(2);
+    print_graphemes(&mut page, 0, &["e\u{301}", "o\u{308}"]).unwrap();
+    print_graphemes(&mut page, 1, &["u\u{30A}"]).unwrap();
+    page.clear_row(0);
+    assert_eq!(page.graphemes.len(), 1);
+    assert_eq!(page.grapheme(0, 0), []);
+    assert!(!page.row(0).has(RowFlag::Graphemes));
+    assert_eq!(page.grapheme(1, 0), ['\u{30A}']);
+}
+
+#[test]
+fn a_page_whose_grapheme_table_fills_up_grows_it() {
+    let mut page = page_with_rows(page_with_rows(0).capacity().rows);
+    let cells = page.len() * page.cols();
+    let mark = |n: u32| char::from_u32(0x300 + n % 0x70).expect("a combining mark");
+    // Every cell gets a grapheme of its own, which fills the table again and
+    // again.
+    let mut n = 0;
+    for y in 0..page.len() {
+        for x in 0..page.cols() {
+            print(&mut page, y, x, 'a', &Style::DEFAULT).unwrap();
+            if let Err(full) = page.push_codepoint(y, x, mark(n)) {
+                assert_eq!(full, TableFull::Graphemes);
+                page = page.grown(page.capacity().grown_for(full));
+                page.push_codepoint(y, x, mark(n)).unwrap();
+            }
+            n += 1;
+        }
+    }
+    assert_eq!(page.graphemes.len(), usize::from(cells));
+    let mut n = 0;
+    for y in 0..page.len() {
+        for x in 0..page.cols() {
+            assert_eq!(page.grapheme(y, x), [mark(n)]);
+            n += 1;
+        }
+    }
+    assert_eq!(page.memory(), page.capacity().bytes());
 }

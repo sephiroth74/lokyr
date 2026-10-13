@@ -1,6 +1,7 @@
 //! Styles, colors, and the style table of a page.
 
-use thiserror::Error;
+use super::TableFull;
+use super::index::{Ids, Index, Slot};
 
 /// A color in 8-bit RGB.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -147,20 +148,6 @@ impl StyleId {
     }
 }
 
-/// Where a lookup in the index of a [`StyleTable`] ends.
-#[derive(Clone, Copy, Debug)]
-enum Slot {
-    /// The slot that holds the style.
-    Taken(usize),
-    /// The empty slot where the style would go.
-    Empty(usize),
-}
-
-/// The table has no room for another style.
-#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
-#[error("the style table is full")]
-pub struct TableFull;
-
 /// The styles of a page, deduplicated and reference-counted.
 ///
 /// Cells hold a [`StyleId`] rather than a style. A cell that takes a style
@@ -176,13 +163,9 @@ pub struct StyleTable {
     styles: Box<[Style]>,
     /// How many references each style has; 0 for a free id.
     refs: Box<[u32]>,
-    /// An open-addressing hash index, from a style to its id. 0 is an empty
-    /// slot, since the default style is not indexed.
-    index: Box<[u16]>,
-    /// Ids freed since they were first used, to use again.
-    free: Vec<u16>,
-    /// The lowest id that has never been used.
-    unused: u16,
+    ids: Ids,
+    /// From a style to its id. The default style is not in it.
+    index: Index,
     /// How many styles the table holds, the default one aside.
     len: usize,
 }
@@ -190,21 +173,19 @@ pub struct StyleTable {
 impl StyleTable {
     /// A table with room for `capacity` styles besides the default one.
     pub fn new(capacity: u16) -> Self {
-        let slots = Self::slots_for(capacity);
         let ids = usize::from(capacity) + 1;
         Self {
             styles: vec![Style::DEFAULT; ids].into_boxed_slice(),
             refs: vec![0; ids].into_boxed_slice(),
-            index: vec![0; slots].into_boxed_slice(),
-            free: Vec::with_capacity(usize::from(capacity)),
-            unused: 1,
+            ids: Ids::new(capacity),
+            index: Index::new(capacity),
             len: 0,
         }
     }
 
     /// How many styles the table can hold, the default one aside.
     pub fn capacity(&self) -> usize {
-        self.styles.len() - 1
+        usize::from(self.ids.capacity())
     }
 
     /// How many styles the table holds, the default one aside.
@@ -219,48 +200,34 @@ impl StyleTable {
 
     /// The bytes that a table with room for `capacity` styles allocates.
     pub fn memory_for(capacity: u16) -> usize {
-        let ids = usize::from(capacity) + 1;
-        ids * (size_of::<Style>() + size_of::<u32>())
-            + Self::slots_for(capacity) * size_of::<u16>()
-            + usize::from(capacity) * size_of::<u16>()
+        (usize::from(capacity) + 1) * (size_of::<Style>() + size_of::<u32>())
+            + Ids::memory_for(capacity)
+            + Index::memory_for(capacity)
     }
 
     /// The bytes that the table allocates.
     pub fn memory(&self) -> usize {
         size_of_val(&*self.styles)
             + size_of_val(&*self.refs)
-            + size_of_val(&*self.index)
-            + self.free.capacity() * size_of::<u16>()
+            + self.ids.memory()
+            + self.index.memory()
     }
 
     /// A copy of the table with room for `capacity` styles, at least as many
     /// as it has room for now. Every style keeps its id and its references.
     pub fn grown(&self, capacity: u16) -> Self {
-        let capacity = capacity.max(self.capacity() as u16);
-        let mut table = Self::new(capacity);
+        let mut table = Self::new(capacity.max(self.ids.capacity()));
         let ids = self.styles.len();
         table.styles[..ids].copy_from_slice(&self.styles);
         table.refs[..ids].copy_from_slice(&self.refs);
-        table.free.extend_from_slice(&self.free);
-        table.unused = self.unused;
+        table.ids = self.ids.grown(table.ids.capacity());
         table.len = self.len;
-        for id in 1..self.unused {
-            if self.refs[usize::from(id)] > 0
-                && let Some(Slot::Empty(slot)) = table.find(&table.styles[usize::from(id)])
-            {
-                table.index[slot] = id;
+        for id in self.index.ids() {
+            if let Some(Slot::Empty(slot)) = table.find(&self.styles[usize::from(id)]) {
+                table.index.insert(slot, id);
             }
         }
         table
-    }
-
-    /// How many slots the index of a table with room for `capacity` styles
-    /// has: twice as many, as a power of two.
-    fn slots_for(capacity: u16) -> usize {
-        usize::from(capacity)
-            .saturating_mul(2)
-            .next_power_of_two()
-            .max(2)
     }
 
     /// The style with `id`.
@@ -283,24 +250,17 @@ impl StyleTable {
         }
         let slot = match self.find(style) {
             Some(Slot::Taken(slot)) => {
-                let id = self.index[slot];
+                let id = self.index.id(slot);
                 self.refs[usize::from(id)] += 1;
                 return Ok(StyleId::new(id));
             }
             Some(Slot::Empty(slot)) => slot,
-            None => return Err(TableFull),
+            None => return Err(TableFull::Styles),
         };
-        let id = if let Some(id) = self.free.pop() {
-            id
-        } else if usize::from(self.unused) < self.styles.len() {
-            self.unused += 1;
-            self.unused - 1
-        } else {
-            return Err(TableFull);
-        };
+        let id = self.ids.take().ok_or(TableFull::Styles)?;
         self.styles[usize::from(id)] = *style;
         self.refs[usize::from(id)] = 1;
-        self.index[slot] = id;
+        self.index.insert(slot, id);
         self.len += 1;
         Ok(StyleId::new(id))
     }
@@ -327,10 +287,11 @@ impl StyleTable {
         }
         let style = self.styles[usize::from(id.get())];
         if let Some(Slot::Taken(slot)) = self.find(&style) {
-            self.remove_slot(slot);
+            let styles = &self.styles;
+            self.index.remove(slot, |id| hash(&styles[usize::from(id)]));
         }
         self.styles[usize::from(id.get())] = Style::DEFAULT;
-        self.free.push(id.get());
+        self.ids.give(id.get());
         self.len -= 1;
     }
 
@@ -342,57 +303,18 @@ impl StyleTable {
                 .is_some_and(|&refs| refs > 0)
     }
 
-    /// The index slot where `style` belongs.
-    fn home(&self, style: &Style) -> usize {
-        // Fibonacci hashing: the top bits of the product are the best mixed.
-        let bits = style.bits();
-        let folded = (bits as u64) ^ ((bits >> 64) as u64).rotate_left(29);
-        let hash = folded.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        (hash >> (64 - self.index.len().trailing_zeros())) as usize
-    }
-
     /// The slot of `style` in the index, or the empty slot where it would
     /// go.
-    ///
-    /// The index has twice as many slots as the table has ids, so a lookup
-    /// always meets an empty slot. It still stops after a full turn, so that
-    /// a broken index cannot hang the terminal.
     fn find(&self, style: &Style) -> Option<Slot> {
-        let mask = self.index.len() - 1;
-        let mut slot = self.home(style);
-        for _ in 0..self.index.len() {
-            match self.index[slot] {
-                0 => return Some(Slot::Empty(slot)),
-                id if self.styles[usize::from(id)] == *style => return Some(Slot::Taken(slot)),
-                _ => slot = (slot + 1) & mask,
-            }
-        }
-        debug_assert!(false, "the style index has no empty slot");
-        None
+        self.index
+            .find(hash(style), |id| self.styles[usize::from(id)] == *style)
     }
+}
 
-    /// Empties `slot`, and moves back the entries after it that it would
-    /// hide from a lookup, so that the index needs no tombstones.
-    fn remove_slot(&mut self, slot: usize) {
-        let mask = self.index.len() - 1;
-        let mut hole = slot;
-        let mut next = slot;
-        loop {
-            next = (next + 1) & mask;
-            let id = self.index[next];
-            if id == 0 {
-                break;
-            }
-            let home = self.home(&self.styles[usize::from(id)]);
-            // The entry can fill the hole unless its home lies between the
-            // hole and itself.
-            if next.wrapping_sub(home) & mask >= next.wrapping_sub(hole) & mask {
-                self.index[hole] = id;
-                hole = next;
-            }
-        }
-        self.index[hole] = 0;
-    }
+/// The hash of `style`: its packed bits, folded to 64.
+fn hash(style: &Style) -> u64 {
+    let bits = style.bits();
+    (bits as u64) ^ ((bits >> 64) as u64).rotate_left(29)
 }
 
 #[cfg(test)]
@@ -457,7 +379,7 @@ mod tests {
             .map(|fg| table.acquire(&bold(fg)).unwrap())
             .collect();
         assert_eq!(table.len(), table.capacity());
-        assert_eq!(table.acquire(&bold(4)), Err(TableFull));
+        assert_eq!(table.acquire(&bold(4)), Err(TableFull::Styles));
         assert_eq!(table.acquire(&bold(2)), Ok(ids[1]));
         assert_eq!(table.acquire(&Style::DEFAULT), Ok(StyleId::DEFAULT));
         // Freeing a style makes room.
@@ -468,7 +390,7 @@ mod tests {
     #[test]
     fn a_table_without_capacity_holds_only_the_default_style() {
         let mut table = StyleTable::new(0);
-        assert_eq!(table.acquire(&bold(1)), Err(TableFull));
+        assert_eq!(table.acquire(&bold(1)), Err(TableFull::Styles));
         assert_eq!(table.acquire(&Style::DEFAULT), Ok(StyleId::DEFAULT));
     }
 
@@ -497,7 +419,7 @@ mod tests {
         for fg in 10..15 {
             grown.acquire(&bold(fg)).unwrap();
         }
-        assert_eq!(grown.acquire(&bold(15)), Err(TableFull));
+        assert_eq!(grown.acquire(&bold(15)), Err(TableFull::Styles));
     }
 
     #[test]
@@ -649,7 +571,8 @@ mod tests {
                             entry.1 += 1;
                             held.push((style, id));
                         }
-                        Err(TableFull) => {
+                        Err(full) => {
+                            prop_assert_eq!(full, TableFull::Styles);
                             prop_assert!(!live.contains_key(&style));
                             prop_assert_eq!(live.len(), usize::from(capacity));
                         }
