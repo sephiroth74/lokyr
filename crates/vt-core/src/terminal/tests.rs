@@ -3,7 +3,7 @@
 use super::*;
 use crate::page::{Color, RowFlag, StyleId};
 use crate::parser::Parser;
-use crate::unicode::{Mode, Tables};
+use crate::unicode::{Mode, Normalization, Tables};
 
 /// A terminal with the parser that feeds it.
 struct Term {
@@ -372,4 +372,81 @@ fn the_screens_keep_their_rows_and_cursors() {
     assert!(term.terminal.screen_rows().pages() <= 2);
     term.terminal.set_alternate_screen(false);
     assert_eq!(term.screen(), ["main", ""]);
+}
+
+fn normalizing(normalization: Normalization) -> Term {
+    Term::with(
+        10,
+        2,
+        Options {
+            normalization,
+            ..Options::default()
+        },
+    )
+}
+
+#[test]
+fn nfc_composes_and_a_composed_character_takes_no_grapheme() {
+    let mut term = normalizing(Normalization::Nfc);
+    term.feed("e\u{301}a\u{308}\u{301}");
+    assert_eq!(term.cell(0, 0).content(), Content::Char('\u{E9}'));
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), [], "no grapheme entry");
+    assert_eq!(term.cell(1, 0).content(), Content::Grapheme('\u{E4}'));
+    assert_eq!(page.grapheme(row, 1), ['\u{301}']);
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn nfd_decomposes_even_a_single_character() {
+    let mut term = normalizing(Normalization::Nfd);
+    term.feed("\u{E9}x");
+    assert_eq!(term.cell(0, 0).content(), Content::Grapheme('e'));
+    assert_eq!(term.screen()[0], "e\u{301}x");
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn hangul_composes_into_syllables_and_back() {
+    let mut term = normalizing(Normalization::Nfc);
+    term.feed("\u{1100}\u{1161}\u{11A8}!");
+    assert_eq!(term.cell(0, 0).content(), Content::Char('\u{AC01}'));
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cursor(), (3, 0, false));
+
+    let mut term = normalizing(Normalization::Nfd);
+    term.feed("\u{AC01}!");
+    assert_eq!(term.screen()[0], "\u{1100}\u{1161}\u{11A8}!");
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cursor(), (3, 0, false));
+}
+
+#[test]
+fn hfs_plus_decomposes_but_leaves_its_ranges_alone() {
+    let mut term = normalizing(Normalization::HfsPlus);
+    term.feed("\u{E9}\u{2126}\u{F900}");
+    assert_eq!(term.screen()[0], "e\u{301}\u{2126}\u{F900}");
+    let mut term = normalizing(Normalization::Nfd);
+    term.feed("\u{2126}");
+    assert_eq!(term.screen()[0], "\u{3A9}");
+}
+
+#[test]
+fn without_normalization_text_stays_as_written() {
+    let mut term = normalizing(Normalization::None);
+    term.feed("e\u{301}\u{E9}");
+    assert_eq!(term.screen()[0], "e\u{301}\u{E9}");
+}
+
+#[test]
+fn normalization_keeps_the_style_of_the_cell() {
+    let mut term = normalizing(Normalization::Nfc);
+    let red = Style {
+        fg: Color::Palette(1),
+        ..Style::DEFAULT
+    };
+    term.terminal.set_pen(red);
+    term.feed("e\u{301}");
+    let (page, _) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.styles().get(term.cell(0, 0).style()), &red);
 }

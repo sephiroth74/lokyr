@@ -298,6 +298,29 @@ impl Page {
         Ok(())
     }
 
+    /// Replaces the codepoints of the cluster at column `x` of row `y`, a
+    /// cell that holds a character, with `first` and `rest`, as
+    /// normalization does. The cell keeps its style, width and flags.
+    pub fn set_cluster(
+        &mut self,
+        y: u16,
+        x: u16,
+        first: char,
+        rest: &[char],
+    ) -> Result<(), TableFull> {
+        let index = self.cell_index(y, x);
+        let cell = self.cells[index];
+        if let Content::Grapheme(_) = cell.content() {
+            self.graphemes.remove(Self::key(index));
+        }
+        self.cells[index] = cell.with_content(Content::Char(first));
+        for &c in rest {
+            self.push_codepoint(y, x, c)?;
+        }
+        self.row_mut(y).set(RowFlag::Dirty, true);
+        Ok(())
+    }
+
     /// Puts `cell` at column `x` of row `y`. The cell takes a reference to
     /// its style, which must be in the page's table, and the cell it
     /// replaces drops one, its grapheme and its link. A cell becomes a

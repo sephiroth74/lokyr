@@ -2,7 +2,7 @@
 
 use super::{Cluster, Terminal};
 use crate::page::{Cell, Content, RowFlag, StyleId, Width};
-use crate::unicode::Mode;
+use crate::unicode::{Mode, Normalization};
 
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
@@ -67,6 +67,7 @@ impl Terminal {
         }
         self.release_pen_style(y, style);
         self.cluster = Some(Cluster { x, y });
+        self.normalize(Cluster { x, y });
 
         let cursor = &mut self.screen_mut().cursor;
         if x + width >= cols {
@@ -89,6 +90,7 @@ impl Terminal {
                 Err(full) => rows.grow_page(y, full),
             }
         }
+        self.normalize(cluster);
         if self.widths.mode == Mode::Unicode {
             let (page, row) = self.screen().rows.screen_row(y);
             let cell = page.cells(row)[usize::from(x)];
@@ -154,6 +156,38 @@ impl Terminal {
             cursor.x = x + 1;
             cursor.pending_wrap = false;
         }
+    }
+
+    /// Puts the cluster at `cluster` in the terminal's normal form.
+    fn normalize(&mut self, cluster: Cluster) {
+        if self.normalization == Normalization::None {
+            return;
+        }
+        let Cluster { x, y } = cluster;
+        let (mut codepoints, mut normal) = std::mem::take(&mut self.scratch);
+        {
+            let (page, row) = self.screen().rows.screen_row(y);
+            let (Content::Char(first) | Content::Grapheme(first)) =
+                page.cells(row)[usize::from(x)].content()
+            else {
+                self.scratch = (codepoints, normal);
+                return;
+            };
+            codepoints.clear();
+            codepoints.push(first);
+            codepoints.extend_from_slice(page.grapheme(row, x));
+        }
+        if self.normalization.normalize(&codepoints, &mut normal) {
+            let rows = &mut self.screen_mut().rows;
+            loop {
+                let (page, row) = rows.screen_row_mut(y);
+                match page.set_cluster(row, x, normal[0], &normal[1..]) {
+                    Ok(()) => break,
+                    Err(full) => rows.grow_page(y, full),
+                }
+            }
+        }
+        self.scratch = (codepoints, normal);
     }
 
     /// The cell left of the cursor, or under it while the wrap is pending,

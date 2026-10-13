@@ -4,11 +4,13 @@
 //! The properties come from tables of the Unicode Character Database,
 //! which `cargo xtask ucd` generates for a pinned version of Unicode.
 
+mod normalize;
 mod segment;
 #[rustfmt::skip]
 mod tables;
 mod width;
 
+pub use normalize::Normalization;
 pub use segment::Segmenter;
 pub use tables::UNICODE_VERSION;
 pub use width::{Mode, Tables, Widths};

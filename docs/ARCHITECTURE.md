@@ -180,7 +180,7 @@ Versions and maturity must be rechecked when coding starts.
 | Wayland / X11 (F7) | `smithay-client-toolkit` + `calloop`; `x11rb` + `xkbcommon` + `xim` | |
 | GPU on Linux (F7) | `glow` + `khronos-egl` | |
 | Text | CoreText on macOS (discovery, fallback, shaping, rasterization); `harfrust` + `fontconfig` + `freetype-rs` on Linux (F7) | HarfRust is young: benchmark it against `harfbuzz-sys` before adopting it |
-| Core | `memchr` + `core::arch` for SIMD (`std::simd` is not stable), `regex-automata`, `lz4_flex` | |
+| Core | `memchr` + `core::arch` for SIMD (`std::simd` is not stable), `regex-automata`, `lz4_flex`, `unicode-normalization` | `unicode-normalization` may trail the pinned Unicode version: 17 while the tables are 18 |
 | UI | `taffy`, `accesskit` | |
 | Formats and config | `plist`, `toml_edit` (errors with line and column), `serde`, `ciborium` (CBOR), `notify` | |
 | Plugins | `mlua` with the `luau` and `luau-jit` features, from vendored sources | Luau ships every week or two; pin it and upgrade deliberately |

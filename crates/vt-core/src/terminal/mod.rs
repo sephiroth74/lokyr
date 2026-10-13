@@ -6,7 +6,7 @@ mod print;
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
 use crate::parser::Handler;
-use crate::unicode::{Segmenter, Widths};
+use crate::unicode::{Normalization, Segmenter, Widths};
 
 /// What a terminal is made with.
 #[derive(Clone, Debug, Default)]
@@ -16,6 +16,8 @@ pub struct Options {
     pub scrollback: Scrollback,
     /// How the terminal counts the cells of text.
     pub widths: Widths,
+    /// The normal form that printed text takes.
+    pub normalization: Normalization,
 }
 
 /// Where the cursor of a screen is.
@@ -67,6 +69,10 @@ pub struct Terminal {
     alternate: Screen,
     alternate_active: bool,
     widths: Widths,
+    normalization: Normalization,
+    /// The codepoints of a cluster being normalized, and its normal form,
+    /// kept to be reused.
+    scratch: (Vec<char>, Vec<char>),
     /// The style that printed text takes.
     pen: Style,
     /// Autowrap (DECAWM): printing past the right margin goes on to the
@@ -104,6 +110,8 @@ impl Terminal {
             alternate: screen(no_scrollback),
             alternate_active: false,
             widths: options.widths,
+            normalization: options.normalization,
+            scratch: (Vec::new(), Vec::new()),
             pen: Style::DEFAULT,
             autowrap: true,
             insert: false,
@@ -151,6 +159,17 @@ impl Terminal {
     /// How the terminal counts the cells of text.
     pub fn widths(&self) -> Widths {
         self.widths
+    }
+
+    /// The normal form that printed text takes.
+    pub fn normalization(&self) -> Normalization {
+        self.normalization
+    }
+
+    /// Sets the normal form that printed text takes, from the next
+    /// character on.
+    pub fn set_normalization(&mut self, normalization: Normalization) {
+        self.normalization = normalization;
     }
 
     /// The style that printed text takes.
