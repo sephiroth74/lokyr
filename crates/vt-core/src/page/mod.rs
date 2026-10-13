@@ -4,6 +4,7 @@ mod arena;
 mod cell;
 mod cell_map;
 mod grapheme;
+mod hyperlink;
 mod index;
 mod row;
 mod style;
@@ -13,6 +14,7 @@ use thiserror::Error;
 use grapheme::GraphemeTable;
 
 pub use cell::{Cell, Content, Semantic, Width};
+pub use hyperlink::{Hyperlink, HyperlinkId, HyperlinkTable};
 pub use row::{Row, RowFlag};
 pub use style::{Color, Rgb, Style, StyleId, StyleTable, Underline};
 
@@ -25,6 +27,12 @@ pub enum TableFull {
     /// The grapheme table.
     #[error("the grapheme table is full")]
     Graphemes,
+    /// The hyperlink table, for the targets of links.
+    #[error("the hyperlink table is full")]
+    Hyperlinks,
+    /// The hyperlink table, for the cells that are part of links.
+    #[error("the hyperlink table has no room for another linked cell")]
+    LinkedCells,
 }
 
 /// The memory of a standard page, from which its capacity follows.
@@ -36,6 +44,12 @@ pub const PAGE_STYLES: u16 = 256;
 /// How many cells of a standard page can have a grapheme of several
 /// codepoints.
 pub const PAGE_GRAPHEMES: u16 = 128;
+
+/// How many link targets a standard page has room for.
+pub const PAGE_HYPERLINKS: u16 = 32;
+
+/// How many cells of a standard page can be part of a link.
+pub const PAGE_LINKED_CELLS: u16 = 512;
 
 /// How much a page holds: its width, its rows and the capacity of its
 /// tables. The page's memory follows from it.
@@ -49,6 +63,10 @@ pub struct Capacity {
     pub styles: u16,
     /// The cells with a grapheme of several codepoints.
     pub graphemes: u16,
+    /// The targets of links.
+    pub hyperlinks: u16,
+    /// The cells that are part of links.
+    pub linked_cells: u16,
 }
 
 impl Capacity {
@@ -61,6 +79,8 @@ impl Capacity {
             rows: 0,
             styles: PAGE_STYLES,
             graphemes: PAGE_GRAPHEMES,
+            hyperlinks: PAGE_HYPERLINKS,
+            linked_cells: PAGE_LINKED_CELLS,
         };
         let row = Self { rows: 1, ..tables }.bytes() - tables.bytes();
         let rows = PAGE_BYTES.saturating_sub(tables.bytes()) / row;
@@ -78,6 +98,7 @@ impl Capacity {
             + rows * usize::from(self.cols) * size_of::<Cell>()
             + StyleTable::memory_for(self.styles)
             + GraphemeTable::memory_for(self.graphemes)
+            + HyperlinkTable::memory_for(self.hyperlinks, self.linked_cells)
     }
 
     /// This capacity, with twice the room in the table that is `full`.
@@ -90,6 +111,14 @@ impl Capacity {
             },
             TableFull::Graphemes => Self {
                 graphemes: self.graphemes.saturating_mul(2),
+                ..self
+            },
+            TableFull::Hyperlinks => Self {
+                hyperlinks: self.hyperlinks.saturating_mul(2),
+                ..self
+            },
+            TableFull::LinkedCells => Self {
+                linked_cells: self.linked_cells.saturating_mul(2),
                 ..self
             },
         }
@@ -112,6 +141,7 @@ pub struct Page {
     cells: Box<[Cell]>,
     styles: StyleTable,
     graphemes: GraphemeTable,
+    hyperlinks: HyperlinkTable,
 }
 
 impl Page {
@@ -125,6 +155,7 @@ impl Page {
             cells: vec![Cell::EMPTY; rows * usize::from(capacity.cols)].into_boxed_slice(),
             styles: StyleTable::new(capacity.styles),
             graphemes: GraphemeTable::new(capacity.graphemes),
+            hyperlinks: HyperlinkTable::new(capacity.hyperlinks, capacity.linked_cells),
         }
     }
 
@@ -190,6 +221,51 @@ impl Page {
         &mut self.styles
     }
 
+    /// The hyperlink table that the page's cells refer to.
+    pub fn hyperlinks(&self) -> &HyperlinkTable {
+        &self.hyperlinks
+    }
+
+    /// The hyperlink table, to acquire and release links in.
+    pub fn hyperlinks_mut(&mut self) -> &mut HyperlinkTable {
+        &mut self.hyperlinks
+    }
+
+    /// The link that the cell at column `x` of row `y` is part of.
+    pub fn hyperlink(&self, y: u16, x: u16) -> Option<HyperlinkId> {
+        let index = self.cell_index(y, x);
+        if self.cells[index].has_hyperlink() {
+            self.hyperlinks.cell(Self::key(index))
+        } else {
+            None
+        }
+    }
+
+    /// Makes the cell at column `x` of row `y` part of the link with `link`,
+    /// which must be in the page's table, or of no link.
+    pub fn set_hyperlink(
+        &mut self,
+        y: u16,
+        x: u16,
+        link: Option<HyperlinkId>,
+    ) -> Result<(), TableFull> {
+        let index = self.cell_index(y, x);
+        let cell = self.cells[index];
+        match link {
+            Some(link) => {
+                self.hyperlinks.set_cell(Self::key(index), link)?;
+                self.cells[index] = cell.with_hyperlink(true);
+                self.row_mut(y).set(RowFlag::Hyperlinks, true);
+            }
+            None => {
+                self.hyperlinks.remove_cell(Self::key(index));
+                self.cells[index] = cell.with_hyperlink(false);
+            }
+        }
+        self.row_mut(y).set(RowFlag::Dirty, true);
+        Ok(())
+    }
+
     /// The codepoints of the grapheme at column `x` of row `y` after the
     /// first, which the cell holds: none for most cells.
     pub fn grapheme(&self, y: u16, x: u16) -> &[char] {
@@ -222,13 +298,15 @@ impl Page {
 
     /// Puts `cell` at column `x` of row `y`. The cell takes a reference to
     /// its style, which must be in the page's table, and the cell it
-    /// replaces drops one and its grapheme. A cell becomes a grapheme only
-    /// through [`Page::push_codepoint`].
+    /// replaces drops one, its grapheme and its link. A cell becomes a
+    /// grapheme only through [`Page::push_codepoint`], and part of a link
+    /// only through [`Page::set_hyperlink`].
     pub fn set_cell(&mut self, y: u16, x: u16, cell: Cell) {
         debug_assert!(
             !matches!(cell.content(), Content::Grapheme(_)),
             "a grapheme is built with push_codepoint"
         );
+        debug_assert!(!cell.has_hyperlink(), "a link is set with set_hyperlink");
         let index = self.cell_index(y, x);
         let old = self.cells[index];
         // Retain first, in case the old cell holds the last reference.
@@ -242,8 +320,8 @@ impl Page {
         }
     }
 
-    /// Empties every cell of row `y`, which drop their styles and their
-    /// graphemes, and resets its metadata. The row is dirty.
+    /// Empties every cell of row `y`, which drop their styles, their
+    /// graphemes and their links, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
         for index in self.cell_range(y) {
             let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
@@ -268,8 +346,13 @@ impl Page {
         page.cells[..cells].copy_from_slice(&self.cells[..cells]);
         page.styles = self.styles.grown(capacity.styles);
         page.graphemes = self.graphemes.grown(capacity.graphemes);
+        page.hyperlinks = self
+            .hyperlinks
+            .grown(capacity.hyperlinks, capacity.linked_cells);
         page.capacity.styles = page.styles.capacity() as u16;
         page.capacity.graphemes = page.graphemes.capacity();
+        page.capacity.hyperlinks = page.hyperlinks.capacity();
+        page.capacity.linked_cells = page.hyperlinks.cell_capacity();
         page
     }
 
@@ -280,6 +363,7 @@ impl Page {
             + size_of_val(&*self.cells)
             + self.styles.memory()
             + self.graphemes.memory()
+            + self.hyperlinks.memory()
     }
 
     /// Drops what `cell`, which was at `index`, held in the tables.
@@ -287,6 +371,9 @@ impl Page {
         self.styles.release(cell.style());
         if let Content::Grapheme(_) = cell.content() {
             self.graphemes.remove(Self::key(index));
+        }
+        if cell.has_hyperlink() {
+            self.hyperlinks.remove_cell(Self::key(index));
         }
     }
 

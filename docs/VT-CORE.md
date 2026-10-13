@@ -93,10 +93,13 @@ The metadata fits in one byte.
 
 ### Page
 
-- **Layout**: a fixed memory budget, 512 KiB to start with (to be tuned). For a given width, it sets how many rows fit next to the tables: about 800 at 80 columns, 320 at 200. The page holds a header, the row metadata, the cells, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table.
+- **Layout**: a fixed memory budget, 512 KiB to start with (to be tuned). For a given width, it sets how many rows fit next to the tables: 781 at 80 columns, 312 at 200. The page holds a header, the row metadata, the cells, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table. By default the tables have room for 256 styles, 128 graphemes, 32 link targets and 512 linked cells, about 23 KiB.
 - **Allocation**: each part is allocated once, when the page is created, and never grows. They are separate allocations rather than one block, which in safe Rust would mean packing every table into words; the pool keeps the guarantee that matters, no allocation while output scrolls.
 - **Style table**: its capacity is set with the page's. Equal styles share an id, every cell holds a reference to its style, and the last reference frees the id. The default style, id 0, is not counted, so unstyled text costs nothing. A lookup hashes the style packed in 128 bits, so even a style change on every character stays cheap.
-- **Growth**: when a table fills up, the page is rebuilt with more capacity, so it becomes larger than a standard page. Styles keep their ids, so the cells are copied as they are.
+- **Grapheme table**: the codepoints after the first, for the cells whose cluster has several, in a fixed arena of 4-codepoint chunks and keyed by cell. A cell becomes a grapheme when a codepoint is added to it; overwriting or clearing it frees the entry.
+- **Hyperlink table**: the OSC 8 targets, id and URI, in an arena of 32-byte chunks, deduplicated and reference-counted like the styles, and a map from each linked cell to its link. The terminal's pen holds a reference to the link it writes, and lets go even when a write fails.
+- **Shared machinery**: the tables share one open-addressing index and one allocator of ids. A lookup stops after one turn of the index, which never happens in a sound one, so a bug fails instead of hanging the terminal.
+- **Growth**: when a table fills up, the page is rebuilt with more capacity, so it becomes larger than a standard page. The error says which table is full, and `Capacity::grown_for` doubles that one. Every table keeps its ids, so the cells are copied as they are.
 - **Pool**: pages come from a pool and go back to it. There is no `malloc`/`free` while output scrolls.
 
 ### Page list and scrollback

@@ -176,6 +176,13 @@ impl Index {
     }
 }
 
+/// A hash of `bytes` (FNV-1a), for the keys that are byte strings.
+pub(crate) fn hash_bytes(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xCBF2_9CE4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +228,11 @@ mod tests {
             let found = index.find(colliding(key), |found| keys[usize::from(found) - 1] == key);
             assert_eq!(matches!(found, Some(Slot::Taken(_))), key != 20, "{key}");
         }
+    }
+
+    #[test]
+    fn byte_hashes_differ() {
+        assert_ne!(hash_bytes(b"a"), hash_bytes(b"b"));
+        assert_ne!(hash_bytes(b""), hash_bytes(b"\0"));
     }
 }

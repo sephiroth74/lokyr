@@ -290,3 +290,108 @@ fn a_page_whose_grapheme_table_fills_up_grows_it() {
     }
     assert_eq!(page.memory(), page.capacity().bytes());
 }
+
+fn link<'a>(id: &'a str, uri: &'a str) -> Hyperlink<'a> {
+    Hyperlink {
+        id: id.as_bytes(),
+        uri: uri.as_bytes(),
+    }
+}
+
+/// Writes `text` from the start of row `y` as part of `target`, the way the
+/// terminal will: its pen holds the link while the cells take theirs, and
+/// lets go whether they all could or not.
+fn print_link(
+    page: &mut Page,
+    y: u16,
+    text: &str,
+    target: Hyperlink<'_>,
+) -> Result<HyperlinkId, TableFull> {
+    let id = page.hyperlinks_mut().acquire(target)?;
+    let linked = link_cells(page, y, text, id);
+    page.hyperlinks_mut().release(id);
+    linked.map(|()| id)
+}
+
+fn link_cells(page: &mut Page, y: u16, text: &str, id: HyperlinkId) -> Result<(), TableFull> {
+    for (x, c) in (0..).zip(text.chars()) {
+        print(page, y, x, c, &Style::DEFAULT)?;
+        page.set_hyperlink(y, x, Some(id))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn cells_become_part_of_a_link() {
+    let mut page = page_with_rows(2);
+    let id = print_link(&mut page, 0, "docs", link("1", "https://example.com/docs")).unwrap();
+    print(&mut page, 1, 0, 'x', &Style::DEFAULT).unwrap();
+    for x in 0..4 {
+        assert_eq!(page.hyperlink(0, x), Some(id));
+        assert!(page.cells(0)[usize::from(x)].has_hyperlink());
+    }
+    assert_eq!(page.hyperlink(0, 4), None);
+    assert_eq!(
+        page.hyperlinks().get(id),
+        link("1", "https://example.com/docs")
+    );
+    assert_eq!(page.hyperlinks().references(id), 4);
+    assert!(page.row(0).has(RowFlag::Hyperlinks));
+    assert!(!page.row(1).has(RowFlag::Hyperlinks));
+}
+
+#[test]
+fn overwriting_a_linked_cell_frees_its_entry() {
+    let mut page = page_with_rows(1);
+    let id = print_link(&mut page, 0, "ab", link("", "https://example.com")).unwrap();
+    print(&mut page, 0, 0, 'x', &Style::DEFAULT).unwrap();
+    assert_eq!(page.hyperlink(0, 0), None);
+    assert!(!page.cells(0)[0].has_hyperlink());
+    assert_eq!(page.hyperlinks().references(id), 1);
+    // A cell can also leave its link without being overwritten; the last
+    // cell frees the link.
+    page.set_hyperlink(0, 1, None).unwrap();
+    assert_eq!(page.hyperlink(0, 1), None);
+    let again = print_link(&mut page, 0, "c", link("", "https://other.example")).unwrap();
+    assert_eq!(again, id, "the freed id serves again");
+}
+
+#[test]
+fn clearing_a_row_frees_its_links_only() {
+    let mut page = page_with_rows(2);
+    let first = print_link(&mut page, 0, "first", link("", "a")).unwrap();
+    let both = print_link(&mut page, 1, "both", link("", "b")).unwrap();
+    page.set_hyperlink(0, 9, Some(both)).unwrap();
+    page.clear_row(0);
+    assert_eq!(page.hyperlink(0, 0), None);
+    assert!(!page.row(0).has(RowFlag::Hyperlinks));
+    assert_eq!(page.hyperlinks().references(both), 4);
+    assert_eq!(page.hyperlink(1, 0), Some(both));
+    // The first link has no cell left, so it is gone.
+    assert_eq!(print_link(&mut page, 0, "x", link("", "c")).unwrap(), first);
+}
+
+#[test]
+fn a_page_whose_hyperlink_table_fills_up_grows_it() {
+    let mut page = page_with_rows(page_with_rows(0).capacity().rows);
+    // A link of its own for every row, over every cell of the row: both
+    // the targets and the linked cells run out again and again.
+    for y in 0..page.len() {
+        let uri = format!("https://example.com/{y}");
+        loop {
+            match print_link(&mut page, y, &"x".repeat(80), link("", &uri)) {
+                Ok(_) => break,
+                Err(full) => page = page.grown(page.capacity().grown_for(full)),
+            }
+        }
+    }
+    for y in 0..page.len() {
+        let uri = format!("https://example.com/{y}");
+        let id = page.hyperlink(y, 79).expect("the row is linked");
+        assert_eq!(page.hyperlinks().get(id), link("", &uri));
+        assert_eq!(page.hyperlinks().references(id), 80);
+    }
+    assert!(page.capacity().hyperlinks > PAGE_HYPERLINKS);
+    assert!(page.capacity().linked_cells > PAGE_LINKED_CELLS);
+    assert_eq!(page.memory(), page.capacity().bytes());
+}
