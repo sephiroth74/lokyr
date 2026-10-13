@@ -76,6 +76,7 @@ The format is inspired by Ghostty's *page list*.
 | 46–47 | Semantics: output, prompt, input |
 | 48–63 | Reserved (image placeholders, future use) |
 
+- **Empty cells**: an empty cell is all zeros, U+0000 in the default style, so a new page is empty without being written.
 - **Background-only cells**: cells that carry only a background color (for example after an erase with *background color erase*) don't use up a style.
 - **Multi-codepoint graphemes**: emoji ZWJ sequences and combining characters live in a per-page table, keyed by cell position.
 
