@@ -1,6 +1,7 @@
 //! Build automation for the Saetta workspace, run as `cargo xtask <task>`.
 
 mod check_deps;
+mod ucd;
 
 use std::process::ExitCode;
 
@@ -12,6 +13,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Some("check-deps") => check_deps::run(args),
+        Some("ucd") => ucd::run(args),
         Some(task) => {
             eprintln!("error: unknown task `{task}`\n");
             print_help();
@@ -28,6 +30,7 @@ fn print_help() {
     println!(
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
-         check-deps [--print-graph]  check the dependency rules of the workspace"
+         check-deps [--print-graph]  check the dependency rules of the workspace\n  \
+         ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );
 }

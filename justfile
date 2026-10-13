@@ -58,6 +58,14 @@ check-deps:
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps
 
+# Generate the Unicode tables of vt-core from the pinned Unicode version (downloads the UCD).
+ucd:
+    cargo xtask ucd
+
+# Check that the Unicode tables match the pinned Unicode version (downloads the UCD).
+ucd-check:
+    cargo xtask ucd --check
+
 # Run the benchmarks (not implemented yet).
 bench:
     @echo "bench: not implemented yet" >&2 && exit 1

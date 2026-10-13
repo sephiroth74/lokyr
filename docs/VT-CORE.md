@@ -130,11 +130,13 @@ The metadata fits in one byte.
 
 ## Unicode
 
-- **Tables generated from the UCD** by `xtask ucd`, for a Unicode version pinned in the repo. They cover:
+- **Tables generated from the UCD** by `cargo xtask ucd`, for Unicode 18.0.0, pinned in the repo. They cover:
   - East Asian Width, Emoji_Presentation, Extended_Pictographic;
-  - combining and *default ignorable* characters;
-  - Grapheme_Cluster_Break.
+  - the marks (Mn, Me, Mc), the format characters (Cf) and the *default ignorable* ones;
+  - Grapheme_Cluster_Break, and Indic_Conjunct_Break for rule GB9c of UAX #29;
+  - the East Asian Width of Unicode 8, for `unicode-widths = "8"`.
   - `unicode-width` is not enough, because it does not match `wcwidth`.
+- **The generated file** (`crates/vt-core/src/unicode/tables.rs`) is committed, with the name and date of every UCD file it comes from. `just ucd-check` downloads the files again and checks that they give the same file. Lookups are binary searches over ranges, which ASCII never reaches; a two-level table can replace them if the throughput measurements ask for it.
 - **`unicode` mode (default)**: grapheme segmentation per UAX #29, with the width computed for the whole cluster (ZWJ sequences and VS16 → 2, VS15 → 1).
 - **`legacy` mode**: one codepoint at a time, like `wcwidth`, for programs that compute widths themselves.
 - **Mode 2027**: lets programs query and switch the mode.
