@@ -76,6 +76,12 @@ impl GraphemeTable {
         Ok(())
     }
 
+    /// Forgets every entry, without allocating.
+    pub(crate) fn clear(&mut self) {
+        self.spans.clear();
+        self.codepoints.clear();
+    }
+
     /// Forgets the codepoints of `cell`.
     pub(crate) fn remove(&mut self, cell: u32) {
         if let Some(span) = self.spans.remove(cell) {

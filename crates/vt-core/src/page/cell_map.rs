@@ -79,6 +79,13 @@ impl<V: Copy + Default> CellMap<V> {
         Ok(())
     }
 
+    /// Removes every entry, without allocating.
+    pub(crate) fn clear(&mut self) {
+        self.ids.clear();
+        self.index.clear();
+        self.len = 0;
+    }
+
     /// Removes the entry of `cell`, and returns its value.
     pub(crate) fn remove(&mut self, cell: u32) -> Option<V> {
         let Slot::Taken(slot) = self.find(cell)? else {

@@ -78,6 +78,12 @@ impl<T: Copy + Default, const CHUNK: usize> Arena<T, CHUNK> {
         None
     }
 
+    /// Gives back every chunk.
+    pub(crate) fn clear(&mut self) {
+        self.used.fill(0);
+        self.first_free = 0;
+    }
+
     /// Gives back the chunks of `span`.
     pub(crate) fn free(&mut self, span: Span) {
         self.mark(span.chunk, Self::chunks_for(span.len), false);

@@ -57,6 +57,12 @@ impl Ids {
         1..self.unused
     }
 
+    /// Takes every id back, without allocating.
+    pub(crate) fn clear(&mut self) {
+        self.free.clear();
+        self.unused = 1;
+    }
+
     /// The same ids, with room for `capacity`.
     pub(crate) fn grown(&self, capacity: u16) -> Self {
         let mut ids = Self::new(capacity.max(self.capacity));
@@ -108,6 +114,11 @@ impl Index {
             .saturating_mul(2)
             .next_power_of_two()
             .max(2)
+    }
+
+    /// Empties every slot.
+    pub(crate) fn clear(&mut self) {
+        self.slots.fill(0);
     }
 
     /// The id in `slot`.

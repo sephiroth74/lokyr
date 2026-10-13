@@ -104,7 +104,9 @@ The metadata fits in one byte.
 
 ### Page list and scrollback
 
-- **Structure**: a doubly linked list. The last pages form the active screen; the earlier ones form the scrollback.
+- **Structure**: a doubly linked list of indexes into a slab, oldest first, rather than of pointers. The last rows form the active screen; the earlier ones form the scrollback. Scrolling adds an empty row at the bottom, in a new page when the last one is full.
+- **Page ids**: a page's id carries the generation of its slot, so the id of a page that left the list goes stale instead of naming another page.
+- **Eviction**: the list holds at most a number of pages, which the byte limits below set. When it needs a new page at that number, the oldest page leaves first: it is emptied and goes back to the pool, so the list keeps no spare page. A page grown past the standard size is freed instead.
 - **Byte-based limits**: one per pane (10 MB by default) and one global limit across all panes. Past the limit, the oldest pages return to the pool.
 - **Cold-page compaction**:
   - Short lines waste space in fixed-width pages. So a few screens away from the viewport, rows are rewritten in a variable-length format that drops trailing blank cells.

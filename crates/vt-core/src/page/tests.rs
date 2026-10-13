@@ -395,3 +395,30 @@ fn a_page_whose_hyperlink_table_fills_up_grows_it() {
     assert!(page.capacity().linked_cells > PAGE_LINKED_CELLS);
     assert_eq!(page.memory(), page.capacity().bytes());
 }
+
+#[test]
+fn a_reset_page_is_as_new() {
+    let mut page = page_with_rows(3);
+    print(&mut page, 0, 0, 'a', &bold(1)).unwrap();
+    print_graphemes(&mut page, 1, &["e\u{301}"]).unwrap();
+    print_link(&mut page, 2, "ab", link("", "https://example.com")).unwrap();
+    page.row_mut(0).set(RowFlag::SoftWrapped, true);
+    page.reset();
+    assert!(page.is_empty());
+    assert!(page.styles().is_empty());
+    assert_eq!(page.graphemes.len(), 0);
+    // Its rows come back empty, and its tables work as new ones.
+    for _ in 0..3 {
+        page.push_row();
+    }
+    for y in 0..3 {
+        assert!(page.cells(y).iter().all(|&cell| cell == Cell::EMPTY));
+        assert_eq!(page.row(y), Row::default());
+    }
+    print(&mut page, 0, 0, 'b', &bold(2)).unwrap();
+    assert_eq!(page.styles().get(page.cells(0)[0].style()), &bold(2));
+    print_graphemes(&mut page, 1, &["o\u{308}"]).unwrap();
+    assert_eq!(page.grapheme(1, 0), ['\u{308}']);
+    let id = print_link(&mut page, 2, "c", link("", "https://other.example")).unwrap();
+    assert_eq!(page.hyperlinks().get(id), link("", "https://other.example"));
+}

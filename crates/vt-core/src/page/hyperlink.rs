@@ -197,6 +197,15 @@ impl HyperlinkTable {
         }
     }
 
+    /// Forgets every link and linked cell, without allocating.
+    pub(crate) fn clear(&mut self) {
+        self.links.fill(Link::default());
+        self.bytes.clear();
+        self.ids.clear();
+        self.index.clear();
+        self.cells.clear();
+    }
+
     /// The same links and cells, with room for `links` links and `cells`
     /// cells, at least as many as now.
     pub(crate) fn grown(&self, links: u16, cells: u16) -> Self {

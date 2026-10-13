@@ -6,6 +6,7 @@ mod cell_map;
 mod grapheme;
 mod hyperlink;
 mod index;
+mod list;
 mod row;
 mod style;
 
@@ -15,6 +16,7 @@ use grapheme::GraphemeTable;
 
 pub use cell::{Cell, Content, Semantic, Width};
 pub use hyperlink::{Hyperlink, HyperlinkId, HyperlinkTable};
+pub use list::{PageId, PageList};
 pub use row::{Row, RowFlag};
 pub use style::{Color, Rgb, Style, StyleId, StyleTable, Underline};
 
@@ -330,6 +332,18 @@ impl Page {
         let row = self.row_mut(y);
         *row = Row::default();
         row.set(RowFlag::Dirty, true);
+    }
+
+    /// Empties the page as it was new, with no row in use, without
+    /// allocating: what the pool does before handing a page out again.
+    pub fn reset(&mut self) {
+        let used = usize::from(self.len) * usize::from(self.cols());
+        self.cells[..used].fill(Cell::EMPTY);
+        self.rows[..usize::from(self.len)].fill(Row::default());
+        self.styles.clear();
+        self.graphemes.clear();
+        self.hyperlinks.clear();
+        self.len = 0;
     }
 
     /// A copy of the page with `capacity`, which must have its width and at

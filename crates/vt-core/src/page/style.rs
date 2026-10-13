@@ -213,6 +213,15 @@ impl StyleTable {
             + self.index.memory()
     }
 
+    /// Forgets every style but the default one, without allocating.
+    pub fn clear(&mut self) {
+        self.styles.fill(Style::DEFAULT);
+        self.refs.fill(0);
+        self.ids.clear();
+        self.index.clear();
+        self.len = 0;
+    }
+
     /// A copy of the table with room for `capacity` styles, at least as many
     /// as it has room for now. Every style keeps its id and its references.
     pub fn grown(&self, capacity: u16) -> Self {
