@@ -65,7 +65,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - live resize, clipboard, menus;
   - an accessibility skeleton.
 - **`font-coretext` and `text-core`**:
-  - font discovery and fallback;
+  - font discovery and fallback, and an optional separate font for non-ASCII text, like iTerm2's;
   - CoreText shaping with ligatures;
   - glyph atlas, box-drawing and powerline sprites.
 - **`render-metal`**: instanced cells, cursor (block, bar and underline, blinking as DECSCUSR asks), selection, decorations.
@@ -133,6 +133,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **IPC and remote CLI** (`saetta cli …`).
 - **Search**: filter mode.
 - **Settings**: a panel generated from the config schemas.
+- **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
 
 ### F5c — Graphics and kitty protocols
 

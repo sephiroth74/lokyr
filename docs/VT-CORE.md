@@ -138,6 +138,7 @@ The metadata fits in one byte.
   - `unicode-widths`: the tables of the Unicode version that Saetta ships, or those of Unicode 8, for programs that predate Unicode 9. Unicode 8 gives most emoji one cell, and Unicode 9 gave them two. `xtask ucd` generates the Unicode 8 table too.
   - `ambiguous-width`: the cells that East Asian Ambiguous characters take (①, ※, ○, Greek and Cyrillic letters…): 1 by default, 2 for CJK setups whose programs count them as two, like vim's `ambiwidth=double`. It is an explicit option, not a guess from the locale, because it must match the programs.
   - A change applies to new output; the cells already written keep their widths.
+- **Normalization**: the `normalization` option puts the text in a Unicode normal form as it is printed: none (the default), NFC, NFD, or HFS+, Apple's variant of NFD, which leaves the ranges U+2000–U+2FFF, U+F900–U+FAFF and U+2F800–U+2FAFF alone. NFC shows the decomposed names of macOS files composed, Hangul included, and a composed character takes no grapheme entry. Each cluster is normalized as it is built.
 
 ### Settings
 
@@ -148,6 +149,7 @@ The `[terminal]` section of the config:
 term = "xterm-256color"   # what TERM tells programs: xterm-saetta, xterm-256color, xterm, ansi, vt100, vt220, dtterm, linux…
 unicode-widths = "current" # current | 8
 ambiguous-width = 1       # 1 | 2
+normalization = "none"    # none | nfc | nfd | hfs+
 ```
 
 `term` changes only what programs are told, never the emulation, which stays xterm's. The other values describe subsets of what xterm does, so they work as they are.
@@ -187,6 +189,7 @@ ambiguous-width = 1       # 1 | 2
 - **Write queue**: collects input (keys, pastes in chunks, replies to terminal reports).
 - **Renderer snapshot**: under the lock, it copies only the visible dirty rows and the styles they use.
 - **Independence from the main thread**: the I/O thread never waits for it. If the renderer falls behind, it jumps straight to the latest state.
+- **Encodings** (F5b): the terminal works in UTF-8 only. Other encodings, chosen per profile, come after the MVP as a conversion in the session, with `encoding_rs`: the bytes from the PTY become UTF-8 before the parser, and the input goes back in the program's encoding. Latin-1, windows-125x, Shift_JIS, EUC-JP, EUC-KR, GB18030, Big5 and ISO-2022-JP are among them. C1 controls stay 7-bit only.
 
 ## Terminfo
 

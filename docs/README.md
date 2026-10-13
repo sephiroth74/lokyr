@@ -40,6 +40,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Search the buffer | Kernel `search` service for the engine, `search` plugin for the UI | [UI-AND-FEATURES](UI-AND-FEATURES.md#search) | F3 |
 | Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy, gliding) | `[cursor]` options, drawn by `render-metal`; the animations run only while they are in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor) | F2–F3 |
 | Widths and terminal type that match the programs': the reported `TERM`, Unicode 8 or current width tables, ambiguous-width characters | `[terminal]` options, which the width computation of `vt-core` and the PTY's environment follow | [VT-CORE](VT-CORE.md#settings) | F1–F2 |
+| iTerm2's text options: Unicode normalization (NFC, NFD, HFS+), a separate font for non-ASCII text | The `normalization` option of `[terminal]`; the non-ASCII font in `[font]` | [VT-CORE](VT-CORE.md#unicode), [ROADMAP](ROADMAP.md#f2--macos-single-pane) | F1–F2 |
+| Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
 | iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
 | Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
