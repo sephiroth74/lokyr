@@ -4,10 +4,14 @@
 //! The properties come from tables of the Unicode Character Database,
 //! which `cargo xtask ucd` generates for a pinned version of Unicode.
 
+mod segment;
 #[rustfmt::skip]
 mod tables;
+mod width;
 
+pub use segment::Segmenter;
 pub use tables::UNICODE_VERSION;
+pub use width::{Mode, Tables, Widths};
 
 /// How wide a character is in East Asian typography (UAX #11), as far as
 /// the grid cares.

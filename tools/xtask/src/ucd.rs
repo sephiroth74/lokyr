@@ -2,10 +2,12 @@
 //! Unicode Character Database.
 //!
 //! The UCD files are downloaded with `curl` into `target/ucd/<version>/`,
-//! and kept there for the next run. The output is
-//! `crates/vt-core/src/unicode/tables.rs`, which is committed. With
-//! `--check`, the task regenerates the tables in memory and fails if they
-//! differ from the committed file.
+//! and kept there for the next run. The outputs are
+//! `crates/vt-core/src/unicode/tables.rs`, and a copy of the UCD's
+//! `GraphemeBreakTest.txt` in `crates/vt-core/testdata/`, so that the
+//! conformance test follows the version of the tables. Both are committed.
+//! With `--check`, the task regenerates them in memory and fails if they
+//! differ from the committed files.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -22,8 +24,12 @@ const VERSION: &str = "18.0.0";
 /// Unicode 9, which gave most emoji two cells.
 const LEGACY_WIDTHS_VERSION: &str = "8.0.0";
 
-/// The generated file, relative to the workspace root.
+/// The generated tables, relative to the workspace root.
 const OUTPUT: &str = "crates/vt-core/src/unicode/tables.rs";
+
+/// The copy of the grapheme conformance test, relative to the workspace
+/// root.
+const BREAK_TEST: &str = "crates/vt-core/testdata/GraphemeBreakTest.txt";
 
 /// The unassigned code points that East_Asian_Width gives "W" rather than
 /// the "N" of its `@missing` line, as the header of `EastAsianWidth.txt`
@@ -46,21 +52,36 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         }
     }
     let root = workspace_root();
-    let tables = generate(&root)?;
-    let output = root.join(OUTPUT);
-    if check {
-        let committed =
-            fs::read_to_string(&output).with_context(|| format!("reading {}", output.display()))?;
-        if committed != tables {
-            eprintln!("error: {OUTPUT} differs from what Unicode {VERSION} generates");
-            return Ok(ExitCode::FAILURE);
+    let outputs = [
+        (OUTPUT, generate(&root)?),
+        (
+            BREAK_TEST,
+            fetch(&root, VERSION, "ucd/auxiliary/GraphemeBreakTest.txt")?.text,
+        ),
+    ];
+    let mut failed = false;
+    for (path, contents) in outputs {
+        let output = root.join(path);
+        if check {
+            let committed = fs::read_to_string(&output)
+                .with_context(|| format!("reading {}", output.display()))?;
+            if committed == contents {
+                println!("ucd: {path} matches Unicode {VERSION}");
+            } else {
+                eprintln!("error: {path} differs from what Unicode {VERSION} gives");
+                failed = true;
+            }
+        } else {
+            fs::write(&output, &contents)
+                .with_context(|| format!("writing {}", output.display()))?;
+            println!("ucd: wrote {path} from Unicode {VERSION}");
         }
-        println!("ucd: {OUTPUT} matches Unicode {VERSION}");
-    } else {
-        fs::write(&output, &tables).with_context(|| format!("writing {}", output.display()))?;
-        println!("ucd: wrote {OUTPUT} from Unicode {VERSION}");
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn workspace_root() -> PathBuf {

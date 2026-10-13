@@ -137,8 +137,12 @@ The metadata fits in one byte.
   - the East Asian Width of Unicode 8, for `unicode-widths = "8"`.
   - `unicode-width` is not enough, because it does not match `wcwidth`.
 - **The generated file** (`crates/vt-core/src/unicode/tables.rs`) is committed, with the name and date of every UCD file it comes from. `just ucd-check` downloads the files again and checks that they give the same file. Lookups are binary searches over ranges, which ASCII never reaches; a two-level table can replace them if the throughput measurements ask for it.
-- **`unicode` mode (default)**: grapheme segmentation per UAX #29, with the width computed for the whole cluster (ZWJ sequences and VS16 → 2, VS15 → 1).
-- **`legacy` mode**: one codepoint at a time, like `wcwidth`, for programs that compute widths themselves.
+- **`unicode` mode (default)**: grapheme segmentation per UAX #29, with the width computed for the whole cluster.
+  - The segmenter takes one codepoint at a time, as text arrives, and passes the conformance test of the UCD, `GraphemeBreakTest.txt`, which `cargo xtask ucd` copies next to the tables.
+  - Unicode 18 changed rule GB9c: a consonant joins after a linker and extenders, with no consonant needed before the linker.
+  - A cluster is as wide as its first codepoint, except that emoji presentation changes it: VS16 after a pictographic or a keycap base gives 2, VS15 gives 1, and a flag or an emoji ZWJ sequence gives 2. With the Unicode 8 tables, which knew no emoji presentation, a cluster is always as wide as its first codepoint.
+- **`legacy` mode**: one codepoint at a time, like `wcwidth`, for programs that compute widths themselves. A codepoint of no width joins the cell before it.
+- **The width of a codepoint**, as Markus Kuhn's `wcwidth` counts it: none for controls, nonspacing and enclosing marks, format and default-ignorable characters, and the Hangul vowels and final consonants that combine into syllables, but one for the soft hyphen; two for wide and fullwidth characters, and for the ambiguous ones when they count as wide; one otherwise.
 - **Mode 2027**: lets programs query and switch the mode.
 - **Width tables that match the programs'**: a program that counts a character's width differently from the terminal misplaces the cursor and the text after it. Two options make the terminal count as the programs do, in either mode:
   - `unicode-widths`: the tables of the Unicode version that Saetta ships, or those of Unicode 8, for programs that predate Unicode 9. Unicode 8 gives most emoji one cell, and Unicode 9 gave them two. `xtask ucd` generates the Unicode 8 table too.
