@@ -106,8 +106,12 @@ The metadata fits in one byte.
 
 - **Structure**: a doubly linked list of indexes into a slab, oldest first, rather than of pointers. The last rows form the active screen; the earlier ones form the scrollback. Scrolling adds an empty row at the bottom, in a new page when the last one is full.
 - **Page ids**: a page's id carries the generation of its slot, so the id of a page that left the list goes stale instead of naming another page.
-- **Eviction**: the list holds at most a number of pages, which the byte limits below set. When it needs a new page at that number, the oldest page leaves first: it is emptied and goes back to the pool, so the list keeps no spare page. A page grown past the standard size is freed instead.
-- **Byte-based limits**: one per pane (10 MB by default) and one global limit across all panes. Past the limit, the oldest pages return to the pool.
+- **Eviction**: when a new page would pass the byte limits below, the oldest page leaves first: it is emptied and goes back to the pool, which hands it out again, so the list keeps no spare page and scrolling at the limit allocates nothing. A page grown past the standard size is freed instead. The oldest page leaves only when the rows after it cover the screen.
+- **Byte-based limits**:
+  - One per pane, 10 MiB by default, over the pages of the list and of its pool.
+  - A global budget shared by all panes, 100 MiB by default, counted atomically since each pane has its own I/O thread.
+  - A pane that needs a page past either limit makes room with its own oldest pages: a busy pane never takes the scrollback of an idle one.
+  - A screen always gets its pages, even past the limits. When a page grows, or another pane's screen passes the budget, the pane frees its oldest pages, at its next new page, until it is within the limits again. So only the pages that screens need can pass them.
 - **Cold-page compaction**:
   - Short lines waste space in fixed-width pages. So a few screens away from the viewport, rows are rewritten in a variable-length format that drops trailing blank cells.
   - A compacted page returns to the normal format when it is needed again (scrolling, search).

@@ -4,7 +4,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
 
-use saetta_vt_core::page::{Capacity, Cell, Content, PageList, Rgb};
+use saetta_vt_core::page::{Capacity, Cell, Content, PageList, Rgb, Scrollback};
 
 /// The system allocator, counting the allocations of each thread, so that
 /// tests that run in parallel do not count each other's.
@@ -70,11 +70,17 @@ fn scroll(list: &mut PageList, first: u32, lines: u32) {
 
 #[test]
 fn scrolling_a_million_lines_allocates_nothing_once_the_pool_is_warm() {
-    let mut list = PageList::new(80, 24, 4);
+    // Room for four pages.
+    let pages = 4;
+    let scrollback = Scrollback {
+        limit: pages * Capacity::standard(80).bytes(),
+        budget: None,
+    };
+    let mut list = PageList::new(80, 24, scrollback);
     let page_rows = u32::from(Capacity::standard(80).rows);
 
     // Enough lines to fill every page the list can hold, and to recycle one.
-    let warm = (list.max_pages() as u32 + 1) * page_rows;
+    let warm = (pages as u32 + 1) * page_rows;
     let start = allocations();
     scroll(&mut list, 0, warm);
     assert!(
@@ -98,5 +104,5 @@ fn scrolling_a_million_lines_allocates_nothing_once_the_pool_is_warm() {
     let last = warm + lines - 1;
     let first = last + 1 - numbers.len() as u32;
     assert_eq!(numbers, (first..=last).collect::<Vec<u32>>());
-    assert!(numbers.len() >= (list.max_pages() - 1) * page_rows as usize);
+    assert!(numbers.len() >= (pages - 1) * page_rows as usize);
 }
