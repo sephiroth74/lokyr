@@ -3,8 +3,9 @@ resolver = "3"
 # Cargo rejects member globs that match no directory, so a glob is added
 # only once its directory exists.
 members = ["crates/*", "faretra/*", "plugins/*", "tools/*"]
-# Spikes are throwaway experiments with their own manifests.
-exclude = ["spikes"]
+# Spikes are throwaway experiments with their own manifests, and the fuzz
+# targets build only with nightly.
+exclude = ["fuzz", "spikes"]
 
 [workspace.package]
 version = "0.1.0"

@@ -16,6 +16,8 @@ mod properties;
 #[cfg(test)]
 mod reference;
 #[cfg(test)]
+mod seeds;
+#[cfg(test)]
 mod tests;
 
 pub use handler::{Handler, StringEnd};

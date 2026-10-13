@@ -163,7 +163,7 @@ fn final_byte(action: char) -> u8 {
 
 /// Inputs that leave the parser in each state, several for most states so
 /// that their transitions run with different parameters and intermediates.
-const PREFIXES: &[(&[u8], State)] = &[
+pub(super) const PREFIXES: &[(&[u8], State)] = &[
     (b"", State::Ground),
     (b"\x1b[m", State::Ground),
     (b"\x1b", State::Escape),
@@ -206,7 +206,7 @@ const PREFIXES: &[(&[u8], State)] = &[
 
 /// Bytes that end whatever came before them and print, so that the state
 /// it left shows in the actions.
-const PROBE: &[u8] = b"x\x07\x18y";
+pub(super) const PROBE: &[u8] = b"x\x07\x18y";
 
 /// Whether the parser and `vte` disagree on `byte` in `state` by design.
 fn differs_by_design(state: State, byte: u8) -> bool {
@@ -250,7 +250,7 @@ fn the_prefixes_reach_every_state() {
 }
 
 /// Sequences that programs send, with malformed ones mixed in.
-const CORPUS: &[&[u8]] = &[
+pub(super) const CORPUS: &[&[u8]] = &[
     // Text, controls and UTF-8.
     b"hello, world\r\n",
     "naïve café — ✓ 🎉 日本語\r\n".as_bytes(),

@@ -1,0 +1,25 @@
+[package]
+name = "saetta-fuzz"
+description = "Fuzz targets, run with cargo-fuzz on a nightly toolchain"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+saetta-vt-core = { path = "../crates/vt-core" }
+
+[[bin]]
+name = "parser"
+path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+bench = false
+
+# A workspace of its own, since it builds only with nightly.
+[workspace]
+members = ["."]

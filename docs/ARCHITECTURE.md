@@ -192,6 +192,7 @@ Versions and maturity must be rechecked when coding starts.
 - **Toolchain**: stable Rust, pinned in `rust-toolchain.toml`; edition 2024. Targets:
   - `aarch64-apple-darwin` only, with macOS 26 as the deployment target ([ADR 0013](adr/0013-platform-baseline.md));
   - `x86_64-unknown-linux-gnu`, for the CI job that builds the platform-independent crates.
+- **Fuzzing** alone uses nightly Rust, which cargo-fuzz needs. That toolchain is pinned too, in the `justfile`, and `fuzz/` is a workspace of its own so that the main one never needs nightly.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
 - **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in the SIMD fast path of `vt-core`, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, and in `tools/bench`, which reads other processes' statistics from the kernel. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau` and `tools/bench` use `#![deny(unsafe_code)]` and allow their call sites one by one.

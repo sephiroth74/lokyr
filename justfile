@@ -5,6 +5,10 @@ alias f := fmt
 alias l := lint
 alias t := test
 
+# The nightly toolchain that cargo-fuzz needs, pinned like the main one:
+# bump it in a dedicated commit.
+fuzz_toolchain := "nightly-2026-10-12"
+
 # Platform-independent crates, which must keep building for Linux.
 portable := "-p saetta-vt-core -p saetta-pty -p saetta-session -p saetta-search -p saetta-kernel -p saetta-text-core -p saetta-render-core -p saetta-ui-core -p saetta-platform-core"
 
@@ -58,9 +62,15 @@ ci: lint build test check-linux deny check-deps
 bench:
     @echo "bench: not implemented yet" >&2 && exit 1
 
-# Run the fuzz targets (not implemented yet).
-fuzz:
-    @echo "fuzz: not implemented yet" >&2 && exit 1
+# Fuzz a target for `seconds`, seeded from the tests (needs `cargo install cargo-fuzz --locked`).
+fuzz target="parser" seconds="600": fuzz-seeds
+    rustup toolchain install {{ fuzz_toolchain }} --profile minimal
+    mkdir -p fuzz/corpus/{{ target }}
+    cargo +{{ fuzz_toolchain }} fuzz run {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/{{ target }} -- -max_total_time={{ seconds }}
+
+# Export the inputs of the parser's tests as fuzzing seeds.
+fuzz-seeds:
+    SAETTA_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p saetta-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact
 
 # Build the signed app bundle (not implemented yet).
 bundle:
