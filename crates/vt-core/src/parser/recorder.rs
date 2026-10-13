@@ -6,7 +6,9 @@ use super::{Handler, Params, StringEnd};
 ///
 /// Consecutive prints merge into one, and a control string becomes a single
 /// action with its whole payload, so the actions do not depend on how the
-/// input was split into reads.
+/// input was split into reads. For the same reason, a string that passed its
+/// size limit keeps no payload: how much of it arrived depends on the reads,
+/// and the handler discards it anyway.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     /// Text printed, by [`Handler::print`] or [`Handler::print_ascii`].
@@ -110,11 +112,14 @@ impl Recorder {
     }
 
     fn close(&mut self, which: Which, end: StringEnd) {
-        let open = self
+        let mut open = self
             .open
             .take()
             .expect("a control string ended without starting");
         assert_eq!(open.kind.which(), which, "the wrong control string ended");
+        if end == StringEnd::TooLong {
+            open.payload.clear();
+        }
         self.actions.push(open.finish(end));
     }
 }
@@ -334,6 +339,21 @@ mod tests {
                     end: StringEnd::TooLong,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_string_past_its_limit_keeps_no_payload() {
+        let mut recorder = Recorder::new();
+        recorder.osc_start();
+        recorder.osc_put(b"52;c;");
+        recorder.osc_end(StringEnd::TooLong);
+        assert_eq!(
+            recorder.actions(),
+            [Action::Osc {
+                payload: Vec::new(),
+                end: StringEnd::TooLong,
+            }]
         );
     }
 

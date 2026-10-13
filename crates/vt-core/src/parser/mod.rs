@@ -12,6 +12,8 @@ mod table;
 mod utf8;
 
 #[cfg(test)]
+mod properties;
+#[cfg(test)]
 mod reference;
 #[cfg(test)]
 mod tests;
@@ -236,15 +238,21 @@ impl Parser {
     /// Delivers `chunk`, a run of payload bytes, unless it takes the string
     /// past its limit. Then the string ends, and the rest of it is consumed.
     fn put<H: Handler>(&mut self, handler: &mut H, payload: Payload, chunk: &[u8]) {
+        // Each byte counts against the limit in force when it arrives, so that
+        // the outcome does not depend on the reads: the bytes that make an
+        // OSC number known count against the general limit, and the whole
+        // chunk against the number's own.
+        let mut fits = true;
         if payload == Payload::Osc
-            && let Some(limit) = self.osc_number.read(chunk, &self.limits)
+            && let Some((read, limit)) = self.osc_number.read(chunk, &self.limits)
         {
+            fits = read <= self.payload_limit.saturating_sub(self.payload_len);
             self.payload_limit = limit;
         }
         // A limit can shrink once the OSC number is known, so the room left
         // can be none.
         let room = self.payload_limit.saturating_sub(self.payload_len);
-        if chunk.len() > room {
+        if !fits || chunk.len() > room {
             self.state = match payload {
                 Payload::Osc => {
                     handler.osc_end(StringEnd::TooLong);

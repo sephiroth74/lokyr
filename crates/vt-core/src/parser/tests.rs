@@ -875,6 +875,29 @@ fn osc_commands_can_have_limits_of_their_own() {
 }
 
 #[test]
+fn the_digits_of_an_osc_number_count_against_the_general_limit() {
+    // With 2 bytes for OSC strings in general, `52;` passes the limit before
+    // OSC 52's own applies, however the reads split it.
+    let limits = Limits {
+        osc: 2,
+        ..small_limits()
+    };
+    let input = b"\x1b]52;c;a\x07";
+    for reads in every_split(input) {
+        let mut parser = Parser::with_limits(limits.clone());
+        let mut recorder = Recorder::new();
+        for read in &reads {
+            parser.advance(&mut recorder, read);
+        }
+        assert_eq!(
+            recorder.actions(),
+            [osc(b"", StringEnd::TooLong)],
+            "{reads:02x?}"
+        );
+    }
+}
+
+#[test]
 fn new_limits_apply_from_the_next_string() {
     let mut parser = Parser::with_limits(small_limits());
     let mut calls = Calls::default();

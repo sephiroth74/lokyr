@@ -28,7 +28,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Why not `vte`**: it discards the contents of APC strings, which kitty graphics needs.
 - **Streamed payloads**:
   - OSC, DCS and APC payloads are delivered in pieces (start, chunks, end). The parser buffers nothing: each run of payload bytes in a read is one chunk. The terminal routes the pieces to handlers registered per type.
-  - Size limits are configurable: 64 KiB for each type of string, and more for the OSC commands that need it, such as 1 MiB for OSC 52 (the clipboard). The parser reads the OSC number, the digits before the first `;`, to pick the limit.
+  - Size limits are configurable: 64 KiB for each type of string, and more for the OSC commands that need it, such as 1 MiB for OSC 52 (the clipboard). The parser reads the OSC number, the digits before the first `;`, to pick the limit. The bytes up to that `;` count against the general limit and the whole string against the command's, so the outcome does not depend on how reads split the string.
   - A string that would pass its limit ends at once as `TooLong`, so the handler can free what it holds. The parser consumes the rest without delivering it, so memory stays constant whatever the payload's size.
   - OSC strings end with ST or BEL, DCS and APC strings with ST, and CAN or SUB cancel any of them. A terminator split across reads is still recognized.
 - **CSI parameters** (DCS parameters follow the same rules):

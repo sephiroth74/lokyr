@@ -67,12 +67,13 @@ impl OscNumber {
         }
     }
 
-    /// Reads from the start of the next chunk of the payload. Returns the
-    /// limit of the string once its number is known, which happens once.
+    /// Reads from the start of the next chunk of the payload. Once the number
+    /// is known, which happens once, returns how many bytes of the chunk it
+    /// took to know it, and the limit of the string.
     ///
     /// The number is made of the digits before the first `;`. Without them,
     /// or with a value too large for a `u16`, the payload has no number.
-    pub(crate) fn read(&mut self, chunk: &[u8], limits: &Limits) -> Option<usize> {
+    pub(crate) fn read(&mut self, chunk: &[u8], limits: &Limits) -> Option<(usize, usize)> {
         let Self::Reading {
             mut digits,
             mut value,
@@ -80,7 +81,7 @@ impl OscNumber {
         else {
             return None;
         };
-        for &byte in chunk {
+        for (index, &byte) in chunk.iter().enumerate() {
             let number = match byte {
                 b'0'..=b'9' => {
                     let next = value
@@ -97,7 +98,7 @@ impl OscNumber {
                 _ => None,
             };
             *self = Self::Done;
-            return Some(limits.osc_limit(number));
+            return Some((index + 1, limits.osc_limit(number)));
         }
         *self = Self::Reading { digits, value };
         None
@@ -116,18 +117,23 @@ mod tests {
         assert_eq!(limits.osc_limit(None), 64 * KIB);
     }
 
-    /// The limit that `chunks` give an OSC string, with OSC 52 at 52 bytes
-    /// and every other OSC string at 1 byte.
-    fn limit_after(chunks: &[&[u8]]) -> Option<usize> {
+    /// What `chunks` tell about an OSC string, with OSC 52 at 52 bytes and
+    /// every other OSC string at 1 byte: which chunk makes the number known,
+    /// how many of its bytes it takes, and the limit.
+    fn read_from(chunks: &[&[u8]]) -> Option<(usize, usize, usize)> {
         let limits = Limits {
             osc: 1,
             osc_commands: vec![(52, 52)],
             ..Limits::default()
         };
         let mut number = OscNumber::start();
-        let found: Vec<usize> = chunks
+        let found: Vec<(usize, usize, usize)> = chunks
             .iter()
-            .filter_map(|chunk| number.read(chunk, &limits))
+            .enumerate()
+            .filter_map(|(index, chunk)| {
+                let (read, limit) = number.read(chunk, &limits)?;
+                Some((index, read, limit))
+            })
             .collect();
         assert!(found.len() <= 1, "the limit is known once");
         found.first().copied()
@@ -135,22 +141,22 @@ mod tests {
 
     #[test]
     fn the_number_comes_before_the_first_semicolon() {
-        assert_eq!(limit_after(&[b"52;c;?"]), Some(52));
-        assert_eq!(limit_after(&[b"5", b"2", b";c", b";?"]), Some(52));
-        assert_eq!(limit_after(&[b"052;"]), Some(52));
-        assert_eq!(limit_after(&[b"2;title"]), Some(1));
+        assert_eq!(read_from(&[b"52;c;?"]), Some((0, 3, 52)));
+        assert_eq!(read_from(&[b"5", b"2", b";c", b";?"]), Some((2, 1, 52)));
+        assert_eq!(read_from(&[b"052;"]), Some((0, 4, 52)));
+        assert_eq!(read_from(&[b"2;title"]), Some((0, 2, 1)));
     }
 
     #[test]
     fn a_payload_without_a_number_gets_the_general_limit() {
-        assert_eq!(limit_after(&[b";52"]), Some(1));
-        assert_eq!(limit_after(&[b"5x;"]), Some(1));
-        assert_eq!(limit_after(&[b"65552;"]), Some(1));
+        assert_eq!(read_from(&[b";52"]), Some((0, 1, 1)));
+        assert_eq!(read_from(&[b"5x;"]), Some((0, 2, 1)));
+        assert_eq!(read_from(&[b"65552;"]), Some((0, 5, 1)));
     }
 
     #[test]
     fn a_number_that_ends_the_payload_is_never_needed() {
         // As in OSC 104, which resets the palette.
-        assert_eq!(limit_after(&[b"104"]), None);
+        assert_eq!(read_from(&[b"104"]), None);
     }
 }

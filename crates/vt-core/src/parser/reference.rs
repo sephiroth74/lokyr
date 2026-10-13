@@ -18,14 +18,14 @@ use super::table::{STATES, State};
 use super::{Action, Parser, Recorder, StringEnd};
 
 /// What the parser does with `input`, in the form both parsers share.
-fn ours(input: &[u8]) -> Vec<Action> {
+pub(super) fn ours(input: &[u8]) -> Vec<Action> {
     let mut recorder = Recorder::new();
     Parser::new().advance(&mut recorder, input);
     shared(recorder.into_actions())
 }
 
 /// What `vte` does with `input`, in the form both parsers share.
-fn reference(input: &[u8]) -> Vec<Action> {
+pub(super) fn reference(input: &[u8]) -> Vec<Action> {
     let mut vte = Vte::default();
     vte::Parser::new().advance(&mut vte, input);
     shared(vte.actions)

@@ -21,6 +21,8 @@ libc = "0.2.190"
 # objc2 crates move together: keep their versions aligned.
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
+# Without forking and timeouts, which the tests do not use.
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
