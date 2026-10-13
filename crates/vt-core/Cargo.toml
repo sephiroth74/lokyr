@@ -9,6 +9,9 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[dependencies]
+thiserror.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true
 vte.workspace = true

@@ -4,4 +4,4 @@ mod cell;
 mod style;
 
 pub use cell::{Cell, Content, Semantic, Width};
-pub use style::{Rgb, StyleId};
+pub use style::{Color, Rgb, Style, StyleId, StyleTable, TableFull, Underline};

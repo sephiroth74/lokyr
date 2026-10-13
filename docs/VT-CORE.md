@@ -92,6 +92,7 @@ Each row has compact metadata:
 ### Page
 
 - **Layout**: a fixed-size block of memory, starting at 512 KiB (to be tuned). It holds a header, rows, cells, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table.
+- **Style table**: its capacity is set with the page's. Equal styles share an id, every cell holds a reference to its style, and the last reference frees the id. The default style, id 0, is not counted, so unstyled text costs nothing. A lookup hashes the style packed in 128 bits, so even a style change on every character stays cheap.
 - **Growth**: when a table fills up, the page is rebuilt with more capacity.
 - **Pool**: pages come from a pool and go back to it. There is no `malloc`/`free` while output scrolls.
 
