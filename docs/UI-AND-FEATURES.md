@@ -1,6 +1,6 @@
 # UI engine and main features
 
-This document covers our UI engine and the four features the MVP cannot ship without: tabs, splits, search and iTerm2 themes.
+This document covers our UI engine and the features the MVP cannot ship without: tabs, splits, search, iTerm2 themes and the cursor's options.
 
 ## UI engine
 
@@ -269,3 +269,26 @@ The `core-actions` plugin:
 - **Mouse selection**:
   - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
   - copy-on-select is optional.
+
+## Cursor
+
+`render-metal` draws the cursor in the pane's cell batch. Its options sit in the `[cursor]` section of the config, and hot reload applies them at once.
+
+```toml
+[cursor]
+shape = "block"           # block | bar | underline
+blink = true
+blink-interval = 500      # how long the cursor stays on, then off, in ms (100–5000)
+smooth-blink = true       # fade out and in, instead of switching
+blink-timeout = 15        # seconds without keys or output before blinking stops; 0 never stops
+movement = "instant"      # instant | snappy | gliding
+```
+
+- **Shape**: block, bar or underline. Programs change the shape and the blinking with DECSCUSR, as vim does in insert mode. The options are the default, which `CSI 0 SP q` and a reset bring back.
+- **Blinking**: on and off for `blink-interval` each. With `smooth-blink`, the cursor fades between the two instead of switching.
+- **Movement**: `snappy` eases the cursor to its new position over a short time, `gliding` over a longer and softer one, and `instant` moves it at once.
+  - The animation only moves the cursor that is drawn. The text that a key press changes still appears in the next frame, so the latency budget holds.
+  - Each frame animates from where the cursor was drawn to where it is now, so a burst of output, or a synchronized update (mode 2026), moves it once rather than once per sequence.
+- **Focus**: only the focused pane's cursor blinks. An unfocused pane, or a window in the background, shows a hollow block.
+- **Power**: blinking stops after `blink-timeout` without keys or output, and the cursor stays on. The display link runs only while a fade or a movement is in progress, like the other animations, and the fade can run at a lower frame rate than the display's. If its frames still cost too much energy, the fade moves to a Core Animation layer over the pane, which the window server animates without waking the app; F3 measures both.
+- **Accessibility**: with the system's "Reduce motion" setting, the movement is instant and blinking does not fade.

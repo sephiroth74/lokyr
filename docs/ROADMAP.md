@@ -68,7 +68,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - font discovery and fallback;
   - CoreText shaping with ligatures;
   - glyph atlas, box-drawing and powerline sprites.
-- **`render-metal`**: instanced cells, cursor, selection, decorations.
+- **`render-metal`**: instanced cells, cursor (block, bar and underline, blinking as DECSCUSR asks), selection, decorations.
 - **Minimal kernel**: commands, keymap, config with hot reload, plus the `core-actions` plugin.
 - **Environment and bundle**: locale, login shell, TCC strings, signed bundle.
 
@@ -81,6 +81,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
+- **Cursor options**: blink interval, smooth blinking, default shape and smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)).
 
 **Exit**:
 - tabs: reorder, rename, drag;
@@ -88,6 +89,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - search over 100k lines in ≤ 150 ms;
 - the whole iTerm2-Color-Schemes collection imports, Light/Dark keys and color spaces included;
 - IME works in the find bar;
+- every cursor option applies on hot reload, and with smooth blinking and movement on, the latency and idle budgets still hold;
 - budgets green.
 
 ### F4 — Plugin ecosystem
