@@ -190,6 +190,15 @@ impl HyperlinkTable {
         Ok(())
     }
 
+    /// Moves the link of `from`, if any, to `to`, which has none. The link
+    /// keeps its references.
+    pub(crate) fn move_cell(&mut self, from: u32, to: u32) {
+        if let Some(id) = self.cells.remove(from) {
+            let moved = self.cells.insert(to, id);
+            debug_assert!(moved.is_ok(), "an entry moves into the room it left");
+        }
+    }
+
     /// Makes `cell` part of no link.
     pub(crate) fn remove_cell(&mut self, cell: u32) {
         if let Some(id) = self.cells.remove(cell) {

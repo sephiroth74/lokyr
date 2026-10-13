@@ -82,6 +82,15 @@ impl GraphemeTable {
         self.codepoints.clear();
     }
 
+    /// Moves the entry of `from`, if any, to `to`, which has none.
+    pub(crate) fn move_cell(&mut self, from: u32, to: u32) {
+        if let Some(span) = self.spans.remove(from) {
+            // The removal made room for the entry.
+            let moved = self.spans.insert(to, span);
+            debug_assert!(moved.is_ok(), "an entry moves into the room it left");
+        }
+    }
+
     /// Forgets the codepoints of `cell`.
     pub(crate) fn remove(&mut self, cell: u32) {
         if let Some(span) = self.spans.remove(cell) {

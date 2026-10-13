@@ -58,6 +58,14 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Semantics**: current hyperlink (OSC 8) and current semantic zone (OSC 133: prompt, input, output).
 - **Keyboard**: the kitty keyboard flag stack, kept separately per screen.
 - **Other modes**: mouse, bracketed paste, focus events, synchronized output (2026), grapheme clustering (2027).
+- **Printing**, the path of every character of text:
+  - A codepoint either joins the cluster printed before it, as the segmenter decides in `unicode` mode or a zero width does in `legacy` mode, or starts a new one at the cursor. A joining codepoint goes to its cluster's cell even while the wrap is pending, and the cluster stays open until the cursor moves or a control comes; other sequences, such as SGR, leave it open.
+  - A codepoint of no width with nothing to join, such as a mark right after a carriage return, joins the character left of the cursor if there is one, and is dropped otherwise.
+  - When VS16 widens a cluster, its cell takes a spacer tail and the cursor moves on one column; VS15 does the reverse. A cluster at the last column has no room to widen and stays narrow.
+  - Writing over half of a wide character empties its other half. A wide character at the last column leaves a spacer head there and wraps, or, without autowrap, goes one column back.
+  - Insert mode moves the rest of the row right, cells with their graphemes and links, and empties a wide character that would lose its second half off the row.
+  - Wrapping marks the row soft-wrapped and the next one as its continuation, for reflow.
+- **C0 controls**: BEL rings; BS moves left and, with the wrap pending, leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the first column; SO and SI select G1 and G0. The others do nothing.
 
 ## Paged grid
 

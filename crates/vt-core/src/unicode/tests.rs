@@ -213,7 +213,7 @@ fn clusters(text: &str) -> Vec<Vec<char>> {
 fn unicode_widths(text: &str, widths: Widths) -> Vec<u8> {
     clusters(text)
         .iter()
-        .map(|cluster| widths.cluster_width(cluster))
+        .map(|cluster| widths.cluster_width(cluster[0], &cluster[1..]))
         .collect()
 }
 

@@ -422,3 +422,48 @@ fn a_reset_page_is_as_new() {
     let id = print_link(&mut page, 2, "c", link("", "https://other.example")).unwrap();
     assert_eq!(page.hyperlinks().get(id), link("", "https://other.example"));
 }
+
+#[test]
+fn inserted_blanks_move_cells_with_their_graphemes_and_links() {
+    let mut page = Page::new(Capacity::standard(8));
+    page.push_row();
+    print_graphemes(&mut page, 0, &["a", "e\u{301}", "c"]).unwrap();
+    let id = page
+        .hyperlinks_mut()
+        .acquire(link("", "https://example.com"))
+        .unwrap();
+    page.set_hyperlink(0, 2, Some(id)).unwrap();
+    page.hyperlinks_mut().release(id);
+    for x in 3..8 {
+        print(&mut page, 0, x, char::from(b'0' + x as u8), &Style::DEFAULT).unwrap();
+    }
+    page.insert_blanks(0, 1, 2);
+    let text: String = page
+        .cells(0)
+        .iter()
+        .map(|cell| match cell.content() {
+            Content::Char('\0') => '.',
+            Content::Char(c) | Content::Grapheme(c) => c,
+            _ => '.',
+        })
+        .collect();
+    assert_eq!(text, "a..ec345", "the last two cells fell off");
+    assert_eq!(page.grapheme(0, 3), ['\u{301}']);
+    assert_eq!(page.grapheme(0, 1), []);
+    assert_eq!(page.hyperlink(0, 4), Some(id));
+    assert_eq!(page.hyperlink(0, 2), None);
+    assert_eq!(page.hyperlinks().references(id), 1);
+    // Cells that fall off drop their entries.
+    page.insert_blanks(0, 0, 8);
+    assert_eq!(page.graphemes.len(), 0);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+}
+
+#[test]
+fn a_cell_can_change_width_and_keep_its_grapheme() {
+    let mut page = page_with_rows(1);
+    print_graphemes(&mut page, 0, &["\u{2764}\u{FE0F}"]).unwrap();
+    page.set_width(0, 0, Width::Wide);
+    assert_eq!(page.cells(0)[0].width(), Width::Wide);
+    assert_eq!(page.grapheme(0, 0), ['\u{FE0F}']);
+}

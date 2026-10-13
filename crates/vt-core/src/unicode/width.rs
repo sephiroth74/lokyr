@@ -82,7 +82,8 @@ impl Widths {
         }
     }
 
-    /// The cells that `cluster`, a grapheme cluster, takes.
+    /// The cells that a grapheme cluster takes: `first`, its first
+    /// codepoint, then `rest`, as a page keeps them.
     ///
     /// A cluster is as wide as its first codepoint, except where emoji
     /// presentation changes it: VS16 after a pictographic or a keycap base
@@ -90,25 +91,22 @@ impl Widths {
     /// makes two; and so does an emoji ZWJ sequence. The tables of Unicode 8
     /// knew no emoji presentation, so with them a cluster is always as wide
     /// as its first codepoint.
-    pub fn cluster_width(self, cluster: &[char]) -> u8 {
-        let Some(&first) = cluster.first() else {
-            return 0;
-        };
+    pub fn cluster_width(self, first: char, rest: &[char]) -> u8 {
         let width = self.char_width(first);
         if self.tables == Tables::Unicode8 {
             return width;
         }
         let emoji = is_extended_pictographic(first) || is_keycap_base(first);
-        if emoji && cluster.contains(&EMOJI_PRESENTATION) {
+        if emoji && rest.contains(&EMOJI_PRESENTATION) {
             return 2;
         }
-        if emoji && cluster.contains(&TEXT_PRESENTATION) {
+        if emoji && rest.contains(&TEXT_PRESENTATION) {
             return 1;
         }
-        if is_flag(first) && cluster.len() > 1 {
+        if is_flag(first) && !rest.is_empty() {
             return 2;
         }
-        let joined = cluster
+        let joined = rest
             .windows(2)
             .any(|pair| pair[0] == ZWJ && is_extended_pictographic(pair[1]));
         if is_extended_pictographic(first) && joined {

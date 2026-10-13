@@ -322,6 +322,32 @@ impl Page {
         }
     }
 
+    /// Changes the width of the cell at column `x` of row `y`, and nothing
+    /// else, as when a variation selector changes a cluster's width.
+    pub fn set_width(&mut self, y: u16, x: u16, width: Width) {
+        let index = self.cell_index(y, x);
+        self.cells[index] = self.cells[index].with_width(width);
+        self.row_mut(y).set(RowFlag::Dirty, true);
+    }
+
+    /// Inserts `n` empty cells at column `x` of row `y`: the cells from
+    /// there move right, with their graphemes and links, and the ones that
+    /// pass the end of the row drop what they held.
+    pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16) {
+        let cols = self.cols();
+        let n = n.min(cols - x);
+        for column in cols - n..cols {
+            let index = self.cell_index(y, column);
+            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
+            self.release(index, cell);
+        }
+        for column in (x..cols - n).rev() {
+            let (from, to) = (self.cell_index(y, column), self.cell_index(y, column + n));
+            self.move_cell(from, to);
+        }
+        self.row_mut(y).set(RowFlag::Dirty, true);
+    }
+
     /// Empties every cell of row `y`, which drop their styles, their
     /// graphemes and their links, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
@@ -378,6 +404,24 @@ impl Page {
             + self.styles.memory()
             + self.graphemes.memory()
             + self.hyperlinks.memory()
+    }
+
+    /// Moves the cell at `from` to `to`, an empty cell, with its entries in
+    /// the tables keyed by cell; `from` is left empty.
+    fn move_cell(&mut self, from: usize, to: usize) {
+        let cell = std::mem::replace(&mut self.cells[from], Cell::EMPTY);
+        debug_assert_eq!(
+            self.cells[to],
+            Cell::EMPTY,
+            "a cell moves into an empty one"
+        );
+        self.cells[to] = cell;
+        if let Content::Grapheme(_) = cell.content() {
+            self.graphemes.move_cell(Self::key(from), Self::key(to));
+        }
+        if cell.has_hyperlink() {
+            self.hyperlinks.move_cell(Self::key(from), Self::key(to));
+        }
     }
 
     /// Drops what `cell`, which was at `index`, held in the tables.
