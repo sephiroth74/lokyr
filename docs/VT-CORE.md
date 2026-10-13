@@ -87,13 +87,16 @@ Each row has compact metadata:
 - continuation of a previous row;
 - start of a prompt (OSC 133);
 - dirty, i.e. needs redrawing;
-- "contains graphemes / hyperlinks / images / styles" flags, so hot paths can skip work.
+- "contains graphemes / hyperlinks / images / styles" flags, so hot paths can skip work. They mean "may contain": they are reset when the row is cleared, not when the last such cell goes.
+
+The metadata fits in one byte.
 
 ### Page
 
-- **Layout**: a fixed-size block of memory, starting at 512 KiB (to be tuned). It holds a header, rows, cells, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table.
+- **Layout**: a fixed memory budget, 512 KiB to start with (to be tuned). For a given width, it sets how many rows fit next to the tables: about 800 at 80 columns, 320 at 200. The page holds a header, the row metadata, the cells, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table.
+- **Allocation**: each part is allocated once, when the page is created, and never grows. They are separate allocations rather than one block, which in safe Rust would mean packing every table into words; the pool keeps the guarantee that matters, no allocation while output scrolls.
 - **Style table**: its capacity is set with the page's. Equal styles share an id, every cell holds a reference to its style, and the last reference frees the id. The default style, id 0, is not counted, so unstyled text costs nothing. A lookup hashes the style packed in 128 bits, so even a style change on every character stays cheap.
-- **Growth**: when a table fills up, the page is rebuilt with more capacity.
+- **Growth**: when a table fills up, the page is rebuilt with more capacity, so it becomes larger than a standard page. Styles keep their ids, so the cells are copied as they are.
 - **Pool**: pages come from a pool and go back to it. There is no `malloc`/`free` while output scrolls.
 
 ### Page list and scrollback

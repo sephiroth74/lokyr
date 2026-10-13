@@ -190,10 +190,7 @@ pub struct StyleTable {
 impl StyleTable {
     /// A table with room for `capacity` styles besides the default one.
     pub fn new(capacity: u16) -> Self {
-        let slots = usize::from(capacity)
-            .saturating_mul(2)
-            .next_power_of_two()
-            .max(2);
+        let slots = Self::slots_for(capacity);
         let ids = usize::from(capacity) + 1;
         Self {
             styles: vec![Style::DEFAULT; ids].into_boxed_slice(),
@@ -218,6 +215,52 @@ impl StyleTable {
     /// Whether the table holds only the default style.
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// The bytes that a table with room for `capacity` styles allocates.
+    pub fn memory_for(capacity: u16) -> usize {
+        let ids = usize::from(capacity) + 1;
+        ids * (size_of::<Style>() + size_of::<u32>())
+            + Self::slots_for(capacity) * size_of::<u16>()
+            + usize::from(capacity) * size_of::<u16>()
+    }
+
+    /// The bytes that the table allocates.
+    pub fn memory(&self) -> usize {
+        size_of_val(&*self.styles)
+            + size_of_val(&*self.refs)
+            + size_of_val(&*self.index)
+            + self.free.capacity() * size_of::<u16>()
+    }
+
+    /// A copy of the table with room for `capacity` styles, at least as many
+    /// as it has room for now. Every style keeps its id and its references.
+    pub fn grown(&self, capacity: u16) -> Self {
+        let capacity = capacity.max(self.capacity() as u16);
+        let mut table = Self::new(capacity);
+        let ids = self.styles.len();
+        table.styles[..ids].copy_from_slice(&self.styles);
+        table.refs[..ids].copy_from_slice(&self.refs);
+        table.free.extend_from_slice(&self.free);
+        table.unused = self.unused;
+        table.len = self.len;
+        for id in 1..self.unused {
+            if self.refs[usize::from(id)] > 0
+                && let Some(Slot::Empty(slot)) = table.find(&table.styles[usize::from(id)])
+            {
+                table.index[slot] = id;
+            }
+        }
+        table
+    }
+
+    /// How many slots the index of a table with room for `capacity` styles
+    /// has: twice as many, as a power of two.
+    fn slots_for(capacity: u16) -> usize {
+        usize::from(capacity)
+            .saturating_mul(2)
+            .next_power_of_two()
+            .max(2)
     }
 
     /// The style with `id`.
@@ -427,6 +470,46 @@ mod tests {
         let mut table = StyleTable::new(0);
         assert_eq!(table.acquire(&bold(1)), Err(TableFull));
         assert_eq!(table.acquire(&Style::DEFAULT), Ok(StyleId::DEFAULT));
+    }
+
+    #[test]
+    fn a_grown_table_keeps_every_id_and_reference() {
+        let mut table = StyleTable::new(3);
+        let ids: Vec<StyleId> = (1..=3)
+            .map(|fg| table.acquire(&bold(fg)).unwrap())
+            .collect();
+        table.retain(ids[2]);
+        table.release(ids[0]);
+        let mut grown = table.grown(8);
+        assert_eq!(grown.capacity(), 8);
+        assert_eq!(grown.len(), 2);
+        for (fg, &id) in (1..).zip(&ids).skip(1) {
+            assert_eq!(grown.get(id), &bold(fg));
+            assert_eq!(
+                grown.acquire(&bold(fg)),
+                Ok(id),
+                "the index knows the style"
+            );
+        }
+        assert_eq!(grown.references(ids[2]), 3);
+        // The freed id comes first, then the new room.
+        assert_eq!(grown.acquire(&bold(9)), Ok(ids[0]));
+        for fg in 10..15 {
+            grown.acquire(&bold(fg)).unwrap();
+        }
+        assert_eq!(grown.acquire(&bold(15)), Err(TableFull));
+    }
+
+    #[test]
+    fn memory_counts_what_the_table_allocates() {
+        for capacity in [0, 1, 3, 255, 256, 1000, u16::MAX] {
+            let table = StyleTable::new(capacity);
+            assert_eq!(
+                table.memory(),
+                StyleTable::memory_for(capacity),
+                "{capacity}"
+            );
+        }
     }
 
     #[test]
