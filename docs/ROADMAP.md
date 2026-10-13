@@ -70,6 +70,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - glyph atlas, box-drawing and powerline sprites.
 - **`render-metal`**: instanced cells, cursor (block, bar and underline, blinking as DECSCUSR asks), selection, decorations.
 - **Minimal kernel**: commands, keymap, config with hot reload, plus the `core-actions` plugin.
+- **Terminal settings**: the reported `TERM`, the width tables and the width of ambiguous characters ([VT-CORE](VT-CORE.md#settings)).
 - **Environment and bundle**: locale, login shell, TCC strings, signed bundle.
 
 **Exit**: used as the main terminal for a week; Japanese IME works; budgets measured; zero wakeups when idle.

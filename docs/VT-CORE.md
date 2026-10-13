@@ -129,6 +129,23 @@ The metadata fits in one byte.
 - **`unicode` mode (default)**: grapheme segmentation per UAX #29, with the width computed for the whole cluster (ZWJ sequences and VS16 → 2, VS15 → 1).
 - **`legacy` mode**: one codepoint at a time, like `wcwidth`, for programs that compute widths themselves.
 - **Mode 2027**: lets programs query and switch the mode.
+- **Width tables that match the programs'**: a program that counts a character's width differently from the terminal misplaces the cursor and the text after it. Two options make the terminal count as the programs do, in either mode:
+  - `unicode-widths`: the tables of the Unicode version that Saetta ships, or those of Unicode 8, for programs that predate Unicode 9. Unicode 8 gives most emoji one cell, and Unicode 9 gave them two. `xtask ucd` generates the Unicode 8 table too.
+  - `ambiguous-width`: the cells that East Asian Ambiguous characters take (①, ※, ○, Greek and Cyrillic letters…): 1 by default, 2 for CJK setups whose programs count them as two, like vim's `ambiwidth=double`. It is an explicit option, not a guess from the locale, because it must match the programs.
+  - A change applies to new output; the cells already written keep their widths.
+
+### Settings
+
+The `[terminal]` section of the config:
+
+```toml
+[terminal]
+term = "xterm-256color"   # what TERM tells programs: xterm-saetta, xterm-256color, xterm, ansi, vt100, vt220, dtterm, linux…
+unicode-widths = "current" # current | 8
+ambiguous-width = 1       # 1 | 2
+```
+
+`term` changes only what programs are told, never the emulation, which stays xterm's. The other values describe subsets of what xterm does, so they work as they are.
 
 ## Input
 
@@ -152,7 +169,7 @@ The metadata fits in one byte.
   - We do not use `posix_spawn`, because it cannot set the controlling terminal.
 - **Login shell**: on macOS, launched like Terminal.app does (`/usr/bin/login -flp $USER <shell>`). On Linux, the shell is started with `argv[0]` prefixed by `-`.
 - **Environment**:
-  - `TERM`, `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR`.
+  - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR`.
   - A UTF-8 locale if none is set ([SECURITY.md](SECURITY.md#macos-environment)).
   - `TERMINFO` is set only when `TERM=xterm-saetta`.
 - **Resize**: `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. Resizes are coalesced while a divider is being dragged.
@@ -177,7 +194,7 @@ The metadata fits in one byte.
   - `Ms` (OSC 52);
   - `fsl`/`tsl`/`hs` (title) and `XT`.
 - **Build and install**: compiled at build time with `tic -x` from a recent ncurses (the one shipped with macOS is very old). It is bundled with the app: `Contents/Resources/terminfo` on macOS, `share/terminfo` on Linux.
-- **Default `TERM`**: `xterm-256color`, because remote hosts usually don't know `xterm-saetta`. The default will change once the ssh integration (F5a) can install the terminfo on remote hosts or fall back automatically.
+- **Default `TERM`**: `xterm-256color`, because remote hosts usually don't know `xterm-saetta`. The `term` option chooses another ([Settings](#settings)). The default will change once the ssh integration (F5a) can install the terminfo on remote hosts or fall back automatically.
 
 ## Supported protocols
 
