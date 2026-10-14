@@ -42,6 +42,15 @@ impl Terminal {
             ([], b'K') => self.erase_in_line(params.value(0), false),
             ([b'?'], b'K') => self.erase_in_line(params.value(0), true),
             ([], b'X') => self.erase_characters(n(0)),
+            ([], b'@') => self.insert_characters(n(0)),
+            ([], b'P') => self.delete_characters(n(0)),
+            ([], b'L') => self.insert_lines(n(0)),
+            ([], b'M') => self.delete_lines(n(0)),
+            ([], b'S') => self.scroll_up(n(0)),
+            // With five parameters, CSI T starts xterm's highlight mouse
+            // tracking instead.
+            ([], b'T') if params.len() <= 1 => self.scroll_down(n(0)),
+            ([], b'b') => self.repeat(n(0)),
             // DECSCA: 1 protects the text printed next, 0 and 2 do not.
             ([b'"'], b'q') => match params.value(0) {
                 1 => self.protected = true,

@@ -1107,6 +1107,164 @@ fn decsc_saves_the_protection() {
     assert!(term.cell(1, 0).is_protected(), "3 does nothing");
 }
 
+/// A screen of 4 by 5 whose rows read 0 to 4.
+fn numbered_rows() -> Term {
+    let mut term = Term::new(4, 5);
+    term.feed("0\r\n1\r\n2\r\n3\r\n4");
+    term
+}
+
+fn blue_background() -> Style {
+    Style {
+        bg: Color::Palette(4),
+        ..Style::DEFAULT
+    }
+}
+
+#[test]
+fn ich_inserts_erased_cells_at_the_cursor() {
+    let mut term = Term::new(8, 1);
+    term.feed("abcdef\x1b[2G\x1b[2@");
+    assert_eq!(term.screen(), ["a  bcdef"]);
+    assert_eq!(term.cursor(), (1, 0, false));
+    term.terminal.set_pen(blue_background());
+    term.feed("\x1b[@");
+    assert_eq!(term.screen(), ["a   bcde"]);
+    assert_eq!(term.cell(1, 0).content(), Content::BgPalette(4));
+    term.feed("\x1b[99@");
+    assert_eq!(term.screen(), ["a"]);
+    let mut term = Term::new(6, 1);
+    term.feed("a中b\x1b[3G\x1b[@");
+    assert_eq!(term.screen(), ["a   b"], "the wide character went whole");
+}
+
+#[test]
+fn dch_deletes_cells_at_the_cursor() {
+    let mut term = Term::new(8, 1);
+    term.feed("abcdef\x1b[2G\x1b[2P");
+    assert_eq!(term.screen(), ["adef"]);
+    term.terminal.set_pen(blue_background());
+    term.feed("\x1b[P");
+    assert_eq!(term.screen(), ["aef"]);
+    assert_eq!(
+        term.cell(7, 0).content(),
+        Content::BgPalette(4),
+        "at the end"
+    );
+    term.feed("\x1b[99P");
+    assert_eq!(term.screen(), ["a"]);
+    let mut term = Term::new(6, 1);
+    term.feed("a中b\x1b[3G\x1b[P");
+    assert_eq!(term.screen(), ["a b"]);
+}
+
+#[test]
+fn il_and_dl_move_the_rows_below_the_cursor() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[3;2H\x1b[L");
+    assert_eq!(term.screen(), ["0", "1", "", "2", "3"]);
+    assert_eq!(term.cursor(), (0, 2, false), "to the left margin");
+    term.feed("\x1b[2;3H\x1b[2M");
+    assert_eq!(term.screen(), ["0", "2", "3", "", ""]);
+    term.feed("\x1b[99L");
+    assert_eq!(term.screen(), ["0", "", "", "", ""]);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+}
+
+#[test]
+fn il_and_dl_stay_within_the_scroll_region() {
+    let mut term = numbered_rows();
+    term.terminal.margins.top = 1;
+    term.terminal.margins.bottom = 3;
+    term.feed("\x1b[3;1H\x1b[L");
+    assert_eq!(term.screen(), ["0", "1", "", "2", "4"]);
+    term.feed("\x1b[2;1H\x1b[M");
+    assert_eq!(term.screen(), ["0", "", "2", "", "4"]);
+    // Outside the region, they do nothing.
+    term.feed("\x1b[5;3H\x1b[L\x1b[1;3H\x1b[M");
+    assert_eq!(term.screen(), ["0", "", "2", "", "4"]);
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn il_and_dl_bring_in_erased_rows() {
+    let mut term = numbered_rows();
+    term.terminal.set_pen(blue_background());
+    term.feed("\x1b[2;1H\x1b[L\x1b[4;1H\x1b[M");
+    assert_eq!(term.cell(3, 1).content(), Content::BgPalette(4));
+    assert_eq!(term.cell(0, 4).content(), Content::BgPalette(4));
+}
+
+#[test]
+fn su_and_sd_scroll_the_region() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;2H\x1b[2S");
+    assert_eq!(term.screen(), ["2", "3", "4", "", ""]);
+    assert_eq!(
+        term.terminal.screen_rows().scrollback_rows(),
+        2,
+        "the whole screen scrolled"
+    );
+    assert_eq!(term.cursor(), (1, 1, false), "the cursor stays");
+    term.feed("\x1b[T");
+    assert_eq!(term.screen(), ["", "2", "3", "4", ""]);
+    let mut term = numbered_rows();
+    term.terminal.margins.top = 1;
+    term.terminal.margins.bottom = 3;
+    term.feed("\x1b[S");
+    assert_eq!(term.screen(), ["0", "2", "3", "", "4"]);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    term.feed("\x1b[2T");
+    assert_eq!(term.screen(), ["0", "", "", "2", "4"]);
+    term.feed("\x1b[99S");
+    assert_eq!(term.screen(), ["0", "", "", "", "4"]);
+    // CSI T with five parameters is not SD.
+    let mut term = numbered_rows();
+    term.feed("\x1b[1;1;1;1;1T");
+    assert_eq!(term.screen(), ["0", "1", "2", "3", "4"]);
+}
+
+#[test]
+fn scrolling_brings_in_erased_rows() {
+    let mut term = numbered_rows();
+    term.terminal.set_pen(blue_background());
+    term.feed("\x1b[S");
+    assert_eq!(term.cell(2, 4).content(), Content::BgPalette(4));
+    term.feed("\x1b[T");
+    assert_eq!(term.cell(2, 0).content(), Content::BgPalette(4));
+    term.feed("\x1b[H\x1bM");
+    assert_eq!(term.cell(2, 0).content(), Content::BgPalette(4), "RI too");
+}
+
+#[test]
+fn rep_repeats_the_last_character_printed() {
+    let mut term = Term::new(10, 2);
+    term.feed("hello\x1b[2b");
+    assert_eq!(term.screen()[0], "hellooo");
+    term.feed("\r\n\u{E9}\x1b[b");
+    assert_eq!(term.screen()[1], "\u{E9}\u{E9}");
+    // Through the character set in use, and after the cursor moved.
+    term.feed("\x1b[2;1H\x1b(0q\x1b(B\r\x1b[3b");
+    assert_eq!(term.screen()[1], "qqq");
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b[3b");
+    assert_eq!(term.screen(), [""], "nothing to repeat");
+    term.feed("a\x1bc\x1b[3b");
+    assert_eq!(term.screen(), [""], "RIS forgets it");
+}
+
+#[test]
+fn editing_ends_the_cluster_and_the_wrap() {
+    let mut term = Term::new(5, 2);
+    // The b moved down a row: the mark must not land where it was.
+    term.feed("ab\x1b[L\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 1), []);
+    assert_eq!(term.screen(), ["", "ab"]);
+    term.feed("\rabcde\x1b[P");
+    assert_eq!(term.cursor(), (4, 0, false));
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -1325,6 +1483,13 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[2X",
     "\x1b[1\"q",
     "\x1b[0\"q",
+    "\x1b[2@",
+    "\x1b[P",
+    "\x1b[L",
+    "\x1b[2M",
+    "\x1b[S",
+    "\x1b[2T",
+    "\x1b[3b",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",

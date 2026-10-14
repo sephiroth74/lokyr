@@ -70,7 +70,14 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - Writing over half of a wide character empties its other half. A wide character at the last column leaves a spacer head there and wraps, or, without autowrap, goes one column back.
   - Insert mode moves the rest of the row right, cells with their graphemes and links, and empties a wide character that would lose its second half off the row.
   - Wrapping marks the row soft-wrapped and the next one as its continuation, for reflow.
-- **C0 controls**: BEL rings; BS moves left and, with the wrap pending, leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the first column; SO and SI select G1 and G0. The others do nothing.
+- **Editing**:
+  - Erased cells, and the cells and rows that inserting, deleting and scrolling bring in, take the pen's background color and nothing else (background color erase).
+  - ED, EL and ECH erase every cell; DECSED and DECSEL keep the cells that DECSCA protected, which both print paths mark. A wide character that an erase, an insertion or a deletion would split goes whole, and an erase that reaches the end of a row ends its wrap.
+  - ED 2 on the primary screen first moves the rows, up to the last one that holds something, into the scrollback, as `alacritty_terminal` does; ED 3 drops the scrollback.
+  - IL and DL work from the cursor's row to the bottom margin, only within the scroll region, and put the cursor at the left margin, as DEC terminals and xterm do. SU and SD scroll the region, the cursor staying, and SU sends the rows that leave a region of the whole screen into the scrollback.
+  - REP prints the last character given to print again, through the character sets in use, as `vte` does.
+  - Every edit ends the cluster being printed; those at the cursor leave no wrap pending.
+- **C0 controls**: BEL rings; BS moves left and, with the wrap pending, leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the left margin, or to the first column from left of it; SO and SI select G1 and G0. The others do nothing.
 
 ## Paged grid
 

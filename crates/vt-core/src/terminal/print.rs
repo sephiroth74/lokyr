@@ -24,6 +24,7 @@ impl Terminal {
     /// Prints `c`, as the character it stands for in the character set in
     /// use.
     pub(super) fn print_translated(&mut self, c: char) {
+        self.last_printed = Some(c);
         let c = self.charsets.translate(c);
         self.print_char(c);
     }
@@ -34,6 +35,9 @@ impl Terminal {
     /// of ASCII takes one cell, starts a cluster and is in normal form
     /// already.
     pub(super) fn print_ascii_run(&mut self, text: &[u8]) {
+        let Some(&last) = text.last() else {
+            return;
+        };
         let mut text = text;
         // Another character set, or a single shift, gives the characters
         // other meanings, so they go one at a time.
@@ -55,6 +59,7 @@ impl Terminal {
             let written = self.write_ascii(text);
             text = &text[written..];
         }
+        self.last_printed = Some(char::from(last));
     }
 
     /// Adds `c` to the cluster that the last character printed started, or,

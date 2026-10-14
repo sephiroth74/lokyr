@@ -648,3 +648,46 @@ fn dropping_the_first_rows_moves_the_others_up() {
     assert!(page.is_empty());
     assert_eq!(page.styles().len(), 0);
 }
+
+#[test]
+fn deleted_cells_make_the_others_move_left_with_their_graphemes_and_links() {
+    let mut page = Page::new(Capacity::standard(8));
+    page.push_row();
+    print_graphemes(&mut page, 0, &["a", "b", "c", "e\u{301}"]).unwrap();
+    let id = page
+        .hyperlinks_mut()
+        .acquire(link("", "https://example.com"))
+        .unwrap();
+    page.set_hyperlink(0, 3, Some(id)).unwrap();
+    page.hyperlinks_mut().release(id);
+    page.delete_cells(0, 1, 2);
+    assert_eq!(row_chars(&page, 0), "ae......");
+    assert_eq!(page.grapheme(0, 1), ['\u{301}']);
+    assert_eq!(page.hyperlink(0, 1), Some(id));
+    assert_eq!(page.hyperlinks().references(id), 1);
+    page.delete_cells(0, 0, 8);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+    assert_eq!(page.graphemes.len(), 0);
+}
+
+#[test]
+fn deleting_half_of_a_wide_character_empties_it_whole() {
+    let mut page = Page::new(Capacity::standard(6));
+    page.push_row();
+    let wide = Cell::EMPTY
+        .with_content(Content::Char('中'))
+        .with_width(Width::Wide);
+    for x in [0, 2] {
+        page.set_cell(0, x, wide);
+        page.set_cell(0, x + 1, Cell::EMPTY.with_width(Width::SpacerTail));
+    }
+    print(&mut page, 0, 4, 'z', &Style::DEFAULT).unwrap();
+    // From the second half of the first, to the first half of the second.
+    page.delete_cells(0, 1, 2);
+    assert_eq!(row_chars(&page, 0), "..z...", "z moved two cells left");
+    assert!(
+        page.cells(0)
+            .iter()
+            .all(|cell| cell.width() == Width::Narrow)
+    );
+}

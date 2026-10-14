@@ -462,6 +462,31 @@ impl Page {
         }
     }
 
+    /// Deletes `n` cells at column `x` of row `y`, which drop what they
+    /// held: the cells after them move left, with their graphemes and links,
+    /// and empty cells come in at the end of the row. A wide character that
+    /// the deletion would split is emptied whole.
+    pub fn delete_cells(&mut self, y: u16, x: u16, n: u16) {
+        let cols = self.cols();
+        let n = n.min(cols - x);
+        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
+            self.set_cell(y, x - 1, Cell::EMPTY);
+        }
+        if x + n < cols && self.cells(y)[usize::from(x + n)].width() == Width::SpacerTail {
+            self.set_cell(y, x + n, Cell::EMPTY);
+        }
+        for column in x..x + n {
+            let index = self.cell_index(y, column);
+            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
+            self.release(index, cell);
+        }
+        for column in x + n..cols {
+            let (from, to) = (self.cell_index(y, column), self.cell_index(y, column - n));
+            self.move_cell(from, to);
+        }
+        self.row_mut(y).set(RowFlag::Dirty, true);
+    }
+
     /// Moves the cells from column `x` of row `y` right by `n`, as
     /// [`Page::insert_blanks`] does, but whatever their widths.
     fn shift_right(&mut self, y: u16, x: u16, n: u16) {

@@ -5,6 +5,7 @@ mod charsets;
 mod control;
 mod csi;
 mod cursor;
+mod edit;
 mod erase;
 mod escape;
 mod print;
@@ -153,6 +154,9 @@ pub struct Terminal {
     segmenter: Segmenter,
     /// The last cluster printed, until the cursor moves.
     cluster: Option<Cluster>,
+    /// The last character given to print, before the character sets, which
+    /// REP repeats.
+    last_printed: Option<char>,
     bells: u64,
 }
 
@@ -191,6 +195,7 @@ impl Terminal {
             keypad_application: false,
             segmenter: Segmenter::new(),
             cluster: None,
+            last_printed: None,
             bells: 0,
         }
     }

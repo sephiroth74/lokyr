@@ -122,22 +122,9 @@ impl Terminal {
         let screen = self.screen_mut();
         screen.cursor.pending_wrap = false;
         if screen.cursor.y == 0 {
-            self.scroll_down();
+            self.shift_rows_down(0, self.rows - 1, 1);
         } else {
             screen.cursor.y -= 1;
         }
-    }
-
-    /// Scrolls the screen down a row: the bottom row is dropped, the others
-    /// move down, and an empty row appears at the top.
-    fn scroll_down(&mut self) {
-        let bottom = self.rows - 1;
-        let rows = &mut self.screen_mut().rows;
-        for y in (0..bottom).rev() {
-            rows.move_row(y, y + 1);
-        }
-        // With a single row, nothing moved out of it.
-        let (page, row) = rows.screen_row_mut(0);
-        page.clear_row(row);
     }
 }
