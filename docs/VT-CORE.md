@@ -84,6 +84,10 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - IL and DL work from the cursor's row to the bottom margin, only within the scroll region, and put the cursor at the left margin, as DEC terminals and xterm do. SU and SD scroll the region, the cursor staying, and SU sends the rows that leave a region of the whole screen into the scrollback.
   - REP prints the last character given to print again, through the character sets in use, as `vte` does.
   - Every edit ends the cluster being printed; those at the cursor leave no wrap pending.
+- **Reports**: replies wait in a queue that the embedder takes and writes to the PTY, and carry only what the terminal makes of its own state.
+  - DA1 says VT220 with ANSI colors (`CSI ? 62 ; 22 c`), DA2 `CSI > 1 ; 10 ; 0 c`, and DA3 a unit id of zeros, as Ghostty does; XTVERSION gives the name and version.
+  - DECRQSS reports SGR, DECSTBM, DECSLRM, DECSCUSR and DECSCA as the sequences that set them, with `1 $ r` for a valid request, as xterm does, and `0 $ r` without echoing the request otherwise. XTGETTCAP answers a few capabilities (`TN`, `Co`, `RGB`) until the terminfo is in.
+  - XTWINOPS reports the size in cells, and in pixels once the embedder gives the size of a cell; it keeps a stack of ten titles. Programs read the title back (20 t and 21 t) only when the configuration allows it, and then without its control characters.
 - **C0 controls**: BEL rings; BS moves left as CUB 1 does, so that, with the wrap pending, it leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the left margin, or to the first column from left of it; SO and SI select G1 and G0. The others do nothing.
 
 ## Paged grid
@@ -190,7 +194,7 @@ ambiguous-width = 1       # 1 | 2
 normalization = "none"    # none | nfc | nfd | hfs+
 ```
 
-`term` changes only what programs are told, never the emulation, which stays xterm's. The other values describe subsets of what xterm does, so they work as they are.
+`term` changes only what programs are told, never the emulation, which stays xterm's: the session puts it in the environment, and the terminal reports it as `TN` to XTGETTCAP. The other values describe subsets of what xterm does, so they work as they are.
 
 ## Input
 

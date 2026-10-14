@@ -2077,6 +2077,189 @@ fn replies_wait_until_they_are_taken() {
 }
 
 #[test]
+fn device_attributes_reply() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[c\x1b[0c\x1b[>c\x1b[=c\x1b[1c\x1b[>1c");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[?62;22c\x1b[?62;22c\x1b[>1;10;0c\x1bP!|00000000\x1b\\",
+        "only the queries get replies"
+    );
+}
+
+#[test]
+fn dsr_reports_the_status_and_the_cursor() {
+    let mut term = Term::new(10, 5);
+    term.feed("\x1b[5n\x1b[3;4H\x1b[6n\x1b[1;10Hx\x1b[6n\x1b[7n");
+    assert_eq!(replies(&mut term), "\x1b[0n\x1b[3;4R\x1b[1;10R");
+    // In origin mode, from the top left of the margins.
+    let mut term = with_margins();
+    term.feed("\x1b[?6h\x1b[2;3H\x1b[6n");
+    assert_eq!(replies(&mut term), "\x1b[2;3R");
+}
+
+#[test]
+fn xtversion_reports_the_name_and_version() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b[>q\x1b[>1q");
+    let version = env!("CARGO_PKG_VERSION");
+    assert_eq!(replies(&mut term), format!("\x1bP>|saetta {version}\x1b\\"));
+}
+
+#[test]
+fn xtwinops_reports_the_sizes_it_knows() {
+    let mut term = Term::new(80, 24);
+    term.feed("\x1b[18t\x1b[14t\x1b[16t");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[8;24;80t",
+        "the pixels are unknown yet"
+    );
+    term.terminal.set_cell_size(8, 16);
+    term.feed("\x1b[14t\x1b[16t\x1b[3;10;10t");
+    assert_eq!(replies(&mut term), "\x1b[4;384;640t\x1b[6;16;8t");
+}
+
+#[test]
+fn the_title_is_reported_only_when_the_configuration_allows_it() {
+    let mut term = Term::new(10, 1);
+    term.terminal.title = "shell\x1b]evil".to_owned();
+    term.feed("\x1b[21t\x1b[20t");
+    assert_eq!(replies(&mut term), "");
+    let options = Options {
+        title_reports: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.terminal.title = "shell\x1b]evil\u{9B}".to_owned();
+    term.terminal.icon_title = "icon".to_owned();
+    term.feed("\x1b[21t\x1b[20t");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]lshell]evil\x1b\\\x1b]Licon\x1b\\",
+        "without its controls"
+    );
+}
+
+#[test]
+fn the_title_stack_pushes_and_pops() {
+    let mut term = Term::new(10, 1);
+    let set = |term: &mut Term, title: &str, icon: &str| {
+        term.terminal.title = title.to_owned();
+        term.terminal.icon_title = icon.to_owned();
+    };
+    let titles = |term: &Term| {
+        (
+            term.terminal.title().to_owned(),
+            term.terminal.icon_title().to_owned(),
+        )
+    };
+    set(&mut term, "one", "1");
+    term.feed("\x1b[22;0t");
+    set(&mut term, "two", "2");
+    term.feed("\x1b[22t");
+    set(&mut term, "three", "3");
+    term.feed("\x1b[23;2t");
+    assert_eq!(
+        titles(&term),
+        ("two".into(), "3".into()),
+        "the window's only"
+    );
+    term.feed("\x1b[23;1t");
+    assert_eq!(titles(&term), ("two".into(), "1".into()), "the icon's only");
+    term.feed("\x1b[23t");
+    assert_eq!(titles(&term), ("two".into(), "1".into()), "an empty stack");
+    for n in 0..12 {
+        set(&mut term, &n.to_string(), "");
+        term.feed("\x1b[22t");
+    }
+    for _ in 0..12 {
+        term.feed("\x1b[23t");
+    }
+    assert_eq!(titles(&term).0, "2", "ten titles at most");
+}
+
+#[test]
+fn decrqss_reports_settings_as_the_sequences_that_set_them() {
+    let mut term = Term::new(10, 5);
+    term.feed("\x1b[1;4:3;38;5;196;48;2;1;2;3;58:5:9m\x1bP$qm\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        "\x1bP1$r0;1;4:3;38;5;196;48;2;1;2;3;58:5:9m\x1b\\"
+    );
+    term.feed("\x1b[0;3;31;102m\x1bP$qm\x1b\\\x1b[m\x1bP$qm\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        "\x1bP1$r0;3;31;102m\x1b\\\x1bP1$r0m\x1b\\"
+    );
+    term.feed("\x1b[2;4r\x1b[?69h\x1b[3;6s\x1b[4 q\x1b[1\"q");
+    term.feed("\x1bP$qr\x1b\\\x1bP$qs\x1b\\\x1bP$q q\x1b\\\x1bP$q\"q\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        "\x1bP1$r2;4r\x1b\\\x1bP1$r3;6s\x1b\\\x1bP1$r4 q\x1b\\\x1bP1$r1\"q\x1b\\"
+    );
+    // A query split across reads still gets its reply.
+    term.feed("\x1bP$");
+    term.feed("q\"");
+    term.feed("q\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r1\"q\x1b\\");
+}
+
+#[test]
+fn decrqss_does_not_echo_what_it_does_not_know() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1bP$qevil\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP0$r\x1b\\");
+    // Too long, cancelled, or another DCS: no reply.
+    term.feed(format!("\x1bP$q{}\x1b\\", "m".repeat(2000)));
+    term.feed("\x1bP$qm\x18\x1bPqm\x1b\\");
+    assert_eq!(replies(&mut term), "");
+}
+
+#[test]
+fn xtgettcap_reports_capabilities_by_name() {
+    let options = Options {
+        term: "xterm-saetta".to_owned(),
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1bP+q544E;436F;524742;5858\x1b\\");
+    let hex = |text: &str| -> String { text.bytes().map(|byte| format!("{byte:02X}")).collect() };
+    assert_eq!(
+        replies(&mut term),
+        format!(
+            "\x1bP1+r544E={}\x1b\\\x1bP1+r436F={}\x1b\\\x1bP1+r524742\x1b\\\x1bP0+r5858\x1b\\",
+            hex("xterm-saetta"),
+            hex("256")
+        )
+    );
+    // Names must be hexadecimal; the first that is not ends the reply.
+    term.feed("\x1bP+q436F;zz;544E\x1b\\\x1bP+q5\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        format!("\x1bP1+r436F={}\x1b\\", hex("256"))
+    );
+    assert_eq!(Options::default().term, "xterm-256color");
+}
+
+#[test]
+fn ris_keeps_what_the_embedder_configured() {
+    let options = Options {
+        term: "xterm-saetta".to_owned(),
+        title_reports: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 2, options);
+    term.terminal.set_cell_size(8, 16);
+    term.terminal.title = "old".to_owned();
+    term.feed("\x1b[22t\x1bc\x1b[16t\x1b[21t\x1bP+q544E\x1b\\\x1b[23t");
+    let reply = replies(&mut term);
+    assert!(reply.starts_with("\x1b[6;16;8t\x1b]l\x1b\\"), "{reply:?}");
+    assert!(reply.ends_with("=787465726D2D736165747461\x1b\\"));
+    assert_eq!(term.terminal.title(), "", "RIS dropped the title stack too");
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -2322,6 +2505,11 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[?1048h",
     "\x1b[?2027l",
     "\x1b[?2027h",
+    "\x1b[6n",
+    "\x1b[c",
+    "\x1bP$qm\x1b\\",
+    "\x1b[22t",
+    "\x1b[23t",
     "\x1b[0m",
     "\x1b[1;31m",
     "\x1b[44m",
@@ -2421,6 +2609,7 @@ proptest! {
             },
             widths,
             normalization,
+            ..Options::default()
         };
         let mut fast = Term::with(cols, rows, options());
         let mut slow = Term::with(cols, rows, options());

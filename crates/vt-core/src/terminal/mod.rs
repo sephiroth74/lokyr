@@ -10,6 +10,7 @@ mod erase;
 mod escape;
 mod modes;
 mod print;
+mod reports;
 mod sgr;
 
 pub use charsets::{Charset, Charsets, Shift};
@@ -17,11 +18,11 @@ pub use charsets::{Charset, Charsets, Shift};
 use std::ops::Range;
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
-use crate::parser::{Handler, Params};
+use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
 /// What a terminal is made with.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Options {
     /// The limits of the primary screen's scrollback. The alternate screen
     /// has none.
@@ -30,6 +31,24 @@ pub struct Options {
     pub widths: Widths,
     /// The normal form that printed text takes.
     pub normalization: Normalization,
+    /// The `TERM` that programs see, which XTGETTCAP reports as `TN`:
+    /// `xterm-256color` by default.
+    pub term: String,
+    /// Whether programs may read the title back (CSI 20 t and 21 t), the
+    /// classic way of injecting text into a shell: off by default.
+    pub title_reports: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            scrollback: Scrollback::default(),
+            widths: Widths::default(),
+            normalization: Normalization::default(),
+            term: "xterm-256color".to_owned(),
+            title_reports: false,
+        }
+    }
 }
 
 /// Where the cursor of a screen is.
@@ -243,6 +262,21 @@ pub struct Terminal {
     /// What the terminal sends back to the program, such as replies to
     /// queries, for the embedder to write to the PTY.
     replies: Vec<u8>,
+    /// The `TERM` that programs see.
+    term: String,
+    /// Whether programs may read the title back.
+    title_reports: bool,
+    /// The size of a cell in pixels, width then height, once the embedder
+    /// knows it.
+    cell_size: Option<(u16, u16)>,
+    /// The window's title (OSC 2) and the icon's (OSC 1).
+    title: String,
+    icon_title: String,
+    /// The titles that CSI 22 t pushed, the latest last.
+    title_stack: Vec<(String, String)>,
+    /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
+    query: Option<reports::Query>,
+    query_bytes: Vec<u8>,
     /// Where the clusters of the printed text start.
     segmenter: Segmenter,
     /// The last cluster printed, until the cursor moves.
@@ -294,6 +328,14 @@ impl Terminal {
             synchronized_output: false,
             configured_widths: options.widths,
             replies: Vec::new(),
+            term: options.term,
+            title_reports: options.title_reports,
+            cell_size: None,
+            title: String::new(),
+            icon_title: String::new(),
+            title_stack: Vec::new(),
+            query: None,
+            query_bytes: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,
             last_printed: None,
@@ -454,6 +496,22 @@ impl Terminal {
         self.synchronized_output
     }
 
+    /// The window's title.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// The icon's title.
+    pub fn icon_title(&self) -> &str {
+        &self.icon_title
+    }
+
+    /// Sets the size of a cell in pixels, which CSI 14 t and 16 t report;
+    /// until then, they get no reply.
+    pub fn set_cell_size(&mut self, width: u16, height: u16) {
+        self.cell_size = Some((width, height));
+    }
+
     /// Takes what the terminal has to send back to the program, such as
     /// replies to queries, oldest first, for the embedder to write to the
     /// PTY.
@@ -544,6 +602,18 @@ impl Handler for Terminal {
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
         self.csi(params, intermediates, final_byte);
+    }
+
+    fn dcs_start(&mut self, _params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.start_query(intermediates, final_byte);
+    }
+
+    fn dcs_put(&mut self, data: &[u8]) {
+        self.read_query(data);
+    }
+
+    fn dcs_end(&mut self, end: StringEnd) {
+        self.end_query(end);
     }
 }
 

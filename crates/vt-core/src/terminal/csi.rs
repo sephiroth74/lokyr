@@ -51,6 +51,13 @@ impl Terminal {
             // tracking instead.
             ([], b'T') if params.len() <= 1 => self.scroll_down(n(0)),
             ([], b'b') => self.repeat(n(0)),
+            // DA1, DA2 and DA3; DSR; XTVERSION; XTWINOPS.
+            ([], b'c') if params.value(0) == 0 => self.reply(b"\x1b[?62;22c"),
+            ([b'>'], b'c') if params.value(0) == 0 => self.reply(b"\x1b[>1;10;0c"),
+            ([b'='], b'c') if params.value(0) == 0 => self.reply(b"\x1bP!|00000000\x1b\\"),
+            ([], b'n') => self.device_status(params.value(0)),
+            ([b'>'], b'q') if params.value(0) == 0 => self.report_version(),
+            ([], b't') => self.window_ops(params),
             ([], b'm') => self.select_graphic_rendition(params),
             // SM and RM, DECSET and DECRST, and DECRQM for both kinds.
             ([], b'h') => self.set_ansi_modes(params, true),

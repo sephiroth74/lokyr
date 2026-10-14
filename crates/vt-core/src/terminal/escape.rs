@@ -78,19 +78,26 @@ impl Terminal {
     }
 
     /// RIS: puts the terminal back as it was made, with its screens and
-    /// scrollback empty. It keeps its configuration: the size, the
-    /// scrollback limits, the widths it was made with and the
-    /// normalization. The bells that rang stay counted, and the replies not
-    /// yet taken stay queued.
+    /// scrollback empty, and no title. It keeps its configuration: the
+    /// size, the scrollback limits, the widths it was made with, the
+    /// normalization, the `TERM`, the title reports and the cell size. The
+    /// bells that rang stay counted, and the replies not yet taken stay
+    /// queued.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
             widths: self.configured_widths,
             normalization: self.normalization,
+            term: std::mem::take(&mut self.term),
+            title_reports: self.title_reports,
         };
-        let (bells, replies) = (self.bells, std::mem::take(&mut self.replies));
+        let (bells, replies, cell_size) = (
+            self.bells,
+            std::mem::take(&mut self.replies),
+            self.cell_size,
+        );
         *self = Self::new(self.cols, self.rows, options);
-        (self.bells, self.replies) = (bells, replies);
+        (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
     }
 
     /// DECALN: fills the screen with `E`, in the default style, makes the
