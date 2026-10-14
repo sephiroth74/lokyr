@@ -11,8 +11,8 @@ impl Terminal {
             ([], b'7') => self.save_cursor(),
             ([], b'8') => self.restore_cursor(),
             // DECKPAM and DECKPNM.
-            ([], b'=') => self.keypad_application = true,
-            ([], b'>') => self.keypad_application = false,
+            ([], b'=') => self.input.keypad_application = true,
+            ([], b'>') => self.input.keypad_application = false,
             ([], b'c') => self.full_reset(),
             ([b'#'], b'8') => self.screen_alignment(),
             // IND: down a row, as LF.
@@ -79,17 +79,18 @@ impl Terminal {
 
     /// RIS: puts the terminal back as it was made, with its screens and
     /// scrollback empty. It keeps its configuration: the size, the
-    /// scrollback limits, the widths and the normalization. The bells that
-    /// rang stay counted.
+    /// scrollback limits, the widths it was made with and the
+    /// normalization. The bells that rang stay counted, and the replies not
+    /// yet taken stay queued.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
-            widths: self.widths,
+            widths: self.configured_widths,
             normalization: self.normalization,
         };
-        let bells = self.bells;
+        let (bells, replies) = (self.bells, std::mem::take(&mut self.replies));
         *self = Self::new(self.cols, self.rows, options);
-        self.bells = bells;
+        (self.bells, self.replies) = (bells, replies);
     }
 
     /// DECALN: fills the screen with `E`, in the default style, makes the

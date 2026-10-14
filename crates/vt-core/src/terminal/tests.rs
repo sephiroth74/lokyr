@@ -1820,6 +1820,262 @@ fn sgr_leaves_the_cluster_open_and_printed_cells_take_the_pen() {
     );
 }
 
+/// What the terminal replied, as text.
+fn replies(term: &mut Term) -> String {
+    String::from_utf8(term.terminal.take_replies()).expect("replies are text")
+}
+
+#[test]
+fn irm_and_lnm_are_the_ansi_modes() {
+    let mut term = Term::new(6, 3);
+    term.feed("abc\r\x1b[4hX\x1b[4$p\x1b[20$p");
+    assert!(term.terminal.insert_mode());
+    assert_eq!(term.screen()[0], "Xabc");
+    assert_eq!(replies(&mut term), "\x1b[4;1$y\x1b[20;2$y");
+    term.feed("\x1b[4l\x1b[20hz\n");
+    assert!(!term.terminal.insert_mode());
+    assert!(term.terminal.input_modes().newline);
+    assert_eq!(term.cursor(), (0, 1, false), "LF went to a new line");
+    term.feed("z\x0b");
+    assert_eq!(term.cursor(), (0, 2, false), "VT too");
+    term.feed("w\x1bD");
+    assert_eq!(term.cursor(), (1, 2, false), "but not IND");
+    term.feed("\x1b[20l\x1b[20$p\x1b[3$p");
+    assert_eq!(replies(&mut term), "\x1b[20;2$y\x1b[3;0$y", "3 is unknown");
+}
+
+#[test]
+fn dec_modes_set_reset_and_report() {
+    type Get = fn(&Terminal) -> bool;
+    let modes: [(u16, Get); 13] = [
+        (1, |t| t.input_modes().cursor_keys_application),
+        (5, |t| t.reverse_video()),
+        (7, |t| t.autowrap()),
+        (12, |t| t.cursor_blink()),
+        (25, |t| t.cursor_visible()),
+        (45, |t| t.reverse_wrap()),
+        (69, |t| t.left_right_margin_mode()),
+        (1004, |t| t.input_modes().focus_events),
+        (1007, |t| t.input_modes().alternate_scroll),
+        (1036, |t| t.input_modes().meta_sends_escape),
+        (2004, |t| t.input_modes().bracketed_paste),
+        (2026, |t| t.synchronized_output()),
+        (2027, |t| t.widths().mode == Mode::Unicode),
+    ];
+    for (mode, get) in modes {
+        let mut term = Term::new(4, 2);
+        term.feed(format!("\x1b[?{mode}h\x1b[?{mode}$p"));
+        assert!(get(&term.terminal), "{mode} set");
+        assert_eq!(replies(&mut term), format!("\x1b[?{mode};1$y"));
+        term.feed(format!("\x1b[?{mode}l\x1b[?{mode}$p"));
+        assert!(!get(&term.terminal), "{mode} reset");
+        assert_eq!(replies(&mut term), format!("\x1b[?{mode};2$y"));
+    }
+    let mut term = Term::new(4, 2);
+    term.feed("\x1b[?1;2004h");
+    assert!(term.terminal.input_modes().cursor_keys_application);
+    assert!(term.terminal.input_modes().bracketed_paste);
+    term.feed("\x1b[?9999$p");
+    assert_eq!(replies(&mut term), "\x1b[?9999;0$y");
+    assert!(
+        term.terminal.cursor_visible(),
+        "the cursor shows by default"
+    );
+}
+
+#[test]
+fn the_mouse_modes_choose_one_tracking_and_one_encoding() {
+    let mut term = Term::new(4, 2);
+    let modes = |term: &Term| {
+        let input = term.terminal.input_modes();
+        (input.mouse_tracking, input.mouse_encoding)
+    };
+    for (mode, tracking) in [
+        (9, MouseTracking::X10),
+        (1000, MouseTracking::Normal),
+        (1002, MouseTracking::ButtonEvent),
+        (1003, MouseTracking::AnyEvent),
+    ] {
+        term.feed(format!("\x1b[?{mode}h"));
+        assert_eq!(modes(&term).0, tracking, "{mode}");
+    }
+    term.feed("\x1b[?1000$p\x1b[?1003$p");
+    assert_eq!(replies(&mut term), "\x1b[?1000;2$y\x1b[?1003;1$y");
+    // Resetting any of them turns tracking off, as in xterm.
+    term.feed("\x1b[?1000l");
+    assert_eq!(modes(&term).0, MouseTracking::None);
+    term.feed("\x1b[?1006h");
+    assert_eq!(modes(&term).1, MouseEncoding::Sgr);
+    term.feed("\x1b[?1016h");
+    assert_eq!(modes(&term).1, MouseEncoding::SgrPixels);
+    term.feed("\x1b[?1016l");
+    assert_eq!(modes(&term).1, MouseEncoding::X10);
+}
+
+#[test]
+fn decom_and_decawm_are_modes_6_and_7() {
+    let mut term = with_margins();
+    term.feed("\x1b[3;3H\x1b[?6h");
+    assert!(term.terminal.origin_mode());
+    assert_eq!(term.cursor(), (2, 1, false), "home is the top left margin");
+    term.feed("\x1b[?6$p\x1b[?6l\x1b[?6$p");
+    assert_eq!(replies(&mut term), "\x1b[?6;1$y\x1b[?6;2$y");
+    term.feed("\x1b[?7l");
+    assert!(!term.terminal.autowrap());
+}
+
+/// The rows of the screen that is not active.
+fn other_screen(term: &Term) -> Vec<String> {
+    let screen = if term.terminal.is_alternate_screen() {
+        &term.terminal.primary
+    } else {
+        &term.terminal.alternate
+    };
+    (0..term.terminal.rows())
+        .map(|y| {
+            let (page, row) = screen.rows.screen_row(y);
+            page.cells(row)
+                .iter()
+                .map(|cell| match cell.content() {
+                    Content::Char('\0') => ' ',
+                    Content::Char(c) => c,
+                    _ => '?',
+                })
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn mode_47_switches_screens_and_the_cursor_goes_along() {
+    let mut term = Term::new(6, 3);
+    term.feed("main\x1b[2;3H\x1b[?47h");
+    assert!(term.terminal.is_alternate_screen());
+    assert_eq!(term.cursor(), (2, 1, false));
+    assert_eq!(term.screen(), ["", "", ""]);
+    term.feed("alt\x1b[?47$p\x1b[?47l");
+    assert_eq!(replies(&mut term), "\x1b[?47;1$y");
+    assert_eq!(term.screen(), ["main", "", ""]);
+    assert_eq!(
+        term.cursor(),
+        (5, 1, false),
+        "where it was on the other screen"
+    );
+    term.feed("\x1b[?47h");
+    assert_eq!(term.screen(), ["", "  alt", ""], "47 erases nothing");
+}
+
+#[test]
+fn mode_1047_erases_the_alternate_screen_on_the_way_out() {
+    let mut term = Term::new(6, 3);
+    term.feed("\x1b[?1047halt\x1b[?1047l");
+    assert!(!term.terminal.is_alternate_screen());
+    assert_eq!(other_screen(&term), ["", "", ""]);
+}
+
+#[test]
+fn mode_1049_saves_the_cursor_and_erases_the_alternate_screen() {
+    let mut term = Term::new(6, 3);
+    term.feed("\x1b[?47hold\x1b[?47l\x1b[H");
+    term.terminal.set_pen(red());
+    term.feed("main\x1b[2;2H\x1b[?1049h");
+    assert!(term.terminal.is_alternate_screen());
+    assert_eq!(
+        term.screen(),
+        ["", "", ""],
+        "the alternate screen is erased"
+    );
+    assert_eq!(term.cursor(), (1, 1, false));
+    term.terminal.set_pen(Style::DEFAULT);
+    term.feed("\x1b[3;3Hx\x1b[?1049l");
+    assert!(!term.terminal.is_alternate_screen());
+    assert_eq!(term.cursor(), (1, 1, false), "the saved cursor is back");
+    assert_eq!(term.terminal.pen(), &red(), "with its pen");
+    assert_eq!(term.screen()[0], "main");
+}
+
+#[test]
+fn the_alternate_screen_saves_a_cursor_of_its_own() {
+    let mut term = Term::new(6, 3);
+    term.feed("\x1b[1;2H\x1b7\x1b[?47h\x1b[3;3H\x1b7\x1b[1;1H\x1b8");
+    assert_eq!(term.cursor(), (2, 2, false), "the alternate screen's own");
+    term.feed("\x1b[?47l\x1b8");
+    assert_eq!(term.cursor(), (1, 0, false), "the primary screen's");
+}
+
+#[test]
+fn mode_1048_saves_and_restores_the_cursor() {
+    let mut term = Term::new(6, 3);
+    term.feed("\x1b[?1048$p\x1b[2;4H\x1b[?1048h\x1b[H\x1b[?1048l\x1b[?1048$p");
+    assert_eq!(term.cursor(), (3, 1, false));
+    assert_eq!(replies(&mut term), "\x1b[?1048;2$y\x1b[?1048;1$y");
+}
+
+#[test]
+fn mode_2027_switches_between_clusters_and_codepoints() {
+    let mut term = Term::new(6, 1);
+    term.feed("\x1b[?2027l\u{1F1EE}\u{1F1F9}");
+    assert_eq!(
+        term.cursor(),
+        (2, 0, false),
+        "a cell per regional indicator"
+    );
+    term.feed("\x1b[?2027h\r\u{1F1EE}\u{1F1F9}");
+    assert_eq!(term.cursor(), (2, 0, false), "one wide cluster");
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    // A switch ends the cluster: half a flag on either side stays apart.
+    term.feed("\r\x1b[K\u{1F1EE}\x1b[?2027l\x1b[?2027h\u{1F1F9}");
+    assert_eq!(term.cell(0, 0).width(), Width::Narrow);
+    assert_eq!(term.cursor(), (2, 0, false));
+    // RIS brings back the mode the terminal was made with.
+    let options = Options {
+        widths: Widths {
+            mode: Mode::Legacy,
+            ..Widths::default()
+        },
+        ..Options::default()
+    };
+    let mut term = Term::with(6, 1, options);
+    term.feed("\x1b[?2027h\x1bc");
+    assert_eq!(term.terminal.widths().mode, Mode::Legacy);
+}
+
+#[test]
+fn reverse_wraparound_moves_left_into_the_row_that_wraps() {
+    let mut term = Term::new(5, 3);
+    term.feed("abcdefg\x1b[?45h");
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("\x08\x08\x08");
+    assert_eq!(term.cursor(), (4, 0, false));
+    term.feed("\x1b[9D");
+    assert_eq!(term.cursor(), (0, 0, false), "the top stops it");
+    // Not into a row that does not wrap.
+    term.feed("\x1b[3;3H\x1b[9D");
+    assert_eq!(term.cursor(), (0, 2, false));
+    // A pending wrap takes one of the moves.
+    let mut term = Term::new(5, 2);
+    term.feed("\x1b[?45habcde\x08");
+    assert_eq!(term.cursor(), (4, 0, false));
+    // Without autowrap, or without the mode, the row's start stops the cursor.
+    let mut term = Term::new(5, 3);
+    term.feed("abcdefg\x1b[?45h\x1b[?7l\x1b[9D");
+    assert_eq!(term.cursor(), (0, 1, false));
+    let mut term = Term::new(5, 3);
+    term.feed("abcdefg\x1b[9D");
+    assert_eq!(term.cursor(), (0, 1, false));
+}
+
+#[test]
+fn replies_wait_until_they_are_taken() {
+    let mut term = Term::new(4, 1);
+    term.feed("\x1b[?25$p");
+    term.feed("\x1bc");
+    assert_eq!(replies(&mut term), "\x1b[?25;1$y", "RIS keeps them");
+    assert_eq!(replies(&mut term), "");
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -2050,6 +2306,22 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[s",
     "\x1b[u",
     "\x1b[?69h",
+    "\x1b[4h",
+    "\x1b[4l",
+    "\x1b[20h",
+    "\x1b[20l",
+    "\x1b[?45h",
+    "\x1b[?7l",
+    "\x1b[?7h",
+    "\x1b[?6h",
+    "\x1b[?6l",
+    "\x1b[?47h",
+    "\x1b[?1047l",
+    "\x1b[?1049h",
+    "\x1b[?1049l",
+    "\x1b[?1048h",
+    "\x1b[?2027l",
+    "\x1b[?2027h",
     "\x1b[0m",
     "\x1b[1;31m",
     "\x1b[44m",

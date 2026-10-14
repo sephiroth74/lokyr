@@ -52,8 +52,13 @@ impl Terminal {
             ([], b'T') if params.len() <= 1 => self.scroll_down(n(0)),
             ([], b'b') => self.repeat(n(0)),
             ([], b'm') => self.select_graphic_rendition(params),
+            // SM and RM, DECSET and DECRST, and DECRQM for both kinds.
+            ([], b'h') => self.set_ansi_modes(params, true),
+            ([], b'l') => self.set_ansi_modes(params, false),
             ([b'?'], b'h') => self.set_private_modes(params, true),
             ([b'?'], b'l') => self.set_private_modes(params, false),
+            ([b'$'], b'p') => self.report_ansi_mode(params.value(0)),
+            ([b'?', b'$'], b'p') => self.report_private_mode(params.value(0)),
             ([], b'r') => self.set_top_bottom_margins(params.value(0), params.value(1)),
             // DECSLRM in left and right margin mode; otherwise SCOSC and
             // SCORC, which save and restore the cursor as DECSC and DECRC

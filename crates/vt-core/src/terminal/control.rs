@@ -19,13 +19,9 @@ impl Terminal {
         }
     }
 
-    /// BS: one column to the left, if there is one. With the wrap pending,
-    /// the cursor leaves the last column.
+    /// BS: one column to the left, as CUB 1 moves.
     fn backspace(&mut self) {
-        self.moved();
-        let cursor = &mut self.screen_mut().cursor;
-        cursor.pending_wrap = false;
-        cursor.x = cursor.x.saturating_sub(1);
+        self.cursor_back(1);
     }
 
     /// HT: to the next tab stop, or to the right margin from within the
@@ -47,10 +43,13 @@ impl Terminal {
     }
 
     /// LF: one row down, scrolling the scroll region up at its bottom
-    /// margin. The column stays.
+    /// margin. The column stays, unless LNM makes it a new line.
     fn line_feed(&mut self) {
         self.moved();
         self.index();
+        if self.input.newline {
+            self.carriage_return();
+        }
     }
 
     /// One row down, scrolling the scroll region up at its bottom margin,

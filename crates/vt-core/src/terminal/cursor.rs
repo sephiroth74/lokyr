@@ -7,6 +7,7 @@
 //! wrap pending.
 
 use super::{Cursor, Terminal};
+use crate::page::RowFlag;
 
 impl Terminal {
     /// CUU: up `n` rows.
@@ -42,15 +43,43 @@ impl Terminal {
         self.move_to(x.saturating_add(n).min(right), y);
     }
 
-    /// CUB: left `n` columns.
+    /// CUB, and BS: left `n` columns.
+    ///
+    /// With reverse wraparound and autowrap on, a move past the left margin
+    /// goes on from the right margin of the row above, as long as that row
+    /// wraps into this one, as far as the top margin. A pending wrap takes
+    /// one of the moves, as in xterm.
     pub(super) fn cursor_back(&mut self, n: u16) {
-        let Cursor { x, y, .. } = self.cursor();
+        let Cursor {
+            mut x,
+            mut y,
+            pending_wrap,
+        } = self.cursor();
         let left = if x >= self.margins.left {
             self.margins.left
         } else {
             0
         };
-        self.move_to(x.saturating_sub(n).max(left), y);
+        if !(self.reverse_wrap && self.autowrap) {
+            self.move_to(x.saturating_sub(n).max(left), y);
+            return;
+        }
+        let mut count = if pending_wrap { n - 1 } else { n };
+        loop {
+            let step = count.min(x - left);
+            x -= step;
+            count -= step;
+            if count == 0 || y <= self.margins.top {
+                break;
+            }
+            let (page, row) = self.screen().rows.screen_row(y - 1);
+            if !page.row(row).has(RowFlag::SoftWrapped) {
+                break;
+            }
+            (x, y) = (self.margins.right, y - 1);
+            count -= 1;
+        }
+        self.move_to(x, y);
     }
 
     /// CUP and HVP: to row `row` and column `col`, both from 0.

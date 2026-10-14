@@ -64,6 +64,59 @@ pub struct CursorStyle {
     pub blinking: bool,
 }
 
+/// Which mouse events a program asks for (modes 9, 1000, 1002 and 1003).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MouseTracking {
+    /// None.
+    #[default]
+    None,
+    /// Presses only, as X10 sent them (9).
+    X10,
+    /// Presses and releases (1000).
+    Normal,
+    /// Presses, releases, and motion with a button down (1002).
+    ButtonEvent,
+    /// Presses, releases, and any motion (1003).
+    AnyEvent,
+}
+
+/// How mouse events are encoded (modes 1006 and 1016).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MouseEncoding {
+    /// Bytes after `CSI M`, as X10 encoded them.
+    #[default]
+    X10,
+    /// `CSI <` with decimal numbers, in cells (1006).
+    Sgr,
+    /// The same, in pixels (1016).
+    SgrPixels,
+}
+
+/// The modes that change what keys, the mouse and pastes send to the
+/// program.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InputModes {
+    /// The cursor keys send application sequences (DECCKM, mode 1).
+    pub cursor_keys_application: bool,
+    /// The keypad sends application sequences (DECKPAM, rather than
+    /// DECKPNM).
+    pub keypad_application: bool,
+    /// Return sends CR LF rather than CR (LNM).
+    pub newline: bool,
+    /// The mouse events the program asks for.
+    pub mouse_tracking: MouseTracking,
+    /// How they are encoded.
+    pub mouse_encoding: MouseEncoding,
+    /// Focus changes send `CSI I` and `CSI O` (mode 1004).
+    pub focus_events: bool,
+    /// On the alternate screen, the wheel sends cursor keys (mode 1007).
+    pub alternate_scroll: bool,
+    /// Meta, or Option, sends ESC before the key (mode 1036).
+    pub meta_sends_escape: bool,
+    /// Pastes come between `CSI 200 ~` and `CSI 201 ~` (mode 2004).
+    pub bracketed_paste: bool,
+}
+
 /// The margins: the rows from `top` to `bottom` and the columns from `left`
 /// to `right`, all included, within which the screen scrolls and origin
 /// mode places the cursor. The whole screen until a program sets them.
@@ -170,9 +223,26 @@ pub struct Terminal {
     /// configuration.
     cursor_style: Option<CursorStyle>,
     charsets: Charsets,
-    /// Application keypad mode (DECKPAM): the keypad sends sequences
-    /// rather than the characters on its keys.
-    keypad_application: bool,
+    input: InputModes,
+    /// Reverse video (DECSCNM, mode 5): the screen's colors swap.
+    reverse_video: bool,
+    /// The cursor shows (DECTCEM, mode 25).
+    cursor_visible: bool,
+    /// The cursor blinks (mode 12).
+    cursor_blink: bool,
+    /// Reverse wraparound (mode 45): with autowrap, moving left past the
+    /// left margin goes on at the end of the row above, when that row wraps
+    /// into this one.
+    reverse_wrap: bool,
+    /// Synchronized output (mode 2026): the screen should not be drawn
+    /// until the program ends the update.
+    synchronized_output: bool,
+    /// The widths the terminal was made with, which RIS brings back after
+    /// mode 2027 changed them.
+    configured_widths: Widths,
+    /// What the terminal sends back to the program, such as replies to
+    /// queries, for the embedder to write to the PTY.
+    replies: Vec<u8>,
     /// Where the clusters of the printed text start.
     segmenter: Segmenter,
     /// The last cluster printed, until the cursor moves.
@@ -216,7 +286,14 @@ impl Terminal {
             origin: false,
             cursor_style: None,
             charsets: Charsets::default(),
-            keypad_application: false,
+            input: InputModes::default(),
+            reverse_video: false,
+            cursor_visible: true,
+            cursor_blink: false,
+            reverse_wrap: false,
+            synchronized_output: false,
+            configured_widths: options.widths,
+            replies: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,
             last_printed: None,
@@ -344,7 +421,44 @@ impl Terminal {
     /// Whether the keypad is in application mode (DECKPAM) rather than in
     /// numeric mode (DECKPNM).
     pub fn keypad_application(&self) -> bool {
-        self.keypad_application
+        self.input.keypad_application
+    }
+
+    /// The modes that change what keys, the mouse and pastes send.
+    pub fn input_modes(&self) -> InputModes {
+        self.input
+    }
+
+    /// Whether reverse video (DECSCNM) is on.
+    pub fn reverse_video(&self) -> bool {
+        self.reverse_video
+    }
+
+    /// Whether the cursor shows (DECTCEM).
+    pub fn cursor_visible(&self) -> bool {
+        self.cursor_visible
+    }
+
+    /// Whether the program asked the cursor to blink (mode 12).
+    pub fn cursor_blink(&self) -> bool {
+        self.cursor_blink
+    }
+
+    /// Whether reverse wraparound (mode 45) is on.
+    pub fn reverse_wrap(&self) -> bool {
+        self.reverse_wrap
+    }
+
+    /// Whether a synchronized update (mode 2026) is under way.
+    pub fn synchronized_output(&self) -> bool {
+        self.synchronized_output
+    }
+
+    /// Takes what the terminal has to send back to the program, such as
+    /// replies to queries, oldest first, for the embedder to write to the
+    /// PTY.
+    pub fn take_replies(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.replies)
     }
 
     /// How many times BEL has rung.

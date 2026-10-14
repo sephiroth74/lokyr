@@ -88,7 +88,7 @@ impl Terminal {
 
     /// Erases `columns` of row `y`. An erase that reaches the end of the
     /// row ends its wrap: the row no longer goes on into the next.
-    fn erase_in_row(&mut self, y: u16, columns: Range<u16>, selective: bool) {
+    pub(super) fn erase_in_row(&mut self, y: u16, columns: Range<u16>, selective: bool) {
         let blank = self.blank();
         let reaches_end = columns.end == self.cols;
         let rows = &mut self.screen_mut().rows;

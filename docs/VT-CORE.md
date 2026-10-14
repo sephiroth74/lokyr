@@ -65,6 +65,11 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Semantics**: current hyperlink (OSC 8) and current semantic zone (OSC 133: prompt, input, output).
 - **Keyboard**: the kitty keyboard flag stack, kept separately per screen.
 - **Other modes**: mouse, bracketed paste, focus events, synchronized output (2026), grapheme clustering (2027).
+  - The modes that change what keys, the mouse and pastes send (DECCKM, DECKPAM, LNM, mouse tracking and encoding, focus events, alternate scroll, Meta sends ESC, bracketed paste) live together, for the input encoders. Resetting any mouse tracking mode turns tracking off, as in xterm.
+  - The alternate screens follow xterm: 47 switches, 1047 also erases the alternate screen on the way out, and 1049 saves the cursor and erases it on the way in, and brings the cursor back on the way out. xterm has one cursor for both screens, so the cursor goes along when they switch; each screen still keeps its own cursor for DECSC.
+  - Mode 2027 switches between `unicode` and `legacy` mode, ending the cluster being printed; RIS brings back the mode the terminal was made with.
+  - Reverse wraparound (45), with autowrap, lets BS and CUB go on from the right margin of the row above, when that row wraps into this one, as far as the top margin.
+  - DECRQM replies for every mode above, 0 for those the terminal does not know; replies wait in a queue that the embedder takes and writes to the PTY.
 - **Printing**, the path of every character of text:
   - A codepoint either joins the cluster printed before it, as the segmenter decides in `unicode` mode or a zero width does in `legacy` mode, or starts a new one at the cursor. A joining codepoint goes to its cluster's cell even while the wrap is pending, and the cluster stays open until the cursor moves or a control comes; other sequences, such as SGR, leave it open.
   - A codepoint of no width with nothing to join, such as a mark right after a carriage return, joins the character left of the cursor if there is one, and is dropped otherwise.
@@ -79,7 +84,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - IL and DL work from the cursor's row to the bottom margin, only within the scroll region, and put the cursor at the left margin, as DEC terminals and xterm do. SU and SD scroll the region, the cursor staying, and SU sends the rows that leave a region of the whole screen into the scrollback.
   - REP prints the last character given to print again, through the character sets in use, as `vte` does.
   - Every edit ends the cluster being printed; those at the cursor leave no wrap pending.
-- **C0 controls**: BEL rings; BS moves left and, with the wrap pending, leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the left margin, or to the first column from left of it; SO and SI select G1 and G0. The others do nothing.
+- **C0 controls**: BEL rings; BS moves left as CUB 1 does, so that, with the wrap pending, it leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the left margin, or to the first column from left of it; SO and SI select G1 and G0. The others do nothing.
 
 ## Paged grid
 
