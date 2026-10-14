@@ -62,7 +62,7 @@ impl Terminal {
     }
 
     /// CR: to the first column.
-    fn carriage_return(&mut self) {
+    pub(super) fn carriage_return(&mut self) {
         self.moved();
         let cursor = &mut self.screen_mut().cursor;
         cursor.x = 0;

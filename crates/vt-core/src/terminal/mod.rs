@@ -2,6 +2,7 @@
 //! the parser's actions do to them.
 
 mod control;
+mod escape;
 mod print;
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
@@ -282,6 +283,10 @@ impl Handler for Terminal {
 
     fn execute(&mut self, byte: u8) {
         self.control(byte);
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], final_byte: u8) {
+        self.escape(intermediates, final_byte);
     }
 }
 

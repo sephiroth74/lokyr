@@ -461,6 +461,85 @@ fn normalization_keeps_the_style_of_the_cell() {
 }
 
 #[test]
+fn ind_goes_down_and_scrolls_at_the_bottom() {
+    let mut term = Term::new(5, 3);
+    term.feed("ab\x1bD");
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("c\x1bDd");
+    assert_eq!(term.screen(), ["ab", "  c", "   d"]);
+    term.feed("\x1bD");
+    assert_eq!(term.screen(), ["  c", "   d", ""]);
+    assert_eq!(term.cursor(), (4, 2, false));
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 1);
+}
+
+#[test]
+fn nel_goes_to_the_start_of_the_next_row() {
+    let mut term = Term::new(5, 2);
+    term.feed("abcde\x1bE");
+    assert_eq!(term.cursor(), (0, 1, false));
+    term.feed("f\x1bE");
+    assert_eq!(term.screen(), ["f", ""]);
+    assert_eq!(term.cursor(), (0, 1, false));
+}
+
+#[test]
+fn ri_goes_up_and_scrolls_down_at_the_top() {
+    let mut term = Term::new(5, 3);
+    term.feed("1\r\n2\r\n3");
+    term.feed("\x1bM");
+    assert_eq!(term.cursor(), (1, 1, false));
+    term.feed("\x1bM\x1bM");
+    assert_eq!(term.screen(), ["", "1", "2"], "3 scrolled off the bottom");
+    assert_eq!(term.cursor(), (1, 0, false));
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    term.feed("x");
+    assert_eq!(term.screen(), [" x", "1", "2"]);
+}
+
+#[test]
+fn ri_moves_the_wrap_flags_with_the_rows() {
+    let mut term = Term::new(3, 3);
+    term.feed("abcd\x1bM\x1bM");
+    assert_eq!(term.screen(), ["", "abc", "d"]);
+    assert!(term.row(1).has(RowFlag::SoftWrapped));
+    assert!(term.row(2).has(RowFlag::Continuation));
+    assert!(!term.row(0).has(RowFlag::SoftWrapped));
+}
+
+#[test]
+fn ri_on_a_single_row_clears_it() {
+    let mut term = Term::new(3, 1);
+    term.feed("abc\x1bM");
+    assert_eq!(term.screen(), [""]);
+    assert_eq!(
+        term.cursor(),
+        (2, 0, false),
+        "the wrap is no longer pending"
+    );
+}
+
+#[test]
+fn hts_sets_a_tab_stop_at_the_cursor() {
+    let mut term = Term::new(20, 2);
+    term.feed("abc\x1bH\r\t");
+    assert_eq!(term.cursor(), (3, 0, false));
+    term.feed("\t");
+    assert_eq!(term.cursor(), (8, 0, false));
+}
+
+#[test]
+fn a_mark_after_an_index_does_not_join_the_character_before() {
+    let mut term = Term::new(5, 3);
+    term.feed("\x1bDe\x1bM\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(1);
+    assert_eq!(page.grapheme(row, 0), [], "the mark stayed off the e");
+    term.feed("\x1bDx\x1bD\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(1);
+    assert_eq!(page.grapheme(row, 1), []);
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
