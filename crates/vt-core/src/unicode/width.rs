@@ -1,9 +1,6 @@
 //! How many cells a character, or a grapheme cluster, takes.
 
-use super::{
-    EastAsianWidth, Mark, east_asian_width, is_default_ignorable, is_extended_pictographic,
-    is_format, legacy_east_asian_width, mark,
-};
+use super::{EastAsianWidth, Mark, Properties, properties};
 
 /// How text splits into cells.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -61,10 +58,17 @@ impl Widths {
     /// one. Wide and fullwidth characters take two, and so do the ambiguous
     /// ones when they count as wide.
     pub fn char_width(self, c: char) -> u8 {
+        self.char_width_with(c, properties(c))
+    }
+
+    /// The cells that `c`, whose properties are `properties`, takes on its
+    /// own, as [`Widths::char_width`] counts them, for a caller that has
+    /// looked them up already.
+    pub fn char_width_with(self, c: char, properties: Properties) -> u8 {
         let zero = matches!(c, '\0'..='\u{1F}' | '\u{7F}'..='\u{9F}' | '\u{1160}'..='\u{11FF}' | '\u{D7B0}'..='\u{D7FF}')
-            || matches!(mark(c), Some(Mark::Nonspacing | Mark::Enclosing))
-            || is_format(c)
-            || is_default_ignorable(c);
+            || matches!(properties.mark, Some(Mark::Nonspacing | Mark::Enclosing))
+            || properties.format
+            || properties.default_ignorable;
         if c == '\u{AD}' {
             return 1;
         }
@@ -72,8 +76,8 @@ impl Widths {
             return 0;
         }
         let east_asian = match self.tables {
-            Tables::Current => east_asian_width(c),
-            Tables::Unicode8 => legacy_east_asian_width(c),
+            Tables::Current => properties.east_asian_width,
+            Tables::Unicode8 => properties.legacy_east_asian_width,
         };
         match east_asian {
             EastAsianWidth::Wide => 2,
@@ -92,11 +96,13 @@ impl Widths {
     /// knew no emoji presentation, so with them a cluster is always as wide
     /// as its first codepoint.
     pub fn cluster_width(self, first: char, rest: &[char]) -> u8 {
-        let width = self.char_width(first);
+        let first_properties = properties(first);
+        let width = self.char_width_with(first, first_properties);
         if self.tables == Tables::Unicode8 {
             return width;
         }
-        let emoji = is_extended_pictographic(first) || is_keycap_base(first);
+        let pictographic = first_properties.extended_pictographic;
+        let emoji = pictographic || is_keycap_base(first);
         if emoji && rest.contains(&EMOJI_PRESENTATION) {
             return 2;
         }
@@ -108,8 +114,8 @@ impl Widths {
         }
         let joined = rest
             .windows(2)
-            .any(|pair| pair[0] == ZWJ && is_extended_pictographic(pair[1]));
-        if is_extended_pictographic(first) && joined {
+            .any(|pair| pair[0] == ZWJ && properties(pair[1]).extended_pictographic);
+        if pictographic && joined {
             return 2;
         }
         width

@@ -49,6 +49,31 @@ fn the_tables_hold_ranges_apart_and_in_order() {
 }
 
 #[test]
+fn the_properties_table_agrees_with_the_range_tables() {
+    for c in (0..=0x10_FFFF).filter_map(char::from_u32) {
+        let expected = Properties {
+            east_asian_width: east_asian_width(c),
+            legacy_east_asian_width: legacy_east_asian_width(c),
+            grapheme_break: grapheme_break(c),
+            indic_conjunct_break: indic_conjunct_break(c),
+            mark: mark(c),
+            format: is_format(c),
+            default_ignorable: is_default_ignorable(c),
+            extended_pictographic: is_extended_pictographic(c),
+        };
+        assert_eq!(properties(c), expected, "U+{:04X}", u32::from(c));
+    }
+}
+
+#[test]
+fn the_properties_table_stays_small() {
+    let bytes = size_of_val(&tables::PROPERTY_INDEX)
+        + size_of_val(&tables::PROPERTY_BLOCKS)
+        + size_of_val(&tables::PROPERTIES);
+    assert!(bytes <= 64 * 1024, "{bytes} bytes");
+}
+
+#[test]
 fn the_version_is_pinned() {
     assert_eq!(UNICODE_VERSION, (18, 0, 0));
 }
@@ -319,6 +344,8 @@ fn ambiguous_characters_can_count_as_wide() {
 fn characters_of_no_width() {
     for c in [
         '\u{301}', '\u{20DD}', '\u{200B}', '\u{200D}', '\u{FE0F}', '\u{1160}', '\u{11A8}', '\0',
+        // Format characters that are not default ignorable.
+        '\u{600}', '\u{FFF9}',
     ] {
         assert_eq!(CURRENT.char_width(c), 0, "{:X}", u32::from(c));
     }

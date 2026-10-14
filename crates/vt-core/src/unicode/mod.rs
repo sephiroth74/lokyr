@@ -68,6 +68,41 @@ pub enum IndicConjunctBreak {
     Extend,
 }
 
+/// The properties of a code point that printing reads, which
+/// [`properties`] finds in one lookup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Properties {
+    /// Its East_Asian_Width in the pinned version of Unicode.
+    pub east_asian_width: EastAsianWidth,
+    /// Its East_Asian_Width in Unicode 8.
+    pub legacy_east_asian_width: EastAsianWidth,
+    /// Its Grapheme_Cluster_Break.
+    pub grapheme_break: GraphemeBreak,
+    /// Its Indic_Conjunct_Break.
+    pub indic_conjunct_break: IndicConjunctBreak,
+    /// The kind of mark it is, if it is one.
+    pub mark: Option<Mark>,
+    /// Whether it is a format character (General_Category Cf).
+    pub format: bool,
+    /// Whether it has Default_Ignorable_Code_Point.
+    pub default_ignorable: bool,
+    /// Whether it has Extended_Pictographic.
+    pub extended_pictographic: bool,
+}
+
+/// The properties of `c` that printing reads.
+///
+/// They come from a table of three stages, which takes a few tens of KiB,
+/// rather than from a binary search of the range tables for each property,
+/// which the functions below make.
+pub fn properties(c: char) -> Properties {
+    let c = u32::from(c);
+    let block = usize::from(tables::PROPERTY_INDEX[(c >> tables::PROPERTY_SHIFT) as usize]);
+    let offset = (c & ((1 << tables::PROPERTY_SHIFT) - 1)) as usize;
+    let entry = tables::PROPERTY_BLOCKS[(block << tables::PROPERTY_SHIFT) | offset];
+    tables::PROPERTIES[usize::from(entry)]
+}
+
 /// The East_Asian_Width of `c` in the pinned version of Unicode.
 pub fn east_asian_width(c: char) -> EastAsianWidth {
     find(tables::EAST_ASIAN_WIDTH, c).unwrap_or(EastAsianWidth::Narrow)

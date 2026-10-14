@@ -9,7 +9,7 @@
 //! With `--check`, the task regenerates them in memory and fails if they
 //! differ from the committed files.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -292,13 +292,17 @@ fn generate(root: &Path) -> Result<String> {
         }
     }
     writeln!(out)?;
-    writeln!(out, "use super::EastAsianWidth::{{self, Ambiguous, Wide}};")?;
+    writeln!(
+        out,
+        "use super::EastAsianWidth::{{self, Ambiguous, Narrow, Wide}};"
+    )?;
     writeln!(out, "use super::GraphemeBreak::{{self, *}};")?;
     writeln!(out, "use super::IndicConjunctBreak;")?;
     writeln!(
         out,
         "use super::Mark::{{self, Enclosing, Nonspacing, Spacing}};"
     )?;
+    writeln!(out, "use super::Properties;")?;
     writeln!(out)?;
     let [major, minor, update] = version_parts(VERSION)?;
     writeln!(
@@ -310,86 +314,340 @@ fn generate(root: &Path) -> Result<String> {
         "pub const UNICODE_VERSION: (u8, u8, u8) = ({major}, {minor}, {update});"
     )?;
 
+    let east_asian = east_asian_width(&widths)?;
+    let legacy_east_asian = east_asian_width(&legacy_widths)?;
+    let marks = select(
+        &categories,
+        &[("Mn", "Nonspacing"), ("Me", "Enclosing"), ("Mc", "Spacing")],
+    )?;
+    let format = select(&categories, &[("Cf", "")])?;
+    let default_ignorable = select(&core, &[("Default_Ignorable_Code_Point", "")])?;
+    let emoji_presentation = select(&emoji, &[("Emoji_Presentation", "")])?;
+    let pictographic = select(&emoji, &[("Extended_Pictographic", "")])?;
+    let grapheme_break = select(
+        &breaks,
+        &[
+            ("CR", "CR"),
+            ("LF", "LF"),
+            ("Control", "Control"),
+            ("Extend", "Extend"),
+            ("ZWJ", "ZWJ"),
+            ("Regional_Indicator", "RegionalIndicator"),
+            ("Prepend", "Prepend"),
+            ("SpacingMark", "SpacingMark"),
+            ("L", "L"),
+            ("V", "V"),
+            ("T", "T"),
+            ("LV", "LV"),
+            ("LVT", "LVT"),
+        ],
+    )?;
+    let conjunct = indic_conjunct_break(&core)?;
+
     table(
         &mut out,
         "East_Asian_Width of the wide and the ambiguous code points; the others are narrow.",
         "EAST_ASIAN_WIDTH",
         "EastAsianWidth",
-        &east_asian_width(&widths)?,
+        &east_asian,
     )?;
     table(
         &mut out,
         "East_Asian_Width as Unicode 8 gave it, before most emoji became wide.",
         "LEGACY_EAST_ASIAN_WIDTH",
         "EastAsianWidth",
-        &east_asian_width(&legacy_widths)?,
+        &legacy_east_asian,
     )?;
     table(
         &mut out,
         "The marks: the code points whose General_Category is Mn, Me or Mc.",
         "MARKS",
         "Mark",
-        &select(
-            &categories,
-            &[("Mn", "Nonspacing"), ("Me", "Enclosing"), ("Mc", "Spacing")],
-        )?,
+        &marks,
     )?;
     set(
         &mut out,
         "The code points whose General_Category is Cf.",
         "FORMAT",
-        &select(&categories, &[("Cf", "")])?,
+        &format,
     )?;
     set(
         &mut out,
         "The code points with Default_Ignorable_Code_Point.",
         "DEFAULT_IGNORABLE",
-        &select(&core, &[("Default_Ignorable_Code_Point", "")])?,
+        &default_ignorable,
     )?;
     set(
         &mut out,
         "The code points with Emoji_Presentation.",
         "EMOJI_PRESENTATION",
-        &select(&emoji, &[("Emoji_Presentation", "")])?,
+        &emoji_presentation,
     )?;
     set(
         &mut out,
         "The code points with Extended_Pictographic.",
         "EXTENDED_PICTOGRAPHIC",
-        &select(&emoji, &[("Extended_Pictographic", "")])?,
+        &pictographic,
     )?;
     table(
         &mut out,
         "Grapheme_Cluster_Break, for the code points whose value is not Other.",
         "GRAPHEME_BREAK",
         "GraphemeBreak",
-        &select(
-            &breaks,
-            &[
-                ("CR", "CR"),
-                ("LF", "LF"),
-                ("Control", "Control"),
-                ("Extend", "Extend"),
-                ("ZWJ", "ZWJ"),
-                ("Regional_Indicator", "RegionalIndicator"),
-                ("Prepend", "Prepend"),
-                ("SpacingMark", "SpacingMark"),
-                ("L", "L"),
-                ("V", "V"),
-                ("T", "T"),
-                ("LV", "LV"),
-                ("LVT", "LVT"),
-            ],
-        )?,
+        &grapheme_break,
     )?;
     table(
         &mut out,
         "Indic_Conjunct_Break, for the code points whose value is not None.",
         "INDIC_CONJUNCT_BREAK",
         "IndicConjunctBreak",
-        &indic_conjunct_break(&core)?,
+        &conjunct,
+    )?;
+
+    const WIDTHS: &[(&str, &str)] = &[("Wide", "Wide"), ("Ambiguous", "Ambiguous")];
+    const PRESENT: &[(&str, &str)] = &[("", "true")];
+    properties(
+        &mut out,
+        &[
+            Field {
+                name: "east_asian_width",
+                ranges: &east_asian,
+                absent: "Narrow",
+                values: WIDTHS,
+            },
+            Field {
+                name: "legacy_east_asian_width",
+                ranges: &legacy_east_asian,
+                absent: "Narrow",
+                values: WIDTHS,
+            },
+            Field {
+                name: "grapheme_break",
+                ranges: &grapheme_break,
+                absent: "Other",
+                values: &[
+                    ("CR", "CR"),
+                    ("LF", "LF"),
+                    ("Control", "Control"),
+                    ("Extend", "Extend"),
+                    ("ZWJ", "ZWJ"),
+                    ("RegionalIndicator", "RegionalIndicator"),
+                    ("Prepend", "Prepend"),
+                    ("SpacingMark", "SpacingMark"),
+                    ("L", "L"),
+                    ("V", "V"),
+                    ("T", "T"),
+                    ("LV", "LV"),
+                    ("LVT", "LVT"),
+                ],
+            },
+            Field {
+                name: "indic_conjunct_break",
+                ranges: &conjunct,
+                absent: "IndicConjunctBreak::None",
+                values: &[
+                    ("Linker", "IndicConjunctBreak::Linker"),
+                    ("Consonant", "IndicConjunctBreak::Consonant"),
+                    ("Extend", "IndicConjunctBreak::Extend"),
+                ],
+            },
+            Field {
+                name: "mark",
+                ranges: &marks,
+                absent: "None",
+                values: &[
+                    ("Nonspacing", "Some(Nonspacing)"),
+                    ("Enclosing", "Some(Enclosing)"),
+                    ("Spacing", "Some(Spacing)"),
+                ],
+            },
+            Field {
+                name: "format",
+                ranges: &format,
+                absent: "false",
+                values: PRESENT,
+            },
+            Field {
+                name: "default_ignorable",
+                ranges: &default_ignorable,
+                absent: "false",
+                values: PRESENT,
+            },
+            Field {
+                name: "extended_pictographic",
+                ranges: &pictographic,
+                absent: "false",
+                values: PRESENT,
+            },
+        ],
     )?;
     Ok(out)
+}
+
+/// How many code points there are.
+const CODE_POINTS: usize = 0x11_0000;
+
+/// A field of the properties that printing reads, and the ranges that its
+/// values come from.
+struct Field<'a> {
+    name: &'static str,
+    ranges: &'a Ranges,
+    /// The field's value, as Rust, for the code points that no range holds.
+    absent: &'static str,
+    /// The values of the ranges, each with the field's value, as Rust.
+    values: &'static [(&'static str, &'static str)],
+}
+
+/// Writes the properties of every code point, `fields` together, as a
+/// table of three stages: the block of each run of code points, the entry
+/// of each code point in a block, and the properties of each entry.
+fn properties(out: &mut String, fields: &[Field]) -> Result<()> {
+    // Each field, as the index of each code point's value: 0 for absent,
+    // then the values in order.
+    let mut columns = Vec::new();
+    for field in fields {
+        let mut column = vec![0_u8; CODE_POINTS];
+        for (start, end, value) in field.ranges.merged() {
+            let Some(index) = field.values.iter().position(|&(name, _)| name == value) else {
+                bail!("{}: no value for {value:?}", field.name);
+            };
+            column[start as usize..=end as usize].fill(u8::try_from(index + 1)?);
+        }
+        columns.push(column);
+    }
+
+    // The entries: the combinations of values, in the order that the code
+    // points first have them.
+    let mut entries: Vec<Vec<u8>> = Vec::new();
+    let mut known: HashMap<Vec<u8>, u8> = HashMap::new();
+    let mut entry_of = Vec::with_capacity(CODE_POINTS);
+    for c in 0..CODE_POINTS {
+        let entry: Vec<u8> = columns.iter().map(|column| column[c]).collect();
+        let id = match known.get(&entry) {
+            Some(&id) => id,
+            None => {
+                let id = u8::try_from(entries.len()).context("more than 256 entries")?;
+                known.insert(entry.clone(), id);
+                entries.push(entry);
+                id
+            }
+        };
+        entry_of.push(id);
+    }
+
+    let (shift, index, blocks) = (4..=10)
+        .map(|shift| stages(&entry_of, shift))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .min_by_key(|(_, index, blocks)| index_bytes(index) + blocks.len())
+        .expect("several block sizes were tried");
+    let index_type = if index_bytes(&index) == index.len() {
+        "u8"
+    } else {
+        "u16"
+    };
+
+    writeln!(out)?;
+    writeln!(
+        out,
+        "/// The properties that printing reads, for every code point, in three stages:"
+    )?;
+    writeln!(
+        out,
+        "/// `PROPERTY_INDEX` gives the block of each run of 2^`PROPERTY_SHIFT` code points,"
+    )?;
+    writeln!(
+        out,
+        "/// `PROPERTY_BLOCKS` the entry of each code point of a block, and `PROPERTIES` the"
+    )?;
+    writeln!(out, "/// properties of each entry.")?;
+    writeln!(out, "pub const PROPERTY_SHIFT: u32 = {shift};")?;
+    numbers(
+        out,
+        "The block of each run of code points.",
+        "PROPERTY_INDEX",
+        index_type,
+        &index,
+    )?;
+    numbers(
+        out,
+        "The entry of each code point, a block after the other.",
+        "PROPERTY_BLOCKS",
+        "u8",
+        &blocks,
+    )?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "/// The combinations of properties that code points have."
+    )?;
+    writeln!(
+        out,
+        "pub static PROPERTIES: [Properties; {}] = [",
+        entries.len()
+    )?;
+    for entry in &entries {
+        let values: Vec<String> = fields
+            .iter()
+            .zip(entry)
+            .map(|(field, &value)| {
+                let rust = match value {
+                    0 => field.absent,
+                    value => field.values[usize::from(value) - 1].1,
+                };
+                format!("{}: {rust}", field.name)
+            })
+            .collect();
+        writeln!(out, "    Properties {{ {} }},", values.join(", "))?;
+    }
+    writeln!(out, "];")?;
+    Ok(())
+}
+
+/// The two first stages for blocks of 2^`shift` code points: the block of
+/// each run, and the blocks, each told once.
+fn stages(entry_of: &[u8], shift: u32) -> Result<(u32, Vec<u16>, Vec<u8>)> {
+    let size = 1 << shift;
+    let mut blocks = Vec::new();
+    let mut known: HashMap<&[u8], u16> = HashMap::new();
+    let mut index = Vec::new();
+    for run in entry_of.chunks(size) {
+        let next = u16::try_from(blocks.len() / size).context("too many blocks")?;
+        let block = *known.entry(run).or_insert_with(|| {
+            blocks.extend_from_slice(run);
+            next
+        });
+        index.push(block);
+    }
+    Ok((shift, index, blocks))
+}
+
+/// The bytes that `index` takes, as bytes if every value fits in one.
+fn index_bytes(index: &[u16]) -> usize {
+    if index.iter().all(|&block| block <= u16::from(u8::MAX)) {
+        index.len()
+    } else {
+        2 * index.len()
+    }
+}
+
+/// Writes an array of numbers, 24 to a line.
+fn numbers<T: std::fmt::Display>(
+    out: &mut String,
+    doc: &str,
+    name: &str,
+    ty: &str,
+    values: &[T],
+) -> Result<()> {
+    writeln!(out)?;
+    writeln!(out, "/// {doc}")?;
+    writeln!(out, "pub static {name}: [{ty}; {}] = [", values.len())?;
+    for line in values.chunks(24) {
+        let line: Vec<String> = line.iter().map(ToString::to_string).collect();
+        writeln!(out, "    {},", line.join(", "))?;
+    }
+    writeln!(out, "];")?;
+    Ok(())
 }
 
 fn version_parts(version: &str) -> Result<[u8; 3]> {

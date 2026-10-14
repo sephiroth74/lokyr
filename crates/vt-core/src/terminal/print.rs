@@ -1,18 +1,19 @@
 //! Printing: the path that every character of text takes into the grid.
 
 use super::{Cluster, Cursor, Terminal};
-use crate::page::{Cell, Content, RowFlag, StyleId, Width};
-use crate::unicode::{Mode, Normalization};
+use crate::page::{Cell, Content, Page, RowFlag, StyleId, Width};
+use crate::unicode::{Mode, Normalization, properties};
 
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
     /// cells at the cursor.
     pub(super) fn print_char(&mut self, c: char) {
+        let properties = properties(c);
+        let width = self.widths.char_width_with(c, properties);
         let joins = match self.widths.mode {
-            Mode::Unicode => !self.segmenter.starts_cluster(c),
-            Mode::Legacy => self.widths.char_width(c) == 0,
+            Mode::Unicode => !self.segmenter.starts_cluster_with(properties),
+            Mode::Legacy => width == 0,
         };
-        let width = self.widths.char_width(c);
         if joins || width == 0 {
             self.join_previous(c);
             return;
@@ -86,15 +87,15 @@ impl Terminal {
     /// [`Terminal::start_cluster`] writes a character.
     fn write_cells(&mut self, x: u16, y: u16, text: &[u8]) {
         let width = text.len() as u16;
-        if self.insert {
-            self.insert_blanks(x, y, width);
-        } else {
-            self.clear_overlaps(x, y, width);
-        }
-        let style = self.pen_style(y);
-        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-        page.write_ascii(row, x, text, style);
-        self.release_pen_style(y, style);
+        let insert = self.insert;
+        self.with_pen(y, |page, row, style| {
+            if insert {
+                page.insert_blanks(row, x, width);
+            } else {
+                page.clear_halves(row, x, width);
+            }
+            page.write_ascii(row, x, text, style);
+        });
     }
 
     /// Writes a new cluster, `c`, which takes `width` cells, at the cursor.
@@ -120,24 +121,22 @@ impl Terminal {
         }
 
         let (x, y) = (self.cursor().x, self.cursor().y);
-        if self.insert {
-            self.insert_blanks(x, y, width);
-        } else {
-            self.clear_overlaps(x, y, width);
-        }
-        let style = self.pen_style(y);
-        let cell = Cell::EMPTY.with_content(Content::Char(c)).with_style(style);
-        if width == 2 {
-            self.put(x, y, cell.with_width(Width::Wide));
-            self.put(
-                x + 1,
-                y,
-                Cell::EMPTY.with_width(Width::SpacerTail).with_style(style),
-            );
-        } else {
-            self.put(x, y, cell);
-        }
-        self.release_pen_style(y, style);
+        let insert = self.insert;
+        self.with_pen(y, |page, row, style| {
+            if insert {
+                page.insert_blanks(row, x, width);
+            } else {
+                page.clear_halves(row, x, width);
+            }
+            let cell = Cell::EMPTY.with_content(Content::Char(c)).with_style(style);
+            if width == 2 {
+                page.set_cell(row, x, cell.with_width(Width::Wide));
+                let tail = Cell::EMPTY.with_width(Width::SpacerTail).with_style(style);
+                page.set_cell(row, x + 1, tail);
+            } else {
+                page.set_cell(row, x, cell);
+            }
+        });
         self.cluster = Some(Cluster { x, y });
         self.normalize(Cluster { x, y });
 
@@ -300,50 +299,28 @@ impl Terminal {
     /// Empties the halves of wide characters that writing `width` cells at
     /// column `x` of row `y` would leave without their other half.
     fn clear_overlaps(&mut self, x: u16, y: u16, width: u16) {
-        if self.cell(x, y).width() == Width::SpacerTail && x > 0 {
-            self.put(x - 1, y, Cell::EMPTY);
-        }
-        let last = x + width - 1;
-        if self.cell(last, y).width() == Width::Wide && last + 1 < self.cols {
-            self.put(last + 1, y, Cell::EMPTY);
-        }
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+        page.clear_halves(row, x, width);
     }
 
-    /// Makes room for `width` cells at column `x` of row `y`, as insert mode
-    /// does, without splitting wide characters.
-    fn insert_blanks(&mut self, x: u16, y: u16, width: u16) {
-        let cols = self.cols;
-        if self.cell(x, y).width() == Width::SpacerTail {
-            self.put(x - 1, y, Cell::EMPTY);
-            self.put(x, y, Cell::EMPTY);
-        }
-        {
-            let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-            page.insert_blanks(row, x, width);
-        }
-        // A wide character whose second half fell off the row.
-        if self.cell(cols - 1, y).width() == Width::Wide {
-            self.put(cols - 1, y, Cell::EMPTY);
-        }
-    }
-
-    /// The pen's style in the table of the page of row `y`, which the pen
-    /// holds a reference to until [`Terminal::release_pen_style`]. A full
-    /// table makes the page grow.
-    fn pen_style(&mut self, y: u16) -> StyleId {
+    /// Runs `write` on the page of row `y`, with the row in it and the
+    /// pen's style in its table, which the pen holds a reference to while
+    /// `write` runs. A full table makes the page grow first. The page is
+    /// looked up once, unless it grows.
+    fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
         let pen = self.pen;
         let rows = &mut self.screen_mut().rows;
-        loop {
-            let (page, _) = rows.screen_row_mut(y);
+        let (mut page, mut row) = rows.screen_row_mut(y);
+        let style = loop {
             match page.styles_mut().acquire(&pen) {
-                Ok(id) => return id,
-                Err(full) => rows.grow_page(y, full),
+                Ok(style) => break style,
+                Err(full) => {
+                    rows.grow_page(y, full);
+                    (page, row) = rows.screen_row_mut(y);
+                }
             }
-        }
-    }
-
-    fn release_pen_style(&mut self, y: u16, style: StyleId) {
-        let (page, _) = self.screen_mut().rows.screen_row_mut(y);
+        };
+        write(page, row, style);
         page.styles_mut().release(style);
     }
 }

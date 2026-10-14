@@ -1,10 +1,7 @@
 //! Grapheme cluster boundaries, as UAX #29 defines them
 //! (<https://www.unicode.org/reports/tr29/>), found one codepoint at a time.
 
-use super::{
-    GraphemeBreak, IndicConjunctBreak, grapheme_break, indic_conjunct_break,
-    is_extended_pictographic,
-};
+use super::{GraphemeBreak, IndicConjunctBreak, Properties, properties};
 
 /// Finds where grapheme clusters start, from the codepoints given to it one
 /// after the other, as text arrives.
@@ -48,11 +45,18 @@ impl Segmenter {
     /// Whether `c` starts a new grapheme cluster, rather than joining the
     /// cluster of the codepoint before it.
     pub fn starts_cluster(&mut self, c: char) -> bool {
+        self.starts_cluster_with(properties(c))
+    }
+
+    /// Whether the codepoint with `properties` starts a new grapheme
+    /// cluster, as [`Segmenter::starts_cluster`] says, for a caller that
+    /// has looked them up already.
+    pub fn starts_cluster_with(&mut self, properties: Properties) -> bool {
         use GraphemeBreak::*;
 
-        let class = grapheme_break(c);
-        let conjunct = indic_conjunct_break(c);
-        let pictographic = is_extended_pictographic(c);
+        let class = properties.grapheme_break;
+        let conjunct = properties.indic_conjunct_break;
+        let pictographic = properties.extended_pictographic;
 
         let starts = match self.previous {
             // GB1: the start of the text.

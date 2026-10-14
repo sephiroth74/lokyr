@@ -266,6 +266,13 @@ fn insert_mode_never_leaves_half_a_wide_character() {
     term.feed("x");
     // 中 lost its second half off the row, so it went whole.
     assert_eq!(term.screen(), ["xabc", ""]);
+    // Inserting in the middle of a wide character empties it too.
+    let mut term = Term::new(6, 2);
+    term.feed("中b");
+    term.terminal.set_insert_mode(true);
+    term.feed("x");
+    assert_eq!(term.screen(), [" x b", ""]);
+    assert_eq!(term.cell(0, 0), Cell::EMPTY);
 }
 
 #[test]

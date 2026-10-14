@@ -381,10 +381,39 @@ impl Page {
         self.row_mut(y).set(RowFlag::Dirty, true);
     }
 
+    /// Empties the halves of wide characters that writing `width` cells
+    /// from column `x` of row `y` would leave without their other half.
+    pub fn clear_halves(&mut self, y: u16, x: u16, width: u16) {
+        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
+            self.set_cell(y, x - 1, Cell::EMPTY);
+        }
+        let last = x + width - 1;
+        if last + 1 < self.cols() && self.cells(y)[usize::from(last)].width() == Width::Wide {
+            self.set_cell(y, last + 1, Cell::EMPTY);
+        }
+    }
+
     /// Inserts `n` empty cells at column `x` of row `y`: the cells from
     /// there move right, with their graphemes and links, and the ones that
-    /// pass the end of the row drop what they held.
+    /// pass the end of the row drop what they held. A wide character that
+    /// the insertion would split, at `x` or at the end of the row, is
+    /// emptied whole.
     pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16) {
+        let cols = self.cols();
+        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
+            self.set_cell(y, x - 1, Cell::EMPTY);
+            self.set_cell(y, x, Cell::EMPTY);
+        }
+        self.shift_right(y, x, n);
+        // A wide character whose second half fell off the row.
+        if self.cells(y)[usize::from(cols - 1)].width() == Width::Wide {
+            self.set_cell(y, cols - 1, Cell::EMPTY);
+        }
+    }
+
+    /// Moves the cells from column `x` of row `y` right by `n`, as
+    /// [`Page::insert_blanks`] does, but whatever their widths.
+    fn shift_right(&mut self, y: u16, x: u16, n: u16) {
         let cols = self.cols();
         let n = n.min(cols - x);
         for column in cols - n..cols {
