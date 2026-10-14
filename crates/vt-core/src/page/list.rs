@@ -266,6 +266,37 @@ impl PageList {
         self.enforce();
     }
 
+    /// Moves row `from` of the screen into row `to`: its cells, with their
+    /// styles, graphemes and links, and its metadata. What `to` held is
+    /// dropped, and `from` is left empty.
+    ///
+    /// Within a page, the cells move as they are. Across pages, they are
+    /// copied into the tables of the page of `to`, which grows when one of
+    /// them is full.
+    pub fn move_row(&mut self, from: u16, to: u16) {
+        let (source, from_row) = self.locate(from);
+        let (target, to_row) = self.locate(to);
+        if source == target {
+            self.page_at_mut(source).move_row(from_row, to_row);
+            return;
+        }
+        loop {
+            let [source_node, target_node] = self
+                .nodes
+                .get_disjoint_mut([source as usize, target as usize])
+                .expect("two nodes of the list");
+            let source_page = source_node.page.as_mut().expect("a linked node has a page");
+            let target_page = target_node.page.as_mut().expect("a linked node has a page");
+            match target_page.copy_row(to_row, source_page, from_row) {
+                Ok(()) => {
+                    source_page.clear_row(from_row);
+                    return;
+                }
+                Err(full) => self.grow_page(to, full),
+            }
+        }
+    }
+
     /// Every row of the list, oldest first, as its page and its row in it.
     pub fn iter_rows(&self) -> impl Iterator<Item = (&Page, u16)> + '_ {
         self.iter_pages()
@@ -563,6 +594,102 @@ mod tests {
         let expected: Vec<Option<u32>> = (lines - 24..lines).map(Some).collect();
         let screen: Vec<Option<u32>> = numbers(&list)[list.scrollback_rows()..].to_vec();
         assert_eq!(screen, expected);
+    }
+
+    /// A list whose screen of 24 rows straddles two pages: its first 12
+    /// rows end a page, and the other 12 start the next one.
+    fn straddling() -> PageList {
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        scroll(&mut list, 0, u32::from(Capacity::standard(80).rows) - 12);
+        assert_ne!(list.screen_row_id(11).0, list.screen_row_id(12).0);
+        list
+    }
+
+    /// The number of each row of the screen.
+    fn screen_numbers(list: &PageList) -> Vec<Option<u32>> {
+        numbers(list)[list.scrollback_rows()..].to_vec()
+    }
+
+    /// Writes `c` in `style` at column 1 of row `y` of the screen.
+    fn styled(list: &mut PageList, y: u16, c: char, style: &Style) {
+        let (page, row) = list.screen_row_mut(y);
+        let id = page.styles_mut().acquire(style).unwrap();
+        page.set_cell(
+            row,
+            1,
+            Cell::EMPTY.with_content(Content::Char(c)).with_style(id),
+        );
+        page.styles_mut().release(id);
+    }
+
+    #[test]
+    fn rows_move_within_a_page_and_across_two() {
+        let mut list = straddling();
+        let red = Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        };
+        for y in 0..24 {
+            let (page, row) = list.screen_row_mut(y);
+            page.set_cell(row, 0, numbered(1000 + u32::from(y)));
+        }
+        styled(&mut list, 11, 'r', &red);
+        // Down across the boundary, up across it, and within a page.
+        list.move_row(11, 12);
+        list.move_row(13, 10);
+        list.move_row(20, 23);
+        let mut expected: Vec<Option<u32>> = (1000..1024).map(Some).collect();
+        expected[12] = Some(1011);
+        expected[11] = None;
+        expected[10] = Some(1013);
+        expected[13] = None;
+        expected[23] = Some(1020);
+        expected[20] = None;
+        assert_eq!(screen_numbers(&list), expected);
+        // The styled cell went into the other page, which holds its style,
+        // and the first page let go of it.
+        let (page, row) = list.screen_row(12);
+        assert_eq!(page.styles().get(page.cells(row)[1].style()), &red);
+        assert_eq!(page.styles().references(page.cells(row)[1].style()), 1);
+        let (page, _) = list.screen_row(0);
+        assert_eq!(page.styles().len(), 0);
+    }
+
+    #[test]
+    fn a_move_into_a_page_with_a_full_table_grows_it() {
+        let mut list = straddling();
+        let style = |n: usize| {
+            let [_, _, g, b] = u32::try_from(n).unwrap().to_be_bytes();
+            Style {
+                fg: Color::Rgb(Rgb::new(1, g, b)),
+                ..Style::DEFAULT
+            }
+        };
+        // Fill the style table of the lower page.
+        let room = usize::from(Capacity::standard(80).styles);
+        for n in 0..room {
+            let (y, x) = (12 + (n / 80) as u16, (n % 80) as u16);
+            let (page, row) = list.screen_row_mut(y);
+            let id = page.styles_mut().acquire(&style(n)).unwrap();
+            page.set_cell(row, x, Cell::EMPTY.with_style(id));
+            page.styles_mut().release(id);
+        }
+        let (page, _) = list.screen_row(23);
+        assert_eq!(page.styles().len(), room, "the table is full");
+        let id = list.screen_row_id(12).0;
+        let blue = Style {
+            fg: Color::Palette(4),
+            bold: true,
+            ..Style::DEFAULT
+        };
+        styled(&mut list, 0, 'b', &blue);
+        list.move_row(0, 23);
+        let (page, row) = list.screen_row(23);
+        assert_eq!(page.cells(row)[1].content(), Content::Char('b'));
+        assert_eq!(page.styles().get(page.cells(row)[1].style()), &blue);
+        assert_eq!(list.screen_row_id(12).0, id, "the page keeps its id");
+        assert!(usize::from(page.capacity().styles) > room, "the page grew");
+        assert_eq!(page.styles().len(), room + 1);
     }
 
     #[test]

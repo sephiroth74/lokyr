@@ -440,6 +440,66 @@ impl Page {
         row.set(RowFlag::Dirty, true);
     }
 
+    /// Moves row `from` into row `to`, within the page: the cells move with
+    /// their graphemes and links, and the row's metadata goes along. What
+    /// `to` held is dropped, and `from` is left empty, as
+    /// [`Page::clear_row`] leaves it.
+    pub fn move_row(&mut self, from: u16, to: u16) {
+        if from == to {
+            return;
+        }
+        self.clear_row(to);
+        let (from_start, to_start) = (self.cell_range(from).start, self.cell_range(to).start);
+        for x in 0..usize::from(self.cols()) {
+            self.move_cell(from_start + x, to_start + x);
+        }
+        let mut metadata = self.row(from);
+        metadata.set(RowFlag::Dirty, true);
+        *self.row_mut(to) = metadata;
+        self.clear_row(from);
+    }
+
+    /// Copies row `from` of `source`, a page of the same width, into row
+    /// `to`: each cell takes its style, grapheme and link in this page's
+    /// tables, and the row's metadata goes along. What `to` held is
+    /// dropped. If one of the tables is full, `to` is left empty, and the
+    /// error tells which.
+    pub fn copy_row(&mut self, to: u16, source: &Page, from: u16) -> Result<(), TableFull> {
+        assert_eq!(source.cols(), self.cols(), "the pages have one width");
+        self.clear_row(to);
+        if let Err(full) = self.copy_cells(to, source, from) {
+            self.clear_row(to);
+            return Err(full);
+        }
+        let mut metadata = source.row(from);
+        metadata.set(RowFlag::Dirty, true);
+        *self.row_mut(to) = metadata;
+        Ok(())
+    }
+
+    /// The cells of [`Page::copy_row`], into the empty row `to`.
+    fn copy_cells(&mut self, to: u16, source: &Page, from: u16) -> Result<(), TableFull> {
+        for (x, &cell) in (0..).zip(source.cells(from)) {
+            let style = self.styles.acquire(source.styles().get(cell.style()))?;
+            let mut copy = cell.with_style(style).with_hyperlink(false);
+            if let Content::Grapheme(first) = cell.content() {
+                copy = copy.with_content(Content::Char(first));
+            }
+            self.set_cell(to, x, copy);
+            self.styles.release(style);
+            for &c in source.grapheme(from, x) {
+                self.push_codepoint(to, x, c)?;
+            }
+            if let Some(link) = source.hyperlink(from, x) {
+                let link = self.hyperlinks.acquire(source.hyperlinks().get(link))?;
+                let linked = self.set_hyperlink(to, x, Some(link));
+                self.hyperlinks.release(link);
+                linked?;
+            }
+        }
+        Ok(())
+    }
+
     /// Empties the page as it was new, with no row in use, without
     /// allocating: what the pool does before handing a page out again.
     pub fn reset(&mut self) {

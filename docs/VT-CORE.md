@@ -115,6 +115,7 @@ The metadata fits in one byte.
 
 - **Structure**: a doubly linked list of indexes into a slab, oldest first, rather than of pointers. The last rows form the active screen; the earlier ones form the scrollback. Scrolling adds an empty row at the bottom, in a new page when the last one is full.
 - **Page ids**: a page's id carries the generation of its slot, so the id of a page that left the list goes stale instead of naming another page.
+- **Moving rows**: a row of the screen moves into another one, as scrolling down, inserting and deleting lines and scroll regions need. Within a page, cells move with their graphemes and links as they are. Across pages, each cell's style, grapheme and link are copied into the tables of the other page, which grows when one is full.
 - **Eviction**: when a new page would pass the byte limits below, the oldest page leaves first: it is emptied and goes back to the pool, which hands it out again, so the list keeps no spare page and scrolling at the limit allocates nothing. A page grown past the standard size is freed instead. The oldest page leaves only when the rows after it cover the screen.
 - **Byte-based limits**:
   - One per pane, 10 MiB by default, over the pages of the list and of its pool.

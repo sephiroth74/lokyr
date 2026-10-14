@@ -467,3 +467,101 @@ fn a_cell_can_change_width_and_keep_its_grapheme() {
     assert_eq!(page.cells(0)[0].width(), Width::Wide);
     assert_eq!(page.grapheme(0, 0), ['\u{FE0F}']);
 }
+
+/// Writes into row `y` of `page` "a" in bold red, "e" with a combining
+/// acute accent, and "lk" in bold red, part of a link, and marks the row
+/// soft-wrapped. Returns the link.
+fn sample_row(page: &mut Page, y: u16) -> HyperlinkId {
+    print(page, y, 0, 'a', &bold(1)).unwrap();
+    print(page, y, 1, 'e', &Style::DEFAULT).unwrap();
+    page.push_codepoint(y, 1, '\u{301}').unwrap();
+    let id = page
+        .hyperlinks_mut()
+        .acquire(link("x", "https://example.com"))
+        .unwrap();
+    for (x, c) in [(2, 'l'), (3, 'k')] {
+        print(page, y, x, c, &bold(1)).unwrap();
+        page.set_hyperlink(y, x, Some(id)).unwrap();
+    }
+    page.hyperlinks_mut().release(id);
+    page.row_mut(y).set(RowFlag::SoftWrapped, true);
+    id
+}
+
+/// Checks that row `y` of `page` holds what [`sample_row`] writes.
+fn assert_sample_row(page: &Page, y: u16) {
+    let cells = page.cells(y);
+    assert_eq!(page.styles().get(cells[0].style()), &bold(1));
+    assert_eq!(cells[0].content(), Content::Char('a'));
+    assert_eq!(cells[1].content(), Content::Grapheme('e'));
+    assert_eq!(page.grapheme(y, 1), ['\u{301}']);
+    for x in [2, 3] {
+        let link = page.hyperlink(y, x).expect("a linked cell");
+        let target = page.hyperlinks().get(link);
+        assert_eq!(
+            (target.id, target.uri),
+            (&b"x"[..], &b"https://example.com"[..])
+        );
+    }
+    assert!(page.row(y).has(RowFlag::SoftWrapped));
+}
+
+#[test]
+fn a_row_moves_within_its_page_with_its_graphemes_and_links() {
+    let mut page = page_with_rows(3);
+    let id = sample_row(&mut page, 0);
+    print(&mut page, 2, 0, 'z', &bold(2)).unwrap();
+    page.move_row(0, 2);
+    assert_sample_row(&page, 2);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+    assert!(!page.row(0).has(RowFlag::SoftWrapped));
+    assert!(page.row(0).has(RowFlag::Dirty));
+    // What row 2 held is gone; the moved cells hold their references.
+    assert_eq!(page.styles().len(), 1);
+    assert_eq!(page.styles().references(page.cells(2)[0].style()), 3);
+    assert_eq!(page.graphemes.len(), 1);
+    assert_eq!(page.hyperlinks().references(id), 2);
+    page.move_row(2, 2);
+    assert_sample_row(&page, 2);
+}
+
+#[test]
+fn a_row_copies_into_another_page_with_its_tables() {
+    let mut source = page_with_rows(1);
+    sample_row(&mut source, 0);
+    let mut target = page_with_rows(2);
+    print(&mut target, 1, 0, 'z', &bold(2)).unwrap();
+    target.copy_row(1, &source, 0).unwrap();
+    assert_sample_row(&target, 1);
+    assert_sample_row(&source, 0);
+    // The target holds its own references, and dropped bold(2).
+    assert_eq!(target.styles().len(), 1);
+    assert_eq!(target.styles().references(target.cells(1)[0].style()), 3);
+    assert_eq!(target.graphemes.len(), 1);
+    let link = target.hyperlink(1, 2).unwrap();
+    assert_eq!(target.hyperlinks().references(link), 2);
+}
+
+#[test]
+fn a_copy_into_a_full_table_leaves_the_row_empty() {
+    let mut source = page_with_rows(1);
+    for x in 0..3 {
+        print(&mut source, 0, x, 'a', &nth_style(u32::from(x) + 1)).unwrap();
+    }
+    let capacity = Capacity {
+        styles: 2,
+        ..Capacity::standard(80)
+    };
+    let mut target = Page::new(capacity);
+    target.push_row();
+    assert_eq!(target.copy_row(0, &source, 0), Err(TableFull::Styles));
+    assert!(target.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+    assert_eq!(
+        target.styles().len(),
+        0,
+        "the two styles copied are dropped"
+    );
+    let mut grown = target.grown(capacity.grown_for(TableFull::Styles));
+    grown.copy_row(0, &source, 0).unwrap();
+    assert_eq!(grown.styles().len(), 3);
+}
