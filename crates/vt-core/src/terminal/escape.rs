@@ -117,10 +117,12 @@ impl Terminal {
         self.tab_stops[usize::from(x)] = true;
     }
 
-    /// RI: up a row, scrolling the scroll region down at its top margin.
-    /// The column stays.
+    /// RI: up a row, scrolling the scroll region down at its top margin,
+    /// when the cursor is between the left and right margins. The column
+    /// stays.
     fn reverse_index(&mut self) {
-        if self.cursor().y == self.margins.top {
+        let Cursor { x, y, .. } = self.cursor();
+        if y == self.margins.top && self.margins.has_column(x) {
             self.moved();
             self.screen_mut().cursor.pending_wrap = false;
             self.scroll_region_down(1);

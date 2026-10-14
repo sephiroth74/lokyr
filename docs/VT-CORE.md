@@ -57,7 +57,8 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Full reset (RIS)**: the terminal goes back to how it was made, its scrollback cleared as `alacritty_terminal` clears it, but it keeps its configuration: size, scrollback limits, widths and normalization.
 - **Modes and geometry**:
   - ANSI and DEC private modes, tab stops;
-  - vertical and horizontal scroll regions (DECSTBM, DECSLRM with DECLRMM).
+  - vertical and horizontal scroll regions (DECSTBM, DECSLRM with DECLRMM). Without DECLRMM, `CSI s` is SCOSC, and `CSI u` without parameters SCORC.
+  - The four margins make a rectangle that LF, IND, NEL and RI scroll, at the bottom and top margins, when the cursor is between the left and right ones; below the region, the last row stops LF. IL, DL, ICH, DCH, SU and SD work within the rectangle, and only a region of the whole screen sends rows into the scrollback. HT stops at the right margin and CBT at the left one, from within them. Wide characters across the edges of what moves are emptied whole.
 - **Character sets**: G0–G3, each designated ASCII, DEC Special Graphics or British; the locking shifts SO, SI, LS2 and LS3, and the single shifts SS2 and SS3. A designation of a set the terminal does not know leaves the slot as it was. Only printable ASCII changes meaning: DEC Special Graphics draws lines and boxes from `_` to `~`, as the VT100 did, and its line characters are ambiguous-width.
 - **Style and colors**: current style (SGR), 256-color palette, dynamic colors (OSC 4/10/11/12), title stack.
 - **Semantics**: current hyperlink (OSC 8) and current semantic zone (OSC 133: prompt, input, output).
@@ -69,7 +70,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - When VS16 widens a cluster, its cell takes a spacer tail and the cursor moves on one column; VS15 does the reverse. A cluster at the last column has no room to widen and stays narrow.
   - Writing over half of a wide character empties its other half. A wide character at the last column leaves a spacer head there and wraps, or, without autowrap, goes one column back.
   - Insert mode moves the rest of the row right, cells with their graphemes and links, and empties a wide character that would lose its second half off the row.
-  - Wrapping marks the row soft-wrapped and the next one as its continuation, for reflow.
+  - A line ends at the right margin, unless the cursor is past it, and then at the edge of the screen; wrapping goes on at the left margin of the next row, through the scroll region. Only a wrap from the last column of the screen to the first one marks the row soft-wrapped and the next one as its continuation, for reflow.
 - **Editing**:
   - Erased cells, and the cells and rows that inserting, deleting and scrolling bring in, take the pen's background color and nothing else (background color erase).
   - ED, EL and ECH erase every cell; DECSED and DECSEL keep the cells that DECSCA protected, which both print paths mark. A wide character that an erase, an insertion or a deletion would split goes whole, and an erase that reaches the end of a row ends its wrap.
@@ -244,7 +245,7 @@ The "Phase" column shows the [roadmap](ROADMAP.md) phase in which support lands.
 | C0 controls | BEL, BS, HT, LF, VT, FF, CR, SO, SI | F1 |
 | ESC | DECSC/DECRC (ESC 7/8), IND, NEL, HTS, RI, RIS, DECKPAM/DECKPNM, G0–G3 charset designation, LS2/LS3, SS2/SS3, DECALN | F1 |
 | Cursor | CUU, CUD, CUF, CUB, CNL, CPL, CHA, CUP, HVP, VPA, VPR, HPA, HPR, CHT, CBT, DECSCUSR | F1 |
-| Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, DECSCA, TBC | F1 |
+| Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, SCOSC/SCORC, DECSCA, TBC | F1 |
 | SGR | 0–9, 21–29, 30–37, 90–97, 38;5 and 38;2 (also with `:`), 39, 40–47, 100–107, 48, 49, 4:0–4:5 (underline styles), 53/55 (overline), 58/59 (underline color) | F1 |
 | ANSI modes | IRM (4), LNM (20) | F1 |
 | DEC modes | 1 (DECCKM), 5 (DECSCNM), 6 (DECOM), 7 (DECAWM), 12 (blink), 25 (DECTCEM), 45 (reverse wrap), 47/1047/1049 (alternate screen), 1048, 69 (DECLRMM), 1000/1002/1003/1006/1016 (mouse), 1004 (focus), 1007 (alternate scroll), 1036 (Meta sends ESC), 2004 (bracketed paste), 2026 (synchronized output), 2027 (grapheme clustering) | F1 |

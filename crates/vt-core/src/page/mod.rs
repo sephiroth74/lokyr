@@ -445,61 +445,73 @@ impl Page {
     }
 
     /// Inserts `n` empty cells at column `x` of row `y`: the cells from
-    /// there move right, with their graphemes and links, and the ones that
-    /// pass the end of the row drop what they held. A wide character that
-    /// the insertion would split, at `x` or at the end of the row, is
-    /// emptied whole.
-    pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16) {
-        let cols = self.cols();
-        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
-            self.set_cell(y, x - 1, Cell::EMPTY);
-            self.set_cell(y, x, Cell::EMPTY);
-        }
-        self.shift_right(y, x, n);
-        // A wide character whose second half fell off the row.
-        if self.cells(y)[usize::from(cols - 1)].width() == Width::Wide {
-            self.set_cell(y, cols - 1, Cell::EMPTY);
+    /// there to column `end`, excluded, move right, with their graphemes
+    /// and links, and the ones that pass `end` drop what they held. A wide
+    /// character that the insertion would split, at `x`, at `end` or past
+    /// it, is emptied whole.
+    pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        self.clear_crossing(y, x..end);
+        self.shift_right(y, x, n, end);
+        // A wide character whose second half fell past the end.
+        if self.cells(y)[usize::from(end - 1)].width() == Width::Wide {
+            self.set_cell(y, end - 1, Cell::EMPTY);
         }
     }
 
     /// Deletes `n` cells at column `x` of row `y`, which drop what they
-    /// held: the cells after them move left, with their graphemes and links,
-    /// and empty cells come in at the end of the row. A wide character that
-    /// the deletion would split is emptied whole.
-    pub fn delete_cells(&mut self, y: u16, x: u16, n: u16) {
-        let cols = self.cols();
-        let n = n.min(cols - x);
-        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
-            self.set_cell(y, x - 1, Cell::EMPTY);
-        }
-        if x + n < cols && self.cells(y)[usize::from(x + n)].width() == Width::SpacerTail {
+    /// held: the cells after them, to column `end`, excluded, move left,
+    /// with their graphemes and links, and empty cells come in before
+    /// `end`. A wide character that the deletion would split is emptied
+    /// whole.
+    pub fn delete_cells(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        let n = n.min(end - x);
+        self.clear_crossing(y, x..end);
+        if x + n < end && self.cells(y)[usize::from(x + n)].width() == Width::SpacerTail {
             self.set_cell(y, x + n, Cell::EMPTY);
         }
-        for column in x..x + n {
-            let index = self.cell_index(y, column);
-            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
-            self.release(index, cell);
-        }
-        for column in x + n..cols {
+        self.clear_cells(y, x..x + n);
+        for column in x + n..end {
             let (from, to) = (self.cell_index(y, column), self.cell_index(y, column - n));
             self.move_cell(from, to);
         }
         self.row_mut(y).set(RowFlag::Dirty, true);
     }
 
-    /// Moves the cells from column `x` of row `y` right by `n`, as
-    /// [`Page::insert_blanks`] does, but whatever their widths.
-    fn shift_right(&mut self, y: u16, x: u16, n: u16) {
-        let cols = self.cols();
-        let n = n.min(cols - x);
-        for column in cols - n..cols {
-            let index = self.cell_index(y, column);
-            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
-            self.release(index, cell);
-        }
-        for column in (x..cols - n).rev() {
+    /// Moves the cells from column `x` of row `y` right by `n`, within
+    /// column `end`, as [`Page::insert_blanks`] does, but whatever their
+    /// widths.
+    fn shift_right(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        let n = n.min(end - x);
+        self.clear_cells(y, end - n..end);
+        for column in (x..end - n).rev() {
             let (from, to) = (self.cell_index(y, column), self.cell_index(y, column + n));
             self.move_cell(from, to);
+        }
+        self.row_mut(y).set(RowFlag::Dirty, true);
+    }
+
+    /// Empties, whole, the wide characters that cross the edges of
+    /// `columns` in row `y`, which moving the cells within them would
+    /// split.
+    pub fn clear_crossing(&mut self, y: u16, columns: Range<u16>) {
+        let Range { start, end } = columns;
+        if start > 0 && self.cells(y)[usize::from(start)].width() == Width::SpacerTail {
+            self.set_cell(y, start - 1, Cell::EMPTY);
+            self.set_cell(y, start, Cell::EMPTY);
+        }
+        if end < self.cols() && self.cells(y)[usize::from(end - 1)].width() == Width::Wide {
+            self.set_cell(y, end - 1, Cell::EMPTY);
+            self.set_cell(y, end, Cell::EMPTY);
+        }
+    }
+
+    /// Empties the cells of `columns` in row `y`, which drop their styles,
+    /// graphemes and links, whatever their widths. The row is dirty.
+    pub fn clear_cells(&mut self, y: u16, columns: Range<u16>) {
+        for x in columns {
+            let index = self.cell_index(y, x);
+            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
+            self.release(index, cell);
         }
         self.row_mut(y).set(RowFlag::Dirty, true);
     }
@@ -524,15 +536,28 @@ impl Page {
         if from == to {
             return;
         }
-        self.clear_row(to);
-        let (from_start, to_start) = (self.cell_range(from).start, self.cell_range(to).start);
-        for x in 0..usize::from(self.cols()) {
-            self.move_cell(from_start + x, to_start + x);
-        }
+        self.move_cells(from, to, 0..self.cols());
         let mut metadata = self.row(from);
         metadata.set(RowFlag::Dirty, true);
         *self.row_mut(to) = metadata;
         self.clear_row(from);
+    }
+
+    /// Moves the cells of `columns` in row `from` into the same columns of
+    /// row `to`, within the page, as they are, with their graphemes and
+    /// links. What those cells of `to` held is dropped, and those of `from`
+    /// are left empty. The rows' metadata stays.
+    pub fn move_cells(&mut self, from: u16, to: u16, columns: Range<u16>) {
+        if from == to {
+            return;
+        }
+        self.clear_cells(to, columns.clone());
+        let (from_start, to_start) = (self.cell_range(from).start, self.cell_range(to).start);
+        for x in columns {
+            let x = usize::from(x);
+            self.move_cell(from_start + x, to_start + x);
+        }
+        self.row_mut(from).set(RowFlag::Dirty, true);
     }
 
     /// Copies row `from` of `source`, a page of the same width, into row
@@ -542,8 +567,7 @@ impl Page {
     /// error tells which.
     pub fn copy_row(&mut self, to: u16, source: &Page, from: u16) -> Result<(), TableFull> {
         assert_eq!(source.cols(), self.cols(), "the pages have one width");
-        self.clear_row(to);
-        if let Err(full) = self.copy_cells(to, source, from) {
+        if let Err(full) = self.copy_cells(to, source, from, 0..self.cols()) {
             self.clear_row(to);
             return Err(full);
         }
@@ -553,9 +577,37 @@ impl Page {
         Ok(())
     }
 
-    /// The cells of [`Page::copy_row`], into the empty row `to`.
-    fn copy_cells(&mut self, to: u16, source: &Page, from: u16) -> Result<(), TableFull> {
-        for (x, &cell) in (0..).zip(source.cells(from)) {
+    /// Copies the cells of `columns` in row `from` of `source`, a page of
+    /// the same width, into the same columns of row `to`, as they are, each
+    /// with its style, grapheme and link in this page's tables. What those
+    /// cells of `to` held is dropped. If one of the tables is full, they
+    /// are left empty, and the error tells which.
+    pub fn copy_cells(
+        &mut self,
+        to: u16,
+        source: &Page,
+        from: u16,
+        columns: Range<u16>,
+    ) -> Result<(), TableFull> {
+        assert_eq!(source.cols(), self.cols(), "the pages have one width");
+        self.clear_cells(to, columns.clone());
+        let copied = self.copy_into_empty(to, source, from, columns.clone());
+        if copied.is_err() {
+            self.clear_cells(to, columns);
+        }
+        copied
+    }
+
+    /// The cells of [`Page::copy_cells`], into empty cells.
+    fn copy_into_empty(
+        &mut self,
+        to: u16,
+        source: &Page,
+        from: u16,
+        columns: Range<u16>,
+    ) -> Result<(), TableFull> {
+        for x in columns {
+            let cell = source.cells(from)[usize::from(x)];
             let style = self.styles.acquire(source.styles().get(cell.style()))?;
             let mut copy = cell.with_style(style).with_hyperlink(false);
             if let Content::Grapheme(first) = cell.content() {

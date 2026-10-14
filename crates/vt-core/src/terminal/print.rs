@@ -72,47 +72,50 @@ impl Terminal {
     }
 
     /// Writes the start of `text`, printable ASCII, from the cursor to the
-    /// end of its row, and returns how many bytes that took.
+    /// end of its line, and returns how many bytes that took.
     fn write_ascii(&mut self, text: &[u8]) -> usize {
-        let cols = self.cols;
         if self.cursor().pending_wrap && self.autowrap {
             self.wrap();
         }
         let Cursor { x, y, pending_wrap } = self.cursor();
-        if pending_wrap {
+        let end = self.line_end(x);
+        // A wrap can stay pending after the margins moved; only at the last
+        // column of the line does it hold the cursor there.
+        if pending_wrap && x == end - 1 {
             // Without autowrap, each character replaces the one in the last
             // column, so only the last of them stays.
-            self.write_cells(x, y, &text[text.len() - 1..]);
+            self.write_cells(x, y, &text[text.len() - 1..], end);
             self.cluster = Some(Cluster { x, y });
             return text.len();
         }
-        let len = text.len().min(usize::from(cols - x));
-        // The row has room for `len` cells, so it fits in a u16.
+        let len = text.len().min(usize::from(end - x));
+        // The line has room for `len` cells, so it fits in a u16.
         let width = len as u16;
-        self.write_cells(x, y, &text[..len]);
+        self.write_cells(x, y, &text[..len], end);
         self.cluster = Some(Cluster {
             x: x + width - 1,
             y,
         });
         let cursor = &mut self.screen_mut().cursor;
-        if x + width >= cols {
-            cursor.x = cols - 1;
+        if x + width >= end {
+            cursor.x = end - 1;
             cursor.pending_wrap = true;
         } else {
             cursor.x = x + width;
+            cursor.pending_wrap = false;
         }
         len
     }
 
-    /// Writes `text`, printable ASCII that fits in the row, into the cells
-    /// from column `x` of row `y`, with the pen's style, as
-    /// [`Terminal::start_cluster`] writes a character.
-    fn write_cells(&mut self, x: u16, y: u16, text: &[u8]) {
+    /// Writes `text`, printable ASCII that fits in the line, which ends
+    /// before column `end`, into the cells from column `x` of row `y`, with
+    /// the pen's style, as [`Terminal::start_cluster`] writes a character.
+    fn write_cells(&mut self, x: u16, y: u16, text: &[u8], end: u16) {
         let width = text.len() as u16;
         let (insert, protected) = (self.insert, self.protected);
         self.with_pen(y, |page, row, style| {
             if insert {
-                page.insert_blanks(row, x, width);
+                page.insert_blanks(row, x, width, end);
             } else {
                 page.clear_halves(row, x, width);
             }
@@ -123,31 +126,37 @@ impl Terminal {
 
     /// Writes a new cluster, `c`, which takes `width` cells, at the cursor.
     fn start_cluster(&mut self, c: char, width: u8) {
-        let cols = self.cols;
         let width = u16::from(width);
         if self.cursor().pending_wrap && self.autowrap {
             self.wrap();
         }
-        // A wide character does not fit in the last column.
-        if width == 2 && self.cursor().x == cols - 1 {
-            if cols < 2 {
+        // A wide character does not fit in the last column of the line.
+        let Cursor { x, y, .. } = self.cursor();
+        let end = self.line_end(x);
+        if width == 2 && x == end - 1 {
+            let start = if x >= self.margins.left {
+                self.margins.left
+            } else {
+                0
+            };
+            if end - start < 2 {
                 return;
             }
             if self.autowrap {
-                let y = self.cursor().y;
-                self.clear_overlaps(cols - 1, y, 1);
-                self.put(cols - 1, y, Cell::EMPTY.with_width(Width::SpacerHead));
+                self.clear_overlaps(x, y, 1);
+                self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
                 self.wrap();
             } else {
-                self.screen_mut().cursor.x = cols - 2;
+                self.screen_mut().cursor.x = x - 1;
             }
         }
 
         let (x, y) = (self.cursor().x, self.cursor().y);
+        let end = self.line_end(x);
         let (insert, protected) = (self.insert, self.protected);
         self.with_pen(y, |page, row, style| {
             if insert {
-                page.insert_blanks(row, x, width);
+                page.insert_blanks(row, x, width, end);
             } else {
                 page.clear_halves(row, x, width);
             }
@@ -164,12 +173,22 @@ impl Terminal {
         self.normalize(Cluster { x, y });
 
         let cursor = &mut self.screen_mut().cursor;
-        if x + width >= cols {
-            cursor.x = cols - 1;
+        if x + width >= end {
+            cursor.x = end - 1;
             cursor.pending_wrap = true;
         } else {
             cursor.x = x + width;
             cursor.pending_wrap = false;
+        }
+    }
+
+    /// Where the line of text at column `x` ends, excluded: at the right
+    /// margin, unless `x` is past it, and then at the edge of the screen.
+    fn line_end(&self, x: u16) -> u16 {
+        if x > self.margins.right {
+            self.cols
+        } else {
+            self.margins.right + 1
         }
     }
 
@@ -201,12 +220,12 @@ impl Terminal {
         self.cluster = Some(cluster);
     }
 
-    /// Makes the narrow cluster at `cluster` wide, if the row has room for
+    /// Makes the narrow cluster at `cluster` wide, if its line has room for
     /// it, and moves the cursor past it if it was right after it.
     fn widen(&mut self, cluster: Cluster) {
         let Cluster { x, y } = cluster;
-        let cols = self.cols;
-        if x + 1 >= cols {
+        let end = self.line_end(x);
+        if x + 1 >= end {
             return;
         }
         let head = self.cell(x, y);
@@ -223,7 +242,7 @@ impl Terminal {
         self.put(x + 1, y, tail);
         let cursor = &mut self.screen_mut().cursor;
         if cursor.y == y && cursor.x == x + 1 && !cursor.pending_wrap {
-            if x + 2 >= cols {
+            if x + 2 >= end {
                 cursor.pending_wrap = true;
             } else {
                 cursor.x = x + 2;
@@ -235,7 +254,7 @@ impl Terminal {
     /// if it was right after it.
     fn narrow(&mut self, cluster: Cluster) {
         let Cluster { x, y } = cluster;
-        let cols = self.cols;
+        let end = self.line_end(x);
         {
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
             page.set_width(row, x, Width::Narrow);
@@ -243,7 +262,7 @@ impl Terminal {
         self.put(x + 1, y, Cell::EMPTY);
         let cursor = &mut self.screen_mut().cursor;
         let right_after = if cursor.pending_wrap {
-            x + 2 == cols && cursor.x == cols - 1
+            x + 2 == end && cursor.x == end - 1
         } else {
             cursor.x == x + 2
         };
@@ -304,18 +323,26 @@ impl Terminal {
         }
     }
 
-    /// Goes on to the start of the next row, as text does past the right
-    /// margin, and marks the rows as one line. The cluster printed last
+    /// Goes on to the left margin of the next row, as text does past the
+    /// end of its line, and marks the rows as one line when they make one.
+    /// The cluster printed last
     /// ends: a new one is about to start, and scrolling may have moved the
     /// row it was in.
     fn wrap(&mut self) {
         self.cluster = None;
-        let y = self.cursor().y;
-        self.row_flag(y, RowFlag::SoftWrapped);
+        let Cursor { x, y, .. } = self.cursor();
+        // Only a wrap from the last column of the screen to the first one
+        // makes the two rows one line, for reflow.
+        let joins_rows = x == self.cols - 1 && self.margins.left == 0;
+        if joins_rows {
+            self.row_flag(y, RowFlag::SoftWrapped);
+        }
         self.index();
-        self.screen_mut().cursor.x = 0;
-        let y = self.cursor().y;
-        self.row_flag(y, RowFlag::Continuation);
+        self.screen_mut().cursor.x = self.margins.left;
+        if joins_rows {
+            let y = self.cursor().y;
+            self.row_flag(y, RowFlag::Continuation);
+        }
     }
 
     fn row_flag(&mut self, y: u16, flag: RowFlag) {

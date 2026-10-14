@@ -1,6 +1,7 @@
 //! The page list: the pages of a screen and of its scrollback, oldest
 //! first, with a pool of spare pages, within limits in bytes.
 
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -290,6 +291,44 @@ impl PageList {
             match target_page.copy_row(to_row, source_page, from_row) {
                 Ok(()) => {
                     source_page.clear_row(from_row);
+                    return;
+                }
+                Err(full) => self.grow_page(to, full),
+            }
+        }
+    }
+
+    /// Moves the cells of `columns` in row `from` of the screen into the
+    /// same columns of row `to`, with their styles, graphemes and links, as
+    /// the left and right margins need. What those cells of `to` held is
+    /// dropped, and those of `from` are left empty; the rows' metadata
+    /// stays. The wide characters that cross the edges of `columns`, in
+    /// either row, are emptied whole first.
+    pub fn move_cells(&mut self, from: u16, to: u16, columns: Range<u16>) {
+        if from == to {
+            return;
+        }
+        for y in [from, to] {
+            let (page, row) = self.screen_row_mut(y);
+            page.clear_crossing(row, columns.clone());
+        }
+        let (source, from_row) = self.locate(from);
+        let (target, to_row) = self.locate(to);
+        if source == target {
+            self.page_at_mut(source)
+                .move_cells(from_row, to_row, columns);
+            return;
+        }
+        loop {
+            let [source_node, target_node] = self
+                .nodes
+                .get_disjoint_mut([source as usize, target as usize])
+                .expect("two nodes of the list");
+            let source_page = source_node.page.as_mut().expect("a linked node has a page");
+            let target_page = target_node.page.as_mut().expect("a linked node has a page");
+            match target_page.copy_cells(to_row, source_page, from_row, columns.clone()) {
+                Ok(()) => {
+                    source_page.clear_cells(from_row, columns);
                     return;
                 }
                 Err(full) => self.grow_page(to, full),
@@ -706,6 +745,36 @@ mod tests {
         assert_eq!(list.screen_row_id(12).0, id, "the page keeps its id");
         assert!(usize::from(page.capacity().styles) > room, "the page grew");
         assert_eq!(page.styles().len(), room + 1);
+    }
+
+    #[test]
+    fn cells_move_across_pages_within_a_range() {
+        let mut list = straddling();
+        let red = Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        };
+        for y in [11, 12] {
+            let (page, row) = list.screen_row_mut(y);
+            for x in 0..4 {
+                page.set_cell(row, x, numbered(u32::from(y) * 10 + u32::from(x)));
+            }
+        }
+        styled(&mut list, 11, 'r', &red);
+        list.move_cells(11, 12, 1..3);
+        let cells = |list: &PageList, y| {
+            let (page, row) = list.screen_row(y);
+            page.cells(row)[..4].to_vec()
+        };
+        assert_eq!(cells(&list, 12)[0], numbered(120));
+        assert_eq!(cells(&list, 12)[3], numbered(123));
+        assert_eq!(cells(&list, 12)[2], numbered(112));
+        assert_eq!(cells(&list, 11)[1], Cell::EMPTY);
+        assert_eq!(cells(&list, 11)[0], numbered(110));
+        let (page, row) = list.screen_row(12);
+        assert_eq!(page.styles().get(page.cells(row)[1].style()), &red);
+        let (page, _) = list.screen_row(11);
+        assert_eq!(page.styles().len(), 0, "the first page let go of red");
     }
 
     #[test]

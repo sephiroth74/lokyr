@@ -437,7 +437,7 @@ fn inserted_blanks_move_cells_with_their_graphemes_and_links() {
     for x in 3..8 {
         print(&mut page, 0, x, char::from(b'0' + x as u8), &Style::DEFAULT).unwrap();
     }
-    page.insert_blanks(0, 1, 2);
+    page.insert_blanks(0, 1, 2, 8);
     let text: String = page
         .cells(0)
         .iter()
@@ -454,7 +454,7 @@ fn inserted_blanks_move_cells_with_their_graphemes_and_links() {
     assert_eq!(page.hyperlink(0, 2), None);
     assert_eq!(page.hyperlinks().references(id), 1);
     // Cells that fall off drop their entries.
-    page.insert_blanks(0, 0, 8);
+    page.insert_blanks(0, 0, 8, 8);
     assert_eq!(page.graphemes.len(), 0);
     assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
 }
@@ -660,12 +660,12 @@ fn deleted_cells_make_the_others_move_left_with_their_graphemes_and_links() {
         .unwrap();
     page.set_hyperlink(0, 3, Some(id)).unwrap();
     page.hyperlinks_mut().release(id);
-    page.delete_cells(0, 1, 2);
+    page.delete_cells(0, 1, 2, 8);
     assert_eq!(row_chars(&page, 0), "ae......");
     assert_eq!(page.grapheme(0, 1), ['\u{301}']);
     assert_eq!(page.hyperlink(0, 1), Some(id));
     assert_eq!(page.hyperlinks().references(id), 1);
-    page.delete_cells(0, 0, 8);
+    page.delete_cells(0, 0, 8, 8);
     assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
     assert_eq!(page.graphemes.len(), 0);
 }
@@ -683,11 +683,65 @@ fn deleting_half_of_a_wide_character_empties_it_whole() {
     }
     print(&mut page, 0, 4, 'z', &Style::DEFAULT).unwrap();
     // From the second half of the first, to the first half of the second.
-    page.delete_cells(0, 1, 2);
+    page.delete_cells(0, 1, 2, 6);
     assert_eq!(row_chars(&page, 0), "..z...", "z moved two cells left");
     assert!(
         page.cells(0)
             .iter()
             .all(|cell| cell.width() == Width::Narrow)
+    );
+}
+
+#[test]
+fn cells_move_within_a_range_and_the_rest_of_the_rows_stays() {
+    let mut page = page_with_rows(2);
+    for x in 0..8 {
+        print(&mut page, 0, x, char::from(b'a' + x as u8), &bold(1)).unwrap();
+        print(&mut page, 1, x, char::from(b'A' + x as u8), &Style::DEFAULT).unwrap();
+    }
+    page.row_mut(1).set(RowFlag::SoftWrapped, true);
+    page.move_cells(0, 1, 2..5);
+    assert_eq!(&row_chars(&page, 1)[..8], "ABcdeFGH");
+    assert_eq!(&row_chars(&page, 0)[..8], "ab...fgh");
+    assert!(page.row(1).has(RowFlag::SoftWrapped), "the metadata stays");
+    assert_eq!(page.styles().references(page.cells(0)[0].style()), 8);
+}
+
+#[test]
+fn cells_copy_within_a_range_into_another_page() {
+    let mut source = page_with_rows(1);
+    sample_row(&mut source, 0);
+    let mut target = page_with_rows(1);
+    for x in 0..4 {
+        print(&mut target, 0, x, 'z', &bold(2)).unwrap();
+    }
+    target.copy_cells(0, &source, 0, 1..3).unwrap();
+    assert_eq!(&row_chars(&target, 0)[..4], "zelz");
+    assert_eq!(target.grapheme(0, 1), ['\u{301}']);
+    assert!(target.hyperlink(0, 2).is_some());
+    assert_eq!(target.hyperlink(0, 3), None);
+    assert_eq!(target.styles().len(), 2, "bold(1) came in with the l");
+}
+
+#[test]
+fn wide_characters_across_the_edges_of_a_range_are_emptied() {
+    let mut page = Page::new(Capacity::standard(8));
+    page.push_row();
+    let wide = Cell::EMPTY
+        .with_content(Content::Char('中'))
+        .with_width(Width::Wide);
+    for x in [1, 5] {
+        page.set_cell(0, x, wide);
+        page.set_cell(0, x + 1, Cell::EMPTY.with_width(Width::SpacerTail));
+    }
+    page.clear_crossing(0, 2..6);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+    page.set_cell(0, 3, wide);
+    page.set_cell(0, 4, Cell::EMPTY.with_width(Width::SpacerTail));
+    page.clear_crossing(0, 2..6);
+    assert_eq!(
+        page.cells(0)[3].width(),
+        Width::Wide,
+        "one within the range stays"
     );
 }

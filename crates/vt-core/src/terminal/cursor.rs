@@ -114,6 +114,23 @@ impl Terminal {
         self.goto(0, 0);
     }
 
+    /// DECSLRM: makes columns `left` to `right`, from 1, the left and right
+    /// margins; 0 for `right` is the last column. Margins of fewer than two
+    /// columns are ignored. The cursor goes home.
+    pub(super) fn set_left_right_margins(&mut self, left: u16, right: u16) {
+        let left = left.max(1) - 1;
+        let right = match right {
+            0 => self.cols,
+            right => right.min(self.cols),
+        } - 1;
+        if left >= right {
+            return;
+        }
+        self.margins.left = left;
+        self.margins.right = right;
+        self.goto(0, 0);
+    }
+
     /// CHT: forward `n` tab stops.
     pub(super) fn tab_forward(&mut self, n: u16) {
         for _ in 0..n {
@@ -125,17 +142,23 @@ impl Terminal {
         }
     }
 
-    /// CBT: back `n` tab stops, or to the first column when none is left.
+    /// CBT: back `n` tab stops, or, when none is left, to the left margin
+    /// from within the margins and to the first column from left of them.
     pub(super) fn tab_back(&mut self, n: u16) {
         let Cursor { mut x, y, .. } = self.cursor();
+        let first = if x >= self.margins.left {
+            self.margins.left
+        } else {
+            0
+        };
         for _ in 0..n {
-            if x == 0 {
+            if x <= first {
                 break;
             }
-            x = (0..x)
+            x = (first..x)
                 .rev()
                 .find(|&column| self.tab_stops[usize::from(column)])
-                .unwrap_or(0);
+                .unwrap_or(first);
         }
         self.move_to(x, y);
     }

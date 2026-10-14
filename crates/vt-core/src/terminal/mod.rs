@@ -8,9 +8,12 @@ mod cursor;
 mod edit;
 mod erase;
 mod escape;
+mod modes;
 mod print;
 
 pub use charsets::{Charset, Charsets, Shift};
+
+use std::ops::Range;
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
 use crate::parser::{Handler, Params};
@@ -82,6 +85,22 @@ impl Margins {
             right: cols - 1,
         }
     }
+
+    /// The columns from the left margin to the right one.
+    fn columns(self) -> Range<u16> {
+        self.left..self.right + 1
+    }
+
+    /// Whether column `x` is between the left and right margins.
+    fn has_column(self, x: u16) -> bool {
+        (self.left..=self.right).contains(&x)
+    }
+
+    /// Whether the left and right margins are the edges of a screen of
+    /// `cols` columns.
+    fn is_full_width(self, cols: u16) -> bool {
+        self.left == 0 && self.right == cols - 1
+    }
 }
 
 /// What DECSC saves of a screen, and DECRC brings back.
@@ -140,6 +159,9 @@ pub struct Terminal {
     /// Whether each column is a tab stop.
     tab_stops: Box<[bool]>,
     margins: Margins,
+    /// Left and right margin mode (DECLRMM): DECSLRM can set the left and
+    /// right margins, which are otherwise the edges of the screen.
+    left_right_margins: bool,
     /// Origin mode (DECOM): the cursor's positions count from the top left
     /// of the margins, and stay within them.
     origin: bool,
@@ -189,6 +211,7 @@ impl Terminal {
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),
             margins: Margins::screen(cols, rows),
+            left_right_margins: false,
             origin: false,
             cursor_style: None,
             charsets: Charsets::default(),
@@ -282,6 +305,21 @@ impl Terminal {
     /// The character sets, and which of them is in use.
     pub fn charsets(&self) -> Charsets {
         self.charsets
+    }
+
+    /// Whether left and right margin mode (DECLRMM) is on.
+    pub fn left_right_margin_mode(&self) -> bool {
+        self.left_right_margins
+    }
+
+    /// Turns left and right margin mode (DECLRMM) on or off. Off, the left
+    /// and right margins go back to the edges of the screen.
+    pub fn set_left_right_margin_mode(&mut self, on: bool) {
+        self.left_right_margins = on;
+        if !on {
+            self.margins.left = 0;
+            self.margins.right = self.cols - 1;
+        }
     }
 
     /// Whether origin mode (DECOM) is on.

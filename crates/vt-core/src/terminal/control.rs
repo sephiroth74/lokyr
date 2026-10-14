@@ -1,6 +1,6 @@
 //! The C0 controls.
 
-use super::{Shift, Terminal};
+use super::{Cursor, Shift, Terminal};
 
 impl Terminal {
     /// Executes a C0 control. Those that a terminal has no use for, such as
@@ -28,11 +28,16 @@ impl Terminal {
         cursor.x = cursor.x.saturating_sub(1);
     }
 
-    /// HT: to the next tab stop, or to the last column.
+    /// HT: to the next tab stop, or to the right margin from within the
+    /// margins and to the last column from right of them.
     pub(super) fn horizontal_tab(&mut self) {
         self.moved();
-        let last = self.cols - 1;
         let x = self.cursor().x;
+        let last = if x <= self.margins.right {
+            self.margins.right
+        } else {
+            self.cols - 1
+        };
         let next = (x + 1..last)
             .find(|&column| self.tab_stops[usize::from(column)])
             .unwrap_or(last);
@@ -49,13 +54,16 @@ impl Terminal {
     }
 
     /// One row down, scrolling the scroll region up at its bottom margin,
-    /// without ending the cluster being printed, as wrapping needs. Below
-    /// the region, the last row stops it.
+    /// without ending the cluster being printed, as wrapping needs. At the
+    /// bottom margin but outside the left and right ones, the cursor stays;
+    /// below the region, the last row stops it.
     pub(super) fn index(&mut self) {
         self.screen_mut().cursor.pending_wrap = false;
-        let y = self.cursor().y;
+        let Cursor { x, y, .. } = self.cursor();
         if y == self.margins.bottom {
-            self.scroll_region_up(1);
+            if self.margins.has_column(x) {
+                self.scroll_region_up(1);
+            }
         } else if y + 1 < self.rows {
             self.screen_mut().cursor.y += 1;
         }

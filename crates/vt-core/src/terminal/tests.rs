@@ -1379,6 +1379,269 @@ fn decaln_resets_the_margins() {
     );
 }
 
+/// A screen of 10 by 5 whose rows are full of a to e, with left and right
+/// margins at columns 2 to 5 and top and bottom ones at rows 1 to 3.
+fn lettered_region() -> Term {
+    let mut term = Term::new(10, 5);
+    term.feed("aaaaaaaaaa\r\nbbbbbbbbbb\r\ncccccccccc\r\ndddddddddd\r\neeeeeeeeee");
+    term.feed("\x1b[?69h\x1b[3;6s\x1b[2;4r");
+    term
+}
+
+#[test]
+fn declrmm_makes_csi_s_set_the_left_and_right_margins() {
+    let mut term = Term::new(10, 3);
+    term.feed("ab\x1b[3;6s\r\n\x1b[u");
+    assert_eq!(
+        term.cursor(),
+        (2, 0, false),
+        "without DECLRMM, CSI s is SCOSC"
+    );
+    assert_eq!(
+        (term.terminal.margins.left, term.terminal.margins.right),
+        (0, 9)
+    );
+    term.feed("\x1b[?69h\x1b[2;2H\x1b[3;6s");
+    assert!(term.terminal.left_right_margin_mode());
+    assert_eq!(
+        (term.terminal.margins.left, term.terminal.margins.right),
+        (2, 5)
+    );
+    assert_eq!(term.cursor(), (0, 0, false));
+    term.feed("\x1b[5;5s\x1b[6;3s");
+    assert_eq!(
+        (term.terminal.margins.left, term.terminal.margins.right),
+        (2, 5),
+        "ignored"
+    );
+    term.feed("\x1b[2;99s");
+    assert_eq!(
+        (term.terminal.margins.left, term.terminal.margins.right),
+        (1, 9)
+    );
+    term.terminal.set_origin_mode(true);
+    term.feed("\x1b[3;6s");
+    assert_eq!(term.cursor(), (2, 0, false), "home of the margins");
+    term.feed("\x1b[?69l");
+    assert!(!term.terminal.left_right_margin_mode());
+    assert_eq!(
+        (term.terminal.margins.left, term.terminal.margins.right),
+        (0, 9)
+    );
+}
+
+#[test]
+fn printing_wraps_at_the_right_margin_to_the_left_one() {
+    let sequences = "\x1b[?69h\x1b[3;6s\x1b[1;3Habcdefgh";
+    let mut term = Term::new(10, 3);
+    term.feed(sequences);
+    assert_eq!(term.screen(), ["  abcd", "  efgh", ""]);
+    assert_eq!(term.cursor(), (5, 1, true));
+    assert!(!term.row(0).has(RowFlag::SoftWrapped), "not one line");
+    assert!(!term.row(1).has(RowFlag::Continuation));
+    // A byte at a time, through the print path of single characters.
+    let mut slow = Term::new(10, 3);
+    for byte in sequences.bytes() {
+        slow.feed([byte]);
+    }
+    assert_eq!(slow.screen(), term.screen());
+    assert_eq!(slow.cursor(), term.cursor());
+}
+
+#[test]
+fn printing_right_of_the_right_margin_goes_to_the_edge() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;6s\x1b[1;8Hxyzw");
+    assert_eq!(term.screen(), ["       xyz", "  w", ""]);
+    assert!(
+        !term.row(0).has(RowFlag::SoftWrapped),
+        "the next line starts at the margin"
+    );
+}
+
+#[test]
+fn a_wide_character_at_the_right_margin_wraps_to_the_left_one() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;6s\x1b[1;6H中");
+    assert_eq!(term.cell(5, 0).width(), Width::SpacerHead);
+    assert_eq!(term.screen(), ["", "  中", ""]);
+    // Without autowrap, it goes back a column.
+    let mut term = Term::new(10, 3);
+    term.terminal.set_autowrap(false);
+    term.feed("\x1b[?69h\x1b[3;6s\x1b[1;6H中");
+    assert_eq!(term.screen(), ["    中", "", ""]);
+}
+
+#[test]
+fn insert_mode_pushes_cells_as_far_as_the_right_margin() {
+    let mut term = Term::new(10, 1);
+    term.feed("0123456789\x1b[?69h\x1b[3;6s\x1b[1;3H");
+    term.terminal.set_insert_mode(true);
+    term.feed("X");
+    assert_eq!(term.screen(), ["01X2346789"]);
+}
+
+#[test]
+fn lf_scrolls_the_cells_between_the_four_margins() {
+    let mut term = lettered_region();
+    term.feed("\x1b[4;3H\n");
+    assert_eq!(
+        term.screen(),
+        [
+            "aaaaaaaaaa",
+            "bbccccbbbb",
+            "ccddddcccc",
+            "dd    dddd",
+            "eeeeeeeeee"
+        ]
+    );
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    // Outside the left and right margins, the cursor stays at the bottom one.
+    term.feed("\x1b[4;9H\n");
+    assert_eq!(term.cursor(), (8, 3, false));
+    assert_eq!(term.screen()[1], "bbccccbbbb");
+}
+
+#[test]
+fn ri_scrolls_the_cells_between_the_four_margins_down() {
+    let mut term = lettered_region();
+    term.feed("\x1b[2;4H\x1bM");
+    assert_eq!(
+        term.screen(),
+        [
+            "aaaaaaaaaa",
+            "bb    bbbb",
+            "ccbbbbcccc",
+            "ddccccdddd",
+            "eeeeeeeeee"
+        ]
+    );
+    let before = term.screen();
+    term.feed("\x1b[2;2H\x1bM");
+    assert_eq!(term.cursor(), (1, 1, false), "outside them, it stays");
+    assert_eq!(term.screen(), before, "and nothing scrolls");
+}
+
+#[test]
+fn il_and_dl_move_the_cells_between_the_margins() {
+    let mut term = lettered_region();
+    term.feed("\x1b[2;4H\x1b[L");
+    assert_eq!(
+        term.screen(),
+        [
+            "aaaaaaaaaa",
+            "bb    bbbb",
+            "ccbbbbcccc",
+            "ddccccdddd",
+            "eeeeeeeeee"
+        ]
+    );
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("\x1b[M\x1b[M");
+    assert_eq!(
+        term.screen(),
+        [
+            "aaaaaaaaaa",
+            "bbccccbbbb",
+            "cc    cccc",
+            "dd    dddd",
+            "eeeeeeeeee"
+        ]
+    );
+    // Outside the left and right margins, they do nothing.
+    let before = term.screen();
+    term.feed("\x1b[2;8H\x1b[L");
+    assert_eq!(term.screen(), before);
+    assert_eq!(term.cursor(), (7, 1, false), "the cursor stays");
+    term.feed("\x1b[M");
+    assert_eq!(term.screen(), before);
+    assert_eq!(term.cursor(), (7, 1, false));
+}
+
+#[test]
+fn ich_and_dch_stay_between_the_margins() {
+    let mut term = Term::new(10, 1);
+    term.feed("0123456789\x1b[?69h\x1b[3;6s\x1b[1;4H\x1b[2@");
+    assert_eq!(term.screen(), ["012  36789"]);
+    // The cells past the right margin stay where they are.
+    term.feed("\x1b[3P");
+    assert_eq!(term.screen(), ["012   6789"]);
+    term.feed("\x1b[1;8H\x1b[@\x1b[P\x1b[1;1H\x1b[@");
+    assert_eq!(term.screen(), ["012   6789"], "outside them, nothing");
+}
+
+#[test]
+fn su_and_sd_scroll_the_cells_between_the_margins() {
+    let mut term = lettered_region();
+    term.feed("\x1b[S");
+    assert_eq!(
+        term.screen()[1..4],
+        ["bbccccbbbb", "ccddddcccc", "dd    dddd"]
+    );
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    term.feed("\x1b[2T");
+    assert_eq!(
+        term.screen()[1..4],
+        ["bb    bbbb", "cc    cccc", "ddccccdddd"]
+    );
+}
+
+#[test]
+fn tabs_stop_at_the_margins() {
+    let mut term = Term::new(20, 1);
+    term.feed("\x1b[?69h\x1b[3;6s");
+    assert_eq!(moved(&mut term, 2, 0, "\t"), (5, 0, false));
+    assert_eq!(
+        moved(&mut term, 6, 0, "\t"),
+        (8, 0, false),
+        "from right of them"
+    );
+    assert_eq!(moved(&mut term, 2, 0, "\x1b[3I"), (5, 0, false));
+    assert_eq!(moved(&mut term, 5, 0, "\x1b[Z"), (2, 0, false));
+    assert_eq!(
+        moved(&mut term, 1, 0, "\x1b[Z"),
+        (0, 0, false),
+        "from left of them"
+    );
+}
+
+#[test]
+fn a_wrap_left_pending_by_margins_that_moved_does_not_hold_the_cursor() {
+    // The wrap is pending at column 3, the last one within the margins, which
+    // then go back to the edges of the screen.
+    let sequences = "\x1b[?69h\x1b[2;4s    \x1b[?69l ";
+    let mut term = Term::new(5, 1);
+    term.terminal.set_autowrap(false);
+    term.feed(sequences);
+    assert_eq!(term.cursor(), (4, 0, false));
+    let mut slow = Term::new(5, 1);
+    slow.terminal.set_autowrap(false);
+    for byte in sequences.bytes() {
+        slow.feed([byte]);
+    }
+    assert_eq!(slow.cursor(), term.cursor());
+}
+
+#[test]
+fn a_cluster_at_the_right_margin_has_no_room_to_widen() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b[?69h\x1b[3;6s\x1b[1;6H\u{2764}\u{FE0F}");
+    assert_eq!(term.cell(5, 0).width(), Width::Narrow);
+    assert_eq!(term.cell(6, 0), Cell::EMPTY);
+    assert_eq!(term.cursor(), (5, 0, true));
+}
+
+#[test]
+fn scrolling_empties_wide_characters_across_the_margins() {
+    let mut term = Term::new(10, 3);
+    term.feed("\r\n\x1b[2;6H中\x1b[?69h\x1b[3;6s\x1b[1;1H\x1b[S");
+    assert_eq!(term.screen(), ["", "", ""]);
+    assert!(
+        (0..10).all(|x| term.cell(x, 1).width() == Width::Narrow),
+        "no half of 中 is left"
+    );
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -1608,6 +1871,9 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[r",
     "\x1b[s",
     "\x1b[u",
+    "\x1b[?69h",
+    "\x1b[?69l",
+    "\x1b[2;4s",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",
