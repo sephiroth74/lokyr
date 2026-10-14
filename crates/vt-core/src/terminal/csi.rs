@@ -36,6 +36,18 @@ impl Terminal {
             ([], b'd') => self.goto_row(n(0) - 1),
             ([], b'g') => self.clear_tab_stops(params.value(0)),
             ([b' '], b'q') => self.set_cursor_style(params.value(0)),
+            // ED and EL, and their selective forms, DECSED and DECSEL.
+            ([], b'J') => self.erase_in_display(params.value(0), false),
+            ([b'?'], b'J') => self.erase_in_display(params.value(0), true),
+            ([], b'K') => self.erase_in_line(params.value(0), false),
+            ([b'?'], b'K') => self.erase_in_line(params.value(0), true),
+            ([], b'X') => self.erase_characters(n(0)),
+            // DECSCA: 1 protects the text printed next, 0 and 2 do not.
+            ([b'"'], b'q') => match params.value(0) {
+                1 => self.protected = true,
+                0 | 2 => self.protected = false,
+                _ => {}
+            },
             _ => {}
         }
     }

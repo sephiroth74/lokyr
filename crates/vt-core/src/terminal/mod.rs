@@ -5,6 +5,7 @@ mod charsets;
 mod control;
 mod csi;
 mod cursor;
+mod erase;
 mod escape;
 mod print;
 
@@ -89,6 +90,7 @@ struct SavedCursor {
     pen: Style,
     charsets: Charsets,
     origin: bool,
+    protected: bool,
 }
 
 /// A screen: its rows, its cursor, and the cursor that DECSC saved, if
@@ -126,6 +128,9 @@ pub struct Terminal {
     scratch: (Vec<char>, Vec<char>),
     /// The style that printed text takes.
     pen: Style,
+    /// Whether printed text is protected from the selective erases
+    /// (DECSCA).
+    protected: bool,
     /// Autowrap (DECAWM): printing past the right margin goes on to the
     /// next row.
     autowrap: bool,
@@ -175,6 +180,7 @@ impl Terminal {
             normalization: options.normalization,
             scratch: (Vec::new(), Vec::new()),
             pen: Style::DEFAULT,
+            protected: false,
             autowrap: true,
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),

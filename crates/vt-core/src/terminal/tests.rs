@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::page::{Color, Page, Row, RowFlag, StyleId};
+use crate::page::{Color, Page, Rgb, Row, RowFlag, StyleId};
 use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
 
@@ -956,6 +956,158 @@ fn decsc_saves_origin_mode() {
 }
 
 #[test]
+fn el_erases_to_the_end_from_the_start_or_the_whole_row() {
+    let mut term = Term::new(8, 1);
+    term.feed("abcdef\x1b[3G\x1b[K");
+    assert_eq!(term.screen(), ["ab"]);
+    assert_eq!(term.cursor(), (2, 0, false));
+    term.feed("\rabcdef\x1b[3G\x1b[1K");
+    assert_eq!(term.screen(), ["   def"]);
+    term.feed("\x1b[2K");
+    assert_eq!(term.screen(), [""]);
+    assert_eq!(term.cursor(), (2, 0, false), "the cursor stays");
+}
+
+#[test]
+fn ed_erases_below_above_or_the_whole_screen() {
+    let lines = "aaaa\r\nbbbb\r\ncccc\x1b[2;3H";
+    let mut term = Term::new(4, 3);
+    term.feed(lines).feed("\x1b[J");
+    assert_eq!(term.screen(), ["aaaa", "bb", ""]);
+    let mut term = Term::new(4, 3);
+    term.feed(lines).feed("\x1b[1J");
+    assert_eq!(term.screen(), ["", "   b", "cccc"]);
+    let mut term = Term::new(4, 3);
+    term.feed(lines).feed("\x1b[2J");
+    assert_eq!(term.screen(), ["", "", ""]);
+    assert_eq!(term.cursor(), (2, 1, false));
+}
+
+#[test]
+fn ed_2_moves_the_primary_screen_into_the_scrollback() {
+    let mut term = Term::new(4, 3);
+    term.feed("a\r\nb\r\n\x1b[2J");
+    assert_eq!(term.screen(), ["", "", ""]);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 2, "up to b");
+    term.feed("\x1b[2J");
+    assert_eq!(
+        term.terminal.screen_rows().scrollback_rows(),
+        2,
+        "nothing to move"
+    );
+    term.terminal.set_alternate_screen(true);
+    term.feed("x\x1b[2J");
+    assert_eq!(term.screen(), ["", "", ""]);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+}
+
+#[test]
+fn ed_3_clears_the_scrollback() {
+    let mut term = Term::new(4, 2);
+    term.feed("1\r\n2\r\n3\r\n4\x1b[3J");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    assert_eq!(term.screen(), ["3", "4"]);
+    term.feed("\r\n5\x1b[?3J");
+    assert_eq!(
+        term.terminal.screen_rows().scrollback_rows(),
+        1,
+        "DECSED has no 3"
+    );
+}
+
+#[test]
+fn ech_erases_cells_from_the_cursor() {
+    let mut term = Term::new(8, 1);
+    term.feed("abcdef\x1b[2G\x1b[2X");
+    assert_eq!(term.screen(), ["a  def"]);
+    term.feed("\x1b[X");
+    assert_eq!(term.screen(), ["a  def"], "0 counts as 1");
+    term.feed("\x1b[5G\x1b[99X");
+    assert_eq!(term.screen(), ["a  d"]);
+    assert_eq!(term.cursor(), (4, 0, false));
+}
+
+#[test]
+fn erased_cells_take_the_background_color() {
+    let mut term = Term::new(4, 2);
+    term.terminal.set_pen(Style {
+        bg: Color::Palette(4),
+        bold: true,
+        ..Style::DEFAULT
+    });
+    term.feed("ab\x1b[1G\x1b[X");
+    assert_eq!(term.cell(0, 0).content(), Content::BgPalette(4));
+    assert_eq!(term.cell(0, 0).style(), StyleId::DEFAULT, "only the color");
+    term.terminal.set_pen(Style {
+        bg: Color::Rgb(Rgb::new(1, 2, 3)),
+        ..Style::DEFAULT
+    });
+    term.feed("\x1b[J");
+    assert_eq!(term.cell(3, 1).content(), Content::BgRgb(Rgb::new(1, 2, 3)));
+}
+
+#[test]
+fn erasing_half_of_a_wide_character_erases_it_whole() {
+    let mut term = Term::new(6, 1);
+    term.feed("a中b\x1b[3G\x1b[K");
+    assert_eq!(term.screen(), ["a"]);
+    term.feed("\ra中b\x1b[2G\x1b[1K");
+    assert_eq!(term.screen(), ["   b"]);
+}
+
+#[test]
+fn an_erase_to_the_end_of_a_row_ends_its_wrap() {
+    let mut term = Term::new(5, 2);
+    term.feed("abcdefg\x1b[1;3H\x1b[1K");
+    assert!(
+        term.row(0).has(RowFlag::SoftWrapped),
+        "the end is still there"
+    );
+    term.feed("\x1b[K");
+    assert!(!term.row(0).has(RowFlag::SoftWrapped));
+    assert!(!term.row(1).has(RowFlag::Continuation));
+}
+
+#[test]
+fn erasing_ends_the_cluster_and_the_wrap() {
+    let mut term = Term::new(5, 1);
+    term.feed("e\x1b[1K\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(
+        page.grapheme(row, 0),
+        [],
+        "the mark stayed off the erased e"
+    );
+    term.feed("\rabcde\x1b[K");
+    assert_eq!(term.cursor(), (4, 0, false), "no wrap pending");
+}
+
+#[test]
+fn the_selective_erases_keep_protected_cells() {
+    let mut term = Term::new(6, 2);
+    term.feed("\x1b[1\"qab\x1b[0\"qcd\r\n\x1b[1\"q中\x1b[2\"qxy");
+    assert!(term.cell(1, 0).is_protected());
+    assert!(term.cell(1, 1).is_protected(), "the second half too");
+    assert!(!term.cell(2, 0).is_protected());
+    term.feed("\x1b[?2J");
+    assert_eq!(term.screen(), ["ab", "中"]);
+    term.feed("\x1b[1;1H\x1b[?K\x1b[K");
+    assert_eq!(term.screen(), ["", "中"], "EL erases them all");
+    term.feed("\x1b[2;1H\x1b[?2K");
+    assert_eq!(term.screen(), ["", "中"]);
+    term.feed("\x1b[2K");
+    assert_eq!(term.screen(), ["", ""]);
+}
+
+#[test]
+fn decsc_saves_the_protection() {
+    let mut term = Term::new(4, 1);
+    term.feed("\x1b[1\"q\x1b7\x1b[0\"q\x1b8a\x1b[3\"qb");
+    assert!(term.cell(0, 0).is_protected());
+    assert!(term.cell(1, 0).is_protected(), "3 does nothing");
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -1161,6 +1313,18 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[I",
     "\x1b[Z",
     "\x1b[3g",
+    "\x1b[K",
+    "\x1b[1K",
+    "\x1b[2K",
+    "\x1b[J",
+    "\x1b[1J",
+    "\x1b[2J",
+    "\x1b[3J",
+    "\x1b[?K",
+    "\x1b[?2J",
+    "\x1b[2X",
+    "\x1b[1\"q",
+    "\x1b[0\"q",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",

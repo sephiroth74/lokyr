@@ -565,3 +565,86 @@ fn a_copy_into_a_full_table_leaves_the_row_empty() {
     grown.copy_row(0, &source, 0).unwrap();
     assert_eq!(grown.styles().len(), 3);
 }
+
+/// The characters of row `y`, `.` for a cell without one.
+fn row_chars(page: &Page, y: u16) -> String {
+    page.cells(y)
+        .iter()
+        .map(|cell| match cell.content() {
+            Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => '.',
+            Content::Char(c) | Content::Grapheme(c) => c,
+        })
+        .collect()
+}
+
+#[test]
+fn erasing_puts_blanks_and_keeps_protected_cells_when_selective() {
+    let mut page = Page::new(Capacity::standard(6));
+    page.push_row();
+    for (x, c) in (0..).zip("abcdef".chars()) {
+        print(&mut page, 0, x, c, &bold(1)).unwrap();
+    }
+    let protected = page.cells(0)[2].with_protected(true);
+    page.set_cell(0, 2, protected);
+    let blank = Cell::EMPTY.with_content(Content::BgPalette(4));
+    page.erase(0, 1..4, blank, true);
+    assert_eq!(row_chars(&page, 0), "a.c.ef");
+    assert_eq!(page.cells(0)[1], blank);
+    // a, c, e and f keep the style.
+    assert_eq!(page.styles().references(page.cells(0)[0].style()), 4);
+    page.erase(0, 0..6, Cell::EMPTY, false);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+    assert_eq!(page.styles().len(), 0);
+    page.erase(0, 3..3, blank, false);
+    assert!(
+        page.cells(0).iter().all(|&cell| cell == Cell::EMPTY),
+        "an empty range"
+    );
+}
+
+#[test]
+fn erasing_half_of_a_wide_character_erases_it_whole() {
+    let mut page = Page::new(Capacity::standard(6));
+    page.push_row();
+    let wide = |page: &mut Page, x: u16, protected: bool| {
+        let head = Cell::EMPTY
+            .with_content(Content::Char('中'))
+            .with_width(Width::Wide)
+            .with_protected(protected);
+        page.set_cell(0, x, head);
+        let tail = Cell::EMPTY
+            .with_width(Width::SpacerTail)
+            .with_protected(protected);
+        page.set_cell(0, x + 1, tail);
+    };
+    wide(&mut page, 0, false);
+    wide(&mut page, 2, false);
+    page.erase(0, 1..3, Cell::EMPTY, false);
+    assert!(page.cells(0)[..4].iter().all(|&cell| cell == Cell::EMPTY));
+    // A protected one stays whole through a selective erase.
+    wide(&mut page, 2, true);
+    page.erase(0, 0..3, Cell::EMPTY, true);
+    assert_eq!(page.cells(0)[2].width(), Width::Wide);
+    assert_eq!(page.cells(0)[3].width(), Width::SpacerTail);
+}
+
+#[test]
+fn dropping_the_first_rows_moves_the_others_up() {
+    let mut page = page_with_rows(5);
+    for y in 0..5 {
+        print(&mut page, y, 0, char::from(b'a' + y as u8), &bold(1)).unwrap();
+    }
+    page.row_mut(3).set(RowFlag::SoftWrapped, true);
+    page.drop_first_rows(3);
+    assert_eq!(page.len(), 2);
+    assert_eq!(page.cells(0)[0].content(), Content::Char('d'));
+    assert!(page.row(0).has(RowFlag::SoftWrapped));
+    assert_eq!(page.cells(1)[0].content(), Content::Char('e'));
+    assert_eq!(page.styles().references(page.cells(0)[0].style()), 2);
+    // The rows past the end are empty, for push_row to hand out again.
+    page.push_row();
+    assert!(page.cells(2).iter().all(|&cell| cell == Cell::EMPTY));
+    page.drop_first_rows(3);
+    assert!(page.is_empty());
+    assert_eq!(page.styles().len(), 0);
+}

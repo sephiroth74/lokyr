@@ -10,6 +10,8 @@ mod list;
 mod row;
 mod style;
 
+use std::ops::Range;
+
 use thiserror::Error;
 
 use grapheme::GraphemeTable;
@@ -346,9 +348,10 @@ impl Page {
     }
 
     /// Puts the characters of `text`, printable ASCII, in the cells from
-    /// column `x` of row `y`, each with `style`, as [`Page::set_cell`] would
-    /// put them one by one. The text must fit in the row.
-    pub fn write_ascii(&mut self, y: u16, x: u16, text: &[u8], style: StyleId) {
+    /// column `x` of row `y`, each as `template` with the character in it,
+    /// as [`Page::set_cell`] would put them one by one. The template's
+    /// style must be in the page's table, and the text must fit in the row.
+    pub fn write_ascii(&mut self, y: u16, x: u16, text: &[u8], template: Cell) {
         debug_assert!(
             text.iter().all(|byte| (0x20..=0x7E).contains(byte)),
             "the text is printable ASCII"
@@ -358,13 +361,17 @@ impl Page {
             usize::from(x) + text.len() <= usize::from(self.cols()),
             "the text passes the end of row {y}"
         );
-        let blank = Cell::EMPTY.with_style(style);
+        debug_assert!(
+            !template.has_hyperlink(),
+            "a link is set with set_hyperlink"
+        );
+        let style = template.style();
         for (index, &byte) in (start..).zip(text) {
             // Retain first, in case the old cell holds the last reference.
             self.styles.retain(style);
             let old = self.cells[index];
             self.release(index, old);
-            self.cells[index] = blank.with_content(Content::Char(char::from(byte)));
+            self.cells[index] = template.with_content(Content::Char(char::from(byte)));
         }
         let row = self.row_mut(y);
         row.set(RowFlag::Dirty, true);
@@ -379,6 +386,50 @@ impl Page {
         let index = self.cell_index(y, x);
         self.cells[index] = self.cells[index].with_width(width);
         self.row_mut(y).set(RowFlag::Dirty, true);
+    }
+
+    /// Puts `blank`, a cell with no character, style or link, in the cells
+    /// of `columns` in row `y`, but leaves the protected ones if
+    /// `selective`, as the selective erases do. A wide character that the
+    /// range would split is erased whole, unless it is kept.
+    pub fn erase(&mut self, y: u16, columns: Range<u16>, blank: Cell, selective: bool) {
+        debug_assert!(
+            blank.style() == StyleId::DEFAULT
+                && !blank.has_hyperlink()
+                && !matches!(blank.content(), Content::Grapheme(_)),
+            "a blank holds nothing in the tables"
+        );
+        let Range { start, end } = columns;
+        if start >= end {
+            return;
+        }
+        let keeps = |cell: Cell| selective && cell.is_protected();
+        let cells = self.cells(y);
+        let (first, last) = (cells[usize::from(start)], cells[usize::from(end - 1)]);
+        if start > 0 && first.width() == Width::SpacerTail && !keeps(first) {
+            self.set_cell(y, start - 1, blank);
+        }
+        if end < self.cols() && last.width() == Width::Wide && !keeps(last) {
+            self.set_cell(y, end, blank);
+        }
+        for x in start..end {
+            if !keeps(self.cells(y)[usize::from(x)]) {
+                self.set_cell(y, x, blank);
+            }
+        }
+    }
+
+    /// Drops the first `n` rows in use, which drop what they held, and moves
+    /// the others up in their place.
+    pub fn drop_first_rows(&mut self, n: u16) {
+        assert!(n <= self.len, "only rows in use can be dropped");
+        for y in 0..n {
+            self.clear_row(y);
+        }
+        for y in n..self.len {
+            self.move_row(y, y - n);
+        }
+        self.len -= n;
     }
 
     /// Empties the halves of wide characters that writing `width` cells

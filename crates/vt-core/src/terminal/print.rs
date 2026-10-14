@@ -104,14 +104,15 @@ impl Terminal {
     /// [`Terminal::start_cluster`] writes a character.
     fn write_cells(&mut self, x: u16, y: u16, text: &[u8]) {
         let width = text.len() as u16;
-        let insert = self.insert;
+        let (insert, protected) = (self.insert, self.protected);
         self.with_pen(y, |page, row, style| {
             if insert {
                 page.insert_blanks(row, x, width);
             } else {
                 page.clear_halves(row, x, width);
             }
-            page.write_ascii(row, x, text, style);
+            let template = Cell::EMPTY.with_style(style).with_protected(protected);
+            page.write_ascii(row, x, text, template);
         });
     }
 
@@ -138,18 +139,18 @@ impl Terminal {
         }
 
         let (x, y) = (self.cursor().x, self.cursor().y);
-        let insert = self.insert;
+        let (insert, protected) = (self.insert, self.protected);
         self.with_pen(y, |page, row, style| {
             if insert {
                 page.insert_blanks(row, x, width);
             } else {
                 page.clear_halves(row, x, width);
             }
-            let cell = Cell::EMPTY.with_content(Content::Char(c)).with_style(style);
+            let blank = Cell::EMPTY.with_style(style).with_protected(protected);
+            let cell = blank.with_content(Content::Char(c));
             if width == 2 {
                 page.set_cell(row, x, cell.with_width(Width::Wide));
-                let tail = Cell::EMPTY.with_width(Width::SpacerTail).with_style(style);
-                page.set_cell(row, x + 1, tail);
+                page.set_cell(row, x + 1, blank.with_width(Width::SpacerTail));
             } else {
                 page.set_cell(row, x, cell);
             }
@@ -203,17 +204,18 @@ impl Terminal {
         if x + 1 >= cols {
             return;
         }
-        let style = self.cell(x, y).style();
+        let head = self.cell(x, y);
         self.clear_overlaps(x + 1, y, 1);
         {
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
             page.set_width(row, x, Width::Wide);
         }
-        self.put(
-            x + 1,
-            y,
-            Cell::EMPTY.with_width(Width::SpacerTail).with_style(style),
-        );
+        // The second half has the style and the protection of the first.
+        let tail = Cell::EMPTY
+            .with_width(Width::SpacerTail)
+            .with_style(head.style())
+            .with_protected(head.is_protected());
+        self.put(x + 1, y, tail);
         let cursor = &mut self.screen_mut().cursor;
         if cursor.y == y && cursor.x == x + 1 && !cursor.pending_wrap {
             if x + 2 >= cols {

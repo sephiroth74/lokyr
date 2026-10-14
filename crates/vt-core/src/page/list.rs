@@ -297,6 +297,22 @@ impl PageList {
         }
     }
 
+    /// Drops the scrollback, the rows above the screen, as ED 3 asks: the
+    /// pages that hold only scrollback go back to the pool, and the screen's
+    /// rows move up in the page where it starts.
+    pub fn clear_scrollback(&mut self) {
+        while self.can_evict(0) {
+            self.evict_head();
+        }
+        let extra = self.total_rows - usize::from(self.rows);
+        if extra > 0 {
+            let head = self.head;
+            // Fewer rows than the page holds.
+            self.page_at_mut(head).drop_first_rows(extra as u16);
+            self.total_rows -= extra;
+        }
+    }
+
     /// Every row of the list, oldest first, as its page and its row in it.
     pub fn iter_rows(&self) -> impl Iterator<Item = (&Page, u16)> + '_ {
         self.iter_pages()
@@ -690,6 +706,30 @@ mod tests {
         assert_eq!(list.screen_row_id(12).0, id, "the page keeps its id");
         assert!(usize::from(page.capacity().styles) > room, "the page grew");
         assert_eq!(page.styles().len(), room + 1);
+    }
+
+    #[test]
+    fn clearing_the_scrollback_keeps_the_screen() {
+        let mut list = straddling();
+        for y in 0..24 {
+            let (page, row) = list.screen_row_mut(y);
+            page.set_cell(row, 0, numbered(1000 + u32::from(y)));
+        }
+        assert_eq!(list.pages(), 2);
+        list.clear_scrollback();
+        assert_eq!(list.scrollback_rows(), 0);
+        assert_eq!(list.total_rows(), 24);
+        let expected: Vec<Option<u32>> = (1000..1024).map(Some).collect();
+        assert_eq!(numbers(&list), expected);
+        // The list goes on as before.
+        scroll(&mut list, 0, 3);
+        assert_eq!(list.scrollback_rows(), 3);
+        assert_eq!(screen_numbers(&list)[23], Some(2));
+        list.clear_scrollback();
+        assert_eq!(list.scrollback_rows(), 0);
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        list.clear_scrollback();
+        assert_eq!(list.total_rows(), 24, "nothing to clear");
     }
 
     #[test]
