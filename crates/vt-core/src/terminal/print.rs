@@ -1,6 +1,6 @@
 //! Printing: the path that every character of text takes into the grid.
 
-use super::{Cluster, Terminal};
+use super::{Cluster, Cursor, Terminal};
 use crate::page::{Cell, Content, RowFlag, StyleId, Width};
 use crate::unicode::{Mode, Normalization};
 
@@ -14,15 +14,87 @@ impl Terminal {
         };
         let width = self.widths.char_width(c);
         if joins || width == 0 {
-            // A codepoint of no width that starts a cluster, such as a mark
-            // after the cursor moved, joins the character left of the
-            // cursor; with none, it is dropped.
-            if let Some(cluster) = self.cluster.or_else(|| self.character_left_of_cursor()) {
-                self.join(cluster, c);
-            }
+            self.join_previous(c);
             return;
         }
         self.start_cluster(c, width);
+    }
+
+    /// Prints `text`, a run of printable ASCII, as [`Terminal::print_char`]
+    /// would print its characters one by one, but a stretch of a row at a
+    /// time: each of them takes one cell, starts a cluster and is in normal
+    /// form already.
+    pub(super) fn print_ascii_run(&mut self, text: &[u8]) {
+        let Some((&first, rest)) = text.split_first() else {
+            return;
+        };
+        let mut text = text;
+        if self.widths.mode == Mode::Unicode && !self.segmenter.ascii_starts_cluster() {
+            self.join_previous(char::from(first));
+            text = rest;
+        }
+        while !text.is_empty() {
+            let written = self.write_ascii(text);
+            text = &text[written..];
+        }
+    }
+
+    /// Adds `c` to the cluster that the last character printed started, or,
+    /// after the cursor moved, to the character left of the cursor. With
+    /// neither, `c` is dropped.
+    fn join_previous(&mut self, c: char) {
+        if let Some(cluster) = self.cluster.or_else(|| self.character_left_of_cursor()) {
+            self.join(cluster, c);
+        }
+    }
+
+    /// Writes the start of `text`, printable ASCII, from the cursor to the
+    /// end of its row, and returns how many bytes that took.
+    fn write_ascii(&mut self, text: &[u8]) -> usize {
+        let cols = self.cols;
+        if self.cursor().pending_wrap && self.autowrap {
+            self.wrap();
+        }
+        let Cursor { x, y, pending_wrap } = self.cursor();
+        if pending_wrap {
+            // Without autowrap, each character replaces the one in the last
+            // column, so only the last of them stays.
+            self.write_cells(x, y, &text[text.len() - 1..]);
+            self.cluster = Some(Cluster { x, y });
+            return text.len();
+        }
+        let len = text.len().min(usize::from(cols - x));
+        // The row has room for `len` cells, so it fits in a u16.
+        let width = len as u16;
+        self.write_cells(x, y, &text[..len]);
+        self.cluster = Some(Cluster {
+            x: x + width - 1,
+            y,
+        });
+        let cursor = &mut self.screen_mut().cursor;
+        if x + width >= cols {
+            cursor.x = cols - 1;
+            cursor.pending_wrap = true;
+        } else {
+            cursor.x = x + width;
+        }
+        len
+    }
+
+    /// Writes `text`, printable ASCII that fits in the row, into the cells
+    /// from column `x` of row `y`, with the pen's style, as
+    /// [`Terminal::start_cluster`] writes a character.
+    fn write_cells(&mut self, x: u16, y: u16, text: &[u8]) {
+        let width = text.len() as u16;
+        if self.insert {
+            self.insert_blanks(x, y, width);
+        } else {
+            self.clear_overlaps(x, y, width);
+        }
+        let style = self.pen_style(y);
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+        page.write_ascii(row, x, text, style);
+        self.release_pen_style(y, style);
     }
 
     /// Writes a new cluster, `c`, which takes `width` cells, at the cursor.

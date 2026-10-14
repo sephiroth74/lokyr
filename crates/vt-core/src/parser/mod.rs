@@ -8,6 +8,7 @@ mod handler;
 mod limits;
 mod params;
 mod recorder;
+mod scan;
 mod table;
 mod utf8;
 
@@ -131,7 +132,13 @@ impl Parser {
                 }
             }
             let transition = TABLE[self.state as usize][usize::from(byte)];
-            if let Some(payload) = payload_of(transition.action) {
+            if transition.action == table::Action::Print {
+                // Printable ASCII, in the ground state: the whole run goes
+                // at once.
+                let len = 1 + scan::printable_len(&bytes[i + 1..]);
+                handler.print_ascii(&bytes[i..i + len]);
+                i += len;
+            } else if let Some(payload) = payload_of(transition.action) {
                 let len = self.run_of(transition, &bytes[i..]);
                 self.put(handler, payload, &bytes[i..i + len]);
                 i += len;
@@ -160,7 +167,7 @@ impl Parser {
 
         match action {
             Ignore => {}
-            Print => handler.print(char::from(byte)),
+            Print => handler.print_ascii(std::slice::from_ref(&byte)),
             Utf8 => {
                 if let Some(c) = self.utf8.start(byte) {
                     handler.print(c);

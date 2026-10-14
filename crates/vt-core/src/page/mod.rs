@@ -345,6 +345,34 @@ impl Page {
         }
     }
 
+    /// Puts the characters of `text`, printable ASCII, in the cells from
+    /// column `x` of row `y`, each with `style`, as [`Page::set_cell`] would
+    /// put them one by one. The text must fit in the row.
+    pub fn write_ascii(&mut self, y: u16, x: u16, text: &[u8], style: StyleId) {
+        debug_assert!(
+            text.iter().all(|byte| (0x20..=0x7E).contains(byte)),
+            "the text is printable ASCII"
+        );
+        let start = self.cell_index(y, x);
+        assert!(
+            usize::from(x) + text.len() <= usize::from(self.cols()),
+            "the text passes the end of row {y}"
+        );
+        let blank = Cell::EMPTY.with_style(style);
+        for (index, &byte) in (start..).zip(text) {
+            // Retain first, in case the old cell holds the last reference.
+            self.styles.retain(style);
+            let old = self.cells[index];
+            self.release(index, old);
+            self.cells[index] = blank.with_content(Content::Char(char::from(byte)));
+        }
+        let row = self.row_mut(y);
+        row.set(RowFlag::Dirty, true);
+        if style != StyleId::DEFAULT {
+            row.set(RowFlag::Styles, true);
+        }
+    }
+
     /// Changes the width of the cell at column `x` of row `y`, and nothing
     /// else, as when a variation selector changes a cluster's width.
     pub fn set_width(&mut self, y: u16, x: u16, width: Width) {
@@ -448,12 +476,26 @@ impl Page {
     }
 
     /// Drops what `cell`, which was at `index`, held in the tables.
+    ///
+    /// Printing calls it for every cell it writes, and the compiler would
+    /// otherwise leave it out of line: the call costs more than the rest.
+    #[inline(always)]
     fn release(&mut self, index: usize, cell: Cell) {
         self.styles.release(cell.style());
-        if let Content::Grapheme(_) = cell.content() {
+        let grapheme = matches!(cell.content(), Content::Grapheme(_));
+        // Most cells hold neither, so the work on the tables stays out of
+        // line.
+        if grapheme || cell.has_hyperlink() {
+            self.release_entries(index, grapheme, cell.has_hyperlink());
+        }
+    }
+
+    /// Drops the grapheme and the link of the cell at `index`, as asked.
+    fn release_entries(&mut self, index: usize, grapheme: bool, hyperlink: bool) {
+        if grapheme {
             self.graphemes.remove(Self::key(index));
         }
-        if cell.has_hyperlink() {
+        if hyperlink {
             self.hyperlinks.remove_cell(Self::key(index));
         }
     }

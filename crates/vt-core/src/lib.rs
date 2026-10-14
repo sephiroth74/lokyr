@@ -12,9 +12,7 @@
 //! - [`unicode`] splits text into grapheme clusters and measures their width.
 //! - [`input`] encodes keys and mouse events for the program.
 
-// `deny` rather than `forbid`: code that needs `unsafe`, such as SIMD
-// intrinsics, allows it explicitly in its own module.
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 pub mod input;
 pub mod page;

@@ -78,6 +78,69 @@ fn del_is_ignored_in_text() {
     assert_eq!(parse(b"a\x7fb"), [print("ab")]);
 }
 
+/// What a handler receives as text: each run of ASCII, as one piece, and
+/// each other character on its own.
+#[derive(Default)]
+struct Runs(Vec<String>);
+
+impl Handler for Runs {
+    fn print(&mut self, c: char) {
+        self.0.push(c.to_string());
+    }
+
+    fn print_ascii(&mut self, text: &[u8]) {
+        self.0
+            .push(String::from_utf8(text.to_vec()).expect("ASCII"));
+    }
+}
+
+fn runs_in_reads(reads: &[&[u8]]) -> Vec<String> {
+    let mut parser = Parser::new();
+    let mut runs = Runs::default();
+    for read in reads {
+        parser.advance(&mut runs, read);
+    }
+    runs.0
+}
+
+#[test]
+fn printable_ascii_arrives_in_runs() {
+    let text = "a run of more than sixteen bytes";
+    assert_eq!(runs_in_reads(&[text.as_bytes()]), [text]);
+    assert_eq!(
+        runs_in_reads(&["ab\r\ncd\x1b[1mef\x7fgh\u{E9}ij~".as_bytes()]),
+        ["ab", "cd", "ef", "gh", "\u{E9}", "ij~"]
+    );
+    // A run ends with the read, and a sequence split across reads is still
+    // a sequence.
+    assert_eq!(
+        runs_in_reads(&[b"abc", b"def\x1b", b"[mxyz"]),
+        ["abc", "def", "xyz"]
+    );
+}
+
+#[test]
+fn only_printable_ascii_prints_and_only_in_the_ground_state() {
+    // The runs of ASCII rest on it: the scan stands for the state machine.
+    use super::State;
+    use super::table::{Action, STATES};
+
+    for state in STATES {
+        for byte in 0..=u8::MAX {
+            let transition = super::TABLE[state as usize][usize::from(byte)];
+            let printable = state == State::Ground && (0x20..=0x7E).contains(&byte);
+            assert_eq!(
+                transition.action == Action::Print,
+                printable,
+                "{state:?}, {byte:#x}"
+            );
+            if printable {
+                assert_eq!(transition.next, State::Ground, "{byte:#x}");
+            }
+        }
+    }
+}
+
 #[test]
 fn escape_sequences_dispatch_with_their_intermediates() {
     assert_eq!(

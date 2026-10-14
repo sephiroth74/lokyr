@@ -1,8 +1,10 @@
 //! The terminal driven by the parser, as programs drive it.
 
+use proptest::prelude::*;
+
 use super::*;
-use crate::page::{Color, RowFlag, StyleId};
-use crate::parser::Parser;
+use crate::page::{Color, Page, Row, RowFlag, StyleId};
+use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
 
 /// A terminal with the parser that feeds it.
@@ -449,4 +451,305 @@ fn normalization_keeps_the_style_of_the_cell() {
     term.feed("e\u{301}");
     let (page, _) = term.terminal.screen_rows().screen_row(0);
     assert_eq!(page.styles().get(term.cell(0, 0).style()), &red);
+}
+
+#[test]
+fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
+    let mut term = Term::new(10, 2);
+    let red = Style {
+        fg: Color::Palette(1),
+        ..Style::DEFAULT
+    };
+    term.terminal.set_pen(red);
+    term.feed("abcdef");
+    let (page, _) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.styles().get(term.cell(5, 0).style()), &red);
+    assert_eq!(page.styles().references(term.cell(0, 0).style()), 6);
+    assert!(term.row(0).has(RowFlag::Styles));
+    term.terminal.set_pen(Style::DEFAULT);
+    term.feed("\rxyz");
+    let (page, _) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.styles().references(term.cell(5, 0).style()), 3);
+}
+
+#[test]
+fn a_run_over_halves_of_wide_characters_clears_their_other_halves() {
+    let mut term = Term::new(8, 2);
+    // Back to the second half of the second 中.
+    term.feed("中中中\x08\x08\x08ab");
+    assert_eq!(term.screen(), ["中 ab", ""]);
+    assert_eq!(term.cell(5, 0), Cell::EMPTY);
+    assert_eq!(term.cursor(), (5, 0, false));
+}
+
+#[test]
+fn ascii_after_a_prepended_character_joins_its_cluster() {
+    let mut term = Term::new(6, 2);
+    term.feed("\u{D4E}ab");
+    assert_eq!(term.screen(), ["\u{D4E}ab", ""]);
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), ['a']);
+    assert_eq!(term.cell(1, 0).content(), Content::Char('b'));
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn a_mark_after_a_run_joins_its_last_character() {
+    let mut term = Term::new(6, 2);
+    term.feed("abc\u{301}d");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 2), ['\u{301}']);
+    assert_eq!(term.cursor(), (4, 0, false));
+}
+
+/// Passes everything to the terminal, but prints runs of ASCII one
+/// character at a time, as [`Handler::print_ascii`] does by default.
+struct OneByOne<'a>(&'a mut Terminal);
+
+impl Handler for OneByOne<'_> {
+    fn print(&mut self, c: char) {
+        self.0.print(c);
+    }
+
+    fn execute(&mut self, byte: u8) {
+        self.0.execute(byte);
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], final_byte: u8) {
+        self.0.esc_dispatch(intermediates, final_byte);
+    }
+
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.0.csi_dispatch(params, intermediates, final_byte);
+    }
+
+    fn osc_start(&mut self) {
+        self.0.osc_start();
+    }
+
+    fn osc_put(&mut self, data: &[u8]) {
+        self.0.osc_put(data);
+    }
+
+    fn osc_end(&mut self, end: StringEnd) {
+        self.0.osc_end(end);
+    }
+
+    fn dcs_start(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.0.dcs_start(params, intermediates, final_byte);
+    }
+
+    fn dcs_put(&mut self, data: &[u8]) {
+        self.0.dcs_put(data);
+    }
+
+    fn dcs_end(&mut self, end: StringEnd) {
+        self.0.dcs_end(end);
+    }
+
+    fn apc_start(&mut self) {
+        self.0.apc_start();
+    }
+
+    fn apc_put(&mut self, data: &[u8]) {
+        self.0.apc_put(data);
+    }
+
+    fn apc_end(&mut self, end: StringEnd) {
+        self.0.apc_end(end);
+    }
+}
+
+/// A cell as it reads, wherever its page keeps its style and grapheme.
+type CellValue = (Cell, Style, Vec<char>);
+
+/// What printing can change in a screen, as values that do not depend on
+/// where the tables keep them.
+fn screen_state(screen: &Screen) -> (Vec<(Row, Vec<CellValue>)>, Cursor) {
+    let rows = screen
+        .rows
+        .iter_rows()
+        .map(|(page, row)| {
+            let cells = (0..)
+                .zip(page.cells(row))
+                .map(|(x, &cell)| {
+                    (
+                        cell.with_style(StyleId::DEFAULT),
+                        *page.styles().get(cell.style()),
+                        page.grapheme(row, x).to_vec(),
+                    )
+                })
+                .collect();
+            (page.row(row), cells)
+        })
+        .collect();
+    (rows, screen.cursor)
+}
+
+/// Checks that each page's styles have as many references as cells that
+/// use them, and no other style is in the table.
+fn assert_styles_counted(screen: &Screen) {
+    use std::collections::HashMap;
+
+    let mut pages: HashMap<*const Page, (&Page, HashMap<StyleId, u32>)> = HashMap::new();
+    for (page, row) in screen.rows.iter_rows() {
+        let (_, counts) = pages
+            .entry(std::ptr::from_ref(page))
+            .or_insert_with(|| (page, HashMap::new()));
+        for cell in page.cells(row) {
+            if cell.style() != StyleId::DEFAULT {
+                *counts.entry(cell.style()).or_default() += 1;
+            }
+        }
+    }
+    for (page, counts) in pages.values() {
+        assert_eq!(page.styles().len(), counts.len(), "styles in the table");
+        for (&id, &count) in counts {
+            assert_eq!(page.styles().references(id), count, "{id:?}");
+        }
+    }
+}
+
+/// Something that the property does to both terminals.
+#[derive(Clone, Debug)]
+enum Op {
+    /// The bytes of one read.
+    Feed(Vec<u8>),
+    Pen(Style),
+    Autowrap(bool),
+    Insert(bool),
+    Alternate(bool),
+}
+
+/// Text that is not a run of ASCII: controls, marks, prepended and wide
+/// characters, the pieces of emoji sequences, and a sequence the terminal
+/// ignores.
+const OTHER_TEXT: &[&str] = &[
+    "\r",
+    "\n",
+    "\r\n",
+    "\x08",
+    "\t",
+    "\x07",
+    "\x0e",
+    "\x0f",
+    "\x7f",
+    "\x1b[1m",
+    "\u{AD}",
+    "\u{E9}",
+    "\u{301}",
+    "\u{600}",
+    "\u{D4E}",
+    "\u{93E}",
+    "\u{1100}",
+    "\u{1161}",
+    "\u{2764}",
+    "\u{FE0E}",
+    "\u{FE0F}",
+    "\u{200D}",
+    "\u{1F1EE}",
+    "中",
+    "\u{1F600}",
+];
+
+fn read() -> impl Strategy<Value = Vec<u8>> {
+    let piece = prop_oneof![
+        6 => prop::collection::vec(0x20_u8..=0x7E, 1..24),
+        4 => prop::sample::select(OTHER_TEXT).prop_map(|text| text.as_bytes().to_vec()),
+        1 => any::<u8>().prop_map(|byte| vec![byte]),
+    ];
+    prop::collection::vec(piece, 1..8).prop_map(|pieces| pieces.concat())
+}
+
+fn op() -> impl Strategy<Value = Op> {
+    let styles = [
+        Style::DEFAULT,
+        Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        },
+        Style {
+            bold: true,
+            bg: Color::Palette(4),
+            ..Style::DEFAULT
+        },
+    ];
+    prop_oneof![
+        12 => read().prop_map(Op::Feed),
+        2 => prop::sample::select(styles.to_vec()).prop_map(Op::Pen),
+        1 => any::<bool>().prop_map(Op::Autowrap),
+        1 => any::<bool>().prop_map(Op::Insert),
+        1 => any::<bool>().prop_map(Op::Alternate),
+    ]
+}
+
+fn widths() -> impl Strategy<Value = Widths> {
+    (
+        prop::sample::select(vec![Mode::Unicode, Mode::Legacy]),
+        prop::sample::select(vec![Tables::Current, Tables::Unicode8]),
+        any::<bool>(),
+    )
+        .prop_map(|(mode, tables, ambiguous_wide)| Widths {
+            mode,
+            tables,
+            ambiguous_wide,
+        })
+}
+
+fn normalization() -> impl Strategy<Value = Normalization> {
+    prop::sample::select(vec![
+        Normalization::None,
+        Normalization::Nfc,
+        Normalization::Nfd,
+        Normalization::HfsPlus,
+    ])
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    #[test]
+    fn runs_of_ascii_print_as_their_characters_do(
+        cols in 1_u16..=10,
+        rows in 1_u16..=4,
+        scrollback in any::<bool>(),
+        widths in widths(),
+        normalization in normalization(),
+        ops in prop::collection::vec(op(), 1..24),
+    ) {
+        let options = || Options {
+            scrollback: if scrollback {
+                Scrollback::default()
+            } else {
+                Scrollback { limit: 0, ..Scrollback::default() }
+            },
+            widths,
+            normalization,
+        };
+        let mut fast = Term::with(cols, rows, options());
+        let mut slow = Term::with(cols, rows, options());
+        for op in &ops {
+            for (term, one_by_one) in [(&mut fast, false), (&mut slow, true)] {
+                let terminal = &mut term.terminal;
+                match op {
+                    Op::Feed(bytes) if one_by_one => {
+                        term.parser.advance(&mut OneByOne(terminal), bytes);
+                    }
+                    Op::Feed(bytes) => term.parser.advance(terminal, bytes),
+                    Op::Pen(style) => terminal.set_pen(*style),
+                    &Op::Autowrap(on) => terminal.set_autowrap(on),
+                    &Op::Insert(on) => terminal.set_insert_mode(on),
+                    &Op::Alternate(on) => terminal.set_alternate_screen(on),
+                }
+            }
+            let (fast, slow) = (&fast.terminal, &slow.terminal);
+            prop_assert_eq!(screen_state(&fast.primary), screen_state(&slow.primary), "after {:?}", op);
+            prop_assert_eq!(screen_state(&fast.alternate), screen_state(&slow.alternate), "after {:?}", op);
+            prop_assert_eq!(fast.cluster, slow.cluster, "after {:?}", op);
+            prop_assert_eq!(fast.segmenter, slow.segmenter, "after {:?}", op);
+        }
+        for screen in [&fast.terminal.primary, &fast.terminal.alternate] {
+            assert_styles_counted(screen);
+        }
+    }
 }

@@ -14,8 +14,13 @@ thiserror.workspace = true
 unicode-normalization.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 proptest.workspace = true
 vte.workspace = true
+
+[[bench]]
+name = "throughput"
+harness = false
 
 [lints]
 workspace = true

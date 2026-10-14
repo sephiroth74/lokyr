@@ -193,17 +193,57 @@ fn a_segmenter_can_start_over() {
     );
 }
 
+#[test]
+fn ascii_starts_a_cluster_as_its_characters_do() {
+    // Text that leaves the segmenter in each of its states.
+    let before = [
+        "",
+        "a",
+        "\r",
+        "\n",
+        "\u{1}",
+        "e\u{301}",
+        "a\u{200D}",
+        "\u{1F1EE}",
+        "\u{1F1EE}\u{1F1F9}",
+        "\u{600}",
+        "\u{D4E}",
+        "\u{915}\u{93E}",
+        "\u{1100}",
+        "\u{1161}",
+        "\u{11A8}",
+        "\u{AC00}",
+        "\u{AC01}",
+        "\u{915}\u{94D}",
+        "\u{1F600}",
+        "\u{1F600}\u{200D}",
+    ];
+    for text in before {
+        let mut segmenter = Segmenter::new();
+        for c in text.chars() {
+            segmenter.starts_cluster(c);
+        }
+        for byte in 0x20_u8..=0x7E {
+            let (mut fast, mut slow) = (segmenter, segmenter);
+            assert_eq!(
+                fast.ascii_starts_cluster(),
+                slow.starts_cluster(char::from(byte)),
+                "{byte:#x} after {text:?}"
+            );
+            assert_eq!(fast, slow, "{byte:#x} after {text:?}");
+        }
+    }
+}
+
 /// The clusters of `text`, as the segmenter finds them.
 fn clusters(text: &str) -> Vec<Vec<char>> {
     let mut segmenter = Segmenter::new();
     let mut clusters: Vec<Vec<char>> = Vec::new();
     for c in text.chars() {
+        let starts = segmenter.starts_cluster(c);
         match clusters.last_mut() {
-            Some(cluster) if !segmenter.starts_cluster(c) => cluster.push(c),
-            _ => {
-                segmenter.starts_cluster(c);
-                clusters.push(vec![c]);
-            }
+            Some(cluster) if !starts => cluster.push(c),
+            _ => clusters.push(vec![c]),
         }
     }
     clusters
@@ -315,6 +355,11 @@ fn emoji_presentation_sets_the_width_of_a_cluster() {
     );
     assert_eq!(unicode_widths("\u{1F1EE}\u{1F1F9}", CURRENT), [2], "a flag");
     assert_eq!(unicode_widths("\u{1F1EE}", CURRENT), [1], "half a flag");
+    assert_eq!(
+        unicode_widths("\u{1F1EE}\u{1F1F9}\u{1F1EB}\u{1F1F7}", CURRENT),
+        [2, 2],
+        "two flags"
+    );
     assert_eq!(
         unicode_widths("\u{1F44D}\u{1F3FD}", CURRENT),
         [2],

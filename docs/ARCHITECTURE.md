@@ -180,7 +180,7 @@ Versions and maturity must be rechecked when coding starts.
 | Wayland / X11 (F7) | `smithay-client-toolkit` + `calloop`; `x11rb` + `xkbcommon` + `xim` | |
 | GPU on Linux (F7) | `glow` + `khronos-egl` | |
 | Text | CoreText on macOS (discovery, fallback, shaping, rasterization); `harfrust` + `fontconfig` + `freetype-rs` on Linux (F7) | HarfRust is young: benchmark it against `harfbuzz-sys` before adopting it |
-| Core | `memchr` + `core::arch` for SIMD (`std::simd` is not stable), `regex-automata`, `lz4_flex`, `unicode-normalization` | `unicode-normalization` may trail the pinned Unicode version: 17 while the tables are 18 |
+| Core | `memchr`, `regex-automata`, `lz4_flex`, `unicode-normalization`. Scans like the parser's fast path use arithmetic on 64-bit words (SWAR) in safe code; `core::arch` only where a measurement shows it pays (`std::simd` is not stable) | `unicode-normalization` may trail the pinned Unicode version: 17 while the tables are 18 |
 | UI | `taffy`, `accesskit` | |
 | Formats and config | `plist`, `toml_edit` (errors with line and column), `serde`, `ciborium` (CBOR), `notify` | |
 | Plugins | `mlua` with the `luau` and `luau-jit` features, from vendored sources | Luau ships every week or two; pin it and upgrade deliberately |
@@ -195,7 +195,7 @@ Versions and maturity must be rechecked when coding starts.
 - **Fuzzing** alone uses nightly Rust, which cargo-fuzz needs. That toolchain is pinned too, in the `justfile`, and `fuzz/` is a workspace of its own so that the main one never needs nightly.
 - **Logging and errors**: `tracing` for logs and spans (with signposts on macOS); `thiserror` in libraries, `anyhow` only in binaries.
 - **Workspace config**: `[workspace.dependencies]` and `[workspace.lints]` are centralized; clippy runs with `-D warnings`.
-- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in the SIMD scan of `vt-core`'s fast path, if measurements keep it over safe code, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `tools/bench`, which reads other processes' statistics from the kernel, and in the test allocators that count allocations, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau` and `tools/bench` use `#![deny(unsafe_code)]` and allow their call sites one by one.
+- **`unsafe`**: allowed only in the platform, render, font and `pty` crates, in `plugin-host-luau`, where the watchdog and the bulk readers use Lua's C API, in `tools/bench`, which reads other processes' statistics from the kernel, and in the test allocators that count allocations, outside library code. Always with a `// SAFETY:` comment. Every other crate uses `#![forbid(unsafe_code)]`; `plugin-host-luau` and `tools/bench` use `#![deny(unsafe_code)]` and allow their call sites one by one.
 - **Comments**: code comments and doc comments describe the code itself. They never reference the plan (roadmap phases, task IDs, ADR numbers, sections of these docs). Links to external specifications such as xterm, kitty or Unicode are fine.
 - **Common tasks** live in the `justfile`: `just ci` runs every check that CI runs, and `just --list` shows the other recipes.
 - **Language**: all documentation, comments and commit messages are in English.

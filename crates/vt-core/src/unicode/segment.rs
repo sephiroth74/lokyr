@@ -89,6 +89,20 @@ impl Segmenter {
         self.previous = Some(class);
         starts
     }
+
+    /// Whether printable ASCII (`0x20..=0x7E`) starts a new grapheme
+    /// cluster, as [`Segmenter::starts_cluster`] says for any of its
+    /// characters, but without looking up their properties. It joins only
+    /// a prepended character (rule GB9b), and every one of its characters
+    /// leaves the same state, so this also stands for a whole run of them.
+    pub fn ascii_starts_cluster(&mut self) -> bool {
+        let starts = self.previous != Some(GraphemeBreak::Prepend);
+        *self = Self {
+            previous: Some(GraphemeBreak::Other),
+            ..Self::default()
+        };
+        starts
+    }
 }
 
 fn previous_is_flag(previous: Option<GraphemeBreak>) -> bool {

@@ -284,6 +284,7 @@ impl StyleTable {
 
     /// Drops a reference to the style with `id`, and frees the id with the
     /// last one.
+    #[inline]
     pub fn release(&mut self, id: StyleId) {
         if id == StyleId::DEFAULT {
             return;
@@ -291,9 +292,14 @@ impl StyleTable {
         debug_assert!(self.is_live(id), "style {id:?} is not in the table");
         let refs = &mut self.refs[usize::from(id.get())];
         *refs = refs.saturating_sub(1);
-        if *refs > 0 {
-            return;
+        if *refs == 0 {
+            self.free(id);
         }
+    }
+
+    /// Takes the style with `id`, which has no reference left, out of the
+    /// table.
+    fn free(&mut self, id: StyleId) {
         let style = self.styles[usize::from(id.get())];
         if let Some(Slot::Taken(slot)) = self.find(&style) {
             let styles = &self.styles;
