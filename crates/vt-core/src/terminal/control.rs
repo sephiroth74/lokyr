@@ -29,7 +29,7 @@ impl Terminal {
     }
 
     /// HT: to the next tab stop, or to the last column.
-    fn horizontal_tab(&mut self) {
+    pub(super) fn horizontal_tab(&mut self) {
         self.moved();
         let last = self.cols - 1;
         let x = self.cursor().x;
@@ -61,11 +61,13 @@ impl Terminal {
         }
     }
 
-    /// CR: to the first column.
+    /// CR: to the left margin, or to the first column from left of it
+    /// outside origin mode.
     pub(super) fn carriage_return(&mut self) {
         self.moved();
+        let (left, origin) = (self.margins.left, self.origin);
         let cursor = &mut self.screen_mut().cursor;
-        cursor.x = 0;
+        cursor.x = if origin || cursor.x >= left { left } else { 0 };
         cursor.pending_wrap = false;
     }
 }

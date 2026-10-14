@@ -51,7 +51,9 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 
 - **Screens**: primary (with scrollback) and alternate (without).
 - **Cursor**: position, *pending wrap*, style (DECSCUSR), save and restore (DECSC/DECRC, mode 1048).
-  - Each screen saves its own cursor. DECSC saves the position with its pending wrap, the pen and the character sets; DECRC with nothing saved puts the cursor at the top left, with the default pen and character sets.
+  - Each screen saves its own cursor. DECSC saves the position with its pending wrap, the pen, the character sets and origin mode; DECRC with nothing saved puts the cursor at the top left, with the default pen and character sets, and origin mode off.
+  - Moves follow xterm: the relative ones (CUU, CUD, CUF, CUB and their kin) stop at the margins when they start within them, and at the edges of the screen otherwise; the absolute ones (CUP, CHA, VPA) count from the top left of the screen, or of the margins in origin mode, and stay within them. Every move ends the cluster being printed and leaves no wrap pending.
+  - DECSCUSR 0 gives the cursor's shape and blinking back to the configuration (see [the cursor options](UI-AND-FEATURES.md#cursor)); the other values override it.
 - **Full reset (RIS)**: the terminal goes back to how it was made, its scrollback cleared as `alacritty_terminal` clears it, but it keeps its configuration: size, scrollback limits, widths and normalization.
 - **Modes and geometry**:
   - ANSI and DEC private modes, tab stops;

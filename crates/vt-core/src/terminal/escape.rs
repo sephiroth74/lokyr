@@ -50,26 +50,28 @@ impl Terminal {
         }
     }
 
-    /// DECSC: saves the cursor, with its pending wrap, the pen and the
-    /// character sets, for the active screen.
+    /// DECSC: saves the cursor, with its pending wrap, the pen, the
+    /// character sets and origin mode, for the active screen.
     pub(super) fn save_cursor(&mut self) {
         let saved = SavedCursor {
             cursor: self.cursor(),
             pen: self.pen,
             charsets: self.charsets,
+            origin: self.origin,
         };
         self.screen_mut().saved = Some(saved);
     }
 
     /// DECRC: brings back what DECSC saved for the active screen, or, with
     /// nothing saved, puts the cursor at the top left with the default pen
-    /// and character sets.
+    /// and character sets, and origin mode off.
     pub(super) fn restore_cursor(&mut self) {
         self.moved();
         let saved = self.screen().saved.unwrap_or_default();
         self.screen_mut().cursor = saved.cursor;
         self.pen = saved.pen;
         self.charsets = saved.charsets;
+        self.origin = saved.origin;
     }
 
     /// RIS: puts the terminal back as it was made, with its screens and

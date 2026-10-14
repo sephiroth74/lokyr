@@ -3,13 +3,15 @@
 
 mod charsets;
 mod control;
+mod csi;
+mod cursor;
 mod escape;
 mod print;
 
 pub use charsets::{Charset, Charsets, Shift};
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
-use crate::parser::Handler;
+use crate::parser::{Handler, Params};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
 /// What a terminal is made with.
@@ -36,12 +38,57 @@ pub struct Cursor {
     pub pending_wrap: bool,
 }
 
+/// The shape of the cursor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorShape {
+    /// A block over the cell.
+    Block,
+    /// A line under the cell.
+    Underline,
+    /// A bar at the left of the cell.
+    Bar,
+}
+
+/// How the cursor looks, as a program sets it with DECSCUSR.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CursorStyle {
+    /// Its shape.
+    pub shape: CursorShape,
+    /// Whether it blinks.
+    pub blinking: bool,
+}
+
+/// The margins: the rows from `top` to `bottom` and the columns from `left`
+/// to `right`, all included, within which the screen scrolls and origin
+/// mode places the cursor. The whole screen until a program sets them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Margins {
+    top: u16,
+    bottom: u16,
+    left: u16,
+    right: u16,
+}
+
+impl Margins {
+    /// The margins of the whole of a screen of `cols` columns and `rows`
+    /// rows.
+    fn screen(cols: u16, rows: u16) -> Self {
+        Self {
+            top: 0,
+            bottom: rows - 1,
+            left: 0,
+            right: cols - 1,
+        }
+    }
+}
+
 /// What DECSC saves of a screen, and DECRC brings back.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct SavedCursor {
     cursor: Cursor,
     pen: Style,
     charsets: Charsets,
+    origin: bool,
 }
 
 /// A screen: its rows, its cursor, and the cursor that DECSC saved, if
@@ -86,6 +133,13 @@ pub struct Terminal {
     insert: bool,
     /// Whether each column is a tab stop.
     tab_stops: Box<[bool]>,
+    margins: Margins,
+    /// Origin mode (DECOM): the cursor's positions count from the top left
+    /// of the margins, and stay within them.
+    origin: bool,
+    /// How a program asked the cursor to look; `None` leaves it to the
+    /// configuration.
+    cursor_style: Option<CursorStyle>,
     charsets: Charsets,
     /// Application keypad mode (DECKPAM): the keypad sends sequences
     /// rather than the characters on its keys.
@@ -124,6 +178,9 @@ impl Terminal {
             autowrap: true,
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),
+            margins: Margins::screen(cols, rows),
+            origin: false,
+            cursor_style: None,
             charsets: Charsets::default(),
             keypad_application: false,
             segmenter: Segmenter::new(),
@@ -216,6 +273,24 @@ impl Terminal {
         self.charsets
     }
 
+    /// Whether origin mode (DECOM) is on.
+    pub fn origin_mode(&self) -> bool {
+        self.origin
+    }
+
+    /// Turns origin mode (DECOM) on or off, which puts the cursor at the
+    /// top left of the margins, or of the screen.
+    pub fn set_origin_mode(&mut self, on: bool) {
+        self.origin = on;
+        self.goto(0, 0);
+    }
+
+    /// How a program asked the cursor to look (DECSCUSR), or `None` for the
+    /// configured cursor.
+    pub fn cursor_style(&self) -> Option<CursorStyle> {
+        self.cursor_style
+    }
+
     /// Whether the keypad is in application mode (DECKPAM) rather than in
     /// numeric mode (DECKPNM).
     pub fn keypad_application(&self) -> bool {
@@ -301,6 +376,10 @@ impl Handler for Terminal {
 
     fn esc_dispatch(&mut self, intermediates: &[u8], final_byte: u8) {
         self.escape(intermediates, final_byte);
+    }
+
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.csi(params, intermediates, final_byte);
     }
 }
 

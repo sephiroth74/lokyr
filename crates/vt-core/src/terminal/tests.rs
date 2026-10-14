@@ -755,6 +755,206 @@ fn deckpam_and_deckpnm_switch_the_keypad() {
     assert!(!term.terminal.keypad_application());
 }
 
+/// Where the cursor is after `sequences`, from column `x` of row `y`.
+fn moved(term: &mut Term, x: u16, y: u16, sequences: &str) -> (u16, u16, bool) {
+    term.feed(format!("\x1b[{};{}H{sequences}", y + 1, x + 1));
+    term.cursor()
+}
+
+/// Margins at rows 1 to 3 and columns 2 to 7 of a screen of 10 by 5.
+fn with_margins() -> Term {
+    let mut term = Term::new(10, 5);
+    term.terminal.margins = Margins {
+        top: 1,
+        bottom: 3,
+        left: 2,
+        right: 7,
+    };
+    term
+}
+
+#[test]
+fn relative_moves_stop_at_the_edges_of_the_screen() {
+    let mut term = Term::new(10, 5);
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[A"), (5, 1, false));
+    assert_eq!(
+        moved(&mut term, 5, 2, "\x1b[0A"),
+        (5, 1, false),
+        "0 counts as 1"
+    );
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[9A"), (5, 0, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[2B"), (5, 4, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[99B"), (5, 4, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[3C"), (8, 2, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[65535C"), (9, 2, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[3D"), (2, 2, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[99D"), (0, 2, false));
+    // VPR and HPR move as CUD and CUF.
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[2e"), (5, 4, false));
+    assert_eq!(moved(&mut term, 5, 2, "\x1b[2a"), (7, 2, false));
+}
+
+#[test]
+fn relative_moves_stop_at_the_margins_from_within_them() {
+    let mut term = with_margins();
+    assert_eq!(moved(&mut term, 4, 2, "\x1b[9A"), (4, 1, false));
+    assert_eq!(moved(&mut term, 4, 2, "\x1b[9B"), (4, 3, false));
+    assert_eq!(moved(&mut term, 4, 2, "\x1b[9C"), (7, 2, false));
+    assert_eq!(moved(&mut term, 4, 2, "\x1b[9D"), (2, 2, false));
+    // From outside, the far edge of the screen stops them.
+    assert_eq!(moved(&mut term, 4, 0, "\x1b[9A"), (4, 0, false));
+    assert_eq!(moved(&mut term, 4, 4, "\x1b[9B"), (4, 4, false));
+    assert_eq!(moved(&mut term, 9, 2, "\x1b[9C"), (9, 2, false));
+    assert_eq!(moved(&mut term, 0, 2, "\x1b[9D"), (0, 2, false));
+    // Toward the margins, from outside, they stop at them.
+    assert_eq!(moved(&mut term, 4, 0, "\x1b[9B"), (4, 3, false));
+    assert_eq!(moved(&mut term, 4, 4, "\x1b[9A"), (4, 1, false));
+    assert_eq!(moved(&mut term, 0, 2, "\x1b[9C"), (7, 2, false));
+    assert_eq!(moved(&mut term, 9, 2, "\x1b[9D"), (2, 2, false));
+}
+
+#[test]
+fn cnl_and_cpl_go_to_the_left_margin() {
+    let mut term = Term::new(10, 5);
+    assert_eq!(moved(&mut term, 5, 1, "\x1b[2E"), (0, 3, false));
+    assert_eq!(moved(&mut term, 5, 3, "\x1b[F"), (0, 2, false));
+    let mut term = with_margins();
+    assert_eq!(moved(&mut term, 5, 1, "\x1b[E"), (2, 2, false));
+    assert_eq!(
+        moved(&mut term, 1, 3, "\x1b[F"),
+        (0, 2, false),
+        "from left of it"
+    );
+}
+
+#[test]
+fn absolute_moves_count_from_the_top_left_of_the_screen() {
+    let mut term = Term::new(10, 5);
+    term.feed("\x1b[2;3H");
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("\x1b[H");
+    assert_eq!(term.cursor(), (0, 0, false));
+    term.feed("\x1b[99;99f");
+    assert_eq!(term.cursor(), (9, 4, false));
+    term.feed("\x1b[;5H");
+    assert_eq!(term.cursor(), (4, 0, false));
+    term.feed("\x1b[4G");
+    assert_eq!(term.cursor(), (3, 0, false));
+    term.feed("\x1b[6`");
+    assert_eq!(term.cursor(), (5, 0, false));
+    term.feed("\x1b[G");
+    assert_eq!(term.cursor(), (0, 0, false));
+    term.feed("\x1b[2C\x1b[3d");
+    assert_eq!(term.cursor(), (2, 2, false));
+    term.feed("\x1b[99d");
+    assert_eq!(term.cursor(), (2, 4, false));
+    // Outside origin mode, margins do not hold the cursor.
+    let mut term = with_margins();
+    term.feed("\x1b[5;10H");
+    assert_eq!(term.cursor(), (9, 4, false));
+}
+
+#[test]
+fn origin_mode_counts_from_the_margins_and_stays_within_them() {
+    let mut term = with_margins();
+    term.feed("\x1b[5;5H");
+    term.terminal.set_origin_mode(true);
+    assert_eq!(term.cursor(), (2, 1, false), "home is the top left margin");
+    term.feed("\x1b[2;2H");
+    assert_eq!(term.cursor(), (3, 2, false));
+    term.feed("\x1b[99;99H");
+    assert_eq!(term.cursor(), (7, 3, false));
+    term.feed("\x1b[1G");
+    assert_eq!(term.cursor(), (2, 3, false));
+    term.feed("\x1b[1d");
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("\x1b[4C\r");
+    assert_eq!(term.cursor(), (2, 1, false), "CR goes to the left margin");
+    term.terminal.set_origin_mode(false);
+    assert_eq!(term.cursor(), (0, 0, false));
+}
+
+#[test]
+fn cr_goes_to_the_left_margin_from_right_of_it() {
+    let mut term = with_margins();
+    assert_eq!(moved(&mut term, 5, 2, "\r"), (2, 2, false));
+    assert_eq!(moved(&mut term, 1, 2, "\r"), (0, 2, false));
+}
+
+#[test]
+fn cursor_moves_end_the_wrap_and_the_cluster() {
+    let mut term = Term::new(5, 2);
+    term.feed("abcde\x1b[D");
+    assert_eq!(term.cursor(), (3, 0, false));
+    term.feed("\x1b[2;1Hxy\x1b[1G\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(1);
+    assert_eq!(page.grapheme(row, 1), [], "the mark stayed off the y");
+}
+
+#[test]
+fn cht_and_cbt_move_by_tab_stops() {
+    let mut term = Term::new(20, 1);
+    assert_eq!(moved(&mut term, 0, 0, "\x1b[2I"), (16, 0, false));
+    assert_eq!(moved(&mut term, 0, 0, "\x1b[99I"), (19, 0, false));
+    assert_eq!(moved(&mut term, 17, 0, "\x1b[Z"), (16, 0, false));
+    assert_eq!(moved(&mut term, 16, 0, "\x1b[Z"), (8, 0, false));
+    assert_eq!(moved(&mut term, 17, 0, "\x1b[2Z"), (8, 0, false));
+    assert_eq!(
+        moved(&mut term, 5, 0, "\x1b[Z"),
+        (0, 0, false),
+        "no stop before"
+    );
+    assert_eq!(moved(&mut term, 19, 0, "\x1b[65535Z"), (0, 0, false));
+}
+
+#[test]
+fn tbc_clears_a_tab_stop_or_all_of_them() {
+    let mut term = Term::new(20, 1);
+    term.feed("\x1b[9G\x1b[g\r\t");
+    assert_eq!(term.cursor(), (16, 0, false));
+    term.feed("\x1b[5g\r\t");
+    assert_eq!(term.cursor(), (16, 0, false), "other values do nothing");
+    term.feed("\x1b[3g\r\t");
+    assert_eq!(term.cursor(), (19, 0, false));
+}
+
+#[test]
+fn decscusr_sets_the_cursor_style() {
+    let mut term = Term::new(4, 1);
+    assert_eq!(term.terminal.cursor_style(), None);
+    for (value, shape, blinking) in [
+        (1, CursorShape::Block, true),
+        (2, CursorShape::Block, false),
+        (3, CursorShape::Underline, true),
+        (4, CursorShape::Underline, false),
+        (5, CursorShape::Bar, true),
+        (6, CursorShape::Bar, false),
+    ] {
+        term.feed(format!("\x1b[{value} q"));
+        assert_eq!(
+            term.terminal.cursor_style(),
+            Some(CursorStyle { shape, blinking }),
+            "{value}"
+        );
+    }
+    term.feed("\x1b[7 q");
+    assert!(term.terminal.cursor_style().is_some(), "7 does nothing");
+    term.feed("\x1b[ q");
+    assert_eq!(term.terminal.cursor_style(), None);
+}
+
+#[test]
+fn decsc_saves_origin_mode() {
+    let mut term = with_margins();
+    term.terminal.set_origin_mode(true);
+    term.feed("\x1b7");
+    term.terminal.set_origin_mode(false);
+    term.feed("\x1b8");
+    assert!(term.terminal.origin_mode());
+    term.feed("\x1b[H");
+    assert_eq!(term.cursor(), (2, 1, false));
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -951,6 +1151,16 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b8",
     "\x1bc",
     "\x1b#8",
+    "\x1b[A",
+    "\x1b[2B",
+    "\x1b[C",
+    "\x1b[3D",
+    "\x1b[2;3H",
+    "\x1b[G",
+    "\x1b[2d",
+    "\x1b[I",
+    "\x1b[Z",
+    "\x1b[3g",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",
