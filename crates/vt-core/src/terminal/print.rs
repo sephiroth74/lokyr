@@ -305,8 +305,11 @@ impl Terminal {
     }
 
     /// Goes on to the start of the next row, as text does past the right
-    /// margin, and marks the rows as one line.
+    /// margin, and marks the rows as one line. The cluster printed last
+    /// ends: a new one is about to start, and scrolling may have moved the
+    /// row it was in.
     fn wrap(&mut self) {
+        self.cluster = None;
         let y = self.cursor().y;
         self.row_flag(y, RowFlag::SoftWrapped);
         self.index();

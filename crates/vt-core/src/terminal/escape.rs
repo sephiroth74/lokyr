@@ -1,6 +1,6 @@
 //! The escape sequences: `ESC`, intermediates, then a final byte.
 
-use super::{Charset, Cursor, Options, SavedCursor, Shift, Terminal};
+use super::{Charset, Cursor, Margins, Options, SavedCursor, Shift, Terminal};
 use crate::page::{Cell, Content};
 
 impl Terminal {
@@ -92,10 +92,12 @@ impl Terminal {
         self.bells = bells;
     }
 
-    /// DECALN: fills the screen with `E`, in the default style, and puts the
-    /// cursor at the top left.
+    /// DECALN: fills the screen with `E`, in the default style, makes the
+    /// margins those of the whole screen, and puts the cursor at the top
+    /// left.
     fn screen_alignment(&mut self) {
         self.moved();
+        self.margins = Margins::screen(self.cols, self.rows);
         let fill = Cell::EMPTY.with_content(Content::Char('E'));
         let cols = self.cols;
         let screen = self.screen_mut();
@@ -115,16 +117,15 @@ impl Terminal {
         self.tab_stops[usize::from(x)] = true;
     }
 
-    /// RI: up a row, scrolling the screen down at the top. The column
-    /// stays.
+    /// RI: up a row, scrolling the scroll region down at its top margin.
+    /// The column stays.
     fn reverse_index(&mut self) {
-        self.moved();
-        let screen = self.screen_mut();
-        screen.cursor.pending_wrap = false;
-        if screen.cursor.y == 0 {
-            self.shift_rows_down(0, self.rows - 1, 1);
+        if self.cursor().y == self.margins.top {
+            self.moved();
+            self.screen_mut().cursor.pending_wrap = false;
+            self.scroll_region_down(1);
         } else {
-            screen.cursor.y -= 1;
+            self.cursor_up(1);
         }
     }
 }

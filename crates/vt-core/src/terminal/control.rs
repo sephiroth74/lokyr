@@ -41,23 +41,23 @@ impl Terminal {
         cursor.pending_wrap = false;
     }
 
-    /// LF: one row down, scrolling the screen up at the bottom. The column
-    /// stays.
+    /// LF: one row down, scrolling the scroll region up at its bottom
+    /// margin. The column stays.
     fn line_feed(&mut self) {
         self.moved();
         self.index();
     }
 
-    /// One row down, scrolling the screen up at the bottom, without ending
-    /// the cluster being printed, as wrapping needs.
+    /// One row down, scrolling the scroll region up at its bottom margin,
+    /// without ending the cluster being printed, as wrapping needs. Below
+    /// the region, the last row stops it.
     pub(super) fn index(&mut self) {
-        let rows = self.rows;
-        let screen = self.screen_mut();
-        screen.cursor.pending_wrap = false;
-        if screen.cursor.y + 1 == rows {
-            screen.rows.scroll_up();
-        } else {
-            screen.cursor.y += 1;
+        self.screen_mut().cursor.pending_wrap = false;
+        let y = self.cursor().y;
+        if y == self.margins.bottom {
+            self.scroll_region_up(1);
+        } else if y + 1 < self.rows {
+            self.screen_mut().cursor.y += 1;
         }
     }
 

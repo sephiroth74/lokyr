@@ -51,27 +51,41 @@ impl Terminal {
         self.move_to_left_margin();
     }
 
-    /// SU: scrolls the scroll region up `n` rows. When the region is the
-    /// whole screen, the rows that leave it go into the scrollback.
+    /// SU: scrolls the scroll region up `n` rows.
     pub(super) fn scroll_up(&mut self, n: u16) {
         self.moved();
+        self.scroll_region_up(n);
+    }
+
+    /// SD: scrolls the scroll region down `n` rows.
+    pub(super) fn scroll_down(&mut self, n: u16) {
+        self.moved();
+        self.scroll_region_down(n);
+    }
+
+    /// Scrolls the scroll region up `n` rows. When the region is the whole
+    /// screen, the rows that leave it go into the scrollback.
+    pub(super) fn scroll_region_up(&mut self, n: u16) {
         let (top, bottom) = (self.margins.top, self.margins.bottom);
         if top == 0 && bottom == self.rows - 1 {
             let n = n.min(self.rows);
             for _ in 0..n {
                 self.screen_mut().rows.scroll_up();
             }
-            for y in self.rows - n..self.rows {
-                self.blank_row(y);
+            // The rows that come in are new, so only a background color is
+            // left to give them.
+            if self.blank() != Cell::EMPTY {
+                for y in self.rows - n..self.rows {
+                    self.blank_row(y);
+                }
             }
         } else {
             self.shift_rows_up(top, bottom, n);
         }
     }
 
-    /// SD: scrolls the scroll region down `n` rows.
-    pub(super) fn scroll_down(&mut self, n: u16) {
-        self.moved();
+    /// Scrolls the scroll region down `n` rows.
+    pub(super) fn scroll_region_down(&mut self, n: u16) {
         self.shift_rows_down(self.margins.top, self.margins.bottom, n);
     }
 
@@ -86,7 +100,7 @@ impl Terminal {
 
     /// Moves the rows from `top` to `bottom` down `n` rows: those that pass
     /// `bottom` are dropped, and erased rows come in at `top`.
-    pub(super) fn shift_rows_down(&mut self, top: u16, bottom: u16, n: u16) {
+    fn shift_rows_down(&mut self, top: u16, bottom: u16, n: u16) {
         let n = n.min(bottom - top + 1);
         let rows = &mut self.screen_mut().rows;
         for y in (top..bottom + 1 - n).rev() {

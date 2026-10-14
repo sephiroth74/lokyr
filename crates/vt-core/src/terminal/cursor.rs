@@ -97,6 +97,23 @@ impl Terminal {
         };
     }
 
+    /// DECSTBM: makes rows `top` to `bottom`, from 1, the top and bottom
+    /// margins; 0 for `bottom` is the last row. A region of fewer than two
+    /// rows is ignored. The cursor goes home.
+    pub(super) fn set_top_bottom_margins(&mut self, top: u16, bottom: u16) {
+        let top = top.max(1) - 1;
+        let bottom = match bottom {
+            0 => self.rows,
+            bottom => bottom.min(self.rows),
+        } - 1;
+        if top >= bottom {
+            return;
+        }
+        self.margins.top = top;
+        self.margins.bottom = bottom;
+        self.goto(0, 0);
+    }
+
     /// CHT: forward `n` tab stops.
     pub(super) fn tab_forward(&mut self, n: u16) {
         for _ in 0..n {

@@ -123,6 +123,14 @@ fn a_wide_character_never_fits_one_column() {
     let mut term = Term::new(1, 2);
     term.feed("中a");
     assert_eq!(term.screen(), ["a", ""]);
+    // The wrap before the dropped character scrolled the screen, so a mark
+    // after it has no cluster to join.
+    let mut term = Term::new(1, 1);
+    term.terminal.set_pen(blue_background());
+    term.feed(" 中\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), []);
+    assert_eq!(term.cell(0, 0).content(), Content::BgPalette(4));
 }
 
 #[test]
@@ -1266,6 +1274,112 @@ fn editing_ends_the_cluster_and_the_wrap() {
 }
 
 #[test]
+fn decstbm_sets_the_scroll_region_and_puts_the_cursor_home() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[3;3H\x1b[2;4r");
+    assert_eq!(
+        (term.terminal.margins.top, term.terminal.margins.bottom),
+        (1, 3)
+    );
+    assert_eq!(term.cursor(), (0, 0, false));
+    // A region of one row, or upside down, is ignored.
+    term.feed("\x1b[3;3r\x1b[4;2r");
+    assert_eq!(
+        (term.terminal.margins.top, term.terminal.margins.bottom),
+        (1, 3)
+    );
+    term.feed("\x1b[2;99r");
+    assert_eq!(term.terminal.margins.bottom, 4, "the last row at most");
+    term.feed("\x1b[r");
+    assert_eq!(
+        (term.terminal.margins.top, term.terminal.margins.bottom),
+        (0, 4)
+    );
+    term.terminal.set_origin_mode(true);
+    term.feed("\x1b[3;4r");
+    assert_eq!(term.cursor(), (0, 2, false), "home of the region");
+}
+
+#[test]
+fn lf_scrolls_the_region_at_its_bottom_margin() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;4r\x1b[4;2H\n");
+    assert_eq!(term.screen(), ["0", "2", "3", "", "4"]);
+    assert_eq!(term.cursor(), (1, 3, false));
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    // IND and NEL too.
+    term.feed("\x1bD\x1bE");
+    assert_eq!(term.screen(), ["0", "", "", "", "4"]);
+    assert_eq!(term.cursor(), (0, 3, false));
+}
+
+#[test]
+fn lf_outside_the_region_moves_down_to_the_last_row() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;3r\x1b[4;1H\n");
+    assert_eq!(term.cursor(), (0, 4, false));
+    term.feed("\n");
+    assert_eq!(term.cursor(), (0, 4, false), "the last row stops it");
+    assert_eq!(term.screen(), ["0", "1", "2", "3", "4"]);
+    // From above, into the region.
+    term.feed("\x1b[2;4r\x1b[1;1H\n\n\n\n");
+    assert_eq!(term.cursor(), (0, 3, false));
+    assert_eq!(term.screen(), ["0", "2", "3", "", "4"]);
+}
+
+#[test]
+fn ri_scrolls_the_region_down_at_its_top_margin() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;4r\x1b[2;1H\x1bM");
+    assert_eq!(term.screen(), ["0", "", "1", "2", "4"]);
+    assert_eq!(term.cursor(), (0, 1, false));
+    // Above the region, it moves up to the first row.
+    term.feed("\x1b[1;1H\x1bM");
+    assert_eq!(term.cursor(), (0, 0, false));
+    assert_eq!(term.screen(), ["0", "", "1", "2", "4"]);
+    // Below it, up into it.
+    term.feed("\x1b[5;1H\x1bM\x1bM");
+    assert_eq!(term.cursor(), (0, 2, false));
+}
+
+#[test]
+fn printing_wraps_within_the_scroll_region() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;4r\x1b[4;1Habcdef");
+    assert_eq!(term.screen(), ["0", "2", "abcd", "ef", "4"]);
+}
+
+#[test]
+fn rows_scrolled_in_take_the_background_color() {
+    let mut term = numbered_rows();
+    term.terminal.set_pen(blue_background());
+    term.feed("\x1b[5;1H\n");
+    assert_eq!(term.cell(3, 4).content(), Content::BgPalette(4));
+    term.feed("\x1b[2;3r\x1b[3;1H\n");
+    assert_eq!(term.cell(3, 2).content(), Content::BgPalette(4));
+}
+
+#[test]
+fn scosc_and_scorc_save_and_restore_the_cursor() {
+    let mut term = Term::new(10, 3);
+    term.feed("ab\x1b[s\r\n\x1b[u");
+    assert_eq!(term.cursor(), (2, 0, false));
+    // The kitty keyboard protocol's CSI u is not SCORC.
+    term.feed("\r\n\x1b[?u\x1b[>1u\x1b[<u\x1b[=1;1u\x1b[1u");
+    assert_eq!(term.cursor(), (0, 1, false));
+}
+
+#[test]
+fn decaln_resets_the_margins() {
+    let mut term = numbered_rows();
+    term.feed("\x1b[2;3r\x1b#8");
+    assert_eq!(
+        (term.terminal.margins.top, term.terminal.margins.bottom),
+        (0, 4)
+    );
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -1490,6 +1604,10 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[S",
     "\x1b[2T",
     "\x1b[3b",
+    "\x1b[2;3r",
+    "\x1b[r",
+    "\x1b[s",
+    "\x1b[u",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",

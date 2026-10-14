@@ -51,6 +51,12 @@ impl Terminal {
             // tracking instead.
             ([], b'T') if params.len() <= 1 => self.scroll_down(n(0)),
             ([], b'b') => self.repeat(n(0)),
+            ([], b'r') => self.set_top_bottom_margins(params.value(0), params.value(1)),
+            // SCOSC and SCORC save and restore the cursor as DECSC and
+            // DECRC do. With parameters or a private marker, CSI u belongs to
+            // the kitty keyboard protocol.
+            ([], b's') => self.save_cursor(),
+            ([], b'u') if params.len() <= 1 && params.value(0) == 0 => self.restore_cursor(),
             // DECSCA: 1 protects the text printed next, 0 and 2 do not.
             ([b'"'], b'q') => match params.value(0) {
                 1 => self.protected = true,
