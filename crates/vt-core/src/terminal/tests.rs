@@ -351,9 +351,9 @@ fn carriage_return_goes_to_the_first_column() {
 fn so_and_si_switch_the_character_set() {
     let mut term = Term::new(4, 2);
     term.feed("\x0e");
-    assert_eq!(term.terminal.shift(), Shift::G1);
+    assert_eq!(term.terminal.charsets().shift(), Shift::G1);
     term.feed("\x0f");
-    assert_eq!(term.terminal.shift(), Shift::G0);
+    assert_eq!(term.terminal.charsets().shift(), Shift::G0);
 }
 
 #[test]
@@ -540,6 +540,88 @@ fn a_mark_after_an_index_does_not_join_the_character_before() {
 }
 
 #[test]
+fn dec_special_graphics_draws_lines_and_boxes() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b(0lqqk\r\nx  x\r\nmqqj\x1b(B ok");
+    assert_eq!(term.screen(), ["┌──┐", "│  │", "└──┘ ok"]);
+    // The same, a byte at a time, through the print path of single
+    // characters.
+    let mut slow = Term::new(10, 3);
+    for byte in b"\x1b(0lqqk\r\nx  x\r\nmqqj\x1b(B ok" {
+        slow.feed([*byte]);
+    }
+    assert_eq!(slow.screen(), term.screen());
+    let mut every = Term::new(40, 1);
+    every.feed("\x1b(0_`abcdefghijklmnopqrstuvwxyz{|}~");
+    assert_eq!(
+        every.screen(),
+        [" ◆▒\u{2409}\u{240C}\u{240D}\u{240A}°±\u{2424}\u{240B}┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·"]
+    );
+    every.feed("\x1b(0AZ09");
+    assert!(every.screen()[0].ends_with("AZ09"), "only _ to ~ change");
+}
+
+#[test]
+fn so_and_si_switch_between_g0_and_g1() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b)0q\x0eq\x0fq");
+    assert_eq!(term.screen(), ["q─q"]);
+}
+
+#[test]
+fn ls2_and_ls3_put_g2_and_g3_in_use() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b*0\x1b+A\x1bnq#\x1bo#q\x0fq#");
+    assert_eq!(term.screen(), ["─#£qq#"]);
+    assert_eq!(term.terminal.charsets().shift(), Shift::G0);
+}
+
+#[test]
+fn ss2_and_ss3_take_one_character_from_g2_or_g3() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b*0\x1b+A\x1bNqq\x1bO##");
+    assert_eq!(term.screen(), ["─q£#"]);
+    // A character that is not ASCII uses up the shift too.
+    term.feed("\x1bN\u{E9}q");
+    assert_eq!(term.screen(), ["─q£#\u{E9}q"]);
+    assert_eq!(term.terminal.charsets().single_shift(), None);
+}
+
+#[test]
+fn the_british_set_has_a_pound_sign() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b(A#3\x1b(B#");
+    assert_eq!(term.screen(), ["£3#"]);
+}
+
+#[test]
+fn an_unknown_set_leaves_the_slot_as_it_was() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b(0\x1b(Zq\x1b(%5q");
+    assert_eq!(term.screen(), ["──"]);
+    assert_eq!(
+        term.terminal.charsets().get(Shift::G0),
+        Charset::DecSpecialGraphics
+    );
+}
+
+#[test]
+fn line_characters_are_wide_when_ambiguous_ones_are() {
+    let options = Options {
+        widths: Widths {
+            ambiguous_wide: true,
+            ..Widths::default()
+        },
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1b(0qx\x1b(Bq");
+    assert_eq!(term.screen(), ["─│q"]);
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cursor(), (5, 0, false));
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -721,6 +803,13 @@ const OTHER_TEXT: &[&str] = &[
     "\x0f",
     "\x7f",
     "\x1b[1m",
+    "\x1b(0",
+    "\x1b(B",
+    "\x1b)0",
+    "\x1b*A",
+    "\x1bN",
+    "\x1bO",
+    "\x1bn",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",

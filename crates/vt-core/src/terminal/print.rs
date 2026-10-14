@@ -21,15 +21,32 @@ impl Terminal {
         self.start_cluster(c, width);
     }
 
-    /// Prints `text`, a run of printable ASCII, as [`Terminal::print_char`]
-    /// would print its characters one by one, but a stretch of a row at a
-    /// time: each of them takes one cell, starts a cluster and is in normal
-    /// form already.
+    /// Prints `c`, as the character it stands for in the character set in
+    /// use.
+    pub(super) fn print_translated(&mut self, c: char) {
+        let c = self.charsets.translate(c);
+        self.print_char(c);
+    }
+
+    /// Prints `text`, a run of printable ASCII, as
+    /// [`Terminal::print_translated`] would print its characters one by
+    /// one, but a stretch of a row at a time where it can: each character
+    /// of ASCII takes one cell, starts a cluster and is in normal form
+    /// already.
     pub(super) fn print_ascii_run(&mut self, text: &[u8]) {
+        let mut text = text;
+        // Another character set, or a single shift, gives the characters
+        // other meanings, so they go one at a time.
+        while !self.charsets.is_plain() {
+            let Some((&first, rest)) = text.split_first() else {
+                return;
+            };
+            self.print_translated(char::from(first));
+            text = rest;
+        }
         let Some((&first, rest)) = text.split_first() else {
             return;
         };
-        let mut text = text;
         if self.widths.mode == Mode::Unicode && !self.segmenter.ascii_starts_cluster() {
             self.join_previous(char::from(first));
             text = rest;

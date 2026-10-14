@@ -1,6 +1,6 @@
 //! The escape sequences: `ESC`, intermediates, then a final byte.
 
-use super::Terminal;
+use super::{Charset, Shift, Terminal};
 
 impl Terminal {
     /// Dispatches the escape sequence with `intermediates` and
@@ -19,6 +19,25 @@ impl Terminal {
             }
             ([], b'H') => self.set_tab_stop(),
             ([], b'M') => self.reverse_index(),
+            // SS2 and SS3: the next character from G2 or G3.
+            ([], b'N') => self.charsets.set_single_shift(Shift::G2),
+            ([], b'O') => self.charsets.set_single_shift(Shift::G3),
+            // LS2 and LS3: G2 or G3 in use.
+            ([], b'n') => self.charsets.lock(Shift::G2),
+            ([], b'o') => self.charsets.lock(Shift::G3),
+            // Designations of sets of 94 characters to G0–G3. Sets the
+            // terminal does not know leave the slot as it was.
+            ([slot @ (b'(' | b')' | b'*' | b'+')], _) => {
+                let slot = match slot {
+                    b'(' => Shift::G0,
+                    b')' => Shift::G1,
+                    b'*' => Shift::G2,
+                    _ => Shift::G3,
+                };
+                if let Some(set) = Charset::designated_by(final_byte) {
+                    self.charsets.designate(slot, set);
+                }
+            }
             _ => {}
         }
     }

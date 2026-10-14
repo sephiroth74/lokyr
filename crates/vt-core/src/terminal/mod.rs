@@ -1,9 +1,12 @@
 //! The terminal state: the screens with their cursor, the modes, and what
 //! the parser's actions do to them.
 
+mod charsets;
 mod control;
 mod escape;
 mod print;
+
+pub use charsets::{Charset, Charsets, Shift};
 
 use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
 use crate::parser::Handler;
@@ -40,16 +43,6 @@ struct Screen {
     cursor: Cursor,
 }
 
-/// Which character set, G0 or G1, SO and SI put in use.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Shift {
-    /// G0, which SI selects.
-    #[default]
-    G0,
-    /// G1, which SO selects.
-    G1,
-}
-
 /// The cell where the last cluster was printed, which a codepoint that
 /// joins the cluster goes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,7 +76,7 @@ pub struct Terminal {
     insert: bool,
     /// Whether each column is a tab stop.
     tab_stops: Box<[bool]>,
-    shift: Shift,
+    charsets: Charsets,
     /// Where the clusters of the printed text start.
     segmenter: Segmenter,
     /// The last cluster printed, until the cursor moves.
@@ -117,7 +110,7 @@ impl Terminal {
             autowrap: true,
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),
-            shift: Shift::G0,
+            charsets: Charsets::default(),
             segmenter: Segmenter::new(),
             cluster: None,
             bells: 0,
@@ -203,9 +196,9 @@ impl Terminal {
         self.insert = on;
     }
 
-    /// Which character set SO and SI put in use.
-    pub fn shift(&self) -> Shift {
-        self.shift
+    /// The character sets, and which of them is in use.
+    pub fn charsets(&self) -> Charsets {
+        self.charsets
     }
 
     /// How many times BEL has rung.
@@ -274,7 +267,7 @@ impl Terminal {
 
 impl Handler for Terminal {
     fn print(&mut self, c: char) {
-        self.print_char(c);
+        self.print_translated(c);
     }
 
     fn print_ascii(&mut self, text: &[u8]) {

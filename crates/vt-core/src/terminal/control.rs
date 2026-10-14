@@ -13,8 +13,8 @@ impl Terminal {
             // LF, VT and FF all feed a line.
             0x0A..=0x0C => self.line_feed(),
             0x0D => self.carriage_return(),
-            0x0E => self.shift = Shift::G1,
-            0x0F => self.shift = Shift::G0,
+            0x0E => self.charsets.lock(Shift::G1),
+            0x0F => self.charsets.lock(Shift::G0),
             _ => {}
         }
     }

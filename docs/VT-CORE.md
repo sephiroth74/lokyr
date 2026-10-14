@@ -54,7 +54,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **Modes and geometry**:
   - ANSI and DEC private modes, tab stops;
   - vertical and horizontal scroll regions (DECSTBM, DECSLRM with DECLRMM).
-- **Character sets**: G0–G3 with SO/SI, plus DEC Special Graphics.
+- **Character sets**: G0–G3, each designated ASCII, DEC Special Graphics or British; the locking shifts SO, SI, LS2 and LS3, and the single shifts SS2 and SS3. A designation of a set the terminal does not know leaves the slot as it was. Only printable ASCII changes meaning: DEC Special Graphics draws lines and boxes from `_` to `~`, as the VT100 did, and its line characters are ambiguous-width.
 - **Style and colors**: current style (SGR), 256-color palette, dynamic colors (OSC 4/10/11/12), title stack.
 - **Semantics**: current hyperlink (OSC 8) and current semantic zone (OSC 133: prompt, input, output).
 - **Keyboard**: the kitty keyboard flag stack, kept separately per screen.
@@ -231,7 +231,7 @@ The "Phase" column shows the [roadmap](ROADMAP.md) phase in which support lands.
 | Group | Sequences | Phase |
 |---|---|---|
 | C0 controls | BEL, BS, HT, LF, VT, FF, CR, SO, SI | F1 |
-| ESC | DECSC/DECRC (ESC 7/8), IND, NEL, HTS, RI, RIS, DECKPAM/DECKPNM, G0–G3 charset designation, DECALN | F1 |
+| ESC | DECSC/DECRC (ESC 7/8), IND, NEL, HTS, RI, RIS, DECKPAM/DECKPNM, G0–G3 charset designation, LS2/LS3, SS2/SS3, DECALN | F1 |
 | Cursor | CUU, CUD, CUF, CUB, CNL, CPL, CHA, CUP, HVP, VPA, VPR, HPA, HPR, CHT, CBT, DECSCUSR | F1 |
 | Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, DECSCA, TBC | F1 |
 | SGR | 0–9, 21–29, 30–37, 90–97, 38;5 and 38;2 (also with `:`), 39, 40–47, 100–107, 48, 49, 4:0–4:5 (underline styles), 53/55 (overline), 58/59 (underline color) | F1 |
