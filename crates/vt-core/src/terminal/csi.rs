@@ -51,6 +51,7 @@ impl Terminal {
             // tracking instead.
             ([], b'T') if params.len() <= 1 => self.scroll_down(n(0)),
             ([], b'b') => self.repeat(n(0)),
+            ([], b'm') => self.select_graphic_rendition(params),
             ([b'?'], b'h') => self.set_private_modes(params, true),
             ([b'?'], b'l') => self.set_private_modes(params, false),
             ([], b'r') => self.set_top_bottom_margins(params.value(0), params.value(1)),

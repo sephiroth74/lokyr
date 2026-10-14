@@ -1,10 +1,13 @@
-//! Scrolling through the page list allocates nothing once its pool is warm,
-//! as an allocator that counts shows.
+//! Scrolling through the page list, and printing text that scrolls,
+//! allocate nothing once the pool of pages is warm, as an allocator that
+//! counts shows.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
 
 use saetta_vt_core::page::{Capacity, Cell, Content, PageList, Rgb, Scrollback};
+use saetta_vt_core::parser::Parser;
+use saetta_vt_core::terminal::{Options, Terminal};
 
 /// The system allocator, counting the allocations of each thread, so that
 /// tests that run in parallel do not count each other's.
@@ -105,4 +108,33 @@ fn scrolling_a_million_lines_allocates_nothing_once_the_pool_is_warm() {
     let first = last + 1 - numbers.len() as u32;
     assert_eq!(numbers, (first..=last).collect::<Vec<u32>>());
     assert!(numbers.len() >= (pages - 1) * page_rows as usize);
+}
+
+#[test]
+fn printing_colored_text_allocates_nothing_once_the_pool_is_warm() {
+    let scrollback = Scrollback {
+        limit: 4 * Capacity::standard(80).bytes(),
+        budget: None,
+    };
+    let mut terminal = Terminal::new(
+        80,
+        24,
+        Options {
+            scrollback,
+            ..Options::default()
+        },
+    );
+    let mut parser = Parser::new();
+    // Colored words, as `ls --color` prints them, wide characters and an
+    // emoji, then the end of the line. No mark: a page whose grapheme table
+    // fills up grows, and a grown page does not go back to the pool.
+    let line = "\x1b[1;34msrc\x1b[0m  \x1b[38;5;208mmain.rs\x1b[0m  \x1b[38:2::1:2:3m日本語\x1b[m \u{1F600}\x1b[K\r\n";
+    let page_rows = usize::from(Capacity::standard(80).rows);
+    let warm = line.repeat(5 * page_rows);
+    parser.advance(&mut terminal, warm.as_bytes());
+    let lines = line.repeat(20_000);
+    let before = allocations();
+    parser.advance(&mut terminal, lines.as_bytes());
+    assert_eq!(allocations() - before, 0, "printing allocated");
+    assert_eq!(terminal.row_text(22), "src  main.rs  日本語 \u{1F600}");
 }

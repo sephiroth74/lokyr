@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::page::{Color, Page, Rgb, Row, RowFlag, StyleId};
+use crate::page::{Color, Page, Rgb, Row, RowFlag, StyleId, Underline};
 use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
 
@@ -1642,6 +1642,184 @@ fn scrolling_empties_wide_characters_across_the_margins() {
     );
 }
 
+/// The pen after `sequences`, from the default one.
+fn pen_after(sequences: &str) -> Style {
+    let mut term = Term::new(4, 1);
+    term.feed(sequences);
+    *term.terminal.pen()
+}
+
+#[test]
+fn sgr_turns_each_attribute_on_and_off() {
+    type Field = fn(&Style) -> bool;
+    let attributes: [(u16, u16, Field); 9] = [
+        (1, 22, |style| style.bold),
+        (2, 22, |style| style.faint),
+        (3, 23, |style| style.italic),
+        (5, 25, |style| style.blink),
+        (6, 25, |style| style.blink),
+        (7, 27, |style| style.inverse),
+        (8, 28, |style| style.invisible),
+        (9, 29, |style| style.strikethrough),
+        (53, 55, |style| style.overline),
+    ];
+    for (on, off, field) in attributes {
+        assert!(field(&pen_after(&format!("\x1b[{on}m"))), "{on}");
+        assert!(
+            !field(&pen_after(&format!("\x1b[{on}m\x1b[{off}m"))),
+            "{off}"
+        );
+        assert!(
+            !field(&pen_after(&format!("\x1b[{on}m\x1b[0m"))),
+            "0 after {on}"
+        );
+    }
+    let both = pen_after("\x1b[1;2m");
+    assert!(both.bold && both.faint);
+    assert_eq!(pen_after("\x1b[1;2;22m"), Style::DEFAULT, "22 ends both");
+    assert_eq!(
+        pen_after("\x1b[1;3;31m\x1b[m"),
+        Style::DEFAULT,
+        "an empty SGR resets"
+    );
+    assert_eq!(
+        pen_after("\x1b[1;0;3m"),
+        Style {
+            italic: true,
+            ..Style::DEFAULT
+        }
+    );
+}
+
+#[test]
+fn sgr_chooses_the_underline() {
+    let underline = |sequence: &str| pen_after(sequence).underline;
+    assert_eq!(underline("\x1b[4m"), Underline::Single);
+    assert_eq!(underline("\x1b[21m"), Underline::Double);
+    for (style, expected) in [
+        (0, Underline::None),
+        (1, Underline::Single),
+        (2, Underline::Double),
+        (3, Underline::Curly),
+        (4, Underline::Dotted),
+        (5, Underline::Dashed),
+    ] {
+        assert_eq!(
+            underline(&format!("\x1b[4m\x1b[4:{style}m")),
+            expected,
+            "4:{style}"
+        );
+    }
+    assert_eq!(
+        underline("\x1b[4:3m\x1b[4:9m"),
+        Underline::Curly,
+        "4:9 is unknown"
+    );
+    assert_eq!(underline("\x1b[4:3m\x1b[24m"), Underline::None);
+}
+
+#[test]
+fn sgr_chooses_colors_of_the_palette() {
+    for n in 0..8 {
+        assert_eq!(
+            pen_after(&format!("\x1b[{}m", 30 + n)).fg,
+            Color::Palette(n as u8)
+        );
+        assert_eq!(
+            pen_after(&format!("\x1b[{}m", 90 + n)).fg,
+            Color::Palette(8 + n as u8)
+        );
+        assert_eq!(
+            pen_after(&format!("\x1b[{}m", 40 + n)).bg,
+            Color::Palette(n as u8)
+        );
+        assert_eq!(
+            pen_after(&format!("\x1b[{}m", 100 + n)).bg,
+            Color::Palette(8 + n as u8)
+        );
+    }
+    assert_eq!(pen_after("\x1b[31;39m").fg, Color::Default);
+    assert_eq!(pen_after("\x1b[41;49m").bg, Color::Default);
+}
+
+#[test]
+fn sgr_reads_extended_colors_with_semicolons_and_with_colons() {
+    let rgb = Color::Rgb(Rgb::new(10, 20, 30));
+    for (which, field) in [(38, 0), (48, 1), (58, 2)] {
+        let color = |sequence: String| {
+            let pen = pen_after(&sequence);
+            [pen.fg, pen.bg, pen.underline_color][field]
+        };
+        assert_eq!(color(format!("\x1b[{which};5;196m")), Color::Palette(196));
+        assert_eq!(color(format!("\x1b[{which}:5:196m")), Color::Palette(196));
+        assert_eq!(color(format!("\x1b[{which};2;10;20;30m")), rgb);
+        assert_eq!(color(format!("\x1b[{which}:2::10:20:30m")), rgb);
+        assert_eq!(color(format!("\x1b[{which}:2:0:10:20:30m")), rgb);
+        assert_eq!(
+            color(format!("\x1b[{which}:2:10:20:30m")),
+            rgb,
+            "without an id"
+        );
+    }
+    assert_eq!(
+        pen_after("\x1b[58;5;1m\x1b[59m").underline_color,
+        Color::Default
+    );
+}
+
+#[test]
+fn sgr_goes_on_after_an_extended_color() {
+    let pen = pen_after("\x1b[1;38;5;196;4m");
+    assert!(pen.bold);
+    assert_eq!(pen.fg, Color::Palette(196));
+    assert_eq!(pen.underline, Underline::Single);
+    let pen = pen_after("\x1b[38;2;1;2;3;3;48:5:4m");
+    assert_eq!(pen.fg, Color::Rgb(Rgb::new(1, 2, 3)));
+    assert!(pen.italic);
+    assert_eq!(pen.bg, Color::Palette(4));
+}
+
+#[test]
+fn sgr_skips_colors_it_cannot_read() {
+    assert_eq!(pen_after("\x1b[38;5;300m").fg, Color::Default);
+    assert_eq!(pen_after("\x1b[38:2::300:0:0m").fg, Color::Default);
+    assert_eq!(pen_after("\x1b[38:3:1:2:3m").fg, Color::Default, "CMY");
+    assert_eq!(pen_after("\x1b[38;2;1;2m").fg, Color::Default, "cut short");
+    assert_eq!(pen_after("\x1b[38m").fg, Color::Default);
+    // As in vte, the values after the one that fails count as attributes.
+    let pen = pen_after("\x1b[38;2;300;1;3m");
+    assert_eq!(pen.fg, Color::Default);
+    assert!(pen.bold && pen.italic);
+}
+
+#[test]
+fn sgr_with_a_private_marker_is_not_sgr() {
+    // CSI > 4 ; 1 m is xterm's modifyOtherKeys.
+    assert_eq!(pen_after("\x1b[>4;1m"), Style::DEFAULT);
+    assert_eq!(pen_after("\x1b[?1m"), Style::DEFAULT);
+}
+
+#[test]
+fn sgr_leaves_the_cluster_open_and_printed_cells_take_the_pen() {
+    let mut term = Term::new(6, 1);
+    term.feed("e\x1b[1;31m\u{301}x");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), ['\u{301}']);
+    assert_eq!(
+        style_at(&term, 0, 0),
+        Style::DEFAULT,
+        "the e keeps its style"
+    );
+    assert_eq!(
+        style_at(&term, 1, 0),
+        Style {
+            bold: true,
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        }
+    );
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -1872,6 +2050,13 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[s",
     "\x1b[u",
     "\x1b[?69h",
+    "\x1b[0m",
+    "\x1b[1;31m",
+    "\x1b[44m",
+    "\x1b[38;2;1;2;3m",
+    "\x1b[48:5:9m",
+    "\x1b[4:3m",
+    "\x1b[7;9m",
     "\x1b[?69l",
     "\x1b[2;4s",
     "\u{AD}",

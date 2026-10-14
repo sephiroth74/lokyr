@@ -10,6 +10,7 @@ mod erase;
 mod escape;
 mod modes;
 mod print;
+mod sgr;
 
 pub use charsets::{Charset, Charsets, Shift};
 
