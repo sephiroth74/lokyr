@@ -1,12 +1,20 @@
 //! The escape sequences: `ESC`, intermediates, then a final byte.
 
-use super::{Charset, Shift, Terminal};
+use super::{Charset, Cursor, Options, SavedCursor, Shift, Terminal};
+use crate::page::{Cell, Content};
 
 impl Terminal {
     /// Dispatches the escape sequence with `intermediates` and
     /// `final_byte`. Those that the terminal does not know do nothing.
     pub(super) fn escape(&mut self, intermediates: &[u8], final_byte: u8) {
         match (intermediates, final_byte) {
+            ([], b'7') => self.save_cursor(),
+            ([], b'8') => self.restore_cursor(),
+            // DECKPAM and DECKPNM.
+            ([], b'=') => self.keypad_application = true,
+            ([], b'>') => self.keypad_application = false,
+            ([], b'c') => self.full_reset(),
+            ([b'#'], b'8') => self.screen_alignment(),
             // IND: down a row, as LF.
             ([], b'D') => {
                 self.moved();
@@ -40,6 +48,60 @@ impl Terminal {
             }
             _ => {}
         }
+    }
+
+    /// DECSC: saves the cursor, with its pending wrap, the pen and the
+    /// character sets, for the active screen.
+    pub(super) fn save_cursor(&mut self) {
+        let saved = SavedCursor {
+            cursor: self.cursor(),
+            pen: self.pen,
+            charsets: self.charsets,
+        };
+        self.screen_mut().saved = Some(saved);
+    }
+
+    /// DECRC: brings back what DECSC saved for the active screen, or, with
+    /// nothing saved, puts the cursor at the top left with the default pen
+    /// and character sets.
+    pub(super) fn restore_cursor(&mut self) {
+        self.moved();
+        let saved = self.screen().saved.unwrap_or_default();
+        self.screen_mut().cursor = saved.cursor;
+        self.pen = saved.pen;
+        self.charsets = saved.charsets;
+    }
+
+    /// RIS: puts the terminal back as it was made, with its screens and
+    /// scrollback empty. It keeps its configuration: the size, the
+    /// scrollback limits, the widths and the normalization. The bells that
+    /// rang stay counted.
+    fn full_reset(&mut self) {
+        let options = Options {
+            scrollback: self.primary.rows.scrollback().clone(),
+            widths: self.widths,
+            normalization: self.normalization,
+        };
+        let bells = self.bells;
+        *self = Self::new(self.cols, self.rows, options);
+        self.bells = bells;
+    }
+
+    /// DECALN: fills the screen with `E`, in the default style, and puts the
+    /// cursor at the top left.
+    fn screen_alignment(&mut self) {
+        self.moved();
+        let fill = Cell::EMPTY.with_content(Content::Char('E'));
+        let cols = self.cols;
+        let screen = self.screen_mut();
+        for y in 0..screen.rows.rows() {
+            let (page, row) = screen.rows.screen_row_mut(y);
+            page.clear_row(row);
+            for x in 0..cols {
+                page.set_cell(row, x, fill);
+            }
+        }
+        screen.cursor = Cursor::default();
     }
 
     /// HTS: makes the cursor's column a tab stop.

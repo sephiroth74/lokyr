@@ -36,11 +36,21 @@ pub struct Cursor {
     pub pending_wrap: bool,
 }
 
-/// A screen: its rows, and its cursor.
+/// What DECSC saves of a screen, and DECRC brings back.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SavedCursor {
+    cursor: Cursor,
+    pen: Style,
+    charsets: Charsets,
+}
+
+/// A screen: its rows, its cursor, and the cursor that DECSC saved, if
+/// any. Each screen saves its own.
 #[derive(Debug)]
 struct Screen {
     rows: PageList,
     cursor: Cursor,
+    saved: Option<SavedCursor>,
 }
 
 /// The cell where the last cluster was printed, which a codepoint that
@@ -77,6 +87,9 @@ pub struct Terminal {
     /// Whether each column is a tab stop.
     tab_stops: Box<[bool]>,
     charsets: Charsets,
+    /// Application keypad mode (DECKPAM): the keypad sends sequences
+    /// rather than the characters on its keys.
+    keypad_application: bool,
     /// Where the clusters of the printed text start.
     segmenter: Segmenter,
     /// The last cluster printed, until the cursor moves.
@@ -92,6 +105,7 @@ impl Terminal {
         let screen = |scrollback| Screen {
             rows: PageList::new(cols, rows, scrollback),
             cursor: Cursor::default(),
+            saved: None,
         };
         let no_scrollback = Scrollback {
             limit: 0,
@@ -111,6 +125,7 @@ impl Terminal {
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),
             charsets: Charsets::default(),
+            keypad_application: false,
             segmenter: Segmenter::new(),
             cluster: None,
             bells: 0,
@@ -199,6 +214,12 @@ impl Terminal {
     /// The character sets, and which of them is in use.
     pub fn charsets(&self) -> Charsets {
         self.charsets
+    }
+
+    /// Whether the keypad is in application mode (DECKPAM) rather than in
+    /// numeric mode (DECKPNM).
+    pub fn keypad_application(&self) -> bool {
+        self.keypad_application
     }
 
     /// How many times BEL has rung.

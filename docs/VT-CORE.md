@@ -51,6 +51,8 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 
 - **Screens**: primary (with scrollback) and alternate (without).
 - **Cursor**: position, *pending wrap*, style (DECSCUSR), save and restore (DECSC/DECRC, mode 1048).
+  - Each screen saves its own cursor. DECSC saves the position with its pending wrap, the pen and the character sets; DECRC with nothing saved puts the cursor at the top left, with the default pen and character sets.
+- **Full reset (RIS)**: the terminal goes back to how it was made, its scrollback cleared as `alacritty_terminal` clears it, but it keeps its configuration: size, scrollback limits, widths and normalization.
 - **Modes and geometry**:
   - ANSI and DEC private modes, tab stops;
   - vertical and horizontal scroll regions (DECSTBM, DECSLRM with DECLRMM).

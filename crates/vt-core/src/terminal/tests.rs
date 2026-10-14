@@ -537,6 +537,12 @@ fn a_mark_after_an_index_does_not_join_the_character_before() {
     term.feed("\x1bDx\x1bD\u{301}");
     let (page, row) = term.terminal.screen_rows().screen_row(1);
     assert_eq!(page.grapheme(row, 1), []);
+    // After DECRC, a mark joins the character left of the cursor.
+    let mut term = Term::new(5, 1);
+    term.feed("e\x1b7x\x1b8\u{301}");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), ['\u{301}']);
+    assert_eq!(page.grapheme(row, 1), []);
 }
 
 #[test]
@@ -619,6 +625,134 @@ fn line_characters_are_wide_when_ambiguous_ones_are() {
     assert_eq!(term.screen(), ["─│q"]);
     assert_eq!(term.cell(0, 0).width(), Width::Wide);
     assert_eq!(term.cursor(), (5, 0, false));
+}
+
+fn red() -> Style {
+    Style {
+        fg: Color::Palette(1),
+        ..Style::DEFAULT
+    }
+}
+
+/// The style of the cell at column `x` of row `y`.
+fn style_at(term: &Term, x: u16, y: u16) -> Style {
+    let (page, _) = term.terminal.screen_rows().screen_row(y);
+    *page.styles().get(term.cell(x, y).style())
+}
+
+#[test]
+fn decrc_brings_back_the_cursor_pen_and_character_sets_of_decsc() {
+    let mut term = Term::new(10, 3);
+    term.feed("\r\n   ");
+    term.terminal.set_pen(red());
+    term.feed("\x1b(0\x1b7");
+    term.terminal.set_pen(Style::DEFAULT);
+    term.feed("\x1b(B\r\nab");
+    term.feed("\x1b8q");
+    assert_eq!(term.screen(), ["", "   ─", "ab"]);
+    assert_eq!(style_at(&term, 3, 1), red());
+    assert_eq!(term.cursor(), (4, 1, false));
+    // What was saved stays saved.
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (3, 1, false));
+}
+
+#[test]
+fn decrc_brings_back_a_pending_wrap() {
+    let mut term = Term::new(5, 2);
+    term.feed("abcde\x1b7\r\x1b8");
+    assert_eq!(term.cursor(), (4, 0, true));
+    term.feed("f");
+    assert_eq!(term.screen(), ["abcde", "f"]);
+}
+
+#[test]
+fn decrc_without_decsc_goes_home_with_the_defaults() {
+    let mut term = Term::new(10, 2);
+    term.terminal.set_pen(red());
+    term.feed("\x1b(0\x0e\r\nabc\x1b8");
+    assert_eq!(term.cursor(), (0, 0, false));
+    assert_eq!(term.terminal.pen(), &Style::DEFAULT);
+    assert_eq!(term.terminal.charsets(), Charsets::default());
+}
+
+#[test]
+fn each_screen_saves_its_own_cursor() {
+    let mut term = Term::new(10, 3);
+    term.feed("ab\x1b7");
+    term.terminal.set_alternate_screen(true);
+    term.feed("\r\n\r\nxyz\x1b7\r\x1b8");
+    assert_eq!(term.cursor(), (3, 2, false));
+    term.terminal.set_alternate_screen(false);
+    term.feed("\r\n\x1b8");
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn decaln_fills_the_screen_with_e() {
+    let mut term = Term::new(4, 3);
+    term.terminal.set_pen(red());
+    term.feed("abcdefg\x1b#8");
+    assert_eq!(term.screen(), ["EEEE"; 3]);
+    assert_eq!(term.cursor(), (0, 0, false));
+    assert_eq!(style_at(&term, 1, 1), Style::DEFAULT);
+    assert!(!term.row(0).has(RowFlag::SoftWrapped));
+    assert!(!term.row(1).has(RowFlag::Continuation));
+}
+
+#[test]
+fn ris_puts_the_terminal_back_as_it_was_made() {
+    let mut term = Term::new(10, 2);
+    term.feed("one\r\ntwo\r\nthree\x1b7\x1b(0\x1b)0\x0e\x1b=\x1bH\x07");
+    term.terminal.set_pen(red());
+    term.terminal.set_autowrap(false);
+    term.terminal.set_insert_mode(true);
+    term.terminal.set_alternate_screen(true);
+    term.feed("alt\x1bc");
+    assert!(!term.terminal.is_alternate_screen());
+    assert_eq!(term.screen(), ["", ""]);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    assert_eq!(term.cursor(), (0, 0, false));
+    assert_eq!(term.terminal.pen(), &Style::DEFAULT);
+    assert_eq!(term.terminal.charsets(), Charsets::default());
+    assert!(term.terminal.autowrap());
+    assert!(!term.terminal.insert_mode());
+    assert!(!term.terminal.keypad_application());
+    assert_eq!(term.terminal.bells(), 1, "the bells stay counted");
+    // The tab stop at column 5 is gone, and so is the saved cursor.
+    term.feed("\t");
+    assert_eq!(term.cursor(), (8, 0, false));
+    term.feed("\r\n\x1b8");
+    assert_eq!(term.cursor(), (0, 0, false));
+    term.terminal.set_alternate_screen(true);
+    assert_eq!(term.screen(), ["", ""], "the alternate screen is empty too");
+}
+
+#[test]
+fn ris_keeps_the_configuration() {
+    let options = Options {
+        widths: Widths {
+            mode: Mode::Legacy,
+            ..Widths::default()
+        },
+        normalization: Normalization::Nfc,
+        ..Options::default()
+    };
+    let mut term = Term::with(6, 2, options);
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.widths().mode, Mode::Legacy);
+    assert_eq!(term.terminal.normalization(), Normalization::Nfc);
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (6, 2));
+}
+
+#[test]
+fn deckpam_and_deckpnm_switch_the_keypad() {
+    let mut term = Term::new(4, 1);
+    assert!(!term.terminal.keypad_application());
+    term.feed("\x1b=");
+    assert!(term.terminal.keypad_application());
+    term.feed("\x1b>");
+    assert!(!term.terminal.keypad_application());
 }
 
 #[test]
@@ -810,6 +944,13 @@ const OTHER_TEXT: &[&str] = &[
     "\x1bN",
     "\x1bO",
     "\x1bn",
+    "\x1bD",
+    "\x1bE",
+    "\x1bM",
+    "\x1b7",
+    "\x1b8",
+    "\x1bc",
+    "\x1b#8",
     "\u{AD}",
     "\u{E9}",
     "\u{301}",
