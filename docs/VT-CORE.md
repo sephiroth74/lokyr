@@ -41,8 +41,9 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - Each maximal subpart of an invalid sequence becomes one U+FFFD, as the Unicode Standard recommends and as Rust's lossy decoding and web browsers do. A character cut short becomes one U+FFFD. Overlong forms, surrogates and values past U+10FFFF become one per byte.
   - C1 controls encoded in UTF-8 (U+0080 to U+009F) are dropped.
 - **Fast path**:
-  - A SIMD loop finds the first byte outside `0x20..=0x7E`. It uses `core::arch`: NEON on aarch64, SSE2/AVX2 on x86_64, with a scalar fallback.
-  - Runs of printable ASCII are written straight into the row's cells, respecting margins, autowrap and insert mode.
+  - A loop finds the first byte outside `0x20..=0x7E`. It is safe code over blocks of 16 bytes, which the compiler vectorizes. `core::arch` intrinsics (NEON on aarch64, SSE2 on x86_64) replace it only if measurements show they pay: more than 5% of the throughput.
+  - Runs of printable ASCII are written straight into the row's cells, with one page lookup and one style acquisition per stretch of a row, respecting autowrap and insert mode.
+  - A run goes through the slow path, character by character, while something that changes how ASCII prints is active: a character set other than ASCII, protected cells, left and right margins, or an open hyperlink, until the fast path learns it. A property test checks that both paths leave the terminal in the same state.
   - Only control characters, escapes and multi-byte UTF-8 go through the state machine.
 - **Interface to the state**: the parser calls a trait (`Handler`) that the terminal state implements. In tests, an action recorder implements it too, which is handy for differential testing.
 
@@ -144,7 +145,7 @@ The metadata fits in one byte.
   - Grapheme_Cluster_Break, and Indic_Conjunct_Break for rule GB9c of UAX #29;
   - the East Asian Width of Unicode 8, for `unicode-widths = "8"`.
   - `unicode-width` is not enough, because it does not match `wcwidth`.
-- **The generated file** (`crates/vt-core/src/unicode/tables.rs`) is committed, with the name and date of every UCD file it comes from. `just ucd-check` downloads the files again and checks that they give the same file. Lookups are binary searches over ranges, which ASCII never reaches; a two-level table can replace them if the throughput measurements ask for it.
+- **The generated file** (`crates/vt-core/src/unicode/tables.rs`) is committed, with the name and date of every UCD file it comes from. `just ucd-check` downloads the files again and checks that they give the same file. The range tables are searched by binary search, one property at a time. Printing reads a multi-stage table instead, generated from the same data, which gives every property that printing needs in one lookup: the first throughput measure showed the searches taking most of the time. The range tables stay as the reference that the tests compare it with.
 - **`unicode` mode (default)**: grapheme segmentation per UAX #29, with the width computed for the whole cluster.
   - The segmenter takes one codepoint at a time, as text arrives, and passes the conformance test of the UCD, `GraphemeBreakTest.txt`, which `cargo xtask ucd` copies next to the tables.
   - Unicode 18 changed rule GB9c: a consonant joins after a linker and extenders, with no consonant needed before the linker.

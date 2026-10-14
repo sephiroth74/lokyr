@@ -201,7 +201,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 | File | Contents |
 |---|---|
-| `crates/vt-core/src/parser/{mod,table,simd}.rs` | State machine, tables, fast path |
+| `crates/vt-core/src/parser/{mod,table,scan}.rs` | State machine, tables, fast path |
 | `crates/vt-core/src/page/{cell,row,page,list,style,pin}.rs` | Paged grid |
 | `crates/vt-core/src/terminal/{mod,modes,csi,sgr,osc,reports}.rs` | State and sequences |
 | `crates/vt-core/src/unicode/{width,grapheme}.rs` | Tables generated from the UCD |

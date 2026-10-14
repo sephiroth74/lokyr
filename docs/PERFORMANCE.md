@@ -88,7 +88,8 @@ Results history is published (e.g. on bencher.dev, or as JSON in a branch of the
 | Technique | Budget |
 |---|---|
 | 8-byte cells, deduplicated styles, pages recycled from a pool | Memory, throughput |
-| SIMD fast path for printable ASCII | Throughput |
+| Fast path for printable ASCII, written straight into the cells | Throughput |
+| Unicode properties in one table lookup | Throughput |
 | Grid lock taken per slice and released fairly | Latency under load |
 | Copying only the visible rows that changed | CPU per frame |
 | One GPU surface per window; 2 drawables; release when occluded | GPU memory |
