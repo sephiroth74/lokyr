@@ -3209,6 +3209,118 @@ fn pins_follow_the_cells_that_insertion_and_deletion_move() {
 }
 
 #[test]
+fn resizing_keeps_the_text_and_moves_the_cursor_with_it() {
+    let mut term = Term::new(10, 4);
+    term.feed("abc\r\ndef");
+    term.terminal.resize(5, 4);
+    assert_eq!(term.screen(), ["abc", "def", "", ""]);
+    assert_eq!(term.cursor(), (3, 1, false));
+    // Shorter: the empty rows below the cursor go first; narrower: cut.
+    term.terminal.resize(2, 2);
+    assert_eq!(term.screen(), ["ab", "de"]);
+    assert_eq!(term.cursor(), (1, 1, false));
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (2, 2));
+    // Taller: the rows come back from the scrollback, none here.
+    term.terminal.resize(2, 3);
+    assert_eq!(term.screen(), ["ab", "de", ""]);
+    term.terminal.resize(0, 0);
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (1, 1));
+}
+
+#[test]
+fn a_wrap_pending_at_the_end_of_a_row_goes_on_after_it_when_it_widens() {
+    let mut term = Term::new(5, 2);
+    term.feed("abcde");
+    assert_eq!(term.cursor(), (4, 0, true));
+    term.terminal.resize(8, 2);
+    assert_eq!(term.cursor(), (5, 0, false));
+    term.feed("f");
+    assert_eq!(term.screen()[0], "abcdef");
+    // Narrower, the cursor stays in the last column.
+    let mut term = Term::new(5, 2);
+    term.feed("abcde");
+    term.terminal.resize(3, 2);
+    assert_eq!(term.cursor(), (2, 0, false));
+    // Only taller, the wrap stays pending.
+    let mut term = Term::new(5, 2);
+    term.feed("abcde");
+    term.terminal.resize(5, 3);
+    assert_eq!(term.cursor(), (4, 0, true));
+}
+
+#[test]
+fn resizing_brings_saved_cursors_back_and_resets_the_margins() {
+    let mut term = Term::new(10, 6);
+    term.feed("\x1b[5;9H\x1b7\x1b[2;3r\x1b[?69h\x1b[2;4s");
+    term.terminal.resize(6, 4);
+    term.feed("\x1b8");
+    assert_eq!(
+        term.cursor(),
+        (5, 3, false),
+        "the saved cursor came back within"
+    );
+    // The margins are the whole screen again: LF at the bottom row scrolls
+    // the screen into the scrollback.
+    term.feed("\x1b[4;1Hz\n");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 1);
+    assert_eq!(term.screen()[2], "z");
+}
+
+#[test]
+fn resizing_keeps_the_tab_stops_and_sets_new_ones_every_eight_columns() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b[4G\x1bH\x1b[3g\x1b[1G");
+    term.feed("\x1b[6G\x1bH");
+    term.terminal.resize(20, 2);
+    let mut stops = Vec::new();
+    term.feed("\r");
+    for _ in 0..3 {
+        term.feed("\t");
+        stops.push(term.cursor().0);
+    }
+    assert_eq!(
+        stops,
+        [5, 16, 19],
+        "the stop kept, a new one, then the last column"
+    );
+}
+
+#[test]
+fn each_screen_resizes_its_own_way() {
+    let mut term = Term::new(10, 3);
+    term.feed("1\r\n2\r\n3\r\n4\r\n5");
+    term.feed("\x1b[?1049ha\r\nb\r\nc\r\nd");
+    term.terminal.resize(10, 5);
+    // The alternate screen grows at the bottom, without its rows that
+    // scrolled away; the cursor stays.
+    assert_eq!(term.screen(), ["b", "c", "d", "", ""]);
+    assert_eq!(term.cursor(), (1, 2, false));
+    term.feed("\x1b[?1049l");
+    // The primary took its new rows from the scrollback.
+    assert_eq!(term.screen(), ["1", "2", "3", "4", "5"]);
+    assert_eq!(term.cursor(), (1, 4, false));
+}
+
+#[test]
+fn resizing_ends_the_cluster_and_empties_a_cut_wide_character() {
+    let mut term = Term::new(10, 2);
+    term.feed("\u{1F1EE}");
+    term.terminal.resize(12, 2);
+    term.feed("\u{1F1F9}");
+    assert_eq!(
+        term.cell(0, 0).width(),
+        Width::Narrow,
+        "no flag across a resize"
+    );
+    let mut term = Term::new(10, 2);
+    term.feed("abcdefgh\u{4E2D}");
+    term.terminal.resize(9, 2);
+    assert_eq!(term.screen()[0], "abcdefgh");
+    assert!(term.cell(8, 0).is_empty());
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -3420,6 +3532,7 @@ enum Op {
     Autowrap(bool),
     Insert(bool),
     Alternate(bool),
+    Resize(u16, u16),
 }
 
 /// Text that is not a run of ASCII: controls, marks, prepended and wide
@@ -3578,6 +3691,7 @@ fn op() -> impl Strategy<Value = Op> {
         1 => any::<bool>().prop_map(Op::Autowrap),
         1 => any::<bool>().prop_map(Op::Insert),
         1 => any::<bool>().prop_map(Op::Alternate),
+        1 => (1_u16..=10, 1_u16..=4).prop_map(|(cols, rows)| Op::Resize(cols, rows)),
     ]
 }
 
@@ -3639,6 +3753,7 @@ proptest! {
                     &Op::Autowrap(on) => terminal.set_autowrap(on),
                     &Op::Insert(on) => terminal.set_insert_mode(on),
                     &Op::Alternate(on) => terminal.set_alternate_screen(on),
+                    &Op::Resize(cols, rows) => terminal.resize(cols, rows),
                 }
             }
             let (fast, slow) = (&fast.terminal, &slow.terminal);

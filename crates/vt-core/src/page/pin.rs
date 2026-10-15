@@ -103,7 +103,6 @@ impl Pins {
     }
 
     /// Where the pin at `index` is, if it is in use.
-    #[cfg(test)]
     pub(super) fn place_of(&self, index: u32) -> Option<Place> {
         self.slots.get(index as usize)?.place
     }

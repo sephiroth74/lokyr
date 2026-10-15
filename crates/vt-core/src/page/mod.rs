@@ -19,7 +19,9 @@ use grapheme::GraphemeTable;
 
 pub use cell::{Cell, Content, Semantic, Width};
 pub use hyperlink::{Hyperlink, HyperlinkId, HyperlinkTable};
-pub use list::{Budget, PageId, PageList, SCROLLBACK_BUDGET_BYTES, SCROLLBACK_BYTES, Scrollback};
+pub use list::{
+    Budget, Grow, PageId, PageList, SCROLLBACK_BUDGET_BYTES, SCROLLBACK_BYTES, Scrollback,
+};
 pub use pin::{PinId, Position};
 pub use row::{Row, RowFlag};
 pub use style::{Color, Rgb, Style, StyleId, StyleTable, Underline};
@@ -212,6 +214,13 @@ impl Page {
         }
         self.len += 1;
         Some(self.len - 1)
+    }
+
+    /// Stops using the last row in use, which drops what it held.
+    pub fn pop_row(&mut self) {
+        assert!(self.len > 0, "only a row in use can be dropped");
+        self.clear_row(self.len - 1);
+        self.len -= 1;
     }
 
     /// The metadata of row `y`.
@@ -616,6 +625,41 @@ impl Page {
         let mut metadata = source.row(from);
         metadata.set(RowFlag::Dirty, true);
         *self.row_mut(to) = metadata;
+        Ok(())
+    }
+
+    /// Copies row `from` of `source`, a page that may have another width,
+    /// into row `to`, cut to this page's width or extended with empty
+    /// cells, as a resize without reflow does. A wide character whose
+    /// second half the cut drops is emptied, and so are spacer heads, since
+    /// the row no longer wraps into the next one: its metadata goes along
+    /// without the wrap flags. `when_full` says what a full table does, as
+    /// for [`Page::copy_row`].
+    pub fn copy_row_resized(
+        &mut self,
+        to: u16,
+        source: &Page,
+        from: u16,
+        when_full: WhenFull,
+    ) -> Result<(), TableFull> {
+        let cols = self.cols().min(source.cols());
+        self.clear_row(to);
+        if let Err(full) = self.copy_into_empty(to, source, from, 0..cols, when_full) {
+            self.clear_row(to);
+            return Err(full);
+        }
+        for x in 0..cols {
+            let cell = self.cells(to)[usize::from(x)];
+            let cut = cell.width() == Width::Wide && x + 1 == self.cols();
+            if cut || cell.width() == Width::SpacerHead {
+                self.set_cell(to, x, Cell::EMPTY);
+            }
+        }
+        let metadata = source.row(from);
+        let row = self.row_mut(to);
+        if metadata.has(RowFlag::PromptStart) {
+            row.set(RowFlag::PromptStart, true);
+        }
         Ok(())
     }
 

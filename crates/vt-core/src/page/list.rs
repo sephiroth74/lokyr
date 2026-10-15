@@ -74,6 +74,17 @@ impl Budget {
     }
 }
 
+/// Where a screen's new rows come from when it grows taller.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grow {
+    /// From the scrollback, as far as it has rows, as xterm does, then
+    /// empty rows at the bottom.
+    FromScrollback,
+    /// Empty rows at the bottom, for a screen whose scrollback is not shown,
+    /// such as the alternate screen.
+    AtTheBottom,
+}
+
 /// What the pages of a list may take.
 #[derive(Clone, Debug)]
 pub struct Scrollback {
@@ -346,6 +357,11 @@ impl PageList {
     /// what the table has no room for rather than trying again.
     pub fn grow_page(&mut self, y: u16, full: TableFull) -> Result<(), TableFull> {
         let (index, _) = self.locate(y);
+        self.grow_node(index, full)
+    }
+
+    /// Rebuilds the page of node `index`, as [`PageList::grow_page`] does.
+    fn grow_node(&mut self, index: u32, full: TableFull) -> Result<(), TableFull> {
         let page = self.page_at(index);
         let capacity = page.capacity().grown_for(full).ok_or(full)?;
         let grown = page.grown(capacity);
@@ -439,6 +455,182 @@ impl PageList {
                     }
                 }
             }
+        }
+    }
+
+    /// Gives the list rows of `cols` cells and a screen of `rows` rows,
+    /// without rewrapping lines, and returns where the cell at `cursor`, a
+    /// column and a row of the screen, goes.
+    ///
+    /// New columns are empty, and cut ones are dropped, with their pins: the
+    /// pages are rebuilt at the new width, the old ones leaving the limits
+    /// as the new ones come. A taller screen takes its new rows as `grow`
+    /// says. A shorter one drops the empty rows below the cursor first, then
+    /// sends rows from the top to the scrollback, as far as the cursor's
+    /// row, and drops the rest from the bottom.
+    pub fn resize(&mut self, cols: u16, rows: u16, cursor: (u16, u16), grow: Grow) -> (u16, u16) {
+        let (mut x, mut y) = cursor;
+        let (cols, rows) = (cols.max(1), rows.max(1));
+        if cols != self.cols() {
+            self.set_cols(cols);
+            x = x.min(cols - 1);
+        }
+        if rows > self.rows {
+            y += self.add_rows(rows - self.rows, grow);
+        } else if rows < self.rows {
+            y = self.remove_rows(self.rows - rows, y);
+        }
+        (x, y)
+    }
+
+    /// Rebuilds every page at `cols` columns, each row cut or extended.
+    fn set_cols(&mut self, cols: u16) {
+        // Take the pages out, oldest first, with their pins. Their ids go
+        // stale, and their bytes leave the limits now, so that the new pages
+        // have the room.
+        let mut old = Vec::with_capacity(self.pages);
+        let mut index = self.head;
+        let mut bytes = 0;
+        while index != NONE {
+            let node = &mut self.nodes[index as usize];
+            let page = node.page.take().expect("a linked node has a page");
+            node.generation = node.generation.wrapping_add(1);
+            let mut pins = std::mem::take(&mut node.pins);
+            let next = node.next;
+            let places = &self.pins;
+            pins.sort_by_key(|&pin| places.place_of(pin).map(|place| place.row));
+            bytes += page.memory();
+            self.free.push(index);
+            old.push((page, pins));
+            index = next;
+        }
+        bytes += self.pool.drain(..).map(|page| page.memory()).sum::<usize>();
+        self.give(bytes);
+        (self.head, self.tail, self.pages, self.total_rows) = (NONE, NONE, 0, 0);
+        self.capacity = Capacity::standard(cols);
+        for (page, pins) in old {
+            let mut pins = pins.into_iter().peekable();
+            for row in 0..page.len() {
+                self.push_row();
+                let tail = self.tail;
+                let to = self.page_at(tail).len() - 1;
+                let mut when_full = WhenFull::Fail;
+                loop {
+                    match self
+                        .page_at_mut(tail)
+                        .copy_row_resized(to, &page, row, when_full)
+                    {
+                        Ok(()) => break,
+                        Err(full) => {
+                            if self.grow_node(tail, full).is_err() {
+                                when_full = WhenFull::Drop;
+                            }
+                        }
+                    }
+                }
+                while let Some(&pin) = pins
+                    .peek()
+                    .filter(|&&pin| self.pins.place_of(pin).map(|p| p.row) == Some(row))
+                {
+                    pins.next();
+                    let place = self.pins.place_mut(pin);
+                    if place.col < cols {
+                        *place = Place {
+                            node: tail,
+                            row: to,
+                            col: place.col,
+                        };
+                        self.nodes[tail as usize].pins.push(pin);
+                    } else {
+                        self.pins.lose(pin);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Adds `n` rows to the screen, as `grow` says, and returns how many
+    /// of them came from the scrollback, above the screen's rows.
+    fn add_rows(&mut self, n: u16, grow: Grow) -> u16 {
+        let revealed = match grow {
+            // Fewer rows than `n`.
+            Grow::FromScrollback => self.scrollback_rows().min(usize::from(n)) as u16,
+            Grow::AtTheBottom => 0,
+        };
+        self.rows += n;
+        for _ in revealed..n {
+            self.push_row();
+        }
+        revealed
+    }
+
+    /// Takes `n` rows off the screen, whose cursor is in row `y`, and
+    /// returns the cursor's new row.
+    fn remove_rows(&mut self, n: u16, y: u16) -> u16 {
+        let blank_below = (y + 1..self.rows)
+            .rev()
+            .take_while(|&y| {
+                let (page, row) = self.screen_row(y);
+                page.cells(row).iter().all(|cell| cell.is_empty())
+            })
+            .count() as u16;
+        let trimmed = blank_below.min(n);
+        let to_scrollback = (n - trimmed).min(y);
+        let dropped = n - trimmed - to_scrollback;
+        for _ in 0..trimmed + dropped {
+            self.pop_row();
+        }
+        self.rows -= n;
+        // A page that emptied went; no row is about to need it.
+        while let Some(page) = self.pool.pop() {
+            self.give(page.memory());
+        }
+        y - to_scrollback
+    }
+
+    /// Drops the last row of the list, with its pins, and the page that it
+    /// leaves empty.
+    fn pop_row(&mut self) {
+        let tail = self.tail;
+        let page = self.page_at_mut(tail);
+        let row = page.len() - 1;
+        page.pop_row();
+        self.total_rows -= 1;
+        let pins = &mut self.pins;
+        self.nodes[tail as usize].pins.retain(|&pin| {
+            let lost = pins.place_mut(pin).row == row;
+            if lost {
+                pins.lose(pin);
+            }
+            !lost
+        });
+        if self.page_at(tail).is_empty() {
+            self.unlink_tail();
+        }
+    }
+
+    /// Unlinks the newest page, an empty one, which goes to the pool if it
+    /// has the standard capacity, and is freed otherwise.
+    fn unlink_tail(&mut self) {
+        let index = self.tail;
+        let node = &mut self.nodes[index as usize];
+        let mut page = node.page.take().expect("a linked node has a page");
+        node.generation = node.generation.wrapping_add(1);
+        node.pins.clear();
+        let prev = node.prev;
+        self.tail = prev;
+        if prev == NONE {
+            self.head = NONE;
+        } else {
+            self.nodes[prev as usize].next = NONE;
+        }
+        self.free.push(index);
+        self.pages -= 1;
+        if page.capacity() == self.capacity {
+            page.reset();
+            self.pool.push(page);
+        } else {
+            self.give(page.memory());
         }
     }
 
@@ -1161,6 +1353,162 @@ mod tests {
     }
 
     #[test]
+    fn a_taller_screen_takes_rows_from_the_scrollback() {
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        scroll(&mut list, 0, 30);
+        assert_eq!(list.resize(80, 30, (2, 23), Grow::FromScrollback), (2, 29));
+        assert_eq!(list.scrollback_rows(), 24);
+        let screen = screen_numbers(&list);
+        assert_eq!(screen, (0..30).map(Some).collect::<Vec<_>>());
+        // With less scrollback than new rows, empty ones come at the bottom.
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        scroll(&mut list, 0, 3);
+        assert_eq!(list.resize(80, 30, (0, 23), Grow::FromScrollback), (0, 26));
+        assert_eq!(list.scrollback_rows(), 0);
+        assert_eq!(screen_numbers(&list)[26], Some(2));
+        assert_eq!(screen_numbers(&list)[27..], [None; 3]);
+        assert_eq!(list.memory(), counted(&list));
+    }
+
+    #[test]
+    fn a_taller_alternate_screen_adds_rows_at_the_bottom() {
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        scroll(&mut list, 0, 30);
+        assert_eq!(list.resize(80, 30, (0, 23), Grow::AtTheBottom), (0, 23));
+        assert_eq!(list.scrollback_rows(), 30);
+        assert_eq!(screen_numbers(&list)[23], Some(29));
+        assert_eq!(screen_numbers(&list)[24..], [None; 6]);
+    }
+
+    #[test]
+    fn a_shorter_screen_drops_the_empty_rows_below_the_cursor_first() {
+        let numbered_screen = || {
+            let mut list = PageList::new(80, 24, pages(80, 4));
+            for y in 0..24 {
+                let (page, row) = list.screen_row_mut(y);
+                page.set_cell(row, 0, numbered(u32::from(y)));
+            }
+            list
+        };
+        // Empty rows below the cursor go, and nothing goes to the scrollback.
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        for y in 0..=10 {
+            let (page, row) = list.screen_row_mut(y);
+            page.set_cell(row, 0, numbered(u32::from(y)));
+        }
+        assert_eq!(list.resize(80, 12, (0, 10), Grow::FromScrollback), (0, 10));
+        assert_eq!(list.scrollback_rows(), 0);
+        assert_eq!(screen_numbers(&list)[10], Some(10));
+        // Rows from the top go to the scrollback, as far as the cursor's.
+        let mut list = numbered_screen();
+        assert_eq!(list.resize(80, 14, (0, 23), Grow::FromScrollback), (0, 13));
+        assert_eq!(list.scrollback_rows(), 10);
+        assert_eq!(screen_numbers(&list)[13], Some(23));
+        // The rest is dropped from the bottom.
+        let mut list = numbered_screen();
+        assert_eq!(list.resize(80, 14, (0, 5), Grow::FromScrollback), (0, 0));
+        assert_eq!(list.scrollback_rows(), 5);
+        assert_eq!(screen_numbers(&list)[0], Some(5));
+        assert_eq!(screen_numbers(&list)[13], Some(18));
+        assert_eq!(list.memory(), counted(&list));
+        // A page that the dropped rows empty is freed.
+        let mut list = straddling();
+        let (lower, _) = list.screen_row_id(12);
+        let pin = pin_at(&mut list, 0, 20);
+        assert_eq!(list.resize(80, 12, (0, 0), Grow::FromScrollback), (0, 0));
+        assert!(list.page(lower).is_none(), "its id went stale");
+        assert_eq!(list.pin_position(pin), None, "its pins were lost");
+        assert_eq!((list.pages(), list.pool_len()), (1, 0));
+        assert_eq!(list.memory(), counted(&list));
+        assert_pins_listed(&list);
+        // A new page takes the slot, but not the old page's id.
+        list.resize(80, 24, (0, 0), Grow::AtTheBottom);
+        assert_eq!(list.pages(), 2);
+        assert!(list.page(lower).is_none());
+    }
+
+    #[test]
+    fn narrower_and_wider_rows_are_cut_and_extended() {
+        let budget = Arc::new(Budget::new(8 * Capacity::standard(80).bytes()));
+        let shared = Scrollback {
+            budget: Some(Arc::clone(&budget)),
+            ..Scrollback::default()
+        };
+        let mut list = PageList::new(80, 24, shared);
+        let page_rows = u32::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, page_rows);
+        let red = Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        };
+        styled(&mut list, 23, 'r', &red);
+        let (page, row) = list.screen_row_mut(23);
+        page.set_cell(row, 2, Cell::EMPTY.with_content(Content::Char('e')));
+        page.push_codepoint(row, 2, '\u{301}').unwrap();
+        page.set_cell(
+            row,
+            9,
+            Cell::EMPTY
+                .with_content(Content::Char('中'))
+                .with_width(crate::page::Width::Wide),
+        );
+        page.set_cell(
+            row,
+            10,
+            Cell::EMPTY.with_width(crate::page::Width::SpacerTail),
+        );
+        page.set_cell(row, 40, Cell::EMPTY.with_content(Content::Char('z')));
+        page.set_cell(
+            row,
+            5,
+            Cell::EMPTY.with_width(crate::page::Width::SpacerHead),
+        );
+        page.row_mut(row)
+            .set(crate::page::RowFlag::SoftWrapped, true);
+        page.row_mut(row)
+            .set(crate::page::RowFlag::PromptStart, true);
+        let kept = pin_at(&mut list, 2, 23);
+        let cut = pin_at(&mut list, 40, 23);
+        let (old_page, _) = list.screen_row_id(23);
+        assert_eq!(list.resize(10, 24, (40, 23), Grow::FromScrollback), (9, 23));
+        assert!(
+            list.page(old_page).is_none(),
+            "the old pages' ids went stale"
+        );
+        let (page, row) = list.screen_row(23);
+        assert_eq!(page.cells(row)[0], numbered(page_rows - 1));
+        assert_eq!(page.styles().get(page.cells(row)[1].style()), &red);
+        assert_eq!(page.grapheme(row, 2), ['\u{301}']);
+        assert_eq!(
+            page.cells(row)[9],
+            Cell::EMPTY,
+            "the wide character lost its half"
+        );
+        assert!(!page.row(row).has(crate::page::RowFlag::SoftWrapped));
+        assert!(page.row(row).has(crate::page::RowFlag::PromptStart));
+        assert_eq!(
+            page.cells(row)[5],
+            Cell::EMPTY,
+            "no spacer head without a wrap"
+        );
+        assert_eq!(pinned(&list, kept), Some(page.cells(row)[2]));
+        assert_eq!(list.pin_position(cut), None);
+        assert_eq!(numbers(&list).len(), list.total_rows());
+        assert_eq!(numbers(&list).last(), Some(&Some(page_rows - 1)));
+        assert_eq!(list.memory(), counted(&list));
+        assert_eq!(budget.used(), list.memory());
+        assert_pins_listed(&list);
+        // Wider again: the cells stay, and the new ones are empty.
+        list.resize(30, 24, (0, 23), Grow::FromScrollback);
+        let (page, row) = list.screen_row(23);
+        assert_eq!(page.grapheme(row, 2), ['\u{301}']);
+        assert!(page.cells(row)[9..].iter().all(|cell| cell.is_empty()));
+        assert_eq!(page.styles().len(), 1);
+        assert_eq!(list.memory(), counted(&list));
+        assert_pins_listed(&list);
+    }
+
+    #[test]
     fn a_page_at_its_largest_does_not_grow() {
         let mut list = PageList::new(80, 24, Scrollback::default());
         let mut grows = 0;
@@ -1571,6 +1919,8 @@ mod tests {
         Delete(u16, u16, u16, u16),
         /// Pins a cell of the row at an index of the list, modulo its rows.
         Pin(usize, u16),
+        /// Resizes the list, without reflow.
+        Resize(u16, u16, bool),
         /// Lets go of a pin, modulo how many there are.
         Unpin(usize),
     }
@@ -1590,6 +1940,8 @@ mod tests {
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
+            1 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, any::<bool>())
+                .prop_map(|(cols, rows, alternate)| Op::Resize(cols, rows, alternate)),
         ]
     }
 
@@ -1622,27 +1974,38 @@ mod tests {
             let mut next = 0;
             let mut pins: Vec<(PinId, u32)> = Vec::new();
             for op in &ops {
+                // The operations stay within the list's size as it changes.
+                let (cols, rows) = (list.cols(), list.rows());
+                let numbered_columns = COLUMNS.min(cols);
                 match op.clone() {
                     Op::Scroll(n) => {
                         for _ in 0..n {
                             list.scroll_up();
-                            let (page, row) = list.screen_row_mut(7);
-                            for x in 0..COLUMNS {
+                            let (page, row) = list.screen_row_mut(rows - 1);
+                            for x in 0..numbered_columns {
                                 page.set_cell(row, x, numbered(next));
                                 next += 1;
                             }
                         }
                     }
-                    Op::MoveRow(from, to) => list.move_row(from, to),
-                    Op::MoveCells(from, to, columns) => list.move_cells(from, to, columns),
+                    Op::MoveRow(from, to) => list.move_row(from % rows, to % rows),
+                    Op::MoveCells(from, to, columns) => {
+                        let columns = columns.start.min(cols - 1)..columns.end.min(cols);
+                        list.move_cells(from % rows, to % rows, columns);
+                    }
                     Op::ClearScrollback => list.clear_scrollback(),
-                    Op::Insert(y, x, n, end) => list.insert_blanks(y, x, n, end),
-                    Op::Delete(y, x, n, end) => list.delete_cells(y, x, n, end),
-                    // A table at its largest stays as it is.
-                    Op::Grow(y) => list.grow_page(y, TableFull::Styles).unwrap_or(()),
+                    Op::Grow(y) => list.grow_page(y % rows, TableFull::Styles).unwrap_or(()),
+                    Op::Insert(y, x, n, end) => {
+                        let end = end.min(cols);
+                        list.insert_blanks(y % rows, x.min(end - 1), n, end);
+                    }
+                    Op::Delete(y, x, n, end) => {
+                        let end = end.min(cols);
+                        list.delete_cells(y % rows, x.min(end - 1), n, end);
+                    }
                     Op::Pin(index, col) => {
                         let (page, row) = list.row_at(index % list.total_rows()).unwrap();
-                        let position = Position { page, row, col };
+                        let position = Position { page, row, col: col.min(cols - 1) };
                         if let Some(number) = number_at(&list, position) {
                             pins.push((list.pin(position).unwrap(), number));
                         }
@@ -1654,11 +2017,16 @@ mod tests {
                             prop_assert_eq!(list.pin_position(pin), None);
                         }
                     }
+                    Op::Resize(cols, rows, alternate) => {
+                        let grow = if alternate { Grow::AtTheBottom } else { Grow::FromScrollback };
+                        list.resize(cols, rows, (0, list.rows() - 1), grow);
+                    }
                 }
                 assert_pins_listed(&list);
+                let span = usize::from(SPAN.min(list.cols()));
                 let present: std::collections::HashSet<u32> = list
                     .iter_rows()
-                    .flat_map(|(page, row)| page.cells(row)[..usize::from(SPAN)].iter())
+                    .flat_map(|(page, row)| page.cells(row)[..span].iter())
                     .filter_map(|cell| match cell.content() {
                         Content::BgRgb(Rgb { r, g, b }) => Some(u32::from_be_bytes([0, r, g, b])),
                         _ => None,

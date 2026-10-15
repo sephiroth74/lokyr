@@ -165,8 +165,11 @@ The metadata fits in one byte.
   - Pins live in a slab with generations, so a lost pin frees its slot at once and its id goes stale. Each page's node lists the pins in it, so a move looks only at the pins of the two pages involved, and a page without pins costs nothing.
   - Used by selection, OSC 133 marks, search results, images and link hover.
 
-### Reflow
+### Resizing and reflow
 
+- **Rows**, `PageList::resize`: a taller screen takes its new rows from the scrollback, as xterm does, and empty ones at the bottom when the scrollback runs out; the alternate screen, whose scrollback is not shown, adds them at the bottom. A shorter screen drops the empty rows below the cursor first, then sends rows from the top to the scrollback, as far as the cursor's row, and drops the rest from the bottom, so the cursor stays on screen.
+- **Columns, without reflow**: the pages are rebuilt at the new width, each row cut or extended with empty cells. A wide character that loses its second half is emptied, spacer heads go, and the rows no longer wrap; pins in the cut columns are lost, the others keep their cell. The old pages leave the byte limits at once, and go as their rows are copied, so the new pages have the room.
+- **The terminal**, `Terminal::resize`: both screens, each cursor following its text; a wrap pending at the end of a row that grows goes on in the cell after it. The cursors that DECSC saved move with the text, as `alacritty_terminal` moves them, and come back within the screen; the margins become the whole screen, the tab stops go on every eight columns past the old width, and the cluster being printed ends.
 - **On column changes**, logical lines (sequences of *soft-wrapped* rows) are rewrapped into new pages. A wide character that straddles the edge produces a *spacer-head*.
 - **Cursor and pins** are remapped.
 - **Alternate screen**: resized without reflow, as xterm does.

@@ -25,7 +25,7 @@ pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
 
-use crate::page::{Cell, Content, PageList, Rgb, Scrollback, Semantic, Style, Width};
+use crate::page::{Cell, Content, Grow, PageList, Rgb, Scrollback, Semantic, Style, Width};
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
@@ -453,6 +453,66 @@ impl Terminal {
     /// Sets the style that printed text takes.
     pub fn set_pen(&mut self, style: Style) {
         self.pen = style;
+    }
+
+    /// Gives the terminal `cols` columns and `rows` rows, at least one of
+    /// each. Both screens keep their text, cut or extended at the right and
+    /// with their rows taken from or sent to the scrollback as
+    /// [`PageList::resize`] does, the primary's from its scrollback and the
+    /// alternate's at the bottom; their cursors follow. The cursors that
+    /// DECSC saved move with the text too, as `alacritty_terminal` moves
+    /// them, and come back within the screen; the margins become the whole
+    /// screen, the tab stops go on every eight columns past the old width,
+    /// and the cluster being printed ends.
+    pub fn resize(&mut self, cols: u16, rows: u16) {
+        let (cols, rows) = (cols.max(1), rows.max(1));
+        if (cols, rows) == (self.cols, self.rows) {
+            return;
+        }
+        self.moved();
+        let old_cols = self.cols;
+        for (screen, grow) in [
+            (&mut self.primary, Grow::FromScrollback),
+            (&mut self.alternate, Grow::AtTheBottom),
+        ] {
+            let cursor = screen.cursor;
+            let (x, y) = screen.rows.resize(cols, rows, (cursor.x, cursor.y), grow);
+            screen.cursor = if cursor.pending_wrap && cols > old_cols {
+                // The text that filled the row goes on after it.
+                Cursor {
+                    x: cursor.x + 1,
+                    y,
+                    pending_wrap: false,
+                }
+            } else {
+                Cursor {
+                    x,
+                    y,
+                    pending_wrap: cursor.pending_wrap && cols == old_cols,
+                }
+            };
+            // The rows that stay moved up or down as the cursor's did.
+            let moved = i32::from(y) - i32::from(cursor.y);
+            if let Some(saved) = &mut screen.saved {
+                let cursor = &mut saved.cursor;
+                if cursor.x >= cols {
+                    (cursor.x, cursor.pending_wrap) = (cols - 1, false);
+                }
+                // Within the screen, so it fits.
+                cursor.y = (i32::from(cursor.y) + moved).clamp(0, i32::from(rows) - 1) as u16;
+            }
+        }
+        let stops = &self.tab_stops;
+        self.tab_stops = (0..cols)
+            .map(|x| {
+                stops
+                    .get(usize::from(x))
+                    .copied()
+                    .unwrap_or(x.is_multiple_of(8))
+            })
+            .collect();
+        (self.cols, self.rows) = (cols, rows);
+        self.margins = Margins::screen(cols, rows);
     }
 
     /// Whether autowrap (DECAWM) is on.
