@@ -570,6 +570,80 @@ fn a_copy_into_a_full_table_leaves_the_row_empty() {
 }
 
 #[test]
+fn cells_moved_within_a_page_bring_the_flags_of_their_row() {
+    let mut page = page_with_rows(2);
+    print(&mut page, 0, 2, 'b', &bold(1)).unwrap();
+    print(&mut page, 0, 3, 'e', &Style::DEFAULT).unwrap();
+    page.push_codepoint(0, 3, '\u{301}').unwrap();
+    let id = page.hyperlinks_mut().acquire(link("", "http://a")).unwrap();
+    print(&mut page, 0, 4, 'l', &Style::DEFAULT).unwrap();
+    page.set_hyperlink(0, 4, Some(id)).unwrap();
+    page.hyperlinks_mut().release(id);
+    page.move_cells(0, 1, 2..5);
+    let row = page.row(1);
+    for flag in [RowFlag::Styles, RowFlag::Graphemes, RowFlag::Hyperlinks] {
+        assert!(row.has(flag), "{flag:?}");
+    }
+}
+
+#[test]
+fn a_copy_into_any_full_table_leaves_the_cells_empty() {
+    let mut source = page_with_rows(1);
+    print(&mut source, 0, 0, 'e', &Style::DEFAULT).unwrap();
+    source.push_codepoint(0, 0, '\u{301}').unwrap();
+    print(&mut source, 0, 1, 'o', &Style::DEFAULT).unwrap();
+    source.push_codepoint(0, 1, '\u{301}').unwrap();
+    for (x, uri) in [(2, "http://a"), (3, "http://b"), (4, "http://b")] {
+        let id = source.hyperlinks_mut().acquire(link("", uri)).unwrap();
+        print(&mut source, 0, x, 'l', &Style::DEFAULT).unwrap();
+        source.set_hyperlink(0, x, Some(id)).unwrap();
+        source.hyperlinks_mut().release(id);
+    }
+    let standard = Capacity::standard(80);
+    for (capacity, full) in [
+        (
+            Capacity {
+                graphemes: 1,
+                ..standard
+            },
+            TableFull::Graphemes,
+        ),
+        (
+            Capacity {
+                hyperlinks: 1,
+                ..standard
+            },
+            TableFull::Hyperlinks,
+        ),
+        (
+            Capacity {
+                linked_cells: 2,
+                ..standard
+            },
+            TableFull::LinkedCells,
+        ),
+    ] {
+        let mut target = Page::new(capacity);
+        target.push_row();
+        assert_eq!(
+            target.copy_cells(0, &source, 0, 0..5, WhenFull::Fail),
+            Err(full)
+        );
+        assert!(
+            target.cells(0).iter().all(|&cell| cell == Cell::EMPTY),
+            "{full:?}"
+        );
+        assert_eq!(target.graphemes.len(), 0, "{full:?}");
+        assert!(target.hyperlinks().is_empty(), "{full:?}");
+        let mut grown = target.grown(capacity.grown_for(full).unwrap());
+        grown
+            .copy_cells(0, &source, 0, 0..5, WhenFull::Fail)
+            .unwrap();
+        assert_eq!(&row_chars(&grown, 0)[..5], "eolll", "{full:?}");
+    }
+}
+
+#[test]
 fn a_table_at_its_largest_does_not_grow() {
     let largest = Capacity {
         styles: u16::MAX,

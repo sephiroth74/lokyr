@@ -3,9 +3,10 @@
 use super::{Cursor, Shift, Terminal};
 
 impl Terminal {
-    /// Executes a C0 control. Those that a terminal has no use for, such as
-    /// NUL, do nothing.
+    /// Executes a C0 control. Every one ends the cluster being printed;
+    /// those that a terminal has no use for, such as NUL, do nothing else.
     pub(super) fn control(&mut self, byte: u8) {
+        self.moved();
         match byte {
             0x07 => self.bells += 1,
             0x08 => self.backspace(),
@@ -58,13 +59,24 @@ impl Terminal {
     /// below the region, the last row stops it.
     pub(super) fn index(&mut self) {
         self.screen_mut().cursor.pending_wrap = false;
+        if !self.index_moves_on() {
+            return;
+        }
+        if self.cursor().y == self.margins.bottom {
+            self.scroll_region_up(1);
+        } else {
+            self.screen_mut().cursor.y += 1;
+        }
+    }
+
+    /// Whether [`Terminal::index`] takes the cursor on to another row, down
+    /// or by scrolling the region, rather than leaving it where it is.
+    pub(super) fn index_moves_on(&self) -> bool {
         let Cursor { x, y, .. } = self.cursor();
         if y == self.margins.bottom {
-            if self.margins.has_column(x) {
-                self.scroll_region_up(1);
-            }
-        } else if y + 1 < self.rows {
-            self.screen_mut().cursor.y += 1;
+            self.margins.has_column(x)
+        } else {
+            y + 1 < self.rows
         }
     }
 

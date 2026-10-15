@@ -358,6 +358,28 @@ fn characters_of_no_width() {
 }
 
 #[test]
+fn the_hangul_fillers_take_their_east_asian_width() {
+    assert_eq!(CURRENT.char_width('\u{115F}'), 2, "the choseong filler");
+    assert_eq!(CURRENT.char_width('\u{3164}'), 2, "the filler");
+    assert_eq!(CURRENT.char_width('\u{FFA0}'), 1, "the halfwidth filler");
+    assert_eq!(
+        CURRENT.char_width('\u{1160}'),
+        0,
+        "the jungseong filler joins"
+    );
+    assert_eq!(unicode_widths("\u{115F}\u{1161}", CURRENT), [2]);
+}
+
+#[test]
+fn a_cluster_after_a_prepended_character_takes_the_next_one_s_width() {
+    assert_eq!(CURRENT.cluster_width('\u{600}', &['1']), 1);
+    assert_eq!(CURRENT.cluster_width('\u{600}', &['中']), 2);
+    assert_eq!(CURRENT.cluster_width('\u{600}', &['\u{301}', '中']), 2);
+    assert_eq!(CURRENT.cluster_width('\u{600}', &[]), 0);
+    assert_eq!(UNICODE_8.cluster_width('\u{600}', &['中']), 2);
+}
+
+#[test]
 fn clusters_take_the_width_of_their_first_codepoint() {
     assert_eq!(unicode_widths("e\u{301}a", CURRENT), [1, 1]);
     assert_eq!(unicode_widths("中\u{301}", CURRENT), [2]);
@@ -382,6 +404,13 @@ fn emoji_presentation_sets_the_width_of_a_cluster() {
     );
     assert_eq!(unicode_widths("\u{1F1EE}\u{1F1F9}", CURRENT), [2], "a flag");
     assert_eq!(unicode_widths("\u{1F1EE}", CURRENT), [1], "half a flag");
+    for after in ['\u{301}', '\u{200D}', '\u{FE0F}'] {
+        assert_eq!(
+            CURRENT.cluster_width('\u{1F1EE}', &[after]),
+            1,
+            "half a flag and {after:?}"
+        );
+    }
     assert_eq!(
         unicode_widths("\u{1F1EE}\u{1F1F9}\u{1F1EB}\u{1F1F7}", CURRENT),
         [2, 2],

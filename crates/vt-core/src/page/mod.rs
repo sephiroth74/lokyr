@@ -241,6 +241,12 @@ impl Page {
         &mut self.styles
     }
 
+    /// How many cells have an entry in the grapheme table.
+    #[cfg(test)]
+    pub(crate) fn grapheme_entries(&self) -> usize {
+        self.graphemes.len()
+    }
+
     /// The hyperlink table that the page's cells refer to.
     pub fn hyperlinks(&self) -> &HyperlinkTable {
         &self.hyperlinks
@@ -562,7 +568,8 @@ impl Page {
     /// Moves the cells of `columns` in row `from` into the same columns of
     /// row `to`, within the page, as they are, with their graphemes and
     /// links. What those cells of `to` held is dropped, and those of `from`
-    /// are left empty. The rows' metadata stays.
+    /// are left empty. The rows' metadata stays, but for the flags that say
+    /// what the cells may hold, which `to` takes from `from` too.
     pub fn move_cells(&mut self, from: u16, to: u16, columns: Range<u16>) {
         if from == to {
             return;
@@ -572,6 +579,18 @@ impl Page {
         for x in columns {
             let x = usize::from(x);
             self.move_cell(from_start + x, to_start + x);
+        }
+        let source = self.row(from);
+        let target = self.row_mut(to);
+        for flag in [
+            RowFlag::Graphemes,
+            RowFlag::Hyperlinks,
+            RowFlag::Images,
+            RowFlag::Styles,
+        ] {
+            if source.has(flag) {
+                target.set(flag, true);
+            }
         }
         self.row_mut(from).set(RowFlag::Dirty, true);
     }

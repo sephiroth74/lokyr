@@ -2,7 +2,7 @@
 
 use super::{Cluster, Cursor, Terminal};
 use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, StyleId, Width};
-use crate::unicode::{Mode, Normalization, properties};
+use crate::unicode::{GraphemeBreak, Mode, Normalization, properties};
 
 /// The most codepoints that a cluster keeps; those that would join it past
 /// them are dropped. Unicode's stream-safe text format allows thirty
@@ -13,7 +13,9 @@ const MAX_CLUSTER: usize = 32;
 
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
-    /// cells at the cursor.
+    /// cells at the cursor. A codepoint of no width that starts a cluster
+    /// joins the character before it instead, unless it is a prepended
+    /// character, such as U+0600, whose cluster the next character joins.
     pub(super) fn print_char(&mut self, c: char) {
         let properties = properties(c);
         let width = self.widths.char_width_with(c, properties);
@@ -21,11 +23,14 @@ impl Terminal {
             Mode::Unicode => !self.segmenter.starts_cluster_with(properties),
             Mode::Legacy => width == 0,
         };
-        if joins || width == 0 {
+        let prepended = properties.grapheme_break == GraphemeBreak::Prepend;
+        if joins || (width == 0 && !prepended) {
             self.join_previous(c);
             return;
         }
-        self.start_cluster(c, width);
+        // A prepended character of no width takes a cell until the character
+        // after it gives the cluster its width.
+        self.start_cluster(c, width.max(1));
     }
 
     /// Prints `c`, as the character it stands for in the character set in
@@ -121,10 +126,11 @@ impl Terminal {
     fn write_cells(&mut self, x: u16, y: u16, text: &[u8], end: u16) {
         let width = text.len() as u16;
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
+        if insert {
+            self.screen_mut().rows.insert_blanks(y, x, width, end);
+        }
         self.with_pen(y, |page, row, style| {
-            if insert {
-                page.insert_blanks(row, x, width, end);
-            } else {
+            if !insert {
                 page.clear_halves(row, x, width);
             }
             let template = Cell::EMPTY
@@ -165,10 +171,11 @@ impl Terminal {
         let (x, y) = (self.cursor().x, self.cursor().y);
         let end = self.line_end(x);
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
+        if insert {
+            self.screen_mut().rows.insert_blanks(y, x, width, end);
+        }
         self.with_pen(y, |page, row, style| {
-            if insert {
-                page.insert_blanks(row, x, width, end);
-            } else {
+            if !insert {
                 page.clear_halves(row, x, width);
             }
             let blank = Cell::EMPTY
@@ -365,15 +372,17 @@ impl Terminal {
 
     /// Goes on to the left margin of the next row, as text does past the
     /// end of its line, and marks the rows as one line when they make one.
-    /// The cluster printed last
-    /// ends: a new one is about to start, and scrolling may have moved the
-    /// row it was in.
+    /// The cluster printed last ends: a new one is about to start, and
+    /// scrolling may have moved the row it was in.
     fn wrap(&mut self) {
         self.cluster = None;
         let Cursor { x, y, .. } = self.cursor();
         // Only a wrap from the last column of the screen to the first one
-        // makes the two rows one line, for reflow.
-        let joins_rows = x == self.cols - 1 && self.margins.left == 0;
+        // of another row makes the two rows one line, for reflow. Below the
+        // scroll region, or right of the right margin, the text goes on in
+        // the same row.
+        let joins_rows = x == self.cols - 1 && self.margins.left == 0 && self.index_moves_on();
+        // Marked before the index, which may scroll the row away.
         if joins_rows {
             self.row_flag(y, RowFlag::SoftWrapped);
         }

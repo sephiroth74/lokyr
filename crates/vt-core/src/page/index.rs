@@ -8,8 +8,10 @@
 pub(crate) struct Ids {
     /// Ids given back, to hand out again first.
     free: Vec<u16>,
-    /// The lowest id never handed out.
-    unused: u16,
+    /// How many ids have been handed out, at some point: those from 1 to
+    /// this one. Counting the last id, rather than the next, lets every id
+    /// up to `u16::MAX` be handed out.
+    handed: u16,
     capacity: u16,
 }
 
@@ -17,7 +19,7 @@ impl Ids {
     pub(crate) fn new(capacity: u16) -> Self {
         Self {
             free: Vec::with_capacity(usize::from(capacity)),
-            unused: 1,
+            handed: 0,
             capacity,
         }
     }
@@ -38,9 +40,9 @@ impl Ids {
     pub(crate) fn take(&mut self) -> Option<u16> {
         if let Some(id) = self.free.pop() {
             Some(id)
-        } else if self.unused <= self.capacity {
-            self.unused += 1;
-            Some(self.unused - 1)
+        } else if self.handed < self.capacity {
+            self.handed += 1;
+            Some(self.handed)
         } else {
             None
         }
@@ -48,26 +50,26 @@ impl Ids {
 
     /// Takes `id` back.
     pub(crate) fn give(&mut self, id: u16) {
-        debug_assert!(id != 0 && id < self.unused, "id {id} was never handed out");
+        debug_assert!(id != 0 && id <= self.handed, "id {id} was never handed out");
         self.free.push(id);
     }
 
     /// Every id handed out at some point, whether it is in use or not.
-    pub(crate) fn ever_used(&self) -> std::ops::Range<u16> {
-        1..self.unused
+    pub(crate) fn ever_used(&self) -> std::ops::RangeInclusive<u16> {
+        1..=self.handed
     }
 
     /// Takes every id back, without allocating.
     pub(crate) fn clear(&mut self) {
         self.free.clear();
-        self.unused = 1;
+        self.handed = 0;
     }
 
     /// The same ids, with room for `capacity`.
     pub(crate) fn grown(&self, capacity: u16) -> Self {
         let mut ids = Self::new(capacity.max(self.capacity));
         ids.free.extend_from_slice(&self.free);
-        ids.unused = self.unused;
+        ids.handed = self.handed;
         ids
     }
 }
@@ -206,12 +208,23 @@ mod tests {
         assert_eq!(ids.take(), Some(1));
         assert_eq!(ids.take(), Some(3));
         assert_eq!(ids.take(), None);
-        assert_eq!(ids.ever_used(), 1..4);
+        assert_eq!(ids.ever_used(), 1..=3);
         let mut grown = ids.grown(5);
         assert_eq!(
             [grown.take(), grown.take(), grown.take()],
             [Some(4), Some(5), None]
         );
+    }
+
+    #[test]
+    fn every_id_up_to_the_largest_is_handed_out() {
+        let mut ids = Ids::new(u16::MAX);
+        assert!(ids.ever_used().is_empty());
+        for id in 1..=u16::MAX {
+            assert_eq!(ids.take(), Some(id));
+        }
+        assert_eq!(ids.take(), None);
+        assert_eq!(ids.ever_used(), 1..=u16::MAX);
     }
 
     #[test]

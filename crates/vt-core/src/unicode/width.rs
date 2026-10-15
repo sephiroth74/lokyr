@@ -55,8 +55,9 @@ impl Widths {
     /// Controls, marks that do not space, format characters, default
     /// ignorable characters, and the Hangul vowels and final consonants that
     /// combine into syllables take none, except SOFT HYPHEN, which takes
-    /// one. Wide and fullwidth characters take two, and so do the ambiguous
-    /// ones when they count as wide.
+    /// one, and the Hangul fillers, which take the cells of their East Asian
+    /// width. Wide and fullwidth characters take two, and so do the
+    /// ambiguous ones when they count as wide.
     pub fn char_width(self, c: char) -> u8 {
         self.char_width_with(c, properties(c))
     }
@@ -65,10 +66,13 @@ impl Widths {
     /// own, as [`Widths::char_width`] counts them, for a caller that has
     /// looked them up already.
     pub fn char_width_with(self, c: char, properties: Properties) -> u8 {
+        // The Hangul fillers are default ignorable, but `wcwidth` gives them
+        // the cells that fonts draw them in.
+        let filler = matches!(c, '\u{115F}' | '\u{3164}' | '\u{FFA0}');
         let zero = matches!(c, '\0'..='\u{1F}' | '\u{7F}'..='\u{9F}' | '\u{1160}'..='\u{11FF}' | '\u{D7B0}'..='\u{D7FF}')
             || matches!(properties.mark, Some(Mark::Nonspacing | Mark::Enclosing))
             || properties.format
-            || properties.default_ignorable;
+            || (properties.default_ignorable && !filler);
         if c == '\u{AD}' {
             return 1;
         }
@@ -89,15 +93,23 @@ impl Widths {
     /// The cells that a grapheme cluster takes: `first`, its first
     /// codepoint, then `rest`, as a page keeps them.
     ///
-    /// A cluster is as wide as its first codepoint, except where emoji
-    /// presentation changes it: VS16 after a pictographic or a keycap base
-    /// makes two cells, VS15 one; a pair of regional indicators, a flag,
-    /// makes two; and so does an emoji ZWJ sequence. The tables of Unicode 8
-    /// knew no emoji presentation, so with them a cluster is always as wide
-    /// as its first codepoint.
+    /// A cluster is as wide as its first codepoint that has a width, which
+    /// is its first codepoint unless a prepended character comes before it,
+    /// except where emoji presentation changes it: VS16 after a pictographic
+    /// or a keycap base makes two cells, VS15 one; a pair of regional
+    /// indicators, a flag, makes two; and so does an emoji ZWJ sequence. The
+    /// tables of Unicode 8 knew no emoji presentation, so with them a
+    /// cluster is always as wide as its first codepoint that has a width.
     pub fn cluster_width(self, first: char, rest: &[char]) -> u8 {
         let first_properties = properties(first);
-        let width = self.char_width_with(first, first_properties);
+        let mut width = self.char_width_with(first, first_properties);
+        if width == 0 {
+            width = rest
+                .iter()
+                .map(|&c| self.char_width(c))
+                .find(|&width| width > 0)
+                .unwrap_or(0);
+        }
         if self.tables == Tables::Unicode8 {
             return width;
         }
@@ -109,13 +121,14 @@ impl Widths {
         if emoji && rest.contains(&TEXT_PRESENTATION) {
             return 1;
         }
-        if is_flag(first) && !rest.is_empty() {
+        if is_flag(first) && rest.first().copied().is_some_and(is_flag) {
             return 2;
         }
-        let joined = rest
-            .windows(2)
-            .any(|pair| pair[0] == ZWJ && properties(pair[1]).extended_pictographic);
-        if pictographic && joined {
+        let joined = || {
+            rest.windows(2)
+                .any(|pair| pair[0] == ZWJ && properties(pair[1]).extended_pictographic)
+        };
+        if pictographic && joined() {
             return 2;
         }
         width

@@ -17,8 +17,9 @@ impl Terminal {
             return;
         }
         let (blank, end) = (self.blank(), self.margins.right + 1);
-        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-        page.insert_blanks(row, x, n, end);
+        let rows = &mut self.screen_mut().rows;
+        rows.insert_blanks(y, x, n, end);
+        let (page, row) = rows.screen_row_mut(y);
         page.erase(row, x..x.saturating_add(n).min(end), blank, false);
     }
 
@@ -32,8 +33,9 @@ impl Terminal {
         }
         let (blank, end) = (self.blank(), self.margins.right + 1);
         let n = n.min(end - x);
-        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-        page.delete_cells(row, x, n, end);
+        let rows = &mut self.screen_mut().rows;
+        rows.delete_cells(y, x, n, end);
+        let (page, row) = rows.screen_row_mut(y);
         page.erase(row, end - n..end, blank, false);
     }
 

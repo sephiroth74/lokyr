@@ -442,12 +442,38 @@ impl PageList {
         }
     }
 
+    /// Inserts `n` empty cells at column `x` of row `y` of the screen, as
+    /// [`Page::insert_blanks`] does: the pins of the cells that move right
+    /// go along, and those of the cells that pass `end` are lost.
+    pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        let (node, row) = self.locate(y);
+        self.shift_pins(node, row, x..end, |col| {
+            col.checked_add(n).filter(|&col| col < end)
+        });
+        self.page_at_mut(node).insert_blanks(row, x, n, end);
+    }
+
+    /// Deletes `n` cells at column `x` of row `y` of the screen, as
+    /// [`Page::delete_cells`] does: the pins of the deleted cells are lost,
+    /// and those of the cells that move left go along.
+    pub fn delete_cells(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        let n = n.min(end - x);
+        let (node, row) = self.locate(y);
+        self.shift_pins(node, row, x..end, |col| (col >= x + n).then(|| col - n));
+        self.page_at_mut(node).delete_cells(row, x, n, end);
+    }
+
     /// Drops the scrollback, the rows above the screen, as ED 3 asks: the
-    /// pages that hold only scrollback go back to the pool, and the screen's
-    /// rows move up in the page where it starts.
+    /// pages that hold only scrollback are freed, and the screen's rows move
+    /// up in the page where it starts.
     pub fn clear_scrollback(&mut self) {
         while self.can_evict(0) {
             self.evict_head();
+        }
+        // No new page is about to take them from the pool, so their bytes
+        // leave the limits now.
+        while let Some(page) = self.pool.pop() {
+            self.give(page.memory());
         }
         let extra = self.total_rows - usize::from(self.rows);
         if extra > 0 {
@@ -508,6 +534,34 @@ impl PageList {
             };
             target_node.pins.push(pin);
             false
+        });
+    }
+
+    /// Moves the pins in `columns` of row `row` of a node to the column that
+    /// `to` gives, or loses those for which it gives none.
+    fn shift_pins(
+        &mut self,
+        node: u32,
+        row: u16,
+        columns: Range<u16>,
+        to: impl Fn(u16) -> Option<u16>,
+    ) {
+        let pins = &mut self.pins;
+        self.nodes[node as usize].pins.retain(|&pin| {
+            let place = pins.place_mut(pin);
+            if place.row != row || !columns.contains(&place.col) {
+                return true;
+            }
+            match to(place.col) {
+                Some(col) => {
+                    place.col = col;
+                    true
+                }
+                None => {
+                    pins.lose(pin);
+                    false
+                }
+            }
         });
     }
 
@@ -746,7 +800,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::page::{Cell, Color, Content, Rgb, Style};
+    use crate::page::{Cell, Color, Content, Hyperlink, Rgb, Style};
 
     /// Limits that hold `pages` standard pages of `cols` columns.
     fn pages(cols: u16, pages: usize) -> Scrollback {
@@ -1031,6 +1085,79 @@ mod tests {
         scroll(&mut list, 10, (2 * page_rows) as u32);
         assert!(list.page(id).is_none());
         assert_eq!(list.pool_len(), 0);
+    }
+
+    #[test]
+    fn clearing_the_scrollback_frees_its_pages() {
+        let budget = Arc::new(Budget::new(8 * Capacity::standard(80).bytes()));
+        let shared = Scrollback {
+            budget: Some(Arc::clone(&budget)),
+            ..Scrollback::default()
+        };
+        let mut list = PageList::new(80, 24, shared);
+        let page_rows = u32::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, 4 * page_rows);
+        let pages = list.pages();
+        list.clear_scrollback();
+        assert_eq!(list.pool_len(), 0, "no spare page waits");
+        assert!(list.pages() < pages);
+        assert_eq!(list.memory(), counted(&list));
+        assert_eq!(
+            budget.used(),
+            list.memory(),
+            "the budget has the bytes back"
+        );
+    }
+
+    #[test]
+    fn a_move_into_full_grapheme_and_link_tables_grows_them() {
+        let mut list = straddling();
+        // Fill the lower page's grapheme table, and its table of links.
+        let capacity = Capacity::standard(80);
+        for n in 0..usize::from(capacity.graphemes) {
+            let (y, x) = (12 + (n / 80) as u16, (n % 80) as u16);
+            let (page, row) = list.screen_row_mut(y);
+            page.set_cell(row, x, Cell::EMPTY.with_content(Content::Char('e')));
+            page.push_codepoint(row, x, '\u{301}').unwrap();
+        }
+        for n in 0..usize::from(capacity.hyperlinks) {
+            let (page, row) = list.screen_row_mut(20);
+            let uri = format!("http://{n}");
+            let id = page
+                .hyperlinks_mut()
+                .acquire(Hyperlink {
+                    id: b"",
+                    uri: uri.as_bytes(),
+                })
+                .unwrap();
+            page.set_hyperlink(row, n as u16, Some(id)).unwrap();
+            page.hyperlinks_mut().release(id);
+        }
+        // A row of the upper page with a grapheme and a link of its own.
+        let (page, row) = list.screen_row_mut(0);
+        page.set_cell(row, 0, Cell::EMPTY.with_content(Content::Char('o')));
+        page.push_codepoint(row, 0, '\u{302}').unwrap();
+        let id = page
+            .hyperlinks_mut()
+            .acquire(Hyperlink {
+                id: b"",
+                uri: b"http://new",
+            })
+            .unwrap();
+        page.set_hyperlink(row, 0, Some(id)).unwrap();
+        page.hyperlinks_mut().release(id);
+        list.move_row(0, 23);
+        let (page, row) = list.screen_row(23);
+        assert_eq!(page.grapheme(row, 0), ['\u{302}']);
+        let link = page.hyperlink(row, 0).unwrap();
+        assert_eq!(page.hyperlinks().get(link).uri, b"http://new");
+        assert!(page.capacity().graphemes > capacity.graphemes);
+        assert!(page.capacity().hyperlinks > capacity.hyperlinks);
+        let (page, _) = list.screen_row(0);
+        assert!(
+            page.hyperlinks().is_empty(),
+            "the upper page let go of its link"
+        );
     }
 
     #[test]
@@ -1438,6 +1565,10 @@ mod tests {
         MoveCells(u16, u16, Range<u16>),
         ClearScrollback,
         Grow(u16),
+        /// Inserts empty cells in a row of the screen, as ICH does.
+        Insert(u16, u16, u16, u16),
+        /// Deletes cells of a row of the screen, as DCH does.
+        Delete(u16, u16, u16, u16),
         /// Pins a cell of the row at an index of the list, modulo its rows.
         Pin(usize, u16),
         /// Lets go of a pin, modulo how many there are.
@@ -1452,6 +1583,10 @@ mod tests {
             2 => (y(), y(), 0_u16..6, 1_u16..4)
                 .prop_map(|(from, to, start, len)| Op::MoveCells(from, to, start..start + len)),
             1 => Just(Op::ClearScrollback),
+            1 => (y(), 0_u16..SPAN, 1_u16..4, 1_u16..=SPAN)
+                .prop_map(|(y, x, n, end)| Op::Insert(y, x.min(end - 1), n, end)),
+            1 => (y(), 0_u16..SPAN, 1_u16..4, 1_u16..=SPAN)
+                .prop_map(|(y, x, n, end)| Op::Delete(y, x.min(end - 1), n, end)),
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
@@ -1460,6 +1595,10 @@ mod tests {
 
     /// The numbered columns of each row in the property.
     const COLUMNS: u16 = 5;
+
+    /// The columns that the property looks at, wide enough for the numbered
+    /// cells that insertions move right.
+    const SPAN: u16 = 8;
 
     /// The number of the cell at `position`, if it has one.
     fn number_at(list: &PageList, position: Position) -> Option<u32> {
@@ -1497,6 +1636,8 @@ mod tests {
                     Op::MoveRow(from, to) => list.move_row(from, to),
                     Op::MoveCells(from, to, columns) => list.move_cells(from, to, columns),
                     Op::ClearScrollback => list.clear_scrollback(),
+                    Op::Insert(y, x, n, end) => list.insert_blanks(y, x, n, end),
+                    Op::Delete(y, x, n, end) => list.delete_cells(y, x, n, end),
                     // A table at its largest stays as it is.
                     Op::Grow(y) => list.grow_page(y, TableFull::Styles).unwrap_or(()),
                     Op::Pin(index, col) => {
@@ -1517,7 +1658,7 @@ mod tests {
                 assert_pins_listed(&list);
                 let present: std::collections::HashSet<u32> = list
                     .iter_rows()
-                    .flat_map(|(page, row)| page.cells(row)[..usize::from(COLUMNS)].iter())
+                    .flat_map(|(page, row)| page.cells(row)[..usize::from(SPAN)].iter())
                     .filter_map(|cell| match cell.content() {
                         Content::BgRgb(Rgb { r, g, b }) => Some(u32::from_be_bytes([0, r, g, b])),
                         _ => None,

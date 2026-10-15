@@ -3040,6 +3040,110 @@ fn a_row_moved_into_a_page_that_cannot_grow_keeps_its_text() {
 }
 
 #[test]
+fn a_prepended_character_starts_the_cluster_of_the_next_one() {
+    let mut term = Term::new(10, 2);
+    term.feed("\r\u{600}123");
+    assert_eq!(cluster_at(&term, 0, 0), ['\u{600}', '1']);
+    assert_eq!(cluster_at(&term, 1, 0), ['2']);
+    assert_eq!(term.cursor(), (3, 0, false));
+    // After another character, and through both print paths.
+    let mut term = Term::new(10, 2);
+    term.feed("x\u{600}").feed("1");
+    assert_eq!(cluster_at(&term, 1, 0), ['\u{600}', '1']);
+    assert_eq!(term.cursor(), (2, 0, false));
+    // A verse number: two digits after the sign.
+    let mut term = Term::new(10, 2);
+    term.feed("\u{6DD}\u{661}\u{662}");
+    assert_eq!(cluster_at(&term, 0, 0), ['\u{6DD}', '\u{661}']);
+    assert_eq!(cluster_at(&term, 1, 0), ['\u{662}']);
+    // In legacy mode, a codepoint of no width joins the cell before it.
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b[?2027l\r\u{600}123");
+    assert_eq!(term.cursor(), (3, 0, false));
+    assert_eq!(cluster_at(&term, 0, 0), ['1']);
+}
+
+#[test]
+fn half_a_flag_and_a_mark_take_one_cell() {
+    let mut term = Term::new(10, 2);
+    term.feed("\u{1F1EE}\u{301}x");
+    assert_eq!(term.cell(0, 0).width(), Width::Narrow);
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn the_hangul_fillers_take_cells() {
+    let mut term = Term::new(10, 2);
+    term.feed("x\u{115F}\u{1161}y\u{3164}");
+    assert_eq!(term.cursor(), (6, 0, false), "as wcwidth counts them");
+}
+
+#[test]
+fn every_control_ends_the_cluster() {
+    for control in ["\x07", "\x0f", "\x00", "\x1b[1m\x07"] {
+        let mut term = Term::new(10, 2);
+        term.feed(format!("\u{1F1EE}{control}\u{1F1F9}"));
+        assert_eq!(term.cursor(), (2, 0, false), "{control:?}");
+        assert_eq!(term.cell(0, 0).width(), Width::Narrow, "{control:?}");
+    }
+    // SGR alone leaves the cluster open.
+    let mut term = Term::new(10, 2);
+    term.feed("\u{1F1EE}\x1b[1m\u{1F1F9}");
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+}
+
+#[test]
+fn a_wrap_that_stays_in_its_row_marks_no_line() {
+    let flags = |term: &Term, y| {
+        (
+            term.row(y).has(RowFlag::SoftWrapped),
+            term.row(y).has(RowFlag::Continuation),
+        )
+    };
+    // Below the scroll region, the last row stops the text.
+    let mut term = Term::new(5, 3);
+    term.feed("\x1b[1;2r\x1b[3;1Habcdefg");
+    assert_eq!(term.screen()[2], "fgcde");
+    assert_eq!(flags(&term, 2), (false, false));
+    // At the bottom margin, right of the right margin.
+    let mut term = Term::new(5, 3);
+    term.feed("\x1b[?69h\x1b[1;3s\x1b[1;2r\x1b[2;4Habc");
+    assert_eq!(term.screen()[1], "c  ab");
+    assert_eq!(flags(&term, 1), (false, false));
+    // A wrap that moves on still joins the rows.
+    let mut term = Term::new(5, 3);
+    term.feed("abcdefg");
+    assert_eq!(
+        (flags(&term, 0), flags(&term, 1)),
+        ((true, false), (false, true))
+    );
+}
+
+#[test]
+fn pins_follow_the_cells_that_insertion_and_deletion_move() {
+    let mut term = Term::new(10, 2);
+    term.feed("abcdefghij");
+    let [c, f, i] = [2, 5, 8].map(|x| pin(&mut term, x, 0));
+    // ICH 2 at column 1: c and f move right, i passes the edge.
+    term.feed("\x1b[2G\x1b[2@");
+    assert_eq!(term.screen()[0], "a  bcdefgh");
+    assert_eq!(
+        [c, f, i].map(|pin| pinned_char(&term, pin)),
+        [Some('c'), Some('f'), None]
+    );
+    // DCH 3 at column 2: c goes, f moves left.
+    term.feed("\x1b[4G\x1b[3P");
+    assert_eq!(term.screen()[0], "a  efgh");
+    assert_eq!([c, f].map(|pin| pinned_char(&term, pin)), [None, Some('f')]);
+    // Printing in insert mode moves it right again.
+    term.feed("\x1b[4h\x1b[1GXY");
+    assert_eq!(term.screen()[0], "XYa  efgh");
+    assert_eq!(pinned_char(&term, f), Some('f'));
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(rows.pin_position(f).map(|p| p.col), Some(6));
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -3182,7 +3286,9 @@ fn screen_state(screen: &Screen) -> (Vec<(Row, Vec<CellValue>)>, Cursor) {
 }
 
 /// Checks that each page's styles and links have as many references as
-/// cells that use them, and no others are in the tables.
+/// cells that use them, and no others are in the tables; that the grapheme
+/// table has an entry for each grapheme cell, and no other; and that each
+/// row has the flags of what its cells hold.
 fn assert_tables_counted(screen: &Screen) {
     use std::collections::HashMap;
 
@@ -3190,6 +3296,7 @@ fn assert_tables_counted(screen: &Screen) {
     struct Counts {
         styles: HashMap<StyleId, u32>,
         links: HashMap<HyperlinkId, u32>,
+        graphemes: usize,
     }
 
     let mut pages: HashMap<*const Page, (&Page, Counts)> = HashMap::new();
@@ -3197,12 +3304,20 @@ fn assert_tables_counted(screen: &Screen) {
         let (_, counts) = pages
             .entry(std::ptr::from_ref(page))
             .or_insert_with(|| (page, Counts::default()));
+        let flags = page.row(row);
         for (x, cell) in (0..).zip(page.cells(row)) {
             if cell.style() != StyleId::DEFAULT {
                 *counts.styles.entry(cell.style()).or_default() += 1;
+                assert!(flags.has(RowFlag::Styles), "row {row}, column {x}");
             }
             if let Some(link) = page.hyperlink(row, x) {
                 *counts.links.entry(link).or_default() += 1;
+                assert!(flags.has(RowFlag::Hyperlinks), "row {row}, column {x}");
+            }
+            if let Content::Grapheme(_) = cell.content() {
+                counts.graphemes += 1;
+                assert!(!page.grapheme(row, x).is_empty(), "row {row}, column {x}");
+                assert!(flags.has(RowFlag::Graphemes), "row {row}, column {x}");
             }
         }
     }
@@ -3219,6 +3334,11 @@ fn assert_tables_counted(screen: &Screen) {
             page.hyperlinks().len(),
             counts.links.len(),
             "links in the table"
+        );
+        assert_eq!(
+            page.grapheme_entries(),
+            counts.graphemes,
+            "graphemes in the table"
         );
         for (&id, &count) in &counts.links {
             assert_eq!(page.hyperlinks().references(id), count, "{id:?}");
