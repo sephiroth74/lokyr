@@ -23,7 +23,7 @@ pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
 
-use crate::page::{Cell, Content, PageList, Rgb, Scrollback, Style, Width};
+use crate::page::{Cell, Content, PageList, Rgb, Scrollback, Semantic, Style, Width};
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
@@ -46,6 +46,9 @@ pub struct Options {
     /// Whether programs may ask to read the clipboard (OSC 52 with `?`),
     /// which the embedder still confirms: off by default.
     pub clipboard_reads: bool,
+    /// The schemes that links (OSC 8) may have, in any case: `http`,
+    /// `https`, `mailto` and `file` by default.
+    pub link_schemes: Vec<String>,
 }
 
 impl Default for Options {
@@ -57,6 +60,9 @@ impl Default for Options {
             term: "xterm-256color".to_owned(),
             title_reports: false,
             clipboard_reads: false,
+            link_schemes: ["http", "https", "mailto", "file"]
+                .map(str::to_owned)
+                .to_vec(),
         }
     }
 }
@@ -278,6 +284,12 @@ pub struct Terminal {
     title_reports: bool,
     /// Whether programs may ask to read the clipboard.
     clipboard_reads: bool,
+    /// The schemes that links may have.
+    link_schemes: Vec<String>,
+    /// The link that the text printed next is part of (OSC 8).
+    link: osc::Link,
+    /// The zone of the text printed next (OSC 133).
+    zone: Semantic,
     /// The theme's colors, which the resets bring back, and the colors
     /// now, which programs can change.
     default_colors: Colors,
@@ -355,6 +367,9 @@ impl Terminal {
             term: options.term,
             title_reports: options.title_reports,
             clipboard_reads: options.clipboard_reads,
+            link_schemes: options.link_schemes,
+            link: osc::Link::default(),
+            zone: Semantic::Output,
             default_colors: Colors::default(),
             colors: Colors::default(),
             cell_size: None,
@@ -545,6 +560,16 @@ impl Terminal {
     /// The tab's color, from OSC 6;1.
     pub fn tab_color(&self) -> Option<Rgb> {
         self.tab_color
+    }
+
+    /// The URI of the link that the text printed next is part of.
+    pub fn open_link(&self) -> Option<&[u8]> {
+        self.link.is_open().then_some(&self.link.uri[..])
+    }
+
+    /// The zone of the text printed next, as semantic prompts mark it.
+    pub fn semantic_zone(&self) -> Semantic {
+        self.zone
     }
 
     /// The colors to draw with: the theme's, as programs changed them.

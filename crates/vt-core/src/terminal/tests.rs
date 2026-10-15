@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::page::{Color, Page, Rgb, Row, RowFlag, StyleId, Underline};
+use crate::page::{Color, HyperlinkId, Page, Rgb, Row, RowFlag, Semantic, StyleId, Underline};
 use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
 
@@ -2594,6 +2594,203 @@ fn osc_52_reads_only_when_the_configuration_allows_them() {
     );
 }
 
+/// The id and the URI of the link that the cell at column `x` of row `y`
+/// is part of.
+fn link_at(term: &Term, x: u16, y: u16) -> Option<(String, String)> {
+    let (page, row) = term.terminal.screen_rows().screen_row(y);
+    let link = page.hyperlinks().get(page.hyperlink(row, x)?);
+    let text = |bytes: &[u8]| String::from_utf8(bytes.to_vec()).unwrap();
+    Some((text(link.id), text(link.uri)))
+}
+
+fn link(id: &str, uri: &str) -> Option<(String, String)> {
+    Some((id.to_owned(), uri.to_owned()))
+}
+
+#[test]
+fn osc_8_links_the_text_printed_while_it_is_open() {
+    let mut term = Term::new(10, 2);
+    term.feed("a\x1b]8;;https://example.com\x1b\\bc\x1b]8;;\x1b\\d");
+    assert_eq!(term.screen()[0], "abcd");
+    let example = link("", "https://example.com");
+    let links: Vec<_> = (0..5).map(|x| link_at(&term, x, 0)).collect();
+    assert_eq!(links, [None, example.clone(), example, None, None]);
+    assert_eq!(term.terminal.open_link(), None);
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    let id = page.hyperlink(row, 1).unwrap();
+    assert_eq!(page.hyperlinks().references(id), 2, "one for each cell");
+    assert!(page.row(row).has(RowFlag::Hyperlinks));
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn osc_8_takes_the_id_from_its_parameters() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b]8;a=1:id=one:b=2;http://x\x07a\x1b]8;id=one;http://y\x07b");
+    term.feed("\x1b]8;id=one;http://x\x07c\x1b]8;;http://x\x07d");
+    let links: Vec<_> = (0..4).map(|x| link_at(&term, x, 0)).collect();
+    assert_eq!(
+        links,
+        [
+            link("one", "http://x"),
+            link("one", "http://y"),
+            link("one", "http://x"),
+            link("", "http://x"),
+        ]
+    );
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(
+        page.hyperlink(row, 0),
+        page.hyperlink(row, 2),
+        "the same id and URI make the same link"
+    );
+    assert_eq!(term.terminal.open_link(), Some(&b"http://x"[..]));
+    term.feed("\x1b]8\x07\x1b]8;id=two\x07");
+    assert_eq!(
+        term.terminal.open_link(),
+        Some(&b"http://x"[..]),
+        "no URI field"
+    );
+}
+
+#[test]
+fn osc_8_links_only_the_schemes_the_configuration_allows() {
+    let mut term = Term::new(20, 2);
+    for (uri, allowed) in [
+        ("https://a", true),
+        ("HTTP://a", true),
+        ("mailto:a@b", true),
+        ("file:///tmp", true),
+        ("javascript:alert(1)", false),
+        ("ssh://host", false),
+        ("x-http://a", false),
+        ("1http://a", false),
+        (":a", false),
+        ("https", false),
+        ("ht\u{e9}tp://a", false),
+    ] {
+        term.feed(format!("\x1b]8;;https://open\x07\x1b]8;;{uri}\x07"));
+        let open = term.terminal.open_link().map(<[u8]>::to_vec);
+        assert_eq!(open, allowed.then(|| uri.as_bytes().to_vec()), "{uri}");
+    }
+    let options = Options {
+        link_schemes: vec!["ssh".to_owned()],
+        ..Options::default()
+    };
+    let mut term = Term::with(20, 2, options);
+    term.feed("\x1b]8;;SSH://host\x07a\x1b]8;;https://a\x07b");
+    assert_eq!(link_at(&term, 0, 0), link("", "SSH://host"));
+    assert_eq!(link_at(&term, 1, 0), None);
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.open_link(), None, "RIS closes the link");
+    term.feed("\x1b]8;;ssh://host\x07");
+    assert!(term.terminal.open_link().is_some(), "and keeps the schemes");
+}
+
+#[test]
+fn osc_8_drops_links_longer_than_the_specification_allows() {
+    let mut term = Term::new(10, 2);
+    let uri = |len: usize| format!("http://{}", "a".repeat(len - 7));
+    for (id, uri, kept) in [
+        (String::new(), uri(2083), true),
+        (String::new(), uri(2084), false),
+        ("i".repeat(250), uri(10), true),
+        ("i".repeat(251), uri(10), false),
+        ("i".repeat(250), uri(2083), true),
+    ] {
+        term.feed(format!("\r\x1b]8;id={id};{uri}\x07x"));
+        let expected = kept.then(|| (id.clone(), uri.clone()));
+        assert_eq!(
+            link_at(&term, 0, 0),
+            expected,
+            "{} and {}",
+            id.len(),
+            uri.len()
+        );
+    }
+}
+
+#[test]
+fn links_grow_the_page_when_its_table_is_full() {
+    let mut term = Term::new(80, 2);
+    let uri = |n: usize| format!("http://{n}/{}", "a".repeat(1000));
+    for n in 0..80 {
+        term.feed(format!("\x1b]8;;{}\x07x", uri(n)));
+    }
+    for n in 0..80_u16 {
+        let uri = uri(usize::from(n));
+        assert_eq!(link_at(&term, n, 0), link("", &uri), "{n}");
+    }
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn both_halves_of_a_wide_character_are_part_of_its_link() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b]8;;http://a\x07\u{4E2D}\u{2764}\u{FE0F}\x1b]8;;\x07");
+    for x in 0..4 {
+        assert_eq!(link_at(&term, x, 0), link("", "http://a"), "{x}");
+    }
+    assert_eq!(
+        term.cell(3, 0).width(),
+        Width::SpacerTail,
+        "the heart widened"
+    );
+    assert_eq!(link_at(&term, 4, 0), None);
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn writing_over_a_link_lets_it_go() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b]8;;http://a\x07ab\u{4E2D}\x1b]8;;\x07\rxyz");
+    term.feed("\x1b]8;;http://b\x07\u{2764}\x1b]8;;\x07\rw\x1b[3C\u{FE0F}");
+    assert_eq!(term.screen()[0], "wyz\u{2764}\u{FE0F}");
+    assert_eq!(link_at(&term, 3, 0), link("", "http://b"));
+    assert_eq!(
+        link_at(&term, 4, 0),
+        link("", "http://b"),
+        "the tail of the widened heart"
+    );
+    for x in [0, 1, 2, 5] {
+        assert_eq!(link_at(&term, x, 0), None, "{x}");
+    }
+    assert_tables_counted(&term.terminal.primary);
+    term.feed("\x1b[2K");
+    let (page, _) = term.terminal.screen_rows().screen_row(0);
+    assert!(page.hyperlinks().is_empty(), "erasing lets the links go");
+}
+
+#[test]
+fn osc_133_marks_prompts_commands_and_their_output() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07l\u{4E2D}\u{2764}\x1b]133;C\x07\u{FE0F}");
+    term.feed("\r\nout\x1b]133;B\x07\x1b]133;D;0\x07!\r\n\x1b]133;A;aid=1\x07%");
+    use Semantic::{Input, Output, Prompt};
+    let zones: Vec<_> = (0..8).map(|x| term.cell(x, 0).semantic()).collect();
+    assert_eq!(
+        zones,
+        [Prompt, Prompt, Input, Input, Input, Input, Input, Output],
+        "the heart widened in its own zone, and an empty cell is output"
+    );
+    let zones: Vec<_> = (0..4).map(|x| term.cell(x, 1).semantic()).collect();
+    assert_eq!(zones, [Output; 4]);
+    assert_eq!(term.cell(0, 2).semantic(), Prompt);
+    assert_eq!(term.terminal.semantic_zone(), Prompt);
+    let starts: Vec<_> = (0..3)
+        .map(|y| term.row(y).has(RowFlag::PromptStart))
+        .collect();
+    assert_eq!(starts, [true, false, true]);
+    term.feed("\x1b]133;Z\x07\x1b]133\x07");
+    assert_eq!(
+        term.terminal.semantic_zone(),
+        Prompt,
+        "unknown marks change nothing"
+    );
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.semantic_zone(), Output);
+}
+
 #[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
@@ -2701,8 +2898,12 @@ impl Handler for OneByOne<'_> {
     }
 }
 
-/// A cell as it reads, wherever its page keeps its style and grapheme.
-type CellValue = (Cell, Style, Vec<char>);
+/// The id and the URI of a link.
+type LinkTarget = (Vec<u8>, Vec<u8>);
+
+/// A cell as it reads, wherever its page keeps its style, grapheme and
+/// link.
+type CellValue = (Cell, Style, Vec<char>, Option<LinkTarget>);
 
 /// What printing can change in a screen, as values that do not depend on
 /// where the tables keep them.
@@ -2714,10 +2915,15 @@ fn screen_state(screen: &Screen) -> (Vec<(Row, Vec<CellValue>)>, Cursor) {
             let cells = (0..)
                 .zip(page.cells(row))
                 .map(|(x, &cell)| {
+                    let link = page.hyperlink(row, x).map(|id| {
+                        let link = page.hyperlinks().get(id);
+                        (link.id.to_vec(), link.uri.to_vec())
+                    });
                     (
                         cell.with_style(StyleId::DEFAULT),
                         *page.styles().get(cell.style()),
                         page.grapheme(row, x).to_vec(),
+                        link,
                     )
                 })
                 .collect();
@@ -2727,26 +2933,47 @@ fn screen_state(screen: &Screen) -> (Vec<(Row, Vec<CellValue>)>, Cursor) {
     (rows, screen.cursor)
 }
 
-/// Checks that each page's styles have as many references as cells that
-/// use them, and no other style is in the table.
-fn assert_styles_counted(screen: &Screen) {
+/// Checks that each page's styles and links have as many references as
+/// cells that use them, and no others are in the tables.
+fn assert_tables_counted(screen: &Screen) {
     use std::collections::HashMap;
 
-    let mut pages: HashMap<*const Page, (&Page, HashMap<StyleId, u32>)> = HashMap::new();
+    #[derive(Default)]
+    struct Counts {
+        styles: HashMap<StyleId, u32>,
+        links: HashMap<HyperlinkId, u32>,
+    }
+
+    let mut pages: HashMap<*const Page, (&Page, Counts)> = HashMap::new();
     for (page, row) in screen.rows.iter_rows() {
         let (_, counts) = pages
             .entry(std::ptr::from_ref(page))
-            .or_insert_with(|| (page, HashMap::new()));
-        for cell in page.cells(row) {
+            .or_insert_with(|| (page, Counts::default()));
+        for (x, cell) in (0..).zip(page.cells(row)) {
             if cell.style() != StyleId::DEFAULT {
-                *counts.entry(cell.style()).or_default() += 1;
+                *counts.styles.entry(cell.style()).or_default() += 1;
+            }
+            if let Some(link) = page.hyperlink(row, x) {
+                *counts.links.entry(link).or_default() += 1;
             }
         }
     }
     for (page, counts) in pages.values() {
-        assert_eq!(page.styles().len(), counts.len(), "styles in the table");
-        for (&id, &count) in counts {
+        assert_eq!(
+            page.styles().len(),
+            counts.styles.len(),
+            "styles in the table"
+        );
+        for (&id, &count) in &counts.styles {
             assert_eq!(page.styles().references(id), count, "{id:?}");
+        }
+        assert_eq!(
+            page.hyperlinks().len(),
+            counts.links.len(),
+            "links in the table"
+        );
+        for (&id, &count) in &counts.links {
+            assert_eq!(page.hyperlinks().references(id), count, "{id:?}");
         }
     }
 }
@@ -2851,6 +3078,13 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b]4;1;#123\x07",
     "\x1b]11;?\x07",
     "\x1b]52;c;eA==\x07",
+    "\x1b]8;;https://a\x07",
+    "\x1b]8;id=1;file:///b\x1b\\",
+    "\x1b]8;;\x07",
+    "\x1b]133;A\x07",
+    "\x1b]133;B\x07",
+    "\x1b]133;C\x07",
+    "\x1b]133;D;0\x07",
     "\x1b[0m",
     "\x1b[1;31m",
     "\x1b[44m",
@@ -2975,7 +3209,7 @@ proptest! {
             prop_assert_eq!(fast.segmenter, slow.segmenter, "after {:?}", op);
         }
         for screen in [&fast.terminal.primary, &fast.terminal.alternate] {
-            assert_styles_counted(screen);
+            assert_tables_counted(screen);
         }
     }
 }

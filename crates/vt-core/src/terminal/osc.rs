@@ -3,12 +3,31 @@
 //! progress and the tab's color.
 
 use super::{ClipboardRequest, ClipboardTarget, Terminal};
-use crate::page::Rgb;
+use crate::page::{Rgb, RowFlag, Semantic};
 use crate::parser::StringEnd;
 
 /// The most that the buffer of OSC strings keeps between them. A larger
 /// buffer, which OSC 52 can need, is let go after its string.
 const KEPT_BYTES: usize = 4 * 1024;
+
+/// The longest URI and `id` of a link, as the specification of OSC 8
+/// limits them.
+const MAX_URI: usize = 2083;
+const MAX_LINK_ID: usize = 250;
+
+/// The link that OSC 8 opened, with no URI while none is open. Its buffers
+/// stay from one link to the next.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Link {
+    pub(super) id: Vec<u8>,
+    pub(super) uri: Vec<u8>,
+}
+
+impl Link {
+    pub(super) fn is_open(&self) -> bool {
+        !self.uri.is_empty()
+    }
+}
 
 /// What the embedder has to act on, which programs asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +121,7 @@ impl Terminal {
             b"6" => self.set_tab_color(rest),
             b"4" => self.set_palette(rest, end),
             b"7" => self.set_working_directory(rest),
+            b"8" => self.set_link(rest),
             b"10" => self.set_dynamic_colors(10, rest, end),
             b"11" => self.set_dynamic_colors(11, rest, end),
             b"12" => self.set_dynamic_colors(12, rest, end),
@@ -110,6 +130,7 @@ impl Terminal {
             b"110" => self.reset_dynamic_color(10),
             b"111" => self.reset_dynamic_color(11),
             b"112" => self.reset_dynamic_color(12),
+            b"133" => self.mark_prompt(rest),
             b"9" => match rest.strip_prefix(b"4") {
                 Some([] | [b';', ..]) => self.report_progress(rest),
                 _ => self.notify(String::new(), text(rest)),
@@ -124,6 +145,67 @@ impl Terminal {
             }
             _ => {}
         }
+    }
+
+    /// OSC 8, `params;uri`: opens the link to `uri`, which the text printed
+    /// next is part of, or closes it with no URI. The `id` parameter ties
+    /// the cells of one link together. A link whose scheme the
+    /// configuration does not allow, or longer than the limits of the
+    /// specification (<https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda>),
+    /// closes the link instead.
+    fn set_link(&mut self, fields: &[u8]) {
+        let Some(at) = fields.iter().position(|&byte| byte == b';') else {
+            return;
+        };
+        let (params, uri) = (&fields[..at], &fields[at + 1..]);
+        let id = params
+            .split(|&byte| byte == b':')
+            .find_map(|param| param.strip_prefix(b"id="))
+            .unwrap_or_default();
+        let opens = !uri.is_empty()
+            && uri.len() <= MAX_URI
+            && id.len() <= MAX_LINK_ID
+            && self.allows_scheme(uri);
+        self.link.id.clear();
+        self.link.uri.clear();
+        if opens {
+            self.link.id.extend_from_slice(id);
+            self.link.uri.extend_from_slice(uri);
+        }
+    }
+
+    /// Whether the configuration allows the scheme of `uri`, what comes
+    /// before its first `:`, in any case.
+    fn allows_scheme(&self, uri: &[u8]) -> bool {
+        let Some(colon) = uri.iter().position(|&byte| byte == b':') else {
+            return false;
+        };
+        let scheme = &uri[..colon];
+        self.link_schemes
+            .iter()
+            .any(|allowed| allowed.as_bytes().eq_ignore_ascii_case(scheme))
+    }
+
+    /// OSC 133, FinalTerm's semantic prompts: `A` starts a prompt, which
+    /// also marks its row, `B` the command that the user types, and `C`
+    /// its output, as `D` ends the command. The text printed next is in
+    /// that zone.
+    fn mark_prompt(&mut self, fields: &[u8]) {
+        let kind = fields
+            .split(|&byte| byte == b';')
+            .next()
+            .unwrap_or_default();
+        self.zone = match kind {
+            b"A" => {
+                let y = self.cursor().y;
+                let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+                page.row_mut(row).set(RowFlag::PromptStart, true);
+                Semantic::Prompt
+            }
+            b"B" => Semantic::Input,
+            b"C" | b"D" => Semantic::Output,
+            _ => return,
+        };
     }
 
     /// OSC 0, 1 and 2: the window's title, the icon's, or both.

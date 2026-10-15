@@ -1,7 +1,7 @@
 //! Printing: the path that every character of text takes into the grid.
 
 use super::{Cluster, Cursor, Terminal};
-use crate::page::{Cell, Content, Page, RowFlag, StyleId, Width};
+use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, StyleId, Width};
 use crate::unicode::{Mode, Normalization, properties};
 
 impl Terminal {
@@ -40,8 +40,9 @@ impl Terminal {
         };
         let mut text = text;
         // Another character set, or a single shift, gives the characters
-        // other meanings, so they go one at a time.
-        while !self.charsets.is_plain() {
+        // other meanings, and an open link takes the cells into its page's
+        // table, so they go one at a time.
+        while !self.charsets.is_plain() || self.link.is_open() {
             let Some((&first, rest)) = text.split_first() else {
                 return;
             };
@@ -112,14 +113,17 @@ impl Terminal {
     /// the pen's style, as [`Terminal::start_cluster`] writes a character.
     fn write_cells(&mut self, x: u16, y: u16, text: &[u8], end: u16) {
         let width = text.len() as u16;
-        let (insert, protected) = (self.insert, self.protected);
+        let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         self.with_pen(y, |page, row, style| {
             if insert {
                 page.insert_blanks(row, x, width, end);
             } else {
                 page.clear_halves(row, x, width);
             }
-            let template = Cell::EMPTY.with_style(style).with_protected(protected);
+            let template = Cell::EMPTY
+                .with_style(style)
+                .with_protected(protected)
+                .with_semantic(zone);
             page.write_ascii(row, x, text, template);
         });
     }
@@ -153,14 +157,17 @@ impl Terminal {
 
         let (x, y) = (self.cursor().x, self.cursor().y);
         let end = self.line_end(x);
-        let (insert, protected) = (self.insert, self.protected);
+        let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         self.with_pen(y, |page, row, style| {
             if insert {
                 page.insert_blanks(row, x, width, end);
             } else {
                 page.clear_halves(row, x, width);
             }
-            let blank = Cell::EMPTY.with_style(style).with_protected(protected);
+            let blank = Cell::EMPTY
+                .with_style(style)
+                .with_protected(protected)
+                .with_semantic(zone);
             let cell = blank.with_content(Content::Char(c));
             if width == 2 {
                 page.set_cell(row, x, cell.with_width(Width::Wide));
@@ -169,6 +176,9 @@ impl Terminal {
                 page.set_cell(row, x, cell);
             }
         });
+        if self.link.is_open() {
+            self.link_cells(x, y, width);
+        }
         self.cluster = Some(Cluster { x, y });
         self.normalize(Cluster { x, y });
 
@@ -234,12 +244,17 @@ impl Terminal {
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
             page.set_width(row, x, Width::Wide);
         }
-        // The second half has the style and the protection of the first.
+        // The second half has the style, the protection, the zone and the
+        // link of the first.
         let tail = Cell::EMPTY
             .with_width(Width::SpacerTail)
             .with_style(head.style())
-            .with_protected(head.is_protected());
+            .with_protected(head.is_protected())
+            .with_semantic(head.semantic());
         self.put(x + 1, y, tail);
+        if head.has_hyperlink() {
+            self.share_link(x, y);
+        }
         let cursor = &mut self.screen_mut().cursor;
         if cursor.y == y && cursor.x == x + 1 && !cursor.pending_wrap {
             if x + 2 >= end {
@@ -355,6 +370,50 @@ impl Terminal {
     fn clear_overlaps(&mut self, x: u16, y: u16, width: u16) {
         let (page, row) = self.screen_mut().rows.screen_row_mut(y);
         page.clear_halves(row, x, width);
+    }
+
+    /// Makes the `width` cells from column `x` of row `y` part of the open
+    /// link, in their page's table, which grows when it is full.
+    fn link_cells(&mut self, x: u16, y: u16, width: u16) {
+        let link = std::mem::take(&mut self.link);
+        let target = Hyperlink {
+            id: &link.id,
+            uri: &link.uri,
+        };
+        let rows = &mut self.screen_mut().rows;
+        loop {
+            let (page, row) = rows.screen_row_mut(y);
+            let id = match page.hyperlinks_mut().acquire(target) {
+                Ok(id) => id,
+                Err(full) => {
+                    rows.grow_page(y, full);
+                    continue;
+                }
+            };
+            let linked = (x..x + width).try_for_each(|x| page.set_hyperlink(row, x, Some(id)));
+            page.hyperlinks_mut().release(id);
+            match linked {
+                Ok(()) => break,
+                Err(full) => rows.grow_page(y, full),
+            }
+        }
+        self.link = link;
+    }
+
+    /// Makes the second half of the wide cluster at column `x` of row `y`
+    /// part of the first half's link.
+    fn share_link(&mut self, x: u16, y: u16) {
+        let rows = &mut self.screen_mut().rows;
+        loop {
+            let (page, row) = rows.screen_row_mut(y);
+            let Some(id) = page.hyperlink(row, x) else {
+                return;
+            };
+            match page.set_hyperlink(row, x + 1, Some(id)) {
+                Ok(()) => return,
+                Err(full) => rows.grow_page(y, full),
+            }
+        }
     }
 
     /// Runs `write` on the page of row `y`, with the row in it and the

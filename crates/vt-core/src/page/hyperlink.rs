@@ -98,6 +98,19 @@ impl HyperlinkTable {
         self.cells.capacity()
     }
 
+    /// How many links the table holds.
+    pub fn len(&self) -> usize {
+        self.ids
+            .ever_used()
+            .filter(|&id| self.links[usize::from(id)].refs > 0)
+            .count()
+    }
+
+    /// Whether the table holds no link.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// The target of the link with `id`.
     pub fn get(&self, id: HyperlinkId) -> Hyperlink<'_> {
         let link = self.link(id);

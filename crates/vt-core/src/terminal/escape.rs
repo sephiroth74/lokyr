@@ -93,6 +93,7 @@ impl Terminal {
             term: std::mem::take(&mut self.term),
             title_reports: self.title_reports,
             clipboard_reads: self.clipboard_reads,
+            link_schemes: std::mem::take(&mut self.link_schemes),
         };
         let (bells, replies, cell_size) = (
             self.bells,
