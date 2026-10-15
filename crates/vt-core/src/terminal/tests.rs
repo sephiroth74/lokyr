@@ -2331,6 +2331,47 @@ fn the_title_stack_pushes_and_pops() {
 }
 
 #[test]
+fn the_title_stack_saves_and_brings_back_the_titles_asked_for() {
+    let mut term = Term::new(10, 1);
+    let titles = |term: &Term| {
+        (
+            term.terminal.title().to_owned(),
+            term.terminal.icon_title().to_owned(),
+        )
+    };
+    // The window's title alone is saved, so the icon's stays.
+    term.feed("\x1b]1;icon-old\x07\x1b]2;win-old\x07\x1b[22;2t");
+    term.feed("\x1b]1;icon-new\x07\x1b]2;win-new\x07");
+    term.terminal.take_events();
+    term.feed("\x1b[23;0t");
+    assert_eq!(titles(&term), ("win-old".into(), "icon-new".into()));
+    assert_eq!(term.terminal.take_events(), [Event::TitleChanged]);
+    // Nothing to bring back: no event.
+    term.feed("\x1b[22;1t\x1b[23;2t\x1b[22;7t\x1b[23t");
+    assert_eq!(term.terminal.take_events(), []);
+    assert_eq!(titles(&term), ("win-old".into(), "icon-new".into()));
+    // As vim does: the shell's title comes back, and the embedder hears.
+    term.feed("\x1b]2;shell\x07\x1b[22;0t\x1b]2;vim\x07");
+    term.terminal.take_events();
+    term.feed("\x1b[23;0t");
+    assert_eq!(term.terminal.title(), "shell");
+    assert_eq!(term.terminal.take_events(), [Event::TitleChanged]);
+}
+
+#[test]
+fn nel_indexes_before_it_returns_the_carriage() {
+    // Right of the right margin, at the bottom margin, IND does nothing,
+    // so NEL does not scroll either.
+    let mut term = Term::new(6, 3);
+    term.feed("aaa\r\nbbb\r\nccc\x1b[?69h\x1b[1;3s\x1b[3;5H\x1bE");
+    assert_eq!(term.screen(), ["aaa", "bbb", "ccc"]);
+    assert_eq!(term.cursor(), (0, 2, false));
+    // Within the margins, it scrolls.
+    term.feed("\x1b[3;2H\x1bE");
+    assert_eq!(term.screen(), ["bbb", "ccc", ""]);
+}
+
+#[test]
 fn decrqss_reports_settings_as_the_sequences_that_set_them() {
     let mut term = Term::new(10, 5);
     term.feed("\x1b[1;4:3;38;5;196;48;2;1;2;3;58:5:9m\x1bP$qm\x1b\\");
@@ -2385,7 +2426,7 @@ fn xtgettcap_reports_capabilities_by_name() {
         )
     );
     // Names must be hexadecimal; the first that is not ends the reply.
-    term.feed("\x1bP+q436F;zz;544E\x1b\\\x1bP+q5\x1b\\");
+    term.feed("\x1bP+q436F;zz;544E\x1b\\\x1bP+q5\x1b\\\x1bP+q+5\x1b\\");
     assert_eq!(
         replies(&mut term),
         format!("\x1bP1+r436F={}\x1b\\", hex("256"))
@@ -2463,6 +2504,12 @@ fn osc_7_gives_the_working_directory() {
     term.feed("\x1b]7;http://example.com/x\x07\x1b]7;file://host\x07");
     assert_eq!(term.terminal.take_events(), []);
     assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/100%");
+    // A pair with a sign is not hexadecimal.
+    term.feed("\x1b]7;file:///tmp/%+41\x07");
+    assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/%+41");
+    // RIS keeps the directory, which is the shell's.
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/%+41");
 }
 
 #[test]
@@ -2836,6 +2883,24 @@ fn osc_8_links_only_the_schemes_the_configuration_allows() {
     assert_eq!(term.terminal.open_link(), None, "RIS closes the link");
     term.feed("\x1b]8;;ssh://host\x07");
     assert!(term.terminal.open_link().is_some(), "and keeps the schemes");
+}
+
+#[test]
+fn osc_8_opens_no_link_with_control_characters() {
+    let mut term = Term::new(10, 1);
+    // DEL, CSI and NEL as C1 characters in UTF-8, and a byte that is not
+    // UTF-8.
+    for link in [
+        &b"\x1b]8;;http://a\x7fb\x07"[..],
+        b"\x1b]8;;http://a\xc2\x9bb\x07",
+        b"\x1b]8;id=a\xc2\x85;http://a\x07",
+        b"\x1b]8;;http://a\xffb\x07",
+    ] {
+        term.feed("\x1b]8;;http://open\x07").feed(link);
+        assert_eq!(term.terminal.open_link(), None, "{link:?}");
+    }
+    term.feed("\x1b]8;;http://\u{e9}t\u{e9}.example\x07");
+    assert!(term.terminal.open_link().is_some(), "letters beyond ASCII");
 }
 
 #[test]

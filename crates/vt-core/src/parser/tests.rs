@@ -982,6 +982,20 @@ fn new_limits_apply_from_the_next_string() {
 }
 
 #[test]
+fn a_string_keeps_its_limits_when_its_osc_number_comes_after_new_ones() {
+    let mut parser = Parser::with_limits(small_limits());
+    let mut calls = Calls::default();
+    parser.advance(&mut calls, b"\x1b]5");
+    parser.set_limits(Limits::default());
+    parser.advance(&mut calls, b"2;c;AAAAAAAA\x07");
+    assert_eq!(calls.0.last().map(String::as_str), Some("osc_end TooLong"));
+    // The next string has the new limits.
+    calls.0.clear();
+    parser.advance(&mut calls, b"\x1b]52;c;AAAAAAAA\x07");
+    assert_eq!(calls.0.last().map(String::as_str), Some("osc_end Bel"));
+}
+
+#[test]
 fn a_100_mib_payload_is_dropped_in_constant_memory() {
     /// Counts what arrives, so that the test keeps nothing either.
     #[derive(Default)]

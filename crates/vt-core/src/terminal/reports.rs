@@ -8,7 +8,8 @@
 
 use std::fmt::Write as _;
 
-use super::{CursorShape, Terminal};
+use super::osc::hex_byte;
+use super::{CursorShape, Event, Terminal};
 use crate::page::{Color, Style, Underline};
 use crate::parser::{Params, StringEnd};
 
@@ -89,33 +90,44 @@ impl Terminal {
                 let reply = format!("\x1b]l{}\x1b\\", printable(&self.title));
                 self.reply(reply.as_bytes());
             }
-            22 => self.push_title(),
+            22 => self.push_title(params.value(1)),
             23 => self.pop_title(params.value(1)),
             _ => {}
         }
     }
 
-    /// CSI 22 t: pushes the titles, dropping the oldest when the stack is
-    /// full.
-    fn push_title(&mut self) {
+    /// CSI 22 t: pushes both titles with 0, the icon's with 1 and the
+    /// window's with 2, as xterm does, dropping the oldest entry when the
+    /// stack is full.
+    fn push_title(&mut self, which: u16) {
         if self.title_stack.len() == TITLE_STACK {
             self.title_stack.remove(0);
         }
-        self.title_stack
-            .push((self.title.clone(), self.icon_title.clone()));
+        let (title, icon) = titles(which);
+        self.title_stack.push((
+            title.then(|| self.title.clone()),
+            icon.then(|| self.icon_title.clone()),
+        ));
     }
 
-    /// CSI 23 t: pops the titles, and brings back both with 0, the icon's
-    /// with 1 and the window's with 2.
+    /// CSI 23 t: pops an entry, and brings back both titles with 0, the
+    /// icon's with 1 and the window's with 2, of those that it holds.
     fn pop_title(&mut self, which: u16) {
         let Some((title, icon_title)) = self.title_stack.pop() else {
             return;
         };
-        if which != 1 {
+        let (window, icon) = titles(which);
+        let mut changed = false;
+        if let Some(title) = title.filter(|_| window) {
             self.title = title;
+            changed = true;
         }
-        if which != 2 {
+        if let Some(icon_title) = icon_title.filter(|_| icon) {
             self.icon_title = icon_title;
+            changed = true;
+        }
+        if changed {
+            self.events.push(Event::TitleChanged);
         }
     }
 
@@ -294,17 +306,24 @@ fn printable(title: &str) -> String {
     title.chars().filter(|c| !c.is_control()).collect()
 }
 
+/// Which titles a title stack operation with `which` concerns, the
+/// window's and the icon's: 0 for both, 1 for the icon's, 2 for the
+/// window's, and none for the other values.
+fn titles(which: u16) -> (bool, bool) {
+    match which {
+        0 => (true, true),
+        1 => (false, true),
+        2 => (true, false),
+        _ => (false, false),
+    }
+}
+
 /// The bytes that `hex`, pairs of hexadecimal digits, stand for.
 fn unhex(hex: &[u8]) -> Option<Vec<u8>> {
     if hex.is_empty() || !hex.len().is_multiple_of(2) {
         return None;
     }
-    hex.chunks(2)
-        .map(|pair| {
-            let digits = std::str::from_utf8(pair).ok()?;
-            u8::from_str_radix(digits, 16).ok()
-        })
-        .collect()
+    hex.chunks(2).map(hex_byte).collect()
 }
 
 /// `bytes` in uppercase hexadecimal.

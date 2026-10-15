@@ -306,7 +306,7 @@ pub struct Terminal {
     title: String,
     icon_title: String,
     /// The titles that CSI 22 t pushed, the latest last.
-    title_stack: Vec<(String, String)>,
+    title_stack: Vec<(Option<String>, Option<String>)>,
     /// The OSC string being read.
     osc: Vec<u8>,
     /// What the embedder has to act on, oldest first.

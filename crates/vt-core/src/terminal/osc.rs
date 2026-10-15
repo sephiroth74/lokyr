@@ -152,7 +152,7 @@ impl Terminal {
     /// the cells of one link together. A link whose scheme the
     /// configuration does not allow, or longer than the limits of the
     /// specification (<https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda>),
-    /// closes the link instead.
+    /// or with control characters, closes the link instead.
     fn set_link(&mut self, fields: &[u8]) {
         let Some(at) = fields.iter().position(|&byte| byte == b';') else {
             return;
@@ -165,6 +165,8 @@ impl Terminal {
         let opens = !uri.is_empty()
             && uri.len() <= MAX_URI
             && id.len() <= MAX_LINK_ID
+            && without_controls(uri)
+            && without_controls(id)
             && self.allows_scheme(uri);
         self.link.id.clear();
         self.link.uri.clear();
@@ -297,6 +299,21 @@ pub(super) fn text(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Whether `bytes` are UTF-8 without control characters.
+fn without_controls(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).is_ok_and(|text| !text.chars().any(char::is_control))
+}
+
+/// The byte that `pair`, two hexadecimal digits, stands for.
+pub(super) fn hex_byte(pair: &[u8]) -> Option<u8> {
+    let &[high, low] = pair else {
+        return None;
+    };
+    let digit = |byte: u8| char::from(byte).to_digit(16);
+    // Two digits make at most 0xFF.
+    Some((digit(high)? * 16 + digit(low)?) as u8)
+}
+
 /// The number that `digits` write in decimal, if they all are digits.
 pub(super) fn decimal(digits: &[u8]) -> Option<u32> {
     if digits.is_empty() || digits.len() > 9 || !digits.iter().all(u8::is_ascii_digit) {
@@ -311,10 +328,7 @@ fn percent_decoded(bytes: &[u8]) -> Vec<u8> {
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
     while let Some((&byte, after)) = rest.split_first() {
-        let escaped = after
-            .get(..2)
-            .and_then(|hex| std::str::from_utf8(hex).ok())
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        let escaped = after.get(..2).and_then(hex_byte);
         match (byte, escaped) {
             (b'%', Some(value)) => {
                 decoded.push(value);

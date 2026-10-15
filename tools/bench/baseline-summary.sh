@@ -2,7 +2,7 @@
 # Prints the reports that tools/bench/baseline.sh wrote as Markdown tables,
 # one row per terminal: startup, memory and idle wakeups.
 #
-#   tools/bench/baseline-summary.sh docs/bench/baseline-F0
+#   tools/bench/baseline-summary.sh <dir>
 set -euo pipefail
 
 dir="${1:?usage: baseline-summary.sh <dir>}"

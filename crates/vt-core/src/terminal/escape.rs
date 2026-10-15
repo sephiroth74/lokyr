@@ -20,10 +20,11 @@ impl Terminal {
                 self.moved();
                 self.index();
             }
-            // NEL: to the start of the next row.
+            // NEL: to the start of the next row, indexing first as xterm
+            // does, which matters right of the right margin.
             ([], b'E') => {
-                self.carriage_return();
                 self.index();
+                self.carriage_return();
             }
             ([], b'H') => self.set_tab_stop(),
             ([], b'M') => self.reverse_index(),
@@ -81,10 +82,11 @@ impl Terminal {
     /// scrollback empty, no title and the theme's colors. It keeps its
     /// configuration: the size, the scrollback limits, the widths it was
     /// made with, the normalization, the `TERM`, the title and clipboard
-    /// reports, the link schemes, the cell size and the theme. The bells
-    /// that rang and the synchronized updates stay counted, and the replies
-    /// and events not yet taken stay queued, with events for the titles,
-    /// the tab color and the colors that RIS changed.
+    /// reports, the link schemes, the cell size and the theme. It keeps the
+    /// working directory too, which describes the shell rather than the
+    /// terminal. The bells that rang and the synchronized updates stay
+    /// counted, and the replies and events not yet taken stay queued, with
+    /// events for the titles, the tab color and the colors that RIS changed.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
@@ -101,6 +103,7 @@ impl Terminal {
             std::mem::take(&mut self.replies),
             self.cell_size,
         );
+        let working_directory = self.working_directory.take();
         let mut events = std::mem::take(&mut self.events);
         if !self.title.is_empty() || !self.icon_title.is_empty() {
             events.push(Event::TitleChanged);
@@ -115,6 +118,7 @@ impl Terminal {
         *self = Self::new(self.cols, self.rows, options);
         (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
         self.synchronized_updates = updates;
+        self.working_directory = working_directory;
         self.events = events;
         self.set_default_colors(colors);
     }

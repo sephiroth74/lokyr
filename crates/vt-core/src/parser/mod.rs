@@ -79,6 +79,9 @@ pub struct Parser {
     ignoring: bool,
     utf8: Utf8Decoder,
     limits: Limits,
+    /// Limits that [`Parser::set_limits`] gave, which apply from the next
+    /// control string.
+    next_limits: Option<Limits>,
     /// How many bytes of its payload the current control string has
     /// delivered.
     payload_len: usize,
@@ -101,15 +104,25 @@ impl Parser {
         }
     }
 
-    /// The size limits of control strings.
+    /// The size limits of control strings, as [`Parser::set_limits`] last
+    /// set them.
     pub fn limits(&self) -> &Limits {
-        &self.limits
+        self.next_limits.as_ref().unwrap_or(&self.limits)
     }
 
-    /// Replaces the size limits of control strings. A string in progress
-    /// keeps the limit it started with.
+    /// Replaces the size limits of control strings, from the next string
+    /// on. A string in progress keeps the limits it started with, the limit
+    /// of an OSC number that comes after the change included.
     pub fn set_limits(&mut self, limits: Limits) {
-        self.limits = limits;
+        self.next_limits = Some(limits);
+    }
+
+    /// The limits for a control string that starts now.
+    fn string_limits(&mut self) -> &Limits {
+        if let Some(limits) = self.next_limits.take() {
+            self.limits = limits;
+        }
+        &self.limits
     }
 
     /// Parses `bytes`, calling `handler` for what they contain.
@@ -195,7 +208,8 @@ impl Parser {
                 if self.ignoring {
                     self.state = State::DcsIgnore;
                 } else {
-                    self.start_string(self.limits.dcs);
+                    let limit = self.string_limits().dcs;
+                    self.start_string(limit);
                     handler.dcs_start(&self.params, self.intermediates(), byte);
                 }
             }
@@ -209,7 +223,8 @@ impl Parser {
                 handler.execute(byte);
             }
             OscStart => {
-                self.start_string(self.limits.osc);
+                let limit = self.string_limits().osc;
+                self.start_string(limit);
                 self.osc_number = OscNumber::start();
                 handler.osc_start();
             }
@@ -224,7 +239,8 @@ impl Parser {
                 handler.execute(byte);
             }
             ApcStart => {
-                self.start_string(self.limits.apc);
+                let limit = self.string_limits().apc;
+                self.start_string(limit);
                 handler.apc_start();
             }
             ApcPut => self.put(handler, Payload::Apc, &[byte]),
