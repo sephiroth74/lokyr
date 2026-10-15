@@ -34,14 +34,19 @@ impl Terminal {
     }
 
     /// DSR: 5 asks whether the terminal is well, 6 where the cursor is
-    /// (CPR), from the top left of the margins in origin mode.
+    /// (CPR), from the top left of the margins in origin mode. DECRC can
+    /// bring the cursor back above or left of margins set since, which
+    /// reports as their top left.
     pub(super) fn device_status(&mut self, which: u16) {
         match which {
             5 => self.reply(b"\x1b[0n"),
             6 => {
                 let cursor = self.cursor();
                 let (row, column) = if self.origin {
-                    (cursor.y - self.margins.top, cursor.x - self.margins.left)
+                    (
+                        cursor.y.saturating_sub(self.margins.top),
+                        cursor.x.saturating_sub(self.margins.left),
+                    )
                 } else {
                     (cursor.y, cursor.x)
                 };

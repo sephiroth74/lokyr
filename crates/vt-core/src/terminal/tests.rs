@@ -2068,6 +2068,82 @@ fn reverse_wraparound_moves_left_into_the_row_that_wraps() {
 }
 
 #[test]
+fn the_kitty_keyboard_flags_are_pushed_popped_set_and_reported() {
+    let mut term = Term::new(10, 2);
+    let mut report = |sequence: &str| {
+        term.feed(sequence).feed("\x1b[?u");
+        replies(&mut term)
+    };
+    assert_eq!(report(""), "\x1b[?0u");
+    assert_eq!(report("\x1b[>1u"), "\x1b[?1u");
+    assert_eq!(report("\x1b[=10;2u"), "\x1b[?11u", "adds flags");
+    assert_eq!(report("\x1b[=3;3u"), "\x1b[?8u", "removes flags");
+    assert_eq!(report("\x1b[=5u"), "\x1b[?5u", "replaces them");
+    assert_eq!(report("\x1b[=31;9u"), "\x1b[?5u", "an unknown mode");
+    assert_eq!(report("\x1b[>255u"), "\x1b[?31u", "only the defined flags");
+    assert_eq!(report("\x1b[>u"), "\x1b[?0u");
+    assert_eq!(report("\x1b[<2u"), "\x1b[?5u");
+    assert_eq!(report("\x1b[<0u"), "\x1b[?0u", "pops one");
+    assert_eq!(report("\x1b[>3u\x1b[<9u"), "\x1b[?0u");
+    term.feed("\x1b[>9u");
+    assert_eq!(term.terminal.keyboard_flags(), KeyboardFlags::from_bits(9));
+    term.feed("\x1b[2;3H\x1b7\x1b[H\x1b[u");
+    assert_eq!(term.cursor(), (2, 1, false), "CSI u alone is still SCORC");
+}
+
+#[test]
+fn each_screen_keeps_its_own_keyboard_flags() {
+    let mut term = Term::new(10, 2);
+    let flags = |term: &Term| term.terminal.keyboard_flags().bits();
+    term.feed("\x1b[>1u\x1b[?1049h");
+    assert_eq!(flags(&term), 0);
+    term.feed("\x1b[>8u\x1b[>4u\x1b[?1049l");
+    assert_eq!(flags(&term), 1);
+    term.feed("\x1b[<u\x1b[?47h");
+    assert_eq!(flags(&term), 4, "the alternate screen kept its stack");
+    term.feed("\x1b[<u");
+    assert_eq!(flags(&term), 8);
+    term.feed("\x1bc");
+    assert_eq!(flags(&term), 0);
+    term.feed("\x1b[?47h");
+    assert_eq!(flags(&term), 0, "RIS resets both stacks");
+}
+
+#[test]
+fn synchronized_output_starts_ends_and_reports() {
+    let mut term = Term::new(10, 2);
+    let state = |term: &mut Term| {
+        term.feed("\x1b[?2026$p");
+        let terminal = &term.terminal;
+        let state = (
+            terminal.synchronized_output(),
+            terminal.synchronized_updates(),
+        );
+        (state, replies(term))
+    };
+    assert_eq!(state(&mut term), ((false, 0), "\x1b[?2026;2$y".to_owned()));
+    term.feed("\x1b[?2026h");
+    assert_eq!(state(&mut term), ((true, 1), "\x1b[?2026;1$y".to_owned()));
+    term.feed("\x1b[?2026h");
+    assert_eq!(state(&mut term).0, (true, 2), "each start counts");
+    term.feed("\x1b[?2026l");
+    assert_eq!(state(&mut term), ((false, 2), "\x1b[?2026;2$y".to_owned()));
+    term.feed("\x1b[?2026h");
+    term.terminal.end_synchronized_output();
+    assert_eq!(
+        state(&mut term),
+        ((false, 3), "\x1b[?2026;2$y".to_owned()),
+        "the deadline passed"
+    );
+    term.feed("\x1b[?2026h\x1bc");
+    assert_eq!(
+        state(&mut term).0,
+        (false, 4),
+        "RIS ends it, and keeps count"
+    );
+}
+
+#[test]
 fn replies_wait_until_they_are_taken() {
     let mut term = Term::new(4, 1);
     term.feed("\x1b[?25$p");
@@ -2096,6 +2172,11 @@ fn dsr_reports_the_status_and_the_cursor() {
     let mut term = with_margins();
     term.feed("\x1b[?6h\x1b[2;3H\x1b[6n");
     assert_eq!(replies(&mut term), "\x1b[2;3R");
+    // DECRC brings back a cursor outside margins set after DECSC.
+    let mut term = Term::new(10, 5);
+    term.feed("\x1b[?6h\x1b[?69h\x1b7\x1b[2;4r\x1b[3;5s\x1b8\x1b[6n");
+    assert_eq!(replies(&mut term), "\x1b[1;1R");
+    assert_eq!(term.cursor(), (0, 0, false));
 }
 
 #[test]
@@ -3069,6 +3150,12 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[?2027h",
     "\x1b[6n",
     "\x1b[c",
+    "\x1b[>1u",
+    "\x1b[<u",
+    "\x1b[=3;2u",
+    "\x1b[?u",
+    "\x1b[?2026h",
+    "\x1b[?2026l",
     "\x1bP$qm\x1b\\",
     "\x1b[22t",
     "\x1b[23t",

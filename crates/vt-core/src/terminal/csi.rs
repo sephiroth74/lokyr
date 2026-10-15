@@ -76,6 +76,10 @@ impl Terminal {
             }
             ([], b's') => self.save_cursor(),
             ([], b'u') if params.len() <= 1 && params.value(0) == 0 => self.restore_cursor(),
+            ([b'>'], b'u') => self.push_keyboard_flags(params.value(0)),
+            ([b'<'], b'u') => self.pop_keyboard_flags(n(0)),
+            ([b'='], b'u') => self.set_keyboard_flags(params.value(0), n(1)),
+            ([b'?'], b'u') => self.report_keyboard_flags(),
             // DECSCA: 1 protects the text printed next, 0 and 2 do not.
             ([b'"'], b'q') => match params.value(0) {
                 1 => self.protected = true,

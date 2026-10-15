@@ -10,6 +10,7 @@ mod cursor;
 mod edit;
 mod erase;
 mod escape;
+mod keyboard;
 mod modes;
 mod osc;
 mod print;
@@ -19,6 +20,7 @@ mod sgr;
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::Colors;
+pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
@@ -202,13 +204,14 @@ struct SavedCursor {
     protected: bool,
 }
 
-/// A screen: its rows, its cursor, and the cursor that DECSC saved, if
-/// any. Each screen saves its own.
+/// A screen: its rows, its cursor, the cursor that DECSC saved, if any,
+/// and the flags of the kitty keyboard protocol. Each screen keeps its own.
 #[derive(Debug)]
 struct Screen {
     rows: PageList,
     cursor: Cursor,
     saved: Option<SavedCursor>,
+    keyboard: keyboard::KeyboardStack,
 }
 
 /// The cell where the last cluster was printed, which a codepoint that
@@ -272,6 +275,8 @@ pub struct Terminal {
     /// Synchronized output (mode 2026): the screen should not be drawn
     /// until the program ends the update.
     synchronized_output: bool,
+    /// How many synchronized updates programs started.
+    synchronized_updates: u64,
     /// The widths the terminal was made with, which RIS brings back after
     /// mode 2027 changed them.
     configured_widths: Widths,
@@ -332,6 +337,7 @@ impl Terminal {
             rows: PageList::new(cols, rows, scrollback),
             cursor: Cursor::default(),
             saved: None,
+            keyboard: keyboard::KeyboardStack::default(),
         };
         let no_scrollback = Scrollback {
             limit: 0,
@@ -362,6 +368,7 @@ impl Terminal {
             cursor_blink: false,
             reverse_wrap: false,
             synchronized_output: false,
+            synchronized_updates: 0,
             configured_widths: options.widths,
             replies: Vec::new(),
             term: options.term,
@@ -540,6 +547,19 @@ impl Terminal {
     /// Whether a synchronized update (mode 2026) is under way.
     pub fn synchronized_output(&self) -> bool {
         self.synchronized_output
+    }
+
+    /// How many synchronized updates programs have started, one for each
+    /// `CSI ? 2026 h`, so that whoever draws the screen can tell a new
+    /// update from the one it waits for, and give each its own deadline.
+    pub fn synchronized_updates(&self) -> u64 {
+        self.synchronized_updates
+    }
+
+    /// Ends the synchronized update under way, as whoever draws the screen
+    /// does when the update takes too long.
+    pub fn end_synchronized_output(&mut self) {
+        self.synchronized_output = false;
     }
 
     /// The window's title.

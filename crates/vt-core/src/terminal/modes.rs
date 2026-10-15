@@ -78,7 +78,10 @@ impl Terminal {
             1007 => self.input.alternate_scroll = on,
             1036 => self.input.meta_sends_escape = on,
             2004 => self.input.bracketed_paste = on,
-            2026 => self.synchronized_output = on,
+            2026 => {
+                self.synchronized_output = on;
+                self.synchronized_updates += u64::from(on);
+            }
             2027 => {
                 self.widths.mode = if on { Mode::Unicode } else { Mode::Legacy };
                 self.moved();

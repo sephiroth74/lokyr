@@ -81,10 +81,10 @@ impl Terminal {
     /// scrollback empty, no title and the theme's colors. It keeps its
     /// configuration: the size, the scrollback limits, the widths it was
     /// made with, the normalization, the `TERM`, the title and clipboard
-    /// reports, the cell size and the theme. The bells that rang stay
-    /// counted, and the replies and events not yet taken stay queued, with
-    /// events for the titles, the tab color and the colors that RIS
-    /// changed.
+    /// reports, the link schemes, the cell size and the theme. The bells
+    /// that rang and the synchronized updates stay counted, and the replies
+    /// and events not yet taken stay queued, with events for the titles,
+    /// the tab color and the colors that RIS changed.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
@@ -95,8 +95,9 @@ impl Terminal {
             clipboard_reads: self.clipboard_reads,
             link_schemes: std::mem::take(&mut self.link_schemes),
         };
-        let (bells, replies, cell_size) = (
+        let (bells, updates, replies, cell_size) = (
             self.bells,
+            self.synchronized_updates,
             std::mem::take(&mut self.replies),
             self.cell_size,
         );
@@ -113,6 +114,7 @@ impl Terminal {
         let colors = std::mem::take(&mut self.default_colors);
         *self = Self::new(self.cols, self.rows, options);
         (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
+        self.synchronized_updates = updates;
         self.events = events;
         self.set_default_colors(colors);
     }
