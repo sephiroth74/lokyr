@@ -78,12 +78,13 @@ impl Terminal {
     }
 
     /// RIS: puts the terminal back as it was made, with its screens and
-    /// scrollback empty, and no title. It keeps its configuration: the
-    /// size, the scrollback limits, the widths it was made with, the
-    /// normalization, the `TERM`, the title reports and the cell size. The
-    /// bells that rang stay counted, and the replies and events not yet
-    /// taken stay queued, with events for the titles and the tab color that
-    /// RIS dropped.
+    /// scrollback empty, no title and the theme's colors. It keeps its
+    /// configuration: the size, the scrollback limits, the widths it was
+    /// made with, the normalization, the `TERM`, the title and clipboard
+    /// reports, the cell size and the theme. The bells that rang stay
+    /// counted, and the replies and events not yet taken stay queued, with
+    /// events for the titles, the tab color and the colors that RIS
+    /// changed.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
@@ -91,6 +92,7 @@ impl Terminal {
             normalization: self.normalization,
             term: std::mem::take(&mut self.term),
             title_reports: self.title_reports,
+            clipboard_reads: self.clipboard_reads,
         };
         let (bells, replies, cell_size) = (
             self.bells,
@@ -104,9 +106,14 @@ impl Terminal {
         if self.tab_color.is_some() {
             events.push(Event::TabColor(None));
         }
+        if self.colors != self.default_colors {
+            events.push(Event::ColorsChanged);
+        }
+        let colors = std::mem::take(&mut self.default_colors);
         *self = Self::new(self.cols, self.rows, options);
         (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
         self.events = events;
+        self.set_default_colors(colors);
     }
 
     /// DECALN: fills the screen with `E`, in the default style, makes the

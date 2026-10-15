@@ -2,7 +2,7 @@
 //! embedder, besides text: titles, the working directory, notifications,
 //! progress and the tab's color.
 
-use super::Terminal;
+use super::{ClipboardRequest, ClipboardTarget, Terminal};
 use crate::page::Rgb;
 use crate::parser::StringEnd;
 
@@ -28,6 +28,19 @@ pub enum Event {
     Progress(Progress),
     /// The tab's color changed, or went back to the default (OSC 6;1).
     TabColor(Option<Rgb>),
+    /// A program changed the colors (OSC 4, 10 to 12, and their resets).
+    ColorsChanged,
+    /// A program wrote to the clipboards (OSC 52).
+    ClipboardWrite {
+        /// The clipboards.
+        target: ClipboardTarget,
+        /// What it wrote, decoded.
+        data: Vec<u8>,
+    },
+    /// A program asks to read the clipboards (OSC 52), which the
+    /// configuration allows; the embedder answers with
+    /// [`Terminal::reply_clipboard`].
+    ClipboardRead(ClipboardRequest),
 }
 
 /// Where a shell works, as OSC 7 tells it: a host and a path on it.
@@ -77,7 +90,7 @@ impl Terminal {
         }
     }
 
-    fn dispatch_osc(&mut self, osc: &[u8], _end: StringEnd) {
+    fn dispatch_osc(&mut self, osc: &[u8], end: StringEnd) {
         let (number, rest) = match osc.iter().position(|&byte| byte == b';') {
             Some(at) => (&osc[..at], &osc[at + 1..]),
             None => (osc, &[][..]),
@@ -87,7 +100,16 @@ impl Terminal {
             b"1" => self.set_titles(rest, false, true),
             b"2" => self.set_titles(rest, true, false),
             b"6" => self.set_tab_color(rest),
+            b"4" => self.set_palette(rest, end),
             b"7" => self.set_working_directory(rest),
+            b"10" => self.set_dynamic_colors(10, rest, end),
+            b"11" => self.set_dynamic_colors(11, rest, end),
+            b"12" => self.set_dynamic_colors(12, rest, end),
+            b"52" => self.clipboard(rest, end),
+            b"104" => self.reset_palette(rest),
+            b"110" => self.reset_dynamic_color(10),
+            b"111" => self.reset_dynamic_color(11),
+            b"112" => self.reset_dynamic_color(12),
             b"9" => match rest.strip_prefix(b"4") {
                 Some([] | [b';', ..]) => self.report_progress(rest),
                 _ => self.notify(String::new(), text(rest)),

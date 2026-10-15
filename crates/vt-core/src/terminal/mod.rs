@@ -2,6 +2,8 @@
 //! the parser's actions do to them.
 
 mod charsets;
+mod clipboard;
+mod colors;
 mod control;
 mod csi;
 mod cursor;
@@ -15,6 +17,8 @@ mod reports;
 mod sgr;
 
 pub use charsets::{Charset, Charsets, Shift};
+pub use clipboard::{ClipboardRequest, ClipboardTarget};
+pub use colors::Colors;
 pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
@@ -39,6 +43,9 @@ pub struct Options {
     /// Whether programs may read the title back (CSI 20 t and 21 t), the
     /// classic way of injecting text into a shell: off by default.
     pub title_reports: bool,
+    /// Whether programs may ask to read the clipboard (OSC 52 with `?`),
+    /// which the embedder still confirms: off by default.
+    pub clipboard_reads: bool,
 }
 
 impl Default for Options {
@@ -49,6 +56,7 @@ impl Default for Options {
             normalization: Normalization::default(),
             term: "xterm-256color".to_owned(),
             title_reports: false,
+            clipboard_reads: false,
         }
     }
 }
@@ -268,6 +276,12 @@ pub struct Terminal {
     term: String,
     /// Whether programs may read the title back.
     title_reports: bool,
+    /// Whether programs may ask to read the clipboard.
+    clipboard_reads: bool,
+    /// The theme's colors, which the resets bring back, and the colors
+    /// now, which programs can change.
+    default_colors: Colors,
+    colors: Colors,
     /// The size of a cell in pixels, width then height, once the embedder
     /// knows it.
     cell_size: Option<(u16, u16)>,
@@ -340,6 +354,9 @@ impl Terminal {
             replies: Vec::new(),
             term: options.term,
             title_reports: options.title_reports,
+            clipboard_reads: options.clipboard_reads,
+            default_colors: Colors::default(),
+            colors: Colors::default(),
             cell_size: None,
             title: String::new(),
             icon_title: String::new(),
@@ -528,6 +545,18 @@ impl Terminal {
     /// The tab's color, from OSC 6;1.
     pub fn tab_color(&self) -> Option<Rgb> {
         self.tab_color
+    }
+
+    /// The colors to draw with: the theme's, as programs changed them.
+    pub fn colors(&self) -> &Colors {
+        &self.colors
+    }
+
+    /// Sets the theme's colors, which become the colors to draw with, and
+    /// those that the resets bring back.
+    pub fn set_default_colors(&mut self, colors: Colors) {
+        self.colors.clone_from(&colors);
+        self.default_colors = colors;
     }
 
     /// Takes what the embedder has to act on, oldest first.

@@ -2415,6 +2415,186 @@ fn a_large_osc_string_does_not_keep_its_buffer() {
 }
 
 #[test]
+fn the_colors_start_as_xterm_s() {
+    let colors = Colors::default();
+    assert_eq!(colors.palette[1], Rgb::new(205, 0, 0));
+    assert_eq!(colors.palette[12], Rgb::new(92, 92, 255));
+    assert_eq!(colors.palette[16], Rgb::new(0, 0, 0));
+    assert_eq!(colors.palette[196], Rgb::new(255, 0, 0));
+    assert_eq!(colors.palette[231], Rgb::new(255, 255, 255));
+    assert_eq!(colors.palette[232], Rgb::new(8, 8, 8));
+    assert_eq!(colors.palette[255], Rgb::new(238, 238, 238));
+}
+
+#[test]
+fn color_specs_follow_x11() {
+    let color = |spec: &str| colors::parse_color(spec.as_bytes());
+    assert_eq!(color("rgb:ff/80/00"), Some(Rgb::new(255, 128, 0)));
+    assert_eq!(color("rgb:f/8/0"), Some(Rgb::new(255, 136, 0)), "scaled");
+    assert_eq!(color("rgb:ffff/0000/8080"), Some(Rgb::new(255, 0, 128)));
+    assert_eq!(
+        color("#f80"),
+        Some(Rgb::new(240, 128, 0)),
+        "the high digits"
+    );
+    assert_eq!(color("#ff8000"), Some(Rgb::new(255, 128, 0)));
+    assert_eq!(color("#fff888000"), Some(Rgb::new(255, 136, 0)));
+    assert_eq!(color("#ffff88880000"), Some(Rgb::new(255, 136, 0)));
+    for bad in [
+        "red",
+        "rgb:ff/80",
+        "rgb:ff/80/00/00",
+        "rgb:+f/0/0",
+        "rgb:fffff/0/0",
+        "#ff80",
+        "#",
+        "rgb://",
+    ] {
+        assert_eq!(color(bad), None, "{bad}");
+    }
+}
+
+#[test]
+fn osc_4_sets_and_reports_the_palette() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]4;1;rgb:12/34/56;300;#fff;2;red\x1b\\");
+    assert_eq!(
+        term.terminal.colors().palette[1],
+        Rgb::new(0x12, 0x34, 0x56)
+    );
+    assert_eq!(
+        term.terminal.colors().palette[2],
+        Colors::default().palette[2],
+        "a name"
+    );
+    assert_eq!(term.terminal.take_events(), [Event::ColorsChanged]);
+    term.feed("\x1b]4;1;?;3;?\x07");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]4;1;rgb:1212/3434/5656\x07\x1b]4;3;rgb:cdcd/cdcd/0000\x07",
+        "each with the query's end"
+    );
+    term.feed("\x1b]4;5;#000\x07\x1b]104;1\x07");
+    assert_eq!(
+        term.terminal.colors().palette[1],
+        Colors::default().palette[1]
+    );
+    assert_eq!(term.terminal.colors().palette[5], Rgb::new(0, 0, 0));
+    term.feed("\x1b]104\x07");
+    assert_eq!(term.terminal.colors(), &Colors::default());
+}
+
+#[test]
+fn osc_10_to_12_set_and_report_the_dynamic_colors() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]10;#102030;#405060\x07\x1b]12;rgb:ff/00/00\x07");
+    let colors = term.terminal.colors().clone();
+    assert_eq!(
+        (colors.foreground, colors.background, colors.cursor),
+        (
+            Rgb::new(16, 32, 48),
+            Rgb::new(64, 80, 96),
+            Rgb::new(255, 0, 0)
+        ),
+        "10 then 11"
+    );
+    term.feed("\x1b]11;?\x1b\\\x1b]10;?;?\x07");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]11;rgb:4040/5050/6060\x1b\\\x1b]10;rgb:1010/2020/3030\x07\x1b]11;rgb:4040/5050/6060\x07"
+    );
+    term.feed("\x1b]110\x07\x1b]111\x07\x1b]112\x07");
+    assert_eq!(term.terminal.colors(), &Colors::default());
+}
+
+#[test]
+fn the_resets_bring_back_the_theme_and_so_does_ris() {
+    let mut term = Term::new(10, 1);
+    let mut theme = Colors::default();
+    theme.palette[1] = Rgb::new(1, 1, 1);
+    theme.foreground = Rgb::new(2, 2, 2);
+    theme.background = Rgb::new(3, 3, 3);
+    theme.cursor = Rgb::new(4, 4, 4);
+    term.terminal.set_default_colors(theme.clone());
+    assert_eq!(term.terminal.colors(), &theme);
+    term.feed("\x1b]4;1;#fff\x07\x1b]10;#fff;#fff;#fff\x07");
+    term.feed("\x1b]104;1\x07\x1b]110\x07\x1b]111\x07\x1b]112\x07");
+    assert_eq!(term.terminal.colors(), &theme);
+    term.feed("\x1b]4;1;#fff\x07");
+    term.terminal.take_events();
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.colors(), &theme);
+    assert_eq!(term.terminal.take_events(), [Event::ColorsChanged]);
+}
+
+#[test]
+fn osc_52_writes_the_clipboards() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]52;c;aGVsbG8=\x07\x1b]52;;d29ybGQ\x07\x1b]52;ps;eA==\x07\x1b]52;c;\x07");
+    term.feed("\x1b]52;0;eA==\x07\x1b]52;c;!!\x07\x1b]52;c\x07");
+    let clipboard = ClipboardTarget {
+        clipboard: true,
+        primary: false,
+    };
+    let primary = ClipboardTarget {
+        clipboard: false,
+        primary: true,
+    };
+    assert_eq!(
+        term.terminal.take_events(),
+        [
+            Event::ClipboardWrite {
+                target: clipboard,
+                data: b"hello".to_vec()
+            },
+            Event::ClipboardWrite {
+                target: clipboard,
+                data: b"world".to_vec()
+            },
+            Event::ClipboardWrite {
+                target: primary,
+                data: b"x".to_vec()
+            },
+            Event::ClipboardWrite {
+                target: clipboard,
+                data: Vec::new()
+            },
+        ],
+        "the cut buffers, bad base64 and no data at all are left out"
+    );
+}
+
+#[test]
+fn osc_52_reads_only_when_the_configuration_allows_them() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]52;c;?\x07");
+    assert_eq!(term.terminal.take_events(), []);
+    assert_eq!(replies(&mut term), "");
+    let options = Options {
+        clipboard_reads: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1b]52;c;?\x07\x1b]52;p;?\x1b\\");
+    let events = term.terminal.take_events();
+    let [
+        Event::ClipboardRead(clipboard),
+        Event::ClipboardRead(primary),
+    ] = events[..]
+    else {
+        panic!("two reads: {events:?}");
+    };
+    assert!(clipboard.target.clipboard && primary.target.primary);
+    term.terminal.reply_clipboard(clipboard, b"hello");
+    term.terminal.reply_clipboard(primary, b"");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]52;c;aGVsbG8=\x07\x1b]52;p;\x1b\\",
+        "each ends as its request did"
+    );
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -2668,6 +2848,9 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b]2;title\x07",
     "\x1b]7;file:///tmp\x1b\\",
     "\x1b]9;4;1;5\x07",
+    "\x1b]4;1;#123\x07",
+    "\x1b]11;?\x07",
+    "\x1b]52;c;eA==\x07",
     "\x1b[0m",
     "\x1b[1;31m",
     "\x1b[44m",
