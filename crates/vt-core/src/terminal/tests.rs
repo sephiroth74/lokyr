@@ -3,7 +3,9 @@
 use proptest::prelude::*;
 
 use super::*;
-use crate::page::{Color, HyperlinkId, Page, Rgb, Row, RowFlag, Semantic, StyleId, Underline};
+use crate::page::{
+    Color, HyperlinkId, Page, PinId, Position, Rgb, Row, RowFlag, Semantic, StyleId, Underline,
+};
 use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
 
@@ -2141,6 +2143,73 @@ fn synchronized_output_starts_ends_and_reports() {
         (false, 4),
         "RIS ends it, and keeps count"
     );
+}
+
+/// Pins column `x` of row `y` of the primary screen.
+fn pin(term: &mut Term, x: u16, y: u16) -> PinId {
+    let rows = &mut term.terminal.primary.rows;
+    let (page, row) = rows.screen_row_id(y);
+    rows.pin(Position { page, row, col: x }).unwrap()
+}
+
+/// The character that `pin` is on, if the pin is not lost.
+fn pinned_char(term: &Term, pin: PinId) -> Option<char> {
+    let rows = &term.terminal.primary.rows;
+    let position = rows.pin_position(pin)?;
+    let page = rows.page(position.page)?;
+    match page.cells(position.row)[usize::from(position.col)].content() {
+        Content::Char(c) => Some(c),
+        _ => None,
+    }
+}
+
+#[test]
+fn pins_follow_the_text_that_editing_moves() {
+    let mut term = Term::new(10, 6);
+    term.feed("a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    let [a, b, c, d, _, f] = [0, 1, 2, 3, 4, 5].map(|y| pin(&mut term, 0, y));
+    let chars = |term: &Term, pins: &[PinId]| -> Vec<_> {
+        pins.iter().map(|&pin| pinned_char(term, pin)).collect()
+    };
+    // A scroll region scrolls up: b leaves it, and c and d go up.
+    term.feed("\x1b[2;5r\x1b[5H\n");
+    assert_eq!(
+        chars(&term, &[a, b, c, d]),
+        [Some('a'), None, Some('c'), Some('d')]
+    );
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(
+        rows.pin_position(c).map(|p| (p.page, p.row)),
+        Some(rows.screen_row_id(1))
+    );
+    // IL pushes the last row out, and DL takes a out.
+    term.feed("\x1b[r\x1b[H\x1b[L\x1b[2M");
+    assert_eq!(
+        chars(&term, &[a, c, d, f]),
+        [None, Some('c'), Some('d'), None]
+    );
+    // Between the side margins, only the cells there move.
+    term.feed("\x1b[3Hklmno\x1b[6Hfghij");
+    let [m, g, h, i] = [(2, 2), (1, 5), (2, 5), (3, 5)].map(|(x, y)| pin(&mut term, x, y));
+    term.feed("\x1b[?69h\x1b[3;4s\x1b[3;6r\x1b[6;3H\n");
+    assert_eq!(term.screen()[4..], ["  hi", "fg  j"]);
+    assert_eq!(
+        chars(&term, &[m, g, h, i]),
+        [None, Some('g'), Some('h'), Some('i')]
+    );
+    let rows = &term.terminal.primary.rows;
+    let (page, row) = rows.screen_row_id(4);
+    assert_eq!(rows.pin_position(h), Some(Position { page, row, col: 2 }));
+    // ED 3 drops the scrollback, and the pins in it.
+    term.feed("\x1b[?69l\x1b[r\x1b[6H\n\n\n\n\n\n");
+    assert_eq!(
+        chars(&term, &[c, g]),
+        [Some('c'), Some('g')],
+        "in the scrollback"
+    );
+    term.feed("\x1b[3J");
+    assert_eq!(chars(&term, &[c, d, g, h, i]), [None; 5]);
+    assert_eq!(term.terminal.primary.rows.pins(), 0);
 }
 
 #[test]

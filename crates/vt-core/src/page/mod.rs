@@ -7,6 +7,7 @@ mod grapheme;
 mod hyperlink;
 mod index;
 mod list;
+mod pin;
 mod row;
 mod style;
 
@@ -19,6 +20,7 @@ use grapheme::GraphemeTable;
 pub use cell::{Cell, Content, Semantic, Width};
 pub use hyperlink::{Hyperlink, HyperlinkId, HyperlinkTable};
 pub use list::{Budget, PageId, PageList, SCROLLBACK_BUDGET_BYTES, SCROLLBACK_BYTES, Scrollback};
+pub use pin::{PinId, Position};
 pub use row::{Row, RowFlag};
 pub use style::{Color, Rgb, Style, StyleId, StyleTable, Underline};
 
