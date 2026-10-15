@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::pin::{Pins, Place};
-use super::{Capacity, Page, PinId, Position, TableFull};
+use super::{Capacity, Page, PinId, Position, TableFull, WhenFull};
 
 /// No node, at either end of the list.
 const NONE: u32 = u32::MAX;
@@ -340,14 +340,20 @@ impl PageList {
     /// table that is `full`. Its rows keep their contents, and its id stays
     /// the same. If the larger page passes the limits, the oldest pages of
     /// the scrollback make room.
-    pub fn grow_page(&mut self, y: u16, full: TableFull) {
+    ///
+    /// A table that is as large as it can be does not grow: the page stays
+    /// as it is, and the error says so, so that the caller writes without
+    /// what the table has no room for rather than trying again.
+    pub fn grow_page(&mut self, y: u16, full: TableFull) -> Result<(), TableFull> {
         let (index, _) = self.locate(y);
         let page = self.page_at(index);
-        let grown = page.grown(page.capacity().grown_for(full));
+        let capacity = page.capacity().grown_for(full).ok_or(full)?;
+        let grown = page.grown(capacity);
         let added = grown.memory() - page.memory();
         self.nodes[index as usize].page = Some(grown);
         self.take(added);
         self.enforce();
+        Ok(())
     }
 
     /// Moves row `from` of the screen into row `to`: its cells, with their
@@ -356,7 +362,8 @@ impl PageList {
     ///
     /// Within a page, the cells move as they are. Across pages, they are
     /// copied into the tables of the page of `to`, which grows when one of
-    /// them is full.
+    /// them is full; a page that cannot grow takes them without what does
+    /// not fit.
     pub fn move_row(&mut self, from: u16, to: u16) {
         if from == to {
             return;
@@ -368,6 +375,7 @@ impl PageList {
             self.page_at_mut(source).move_row(from_row, to_row);
             return;
         }
+        let mut when_full = WhenFull::Fail;
         loop {
             let [source_node, target_node] = self
                 .nodes
@@ -375,12 +383,16 @@ impl PageList {
                 .expect("two nodes of the list");
             let source_page = source_node.page.as_mut().expect("a linked node has a page");
             let target_page = target_node.page.as_mut().expect("a linked node has a page");
-            match target_page.copy_row(to_row, source_page, from_row) {
+            match target_page.copy_row(to_row, source_page, from_row, when_full) {
                 Ok(()) => {
                     source_page.clear_row(from_row);
                     return;
                 }
-                Err(full) => self.grow_page(to, full),
+                Err(full) => {
+                    if self.grow_page(to, full).is_err() {
+                        when_full = WhenFull::Drop;
+                    }
+                }
             }
         }
     }
@@ -407,6 +419,7 @@ impl PageList {
                 .move_cells(from_row, to_row, columns);
             return;
         }
+        let mut when_full = WhenFull::Fail;
         loop {
             let [source_node, target_node] = self
                 .nodes
@@ -414,12 +427,17 @@ impl PageList {
                 .expect("two nodes of the list");
             let source_page = source_node.page.as_mut().expect("a linked node has a page");
             let target_page = target_node.page.as_mut().expect("a linked node has a page");
-            match target_page.copy_cells(to_row, source_page, from_row, columns.clone()) {
+            match target_page.copy_cells(to_row, source_page, from_row, columns.clone(), when_full)
+            {
                 Ok(()) => {
                     source_page.clear_cells(from_row, columns);
                     return;
                 }
-                Err(full) => self.grow_page(to, full),
+                Err(full) => {
+                    if self.grow_page(to, full).is_err() {
+                        when_full = WhenFull::Drop;
+                    }
+                }
             }
         }
     }
@@ -1004,7 +1022,7 @@ mod tests {
         let mut list = PageList::new(80, 24, pages(80, 2));
         scroll(&mut list, 0, 10);
         let (id, _) = list.screen_row_id(23);
-        list.grow_page(23, TableFull::Styles);
+        list.grow_page(23, TableFull::Styles).unwrap();
         assert_eq!(list.page(id).map(|page| page.capacity().styles), Some(512));
         let (page, row) = list.screen_row(23);
         assert_eq!(page.cells(row)[0], numbered(9));
@@ -1013,6 +1031,26 @@ mod tests {
         scroll(&mut list, 10, (2 * page_rows) as u32);
         assert!(list.page(id).is_none());
         assert_eq!(list.pool_len(), 0);
+    }
+
+    #[test]
+    fn a_page_at_its_largest_does_not_grow() {
+        let mut list = PageList::new(80, 24, Scrollback::default());
+        let mut grows = 0;
+        while list.grow_page(23, TableFull::Styles).is_ok() {
+            grows += 1;
+        }
+        // From 256 styles to 65 535, doubling.
+        assert_eq!(grows, 8);
+        let (page, _) = list.screen_row(23);
+        assert_eq!(page.capacity().styles, u16::MAX);
+        let memory = list.memory();
+        assert_eq!(
+            list.grow_page(23, TableFull::Styles),
+            Err(TableFull::Styles)
+        );
+        assert_eq!(list.memory(), memory, "the page stayed as it was");
+        assert_eq!(list.memory(), counted(&list));
     }
 
     #[test]
@@ -1041,7 +1079,7 @@ mod tests {
             let (page, _) = list.screen_row_mut(bottom);
             match page.styles_mut().acquire(&style) {
                 Ok(id) => break id,
-                Err(full) => list.grow_page(bottom, full),
+                Err(full) => list.grow_page(bottom, full).unwrap(),
             }
         };
         let (page, row) = list.screen_row_mut(bottom);
@@ -1095,7 +1133,7 @@ mod tests {
         // Three full pages: exactly at the limit.
         scroll(&mut list, 0, 3 * page_rows - 24);
         assert_eq!(list.memory(), list.scrollback().limit);
-        list.grow_page(23, TableFull::Styles);
+        list.grow_page(23, TableFull::Styles).unwrap();
         assert!(list.memory() <= list.scrollback().limit);
         assert_eq!(list.pages(), 2, "the oldest page made room");
         assert_eq!(list.memory(), counted(&list));
@@ -1353,7 +1391,7 @@ mod tests {
         let mut list = straddling();
         let pin = pin_at(&mut list, 2, 23);
         let position = list.pin_position(pin);
-        list.grow_page(23, TableFull::Styles);
+        list.grow_page(23, TableFull::Styles).unwrap();
         assert_eq!(list.pin_position(pin), position);
         assert_pins_listed(&list);
     }
@@ -1459,7 +1497,8 @@ mod tests {
                     Op::MoveRow(from, to) => list.move_row(from, to),
                     Op::MoveCells(from, to, columns) => list.move_cells(from, to, columns),
                     Op::ClearScrollback => list.clear_scrollback(),
-                    Op::Grow(y) => list.grow_page(y, TableFull::Styles),
+                    // A table at its largest stays as it is.
+                    Op::Grow(y) => list.grow_page(y, TableFull::Styles).unwrap_or(()),
                     Op::Pin(index, col) => {
                         let (page, row) = list.row_at(index % list.total_rows()).unwrap();
                         let position = Position { page, row, col };

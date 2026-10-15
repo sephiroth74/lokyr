@@ -107,10 +107,11 @@ impl Capacity {
             + HyperlinkTable::memory_for(self.hyperlinks, self.linked_cells)
     }
 
-    /// This capacity, with twice the room in the table that is `full`.
+    /// This capacity, with twice the room in the table that is `full`, or
+    /// `None` if that table is as large as it can be.
     #[must_use]
-    pub fn grown_for(self, full: TableFull) -> Self {
-        match full {
+    pub fn grown_for(self, full: TableFull) -> Option<Self> {
+        let grown = match full {
             TableFull::Styles => Self {
                 styles: self.styles.saturating_mul(2),
                 ..self
@@ -127,8 +128,21 @@ impl Capacity {
                 linked_cells: self.linked_cells.saturating_mul(2),
                 ..self
             },
-        }
+        };
+        (grown != self).then_some(grown)
     }
+}
+
+/// What a copy into a page does when one of the page's tables is full.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WhenFull {
+    /// It leaves the cells empty and names the table, so that the page can
+    /// grow before the copy starts again.
+    Fail,
+    /// It copies each cell without what the table has no room for: its
+    /// style, the codepoints of its cluster after the first that do not
+    /// fit, or its link. For a page that cannot grow any more.
+    Drop,
 }
 
 /// A block of the grid: a fixed number of rows of a fixed width, with the
@@ -565,11 +579,18 @@ impl Page {
     /// Copies row `from` of `source`, a page of the same width, into row
     /// `to`: each cell takes its style, grapheme and link in this page's
     /// tables, and the row's metadata goes along. What `to` held is
-    /// dropped. If one of the tables is full, `to` is left empty, and the
-    /// error tells which.
-    pub fn copy_row(&mut self, to: u16, source: &Page, from: u16) -> Result<(), TableFull> {
+    /// dropped. If one of the tables is full, `when_full` says what
+    /// happens: with [`WhenFull::Fail`], `to` is left empty and the error
+    /// tells which table it is.
+    pub fn copy_row(
+        &mut self,
+        to: u16,
+        source: &Page,
+        from: u16,
+        when_full: WhenFull,
+    ) -> Result<(), TableFull> {
         assert_eq!(source.cols(), self.cols(), "the pages have one width");
-        if let Err(full) = self.copy_cells(to, source, from, 0..self.cols()) {
+        if let Err(full) = self.copy_cells(to, source, from, 0..self.cols(), when_full) {
             self.clear_row(to);
             return Err(full);
         }
@@ -582,18 +603,20 @@ impl Page {
     /// Copies the cells of `columns` in row `from` of `source`, a page of
     /// the same width, into the same columns of row `to`, as they are, each
     /// with its style, grapheme and link in this page's tables. What those
-    /// cells of `to` held is dropped. If one of the tables is full, they
-    /// are left empty, and the error tells which.
+    /// cells of `to` held is dropped. If one of the tables is full,
+    /// `when_full` says what happens: with [`WhenFull::Fail`], the cells
+    /// are left empty and the error tells which table it is.
     pub fn copy_cells(
         &mut self,
         to: u16,
         source: &Page,
         from: u16,
         columns: Range<u16>,
+        when_full: WhenFull,
     ) -> Result<(), TableFull> {
         assert_eq!(source.cols(), self.cols(), "the pages have one width");
         self.clear_cells(to, columns.clone());
-        let copied = self.copy_into_empty(to, source, from, columns.clone());
+        let copied = self.copy_into_empty(to, source, from, columns.clone(), when_full);
         if copied.is_err() {
             self.clear_cells(to, columns);
         }
@@ -607,10 +630,23 @@ impl Page {
         source: &Page,
         from: u16,
         columns: Range<u16>,
+        when_full: WhenFull,
     ) -> Result<(), TableFull> {
+        // What a full table does: stop the copy, or let the cell go on
+        // without what it has no room for.
+        let full = |full| match when_full {
+            WhenFull::Fail => Err(full),
+            WhenFull::Drop => Ok(()),
+        };
         for x in columns {
             let cell = source.cells(from)[usize::from(x)];
-            let style = self.styles.acquire(source.styles().get(cell.style()))?;
+            let style = match self.styles.acquire(source.styles().get(cell.style())) {
+                Ok(style) => style,
+                Err(error) => {
+                    full(error)?;
+                    StyleId::DEFAULT
+                }
+            };
             let mut copy = cell.with_style(style).with_hyperlink(false);
             if let Content::Grapheme(first) = cell.content() {
                 copy = copy.with_content(Content::Char(first));
@@ -618,13 +654,22 @@ impl Page {
             self.set_cell(to, x, copy);
             self.styles.release(style);
             for &c in source.grapheme(from, x) {
-                self.push_codepoint(to, x, c)?;
+                if let Err(error) = self.push_codepoint(to, x, c) {
+                    full(error)?;
+                    break;
+                }
             }
             if let Some(link) = source.hyperlink(from, x) {
-                let link = self.hyperlinks.acquire(source.hyperlinks().get(link))?;
-                let linked = self.set_hyperlink(to, x, Some(link));
-                self.hyperlinks.release(link);
-                linked?;
+                match self.hyperlinks.acquire(source.hyperlinks().get(link)) {
+                    Ok(link) => {
+                        let linked = self.set_hyperlink(to, x, Some(link));
+                        self.hyperlinks.release(link);
+                        if let Err(error) = linked {
+                            full(error)?;
+                        }
+                    }
+                    Err(error) => full(error)?,
+                }
             }
         }
         Ok(())

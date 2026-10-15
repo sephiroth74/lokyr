@@ -127,7 +127,7 @@ fn clearing_a_row_frees_its_styles_and_resets_it() {
 /// A copy of `page` with twice the room for styles, after checking that it
 /// keeps the cells and stays within its block.
 fn grow(page: &Page) -> Page {
-    let capacity = page.capacity().grown_for(TableFull::Styles);
+    let capacity = page.capacity().grown_for(TableFull::Styles).unwrap();
     let grown = page.grown(capacity);
     for y in 0..page.len() {
         assert_eq!(grown.cells(y), page.cells(y));
@@ -274,7 +274,7 @@ fn a_page_whose_grapheme_table_fills_up_grows_it() {
             print(&mut page, y, x, 'a', &Style::DEFAULT).unwrap();
             if let Err(full) = page.push_codepoint(y, x, mark(n)) {
                 assert_eq!(full, TableFull::Graphemes);
-                page = page.grown(page.capacity().grown_for(full));
+                page = page.grown(page.capacity().grown_for(full).unwrap());
                 page.push_codepoint(y, x, mark(n)).unwrap();
             }
             n += 1;
@@ -381,7 +381,7 @@ fn a_page_whose_hyperlink_table_fills_up_grows_it() {
         loop {
             match print_link(&mut page, y, &"x".repeat(80), link("", &uri)) {
                 Ok(_) => break,
-                Err(full) => page = page.grown(page.capacity().grown_for(full)),
+                Err(full) => page = page.grown(page.capacity().grown_for(full).unwrap()),
             }
         }
     }
@@ -531,7 +531,7 @@ fn a_row_copies_into_another_page_with_its_tables() {
     sample_row(&mut source, 0);
     let mut target = page_with_rows(2);
     print(&mut target, 1, 0, 'z', &bold(2)).unwrap();
-    target.copy_row(1, &source, 0).unwrap();
+    target.copy_row(1, &source, 0, WhenFull::Fail).unwrap();
     assert_sample_row(&target, 1);
     assert_sample_row(&source, 0);
     // The target holds its own references, and dropped bold(2).
@@ -554,16 +554,97 @@ fn a_copy_into_a_full_table_leaves_the_row_empty() {
     };
     let mut target = Page::new(capacity);
     target.push_row();
-    assert_eq!(target.copy_row(0, &source, 0), Err(TableFull::Styles));
+    assert_eq!(
+        target.copy_row(0, &source, 0, WhenFull::Fail),
+        Err(TableFull::Styles)
+    );
     assert!(target.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
     assert_eq!(
         target.styles().len(),
         0,
         "the two styles copied are dropped"
     );
-    let mut grown = target.grown(capacity.grown_for(TableFull::Styles));
-    grown.copy_row(0, &source, 0).unwrap();
+    let mut grown = target.grown(capacity.grown_for(TableFull::Styles).unwrap());
+    grown.copy_row(0, &source, 0, WhenFull::Fail).unwrap();
     assert_eq!(grown.styles().len(), 3);
+}
+
+#[test]
+fn a_table_at_its_largest_does_not_grow() {
+    let largest = Capacity {
+        styles: u16::MAX,
+        graphemes: u16::MAX,
+        hyperlinks: u16::MAX,
+        linked_cells: u16::MAX,
+        ..Capacity::standard(80)
+    };
+    for full in [
+        TableFull::Styles,
+        TableFull::Graphemes,
+        TableFull::Hyperlinks,
+        TableFull::LinkedCells,
+    ] {
+        assert_eq!(largest.grown_for(full), None, "{full:?}");
+    }
+    let near = Capacity {
+        graphemes: 40_000,
+        ..Capacity::standard(80)
+    };
+    let grown = near.grown_for(TableFull::Graphemes).unwrap();
+    assert_eq!(grown.graphemes, u16::MAX, "the last step is short of twice");
+    assert_eq!(grown.grown_for(TableFull::Graphemes), None);
+}
+
+#[test]
+fn a_copy_that_may_drop_leaves_out_only_what_does_not_fit() {
+    let mut source = page_with_rows(1);
+    for x in 0..3 {
+        print(&mut source, 0, x, 'a', &nth_style(u32::from(x) + 1)).unwrap();
+    }
+    for (x, cluster) in [(3, "e\u{301}\u{302}"), (4, "o\u{301}")] {
+        let mut chars = cluster.chars();
+        print(&mut source, 0, x, chars.next().unwrap(), &Style::DEFAULT).unwrap();
+        for c in chars {
+            source.push_codepoint(0, x, c).unwrap();
+        }
+    }
+    for (x, uri) in [(5, "http://a"), (6, "http://b")] {
+        let id = source.hyperlinks_mut().acquire(link("", uri)).unwrap();
+        print(&mut source, 0, x, 'l', &Style::DEFAULT).unwrap();
+        source.set_hyperlink(0, x, Some(id)).unwrap();
+        source.hyperlinks_mut().release(id);
+    }
+    // Room for two styles, one grapheme and one link.
+    let capacity = Capacity {
+        styles: 2,
+        graphemes: 1,
+        hyperlinks: 1,
+        ..Capacity::standard(80)
+    };
+    let mut target = Page::new(capacity);
+    target.push_row();
+    assert_eq!(
+        target.copy_row(0, &source, 0, WhenFull::Fail),
+        Err(TableFull::Styles)
+    );
+    target.copy_row(0, &source, 0, WhenFull::Drop).unwrap();
+    assert_eq!(
+        &row_chars(&target, 0)[..7],
+        "aaaeoll",
+        "every cell is copied"
+    );
+    let styles: Vec<_> = (0..3)
+        .map(|x| *target.styles().get(target.cells(0)[x].style()))
+        .collect();
+    assert_eq!(styles, [nth_style(1), nth_style(2), Style::DEFAULT]);
+    assert_eq!(target.grapheme(0, 3), ['\u{301}', '\u{302}']);
+    assert_eq!(target.cells(0)[4].content(), Content::Char('o'));
+    let first = target.hyperlink(0, 5).unwrap();
+    assert_eq!(target.hyperlinks().get(first), link("", "http://a"));
+    assert_eq!(target.hyperlink(0, 6), None);
+    assert_eq!(target.styles().len(), 2);
+    assert_eq!(target.hyperlinks().references(first), 1);
+    assert_eq!(target.graphemes.len(), 1);
 }
 
 /// The characters of row `y`, `.` for a cell without one.
@@ -715,7 +796,9 @@ fn cells_copy_within_a_range_into_another_page() {
     for x in 0..4 {
         print(&mut target, 0, x, 'z', &bold(2)).unwrap();
     }
-    target.copy_cells(0, &source, 0, 1..3).unwrap();
+    target
+        .copy_cells(0, &source, 0, 1..3, WhenFull::Fail)
+        .unwrap();
     assert_eq!(&row_chars(&target, 0)[..4], "zelz");
     assert_eq!(target.grapheme(0, 1), ['\u{301}']);
     assert!(target.hyperlink(0, 2).is_some());

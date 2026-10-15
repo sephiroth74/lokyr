@@ -4,6 +4,13 @@ use super::{Cluster, Cursor, Terminal};
 use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, StyleId, Width};
 use crate::unicode::{Mode, Normalization, properties};
 
+/// The most codepoints that a cluster keeps; those that would join it past
+/// them are dropped. Unicode's stream-safe text format allows thirty
+/// combining marks in a row (<https://www.unicode.org/reports/tr15/#Stream_Safe_Text_Format>),
+/// and the longest emoji sequences have about ten codepoints. The bound
+/// keeps a cluster's work, normalization included, small.
+const MAX_CLUSTER: usize = 32;
+
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
     /// cells at the cursor.
@@ -202,16 +209,29 @@ impl Terminal {
         }
     }
 
-    /// Adds `c` to the cluster at `cluster`, whose width can change.
+    /// Adds `c` to the cluster at `cluster`, whose width can change. A
+    /// cluster that has [`MAX_CLUSTER`] codepoints, or a page that has no
+    /// room for another and cannot grow, drops `c`.
     fn join(&mut self, cluster: Cluster, c: char) {
         let Cluster { x, y } = cluster;
         let rows = &mut self.screen_mut().rows;
-        loop {
+        let joined = loop {
             let (page, row) = rows.screen_row_mut(y);
-            match page.push_codepoint(row, x, c) {
-                Ok(()) => break,
-                Err(full) => rows.grow_page(y, full),
+            if page.grapheme(row, x).len() + 1 >= MAX_CLUSTER {
+                break false;
             }
+            match page.push_codepoint(row, x, c) {
+                Ok(()) => break true,
+                Err(full) => {
+                    if rows.grow_page(y, full).is_err() {
+                        break false;
+                    }
+                }
+            }
+        };
+        if !joined {
+            self.cluster = Some(cluster);
+            return;
         }
         self.normalize(cluster);
         if self.widths.mode == Mode::Unicode {
@@ -312,7 +332,12 @@ impl Terminal {
                 let (page, row) = rows.screen_row_mut(y);
                 match page.set_cluster(row, x, normal[0], &normal[1..]) {
                     Ok(()) => break,
-                    Err(full) => rows.grow_page(y, full),
+                    // The cluster keeps the codepoints that fit.
+                    Err(full) => {
+                        if rows.grow_page(y, full).is_err() {
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -373,7 +398,8 @@ impl Terminal {
     }
 
     /// Makes the `width` cells from column `x` of row `y` part of the open
-    /// link, in their page's table, which grows when it is full.
+    /// link, in their page's table, which grows when it is full. The cells
+    /// of a page that cannot grow stay out of the link.
     fn link_cells(&mut self, x: u16, y: u16, width: u16) {
         let link = std::mem::take(&mut self.link);
         let target = Hyperlink {
@@ -386,7 +412,9 @@ impl Terminal {
             let id = match page.hyperlinks_mut().acquire(target) {
                 Ok(id) => id,
                 Err(full) => {
-                    rows.grow_page(y, full);
+                    if rows.grow_page(y, full).is_err() {
+                        break;
+                    }
                     continue;
                 }
             };
@@ -394,7 +422,11 @@ impl Terminal {
             page.hyperlinks_mut().release(id);
             match linked {
                 Ok(()) => break,
-                Err(full) => rows.grow_page(y, full),
+                Err(full) => {
+                    if rows.grow_page(y, full).is_err() {
+                        break;
+                    }
+                }
             }
         }
         self.link = link;
@@ -411,15 +443,20 @@ impl Terminal {
             };
             match page.set_hyperlink(row, x + 1, Some(id)) {
                 Ok(()) => return,
-                Err(full) => rows.grow_page(y, full),
+                Err(full) => {
+                    if rows.grow_page(y, full).is_err() {
+                        return;
+                    }
+                }
             }
         }
     }
 
     /// Runs `write` on the page of row `y`, with the row in it and the
     /// pen's style in its table, which the pen holds a reference to while
-    /// `write` runs. A full table makes the page grow first. The page is
-    /// looked up once, unless it grows.
+    /// `write` runs. A full table makes the page grow first, and a page
+    /// that cannot grow writes in the default style. The page is looked up
+    /// once, unless it grows.
     fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
         let pen = self.pen;
         let rows = &mut self.screen_mut().rows;
@@ -428,8 +465,11 @@ impl Terminal {
             match page.styles_mut().acquire(&pen) {
                 Ok(style) => break style,
                 Err(full) => {
-                    rows.grow_page(y, full);
+                    let grown = rows.grow_page(y, full);
                     (page, row) = rows.screen_row_mut(y);
+                    if grown.is_err() {
+                        break StyleId::DEFAULT;
+                    }
                 }
             }
         };

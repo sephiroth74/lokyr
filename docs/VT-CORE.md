@@ -79,7 +79,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - Reverse wraparound (45), with autowrap, lets BS and CUB go on from the right margin of the row above, when that row wraps into this one, as far as the top margin.
   - DECRQM replies for every mode above, 0 for those the terminal does not know; replies wait in a queue that the embedder takes and writes to the PTY.
 - **Printing**, the path of every character of text:
-  - A codepoint either joins the cluster printed before it, as the segmenter decides in `unicode` mode or a zero width does in `legacy` mode, or starts a new one at the cursor. A joining codepoint goes to its cluster's cell even while the wrap is pending, and the cluster stays open until the cursor moves or a control comes; other sequences, such as SGR, leave it open.
+  - A codepoint either joins the cluster printed before it, as the segmenter decides in `unicode` mode or a zero width does in `legacy` mode, or starts a new one at the cursor. A joining codepoint goes to its cluster's cell even while the wrap is pending, and the cluster stays open until the cursor moves or a control comes; other sequences, such as SGR, leave it open. A cluster keeps at most 32 codepoints, more than Unicode's stream-safe format allows marks, and drops those past them.
   - A codepoint of no width with nothing to join, such as a mark right after a carriage return, joins the character left of the cursor if there is one, and is dropped otherwise.
   - When VS16 widens a cluster, its cell takes a spacer tail and the cursor moves on one column; VS15 does the reverse. A cluster at the last column has no room to widen and stays narrow.
   - Writing over half of a wide character empties its other half. A wide character at the last column leaves a spacer head there and wraps, or, without autowrap, goes one column back.
@@ -140,6 +140,7 @@ The metadata fits in one byte.
 - **Hyperlink table**: the OSC 8 targets, id and URI, in an arena of 32-byte chunks, deduplicated and reference-counted like the styles, and a map from each linked cell to its link. The terminal holds a reference to the link while it links a cluster's cells, and lets go of it after, even when the table has no room for one of them.
 - **Shared machinery**: the tables share one open-addressing index and one allocator of ids. A lookup stops after one turn of the index, which never happens in a sound one, so a bug fails instead of hanging the terminal.
 - **Growth**: when a table fills up, the page is rebuilt with more capacity, so it becomes larger than a standard page. The error says which table is full, and `Capacity::grown_for` doubles that one. Every table keeps its ids, so the cells are copied as they are.
+  - A table at its largest capacity does not grow: `grown_for` returns `None`, and `PageList::grow_page` an error. The page then writes without what the table has no room for: a codepoint that would join a cluster, a cell's link, or, when printing, the pen's style. A copy between pages, with `WhenFull::Drop`, takes each cell without what does not fit.
 - **Pool**: pages come from a pool and go back to it. There is no `malloc`/`free` while output scrolls.
 
 ### Page list and scrollback

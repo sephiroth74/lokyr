@@ -4,7 +4,8 @@ use proptest::prelude::*;
 
 use super::*;
 use crate::page::{
-    Color, HyperlinkId, Page, PinId, Position, Rgb, Row, RowFlag, Semantic, StyleId, Underline,
+    Capacity, Color, HyperlinkId, Page, PinId, Position, Rgb, Row, RowFlag, Semantic, StyleId,
+    Underline,
 };
 use crate::parser::{Params, Parser, StringEnd};
 use crate::unicode::{Mode, Normalization, Tables};
@@ -2939,6 +2940,103 @@ fn osc_133_marks_prompts_commands_and_their_output() {
     );
     term.feed("\x1bc");
     assert_eq!(term.terminal.semantic_zone(), Output);
+}
+
+/// The codepoints of the cluster at column `x` of row `y`.
+fn cluster_at(term: &Term, x: u16, y: u16) -> Vec<char> {
+    let (page, row) = term.terminal.screen_rows().screen_row(y);
+    let (Content::Char(first) | Content::Grapheme(first)) =
+        page.cells(row)[usize::from(x)].content()
+    else {
+        return Vec::new();
+    };
+    let mut cluster = vec![first];
+    cluster.extend_from_slice(page.grapheme(row, x));
+    cluster
+}
+
+#[test]
+fn a_cluster_keeps_at_most_32_codepoints() {
+    for normalization in [Normalization::None, Normalization::Nfc, Normalization::Nfd] {
+        let options = Options {
+            normalization,
+            ..Options::default()
+        };
+        let mut term = Term::with(10, 2, options);
+        term.feed(format!("a{}b", "\u{316}".repeat(100)));
+        let cluster = cluster_at(&term, 0, 0);
+        assert_eq!(cluster.len(), 32, "{normalization:?}");
+        assert!(cluster[1..].iter().all(|&c| c == '\u{316}'));
+        assert_eq!(
+            term.screen()[0].chars().last(),
+            Some('b'),
+            "{normalization:?}"
+        );
+    }
+    // A cluster far longer than a page could hold.
+    let mut term = Term::new(10, 2);
+    term.feed(format!("a{}", "\u{301}".repeat(70_000)));
+    assert_eq!(cluster_at(&term, 0, 0).len(), 32);
+}
+
+/// Prints `count` links of the longest length allowed, each a cell of its
+/// own, from the cursor.
+fn print_long_links(term: &mut Term, count: usize, tag: &str) {
+    let id = "i".repeat(250);
+    for n in 0..count {
+        let uri = format!("http://{tag}{n:06}/");
+        let uri = format!("{uri}{}", "a".repeat(2083 - uri.len()));
+        term.feed(format!("\x1b]8;id={id};{uri}\x07x"));
+    }
+    term.feed("\x1b]8;;\x07");
+}
+
+#[test]
+fn links_that_a_page_has_no_room_for_leave_their_cells_out() {
+    let mut term = Term::new(80, 24);
+    print_long_links(&mut term, 900, "");
+    let linked: Vec<bool> = (0..900)
+        .map(|n| link_at(&term, n % 80, n / 80).is_some())
+        .collect();
+    let room = linked.iter().take_while(|&&linked| linked).count();
+    assert!((800..900).contains(&room), "{room} links fit");
+    assert!(linked[room..].iter().all(|&linked| !linked));
+    let (_, uri) = link_at(&term, 7, 0).unwrap();
+    assert!(uri.starts_with("http://000007/"));
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn a_row_moved_into_a_page_that_cannot_grow_keeps_its_text() {
+    // At 100 columns, 900 links take rows 12 to 20, and the row that SD
+    // drops below holds none to make room.
+    let mut term = Term::new(100, 24);
+    // The screen's first 12 rows end a page, the other 12 start the next.
+    let page_rows = usize::from(Capacity::standard(100).rows);
+    term.feed(format!("\x1b[24H{}", "\n".repeat(page_rows + 12 - 24)));
+    {
+        let rows = term.terminal.screen_rows();
+        assert_ne!(rows.screen_row_id(11).0, rows.screen_row_id(12).0);
+    }
+    term.feed("\x1b[13H");
+    print_long_links(&mut term, 900, "");
+    // A long link in the first page, which the second has no room for.
+    term.feed("\x1b[12H");
+    print_long_links(&mut term, 1, "moved");
+    assert!(link_at(&term, 0, 11).is_some());
+    // SD in a region from row 12 moves row 11 down into the full page.
+    term.feed("\x1b[12;24r\x1b[T");
+    assert!(term.screen()[12].starts_with('x'));
+    assert_eq!(
+        link_at(&term, 0, 12),
+        None,
+        "the page had no room for the link"
+    );
+    assert!(
+        link_at(&term, 0, 13).is_some(),
+        "the rows within the page keep theirs"
+    );
+    assert_tables_counted(&term.terminal.primary);
 }
 
 #[test]
