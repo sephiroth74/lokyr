@@ -9,15 +9,17 @@ mod edit;
 mod erase;
 mod escape;
 mod modes;
+mod osc;
 mod print;
 mod reports;
 mod sgr;
 
 pub use charsets::{Charset, Charsets, Shift};
+pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
 
-use crate::page::{Cell, Content, PageList, Scrollback, Style, Width};
+use crate::page::{Cell, Content, PageList, Rgb, Scrollback, Style, Width};
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
@@ -274,6 +276,14 @@ pub struct Terminal {
     icon_title: String,
     /// The titles that CSI 22 t pushed, the latest last.
     title_stack: Vec<(String, String)>,
+    /// The OSC string being read.
+    osc: Vec<u8>,
+    /// What the embedder has to act on, oldest first.
+    events: Vec<Event>,
+    /// The working directory that OSC 7 gave last.
+    working_directory: Option<WorkingDirectory>,
+    /// The tab's color, from OSC 6;1.
+    tab_color: Option<Rgb>,
     /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
     query: Option<reports::Query>,
     query_bytes: Vec<u8>,
@@ -336,6 +346,10 @@ impl Terminal {
             title_stack: Vec::new(),
             query: None,
             query_bytes: Vec::new(),
+            osc: Vec::new(),
+            events: Vec::new(),
+            working_directory: None,
+            tab_color: None,
             segmenter: Segmenter::new(),
             cluster: None,
             last_printed: None,
@@ -506,6 +520,21 @@ impl Terminal {
         &self.icon_title
     }
 
+    /// The working directory that OSC 7 gave last.
+    pub fn working_directory(&self) -> Option<&WorkingDirectory> {
+        self.working_directory.as_ref()
+    }
+
+    /// The tab's color, from OSC 6;1.
+    pub fn tab_color(&self) -> Option<Rgb> {
+        self.tab_color
+    }
+
+    /// Takes what the embedder has to act on, oldest first.
+    pub fn take_events(&mut self) -> Vec<Event> {
+        std::mem::take(&mut self.events)
+    }
+
     /// Sets the size of a cell in pixels, which CSI 14 t and 16 t report;
     /// until then, they get no reply.
     pub fn set_cell_size(&mut self, width: u16, height: u16) {
@@ -602,6 +631,18 @@ impl Handler for Terminal {
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
         self.csi(params, intermediates, final_byte);
+    }
+
+    fn osc_start(&mut self) {
+        self.start_osc();
+    }
+
+    fn osc_put(&mut self, data: &[u8]) {
+        self.read_osc(data);
+    }
+
+    fn osc_end(&mut self, end: StringEnd) {
+        self.end_osc(end);
     }
 
     fn dcs_start(&mut self, _params: &Params, intermediates: &[u8], final_byte: u8) {

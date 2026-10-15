@@ -2260,6 +2260,161 @@ fn ris_keeps_what_the_embedder_configured() {
 }
 
 #[test]
+fn osc_0_1_and_2_set_the_titles() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]0;both\x07");
+    assert_eq!(
+        (term.terminal.title(), term.terminal.icon_title()),
+        ("both", "both")
+    );
+    term.feed("\x1b]2;window\x1b\\\x1b]1;icon\x07");
+    assert_eq!(
+        (term.terminal.title(), term.terminal.icon_title()),
+        ("window", "icon")
+    );
+    assert_eq!(term.terminal.take_events(), vec![Event::TitleChanged; 3]);
+    // UTF-8, without its controls, and split across reads.
+    term.feed("\x1b]2;caf\u{E9} \u{9B}x");
+    term.feed("y\x1b\\");
+    assert_eq!(term.terminal.title(), "caf\u{E9} xy");
+    // A string cancelled or too long changes nothing.
+    term.feed("\x1b]2;gone\x18");
+    term.feed(format!("\x1b]2;{}\x07", "x".repeat(70_000)));
+    assert_eq!(term.terminal.title(), "caf\u{E9} xy");
+    term.terminal.take_events();
+    term.feed("\x1b]2;\x07");
+    assert_eq!(term.terminal.title(), "", "an empty title");
+    assert_eq!(term.terminal.take_events(), [Event::TitleChanged]);
+}
+
+#[test]
+fn osc_7_gives_the_working_directory() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]7;file://mac.local/Users/me/My%20Files\x07");
+    let expected = WorkingDirectory {
+        host: "mac.local".to_owned(),
+        path: "/Users/me/My Files".to_owned(),
+    };
+    assert_eq!(term.terminal.working_directory(), Some(&expected));
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::WorkingDirectory(expected)]
+    );
+    term.feed("\x1b]7;file:///tmp/100%\x07");
+    assert_eq!(term.terminal.working_directory().unwrap().host, "");
+    assert_eq!(
+        term.terminal.working_directory().unwrap().path,
+        "/tmp/100%",
+        "a lone %"
+    );
+    // Only file URLs, with a path.
+    term.terminal.take_events();
+    term.feed("\x1b]7;http://example.com/x\x07\x1b]7;file://host\x07");
+    assert_eq!(term.terminal.take_events(), []);
+    assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/100%");
+}
+
+#[test]
+fn osc_9_and_777_send_notifications() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]9;Build done\x07\x1b]777;notify;Make;all; done\x1b\\");
+    term.feed("\x1b]777;other;x\x07\x1b]9;a\x1bb\x07");
+    assert_eq!(
+        term.terminal.take_events(),
+        [
+            Event::Notification {
+                title: String::new(),
+                body: "Build done".to_owned()
+            },
+            Event::Notification {
+                title: "Make".to_owned(),
+                body: "all; done".to_owned()
+            },
+            Event::Notification {
+                title: String::new(),
+                body: "a".to_owned()
+            },
+        ],
+        "777 knows only notify, and an ESC ends the string"
+    );
+}
+
+#[test]
+fn osc_9_4_reports_progress() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]9;4;1;42\x07\x1b]9;4;1;150\x07\x1b]9;4;2\x07\x1b]9;4;2;7\x07");
+    term.feed("\x1b]9;4;3\x07\x1b]9;4;4;9\x07\x1b]9;4;0\x07\x1b]9;4\x07\x1b]9;4;5\x07");
+    let progress: Vec<Event> = [
+        Progress::Set(42),
+        Progress::Set(100),
+        Progress::Error(None),
+        Progress::Error(Some(7)),
+        Progress::Indeterminate,
+        Progress::Paused(Some(9)),
+        Progress::Remove,
+        Progress::Remove,
+    ]
+    .into_iter()
+    .map(Event::Progress)
+    .collect();
+    assert_eq!(term.terminal.take_events(), progress, "5 is no state");
+    term.feed("\x1b]9;42\x07");
+    assert!(matches!(
+        &term.terminal.take_events()[..],
+        [Event::Notification { .. }]
+    ));
+}
+
+#[test]
+fn osc_6_1_sets_the_tab_color_a_component_at_a_time() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]6;1;bg;red;brightness;255\x07\x1b]6;1;bg;blue;brightness;16\x07");
+    assert_eq!(term.terminal.tab_color(), Some(Rgb::new(255, 0, 16)));
+    term.feed("\x1b]6;1;bg;pink;brightness;1\x07\x1b]6;1;bg;red;brightness;300\x07");
+    assert_eq!(
+        term.terminal.tab_color(),
+        Some(Rgb::new(255, 0, 16)),
+        "ignored"
+    );
+    term.feed("\x1b]6;1;bg;*;default\x07");
+    assert_eq!(term.terminal.tab_color(), None);
+    assert_eq!(
+        term.terminal.take_events(),
+        [
+            Event::TabColor(Some(Rgb::new(255, 0, 0))),
+            Event::TabColor(Some(Rgb::new(255, 0, 16))),
+            Event::TabColor(None),
+        ]
+    );
+}
+
+#[test]
+fn ris_tells_the_embedder_what_it_dropped() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]2;t\x07\x1b]6;1;bg;red;brightness;1\x07\x1bc");
+    assert_eq!(
+        term.terminal.take_events(),
+        [
+            Event::TitleChanged,
+            Event::TabColor(Some(Rgb::new(1, 0, 0))),
+            Event::TitleChanged,
+            Event::TabColor(None),
+        ]
+    );
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.take_events(), [], "nothing left to drop");
+}
+
+#[test]
+fn a_large_osc_string_does_not_keep_its_buffer() {
+    let mut term = Term::new(10, 1);
+    term.feed(format!("\x1b]52;c;{}\x07", "A".repeat(100_000)));
+    assert!(term.terminal.osc.capacity() <= 4 * 1024);
+    term.feed("\x1b]2;small\x07");
+    assert!(term.terminal.osc.capacity() > 0, "a small one is kept");
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {
@@ -2510,6 +2665,9 @@ const OTHER_TEXT: &[&str] = &[
     "\x1bP$qm\x1b\\",
     "\x1b[22t",
     "\x1b[23t",
+    "\x1b]2;title\x07",
+    "\x1b]7;file:///tmp\x1b\\",
+    "\x1b]9;4;1;5\x07",
     "\x1b[0m",
     "\x1b[1;31m",
     "\x1b[44m",

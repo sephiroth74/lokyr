@@ -1,6 +1,6 @@
 //! The escape sequences: `ESC`, intermediates, then a final byte.
 
-use super::{Charset, Cursor, Margins, Options, SavedCursor, Shift, Terminal};
+use super::{Charset, Cursor, Event, Margins, Options, SavedCursor, Shift, Terminal};
 use crate::page::{Cell, Content};
 
 impl Terminal {
@@ -81,8 +81,9 @@ impl Terminal {
     /// scrollback empty, and no title. It keeps its configuration: the
     /// size, the scrollback limits, the widths it was made with, the
     /// normalization, the `TERM`, the title reports and the cell size. The
-    /// bells that rang stay counted, and the replies not yet taken stay
-    /// queued.
+    /// bells that rang stay counted, and the replies and events not yet
+    /// taken stay queued, with events for the titles and the tab color that
+    /// RIS dropped.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
@@ -96,8 +97,16 @@ impl Terminal {
             std::mem::take(&mut self.replies),
             self.cell_size,
         );
+        let mut events = std::mem::take(&mut self.events);
+        if !self.title.is_empty() || !self.icon_title.is_empty() {
+            events.push(Event::TitleChanged);
+        }
+        if self.tab_color.is_some() {
+            events.push(Event::TabColor(None));
+        }
         *self = Self::new(self.cols, self.rows, options);
         (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
+        self.events = events;
     }
 
     /// DECALN: fills the screen with `E`, in the default style, makes the
