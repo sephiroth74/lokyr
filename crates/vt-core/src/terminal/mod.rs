@@ -25,7 +25,9 @@ pub use osc::{Event, Progress, WorkingDirectory};
 
 use std::ops::Range;
 
-use crate::page::{Cell, Content, Grow, PageList, Rgb, Scrollback, Semantic, Style, Width};
+use crate::page::{
+    Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, Width,
+};
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
@@ -456,52 +458,23 @@ impl Terminal {
     }
 
     /// Gives the terminal `cols` columns and `rows` rows, at least one of
-    /// each. Both screens keep their text, cut or extended at the right and
-    /// with their rows taken from or sent to the scrollback as
-    /// [`PageList::resize`] does, the primary's from its scrollback and the
-    /// alternate's at the bottom; their cursors follow. The cursors that
-    /// DECSC saved move with the text too, as `alacritty_terminal` moves
-    /// them, and come back within the screen; the margins become the whole
-    /// screen, the tab stops go on every eight columns past the old width,
-    /// and the cluster being printed ends.
+    /// each. The primary screen rewraps its lines, as [`PageList::reflow`]
+    /// does; the alternate screen's are cut or extended, as
+    /// [`PageList::resize`] does, its new rows at the bottom. Each cursor
+    /// follows its cell, and the cursors that DECSC saved follow theirs,
+    /// coming back within the screen when their text has gone; a wrap stays
+    /// pending only at the last column, and otherwise goes on in the cell
+    /// after. The margins become the whole screen, the tab stops go on
+    /// every eight columns past the old width, and the cluster being
+    /// printed ends.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         let (cols, rows) = (cols.max(1), rows.max(1));
         if (cols, rows) == (self.cols, self.rows) {
             return;
         }
         self.moved();
-        let old_cols = self.cols;
-        for (screen, grow) in [
-            (&mut self.primary, Grow::FromScrollback),
-            (&mut self.alternate, Grow::AtTheBottom),
-        ] {
-            let cursor = screen.cursor;
-            let (x, y) = screen.rows.resize(cols, rows, (cursor.x, cursor.y), grow);
-            screen.cursor = if cursor.pending_wrap && cols > old_cols {
-                // The text that filled the row goes on after it.
-                Cursor {
-                    x: cursor.x + 1,
-                    y,
-                    pending_wrap: false,
-                }
-            } else {
-                Cursor {
-                    x,
-                    y,
-                    pending_wrap: cursor.pending_wrap && cols == old_cols,
-                }
-            };
-            // The rows that stay moved up or down as the cursor's did.
-            let moved = i32::from(y) - i32::from(cursor.y);
-            if let Some(saved) = &mut screen.saved {
-                let cursor = &mut saved.cursor;
-                if cursor.x >= cols {
-                    (cursor.x, cursor.pending_wrap) = (cols - 1, false);
-                }
-                // Within the screen, so it fits.
-                cursor.y = (i32::from(cursor.y) + moved).clamp(0, i32::from(rows) - 1) as u16;
-            }
-        }
+        resize_screen(&mut self.primary, cols, rows, true);
+        resize_screen(&mut self.alternate, cols, rows, false);
         let stops = &self.tab_stops;
         self.tab_stops = (0..cols)
             .map(|x| {
@@ -789,6 +762,57 @@ impl Handler for Terminal {
 
     fn dcs_end(&mut self, end: StringEnd) {
         self.end_query(end);
+    }
+}
+
+/// Resizes `screen` to `cols` columns and `rows` rows, rewrapping its lines
+/// with `reflow` and cutting them without, and moves its cursors with
+/// their cells.
+fn resize_screen(screen: &mut Screen, cols: u16, rows: u16, reflow: bool) {
+    let cursor = screen.cursor;
+    // The saved cursor's cell is pinned, so that it follows its text.
+    let saved = screen.saved.map(|saved| {
+        let (page, row) = screen.rows.screen_row_id(saved.cursor.y);
+        screen.rows.pin(Position {
+            page,
+            row,
+            col: saved.cursor.x,
+        })
+    });
+    let (x, y) = if reflow {
+        screen.rows.reflow(cols, rows, (cursor.x, cursor.y))
+    } else {
+        screen
+            .rows
+            .resize(cols, rows, (cursor.x, cursor.y), Grow::AtTheBottom)
+    };
+    screen.cursor = after_resize(cursor.pending_wrap, x, y, cols);
+    if let (Some(saved), Some(Some(pin))) = (&mut screen.saved, saved) {
+        let old = saved.cursor;
+        let (x, y) = match screen.rows.pin_on_screen(pin) {
+            Some(point) => point,
+            // Its text went to the scrollback, or was cut off.
+            None if screen.rows.pin_position(pin).is_some() => (old.x.min(cols - 1), 0),
+            None => (old.x.min(cols - 1), old.y.min(rows - 1)),
+        };
+        saved.cursor = after_resize(old.pending_wrap, x, y, cols);
+        screen.rows.unpin(pin);
+    }
+}
+
+/// A cursor on the cell at column `x` of row `y` of a screen `cols` wide
+/// after a resize, whose wrap was pending or not before it: the wrap stays
+/// pending at the last column, and goes on in the cell after the text
+/// otherwise.
+fn after_resize(pending_wrap: bool, x: u16, y: u16, cols: u16) -> Cursor {
+    if pending_wrap && x + 1 < cols {
+        Cursor {
+            x: x + 1,
+            y,
+            pending_wrap: false,
+        }
+    } else {
+        Cursor { x, y, pending_wrap }
     }
 }
 

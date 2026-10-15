@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::pin::{Pins, Place};
-use super::{Capacity, Page, PinId, Position, TableFull, WhenFull};
+use super::{Capacity, Cell, Page, PinId, Position, Row, RowFlag, TableFull, WhenFull, Width};
 
 /// No node, at either end of the list.
 const NONE: u32 = u32::MAX;
@@ -83,6 +83,23 @@ pub enum Grow {
     /// Empty rows at the bottom, for a screen whose scrollback is not shown,
     /// such as the alternate screen.
     AtTheBottom,
+}
+
+/// Where a rewrap has got to in the line it writes.
+struct Writer {
+    cols: u16,
+    /// The column that the next cell goes to, in the last row.
+    x: u16,
+    /// Where the line's last cell went, if it has one: its node, row and
+    /// column.
+    last: Option<(u32, u16, u16)>,
+    /// Pins of spacer heads, which go with the next cell written.
+    carried: Vec<u32>,
+}
+
+/// Whether every cell of row `row` of `page` is empty.
+fn page_row_is_empty(page: &Page, row: u16) -> bool {
+    page.cells(row).iter().all(|cell| cell.is_empty())
 }
 
 /// What the pages of a list may take.
@@ -329,6 +346,16 @@ impl PageList {
         })
     }
 
+    /// Where `pin` is on the screen, as a column and a row, if it is not
+    /// lost and its row is on the screen.
+    pub fn pin_on_screen(&self, pin: PinId) -> Option<(u16, u16)> {
+        let position = self.pin_position(pin)?;
+        let index = self.row_index(position.page, position.row)?;
+        let y = index.checked_sub(self.scrollback_rows())?;
+        // A row of the screen.
+        Some((position.col, y as u16))
+    }
+
     /// Lets go of `pin`, which goes stale.
     pub fn unpin(&mut self, pin: PinId) {
         let Some(place) = self.pins.place(pin) else {
@@ -483,11 +510,41 @@ impl PageList {
         (x, y)
     }
 
-    /// Rebuilds every page at `cols` columns, each row cut or extended.
-    fn set_cols(&mut self, cols: u16) {
-        // Take the pages out, oldest first, with their pins. Their ids go
-        // stale, and their bytes leave the limits now, so that the new pages
-        // have the room.
+    /// Gives the list rows of `cols` cells and a screen of `rows` rows,
+    /// rewrapping lines, and returns where the cell at `cursor`, a column
+    /// and a row of the screen, goes.
+    ///
+    /// A line, the rows that soft-wrap into each other, is written again at
+    /// the new width: a wide character that the edge would split leaves a
+    /// spacer head and goes on in the next row, and the empty cells that
+    /// end a line are left out, but those before the cursor. Cells keep
+    /// their styles, graphemes and links, and pins follow them; a pin on
+    /// an empty cell left out goes after the line's text.
+    ///
+    /// When rewrapping adds rows, the empty rows below the cursor take
+    /// them, as far as there are some, so that the text above stays on
+    /// screen; the cursor always stays on screen, the rows below it going
+    /// first. A taller or shorter screen then takes or gives rows as
+    /// [`PageList::resize`] does with [`Grow::FromScrollback`].
+    pub fn reflow(&mut self, cols: u16, rows: u16, cursor: (u16, u16)) -> (u16, u16) {
+        let (cols, rows) = (cols.max(1), rows.max(1));
+        let (mut x, mut y) = cursor;
+        if cols != self.cols() {
+            (x, y) = self.rewrap(cols, cursor);
+        }
+        if rows > self.rows {
+            y += self.add_rows(rows - self.rows, Grow::FromScrollback);
+        } else if rows < self.rows {
+            y = self.remove_rows(self.rows - rows, y);
+        }
+        (x, y)
+    }
+
+    /// Takes the pages out of the list, oldest first, each with its pins
+    /// sorted by cell, and makes the list empty, for rows of `cols` cells.
+    /// The pages' ids go stale, and their bytes leave the limits now, so
+    /// that the new pages have the room.
+    fn take_pages(&mut self, cols: u16) -> Vec<(Page, Vec<u32>)> {
         let mut old = Vec::with_capacity(self.pages);
         let mut index = self.head;
         let mut bytes = 0;
@@ -498,7 +555,7 @@ impl PageList {
             let mut pins = std::mem::take(&mut node.pins);
             let next = node.next;
             let places = &self.pins;
-            pins.sort_by_key(|&pin| places.place_of(pin).map(|place| place.row));
+            pins.sort_by_key(|&pin| places.place_of(pin).map(|place| (place.row, place.col)));
             bytes += page.memory();
             self.free.push(index);
             old.push((page, pins));
@@ -508,7 +565,284 @@ impl PageList {
         self.give(bytes);
         (self.head, self.tail, self.pages, self.total_rows) = (NONE, NONE, 0, 0);
         self.capacity = Capacity::standard(cols);
-        for (page, pins) in old {
+        old
+    }
+
+    /// Writes the lines again at `cols` columns, and returns where the
+    /// cursor goes, as [`PageList::reflow`] describes.
+    fn rewrap(&mut self, cols: u16, cursor: (u16, u16)) -> (u16, u16) {
+        let old_cols = self.cols();
+        let old_total = self.total_rows;
+        let cursor_row = self.scrollback_rows() + usize::from(cursor.1);
+        let (page, row) = self.screen_row_id(cursor.1);
+        let cursor_pin = self
+            .pin(Position {
+                page,
+                row,
+                col: cursor.0,
+            })
+            .expect("the cursor's cell is in the list");
+        let mut writer = Writer {
+            cols,
+            x: 0,
+            last: None,
+            carried: Vec::new(),
+        };
+        let mut wrapped = false;
+        let mut source_row = 0;
+        for (page, pins) in self.take_pages(cols) {
+            let mut pins = pins.into_iter().peekable();
+            for row in 0..page.len() {
+                let metadata = page.row(row);
+                let cells = page.cells(row);
+                let wraps = metadata.has(RowFlag::SoftWrapped);
+                if !wrapped {
+                    self.start_line(&mut writer, metadata);
+                }
+                let last = cells[usize::from(old_cols) - 1];
+                let mut len = if wraps {
+                    old_cols - u16::from(last.width() == Width::SpacerHead)
+                } else {
+                    // Fewer cells than a row holds.
+                    cells
+                        .iter()
+                        .rposition(|cell| !cell.is_empty())
+                        .map_or(0, |x| x as u16 + 1)
+                };
+                if source_row == cursor_row {
+                    len = len.max(cursor.0 + 1);
+                }
+                let mut col = 0;
+                while col < len {
+                    let wide = cells[usize::from(col)].width() == Width::Wide;
+                    let at = self.place(&mut writer, &page, row, col);
+                    self.repin(&mut pins, row, col, at);
+                    if wide && cols >= 2 {
+                        self.repin(&mut pins, row, col + 1, (at.0, at.1, at.2 + 1));
+                        col += 2;
+                    } else {
+                        col += 1;
+                    }
+                }
+                // The pins past the text: a spacer head's go with the next
+                // cell, and the others after the line's text.
+                while let Some(&pin) = pins
+                    .peek()
+                    .filter(|&&pin| self.pins.place_of(pin).map(|p| p.row) == Some(row))
+                {
+                    pins.next();
+                    if wraps {
+                        writer.carried.push(pin);
+                    } else {
+                        let col = self.pins.place_of(pin).expect("a pin in use").col;
+                        let at = self.after_text(&writer, col.saturating_sub(len));
+                        self.move_pin(pin, at);
+                    }
+                }
+                if !wraps {
+                    for pin in std::mem::take(&mut writer.carried) {
+                        let at = self.after_text(&writer, 0);
+                        self.move_pin(pin, at);
+                    }
+                }
+                wrapped = wraps;
+                source_row += 1;
+            }
+        }
+        self.settle_cursor(cursor_pin, old_total)
+    }
+
+    /// Starts a line in a row of its own, which takes the prompt mark of
+    /// the line's first row.
+    fn start_line(&mut self, writer: &mut Writer, metadata: Row) {
+        self.push_row();
+        writer.x = 0;
+        writer.last = None;
+        if metadata.has(RowFlag::PromptStart) {
+            self.tail_row_flag(RowFlag::PromptStart);
+        }
+    }
+
+    /// Goes on to a new row of the line being written.
+    fn next_row(&mut self, writer: &mut Writer) {
+        self.tail_row_flag(RowFlag::SoftWrapped);
+        self.push_row();
+        self.tail_row_flag(RowFlag::Continuation);
+        writer.x = 0;
+    }
+
+    fn tail_row_flag(&mut self, flag: RowFlag) {
+        let tail = self.tail;
+        let page = self.page_at_mut(tail);
+        let row = page.len() - 1;
+        page.row_mut(row).set(flag, true);
+    }
+
+    /// Writes the cell at column `col` of row `row` of `source` where the
+    /// line being written has got to, with its second half if it is wide,
+    /// and returns where it went: its node, row and column.
+    fn place(&mut self, writer: &mut Writer, source: &Page, row: u16, col: u16) -> (u32, u16, u16) {
+        let cell = source.cells(row)[usize::from(col)];
+        let wide = cell.width() == Width::Wide && writer.cols >= 2;
+        if writer.x + 1 + u16::from(wide) > writer.cols {
+            // A wide character that the edge would split leaves a spacer
+            // head in the last column.
+            if writer.x < writer.cols {
+                self.set_tail_cell(writer.x, Cell::EMPTY.with_width(Width::SpacerHead));
+            }
+            self.next_row(writer);
+        }
+        let x = writer.x;
+        match cell.width() {
+            Width::Wide if wide => {
+                self.copy_to_tail(source, row, col, x);
+                let has_tail = source
+                    .cells(row)
+                    .get(usize::from(col) + 1)
+                    .is_some_and(|cell| cell.width() == Width::SpacerTail);
+                if has_tail {
+                    self.copy_to_tail(source, row, col + 1, x + 1);
+                } else {
+                    self.set_tail_cell(x + 1, Cell::EMPTY.with_width(Width::SpacerTail));
+                }
+            }
+            // A wide character in a column of one, and a spacer of a wide
+            // character that is not there, show nothing.
+            Width::Wide | Width::SpacerHead | Width::SpacerTail => {
+                self.set_tail_cell(x, Cell::EMPTY);
+            }
+            Width::Narrow => self.copy_to_tail(source, row, col, x),
+        }
+        writer.x += 1 + u16::from(wide);
+        let at = (self.tail, self.page_at(self.tail).len() - 1, x);
+        writer.last = Some(at);
+        for pin in std::mem::take(&mut writer.carried) {
+            self.move_pin(pin, at);
+        }
+        at
+    }
+
+    /// Copies a cell of `source` into column `x` of the last row, growing
+    /// its page when a table is full.
+    fn copy_to_tail(&mut self, source: &Page, row: u16, col: u16, x: u16) {
+        let tail = self.tail;
+        let to = self.page_at(tail).len() - 1;
+        let mut when_full = WhenFull::Fail;
+        loop {
+            match self
+                .page_at_mut(tail)
+                .copy_cell(to, x, source, row, col, when_full)
+            {
+                Ok(()) => return,
+                Err(full) => {
+                    if self.grow_node(tail, full).is_err() {
+                        when_full = WhenFull::Drop;
+                    }
+                }
+            }
+        }
+    }
+
+    fn set_tail_cell(&mut self, x: u16, cell: Cell) {
+        let tail = self.tail;
+        let page = self.page_at_mut(tail);
+        let row = page.len() - 1;
+        page.set_cell(row, x, cell);
+    }
+
+    /// Where the cell `past` cells after the line's text goes: in its last
+    /// row, as far as the row goes.
+    fn after_text(&self, writer: &Writer, past: u16) -> (u32, u16, u16) {
+        let (node, row, x) = writer.last.map_or_else(
+            || (self.tail, self.page_at(self.tail).len() - 1, 0),
+            |(node, row, x)| (node, row, x + 1),
+        );
+        (node, row, x.saturating_add(past).min(writer.cols - 1))
+    }
+
+    /// Moves the pins of the cell at column `col` of row `row` of the page
+    /// being rewritten to `at`.
+    fn repin(
+        &mut self,
+        pins: &mut std::iter::Peekable<std::vec::IntoIter<u32>>,
+        row: u16,
+        col: u16,
+        at: (u32, u16, u16),
+    ) {
+        while let Some(&pin) = pins.peek().filter(|&&pin| {
+            self.pins
+                .place_of(pin)
+                .is_some_and(|place| (place.row, place.col) == (row, col))
+        }) {
+            pins.next();
+            self.move_pin(pin, at);
+        }
+    }
+
+    /// Puts `pin`, which no node lists, at `at`: a node, a row and a
+    /// column.
+    fn move_pin(&mut self, pin: u32, at: (u32, u16, u16)) {
+        let (node, row, col) = at;
+        *self.pins.place_mut(pin) = Place { node, row, col };
+        self.nodes[node as usize].pins.push(pin);
+    }
+
+    /// Settles the screen after rewrapping, which may have changed how many
+    /// rows the list has, from `old_total`, and returns where the cursor,
+    /// whose pin is `cursor_pin`, is on it.
+    fn settle_cursor(&mut self, cursor_pin: PinId, old_total: usize) -> (u16, u16) {
+        let index = |list: &Self| {
+            let position = list.pin_position(cursor_pin)?;
+            list.row_index(position.page, position.row)
+        };
+        // A line longer than the scrollback can take, which goes on past
+        // the cursor, can push the cursor's row out of the list: the
+        // cursor then starts the screen's last row.
+        let Some(cursor) = index(self) else {
+            while self.total_rows < usize::from(self.rows) {
+                self.push_row();
+            }
+            return (0, self.rows - 1);
+        };
+        // The empty rows below the cursor take the rows that rewrapping
+        // added, as far as there are some.
+        let added = self.total_rows.saturating_sub(old_total);
+        let below = self.total_rows - 1 - cursor;
+        let empty = (0..below.min(added))
+            .take_while(|&n| {
+                self.row_at(self.total_rows - 1 - n)
+                    .and_then(|(page, row)| Some(page_row_is_empty(self.page(page)?, row)))
+                    .unwrap_or(false)
+            })
+            .count();
+        for _ in 0..empty {
+            self.pop_row();
+        }
+        // The cursor stays on screen: the rows below it go first.
+        let excess = (self.total_rows - 1 - cursor).saturating_sub(usize::from(self.rows) - 1);
+        for _ in 0..excess {
+            self.pop_row();
+        }
+        while self.total_rows < usize::from(self.rows) {
+            self.push_row();
+        }
+        while let Some(page) = self.pool.pop() {
+            self.give(page.memory());
+        }
+        let col = self
+            .pin_position(cursor_pin)
+            .map_or(0, |position| position.col);
+        let y = index(self).map_or(usize::from(self.rows) - 1, |index| {
+            index - self.scrollback_rows()
+        });
+        self.unpin(cursor_pin);
+        // Within the screen, so it fits.
+        (col, y as u16)
+    }
+
+    /// Rebuilds every page at `cols` columns, each row cut or extended.
+    fn set_cols(&mut self, cols: u16) {
+        for (page, pins) in self.take_pages(cols) {
             let mut pins = pins.into_iter().peekable();
             for row in 0..page.len() {
                 self.push_row();
@@ -1919,8 +2253,9 @@ mod tests {
         Delete(u16, u16, u16, u16),
         /// Pins a cell of the row at an index of the list, modulo its rows.
         Pin(usize, u16),
-        /// Resizes the list, without reflow.
-        Resize(u16, u16, bool),
+        /// Resizes the list: 0 cuts, taking new rows from the scrollback; 1
+        /// cuts, adding them at the bottom; 2 rewraps.
+        Resize(u16, u16, u8),
         /// Lets go of a pin, modulo how many there are.
         Unpin(usize),
     }
@@ -1940,8 +2275,8 @@ mod tests {
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
-            1 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, any::<bool>())
-                .prop_map(|(cols, rows, alternate)| Op::Resize(cols, rows, alternate)),
+            2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3)
+                .prop_map(|(cols, rows, how)| Op::Resize(cols, rows, how)),
         ]
     }
 
@@ -2017,9 +2352,13 @@ mod tests {
                             prop_assert_eq!(list.pin_position(pin), None);
                         }
                     }
-                    Op::Resize(cols, rows, alternate) => {
-                        let grow = if alternate { Grow::AtTheBottom } else { Grow::FromScrollback };
-                        list.resize(cols, rows, (0, list.rows() - 1), grow);
+                    Op::Resize(cols, rows, how) => {
+                        let cursor = (0, list.rows() - 1);
+                        let _ = match how {
+                            0 => list.resize(cols, rows, cursor, Grow::FromScrollback),
+                            1 => list.resize(cols, rows, cursor, Grow::AtTheBottom),
+                            _ => list.reflow(cols, rows, cursor),
+                        };
                     }
                 }
                 assert_pins_listed(&list);

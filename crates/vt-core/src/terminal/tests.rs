@@ -3215,14 +3215,16 @@ fn resizing_keeps_the_text_and_moves_the_cursor_with_it() {
     term.terminal.resize(5, 4);
     assert_eq!(term.screen(), ["abc", "def", "", ""]);
     assert_eq!(term.cursor(), (3, 1, false));
-    // Shorter: the empty rows below the cursor go first; narrower: cut.
+    // Narrower, the lines wrap, and the empty rows below the cursor take
+    // the new rows; shorter, the top rows go to the scrollback.
     term.terminal.resize(2, 2);
-    assert_eq!(term.screen(), ["ab", "de"]);
+    assert_eq!(term.screen(), ["de", "f"]);
     assert_eq!(term.cursor(), (1, 1, false));
     assert_eq!((term.terminal.cols(), term.terminal.rows()), (2, 2));
-    // Taller: the rows come back from the scrollback, none here.
+    // Taller: the rows come back from the scrollback.
     term.terminal.resize(2, 3);
-    assert_eq!(term.screen(), ["ab", "de", ""]);
+    assert_eq!(term.screen(), ["c", "de", "f"]);
+    assert_eq!(term.cursor(), (1, 2, false));
     term.terminal.resize(0, 0);
     assert_eq!((term.terminal.cols(), term.terminal.rows()), (1, 1));
 }
@@ -3236,11 +3238,17 @@ fn a_wrap_pending_at_the_end_of_a_row_goes_on_after_it_when_it_widens() {
     assert_eq!(term.cursor(), (5, 0, false));
     term.feed("f");
     assert_eq!(term.screen()[0], "abcdef");
-    // Narrower, the cursor stays in the last column.
+    // Narrower, the line wraps, and the cursor goes on after its text.
     let mut term = Term::new(5, 2);
     term.feed("abcde");
     term.terminal.resize(3, 2);
-    assert_eq!(term.cursor(), (2, 0, false));
+    assert_eq!(term.screen(), ["abc", "de"]);
+    assert_eq!(term.cursor(), (2, 1, false));
+    // On the alternate screen, cut, it stays pending in the last column.
+    let mut term = Term::new(5, 2);
+    term.feed("\x1b[?1049habcde");
+    term.terminal.resize(3, 2);
+    assert_eq!(term.cursor(), (2, 0, true));
     // Only taller, the wrap stays pending.
     let mut term = Term::new(5, 2);
     term.feed("abcde");
@@ -3318,6 +3326,155 @@ fn resizing_ends_the_cluster_and_empties_a_cut_wide_character() {
     assert_eq!(term.screen()[0], "abcdefgh");
     assert!(term.cell(8, 0).is_empty());
     assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn reflow_rewraps_lines_as_the_width_changes() {
+    let mut term = Term::new(10, 4);
+    term.feed("abcdefghijklmnopqrstuvwxy\r\nshort");
+    assert_eq!(
+        term.screen(),
+        ["abcdefghij", "klmnopqrst", "uvwxy", "short"]
+    );
+    term.terminal.resize(7, 4);
+    assert_eq!(term.screen(), ["hijklmn", "opqrstu", "vwxy", "short"]);
+    assert_eq!(term.cursor(), (5, 3, false));
+    let flags: Vec<_> = (0..4)
+        .map(|y| {
+            (
+                term.row(y).has(RowFlag::SoftWrapped),
+                term.row(y).has(RowFlag::Continuation),
+            )
+        })
+        .collect();
+    assert_eq!(
+        flags,
+        [(true, true), (true, true), (false, true), (false, false)]
+    );
+    // Wider, the line comes back whole, the scrollback with it.
+    term.terminal.resize(30, 4);
+    assert_eq!(
+        term.screen(),
+        ["abcdefghijklmnopqrstuvwxy", "short", "", ""]
+    );
+    assert_eq!(term.cursor(), (5, 1, false));
+    assert!(!term.row(0).has(RowFlag::SoftWrapped));
+}
+
+#[test]
+fn reflow_moves_a_wide_character_that_the_edge_splits() {
+    let mut term = Term::new(6, 4);
+    term.feed("ab\u{4E2D}de\r\n");
+    let tail = pin(&mut term, 3, 0);
+    term.terminal.resize(3, 4);
+    assert_eq!(term.screen(), ["ab", "\u{4E2D}d", "e", ""]);
+    assert_eq!(term.cell(2, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(0, 1).width(), Width::Wide);
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(rows.pin_on_screen(tail), Some((1, 1)), "on the second half");
+    let head = pin(&mut term, 2, 0);
+    term.terminal.resize(6, 4);
+    assert_eq!(term.screen()[0], "ab\u{4E2D}de", "the spacer head goes");
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(
+        rows.pin_on_screen(head),
+        Some((2, 0)),
+        "the spacer head's pin"
+    );
+    assert_eq!(rows.pin_on_screen(tail), Some((3, 0)));
+    // A spacer head's pin goes with the wide character, wherever it goes.
+    let mut term = Term::new(3, 3);
+    term.feed("xa\u{4E2D}");
+    assert_eq!(term.cell(2, 0).width(), Width::SpacerHead);
+    let head = pin(&mut term, 2, 0);
+    term.terminal.resize(2, 3);
+    assert_eq!(term.screen()[..2], ["xa", "\u{4E2D}"]);
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(rows.pin_on_screen(head), Some((0, 1)));
+}
+
+#[test]
+fn reflow_keeps_styles_graphemes_and_links() {
+    let mut term = Term::new(8, 3);
+    term.feed("abc\x1b[31mde\x1b]8;;http://a\x07fg\x1b]8;;\x07\x1b[me\u{301}xyz");
+    term.terminal.resize(3, 3);
+    assert_eq!(term.screen(), ["def", "ge\u{301}x", "yz"]);
+    assert_eq!(style_at(&term, 0, 0).fg, Color::Palette(1));
+    assert_eq!(link_at(&term, 1, 0), None);
+    assert_eq!(link_at(&term, 2, 0), link("", "http://a"));
+    assert_eq!(link_at(&term, 0, 1), link("", "http://a"));
+    assert_eq!(cluster_at(&term, 1, 1), ['e', '\u{301}']);
+    assert_tables_counted(&term.terminal.primary);
+    term.terminal.resize(8, 3);
+    assert_eq!(term.screen()[0], "abcdefge\u{301}");
+    assert_eq!(cluster_at(&term, 7, 0), ['e', '\u{301}']);
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn reflow_keeps_the_cursor_where_it_was_in_its_line() {
+    // In the empty cells after the text.
+    let mut term = Term::new(10, 3);
+    term.feed("ab\x1b[1;9H");
+    term.terminal.resize(5, 3);
+    assert_eq!(term.cursor(), (3, 1, false));
+    assert_eq!(term.screen(), ["ab", "", ""]);
+    // The empty rows below take the rows that the text needs.
+    let mut term = Term::new(10, 6);
+    term.feed("abcdefghijKLM");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["abcde", "fghij", "KLM", "", "", ""]);
+    assert_eq!(term.cursor(), (3, 2, false));
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+}
+
+#[test]
+fn reflow_moves_the_saved_cursor_and_pins_with_their_text() {
+    let mut term = Term::new(10, 4);
+    term.feed("abcdefghijKLM\x1b[2;2H\x1b7\x1b[3;1H");
+    let k = pin(&mut term, 0, 1);
+    let trailing = pin(&mut term, 4, 1);
+    term.terminal.resize(5, 4);
+    assert_eq!(term.screen(), ["abcde", "fghij", "KLM", ""]);
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (1, 2, false), "back on the L");
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(rows.pin_on_screen(k), Some((0, 2)));
+    assert_eq!(pinned_char(&term, k), Some('K'));
+    assert_eq!(
+        rows.pin_on_screen(trailing),
+        Some((4, 2)),
+        "as far after the text as it was"
+    );
+    // A saved cursor whose text went to the scrollback comes to the top.
+    let mut term = Term::new(10, 3);
+    term.feed("abcdefghijKLMNOPQRST\r\nxyz\x1b[2;2H\x1b7\x1b[3;3H");
+    term.terminal.resize(3, 3);
+    assert_eq!(term.screen(), ["PQR", "ST", "xyz"]);
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (1, 0, false));
+    // On the alternate screen, a saved cursor in cut columns comes back
+    // to the last column.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?1049h\x1b[2;9H\x1b7\x1b[H");
+    term.terminal.resize(5, 3);
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (4, 1, false));
+}
+
+#[test]
+fn reflow_keeps_the_prompt_mark_on_the_first_row_of_its_line() {
+    let mut term = Term::new(6, 3);
+    term.feed("\x1b]133;A\x07$ abcdefgh");
+    term.terminal.resize(3, 3);
+    let marks: Vec<_> = (0..3)
+        .map(|y| term.row(y).has(RowFlag::PromptStart))
+        .collect();
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 1);
+    assert_eq!(marks, [false, false, false], "the line's first row went up");
+    term.terminal.resize(12, 3);
+    assert!(term.row(0).has(RowFlag::PromptStart));
+    assert!(!term.row(1).has(RowFlag::PromptStart));
 }
 
 #[test]

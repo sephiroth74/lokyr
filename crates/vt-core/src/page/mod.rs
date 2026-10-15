@@ -695,44 +695,63 @@ impl Page {
         columns: Range<u16>,
         when_full: WhenFull,
     ) -> Result<(), TableFull> {
+        for x in columns {
+            self.copy_cell(to, x, source, from, x, when_full)?;
+        }
+        Ok(())
+    }
+
+    /// Copies the cell at column `from_x` of row `from` of `source` into
+    /// column `x` of row `to`, with its style, grapheme and link in this
+    /// page's tables, in place of what the cell held. `when_full` says what
+    /// a full table does, as for [`Page::copy_cells`]; with
+    /// [`WhenFull::Fail`], the cell may be left partly copied, for the
+    /// caller to copy again once the page has grown.
+    pub fn copy_cell(
+        &mut self,
+        to: u16,
+        x: u16,
+        source: &Page,
+        from: u16,
+        from_x: u16,
+        when_full: WhenFull,
+    ) -> Result<(), TableFull> {
         // What a full table does: stop the copy, or let the cell go on
         // without what it has no room for.
         let full = |full| match when_full {
             WhenFull::Fail => Err(full),
             WhenFull::Drop => Ok(()),
         };
-        for x in columns {
-            let cell = source.cells(from)[usize::from(x)];
-            let style = match self.styles.acquire(source.styles().get(cell.style())) {
-                Ok(style) => style,
-                Err(error) => {
-                    full(error)?;
-                    StyleId::DEFAULT
-                }
-            };
-            let mut copy = cell.with_style(style).with_hyperlink(false);
-            if let Content::Grapheme(first) = cell.content() {
-                copy = copy.with_content(Content::Char(first));
+        let cell = source.cells(from)[usize::from(from_x)];
+        let style = match self.styles.acquire(source.styles().get(cell.style())) {
+            Ok(style) => style,
+            Err(error) => {
+                full(error)?;
+                StyleId::DEFAULT
             }
-            self.set_cell(to, x, copy);
-            self.styles.release(style);
-            for &c in source.grapheme(from, x) {
-                if let Err(error) = self.push_codepoint(to, x, c) {
-                    full(error)?;
-                    break;
-                }
+        };
+        let mut copy = cell.with_style(style).with_hyperlink(false);
+        if let Content::Grapheme(first) = cell.content() {
+            copy = copy.with_content(Content::Char(first));
+        }
+        self.set_cell(to, x, copy);
+        self.styles.release(style);
+        for &c in source.grapheme(from, from_x) {
+            if let Err(error) = self.push_codepoint(to, x, c) {
+                full(error)?;
+                break;
             }
-            if let Some(link) = source.hyperlink(from, x) {
-                match self.hyperlinks.acquire(source.hyperlinks().get(link)) {
-                    Ok(link) => {
-                        let linked = self.set_hyperlink(to, x, Some(link));
-                        self.hyperlinks.release(link);
-                        if let Err(error) = linked {
-                            full(error)?;
-                        }
+        }
+        if let Some(link) = source.hyperlink(from, from_x) {
+            match self.hyperlinks.acquire(source.hyperlinks().get(link)) {
+                Ok(link) => {
+                    let linked = self.set_hyperlink(to, x, Some(link));
+                    self.hyperlinks.release(link);
+                    if let Err(error) = linked {
+                        full(error)?;
                     }
-                    Err(error) => full(error)?,
                 }
+                Err(error) => full(error)?,
             }
         }
         Ok(())
