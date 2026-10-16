@@ -158,7 +158,7 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 
 ### Engine
 
-- **Literal search**: `memchr::memmem` over the text of logical lines. Case-insensitive search has an ASCII fast path plus simple Unicode case folding.
+- **Literal search**: `memchr::memmem` over the text of logical lines, forward or backward from a cell; empty cells read as spaces, but those that end a line do not. Case-insensitive literal search folds ASCII; Unicode case folding goes through the regex engine, with the literal escaped.
 - **Regex search**:
   - Forward and reverse lazy DFAs from `regex-automata`, advanced **one cell at a time** as Alacritty does, because `regex-automata` has no chunked-input API.
   - This avoids building intermediate strings for the whole scrollback.
@@ -166,7 +166,7 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 - **Logical lines**: *soft-wrapped* rows count as one line, so words broken at the edge are still found.
 - **Order and cancellation**: the search runs in chunks on a worker thread, starting at the viewport and moving outward so nearby results arrive first. Each keystroke in the find bar cancels the previous search.
 - **Results**:
-  - Stored as stable pins, which stay valid as new output arrives.
+  - Stored as stable pins, on a match's first and last cells, which stay valid as new output arrives, and go when the cells leave the scrollback.
   - At most 100k are kept; past that, only the count.
 - **Target**: 100k lines in ≤ 150 ms ([PERFORMANCE.md](PERFORMANCE.md)).
 

@@ -164,6 +164,8 @@ name = "bolt-search"
 version = "0.1.0"
 dependencies = [
  "bolt-vt-core",
+ "memchr",
+ "proptest",
 ]
 
 [[package]]

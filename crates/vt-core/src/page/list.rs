@@ -333,18 +333,82 @@ impl PageList {
     /// The page and the row in it of the row at `index` of the list, oldest
     /// first, if the list has that many.
     pub fn row_at(&self, index: usize) -> Option<(PageId, u16)> {
+        let (node, row) = self.node_at(index)?;
+        Some((self.id(node), row))
+    }
+
+    /// The rows from index `start` of the list on, oldest first, each as
+    /// its page's id, its page and its row in it, read in one pass.
+    ///
+    /// # Panics
+    ///
+    /// On a cold page: [`PageList::warm`] brings back the rows to read.
+    pub fn rows_from(&self, start: usize) -> impl Iterator<Item = (PageId, &Page, u16)> + '_ {
+        let (mut node, mut row) = self.node_at(start).unwrap_or((NONE, 0));
+        std::iter::from_fn(move || {
+            while node != NONE {
+                if row < self.node_len(node) {
+                    let item = (self.id(node), self.warm_page(node), row);
+                    row += 1;
+                    return Some(item);
+                }
+                node = self.nodes[node as usize].next;
+                row = 0;
+            }
+            None
+        })
+    }
+
+    /// The rows before index `end` of the list, newest first, as
+    /// [`PageList::rows_from`] gives them.
+    ///
+    /// # Panics
+    ///
+    /// On a cold page, as [`PageList::rows_from`] does.
+    pub fn rows_before(&self, end: usize) -> impl Iterator<Item = (PageId, &Page, u16)> + '_ {
+        // The node of the row before `end`, and how many of its rows, from
+        // its first, come before `end`.
+        let (mut node, mut left) = end
+            .min(self.total_rows)
+            .checked_sub(1)
+            .and_then(|last| self.node_at(last))
+            .map_or((NONE, 0), |(node, row)| (node, row + 1));
+        std::iter::from_fn(move || {
+            while node != NONE {
+                if left > 0 {
+                    left -= 1;
+                    return Some((self.id(node), self.warm_page(node), left));
+                }
+                node = self.nodes[node as usize].prev;
+                left = if node == NONE { 0 } else { self.node_len(node) };
+            }
+            None
+        })
+    }
+
+    /// The node that holds the row at `index` of the list, and the row in
+    /// its page.
+    fn node_at(&self, index: usize) -> Option<(u32, u16)> {
         let mut node = self.head;
         let mut start = 0;
         while node != NONE {
             let len = usize::from(self.node_len(node));
             if index < start + len {
                 // Fewer rows than the page holds.
-                return Some((self.id(node), (index - start) as u16));
+                return Some((node, (index - start) as u16));
             }
             start += len;
             node = self.nodes[node as usize].next;
         }
         None
+    }
+
+    /// The page of node `index`, which is warm.
+    fn warm_page(&self, index: u32) -> &Page {
+        self.nodes[index as usize]
+            .page
+            .as_ref()
+            .expect("a cold page is warmed before its rows are read")
     }
 
     /// The index in the list, oldest first, of row `row` of the page with
@@ -2970,6 +3034,45 @@ mod tests {
                 let live = pins.iter().filter(|(pin, _)| list.pin_position(*pin).is_some()).count();
                 prop_assert_eq!(list.pins(), live);
             }
+        }
+    }
+
+    #[test]
+    fn rows_are_read_in_one_pass_either_way() {
+        // At 2000 columns a page holds about 30 rows: several pages.
+        let mut list = PageList::new(2000, 8, Scrollback::default());
+        scroll(&mut list, 0, 100);
+        let total = list.total_rows();
+        let at = |index| list.row_at(index).unwrap();
+        for start in [0, 1, 29, 30, 31, total - 1, total] {
+            let forward: Vec<_> = list
+                .rows_from(start)
+                .map(|(id, _, row)| (id, row))
+                .collect();
+            assert_eq!(
+                forward,
+                (start..total).map(at).collect::<Vec<_>>(),
+                "from {start}"
+            );
+            let backward: Vec<_> = list
+                .rows_before(start)
+                .map(|(id, _, row)| (id, row))
+                .collect();
+            assert_eq!(
+                backward,
+                (0..start).rev().map(at).collect::<Vec<_>>(),
+                "before {start}"
+            );
+        }
+        assert_eq!(list.rows_from(total + 5).count(), 0);
+        assert_eq!(
+            list.rows_before(total + 5).count(),
+            total,
+            "past the end, every row"
+        );
+        for (id, page, row) in list.rows_from(0).take(3) {
+            assert!(std::ptr::eq(page, list.page(id).unwrap()));
+            assert!(row < page.len());
         }
     }
 

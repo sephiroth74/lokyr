@@ -21,6 +21,8 @@ cargo_metadata = "0.23.1"
 # Benchmarks, without plots or rayon.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 libc = "0.2.190"
+# Literal search over the grid's text.
+memchr = "2.8.3"
 # objc2 crates move together: keep their versions aligned.
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
