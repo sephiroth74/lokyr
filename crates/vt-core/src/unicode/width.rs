@@ -101,14 +101,18 @@ impl Widths {
     /// tables of Unicode 8 knew no emoji presentation, so with them a
     /// cluster is always as wide as its first codepoint that has a width.
     pub fn cluster_width(self, first: char, rest: &[char]) -> u8 {
-        let first_properties = properties(first);
+        // The base, the first codepoint that has a width, and what follows
+        // it, which emoji presentation reads.
+        let mut first_properties = properties(first);
         let mut width = self.char_width_with(first, first_properties);
+        let (mut first, mut rest) = (first, rest);
         if width == 0 {
-            width = rest
-                .iter()
-                .map(|&c| self.char_width(c))
-                .find(|&width| width > 0)
-                .unwrap_or(0);
+            let Some(at) = rest.iter().position(|&c| self.char_width(c) > 0) else {
+                return 0;
+            };
+            (first, rest) = (rest[at], &rest[at + 1..]);
+            first_properties = properties(first);
+            width = self.char_width_with(first, first_properties);
         }
         if self.tables == Tables::Unicode8 {
             return width;

@@ -260,6 +260,11 @@ impl Terminal {
             return;
         }
         let head = self.cell(x, y);
+        // In insert mode, the second half pushes the rest of the line
+        // right, as the cluster's first half did.
+        if self.insert {
+            self.screen_mut().rows.insert_blanks(y, x + 1, 1, end);
+        }
         self.clear_overlaps(x + 1, y, 1);
         {
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
@@ -328,6 +333,8 @@ impl Terminal {
             codepoints.extend_from_slice(page.grapheme(row, x));
         }
         if self.normalization.normalize(&codepoints, &mut normal) {
+            // A decomposition can make the cluster longer than it keeps.
+            normal.truncate(MAX_CLUSTER);
             let rows = &mut self.screen_mut().rows;
             loop {
                 let (page, row) = rows.screen_row_mut(y);

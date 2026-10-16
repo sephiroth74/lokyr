@@ -3576,6 +3576,37 @@ fn a_saved_cursor_in_a_cut_column_keeps_its_row() {
 }
 
 #[test]
+fn a_cluster_that_widens_in_insert_mode_moves_the_line_right() {
+    let mut term = Term::new(10, 2);
+    term.feed("abc\r\x1b[4h\u{2764}\u{FE0F}");
+    assert_eq!(term.screen()[0], "\u{2764}\u{FE0F}abc");
+    assert_eq!(term.cursor(), (2, 0, false));
+    let mut term = Term::new(10, 2);
+    term.feed("abc\r\x1b[4h\u{600}\u{4E2D}");
+    assert_eq!(term.screen()[0], "\u{600}\u{4E2D}abc");
+    assert_eq!(cluster_at(&term, 0, 0), ['\u{600}', '\u{4E2D}']);
+}
+
+#[test]
+fn a_cluster_keeps_32_codepoints_after_normalization_too() {
+    let options = Options {
+        normalization: Normalization::Nfd,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 2, options);
+    term.feed(format!("a{}\u{344}x", "\u{301}".repeat(30)));
+    assert_eq!(cluster_at(&term, 0, 0).len(), 32);
+}
+
+#[test]
+fn a_flag_after_a_prepended_character_takes_two_cells() {
+    let mut term = Term::new(10, 2);
+    term.feed("\r\u{600}\u{1F1FA}\u{1F1F8}x");
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cursor(), (3, 0, false));
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {

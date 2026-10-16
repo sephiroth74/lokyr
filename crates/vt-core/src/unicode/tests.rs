@@ -377,6 +377,19 @@ fn a_cluster_after_a_prepended_character_takes_the_next_one_s_width() {
     assert_eq!(CURRENT.cluster_width('\u{600}', &['\u{301}', '中']), 2);
     assert_eq!(CURRENT.cluster_width('\u{600}', &[]), 0);
     assert_eq!(UNICODE_8.cluster_width('\u{600}', &['中']), 2);
+    // Emoji presentation reads the base and what follows it.
+    assert_eq!(
+        CURRENT.cluster_width('\u{600}', &['\u{1F1FA}', '\u{1F1F8}']),
+        2
+    );
+    assert_eq!(
+        CURRENT.cluster_width('\u{600}', &['\u{2764}', '\u{FE0F}']),
+        2
+    );
+    assert_eq!(
+        CURRENT.cluster_width('\u{600}', &['\u{231A}', '\u{FE0E}']),
+        1
+    );
 }
 
 #[test]
