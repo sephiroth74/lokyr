@@ -2214,6 +2214,26 @@ fn pins_follow_the_text_that_editing_moves() {
 }
 
 #[test]
+fn programs_set_and_query_modify_other_keys() {
+    let mut term = Term::new(10, 2);
+    let level = |term: &Term| term.terminal.input_modes().modify_other_keys;
+    term.feed("\x1b[>4;2m");
+    assert_eq!(level(&term), 2);
+    term.feed("\x1b[?4m");
+    assert_eq!(replies(&mut term), "\x1b[>4;2m");
+    term.feed("\x1b[>4;7m");
+    assert_eq!(level(&term), 2, "at most 2");
+    term.feed("\x1b[>4m");
+    assert_eq!(level(&term), 0, "no value resets it");
+    term.feed("\x1b[>4;1m\x1b[>4n");
+    assert_eq!(level(&term), 0, "and so does CSI > 4 n");
+    term.feed("\x1b[>4;1m\x1b[>1;2m");
+    assert_eq!(level(&term), 1, "other resources are not this one");
+    term.feed("\x1bc");
+    assert_eq!(level(&term), 0, "RIS resets it");
+}
+
+#[test]
 fn replies_wait_until_they_are_taken() {
     let mut term = Term::new(4, 1);
     term.feed("\x1b[?25$p");

@@ -154,6 +154,10 @@ pub struct InputModes {
     pub meta_sends_escape: bool,
     /// Pastes come between `CSI 200 ~` and `CSI 201 ~` (mode 2004).
     pub bracketed_paste: bool,
+    /// xterm's `modifyOtherKeys`, which `CSI > 4 ; n m` sets: 0, keys as
+    /// usual; 1, the keys whose usual sequence would lose a modifier as
+    /// `CSI 27 ; modifiers ; code ~`; 2, every modified key so.
+    pub modify_other_keys: u8,
 }
 
 /// The margins: the rows from `top` to `bottom` and the columns from `left`

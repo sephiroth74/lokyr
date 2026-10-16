@@ -59,6 +59,16 @@ impl Terminal {
             ([b'>'], b'q') if params.value(0) == 0 => self.report_version(),
             ([], b't') => self.window_ops(params),
             ([], b'm') => self.select_graphic_rendition(params),
+            // XTMODKEYS for modifyOtherKeys, its reset (XTMODKEYS without a
+            // value, and the older `CSI > 4 n`), and its query.
+            ([b'>'], b'm') if params.value(0) == 4 => {
+                self.input.modify_other_keys = params.value(1).min(2) as u8;
+            }
+            ([b'>'], b'n') if params.value(0) == 4 => self.input.modify_other_keys = 0,
+            ([b'?'], b'm') if params.value(0) == 4 => {
+                let reply = format!("\x1b[>4;{}m", self.input.modify_other_keys);
+                self.reply(reply.as_bytes());
+            }
             // SM and RM, DECSET and DECRST, and DECRQM for both kinds.
             ([], b'h') => self.set_ansi_modes(params, true),
             ([], b'l') => self.set_ansi_modes(params, false),

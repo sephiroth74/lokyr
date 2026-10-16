@@ -219,7 +219,11 @@ normalization = "none"    # none | nfc | nfd | hfs+
 ## Input
 
 - **Keyboard**:
-  - legacy xterm encoding, with `modifyOtherKeys` where needed;
+  - legacy xterm encoding, `input::encode_key`, from a `KeyEvent` that the platform makes once dead keys and input methods are resolved: the key, its modifiers, with the two Alt keys told apart, what it types with every modifier, and what it types with Shift alone, as macOS's `charactersIgnoringModifiers` gives it.
+    - Control maps characters to C0 as xterm does: the letters and `@[\]^_`, space and `2` to NUL, `3` to `7` to ESC and the four after it, `/` to US, `8` and `?` to DEL; other characters go as they are. Backspace sends DEL, and BS with Control; Shift with Tab sends `CSI Z`; Return sends CR, or CR LF in LNM.
+    - The cursor keys, Home and End send `CSI final`, or `SS3 final` in application mode (DECCKM); Insert, Delete, Page Up and Page Down `CSI n ~`; F1 to F4 `SS3 P` to `SS3 S`, and F5 to F20 `CSI n ~`. With modifiers, they all send `CSI 1 ; m final` or `CSI n ; m ~`, where `m` is 1 plus 1 for Shift, 2 for Meta and 4 for Control. The keypad sends `SS3` codes in application mode (DECKPAM), and what it types otherwise.
+    - An Alt that acts as Meta, as `KeyOptions` says for each side, sends ESC before the key, typed without Alt; one that does not types what the platform composed with it, as Option's characters on macOS. ESC is sent whatever mode 1036 says, which is reported but changes nothing: xterm's eight-bit Meta does not suit UTF-8.
+    - `modifyOtherKeys`, which programs set with `CSI > 4 ; n m` and query with `CSI ? 4 m`: at 1, the keys whose usual sequence loses a modifier, such as Control with a digit, Control and Shift with a letter, or Return with Control or Shift, send `CSI 27 ; m ; code ~`; at 2, every key with Control or Meta, and the named keys with any modifier, do. `CSI > 4 m` and `CSI > 4 n` reset it, and so does RIS.
   - the **kitty keyboard protocol** with every flag: disambiguate, event types, alternate keys, all keys as escapes, associated text.
   - The kitty flags live on a per-screen stack (`CSI > u`, `CSI < u`, `CSI = u`, `CSI ? u`).
 - **macOS specifics**:
