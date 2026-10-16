@@ -22,7 +22,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 | Clipboard write (OSC 52) | On, up to 1 MiB | tmux, Neovim and similar tools need it over ssh |
 | Title report (CSI 21 t) | Off | The classic way to inject text into the shell's input |
 | Report replies | Well-formed data only, never program-controlled text | Prevents injection through replies |
-| Bracketed paste | ESC and C0 controls (except tab and newline) stripped from pasted text | Stops a paste from ending bracketed paste from the inside (`\e[201~`) |
+| Pasted text | Control characters stripped, ESC and the rest of C0, DEL and C1, except tab and line breaks, with or without bracketed paste | Stops a paste from ending bracketed paste from the inside (`\e[201~`), or from sending ESC to an editor |
 | Multi-line paste without bracketed paste | Asks for confirmation | Avoids running commands by accident |
 | OSC 8 hyperlinks | `http`, `https`, `mailto` and `file` only (configurable); the target is shown on hover; opened with ⌘-click or Ctrl-click | No schemes that launch other apps |
 | Notifications from sequences (OSC 9, 777, 99) | Only when the window is not focused, rate-limited | Avoids spam |

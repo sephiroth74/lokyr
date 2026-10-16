@@ -239,9 +239,13 @@ normalization = "none"    # none | nfc | nfd | hfs+
   - Option can act as Meta, configurable separately for the left and right keys;
   - dead keys are supported;
   - IME composition text is never sent to the PTY.
-- **Mouse**: X10, 1000, 1002, 1003, SGR (1006), SGR-pixels (1016), alternate scroll (1007).
-- **Paste**: bracketed paste (2004), with the contents sanitized ([SECURITY.md](SECURITY.md)).
-- **Focus events**: mode 1004.
+- **Mouse**: `input::encode_mouse`, from a `MouseEvent`: a press, a release, a motion with a button held or none, or a step of the wheel, with the modifiers and the cell and the pixel under the pointer. It returns whether the event goes to the program rather than to the terminal, which selects text and scrolls with the others.
+  - **Tracking**: X10 (9) reports the presses of the first three buttons, without modifiers; 1000 presses, releases and the wheel; 1002 also motion with a button held; 1003 every motion. The platform reports a motion only when the cell changes, or the pixel, for reports in pixels.
+  - **Codes**: the first three buttons are 0 to 2, buttons 8 to 11 are 128 to 131, and the wheel 64 to 67; a motion adds 32, and Shift 4, either Alt 8 and Control 16.
+  - **Encodings**: X10's `CSI M` and three bytes, the code and the column and row from 1, each plus 32, where a release is 3, whichever button went up, and positions past 222 are the byte 0, as in xterm; SGR (1006), `CSI < code ; column ; row M`, or `m` for a release, which keeps the button; SGR-pixels (1016), the same with the pixel, from 1.
+  - **Alternate scroll** (1007): without tracking, on the alternate screen, each step of the vertical wheel sends the up or down cursor key, as cursor key mode has it.
+- **Paste**: `input::encode_paste`. With bracketed paste (2004), the text goes between `CSI 200 ~` and `CSI 201 ~`; without, each line break, CR LF, LF or CR, goes as CR, as Return sends it. Either way, the control characters other than tab and the line breaks are left out, C0, DEL and C1 alike, so that a paste can neither end the bracket with its own `CSI 201 ~` nor send ESC to an editor ([SECURITY.md](SECURITY.md#terminal-defaults)).
+- **Focus events**: `input::encode_focus` sends `CSI I` and `CSI O` in mode 1004.
 
 ## PTY and processes (`pty`)
 
