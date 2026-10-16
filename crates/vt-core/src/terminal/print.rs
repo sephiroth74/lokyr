@@ -308,7 +308,9 @@ impl Terminal {
             .with_protected(head.is_protected())
             .with_semantic(head.semantic());
         self.put(x + 1, y, blank);
-        if self.insert {
+        // Past the line's end, as when a margin moved over the cluster's
+        // second half, the line has nothing to move back.
+        if self.insert && x + 1 < end {
             self.screen_mut().rows.delete_cells(y, x + 1, 1, end);
         }
         let cursor = &mut self.screen_mut().cursor;

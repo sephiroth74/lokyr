@@ -3628,6 +3628,18 @@ fn a_cluster_that_narrows_in_insert_mode_moves_the_line_back() {
 }
 
 #[test]
+fn a_cluster_past_the_right_margin_narrows_in_insert_mode() {
+    let mut term = Term::new(10, 2);
+    // A wide cluster in columns 4 and 5, then a right margin at column 4,
+    // and the cursor past it.
+    term.feed("\x1b[1;5H\u{231A}\x1b[?69h\x1b[1;5s");
+    term.feed("\x1b[1;7H\x1b[4h\u{FE0E}");
+    assert_eq!(term.cell(4, 0).width(), Width::Narrow);
+    assert_eq!(term.cell(5, 0).width(), Width::Narrow);
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
 fn the_cell_that_a_narrowed_cluster_frees_keeps_its_style() {
     let mut term = Term::new(10, 2);
     term.feed("\x1b]133;A\x07\x1b[41m\x1b[1\"q\u{231A}\u{FE0E}");

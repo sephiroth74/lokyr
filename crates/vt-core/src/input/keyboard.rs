@@ -299,7 +299,10 @@ const ESC: u8 = 0x1B;
 /// says: xterm's eight-bit Meta does not suit UTF-8. With
 /// `modifyOtherKeys` at 1, keys whose usual sequence would lose a modifier,
 /// such as Control with a digit or Control and Shift with a letter, send
-/// `CSI 27 ; modifiers ; code ~`; at 2, every modified key does.
+/// `CSI 27 ; modifiers ; code ~`; at 2, as xterm's `input.c` has it, every
+/// key with Control or Meta does, and with Shift alone, space and the
+/// characters from `@` to DEL that the key types, but Backspace with
+/// Control alone, and the keypad.
 ///
 /// With flags, keys go as the kitty keyboard protocol has them:
 /// <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.
@@ -466,8 +469,12 @@ fn encode_char(event: &KeyEvent<'_>, modifiers: Modifiers, modes: &InputModes, o
         let lossy = modifiers.control
             && (control.is_none() || (modifiers.shift && base.is_ascii_alphabetic()));
         // At 2, as in xterm, Shift alone reports space and the characters
-        // that Control makes control codes of, from `@` to DEL.
-        let shifted = modifiers.shift && (base == ' ' || ('@'..='\x7f').contains(&base));
+        // that Control makes control codes of, from `@` to DEL, when the key
+        // types that character: one that Option or a dead key composed
+        // types.
+        let shifted = modifiers.shift
+            && single_char(event.text) == Some(base)
+            && (base == ' ' || ('@'..='\x7f').contains(&base));
         let reported = match modes.modify_other_keys {
             0 => false,
             1 => lossy,
@@ -928,6 +935,37 @@ mod tests {
             "\r\n"
         );
         assert_eq!(send(Key::Tab, alt_shift, "", "", &two), "\x1b[27;4;9~");
+    }
+
+    #[test]
+    fn composed_characters_type_at_modify_other_keys_2() {
+        let composing = KeyOptions {
+            left_alt_is_meta: false,
+            right_alt_is_meta: false,
+        };
+        let shift_option = Mods {
+            shift: true,
+            left_alt: true,
+            ..NONE
+        };
+        for level in 0..=2 {
+            let modes = InputModes {
+                modify_other_keys: level,
+                ..InputModes::default()
+            };
+            let typed = |key, text, unmodified| {
+                send_with(key, shift_option, text, unmodified, &modes, composing)
+            };
+            // Option, which is not Meta, composed them.
+            assert_eq!(typed(Key::Char('a'), "Å", "A"), "Å", "at {level}");
+            assert_eq!(typed(Key::Char(' '), "\u{a0}", " "), "\u{a0}", "at {level}");
+            // A dead key composed this one.
+            assert_eq!(
+                send(Key::Char('a'), SHIFT, "Â", "A", &modes),
+                "Â",
+                "at {level}"
+            );
+        }
     }
 
     #[test]

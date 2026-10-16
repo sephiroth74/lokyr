@@ -34,7 +34,8 @@ const NO_TEXT: u8 = ALT | CONTROL | SUPER | HYPER | META;
 /// for the functional keys, `CSI 1 ; modifiers final` and
 /// `CSI code ; modifiers ~`. Without the flags that disambiguate or report
 /// every key, presses that xterm has a sequence for send it, as without
-/// flags.
+/// flags, unless Super, Hyper, Meta or a lock is held, which xterm's
+/// sequences cannot carry.
 pub(super) fn encode_key(
     event: &KeyEvent<'_>,
     modes: &InputModes,
