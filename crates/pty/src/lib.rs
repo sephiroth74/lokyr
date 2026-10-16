@@ -27,6 +27,22 @@ pub struct Size {
     pub height: u16,
 }
 
+/// How a PTY's program ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Exit {
+    /// It exited, with this status.
+    Code(i32),
+    /// This signal ended it.
+    Signal(i32),
+}
+
+impl Exit {
+    /// Whether it exited with status 0.
+    pub fn success(self) -> bool {
+        self == Self::Code(0)
+    }
+}
+
 /// What a PTY runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Program {

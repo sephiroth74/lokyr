@@ -7,19 +7,25 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 
-use crate::{Error, Options, Program, Size};
+use crate::{Error, Exit, Options, Program, Size};
 
 /// A pseudo-terminal, with the program that runs in it.
 ///
-/// Dropping it closes the terminal, which hangs the program up.
+/// Dropping it hangs the program up, as closing a terminal does, with
+/// SIGHUP to the program and to the terminal's foreground process group,
+/// even while readers and writers still have the terminal open; a thread
+/// then waits for the program to go, so that it leaves no zombie behind.
 #[derive(Debug)]
 pub struct Pty {
     master: OwnedFd,
-    child: Child,
+    /// The program, until the drop hands it to the thread that waits for
+    /// it.
+    child: Option<Child>,
+    pid: u32,
     tty: PathBuf,
 }
 
@@ -68,7 +74,12 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     // none, so that the master reads the end when the program goes.
     drop(command);
     drop(slave);
-    Ok(Pty { master, child, tty })
+    Ok(Pty {
+        master,
+        pid: child.id(),
+        child: Some(child),
+        tty,
+    })
 }
 
 impl Pty {
@@ -90,16 +101,101 @@ impl Pty {
 
     /// The process id of the program.
     pub fn process_id(&self) -> u32 {
-        self.child.id()
+        self.pid
+    }
+
+    /// Gives the terminal `size`, in cells and in pixels; the program's
+    /// foreground process group learns of it through SIGWINCH.
+    pub fn resize(&self, size: Size) -> io::Result<()> {
+        let window = winsize(size);
+        // SAFETY: `TIOCSWINSZ` reads a `winsize`, which `window` is.
+        let failed = unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &window) };
+        if failed == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    /// The terminal's size, in cells and in pixels.
+    pub fn size(&self) -> io::Result<Size> {
+        // SAFETY: an all-zero `winsize` is a valid value to overwrite.
+        let mut window: libc::winsize = unsafe { std::mem::zeroed() };
+        // SAFETY: `TIOCGWINSZ` writes a `winsize`, which `window` is.
+        let failed = unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCGWINSZ, &mut window) };
+        if failed == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Size {
+            cols: window.ws_col,
+            rows: window.ws_row,
+            width: window.ws_xpixel,
+            height: window.ws_ypixel,
+        })
+    }
+
+    /// Waits for the program to end, as `waitpid` does, and tells how it
+    /// did. The end that the master reads can come later, when processes
+    /// that the program started still have the terminal open, or never.
+    pub fn wait(&mut self) -> io::Result<Exit> {
+        self.child().wait().map(exit)
+    }
+
+    /// How the program ended, if it has, without waiting.
+    pub fn try_wait(&mut self) -> io::Result<Option<Exit>> {
+        Ok(self.child().try_wait()?.map(exit))
+    }
+
+    fn child(&mut self) -> &mut Child {
+        self.child.as_mut().expect("only the drop takes the child")
     }
 
     /// The process group in the terminal's foreground: the program's, or
-    /// that of a job that it runs.
+    /// that of a job that it runs; none once the program's session has
+    /// ended.
     pub fn foreground_process_group(&self) -> Option<u32> {
         // SAFETY: `tcgetpgrp` only reads the terminal's state, through a
         // descriptor that `self` owns.
         let group = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
-        u32::try_from(group).ok()
+        u32::try_from(group).ok().filter(|&group| group != 0)
+    }
+}
+
+impl Drop for Pty {
+    fn drop(&mut self) {
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
+        if !matches!(child.try_wait(), Ok(None)) {
+            return;
+        }
+        // SAFETY: `getpgrp` only reads this process's group.
+        let own = unsafe { libc::getpgrp() } as u32;
+        // A job in the foreground, not the program, nor this process's own
+        // group, which a mistaken id would hang up.
+        let group = self
+            .foreground_process_group()
+            .filter(|&group| group != child.id() && group != own);
+        // SAFETY: sending SIGHUP touches no memory. The program has not
+        // been waited for, so its id is still its own.
+        unsafe {
+            libc::kill(child.id() as libc::pid_t, libc::SIGHUP);
+            if let Some(group) = group {
+                libc::kill(-(group as libc::pid_t), libc::SIGHUP);
+            }
+        }
+        // Without a thread, the program stays a zombie until the app ends.
+        let _ = std::thread::Builder::new()
+            .name("pty-wait".into())
+            .spawn(move || child.wait());
+    }
+}
+
+/// How a process that `status` describes ended.
+fn exit(status: ExitStatus) -> Exit {
+    match (status.code(), status.signal()) {
+        (Some(code), _) => Exit::Code(code),
+        (None, Some(signal)) => Exit::Signal(signal),
+        (None, None) => unreachable!("a process that was waited for exited or was signalled"),
     }
 }
 
@@ -127,12 +223,7 @@ impl Write for PtyWriter {
 /// Opens a pseudo-terminal of `size`, and returns its master and its slave,
 /// neither inherited across exec.
 fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut window = libc::winsize {
-        ws_row: size.rows,
-        ws_col: size.cols,
-        ws_xpixel: size.width,
-        ws_ypixel: size.height,
-    };
+    let mut window = winsize(size);
     let (mut master, mut slave) = (-1, -1);
     // SAFETY: the descriptors and the size are valid places to write and
     // read; without a name buffer, `openpty` writes no name.
@@ -157,6 +248,15 @@ fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd)> {
         }
     }
     Ok((master, slave))
+}
+
+fn winsize(size: Size) -> libc::winsize {
+    libc::winsize {
+        ws_row: size.rows,
+        ws_col: size.cols,
+        ws_xpixel: size.width,
+        ws_ypixel: size.height,
+    }
 }
 
 /// The path of the terminal that `fd` is open on.

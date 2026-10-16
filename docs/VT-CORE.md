@@ -259,8 +259,9 @@ normalization = "none"    # none | nfc | nfd | hfs+
   - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR` when the caller gives it, and the caller's own variables last.
   - A UTF-8 locale in `LANG` if none of `LC_ALL`, `LC_CTYPE` and `LANG` is set; the caller chooses it ([SECURITY.md](SECURITY.md#macos-environment)).
   - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-saetta`.
-- **Resize**: `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. Resizes are coalesced while a divider is being dragged.
-- **Process exit**: EOF on the master plus `waitpid`. What happens next is configurable: close the pane, or show the exit code.
+- **Resize**: `Pty::resize`, `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. The kernel sends SIGWINCH to the foreground process group. Resizes are coalesced while a divider is being dragged.
+- **Process exit**: EOF on the master plus `waitpid`: `Pty::wait` and `Pty::try_wait` tell an `Exit`, a status or the signal that ended the program. The end that the master reads can come after the program's exit, when processes that it started still have the terminal open, or never, so the exit is told apart from it. What happens next is configurable: close the pane, or show the exit code.
+- **Closing**: dropping a `Pty` hangs the program up as closing a terminal does, with SIGHUP to the program and to a job in the terminal's foreground, even while readers still have the terminal open, and a thread waits for the program, so that it leaves no zombie.
 - **Portable API**: the public interface (reader, writer, resize, child) exposes no `RawFd`. A future ConPTY implementation for Windows will therefore not change any callers.
 
 ## Session (`session`)

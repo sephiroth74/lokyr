@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use saetta_pty::{Options, Program, PtyReader, Size, spawn};
+use saetta_pty::{Exit, Options, Program, PtyReader, Size, spawn};
 
 /// What the program writes, read on a thread of its own so that a test
 /// gives up rather than hang.
@@ -155,4 +155,117 @@ fn the_login_shell_is_a_login_shell() {
         .unwrap();
     let text = output.until("login:-").to_owned();
     assert!(text.contains("login:-"), "{text}");
+}
+
+#[test]
+fn a_resize_reaches_the_program() {
+    let script = r#"trap 'echo "winch $(stty size)"' WINCH; echo "ready $(stty size)"; while :; do sleep 0.05; done"#;
+    let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready 24 80\r\n");
+    let size = Size {
+        cols: 120,
+        rows: 40,
+        width: 960,
+        height: 640,
+    };
+    pty.resize(size).unwrap();
+    assert_eq!(pty.size().unwrap(), size, "in pixels too");
+    output.until("winch 40 120\r\n");
+}
+
+#[test]
+fn the_exit_status_is_reported() {
+    let mut pty = spawn(&Options::new(sh("exit 3"), "xterm-256color")).unwrap();
+    // The end that the master reads, then the status.
+    let mut text = String::new();
+    pty.reader().unwrap().read_to_string(&mut text).unwrap();
+    assert_eq!(pty.wait().unwrap(), Exit::Code(3));
+    assert!(!Exit::Code(3).success());
+    // Waiting again tells the same.
+    assert_eq!(pty.try_wait().unwrap(), Some(Exit::Code(3)));
+    // The session has ended: the terminal has no foreground group.
+    assert_eq!(pty.foreground_process_group(), None);
+    let mut pty = spawn(&Options::new(sh("kill -TERM $$"), "xterm-256color")).unwrap();
+    assert_eq!(pty.wait().unwrap(), Exit::Signal(libc::SIGTERM));
+}
+
+#[test]
+fn a_program_still_running_has_no_status() {
+    let mut pty = spawn(&Options::new(sh("echo ready; read line"), "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    assert_eq!(pty.try_wait().unwrap(), None);
+    pty.writer().unwrap().write_all(b"\n").unwrap();
+    assert_eq!(pty.wait().unwrap(), Exit::Code(0));
+    assert!(Exit::Code(0).success());
+}
+
+/// Whether the process `pid` is gone, waited for: neither running nor a
+/// zombie.
+fn gone(pid: u32) -> bool {
+    // SAFETY: signal 0 only checks that the process exists.
+    let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+    !alive
+}
+
+#[test]
+fn dropping_the_terminal_hangs_the_program_up_and_waits_for_it() {
+    let pty = spawn(&Options::new(
+        sh("echo ready; while :; do sleep 0.05; done"),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let pid = pty.process_id();
+    // A reader that still has the terminal open does not keep the program
+    // alive.
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    drop(pty);
+    let start = std::time::Instant::now();
+    while !gone(pid) {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{pid} is still there"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // And the reader reads the end.
+    output.rest();
+}
+
+#[test]
+fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
+    // With job control, the shell runs `sleep` in a group of its own, in the
+    // terminal's foreground. The shell catches SIGHUP, and a reader keeps the
+    // terminal open, so only the hang-up of the job ends it.
+    let script = "trap : HUP; set -m; sleep 30; echo after";
+    // bash, whose job control works without a prompt, where dash's may not.
+    let bash = Program::command("/bin/bash", ["-c", script]);
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    let pid = pty.process_id();
+    let start = std::time::Instant::now();
+    let job = loop {
+        match pty.foreground_process_group() {
+            Some(group) if group != pid => break group,
+            _ => {
+                assert!(start.elapsed() < Duration::from_secs(10), "no job");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    drop(pty);
+    // SAFETY: signal 0 only checks that the group has a process.
+    let job_alive = || unsafe { libc::kill(-(job as libc::pid_t), 0) } == 0;
+    let start = std::time::Instant::now();
+    while job_alive() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the job is still there"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // The shell went on past its job.
+    output.until("after");
 }
