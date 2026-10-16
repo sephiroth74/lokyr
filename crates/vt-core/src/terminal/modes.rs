@@ -79,8 +79,9 @@ impl Terminal {
             1036 => self.input.meta_sends_escape = on,
             2004 => self.input.bracketed_paste = on,
             2026 => {
+                // A start during an update goes on with it.
+                self.synchronized_updates += u64::from(on && !self.synchronized_output);
                 self.synchronized_output = on;
-                self.synchronized_updates += u64::from(on);
             }
             2027 => {
                 self.widths.mode = if on { Mode::Unicode } else { Mode::Legacy };

@@ -1,6 +1,7 @@
 //! PTYs on Unix: a pseudo-terminal, and a child that leads its own session
 //! with the PTY as its controlling terminal.
 
+mod closing;
 mod io;
 
 use std::collections::BTreeMap;
@@ -11,16 +12,11 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 pub use io::{PtyReader, PtyWriter};
 
 use crate::{Error, Exit, Options, Program, Size};
-
-/// Held while this crate forks, and while it makes a descriptor that cannot
-/// be closed on exec as it opens, so that no child of this crate inherits
-/// one.
-static FORKING: Mutex<()> = Mutex::new(());
 
 /// A pseudo-terminal, with the program that runs in it.
 ///
@@ -33,10 +29,10 @@ static FORKING: Mutex<()> = Mutex::new(());
 #[derive(Debug)]
 pub struct Pty {
     master: OwnedFd,
-    /// The end of a pipe that readers and writers wait on, which reads the
-    /// end once the other end, `_closing`, drops with the PTY.
+    /// What readers and writers wait on, which becomes ready once
+    /// `_closing` drops with the PTY.
     closed: Arc<OwnedFd>,
-    _closing: OwnedFd,
+    _closing: closing::Closing,
     /// The program, until the drop hands it to the thread that waits for
     /// it.
     child: Option<Child>,
@@ -75,18 +71,15 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     unsafe {
         command.pre_exec(lead_session);
     }
-    let (closed, closing) = pipe().map_err(Error::Open)?;
-    let child = {
-        let _forking = FORKING.lock().unwrap_or_else(PoisonError::into_inner);
-        command.spawn().map_err(spawn_error)?
-    };
+    let (closed, closing) = closing::closing().map_err(Error::Open)?;
+    let child = command.spawn().map_err(spawn_error)?;
     // The child has its copies of the terminal's side; the parent keeps
     // none, so that the master reads the end when the program goes.
     drop(command);
     drop(slave);
     Ok(Pty {
         master,
-        closed: Arc::new(closed),
+        closed,
         _closing: closing,
         pid: child.id(),
         child: Some(child),
@@ -272,38 +265,6 @@ fn open(size: Size) -> std::io::Result<(OwnedFd, OwnedFd, PathBuf)> {
         return Err(IoError::last_os_error());
     }
     Ok((master, slave, tty))
-}
-
-/// A pipe, its end to read and its end to write, neither inherited across
-/// exec.
-fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
-    let mut ends = [-1; 2];
-    #[cfg(not(target_os = "macos"))]
-    {
-        // SAFETY: `pipe2` writes the two descriptors into `ends`.
-        if unsafe { libc::pipe2(ends.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
-            return Err(IoError::last_os_error());
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // macOS has no `pipe2`: this crate does not fork until both ends
-        // close on exec.
-        let _forking = FORKING.lock().unwrap_or_else(PoisonError::into_inner);
-        // SAFETY: `pipe` writes the two descriptors into `ends`.
-        if unsafe { libc::pipe(ends.as_mut_ptr()) } == -1 {
-            return Err(IoError::last_os_error());
-        }
-        for fd in ends {
-            // SAFETY: `fd` was just opened, and setting its flags touches
-            // nothing else.
-            if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-                return Err(IoError::last_os_error());
-            }
-        }
-    }
-    // SAFETY: `pipe` opened both, and nothing else owns them.
-    Ok(unsafe { (OwnedFd::from_raw_fd(ends[0]), OwnedFd::from_raw_fd(ends[1])) })
 }
 
 fn winsize(size: Size) -> libc::winsize {

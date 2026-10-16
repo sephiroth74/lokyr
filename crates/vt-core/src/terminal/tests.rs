@@ -2128,20 +2128,24 @@ fn synchronized_output_starts_ends_and_reports() {
     term.feed("\x1b[?2026h");
     assert_eq!(state(&mut term), ((true, 1), "\x1b[?2026;1$y".to_owned()));
     term.feed("\x1b[?2026h");
-    assert_eq!(state(&mut term).0, (true, 2), "each start counts");
+    assert_eq!(
+        state(&mut term).0,
+        (true, 1),
+        "a start during the update goes on with it"
+    );
     term.feed("\x1b[?2026l");
-    assert_eq!(state(&mut term), ((false, 2), "\x1b[?2026;2$y".to_owned()));
+    assert_eq!(state(&mut term), ((false, 1), "\x1b[?2026;2$y".to_owned()));
     term.feed("\x1b[?2026h");
     term.terminal.end_synchronized_output();
     assert_eq!(
         state(&mut term),
-        ((false, 3), "\x1b[?2026;2$y".to_owned()),
+        ((false, 2), "\x1b[?2026;2$y".to_owned()),
         "the deadline passed"
     );
     term.feed("\x1b[?2026h\x1bc");
     assert_eq!(
         state(&mut term).0,
-        (false, 4),
+        (false, 3),
         "RIS ends it, and keeps count"
     );
 }

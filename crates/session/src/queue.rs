@@ -3,9 +3,17 @@
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
+/// The bytes of the terminal's replies that can wait to be written: past
+/// them, the next replies are dropped, so that a program that sends
+/// queries and never reads its input cannot grow the queue without end.
+pub(crate) const REPLY_BYTES: usize = 1 << 20;
+
 #[derive(Debug, Default)]
 struct State {
-    entries: VecDeque<Vec<u8>>,
+    /// The writes, each with whether it is a reply.
+    entries: VecDeque<(Vec<u8>, bool)>,
+    /// The bytes of the replies among them.
+    replies: usize,
     closed: bool,
 }
 
@@ -21,16 +29,45 @@ impl Queue {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Queues `bytes`, which go to the program after what is queued, and
-    /// before what comes after, unless they are empty or the queue is
-    /// closed.
+    /// Queues `bytes`, keys or a paste, which go to the program after what
+    /// is queued, and before what comes after, unless they are empty or the
+    /// queue is closed.
     pub(crate) fn push(&self, bytes: Vec<u8>) {
+        self.add(bytes, false);
+    }
+
+    /// Queues `bytes`, the terminal's replies, as [`Queue::push`] does,
+    /// unless the replies that wait already take [`REPLY_BYTES`].
+    pub(crate) fn push_replies(&self, bytes: Vec<u8>) {
+        self.add(bytes, true);
+    }
+
+    fn add(&self, bytes: Vec<u8>, reply: bool) {
         let mut state = self.state();
-        if bytes.is_empty() || state.closed {
+        if bytes.is_empty() || state.closed || reply && state.replies >= REPLY_BYTES {
             return;
         }
-        state.entries.push_back(bytes);
+        if reply {
+            state.replies += bytes.len();
+        }
+        state.entries.push_back((bytes, reply));
         self.ready.notify_one();
+    }
+
+    /// The bytes of the replies that wait.
+    #[cfg(test)]
+    pub(crate) fn replies(&self) -> usize {
+        self.state().replies
+    }
+
+    /// The bytes of every write that waits.
+    #[cfg(test)]
+    pub(crate) fn waiting(&self) -> usize {
+        self.state()
+            .entries
+            .iter()
+            .map(|(bytes, _)| bytes.len())
+            .sum()
     }
 
     /// Drops the writes still queued, takes no more, and stops the writer.
@@ -38,6 +75,7 @@ impl Queue {
         let mut state = self.state();
         state.closed = true;
         state.entries.clear();
+        state.replies = 0;
         self.ready.notify_one();
     }
 
@@ -53,8 +91,11 @@ impl Queue {
             if state.closed {
                 return None;
             }
-            if let Some(entry) = state.entries.pop_front() {
-                return Some(entry);
+            if let Some((bytes, reply)) = state.entries.pop_front() {
+                if reply {
+                    state.replies -= bytes.len();
+                }
+                return Some(bytes);
             }
             state = self
                 .ready
@@ -82,6 +123,27 @@ mod tests {
         assert!(queue.is_closed());
         queue.push(b"d".to_vec());
         assert_eq!(queue.next(), None, "closing drops what is queued");
+    }
+
+    #[test]
+    fn replies_wait_up_to_a_limit_and_keys_past_it() {
+        let queue = Queue::default();
+        let reply = vec![b'r'; REPLY_BYTES / 2];
+        queue.push_replies(reply.clone());
+        queue.push_replies(reply.clone());
+        assert_eq!(queue.replies(), REPLY_BYTES);
+        // Past the limit, a reply is dropped, but not a key.
+        queue.push_replies(b"dropped".to_vec());
+        queue.push(b"key".to_vec());
+        assert_eq!(queue.replies(), REPLY_BYTES);
+        // A reply written makes room for the next.
+        assert_eq!(queue.next(), Some(reply.clone()));
+        assert_eq!(queue.replies(), REPLY_BYTES / 2);
+        queue.push_replies(b"kept".to_vec());
+        assert_eq!(queue.next(), Some(reply));
+        assert_eq!(queue.next(), Some(b"key".to_vec()));
+        assert_eq!(queue.next(), Some(b"kept".to_vec()));
+        assert_eq!(queue.replies(), 0);
     }
 
     #[test]

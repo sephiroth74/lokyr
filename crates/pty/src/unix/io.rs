@@ -1,6 +1,6 @@
 //! Reading and writing a PTY's master, which never blocks: each read or
-//! write waits, with `poll`, for the master and for the end of a pipe that
-//! the PTY closes when it drops, so that its readers and writers stop
+//! write waits, with `poll`, for the master and for a descriptor that
+//! becomes ready when the PTY drops, so that its readers and writers stop
 //! then, wherever they are.
 
 use std::io::{self, ErrorKind, Read, Write};
@@ -26,7 +26,7 @@ pub struct PtyWriter {
 
 impl PtyReader {
     /// A reader of `master`, a copy of the master, which stops once
-    /// `closed`, the end of the PTY's pipe, reads the end.
+    /// `closed` becomes ready, as the PTY drops.
     pub(super) fn new(master: OwnedFd, closed: Arc<OwnedFd>) -> Self {
         Self { master, closed }
     }
@@ -125,14 +125,14 @@ enum Ready {
     /// The master, for the events asked for, or with an error or a hang-up
     /// that the read or the write will tell.
     Master,
-    /// The PTY's pipe: the PTY has dropped.
+    /// What the PTY's drop makes ready: the PTY has dropped.
     Closed,
     /// Neither, by the deadline.
     TimedOut,
 }
 
-/// Waits for `master` to have `events`, for `closed` to read the end, or
-/// for `deadline`.
+/// Waits for `master` to have `events`, for `closed` to be ready, or for
+/// `deadline`.
 fn wait(
     master: &OwnedFd,
     closed: &OwnedFd,

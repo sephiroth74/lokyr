@@ -107,7 +107,9 @@ fn the_program_gets_the_environment_and_the_size() {
 
 #[test]
 fn the_program_starts_at_home_with_only_the_terminal_open() {
-    let script = r#"pwd; for fd in 3 4 5 6 7 8 9; do (: <&$fd) 2>/dev/null && echo "open $fd"; done; echo done"#;
+    // Every descriptor that the program could have, past the standard ones,
+    // as the tests running at once can open many.
+    let script = r#"pwd; for fd in $(seq 3 1023); do [ -e /dev/fd/$fd ] && echo "open $fd"; done; echo done"#;
     let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
     let mut text = String::new();
     pty.reader().unwrap().read_to_string(&mut text).unwrap();

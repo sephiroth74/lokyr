@@ -5,6 +5,7 @@ use bolt_pty::Program;
 use bolt_vt_core::input::{Key, KeyAction, Mods};
 
 use super::*;
+use crate::queue::REPLY_BYTES;
 
 fn options(program: &str, args: &[&str]) -> Options {
     Options::new(bolt_pty::Options::new(
@@ -69,8 +70,9 @@ fn the_program_gets_the_reply_to_its_query() {
 }
 
 #[test]
-fn a_synchronized_update_ends_at_its_deadline_which_each_update_restarts() {
-    let mut options = sh(r#"printf '\033[?2026h'; sleep 0.6; printf '\033[?2026h'; sleep 30"#);
+fn each_synchronized_update_has_a_deadline_of_its_own() {
+    let mut options =
+        sh(r#"printf '\033[?2026h'; sleep 0.6; printf '\033[?2026l\033[?2026h'; sleep 30"#);
     options.sync_timeout = Duration::from_secs(1);
     let session = Session::spawn(&options, || {}).unwrap();
     wait_for(&session, "the first update", |terminal| {
@@ -89,6 +91,24 @@ fn a_synchronized_update_ends_at_its_deadline_which_each_update_restarts() {
     });
     let held = second.elapsed();
     assert!(held >= Duration::from_millis(900), "ended after {held:?}");
+}
+
+#[test]
+fn a_start_during_an_update_does_not_put_its_deadline_off() {
+    // A program that starts an update again and again, never ending it.
+    let mut options = sh(r#"while :; do printf '\033[?2026h'; sleep 0.2; done"#);
+    options.sync_timeout = Duration::from_secs(1);
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "the update", |terminal| {
+        terminal.synchronized_output()
+    });
+    let start = Instant::now();
+    wait_for(&session, "the deadline", |terminal| {
+        !terminal.synchronized_output()
+    });
+    let held = start.elapsed();
+    assert!(held < Duration::from_secs(3), "ended after {held:?}");
+    assert_eq!(session.lock().synchronized_updates(), 1, "one update");
 }
 
 #[test]
@@ -309,10 +329,77 @@ fn dropping_a_session_ends_a_program_that_ignores_sighup() {
     })
     .unwrap();
     wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
+    let pid = session.pty.process_id().to_string();
     drop(session);
     assert!(
         freed.recv_timeout(Duration::from_secs(10)).is_ok(),
         "a thread is still there"
+    );
+    // The program goes too, and is waited for: `ps` no longer finds it.
+    let start = Instant::now();
+    let running = || {
+        std::process::Command::new("ps")
+            .args(["-p", &pid])
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    while running() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the program is still there"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn the_replies_to_a_program_that_never_reads_wait_up_to_a_limit() {
+    // In raw mode, which keeps what is typed until the program reads it, a
+    // stream of DA1 queries, without a read.
+    let script = r#"stty raw -echo; q=$(printf '\033[c'); exec yes "$q""#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    // Thousands of slices, whose replies would take MiBs.
+    let start = Instant::now();
+    while session.slices() < 5000 {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "{} slices",
+            session.slices()
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    // A slice's replies take a few times its bytes at most.
+    let waiting = session.shared.queue.waiting();
+    assert!(waiting <= REPLY_BYTES + 4 * SLICE, "{waiting} bytes wait");
+}
+
+#[test]
+fn a_panic_on_the_io_thread_ends_the_session() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let session = {
+        let wakes = Arc::clone(&wakes);
+        Session::spawn(&sh("echo hello; sleep 30"), move || {
+            assert!(
+                wakes.fetch_add(1, Ordering::SeqCst) > 0,
+                "the first wake panics"
+            );
+        })
+        .unwrap()
+    };
+    let start = Instant::now();
+    while !session.has_ended() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the session goes on"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        wakes.load(Ordering::SeqCst),
+        2,
+        "woken again as the thread ended"
     );
 }
 

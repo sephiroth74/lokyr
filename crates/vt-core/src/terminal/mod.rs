@@ -609,8 +609,10 @@ impl Terminal {
     }
 
     /// How many synchronized updates programs have started, one for each
-    /// `CSI ? 2026 h`, so that whoever draws the screen can tell a new
-    /// update from the one it waits for, and give each its own deadline.
+    /// `CSI ? 2026 h` while none is under way, so that whoever draws the
+    /// screen can tell a new update from the one it waits for, and give
+    /// each its own deadline, which a start during the update, going on
+    /// with it, does not put off.
     pub fn synchronized_updates(&self) -> u64 {
         self.synchronized_updates
     }

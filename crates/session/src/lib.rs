@@ -101,7 +101,8 @@ impl Shared {
 /// synchronized update that outlasts its deadline, its read waiting for
 /// that at most. A writer thread writes the keys, the pastes and the
 /// terminal's replies to the program, so that a program that does not read
-/// its input never keeps its output from being read. Dropping the session
+/// its input never keeps its output from being read; the replies that wait
+/// take at most about a MiB, past which the next are dropped. Dropping the session
 /// hangs the program up, ends both threads, and closes the terminal.
 pub struct Session {
     shared: Arc<Shared>,
@@ -261,6 +262,7 @@ impl Drop for Session {
 /// The I/O thread: reads the program's output and parses it, a slice at a
 /// time, until it ends.
 fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
+    let _ending = Ending(shared);
     let mut parser = Parser::new();
     let mut buffer = vec![0; SLICE];
     // The synchronized update under way, by its number, and its deadline.
@@ -292,7 +294,7 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
             .then(|| terminal.synchronized_updates());
         shared.slices.fetch_add(1, Ordering::AcqRel);
         drop(terminal);
-        shared.queue.push(replies);
+        shared.queue.push_replies(replies);
         // Each update that starts has its own deadline, which output does
         // not put off.
         if let Some(started) = synchronized.filter(|&started| started != update) {
@@ -301,11 +303,21 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
         }
         shared.changed();
     }
-    // No more output can end the update under way.
-    shared.terminal.lock_in_turn().end_synchronized_output();
-    shared.ended.store(true, Ordering::Release);
-    shared.woken.store(true, Ordering::Release);
-    (shared.wake)();
+}
+
+/// Ends the session as the I/O thread ends, as the output does or by a
+/// panic, so that a pane whose thread panicked does not hang without a
+/// word: the update under way ends, and the main thread is told.
+struct Ending<'a>(&'a Shared);
+
+impl Drop for Ending<'_> {
+    fn drop(&mut self) {
+        // No more output can end the update under way.
+        self.0.terminal.lock_in_turn().end_synchronized_output();
+        self.0.ended.store(true, Ordering::Release);
+        self.0.woken.store(true, Ordering::Release);
+        (self.0.wake)();
+    }
 }
 
 /// The writer thread: writes what the queue holds, in order, each entry in
