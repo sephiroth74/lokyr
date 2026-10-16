@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use bolt_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
 use bolt_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{self, Terminal};
+use bolt_vt_core::terminal::{self, Snapshot, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -153,6 +153,23 @@ impl Session {
     /// Locks the terminal, ahead of the I/O thread's next slice.
     pub fn lock(&self) -> MutexGuard<'_, Terminal> {
         self.shared.terminal.lock()
+    }
+
+    /// Brings `snapshot` up to date with the terminal, under the lock, and
+    /// returns how many rows it copied, as [`Terminal::snapshot`] does; or
+    /// `None`, leaving it as it was, while a synchronized update holds the
+    /// screen. Either way, the next change calls `wake` again.
+    ///
+    /// The I/O thread waits for the copy only, never for the drawing that
+    /// follows it, and a renderer that falls behind copies the latest
+    /// state.
+    pub fn snapshot(&self, snapshot: &mut Snapshot) -> Option<usize> {
+        let mut terminal = self.lock();
+        self.clear_wake();
+        if terminal.synchronized_output() {
+            return None;
+        }
+        Some(terminal.snapshot(snapshot))
     }
 
     /// Lets the next change call `wake` again. The main thread calls it

@@ -50,15 +50,26 @@ impl Row {
         self.0 & flag as u8 != 0
     }
 
-    /// Sets or clears `flag`.
+    /// Sets or clears `flag`. Changing a flag that a renderer shows, a soft
+    /// wrap, a continuation or a prompt's start, marks the row
+    /// [`RowFlag::Dirty`].
     pub fn set(&mut self, flag: RowFlag, on: bool) {
+        let before = self.0;
         if on {
             self.0 |= flag as u8;
         } else {
             self.0 &= !(flag as u8);
         }
+        if self.0 != before && SHOWN & flag as u8 != 0 {
+            self.0 |= RowFlag::Dirty as u8;
+        }
     }
 }
+
+/// The flags that a renderer shows, which mark the row to draw again when
+/// they change.
+const SHOWN: u8 =
+    RowFlag::SoftWrapped as u8 | RowFlag::Continuation as u8 | RowFlag::PromptStart as u8;
 
 /// Shows the flags that are set.
 impl fmt::Debug for Row {
@@ -79,13 +90,47 @@ mod tests {
             assert_eq!(flag as u8, 1 << bit);
             let mut row = Row::default();
             row.set(flag, true);
+            let shown = SHOWN & flag as u8 != 0;
             assert_eq!(
                 FLAGS.map(|other| row.has(other)),
-                FLAGS.map(|other| other == flag)
+                FLAGS.map(|other| other == flag || (shown && other == RowFlag::Dirty))
             );
             row.set(flag, false);
-            assert_eq!(row, Row::default());
+            assert!(!row.has(flag));
         }
+    }
+
+    #[test]
+    fn a_change_that_shows_marks_the_row_to_draw() {
+        for flag in [
+            RowFlag::SoftWrapped,
+            RowFlag::Continuation,
+            RowFlag::PromptStart,
+        ] {
+            let mut row = Row::default();
+            row.set(flag, false);
+            assert_eq!(row, Row::default(), "no change, no mark");
+            row.set(flag, true);
+            assert!(row.has(RowFlag::Dirty), "{flag:?}");
+            row.set(RowFlag::Dirty, false);
+            row.set(flag, true);
+            assert!(!row.has(RowFlag::Dirty), "{flag:?} again, no change");
+            row.set(flag, false);
+            assert!(row.has(RowFlag::Dirty), "{flag:?} cleared");
+        }
+        let mut row = Row::default();
+        for flag in [
+            RowFlag::Graphemes,
+            RowFlag::Hyperlinks,
+            RowFlag::Images,
+            RowFlag::Styles,
+        ] {
+            row.set(flag, true);
+        }
+        assert!(
+            !row.has(RowFlag::Dirty),
+            "the cells' flags come with cells that mark it"
+        );
     }
 
     #[test]

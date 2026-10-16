@@ -16,12 +16,14 @@ mod osc;
 mod print;
 mod reports;
 mod sgr;
+mod snapshot;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::Colors;
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
+pub use snapshot::{Line, Snapshot, SnapshotCursor};
 
 use std::ops::Range;
 

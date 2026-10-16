@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use super::compact::CompactPage;
 use super::pin::{Pins, Place};
@@ -11,6 +11,14 @@ use super::{Capacity, Cell, Page, PinId, Position, Row, RowFlag, TableFull, When
 
 /// No node, at either end of the list.
 const NONE: u32 = u32::MAX;
+
+/// The epochs that lists have had, so that each has its own.
+static EPOCHS: AtomicU64 = AtomicU64::new(0);
+
+/// An epoch that no list has had.
+fn next_epoch() -> u64 {
+    EPOCHS.fetch_add(1, Ordering::Relaxed) + 1
+}
 
 /// The bytes that the pages of a pane take by default.
 pub const SCROLLBACK_BYTES: usize = 10 * 1024 * 1024;
@@ -186,6 +194,12 @@ pub struct PageList {
     /// The bytes of the pages, in the list and in the pool.
     memory: usize,
     pins: Pins,
+    /// Changes when the screen's rows are laid out again, as a resize and
+    /// a reflow do, and differs from every other list's, so that a copy of
+    /// the screen can tell that its rows are no longer the screen's.
+    epoch: u64,
+    /// How many times the screen has scrolled up in this epoch.
+    scrolled: u64,
 }
 
 impl PageList {
@@ -206,6 +220,8 @@ impl PageList {
             scrollback,
             memory: 0,
             pins: Pins::default(),
+            epoch: next_epoch(),
+            scrolled: 0,
         };
         for _ in 0..rows {
             list.push_row();
@@ -257,6 +273,30 @@ impl PageList {
     /// and an empty row appears at the bottom.
     pub fn scroll_up(&mut self) {
         self.push_row();
+        self.scrolled += 1;
+    }
+
+    /// The epoch of the screen's rows: it changes when they are laid out
+    /// again, as a resize and a reflow do, and no other list has it. Within
+    /// an epoch, row `y` of the screen holds what row `y + n` held before
+    /// the screen scrolled up `n` times, unless something changed the row,
+    /// which marks it with [`RowFlag::Dirty`].
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// How many times the screen has scrolled up in its epoch.
+    pub fn scrolled(&self) -> u64 {
+        self.scrolled
+    }
+
+    /// Starts an epoch, if the screen is to have `cols` columns and `rows`
+    /// rows when it has others.
+    fn new_epoch(&mut self, cols: u16, rows: u16) {
+        if (cols, rows) != (self.cols(), self.rows) {
+            self.epoch = next_epoch();
+            self.scrolled = 0;
+        }
     }
 
     /// The page that holds row `y` of the screen, and the row in it.
@@ -660,6 +700,7 @@ impl PageList {
     pub fn resize(&mut self, cols: u16, rows: u16, cursor: (u16, u16), grow: Grow) -> (u16, u16) {
         let (mut x, mut y) = cursor;
         let (cols, rows) = (cols.max(1), rows.max(1));
+        self.new_epoch(cols, rows);
         if cols != self.cols() {
             self.set_cols(cols);
             x = x.min(cols - 1);
@@ -691,6 +732,7 @@ impl PageList {
     /// [`PageList::resize`] does with [`Grow::FromScrollback`].
     pub fn reflow(&mut self, cols: u16, rows: u16, cursor: (u16, u16)) -> (u16, u16) {
         let (cols, rows) = (cols.max(1), rows.max(1));
+        self.new_epoch(cols, rows);
         let (mut x, mut y) = cursor;
         if cols != self.cols() {
             (x, y) = self.rewrap(cols, cursor);

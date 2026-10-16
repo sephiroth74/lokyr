@@ -126,7 +126,7 @@ Each row has compact metadata:
 - *soft-wrapped*, i.e. continued on the next row;
 - continuation of a previous row;
 - start of a prompt (OSC 133);
-- dirty, i.e. needs redrawing;
+- dirty, i.e. needs redrawing: every change of a cell marks it, and so does a change of the three flags above, which a renderer shows; a snapshot clears it as it copies the row;
 - "contains graphemes / hyperlinks / images / styles" flags, so hot paths can skip work. They mean "may contain": they are reset when the row is cleared, not when the last such cell goes.
 
 The metadata fits in one byte.
@@ -271,7 +271,7 @@ normalization = "none"    # none | nfc | nfd | hfs+
 - **I/O thread**: one per pane. It reads slices of at most 64 KiB, outside the lock, and feeds them to the parser under the grid lock, which it releases fairly after each slice: a thread that waits for the lock has it before the next slice. Before each slice, the I/O thread waits for the threads that came to the lock before it asked; those that come later wait for its slice to start. Each side has the lock in turn, however often the other takes it.
 - **Write queue**: collects input (keys, pastes, replies to terminal reports), in order, for a writer thread, which writes each entry in chunks of 4 KiB and stops between two once the session closes. A paste is one entry, so that no reply comes between its brackets. The I/O thread does not write: a program that floods its output without reading its input, while it asks for replies, would otherwise stop both sides.
 - **Synchronized output**: each update that starts, a new value of `Terminal::synchronized_updates`, gets a deadline, by default a second away, which the I/O thread keeps, its read waiting until then at most; past it, it ends the update with `Terminal::end_synchronized_output`, unless another has started. Output during the update does not put the deadline off, and a write that blocks or fails cannot keep it. The end of the output ends the update under way at once.
-- **Renderer snapshot**: under the lock, it copies only the visible dirty rows and the styles they use.
+- **Renderer snapshot**: `Session::snapshot` brings a `Snapshot`, which the renderer keeps from frame to frame, up to date under the lock, with `Terminal::snapshot`: it copies the visible rows that are dirty, each with the styles that its cells use and its clusters' codepoints, and the cursor, the colors and reverse video. Rows that the screen scrolled are not copied again: the page list counts the screen's scrolls, so the snapshot moves the lines it has up and copies those that came in; a resize or a reflow starts a new epoch of the list, and another screen is another list, after which every row is copied. A snapshot of an unchanged screen copies nothing. While a synchronized update holds the screen, the snapshot stays as it was.
 - **Independence from the main thread**: the I/O thread never waits for it. If the renderer falls behind, it jumps straight to the latest state.
 - **Encodings** (F5b): the terminal works in UTF-8 only. Other encodings, chosen per profile, come after the MVP as a conversion in the session, with `encoding_rs`: the bytes from the PTY become UTF-8 before the parser, and the input goes back in the program's encoding. Latin-1, windows-125x, Shift_JIS, EUC-JP, EUC-KR, GB18030, Big5 and ISO-2022-JP are among them. C1 controls stay 7-bit only.
 

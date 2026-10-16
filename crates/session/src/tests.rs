@@ -1,4 +1,5 @@
 use std::sync::atomic::AtomicUsize;
+use std::sync::mpsc;
 
 use bolt_pty::Program;
 use bolt_vt_core::input::{Key, KeyAction, Mods};
@@ -313,4 +314,168 @@ fn dropping_a_session_ends_a_program_that_ignores_sighup() {
         freed.recv_timeout(Duration::from_secs(10)).is_ok(),
         "a thread is still there"
     );
+}
+
+/// A renderer that draws slowly: it takes a snapshot when woken, then
+/// spends `drawing` on it, without the lock, until it has drawn `frames`
+/// frames or one for which `last` holds.
+fn slow_renderer(
+    session: &Arc<Session>,
+    woken: mpsc::Receiver<()>,
+    drawing: Duration,
+    frames: usize,
+    last: impl Fn(&[String]) -> bool + Send + 'static,
+) -> thread::JoinHandle<Vec<Vec<String>>> {
+    let session = Arc::clone(session);
+    thread::spawn(move || {
+        let mut snapshot = Snapshot::default();
+        let mut seen: Vec<Vec<String>> = Vec::new();
+        while seen.len() < frames && woken.recv_timeout(Duration::from_secs(10)).is_ok() {
+            if session.snapshot(&mut snapshot).is_some() {
+                let rows = (0..snapshot.rows())
+                    .map(|y| line_text(snapshot.line(y)))
+                    .collect();
+                seen.push(rows);
+                if last(seen.last().unwrap()) {
+                    break;
+                }
+            }
+            thread::sleep(drawing);
+        }
+        seen
+    })
+}
+
+fn line_text(line: &bolt_vt_core::terminal::Line) -> String {
+    use bolt_vt_core::page::Content;
+    line.cells()
+        .iter()
+        .map(|cell| match cell.content() {
+            Content::Char(c) | Content::Grapheme(c) if c != '\0' => c,
+            _ => ' ',
+        })
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
+}
+
+#[test]
+fn a_renderer_that_falls_behind_draws_the_latest_state() {
+    let (sender, woken) = mpsc::channel();
+    let script = r#"i=0; while [ $i -lt 3000 ]; do echo "n $i"; i=$((i+1)); done; echo done"#;
+    let session = Arc::new(
+        Session::spawn(&sh(script), move || {
+            let _ = sender.send(());
+        })
+        .unwrap(),
+    );
+    let renderer = slow_renderer(&session, woken, Duration::from_millis(30), 1000, |rows| {
+        rows.iter().any(|row| row == "done")
+    });
+    wait_for(&session, "the end", |terminal| shows(terminal, "done"));
+    let slices = session.slices();
+    // Woken once more by the last change, the renderer catches up.
+    let frames = renderer.join().unwrap();
+    assert!(
+        frames.len() < slices as usize,
+        "{} frames for {slices} slices",
+        frames.len()
+    );
+    // Each frame is one moment of the screen: its numbered rows follow
+    // each other, with no row from another moment between them.
+    for rows in &frames {
+        let numbers: Vec<u32> = rows
+            .iter()
+            .filter_map(|row| row.strip_prefix("n ")?.parse().ok())
+            .collect();
+        assert!(
+            numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "{rows:?}"
+        );
+    }
+    let last = frames.last().unwrap();
+    assert!(last.iter().any(|row| row == "done"), "{last:?}");
+}
+
+#[test]
+fn the_renderer_does_not_hold_up_the_output() {
+    let (sender, woken) = mpsc::channel();
+    let session = Arc::new(
+        Session::spawn(&options("yes", &[]), move || {
+            let _ = sender.send(());
+        })
+        .unwrap(),
+    );
+    // A renderer that takes half a second to draw a frame, drawing as the
+    // output goes on.
+    let renderer = slow_renderer(&session, woken, Duration::from_millis(500), 2, |_| false);
+    wait_for(&session, "the flood", |terminal| shows(terminal, "y"));
+    let before = session.slices();
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        session.slices() > before,
+        "the output went on while the renderer drew"
+    );
+    drop(session);
+    renderer.join().unwrap();
+}
+
+#[test]
+fn a_snapshot_waits_for_a_synchronized_update_and_copies_only_changes() {
+    let mut options = sh(
+        r#"echo before; read line; printf '\033[?2026hhidden'; read line; printf '\033[?2026l'; read line"#,
+    );
+    options.sync_timeout = Duration::from_secs(60);
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "before", |terminal| shows(terminal, "before"));
+    let mut snapshot = Snapshot::default();
+    assert_eq!(
+        session.snapshot(&mut snapshot),
+        Some(24),
+        "every row, at first"
+    );
+    assert_eq!(session.snapshot(&mut snapshot), Some(0), "nothing changed");
+    session.write("\n");
+    wait_for(&session, "the update", |terminal| {
+        terminal.synchronized_output()
+    });
+    wait_for(&session, "hidden", |terminal| shows(terminal, "hidden"));
+    assert_eq!(session.snapshot(&mut snapshot), None, "held");
+    assert!((0..snapshot.rows()).all(|y| line_text(snapshot.line(y)) != "hidden"));
+    session.write("\n");
+    wait_for(&session, "the end of the update", |terminal| {
+        !terminal.synchronized_output()
+    });
+    // The echo of the line break only moved the cursor.
+    assert_eq!(
+        session.snapshot(&mut snapshot),
+        Some(1),
+        "the row that changed"
+    );
+    assert!((0..snapshot.rows()).any(|y| line_text(snapshot.line(y)) == "hidden"));
+}
+
+#[test]
+fn a_snapshot_lets_the_next_change_wake_the_main_thread() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let session = {
+        let wakes = Arc::clone(&wakes);
+        Session::spawn(&sh("echo one; read line; echo two; read line"), move || {
+            wakes.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap()
+    };
+    wait_for(&session, "one", |terminal| shows(terminal, "one"));
+    let mut snapshot = Snapshot::default();
+    session.snapshot(&mut snapshot);
+    assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    session.write("\n");
+    let start = Instant::now();
+    while wakes.load(Ordering::SeqCst) < 2 {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the change woke no one"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 }
