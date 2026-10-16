@@ -115,8 +115,12 @@ impl Terminal {
     /// erased rows come in at `top`.
     fn shift_rows_down(&mut self, top: u16, bottom: u16, n: u16) {
         let n = n.min(bottom - top + 1);
-        for y in (top..bottom + 1 - n).rev() {
-            self.move_within_margins(y, y + n);
+        if self.margins.is_full_width(self.cols) {
+            self.screen_mut().rows.shift_rows_down(top, bottom, n);
+        } else {
+            for y in (top..bottom + 1 - n).rev() {
+                self.move_within_margins(y, y + n);
+            }
         }
         for y in top..top + n {
             self.blank_within_margins(y);
@@ -128,8 +132,12 @@ impl Terminal {
     /// rows come in at `bottom`.
     fn shift_rows_up(&mut self, top: u16, bottom: u16, n: u16) {
         let n = n.min(bottom - top + 1);
-        for y in top + n..=bottom {
-            self.move_within_margins(y, y - n);
+        if self.margins.is_full_width(self.cols) {
+            self.screen_mut().rows.shift_rows_up(top, bottom, n);
+        } else {
+            for y in top + n..=bottom {
+                self.move_within_margins(y, y - n);
+            }
         }
         for y in bottom + 1 - n..=bottom {
             self.blank_within_margins(y);

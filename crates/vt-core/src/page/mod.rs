@@ -102,7 +102,7 @@ impl Capacity {
     pub fn bytes(&self) -> usize {
         let rows = usize::from(self.rows);
         size_of::<Page>()
-            + rows * size_of::<Row>()
+            + rows * (size_of::<Row>() + size_of::<u16>())
             + rows * usize::from(self.cols) * size_of::<Cell>()
             + StyleTable::memory_for(self.styles)
             + GraphemeTable::memory_for(self.graphemes)
@@ -159,7 +159,11 @@ pub struct Page {
     /// How many rows are in use, from the first.
     len: u16,
     rows: Box<[Row]>,
-    /// The cells, one row after the other.
+    /// The block of cells that each row uses. Rows move within the page by
+    /// trading blocks, so that their cells stay where they are, with their
+    /// entries in the tables keyed by cell.
+    slots: Box<[u16]>,
+    /// The cells, a block of a row's width after the other.
     cells: Box<[Cell]>,
     styles: StyleTable,
     graphemes: GraphemeTable,
@@ -174,6 +178,7 @@ impl Page {
             capacity,
             len: 0,
             rows: vec![Row::default(); rows].into_boxed_slice(),
+            slots: (0..capacity.rows).collect(),
             cells: vec![Cell::EMPTY; rows * usize::from(capacity.cols)].into_boxed_slice(),
             styles: StyleTable::new(capacity.styles),
             graphemes: GraphemeTable::new(capacity.graphemes),
@@ -550,9 +555,17 @@ impl Page {
     /// Empties every cell of row `y`, which drop their styles, their
     /// graphemes and their links, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
-        for index in self.cell_range(y) {
-            let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
-            self.release(index, cell);
+        let range = self.cell_range(y);
+        // Rows that scrolling moves are mostly empty already: one compare
+        // over the row tells so.
+        if self.cells[range.clone()]
+            .iter()
+            .any(|&cell| cell != Cell::EMPTY)
+        {
+            for index in range {
+                let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
+                self.release(index, cell);
+            }
         }
         let row = self.row_mut(y);
         *row = Row::default();
@@ -563,15 +576,32 @@ impl Page {
     /// their graphemes and links, and the row's metadata goes along. What
     /// `to` held is dropped, and `from` is left empty, as
     /// [`Page::clear_row`] leaves it.
+    ///
+    /// The rows trade their blocks of cells, emptied first for `to`, so a
+    /// move costs no copy of cells.
     pub fn move_row(&mut self, from: u16, to: u16) {
         if from == to {
             return;
         }
-        self.move_cells(from, to, 0..self.cols());
-        let mut metadata = self.row(from);
+        self.clear_row(to);
+        self.move_row_into_empty(from, to);
+    }
+
+    /// Moves row `from` into row `to`, an empty row, as [`Page::move_row`]
+    /// does, without emptying `to` first: what scrolling does, as it moves
+    /// each row into the one that the move before it left empty.
+    pub fn move_row_into_empty(&mut self, from: u16, to: u16) {
+        debug_assert!(
+            self.cells(to).iter().all(|&cell| cell == Cell::EMPTY),
+            "row {to} is empty"
+        );
+        let (from, to) = (self.row_index(from), self.row_index(to));
+        self.slots.swap(from, to);
+        let mut metadata = self.rows[from];
         metadata.set(RowFlag::Dirty, true);
-        *self.row_mut(to) = metadata;
-        self.clear_row(from);
+        self.rows[to] = metadata;
+        self.rows[from] = Row::default();
+        self.rows[from].set(RowFlag::Dirty, true);
     }
 
     /// Moves the cells of `columns` in row `from` into the same columns of
@@ -760,8 +790,10 @@ impl Page {
     /// Empties the page as it was new, with no row in use, without
     /// allocating: what the pool does before handing a page out again.
     pub fn reset(&mut self) {
-        let used = usize::from(self.len) * usize::from(self.cols());
-        self.cells[..used].fill(Cell::EMPTY);
+        for y in 0..self.len {
+            let range = self.cell_range(y);
+            self.cells[range].fill(Cell::EMPTY);
+        }
         self.rows[..usize::from(self.len)].fill(Row::default());
         self.styles.clear();
         self.graphemes.clear();
@@ -770,17 +802,17 @@ impl Page {
     }
 
     /// A copy of the page with `capacity`, which must have its width and at
-    /// least its rows in use. Styles keep their ids, so cells are copied as
-    /// they are.
+    /// least its rows. Styles keep their ids, and cells and rows their
+    /// blocks, so cells are copied as they are.
     pub fn grown(&self, capacity: Capacity) -> Self {
         assert_eq!(capacity.cols, self.capacity.cols, "a page keeps its width");
-        assert!(capacity.rows >= self.len, "the rows in use must fit");
+        assert!(capacity.rows >= self.capacity.rows, "the rows must fit");
         let mut page = Self::new(capacity);
         let rows = usize::from(self.len);
         page.len = self.len;
         page.rows[..rows].copy_from_slice(&self.rows[..rows]);
-        let cells = rows * usize::from(self.cols());
-        page.cells[..cells].copy_from_slice(&self.cells[..cells]);
+        page.slots[..self.slots.len()].copy_from_slice(&self.slots);
+        page.cells[..self.cells.len()].copy_from_slice(&self.cells);
         page.styles = self.styles.grown(capacity.styles);
         page.graphemes = self.graphemes.grown(capacity.graphemes);
         page.hyperlinks = self
@@ -797,6 +829,7 @@ impl Page {
     pub fn memory(&self) -> usize {
         size_of::<Self>()
             + size_of_val(&*self.rows)
+            + size_of_val(&*self.slots)
             + size_of_val(&*self.cells)
             + self.styles.memory()
             + self.graphemes.memory()
@@ -858,7 +891,12 @@ impl Page {
     }
 
     fn cell_range(&self, y: u16) -> std::ops::Range<usize> {
-        let start = self.row_index(y) * usize::from(self.cols());
+        // One check covers the row in use and the slot: the slots past the
+        // rows in use are not read.
+        let Some(&slot) = self.slots[..usize::from(self.len)].get(usize::from(y)) else {
+            panic!("row {y} is not in use");
+        };
+        let start = usize::from(slot) * usize::from(self.cols());
         start..start + usize::from(self.cols())
     }
 

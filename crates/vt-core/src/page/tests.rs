@@ -644,6 +644,56 @@ fn a_copy_into_any_full_table_leaves_the_cells_empty() {
 }
 
 #[test]
+fn rows_that_trade_blocks_keep_their_cells_through_growth_and_reset() {
+    let mut page = page_with_rows(4);
+    for y in 0..4 {
+        print(
+            &mut page,
+            y,
+            0,
+            char::from(b'a' + y as u8),
+            &nth_style(u32::from(y) + 1),
+        )
+        .unwrap();
+        page.push_codepoint(y, 0, '\u{301}').unwrap();
+    }
+    // Rotate the rows up twice: each moves into the row the move before
+    // left empty.
+    for _ in 0..2 {
+        page.clear_row(0);
+        for y in 1..4 {
+            page.move_row_into_empty(y, y - 1);
+        }
+    }
+    // A row moved into itself stays.
+    page.move_row(1, 1);
+    assert_eq!(&row_chars(&page, 0)[..1], "c");
+    assert_eq!(&row_chars(&page, 1)[..1], "d");
+    assert_eq!(page.grapheme(1, 0), ['\u{301}']);
+    assert_eq!(page.styles().len(), 2);
+    let grown = page.grown(page.capacity().grown_for(TableFull::Styles).unwrap());
+    assert_eq!(&row_chars(&grown, 1)[..1], "d");
+    assert_eq!(grown.grapheme(1, 0), ['\u{301}']);
+    assert_eq!(grown.styles().get(grown.cells(1)[0].style()), &nth_style(4));
+    // The rows in use are now in the last blocks.
+    page.pop_row();
+    page.pop_row();
+    assert_eq!(&row_chars(&page, 0)[..1], "c");
+    // A reset empties every block, wherever the rows left them.
+    page.reset();
+    for _ in 0..4 {
+        page.push_row();
+    }
+    for y in 0..4 {
+        assert!(
+            page.cells(y).iter().all(|&cell| cell == Cell::EMPTY),
+            "row {y}"
+        );
+    }
+    assert_eq!(page.graphemes.len(), 0);
+}
+
+#[test]
 fn a_table_at_its_largest_does_not_grow() {
     let largest = Capacity {
         styles: u16::MAX,

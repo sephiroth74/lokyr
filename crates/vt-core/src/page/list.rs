@@ -416,8 +416,64 @@ impl PageList {
         self.move_pins((source, from_row), (target, to_row), 0..self.cols());
         if source == target {
             self.page_at_mut(source).move_row(from_row, to_row);
-            return;
+        } else {
+            self.copy_row_across((source, from_row), (target, to_row));
         }
+    }
+
+    /// Moves the rows from `top` to `bottom` of the screen `n` rows up, as a
+    /// scroll region does: the first `n` are dropped, with their pins, and
+    /// the last `n` are left empty. Each row moves as
+    /// [`PageList::move_row`] moves it, but into the row that the move
+    /// before left empty, so no row is emptied twice.
+    pub fn shift_rows_up(&mut self, top: u16, bottom: u16, n: u16) {
+        let n = n.min(bottom + 1 - top);
+        for y in top..top + n {
+            self.clear_screen_row(y);
+        }
+        for y in top + n..=bottom {
+            self.move_into_empty(y, y - n);
+        }
+    }
+
+    /// Moves the rows from `top` to `bottom` of the screen `n` rows down,
+    /// as [`PageList::shift_rows_up`] moves them up: the last `n` are
+    /// dropped, and the first `n` are left empty.
+    pub fn shift_rows_down(&mut self, top: u16, bottom: u16, n: u16) {
+        let n = n.min(bottom + 1 - top);
+        for y in bottom + 1 - n..=bottom {
+            self.clear_screen_row(y);
+        }
+        for y in (top..bottom + 1 - n).rev() {
+            self.move_into_empty(y, y + n);
+        }
+    }
+
+    /// Empties row `y` of the screen, and loses its pins.
+    fn clear_screen_row(&mut self, y: u16) {
+        let (node, row) = self.locate(y);
+        self.page_at_mut(node).clear_row(row);
+        self.lose_row_pins(node, row);
+    }
+
+    /// Moves row `from` of the screen into row `to`, an empty row.
+    fn move_into_empty(&mut self, from: u16, to: u16) {
+        let (source, from_row) = self.locate(from);
+        let (target, to_row) = self.locate(to);
+        self.move_pins((source, from_row), (target, to_row), 0..self.cols());
+        if source == target {
+            self.page_at_mut(source)
+                .move_row_into_empty(from_row, to_row);
+        } else {
+            self.copy_row_across((source, from_row), (target, to_row));
+        }
+    }
+
+    /// Copies a row of one node into a row of another, whose page grows
+    /// when one of its tables is full, and empties the first; a page that
+    /// cannot grow takes the cells without what does not fit.
+    fn copy_row_across(&mut self, from: (u32, u16), to: (u32, u16)) {
+        let ((source, from_row), (target, to_row)) = (from, to);
         let mut when_full = WhenFull::Fail;
         loop {
             let [source_node, target_node] = self
@@ -432,12 +488,24 @@ impl PageList {
                     return;
                 }
                 Err(full) => {
-                    if self.grow_page(to, full).is_err() {
+                    if self.grow_node(target, full).is_err() {
                         when_full = WhenFull::Drop;
                     }
                 }
             }
         }
+    }
+
+    /// Loses the pins in row `row` of node `node`.
+    fn lose_row_pins(&mut self, node: u32, row: u16) {
+        let pins = &mut self.pins;
+        self.nodes[node as usize].pins.retain(|&pin| {
+            let lost = pins.place_mut(pin).row == row;
+            if lost {
+                pins.lose(pin);
+            }
+            !lost
+        });
     }
 
     /// Moves the cells of `columns` in row `from` of the screen into the
@@ -948,14 +1016,7 @@ impl PageList {
         let row = page.len() - 1;
         page.pop_row();
         self.total_rows -= 1;
-        let pins = &mut self.pins;
-        self.nodes[tail as usize].pins.retain(|&pin| {
-            let lost = pins.place_mut(pin).row == row;
-            if lost {
-                pins.lose(pin);
-            }
-            !lost
-        });
+        self.lose_row_pins(tail, row);
         if self.page_at(tail).is_empty() {
             self.unlink_tail();
         }
@@ -1862,6 +1923,46 @@ mod tests {
         assert_eq!(page.grapheme(row, 2), ['\u{301}']);
         assert!(page.cells(row)[9..].iter().all(|cell| cell.is_empty()));
         assert_eq!(page.styles().len(), 1);
+        assert_eq!(list.memory(), counted(&list));
+        assert_pins_listed(&list);
+    }
+
+    #[test]
+    fn shifted_rows_move_within_a_page_and_across_two() {
+        let mut list = straddling();
+        let red = Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        };
+        for y in 0..24 {
+            let (page, row) = list.screen_row_mut(y);
+            page.set_cell(row, 0, numbered(1000 + u32::from(y)));
+        }
+        styled(&mut list, 12, 'r', &red);
+        let dropped = pin_at(&mut list, 0, 2);
+        let moved = pin_at(&mut list, 0, 12);
+        // Up across the pages' boundary, by two.
+        list.shift_rows_up(2, 20, 2);
+        let mut expected: Vec<Option<u32>> = (1000..1024).map(Some).collect();
+        expected.copy_within(4..=20, 2);
+        expected[19] = None;
+        expected[20] = None;
+        assert_eq!(screen_numbers(&list), expected);
+        assert_eq!(list.pin_position(dropped), None, "its row was dropped");
+        assert_eq!(list.pin_position(moved), Some(at(&list, 0, 10)));
+        let (page, row) = list.screen_row(10);
+        assert_eq!(page.styles().get(page.cells(row)[1].style()), &red);
+        // A shift by the whole range drops every row, and its pins.
+        let whole = pin_at(&mut list, 0, 22);
+        list.shift_rows_up(22, 23, 2);
+        assert_eq!(list.pin_position(whole), None);
+        let whole = pin_at(&mut list, 0, 21);
+        list.shift_rows_down(21, 21, 1);
+        assert_eq!(list.pin_position(whole), None);
+        // And down again, within the lower page.
+        list.shift_rows_down(12, 23, 1);
+        assert_eq!(screen_numbers(&list)[12], None);
+        assert_eq!(screen_numbers(&list)[13], expected[12]);
         assert_eq!(list.memory(), counted(&list));
         assert_pins_listed(&list);
     }
