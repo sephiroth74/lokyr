@@ -27,6 +27,18 @@ pub struct Size {
     pub height: u16,
 }
 
+/// What a read of a PTY gave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadOutcome {
+    /// That many bytes.
+    Read(usize),
+    /// The end: the program and the processes that it left have closed the
+    /// terminal, or the PTY has dropped.
+    End,
+    /// Nothing, by the deadline.
+    TimedOut,
+}
+
 /// How a PTY's program ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Exit {

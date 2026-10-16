@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use saetta_pty::{Exit, Options, Program, PtyReader, Size, spawn};
+use saetta_pty::{Exit, Options, Program, PtyReader, ReadOutcome, Size, spawn};
 
 /// What the program writes, read on a thread of its own so that a test
 /// gives up rather than hang.
@@ -237,13 +237,14 @@ fn dropping_the_terminal_hangs_the_program_up_and_waits_for_it() {
 #[test]
 fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
     // With job control, the shell runs `sleep` in a group of its own, in the
-    // terminal's foreground. The shell catches SIGHUP, and a reader keeps the
-    // terminal open, so only the hang-up of the job ends it.
+    // terminal's foreground. The shell catches SIGHUP, and a reader that
+    // reads nothing keeps the terminal open, so only the hang-up of the job
+    // ends it.
     let script = "trap : HUP; set -m; sleep 30; echo after";
     // bash, whose job control works without a prompt, where dash's may not.
     let bash = Program::command("/bin/bash", ["-c", script]);
     let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
-    let mut output = Output::new(pty.reader().unwrap());
+    let idle = pty.reader().unwrap();
     let pid = pty.process_id();
     let start = std::time::Instant::now();
     let job = loop {
@@ -266,8 +267,77 @@ fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    // The shell went on past its job.
-    output.until("after");
+    drop(idle);
+}
+
+#[test]
+fn dropping_the_terminal_ends_its_readers_and_writers() {
+    // A program that ignores SIGHUP and reads nothing, so that its input
+    // fills up.
+    let script = "trap '' HUP; stty raw -echo; echo ready; sleep 30";
+    let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    let mut writer = pty.writer().unwrap();
+    let writing = std::thread::spawn(move || writer.write_all(&[b'x'; 1 << 20]));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!writing.is_finished(), "the program reads nothing");
+    let pid = pty.process_id();
+    drop(pty);
+    // The blocked write fails, and the reader reads the end.
+    let error = writing.join().unwrap().unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    output.rest();
+    // SAFETY: ending a test's own child, which would outlive the test.
+    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+}
+
+#[test]
+fn a_read_with_a_deadline_times_out() {
+    let pty = spawn(&Options::new(sh("echo ready; sleep 30"), "xterm-256color")).unwrap();
+    let mut reader = pty.reader().unwrap();
+    let mut buffer = [0; 64];
+    let mut text = Vec::new();
+    while !text.ends_with(b"ready\r\n") {
+        match reader.read_until(&mut buffer, None).unwrap() {
+            ReadOutcome::Read(n) => text.extend_from_slice(&buffer[..n]),
+            outcome => panic!("{outcome:?}"),
+        }
+    }
+    let start = std::time::Instant::now();
+    let deadline = start + Duration::from_millis(200);
+    assert_eq!(
+        reader.read_until(&mut buffer, Some(deadline)).unwrap(),
+        ReadOutcome::TimedOut
+    );
+    assert!(start.elapsed() >= Duration::from_millis(200));
+    assert_eq!(
+        reader.read_until(&mut [], None).unwrap(),
+        ReadOutcome::Read(0)
+    );
+}
+
+#[test]
+fn a_signal_blocked_where_the_program_starts_is_not_blocked_in_it() {
+    let pty = std::thread::spawn(|| {
+        // SAFETY: blocking SIGUSR2 in this thread alone, which ends here.
+        unsafe {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigaddset(&mut set, libc::SIGUSR2);
+            libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+        }
+        spawn(&Options::new(
+            sh("echo started; kill -USR2 $$; echo survived"),
+            "xterm-256color",
+        ))
+        .unwrap()
+    })
+    .join()
+    .unwrap();
+    let text = Output::new(pty.reader().unwrap()).rest();
+    assert!(text.contains("started"));
+    assert!(!text.contains("survived"), "SIGUSR2 ended the shell");
 }
 
 #[test]

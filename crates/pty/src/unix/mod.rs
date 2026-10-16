@@ -1,41 +1,48 @@
-//! PTYs on Unix: `openpty`, and a child that leads its own session with
-//! the PTY as its controlling terminal.
+//! PTYs on Unix: a pseudo-terminal, and a child that leads its own session
+//! with the PTY as its controlling terminal.
+
+mod io;
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
-use std::fs::File;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{Error as IoError, ErrorKind};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex, PoisonError};
+
+pub use io::{PtyReader, PtyWriter};
 
 use crate::{Error, Exit, Options, Program, Size};
+
+/// Held while this crate forks, and while it makes a descriptor that cannot
+/// be closed on exec as it opens, so that no child of this crate inherits
+/// one.
+static FORKING: Mutex<()> = Mutex::new(());
 
 /// A pseudo-terminal, with the program that runs in it.
 ///
 /// Dropping it hangs the program up, as closing a terminal does, with
 /// SIGHUP to the program and to the terminal's foreground process group,
-/// even while readers and writers still have the terminal open; a thread
-/// then waits for the program to go, so that it leaves no zombie behind.
+/// and ends the reads and writes of its readers and writers, so that the
+/// terminal closes once they drop, even for a program that ignores SIGHUP;
+/// a thread then waits for the program to go, so that it leaves no zombie
+/// behind.
 #[derive(Debug)]
 pub struct Pty {
     master: OwnedFd,
+    /// The end of a pipe that readers and writers wait on, which reads the
+    /// end once the other end, `_closing`, drops with the PTY.
+    closed: Arc<OwnedFd>,
+    _closing: OwnedFd,
     /// The program, until the drop hands it to the thread that waits for
     /// it.
     child: Option<Child>,
     pid: u32,
     tty: PathBuf,
 }
-
-/// What the program writes to the terminal.
-#[derive(Debug)]
-pub struct PtyReader(File);
-
-/// What is typed into the terminal, for the program.
-#[derive(Debug)]
-pub struct PtyWriter(File);
 
 /// Opens a pseudo-terminal and starts the program of `options` in it.
 pub fn spawn(options: &Options) -> Result<Pty, Error> {
@@ -68,13 +75,19 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     unsafe {
         command.pre_exec(lead_session);
     }
-    let child = command.spawn().map_err(spawn_error)?;
+    let (closed, closing) = pipe().map_err(Error::Open)?;
+    let child = {
+        let _forking = FORKING.lock().unwrap_or_else(PoisonError::into_inner);
+        command.spawn().map_err(spawn_error)?
+    };
     // The child has its copies of the terminal's side; the parent keeps
     // none, so that the master reads the end when the program goes.
     drop(command);
     drop(slave);
     Ok(Pty {
         master,
+        closed: Arc::new(closed),
+        _closing: closing,
         pid: child.id(),
         child: Some(child),
         tty,
@@ -84,13 +97,19 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
 impl Pty {
     /// A reader of what the program writes. A read returns 0 once the
     /// program and its children have closed the terminal.
-    pub fn reader(&self) -> io::Result<PtyReader> {
-        Ok(PtyReader(File::from(self.master.try_clone()?)))
+    pub fn reader(&self) -> std::io::Result<PtyReader> {
+        Ok(PtyReader::new(
+            self.master.try_clone()?,
+            Arc::clone(&self.closed),
+        ))
     }
 
     /// A writer of what is typed for the program.
-    pub fn writer(&self) -> io::Result<PtyWriter> {
-        Ok(PtyWriter(File::from(self.master.try_clone()?)))
+    pub fn writer(&self) -> std::io::Result<PtyWriter> {
+        Ok(PtyWriter::new(
+            self.master.try_clone()?,
+            Arc::clone(&self.closed),
+        ))
     }
 
     /// The path of the terminal's device, as `tty` prints it.
@@ -105,24 +124,24 @@ impl Pty {
 
     /// Gives the terminal `size`, in cells and in pixels; the program's
     /// foreground process group learns of it through SIGWINCH.
-    pub fn resize(&self, size: Size) -> io::Result<()> {
+    pub fn resize(&self, size: Size) -> std::io::Result<()> {
         let window = winsize(size);
         // SAFETY: `TIOCSWINSZ` reads a `winsize`, which `window` is.
         let failed = unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &window) };
         if failed == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(IoError::last_os_error());
         }
         Ok(())
     }
 
     /// The terminal's size, in cells and in pixels.
-    pub fn size(&self) -> io::Result<Size> {
+    pub fn size(&self) -> std::io::Result<Size> {
         // SAFETY: an all-zero `winsize` is a valid value to overwrite.
         let mut window: libc::winsize = unsafe { std::mem::zeroed() };
         // SAFETY: `TIOCGWINSZ` writes a `winsize`, which `window` is.
         let failed = unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCGWINSZ, &mut window) };
         if failed == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(IoError::last_os_error());
         }
         Ok(Size {
             cols: window.ws_col,
@@ -135,12 +154,12 @@ impl Pty {
     /// Waits for the program to end, as `waitpid` does, and tells how it
     /// did. The end that the master reads can come later, when processes
     /// that the program started still have the terminal open, or never.
-    pub fn wait(&mut self) -> io::Result<Exit> {
+    pub fn wait(&mut self) -> std::io::Result<Exit> {
         self.child().wait().map(exit)
     }
 
     /// How the program ended, if it has, without waiting.
-    pub fn try_wait(&mut self) -> io::Result<Option<Exit>> {
+    pub fn try_wait(&mut self) -> std::io::Result<Option<Exit>> {
         Ok(self.child().try_wait()?.map(exit))
     }
 
@@ -198,27 +217,6 @@ fn exit(status: ExitStatus) -> Exit {
     }
 }
 
-impl Read for PtyReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self.0.read(buf) {
-            // Once no process has the terminal open, the master fails with
-            // EIO rather than reading the end.
-            Err(error) if error.raw_os_error() == Some(libc::EIO) => Ok(0),
-            result => result,
-        }
-    }
-}
-
-impl Write for PtyWriter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
-}
-
 /// The errno with which macOS's kernel asks itself to open a device again:
 /// it reaches the caller of `open` at times when several processes open
 /// `/dev/ptmx` at once, and opening again succeeds.
@@ -228,50 +226,84 @@ const EREDRIVEOPEN: i32 = -6;
 const REDRIVE_TRIES: usize = 1000;
 
 /// Opens a pseudo-terminal of `size`, and returns its master, its slave,
-/// neither inherited across exec, and the slave's path.
+/// neither inherited across exec, and the slave's path. The master does not
+/// block, for its readers and writers to wait on it with `poll`; the slave
+/// does, as programs expect of their standard input.
 ///
 /// `openpty` would do it in one call, but it closes the descriptors on exec
 /// only after opening them, so that a fork elsewhere in the meantime can
 /// inherit them, and it gives up on [`EREDRIVEOPEN`]. Each step here is
 /// safe to run on several threads at once.
-fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd, PathBuf)> {
+fn open(size: Size) -> std::io::Result<(OwnedFd, OwnedFd, PathBuf)> {
     let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
-    let open = |path: &CStr| {
+    let open = |path: &CStr, more: libc::c_int| {
         for _ in 0..REDRIVE_TRIES {
             // SAFETY: `path` is a terminated string.
-            let fd = unsafe { libc::open(path.as_ptr(), flags) };
+            let fd = unsafe { libc::open(path.as_ptr(), flags | more) };
             if fd != -1 {
                 // SAFETY: `open` returned a descriptor that belongs to no
                 // one else.
                 return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
             }
-            let error = io::Error::last_os_error();
+            let error = IoError::last_os_error();
             if error.raw_os_error() != Some(EREDRIVEOPEN) {
                 return Err(error);
             }
             std::thread::yield_now();
         }
-        Err(io::Error::from_raw_os_error(EREDRIVEOPEN))
+        Err(IoError::from_raw_os_error(EREDRIVEOPEN))
     };
-    let master = open(c"/dev/ptmx")?;
+    let master = open(c"/dev/ptmx", libc::O_NONBLOCK)?;
     // SAFETY: both act on the master, which `master` owns.
     unsafe {
         if libc::grantpt(master.as_raw_fd()) == -1 || libc::unlockpt(master.as_raw_fd()) == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(IoError::last_os_error());
         }
     }
     let tty = tty_name(&master)?;
     let path = CString::new(tty.as_os_str().as_bytes())
-        .map_err(|_| io::Error::from(ErrorKind::InvalidData))?;
+        .map_err(|_| IoError::from(ErrorKind::InvalidData))?;
     // Without O_NOCTTY, opening the slave would make it the app's own
     // controlling terminal, when the app leads a session without one.
-    let slave = open(&path)?;
+    let slave = open(&path, 0)?;
     let window = winsize(size);
     // SAFETY: `TIOCSWINSZ` reads a `winsize`, which `window` is.
     if unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &window) } == -1 {
-        return Err(io::Error::last_os_error());
+        return Err(IoError::last_os_error());
     }
     Ok((master, slave, tty))
+}
+
+/// A pipe, its end to read and its end to write, neither inherited across
+/// exec.
+fn pipe() -> std::io::Result<(OwnedFd, OwnedFd)> {
+    let mut ends = [-1; 2];
+    #[cfg(not(target_os = "macos"))]
+    {
+        // SAFETY: `pipe2` writes the two descriptors into `ends`.
+        if unsafe { libc::pipe2(ends.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+            return Err(IoError::last_os_error());
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // macOS has no `pipe2`: this crate does not fork until both ends
+        // close on exec.
+        let _forking = FORKING.lock().unwrap_or_else(PoisonError::into_inner);
+        // SAFETY: `pipe` writes the two descriptors into `ends`.
+        if unsafe { libc::pipe(ends.as_mut_ptr()) } == -1 {
+            return Err(IoError::last_os_error());
+        }
+        for fd in ends {
+            // SAFETY: `fd` was just opened, and setting its flags touches
+            // nothing else.
+            if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
+                return Err(IoError::last_os_error());
+            }
+        }
+    }
+    // SAFETY: `pipe` opened both, and nothing else owns them.
+    Ok(unsafe { (OwnedFd::from_raw_fd(ends[0]), OwnedFd::from_raw_fd(ends[1])) })
 }
 
 fn winsize(size: Size) -> libc::winsize {
@@ -295,7 +327,7 @@ unsafe extern "C" {
 use libc::ptsname_r;
 
 /// The path of the slave of the pseudo-terminal whose master is `master`.
-fn tty_name(master: &OwnedFd) -> io::Result<PathBuf> {
+fn tty_name(master: &OwnedFd) -> std::io::Result<PathBuf> {
     let mut name = [0 as libc::c_char; 128];
     // SAFETY: `ptsname_r` writes at most `name.len()` bytes, a terminated
     // string when it succeeds.
@@ -303,8 +335,8 @@ fn tty_name(master: &OwnedFd) -> io::Result<PathBuf> {
     match failed {
         0 => {}
         // macOS returns -1 and sets errno; glibc returns the error.
-        -1 => return Err(io::Error::last_os_error()),
-        error => return Err(io::Error::from_raw_os_error(error)),
+        -1 => return Err(IoError::last_os_error()),
+        error => return Err(IoError::from_raw_os_error(error)),
     }
     // SAFETY: `ptsname_r` succeeded, so `name` holds a terminated string.
     let name = unsafe { CStr::from_ptr(name.as_ptr()) };
@@ -312,22 +344,29 @@ fn tty_name(master: &OwnedFd) -> io::Result<PathBuf> {
 }
 
 /// Makes the child the leader of a session, with the terminal on its
-/// standard input as the controlling terminal, and gives every signal its
-/// default action, which an ignored one would not get across exec. The
-/// standard library has already emptied the signal mask.
+/// standard input as the controlling terminal, empties the signal mask,
+/// which the child has from the thread that spawned it, and gives every
+/// signal its default action, which an ignored one would not get across
+/// exec.
 ///
 /// It runs between fork and exec, so it calls only async-signal-safe
 /// functions, and does not allocate.
-fn lead_session() -> io::Result<()> {
+fn lead_session() -> std::io::Result<()> {
     // SAFETY: `setsid` and `ioctl` only change the process's session and
-    // terminal; `signal` with `SIG_DFL` installs no handler. All three are
+    // terminal, `sigemptyset` and `sigprocmask` its signal mask, with a set
+    // on the stack; `signal` with `SIG_DFL` installs no handler. All are
     // async-signal-safe.
     unsafe {
         if libc::setsid() == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(IoError::last_os_error());
         }
         if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(IoError::last_os_error());
+        }
+        let mut none: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut none);
+        if libc::sigprocmask(libc::SIG_SETMASK, &none, std::ptr::null_mut()) == -1 {
+            return Err(IoError::last_os_error());
         }
         // SIGKILL and SIGSTOP refuse, which changes nothing.
         for signal in 1..32 {

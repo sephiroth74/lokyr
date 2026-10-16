@@ -214,3 +214,103 @@ fn dropping_the_session_ends_its_threads() {
         thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn a_write_that_blocks_does_not_keep_an_update_from_ending() {
+    // A program in raw mode that starts an update, then reads nothing.
+    let mut options = sh(r#"stty raw -echo; printf '\033[?2026h'; sleep 30"#);
+    options.sync_timeout = Duration::from_millis(300);
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "the update", |terminal| {
+        terminal.synchronized_updates() == 1
+    });
+    // More than the terminal's input holds.
+    session.write(vec![b'x'; 64 * 1024]);
+    wait_for(&session, "the deadline", |terminal| {
+        !terminal.synchronized_output()
+    });
+}
+
+#[test]
+fn an_update_that_an_exited_program_left_ends_with_its_output() {
+    // A deadline that the test does not wait for.
+    let mut options = sh(r#"printf 'last words\033[?2026h'; exit 0"#);
+    options.sync_timeout = Duration::from_secs(60);
+    let session = Session::spawn(&options, || {}).unwrap();
+    let start = Instant::now();
+    while !session.has_ended() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!session.lock().synchronized_output());
+    // A key for a program that has gone changes nothing.
+    session.write("q");
+    thread::sleep(Duration::from_millis(50));
+    assert!(shows(&session.lock(), "last words"));
+}
+
+#[test]
+fn a_reply_never_lands_inside_a_bracketed_paste() {
+    let out = std::env::temp_dir().join(format!("saetta-paste-{}", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    // Bracketed paste on, raw mode, what is typed saved to `out`, and a
+    // stream of DA1 queries, as a program that polls the terminal sends.
+    let script = format!(
+        r#"stty raw -echo; printf '\033[?2004h'; (i=0; while [ $i -lt 100000 ]; do printf '\033[c'; i=$((i+1)); done) & echo armed; exec cat > '{}'"#,
+        out.display()
+    );
+    let session = Session::spawn(&sh(&script), || {}).unwrap();
+    wait_for(&session, "armed", |terminal| shows(terminal, "armed"));
+    session.paste(&"b".repeat(1 << 20));
+    let start = Instant::now();
+    let typed = loop {
+        let typed = std::fs::read(&out).unwrap_or_default();
+        if typed.windows(6).any(|w| w == b"\x1b[201~") {
+            break typed;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "the paste never ended"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    drop(session);
+    let _ = std::fs::remove_file(&out);
+    let open = typed.windows(6).position(|w| w == b"\x1b[200~").unwrap() + 6;
+    let close = typed.windows(6).position(|w| w == b"\x1b[201~").unwrap();
+    assert_eq!(
+        close - open,
+        1 << 20,
+        "nothing but the paste between its brackets"
+    );
+    assert!(typed[open..close].iter().all(|&b| b == b'b'));
+}
+
+/// Tells, as it drops, that the session's shared state, which holds the
+/// `wake` closure that owns it, has gone: both threads have ended.
+struct Freed(std::sync::mpsc::Sender<()>);
+
+impl Drop for Freed {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+#[test]
+fn dropping_a_session_ends_a_program_that_ignores_sighup() {
+    let (sender, freed) = std::sync::mpsc::channel();
+    let guard = Freed(sender);
+    // A program that survives SIGHUP but ends once its reads see the end,
+    // as on a terminal that closes.
+    let script = r#"trap '' HUP; echo ready; while read line; do :; done"#;
+    let session = Session::spawn(&sh(script), move || {
+        let _ = &guard;
+    })
+    .unwrap();
+    wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
+    drop(session);
+    assert!(
+        freed.recv_timeout(Duration::from_secs(10)).is_ok(),
+        "a thread is still there"
+    );
+}

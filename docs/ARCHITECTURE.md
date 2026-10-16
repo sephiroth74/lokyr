@@ -66,8 +66,8 @@ Workspace
 | Thread | Does | Never does |
 |---|---|---|
 | Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Luau plugin |
-| I/O, one per pane | `read` from the PTY, parsing, grid updates | Wait for the main thread, or for the program to read its input |
-| Writer, one per pane | Writing input and replies to the PTY; ending synchronized updates at their deadline | Wait for the main thread |
+| I/O, one per pane | `read` from the PTY, parsing, grid updates; ending synchronized updates at their deadline | Wait for the main thread, or for the program to read its input |
+| Writer, one per pane | Writing input and replies to the PTY | Wait for the main thread |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 

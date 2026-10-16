@@ -9,24 +9,24 @@
 mod lock;
 mod queue;
 
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use saetta_pty::{Exit, Pty, PtyReader, PtyWriter, Size};
+use saetta_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
 use saetta_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use saetta_vt_core::parser::Parser;
 use saetta_vt_core::terminal::{self, Terminal};
 
 use lock::FairMutex;
-use queue::{Queue, Work};
+use queue::Queue;
 
 /// The most bytes that the I/O thread parses at a time, with the lock held.
 const SLICE: usize = 64 * 1024;
 
-/// The most bytes of a paste that go to the program in one write.
+/// The most bytes that the writer writes at a time.
 const PASTE_CHUNK: usize = 4 * 1024;
 
 /// How to start a session.
@@ -97,11 +97,12 @@ impl Shared {
 ///
 /// An I/O thread reads the program's output, at most [`SLICE`] bytes at a
 /// time, and parses each slice under the grid lock, which it hands over,
-/// between two slices, to any thread that waits for it. A writer thread
-/// writes the keys, the pastes and the terminal's replies to the program,
-/// so that a program that does not read its input never keeps its output
-/// from being read; it also ends a synchronized update that outlasts its
-/// deadline. Dropping the session hangs the program up.
+/// between two slices, to any thread that waits for it; it also ends a
+/// synchronized update that outlasts its deadline, its read waiting for
+/// that at most. A writer thread writes the keys, the pastes and the
+/// terminal's replies to the program, so that a program that does not read
+/// its input never keeps its output from being read. Dropping the session
+/// hangs the program up, ends both threads, and closes the terminal.
 pub struct Session {
     shared: Arc<Shared>,
     pty: Pty,
@@ -154,8 +155,9 @@ impl Session {
         self.shared.terminal.lock()
     }
 
-    /// Lets the next change call `wake` again, once the main thread has
-    /// looked at the terminal.
+    /// Lets the next change call `wake` again. The main thread calls it
+    /// before it looks at the terminal, or with the lock held, so that a
+    /// change made after its look calls `wake`.
     pub fn clear_wake(&self) {
         self.shared.woken.store(false, Ordering::Release);
     }
@@ -209,13 +211,12 @@ impl Session {
         self.write(bytes);
     }
 
-    /// Pastes `text`, in writes of [`PASTE_CHUNK`] bytes at most.
+    /// Pastes `text`, in one entry of the queue, so that no reply comes
+    /// between its brackets; the writer writes it in chunks.
     pub fn paste(&self, text: &str) {
         let mut bytes = Vec::new();
         input::encode_paste(text, &self.lock().input_modes(), &mut bytes);
-        for chunk in bytes.chunks(PASTE_CHUNK) {
-            self.write(chunk);
-        }
+        self.write(bytes);
     }
 
     /// Gives the terminal and the program `size`: the grid first, so that
@@ -245,13 +246,26 @@ impl Drop for Session {
 fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
     let mut parser = Parser::new();
     let mut buffer = vec![0; SLICE];
+    // The synchronized update under way, by its number, and its deadline.
     let mut update = 0;
+    let mut deadline = None;
     loop {
-        let n = match reader.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => n,
+        let n = match reader.read_until(&mut buffer, deadline) {
+            Ok(ReadOutcome::Read(n)) => n,
+            Ok(ReadOutcome::TimedOut) => {
+                deadline = None;
+                let mut terminal = shared.terminal.lock_in_turn();
+                let late =
+                    terminal.synchronized_output() && terminal.synchronized_updates() == update;
+                if late {
+                    terminal.end_synchronized_output();
+                    drop(terminal);
+                    shared.changed();
+                }
+                continue;
+            }
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Err(_) => break,
+            Ok(ReadOutcome::End) | Err(_) => break,
         };
         let mut terminal = shared.terminal.lock_in_turn();
         parser.advance(&mut *terminal, &buffer[..n]);
@@ -262,43 +276,36 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
         shared.slices.fetch_add(1, Ordering::AcqRel);
         drop(terminal);
         shared.queue.push(replies);
-        // Each update that starts has its own deadline.
+        // Each update that starts has its own deadline, which output does
+        // not put off.
         if let Some(started) = synchronized.filter(|&started| started != update) {
             update = started;
-            shared
-                .queue
-                .set_deadline(update, Instant::now() + sync_timeout);
+            deadline = Some(Instant::now() + sync_timeout);
         }
         shared.changed();
     }
+    // No more output can end the update under way.
+    shared.terminal.lock_in_turn().end_synchronized_output();
     shared.ended.store(true, Ordering::Release);
     shared.woken.store(true, Ordering::Release);
     (shared.wake)();
 }
 
-/// The writer thread: writes what the queue holds, in order, and ends the
-/// synchronized updates that outlast their deadlines.
+/// The writer thread: writes what the queue holds, in order, each entry in
+/// writes of [`PASTE_CHUNK`] bytes at most, so that it stops between two
+/// of them once the session closes.
 fn write_input(shared: &Shared, mut writer: PtyWriter) {
-    loop {
-        match shared.queue.next() {
-            Work::Write(bytes) => {
-                // The program has gone: what follows has no one to read it.
-                if writer.write_all(&bytes).is_err() {
-                    shared.queue.close();
-                    return;
-                }
+    while let Some(bytes) = shared.queue.next() {
+        for chunk in bytes.chunks(PASTE_CHUNK) {
+            if shared.queue.is_closed() {
+                return;
             }
-            Work::Deadline(update) => {
-                let mut terminal = shared.terminal.lock();
-                let late =
-                    terminal.synchronized_output() && terminal.synchronized_updates() == update;
-                if late {
-                    terminal.end_synchronized_output();
-                    drop(terminal);
-                    shared.changed();
-                }
+            // The program has gone, or the PTY has: what follows has no one
+            // to read it.
+            if writer.write_all(chunk).is_err() {
+                shared.queue.close();
+                return;
             }
-            Work::Stop => return,
         }
     }
 }
