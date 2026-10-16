@@ -58,6 +58,10 @@ check-deps:
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps
 
+# Compile the terminfo entry xterm-bolt into target/terminfo, with the tic on the PATH or $TIC.
+terminfo:
+    cargo xtask terminfo
+
 # Generate the Unicode tables of vt-core from the pinned Unicode version (downloads the UCD).
 ucd:
     cargo xtask ucd

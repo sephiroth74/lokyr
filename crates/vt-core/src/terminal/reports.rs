@@ -9,6 +9,7 @@
 use std::fmt::Write as _;
 
 use super::osc::hex_byte;
+use super::terminfo::{self, Capability};
 use super::{CursorShape, Event, Terminal};
 use crate::page::{Color, Style, Underline};
 use crate::parser::{Params, StringEnd};
@@ -214,11 +215,7 @@ impl Terminal {
             let reply = match self.capability(&name) {
                 Some(Capability::Flag) => format!("\x1bP1+r{}\x1b\\", to_hex(&name)),
                 Some(Capability::Value(value)) => {
-                    format!(
-                        "\x1bP1+r{}={}\x1b\\",
-                        to_hex(&name),
-                        to_hex(value.as_bytes())
-                    )
+                    format!("\x1bP1+r{}={}\x1b\\", to_hex(&name), to_hex(&value))
                 }
                 None => format!("\x1bP0+r{}\x1b\\", to_hex(&name)),
             };
@@ -226,23 +223,18 @@ impl Terminal {
         }
     }
 
-    /// The terminfo capability `name`, among the few the terminal reports.
+    /// The capability `name`: the terminal's terminfo entry's, by its
+    /// terminfo name, and those that xterm answers too: `TN` and `name`,
+    /// the `TERM` that programs see, `Co`, the colors' termcap name, and
+    /// `RGB`, the bits of each channel of a direct color.
     fn capability(&self, name: &[u8]) -> Option<Capability> {
         match name {
-            b"TN" | b"name" => Some(Capability::Value(self.term.clone())),
-            b"Co" | b"colors" => Some(Capability::Value("256".to_owned())),
-            b"RGB" | b"Tc" => Some(Capability::Flag),
-            _ => None,
+            b"TN" | b"name" => Some(Capability::Value(self.term.clone().into_bytes())),
+            b"Co" => terminfo::capability(b"colors").cloned(),
+            b"RGB" => Some(Capability::Value(b"8/8/8".to_vec())),
+            _ => terminfo::capability(name).cloned(),
         }
     }
-}
-
-/// What XTGETTCAP replies for a capability.
-enum Capability {
-    /// A boolean capability, which the terminal has.
-    Flag,
-    /// A number or a string.
-    Value(String),
 }
 
 /// The SGR parameters that give a pen its style, from a reset.

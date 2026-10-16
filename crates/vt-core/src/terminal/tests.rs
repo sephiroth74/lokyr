@@ -2444,9 +2444,33 @@ fn xtgettcap_reports_capabilities_by_name() {
     assert_eq!(
         replies(&mut term),
         format!(
-            "\x1bP1+r544E={}\x1b\\\x1bP1+r436F={}\x1b\\\x1bP1+r524742\x1b\\\x1bP0+r5858\x1b\\",
+            "\x1bP1+r544E={}\x1b\\\x1bP1+r436F={}\x1b\\\x1bP1+r524742={}\x1b\\\x1bP0+r5858\x1b\\",
             hex("xterm-bolt"),
-            hex("256")
+            hex("256"),
+            hex("8/8/8")
+        )
+    );
+    // The terminfo entry's capabilities, by their terminfo names: a
+    // boolean, a key's string as the terminal sends it, and a string with
+    // parameters as the entry writes it.
+    let query = ["Tc", "kbs", "kcuu1", "Smulx", "colors", "name", "smm"]
+        .map(hex)
+        .join(";");
+    term.feed(format!("\x1bP+q{query}\x1b\\"));
+    assert_eq!(
+        replies(&mut term),
+        format!(
+            "\x1bP1+r{}\x1b\\\x1bP1+r{}=7F\x1b\\\x1bP1+r{}=1B4F41\x1b\\\x1bP1+r{}={}\x1b\\\x1bP1+r{}={}\x1b\\\x1bP1+r{}={}\x1b\\\x1bP0+r{}\x1b\\",
+            hex("Tc"),
+            hex("kbs"),
+            hex("kcuu1"),
+            hex("Smulx"),
+            hex(r"\E[4\:%p1%dm"),
+            hex("colors"),
+            hex("256"),
+            hex("name"),
+            hex("xterm-bolt"),
+            hex("smm"),
         )
     );
     // Names must be hexadecimal; the first that is not ends the reply.

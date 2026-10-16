@@ -95,7 +95,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
 - **OSC strings** are read whole, within their size limits, and acted on when they end with ST or BEL. What the embedder has to act on goes to a queue of events: a title changed (OSC 0, 1, 2), the working directory (OSC 7, a `file:` URL), a notification (OSC 9, 777), the progress of a task (OSC 9;4), the tab's color (OSC 6;1, a component at a time), the colors changed, and the clipboard written or, when the configuration allows it, asked for (OSC 52), which the embedder answers after the user confirms. Text from programs loses its control characters.
 - **Reports**: replies wait in a queue that the embedder takes and writes to the PTY, and carry only what the terminal makes of its own state.
   - DA1 says VT220 with ANSI colors (`CSI ? 62 ; 22 c`), DA2 `CSI > 1 ; 10 ; 0 c`, and DA3 a unit id of zeros, as Ghostty does; XTVERSION gives the name and version.
-  - DECRQSS reports SGR, DECSTBM, DECSLRM, DECSCUSR and DECSCA as the sequences that set them, with `1 $ r` for a valid request, as xterm does, and `0 $ r` without echoing the request otherwise. XTGETTCAP answers a few capabilities (`TN`, `Co`, `RGB`) until the terminfo is in.
+  - DECRQSS reports SGR, DECSTBM, DECSLRM, DECSCUSR and DECSCA as the sequences that set them, with `1 $ r` for a valid request, as xterm does, and `0 $ r` without echoing the request otherwise. XTGETTCAP answers from the terminal's terminfo entry, by terminfo name, and answers `TN`, `Co` and `RGB` as xterm does ([Terminfo](#terminfo)).
   - XTWINOPS reports the size in cells, and in pixels once the embedder gives the size of a cell; it keeps a stack of ten entries, which 22 t fills with both titles, the icon's (1) or the window's (2), and 23 t pops, bringing back those asked for of those saved, as xterm does, with a `TitleChanged` event. xterm's third parameter, which reads an entry without popping it, is not read. Programs read the title back (20 t and 21 t) only when the configuration allows it, and then without its control characters.
 - **C0 controls**: BEL rings; BS moves left as CUB 1 does, so that, with the wrap pending, it leaves the last column; HT goes to the next tab stop, every 8 columns by default, or to the last column; LF, VT and FF go down a row and scroll at the bottom; CR goes to the left margin, or to the first column from left of it; SO and SI select G1 and G0. The others do nothing.
 
@@ -259,7 +259,7 @@ normalization = "none"    # none | nfc | nfd | hfs+
 - **Environment**:
   - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=bolt`, `TERM_PROGRAM_VERSION`, `BOLT_RESOURCES_DIR` when the caller gives it, and the caller's own variables last.
   - A UTF-8 locale in `LANG` if none of `LC_ALL`, `LC_CTYPE` and `LANG` is set; the caller chooses it ([SECURITY.md](SECURITY.md#macos-environment)).
-  - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-bolt`.
+  - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-bolt` and the caller gives the resources, to their `terminfo` directory.
 - **Resize**: `Pty::resize`, `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. The kernel sends SIGWINCH to the foreground process group. Resizes are coalesced while a divider is being dragged.
 - **Process exit**: EOF on the master plus `waitpid`: `Pty::wait` and `Pty::try_wait` tell an `Exit`, a status or the signal that ended the program. The end that the master reads can come after the program's exit, when processes that it started still have the terminal open, or never, so the exit is told apart from it. What happens next is configurable: close the pane, or show the exit code.
 - **Closing**: dropping a `Pty` hangs the program up as closing a terminal does, with SIGHUP to the program and to a job in the terminal's foreground, and ends what its readers and writers wait for: reads end, writes fail, and the terminal closes once they drop, so that a program that ignores SIGHUP sees the end of its input. A thread waits for the program, so that it leaves no zombie.
@@ -277,15 +277,21 @@ normalization = "none"    # none | nfc | nfd | hfs+
 
 ## Terminfo
 
-- **Capabilities of `xterm-bolt`**: it derives from `xterm-256color` and adds:
-  - `Tc`/`RGB` (truecolor);
-  - `Smulx` (styled underlines) and `Setulc` (underline color);
-  - `Ss`/`Se` (cursor style);
-  - `Sync` (mode 2026);
-  - `BD`/`BE`/`PS`/`PE` (bracketed paste);
-  - `Ms` (OSC 52);
-  - `fsl`/`tsl`/`hs` (title) and `XT`.
-- **Build and install**: compiled at build time with `tic -x` from a recent ncurses (the one shipped with macOS is very old). It is bundled with the app: `Contents/Resources/terminfo` on macOS, `share/terminfo` on Linux.
+- **The entry**: `xterm-bolt`, also named `bolt`, in `crates/vt-core/terminfo/xterm-bolt.terminfo`. It stands alone, with no `use=`, so that it compiles the same on any machine, whatever `xterm-256color` the machine's database holds.
+  - It is `xterm-256color` as ncurses 6.0 describes it, without what the terminal does not do: the soft reset (DECSTR) of `is2` and `rs2`, printing (`mc0`, `mc4`, `mc5`, `mc5i`), meta mode (`smm`, `rmm`) and memory lock (`meml`, `memu`). `kbs` is DEL, which Backspace sends, and `Se` restores the cursor style that the user chose (`CSI 0 SP q`).
+  - It adds:
+    - `Tc`, `setrgbf` and `setrgbb` (24-bit color). `RGB` is left out: next to `colors#256`, ncurses 6.1 and later would read it as direct color with 3, 3 and 2 bits per channel;
+    - `Su` and `Smulx` (styled underlines) and `Setulc` (underline color);
+    - `Smol`/`Rmol` (overline) and `smxx`/`rmxx` (strikethrough);
+    - `Sync` (mode 2026);
+    - `BD`/`BE`/`PS`/`PE` (bracketed paste);
+    - `fe`/`fd` and `kxIN`/`kxOUT` (focus events);
+    - `hs`, `tsl`, `fsl` and `dsl` (the title as a status line);
+    - `oc` (OSC 104) and `rep` (REP).
+  - It keeps, from `xterm-256color`, `Ss`/`Se` (cursor style), `Ms` (OSC 52), `Cs`/`Cr` (cursor color), `E3` and `XT`.
+- **Build**: `cargo xtask terminfo` (`just terminfo`) compiles it with `tic -x` into `target/terminfo`, in the layout of the `tic` that compiles it: hexadecimal directories on macOS (`78/xterm-bolt`), letters on Linux. macOS's own `tic`, from ncurses 6.0, is enough: the entry's numbers stay below 32768, so that any `tic` writes the legacy format, which every ncurses reads, macOS's own library included. The task fails if `tic` warns, if `infocmp -x` does not read every capability of the source back, or if the format is another.
+- **Install**: the app bundles it, in `Contents/Resources/terminfo` on macOS and `share/terminfo` on Linux, and `TERMINFO` points there when `TERM=xterm-bolt` ([PTY](#pty-and-processes-pty)).
+- **XTGETTCAP** answers from the same source, by terminfo name: a boolean with `DCS 1 + r` and its name, a number in decimal, a string as the terminal sends or reads it (`kbs` is `7F`), and a string with parameters as the source writes it, for the program to fill in, as Ghostty and kitty do. It also answers xterm's own names: `TN` and `name`, the `TERM` that programs see; `Co`, the colors' termcap name; and `RGB`, `8/8/8`, the bits of each channel of a direct color. It does not answer other termcap names.
 - **Default `TERM`**: `xterm-256color`, because remote hosts usually don't know `xterm-bolt`. The `term` option chooses another ([Settings](#settings)). The default will change once the ssh integration (F5a) can install the terminfo on remote hosts or fall back automatically.
 
 ## Supported protocols

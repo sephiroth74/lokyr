@@ -529,7 +529,14 @@ fn environment(
     set("TERM_PROGRAM", "bolt".into());
     set("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION").into());
     match &options.resources_dir {
-        Some(dir) => set("BOLT_RESOURCES_DIR", dir.clone().into()),
+        Some(dir) => {
+            set("BOLT_RESOURCES_DIR", dir.clone().into());
+            // The terminal's own entry, which the app keeps with its
+            // resources, where programs would not otherwise find it.
+            if options.term == "xterm-bolt" {
+                set("TERMINFO", dir.join("terminfo").into());
+            }
+        }
         None => {
             env.remove(OsStr::new("BOLT_RESOURCES_DIR"));
         }
@@ -614,6 +621,22 @@ mod tests {
         }
         let stale = environment(&options, vars(&[("BOLT_RESOURCES_DIR", "/old")]));
         assert_eq!(get(&stale, "BOLT_RESOURCES_DIR"), None);
+    }
+
+    #[test]
+    fn terminfo_points_to_the_entry_that_the_app_keeps() {
+        let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-bolt");
+        let inherited = || vars(&[("TERMINFO", "/opt/other/terminfo")]);
+        // Without the resources, there is no entry to point to.
+        assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
+        options.resources_dir = Some("/Applications/Bolt.app/Contents/Resources".into());
+        assert_eq!(
+            get(&environment(&options, inherited()), "TERMINFO"),
+            Some("/Applications/Bolt.app/Contents/Resources/terminfo")
+        );
+        // Another TERM finds its entry where the system keeps it.
+        options.term = "xterm-256color".to_owned();
+        assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Build automation for the Bolt workspace, run as `cargo xtask <task>`.
 
 mod check_deps;
+mod terminfo;
 mod ucd;
 
 use std::process::ExitCode;
@@ -13,6 +14,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Some("check-deps") => check_deps::run(args),
+        Some("terminfo") => terminfo::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
             eprintln!("error: unknown task `{task}`\n");
@@ -31,6 +33,7 @@ fn print_help() {
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
+         terminfo [--out DIR]        compile the terminfo entry xterm-bolt, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );
 }

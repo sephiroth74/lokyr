@@ -17,6 +17,7 @@ mod print;
 mod reports;
 mod sgr;
 mod snapshot;
+mod terminfo;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
