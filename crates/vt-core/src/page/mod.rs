@@ -486,7 +486,10 @@ impl Page {
     /// and links, and the ones that pass `end` drop what they held. A wide
     /// character that the insertion would split, at `x`, at `end` or past
     /// it, is emptied whole.
+    ///
+    /// `x` is a column before `end`, which is at most the page's width.
     pub fn insert_blanks(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        debug_assert!(x < end && end <= self.cols(), "columns {x} to {end}");
         self.clear_crossing(y, x..end);
         self.shift_right(y, x, n, end);
         // A wide character whose second half fell past the end.
@@ -499,8 +502,9 @@ impl Page {
     /// held: the cells after them, to column `end`, excluded, move left,
     /// with their graphemes and links, and empty cells come in before
     /// `end`. A wide character that the deletion would split is emptied
-    /// whole.
+    /// whole. Its columns are as [`Page::insert_blanks`] takes them.
     pub fn delete_cells(&mut self, y: u16, x: u16, n: u16, end: u16) {
+        debug_assert!(x < end && end <= self.cols(), "columns {x} to {end}");
         let n = n.min(end - x);
         self.clear_crossing(y, x..end);
         if x + n < end && self.cells(y)[usize::from(x + n)].width() == Width::SpacerTail {

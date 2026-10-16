@@ -18,15 +18,18 @@ pub(crate) struct CompactPage {
 }
 
 impl CompactPage {
+    /// Whether keeping `page` small makes it smaller, which it does not
+    /// when its rows are full, or nearly: where each row starts takes bytes
+    /// too.
+    pub(crate) fn shrinks(page: &Page) -> bool {
+        let total: usize = (0..page.len()).map(|y| kept(page, y)).sum();
+        let starts = usize::from(page.len()) + 1;
+        total * size_of::<Cell>() + starts * size_of::<u32>() < size_of_val(&*page.cells)
+    }
+
     /// `page`, kept small. Only cells that are entirely empty are left
     /// out, so nothing that a cell holds is lost.
     pub(crate) fn new(mut page: Page) -> Self {
-        let kept = |page: &Page, y| {
-            page.cells(y)
-                .iter()
-                .rposition(|&cell| cell != Cell::EMPTY)
-                .map_or(0, |x| x + 1)
-        };
         let total = (0..page.len()).map(|y| kept(&page, y)).sum();
         let mut cells = Vec::with_capacity(total);
         let mut starts = Vec::with_capacity(usize::from(page.len()) + 1);
@@ -73,6 +76,15 @@ impl CompactPage {
     }
 }
 
+/// How many cells of row `y` of `page` a cold page keeps: those up to its
+/// last that is not empty.
+fn kept(page: &Page, y: u16) -> usize {
+    page.cells(y)
+        .iter()
+        .rposition(|&cell| cell != Cell::EMPTY)
+        .map_or(0, |x| x + 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +126,38 @@ mod tests {
         }
         assert_eq!(page.styles().get(page.cells(1)[40].style()), &red);
         assert_eq!(page.memory(), Capacity::standard(80).bytes());
+    }
+
+    /// A page of `capacity`, all its rows used, with `x` in every cell but
+    /// the last cell of the first `short` rows.
+    fn full_page(capacity: Capacity, short: u16) -> Page {
+        let mut page = Page::new(capacity);
+        let cols = page.cols();
+        for y in 0..capacity.rows {
+            page.push_row();
+            let width = if y < short { cols - 1 } else { cols };
+            for x in 0..width {
+                page.set_cell(y, x, Cell::EMPTY.with_content(Content::Char('x')));
+            }
+        }
+        page
+    }
+
+    #[test]
+    fn a_page_that_would_not_be_smaller_is_not_kept_small() {
+        let capacity = Capacity::standard(120);
+        assert!(!CompactPage::shrinks(&full_page(capacity, 0)), "full rows");
+        // Where each row starts takes four bytes a row, and one more entry;
+        // a cell left out gives back eight. As many short rows as make up
+        // for that save nothing, so the page stays; one more saves bytes.
+        let rows = usize::from(capacity.rows);
+        assert_eq!((rows + 1) % 2, 0, "{rows} rows");
+        let even = rows.div_ceil(2) as u16;
+        assert!(!CompactPage::shrinks(&full_page(capacity, even)));
+        let page = full_page(capacity, even + 1);
+        assert!(CompactPage::shrinks(&page));
+        let bytes = page.memory();
+        let cold = CompactPage::new(page);
+        assert_eq!(cold.memory(), bytes - size_of::<Cell>());
     }
 }

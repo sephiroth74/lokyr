@@ -3649,6 +3649,34 @@ fn compacting_the_scrollback_keeps_its_text() {
 }
 
 #[test]
+fn a_long_line_is_not_compacted() {
+    let mut term = Term::new(80, 24);
+    // Two thousand full rows, as a minified file printed would make.
+    term.feed("y".repeat(80 * 2000));
+    let before = term.terminal.screen_rows().memory();
+    assert_eq!(term.terminal.compact_scrollback(), 0);
+    assert_eq!(term.terminal.screen_rows().memory(), before);
+}
+
+#[test]
+fn a_taller_screen_after_compaction_can_be_read_and_written() {
+    let mut term = Term::new(80, 24);
+    for n in 0..850 {
+        term.feed(format!("line {n}\r\n"));
+    }
+    assert!(term.terminal.compact_scrollback() > 0);
+    // The screen now reaches into the first page, which was cold.
+    term.terminal.resize(80, 100);
+    assert_eq!(term.terminal.row_text(0).trim_end(), "line 751");
+    term.feed("\x1b[Htop");
+    assert_eq!(term.terminal.row_text(0).trim_end(), "tope 751");
+    term.feed("\x1b[3J");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    assert_eq!(term.terminal.row_text(1).trim_end(), "line 752");
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {

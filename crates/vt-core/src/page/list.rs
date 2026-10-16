@@ -380,10 +380,11 @@ impl PageList {
 
     /// Keeps small the pages whose rows are all `keep` rows or more above
     /// the last row, and the screen's rows at least, and returns the bytes
-    /// that this gave back. A cold page
-    /// keeps the cells of each row up to its last that is not empty, and
-    /// the rest of the page as it is; its rows, pins and ids stay, and
-    /// [`PageList::warm`] brings its cells back.
+    /// that this gave back. A cold page keeps the cells of each row up to
+    /// its last that is not empty, and the rest of the page as it is; its
+    /// rows, pins and ids stay, and [`PageList::warm`] brings its cells
+    /// back. A page that this would not make smaller, as one whose rows are
+    /// full, stays as it is.
     ///
     /// Keeping a page small allocates, and a cold page that leaves the
     /// list is freed rather than pooled, so this is for an idle list, not
@@ -400,7 +401,7 @@ impl PageList {
                 break;
             }
             let node = &mut self.nodes[index as usize];
-            if let Some(page) = node.page.take() {
+            if let Some(page) = node.page.take_if(|page| CompactPage::shrinks(page)) {
                 let before = page.memory();
                 let cold = CompactPage::new(page);
                 saved += before - cold.memory();
@@ -508,7 +509,13 @@ impl PageList {
     /// the last `n` are left empty. Each row moves as
     /// [`PageList::move_row`] moves it, but into the row that the move
     /// before left empty, so no row is emptied twice.
+    ///
+    /// `top` is at most `bottom`, which is a row of the screen.
     pub fn shift_rows_up(&mut self, top: u16, bottom: u16, n: u16) {
+        debug_assert!(
+            top <= bottom && bottom < self.rows,
+            "rows {top} to {bottom}"
+        );
         let n = n.min(bottom + 1 - top);
         for y in top..top + n {
             self.clear_screen_row(y);
@@ -520,8 +527,13 @@ impl PageList {
 
     /// Moves the rows from `top` to `bottom` of the screen `n` rows down,
     /// as [`PageList::shift_rows_up`] moves them up: the last `n` are
-    /// dropped, and the first `n` are left empty.
+    /// dropped, and the first `n` are left empty. Its rows are as
+    /// [`PageList::shift_rows_up`] takes them.
     pub fn shift_rows_down(&mut self, top: u16, bottom: u16, n: u16) {
+        debug_assert!(
+            top <= bottom && bottom < self.rows,
+            "rows {top} to {bottom}"
+        );
         let n = n.min(bottom + 1 - top);
         for y in bottom + 1 - n..=bottom {
             self.clear_screen_row(y);
@@ -1062,7 +1074,8 @@ impl PageList {
     }
 
     /// Adds `n` rows to the screen, as `grow` says, and returns how many
-    /// of them came from the scrollback, above the screen's rows.
+    /// of them came from the scrollback, above the screen's rows. Those are
+    /// warmed, as the screen is never cold.
     fn add_rows(&mut self, n: u16, grow: Grow) -> u16 {
         let revealed = match grow {
             // Fewer rows than `n`.
@@ -1072,6 +1085,10 @@ impl PageList {
         self.rows += n;
         for _ in revealed..n {
             self.push_row();
+        }
+        if revealed > 0 {
+            let start = self.total_rows - usize::from(self.rows);
+            self.warm(start..start + usize::from(revealed));
         }
         revealed
     }
@@ -1274,6 +1291,10 @@ impl PageList {
     }
 
     /// Every row of the list, oldest first, as its page and its row in it.
+    ///
+    /// # Panics
+    ///
+    /// If a page is cold: [`PageList::warm`] brings back the rows to read.
     pub fn iter_rows(&self) -> impl Iterator<Item = (&Page, u16)> + '_ {
         self.iter_pages()
             .flat_map(|page| (0..page.len()).map(move |row| (page, row)))
@@ -2244,6 +2265,69 @@ mod tests {
         assert_eq!(budget.used(), list.memory());
     }
 
+    #[test]
+    #[should_panic(expected = "rows 5 to 3")]
+    fn a_shift_takes_its_rows_in_order() {
+        let mut list = PageList::new(80, 8, Scrollback::default());
+        list.shift_rows_up(5, 3, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "columns 5 to 5")]
+    fn an_insertion_takes_a_column_before_its_end() {
+        let mut list = PageList::new(80, 8, Scrollback::default());
+        list.insert_blanks(0, 5, 1, 5);
+    }
+
+    #[test]
+    fn a_page_of_full_rows_stays_warm() {
+        let mut list = PageList::new(80, 4, Scrollback::default());
+        let page_rows = usize::from(Capacity::standard(80).rows);
+        for _ in 0..2 * page_rows {
+            list.scroll_up();
+            let (page, row) = list.screen_row_mut(3);
+            for x in 0..80 {
+                page.set_cell(row, x, Cell::EMPTY.with_content(Content::Char('x')));
+            }
+        }
+        let before = list.memory();
+        assert_eq!(list.compact(4), 0);
+        assert_eq!(list.memory(), before);
+        let (first, _) = list.row_at(0).unwrap();
+        assert!(list.page(first).is_some(), "it stays warm");
+        assert_eq!(list.memory(), counted(&list));
+    }
+
+    #[test]
+    fn a_taller_screen_warms_the_rows_it_takes_from_the_scrollback() {
+        let mut list = PageList::new(80, 10, Scrollback::default());
+        let page_rows = usize::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, 3 * page_rows as u32);
+        let lines = numbers(&list);
+        let cold = |list: &PageList, index| list.page(list.row_at(index).unwrap().0).is_none();
+        let warm = |list: &PageList| {
+            (0..list.rows()).all(|y| list.page(list.screen_row_id(y).0).is_some())
+        };
+        // The three full pages go cold, and the taller screen starts in the
+        // last row of the first, and takes the other two whole.
+        let rows = (list.total_rows() - (page_rows - 1)) as u16;
+        for reflow in [false, true] {
+            list.compact(10);
+            assert!((0..3).all(|page| cold(&list, page * page_rows)));
+            if reflow {
+                list.reflow(80, rows, (0, 9));
+            } else {
+                list.resize(80, rows, (0, 9), Grow::FromScrollback);
+            }
+            let (page, row) = list.screen_row_id(0);
+            assert_eq!(list.row_index(page, row), Some(page_rows - 1));
+            assert!(warm(&list), "reflowed: {reflow}");
+            assert_eq!(list.memory(), counted(&list));
+            list.resize(80, 10, (0, rows - 1), Grow::FromScrollback);
+        }
+        assert_eq!(numbers_after_warming(&mut list), lines);
+    }
+
     /// The numbers of the rows, after warming every cold page.
     fn numbers_after_warming(list: &mut PageList) -> Vec<Option<u32>> {
         list.warm(0..list.total_rows());
@@ -2676,6 +2760,12 @@ mod tests {
         Resize(u16, u16, u8, u16, u16),
         /// Lets go of a pin, modulo how many there are.
         Unpin(usize),
+        /// Shifts rows of the screen, from a row to a row, modulo its rows,
+        /// up or down, as a scroll region does.
+        Shift(u16, u16, u16, bool),
+        /// Makes the screen taller by that many rows at the same width,
+        /// which takes them from the scrollback: cut, or rewrapped.
+        Taller(u16, bool),
         /// Keeps small the pages that many rows above the last, so that the
         /// next operation meets cold pages.
         Compact(usize),
@@ -2696,7 +2786,10 @@ mod tests {
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
-            2 => (0_usize..200).prop_map(Op::Compact),
+            2 => (y(), y(), 1_u16..10, any::<bool>())
+                .prop_map(|(top, bottom, n, up)| Op::Shift(top, bottom, n, up)),
+            2 => prop_oneof![Just(0_usize), 0_usize..200].prop_map(Op::Compact),
+            1 => (1_u16..40, any::<bool>()).prop_map(|(n, reflow)| Op::Taller(n, reflow)),
             2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3, any::<u16>(), any::<u16>())
                 .prop_map(|(cols, rows, how, x, y)| Op::Resize(cols, rows, how, x, y)),
         ]
@@ -2719,7 +2812,7 @@ mod tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(256))]
+        #![proptest_config(ProptestConfig::with_cases(1024))]
 
         /// Every cell has a number of its own, so a pin that is not lost is
         /// on the cell it was put on, and a lost pin's cell is nowhere.
@@ -2774,9 +2867,25 @@ mod tests {
                             prop_assert_eq!(list.pin_position(pin), None);
                         }
                     }
+                    Op::Shift(top, bottom, n, up) => {
+                        let (top, bottom) = (top % rows, bottom % rows);
+                        let (top, bottom) = (top.min(bottom), top.max(bottom));
+                        if up {
+                            list.shift_rows_up(top, bottom, n);
+                        } else {
+                            list.shift_rows_down(top, bottom, n);
+                        }
+                    }
                     Op::Compact(keep) => {
                         list.compact(keep);
-                        continue;
+                    }
+                    Op::Taller(n, reflow) => {
+                        let cursor = (0, rows - 1);
+                        let _ = if reflow {
+                            list.reflow(cols, rows + n, cursor)
+                        } else {
+                            list.resize(cols, rows + n, cursor, Grow::FromScrollback)
+                        };
                     }
                     Op::Resize(cols, rows, how, x, y) => {
                         let cursor = (x % list.cols(), y % list.rows());
@@ -2786,6 +2895,15 @@ mod tests {
                             _ => list.reflow(cols, rows, cursor),
                         };
                     }
+                }
+                // The screen is never cold, whatever the operation.
+                for y in 0..list.rows() {
+                    let (page, _) = list.screen_row_id(y);
+                    prop_assert!(list.page(page).is_some(), "screen row {} is cold after {:?}", y, op);
+                }
+                if matches!(op, Op::Compact(_)) {
+                    // The next operation meets the cold pages.
+                    continue;
                 }
                 list.warm(0..list.total_rows());
                 prop_assert_eq!(list.memory(), counted(&list));
