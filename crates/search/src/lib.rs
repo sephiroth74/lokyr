@@ -74,9 +74,9 @@ impl Cancelled {
 ///
 /// The search stops with [`Cancelled`] once `cancel` is set, which another
 /// thread can do: it looks at it before each line, and between the matches
-/// that it tries in a line, which can be long. The pages that it reads
-/// are warmed first. `from` is a cell of the list; a position that is not
-/// in it finds nothing.
+/// that it tries in a line, which can be long. It reads cold pages as they
+/// are kept, so that it takes no memory from the scrollback. `from` is a
+/// cell of the list; a position that is not in it finds nothing.
 pub fn find(
     list: &mut PageList,
     query: &Query,
@@ -87,7 +87,6 @@ pub fn find(
     let Some(index) = list.row_index(from.page, from.row) else {
         return Ok(None);
     };
-    list.warm(0..list.total_rows());
     let found = match direction {
         Direction::Forward => line::find_forward(list, index, query, from, cancel)?,
         Direction::Backward => line::find_backward(list, index, query, from, cancel)?,

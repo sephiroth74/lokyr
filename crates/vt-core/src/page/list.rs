@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use super::compact::CompactPage;
 use super::pin::{Pins, Place};
-use super::{Capacity, Cell, Page, PinId, Position, Row, RowFlag, TableFull, WhenFull, Width};
+use super::{
+    Capacity, Cell, Content, Page, PinId, Position, Row, RowFlag, TableFull, WhenFull, Width,
+};
 
 /// No node, at either end of the list.
 const NONE: u32 = u32::MAX;
@@ -138,6 +140,52 @@ impl Default for Scrollback {
 pub struct PageId {
     index: u32,
     generation: u32,
+}
+
+/// A row of a list, on a warm page or a cold one, to read.
+#[derive(Clone, Copy, Debug)]
+pub struct ListRow<'a> {
+    id: PageId,
+    page: &'a Page,
+    row: u16,
+    /// The row's cells: all of them on a warm page; on a cold one, those up
+    /// to its last that is not empty, the others being empty.
+    cells: &'a [Cell],
+}
+
+impl<'a> ListRow<'a> {
+    /// The id of the row's page.
+    pub fn page(self) -> PageId {
+        self.id
+    }
+
+    /// The row in its page.
+    pub fn row(self) -> u16 {
+        self.row
+    }
+
+    /// The row's metadata.
+    pub fn metadata(self) -> Row {
+        self.page.row(self.row)
+    }
+
+    /// The row's cells, one for each column.
+    pub fn cells(self) -> impl Iterator<Item = Cell> + 'a {
+        let empty = usize::from(self.page.cols()) - self.cells.len();
+        self.cells
+            .iter()
+            .copied()
+            .chain(std::iter::repeat_n(Cell::EMPTY, empty))
+    }
+
+    /// The codepoints after the first of the cluster at column `x`: none
+    /// for a cluster of one.
+    pub fn grapheme(self, x: u16) -> &'a [char] {
+        match self.cells.get(usize::from(x)).map(|cell| cell.content()) {
+            Some(Content::Grapheme(_)) => self.page.grapheme_of(self.row, x),
+            _ => &[],
+        }
+    }
 }
 
 /// A slot of the slab.
@@ -337,18 +385,15 @@ impl PageList {
         Some((self.id(node), row))
     }
 
-    /// The rows from index `start` of the list on, oldest first, each as
-    /// its page's id, its page and its row in it, read in one pass.
-    ///
-    /// # Panics
-    ///
-    /// On a cold page: [`PageList::warm`] brings back the rows to read.
-    pub fn rows_from(&self, start: usize) -> impl Iterator<Item = (PageId, &Page, u16)> + '_ {
+    /// The rows from index `start` of the list on, oldest first, read in
+    /// one pass. The rows of a cold page are read as it keeps them, without
+    /// bringing its cells back, so that reading takes no memory.
+    pub fn rows_from(&self, start: usize) -> impl Iterator<Item = ListRow<'_>> + '_ {
         let (mut node, mut row) = self.node_at(start).unwrap_or((NONE, 0));
         std::iter::from_fn(move || {
             while node != NONE {
                 if row < self.node_len(node) {
-                    let item = (self.id(node), self.warm_page(node), row);
+                    let item = self.list_row(node, row);
                     row += 1;
                     return Some(item);
                 }
@@ -360,12 +405,8 @@ impl PageList {
     }
 
     /// The rows before index `end` of the list, newest first, as
-    /// [`PageList::rows_from`] gives them.
-    ///
-    /// # Panics
-    ///
-    /// On a cold page, as [`PageList::rows_from`] does.
-    pub fn rows_before(&self, end: usize) -> impl Iterator<Item = (PageId, &Page, u16)> + '_ {
+    /// [`PageList::rows_from`] reads them.
+    pub fn rows_before(&self, end: usize) -> impl Iterator<Item = ListRow<'_>> + '_ {
         // The node of the row before `end`, and how many of its rows, from
         // its first, come before `end`.
         let (mut node, mut left) = end
@@ -377,7 +418,7 @@ impl PageList {
             while node != NONE {
                 if left > 0 {
                     left -= 1;
-                    return Some((self.id(node), self.warm_page(node), left));
+                    return Some(self.list_row(node, left));
                 }
                 node = self.nodes[node as usize].prev;
                 left = if node == NONE { 0 } else { self.node_len(node) };
@@ -403,12 +444,20 @@ impl PageList {
         None
     }
 
-    /// The page of node `index`, which is warm.
-    fn warm_page(&self, index: u32) -> &Page {
-        self.nodes[index as usize]
-            .page
-            .as_ref()
-            .expect("a cold page is warmed before its rows are read")
+    /// Row `row` of the page of node `index`, warm or cold.
+    fn list_row(&self, index: u32, row: u16) -> ListRow<'_> {
+        let node = &self.nodes[index as usize];
+        let (page, cells) = match (&node.page, &node.cold) {
+            (Some(page), _) => (page, page.cells(row)),
+            (None, Some(cold)) => (cold.page(), cold.cells(row)),
+            (None, None) => panic!("a linked node has a page"),
+        };
+        ListRow {
+            id: self.id(index),
+            page,
+            row,
+            cells,
+        }
     }
 
     /// The index in the list, oldest first, of row `row` of the page with
@@ -518,8 +567,15 @@ impl PageList {
     }
 
     /// Brings back the cells of the cold pages that hold rows of `rows`,
-    /// indexes in the list, oldest first, so that they can be read.
-    pub fn warm(&mut self, rows: Range<usize>) {
+    /// indexes in the list, oldest first, so that they can be written to.
+    ///
+    /// Their bytes count again, and can take the list past its limit and
+    /// the budget past its own: the list then gives back its oldest pages
+    /// as it adds the next, and so does every list that shares the budget
+    /// while it is passed. So only the rows that become the screen's are
+    /// warmed, as the screen is never cold; readers read cold rows as they
+    /// are, through [`PageList::rows_from`].
+    fn warm(&mut self, rows: Range<usize>) {
         let mut index = self.head;
         let mut start = 0;
         while index != NONE && start < rows.end {
@@ -1400,7 +1456,7 @@ impl PageList {
     ///
     /// # Panics
     ///
-    /// If a page is cold: [`PageList::warm`] brings back the rows to read.
+    /// If a page is cold: [`PageList::rows_from`] reads cold pages.
     pub fn iter_rows(&self) -> impl Iterator<Item = (&Page, u16)> + '_ {
         self.iter_pages()
             .flat_map(|page| (0..page.len()).map(move |row| (page, row)))
@@ -2336,6 +2392,49 @@ mod tests {
     }
 
     #[test]
+    fn cold_rows_read_as_they_did_warm() {
+        let mut list = short_lines(4);
+        // A cluster, a cell past the first, and a flag, on a row that goes
+        // cold.
+        let (id, row) = list.row_at(3).unwrap();
+        let page = list.nodes[id.index as usize].page.as_mut().unwrap();
+        page.set_cell(row, 5, Cell::EMPTY.with_content(Content::Char('e')));
+        page.push_codepoint(row, 5, '\u{301}').unwrap();
+        page.set_cell(row, 9, Cell::EMPTY.with_content(Content::Char('x')));
+        page.row_mut(row).set(RowFlag::SoftWrapped, true);
+        let read = |list: &PageList| -> Vec<_> {
+            list.rows_from(0)
+                .map(|row| {
+                    let clusters: Vec<Vec<char>> =
+                        (0..list.cols()).map(|x| row.grapheme(x).to_vec()).collect();
+                    (
+                        row.page(),
+                        row.row(),
+                        row.metadata(),
+                        row.cells().collect::<Vec<_>>(),
+                        clusters,
+                    )
+                })
+                .collect()
+        };
+        let warm = read(&list);
+        assert_eq!(warm[3].4[5], ['\u{301}']);
+        assert!(list.compact(3 * 24) > 0);
+        assert!(list.page(id).is_none(), "the row's page is cold");
+        let memory = list.memory();
+        assert_eq!(read(&list), warm);
+        let mut backward: Vec<_> = list
+            .rows_before(list.total_rows())
+            .map(|row| (row.page(), row.row()))
+            .collect();
+        backward.reverse();
+        let forward: Vec<_> = warm.iter().map(|(page, row, ..)| (*page, *row)).collect();
+        assert_eq!(backward, forward);
+        assert_eq!(list.memory(), memory, "reading took no memory");
+        assert!(list.page(id).is_none(), "and left the page cold");
+    }
+
+    #[test]
     fn cold_pages_leave_and_resize_as_warm_ones_do() {
         let budget = Arc::new(Budget::new(8 * Capacity::standard(80).bytes()));
         let shared = Scrollback {
@@ -3047,7 +3146,7 @@ mod tests {
         for start in [0, 1, 29, 30, 31, total - 1, total] {
             let forward: Vec<_> = list
                 .rows_from(start)
-                .map(|(id, _, row)| (id, row))
+                .map(|row| (row.page(), row.row()))
                 .collect();
             assert_eq!(
                 forward,
@@ -3056,7 +3155,7 @@ mod tests {
             );
             let backward: Vec<_> = list
                 .rows_before(start)
-                .map(|(id, _, row)| (id, row))
+                .map(|row| (row.page(), row.row()))
                 .collect();
             assert_eq!(
                 backward,
@@ -3070,9 +3169,10 @@ mod tests {
             total,
             "past the end, every row"
         );
-        for (id, page, row) in list.rows_from(0).take(3) {
-            assert!(std::ptr::eq(page, list.page(id).unwrap()));
-            assert!(row < page.len());
+        for row in list.rows_from(0).take(3) {
+            let page = list.page(row.page()).unwrap();
+            assert!(row.row() < page.len());
+            assert_eq!(row.cells().collect::<Vec<_>>(), page.cells(row.row()));
         }
     }
 

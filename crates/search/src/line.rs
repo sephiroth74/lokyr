@@ -3,7 +3,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use bolt_vt_core::page::{Content, Page, PageId, PageList, Position, RowFlag, Width};
+use bolt_vt_core::page::{Content, ListRow, PageList, Position, RowFlag, Width};
 
 use crate::{Cancelled, Query};
 
@@ -29,20 +29,23 @@ impl Line {
         self.spots.clear();
     }
 
-    /// Adds the text of row `row` of `page`, row `line_row` of the line.
-    /// Empty cells read as spaces; the halves of wide characters that show
-    /// nothing, as their second halves and the heads that wrapping leaves,
-    /// have no text.
-    fn push_row(&mut self, id: PageId, page: &Page, row: u16, line_row: usize) {
+    /// Adds the text of `row`, row `line_row` of the line. Empty cells read
+    /// as spaces; the halves of wide characters that show nothing, as their
+    /// second halves and the heads that wrapping leaves, have no text.
+    fn push_row(&mut self, row: ListRow<'_>, line_row: usize) {
         let mut utf8 = [0; 4];
-        for (col, cell) in (0..).zip(page.cells(row)) {
+        for (col, cell) in (0..).zip(row.cells()) {
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }
             self.spots.push(Spot {
                 offset: self.text.len(),
                 line_row,
-                position: Position { page: id, row, col },
+                position: Position {
+                    page: row.page(),
+                    row: row.row(),
+                    col,
+                },
             });
             match cell.content() {
                 Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
@@ -53,7 +56,7 @@ impl Line {
                         .extend_from_slice(c.encode_utf8(&mut utf8).as_bytes());
                 }
                 Content::Grapheme(first) => {
-                    for &c in std::iter::once(&first).chain(page.grapheme(row, col)) {
+                    for &c in std::iter::once(&first).chain(row.grapheme(col)) {
                         self.text
                             .extend_from_slice(c.encode_utf8(&mut utf8).as_bytes());
                     }
@@ -100,26 +103,26 @@ impl Line {
     }
 }
 
-/// Whether row `row` of `page` goes on into the row after it, which
-/// continues it, as `next` says.
-fn wraps(page: &Page, row: u16, next: (&Page, u16)) -> bool {
-    page.row(row).has(RowFlag::SoftWrapped) && next.0.row(next.1).has(RowFlag::Continuation)
+/// Whether `row` goes on into `next`, the row after it, which continues
+/// it.
+fn wraps(row: ListRow<'_>, next: ListRow<'_>) -> bool {
+    row.metadata().has(RowFlag::SoftWrapped) && next.metadata().has(RowFlag::Continuation)
 }
 
 /// The index of the first row of the logical line that holds the row at
 /// `index`.
 fn line_start(list: &PageList, index: usize) -> usize {
     let mut rows = list.rows_before(index + 1);
-    let Some((_, mut page, mut row)) = rows.next() else {
+    let Some(mut row) = rows.next() else {
         return index;
     };
     let mut start = index;
-    for (_, before, before_row) in rows {
-        if !wraps(before, before_row, (page, row)) {
+    for before in rows {
+        if !wraps(before, row) {
             break;
         }
         start -= 1;
-        (page, row) = (before, before_row);
+        row = before;
     }
     start
 }
@@ -128,16 +131,16 @@ fn line_start(list: &PageList, index: usize) -> usize {
 /// `index`.
 fn line_end(list: &PageList, index: usize) -> usize {
     let mut rows = list.rows_from(index);
-    let Some((_, mut page, mut row)) = rows.next() else {
+    let Some(mut row) = rows.next() else {
         return index + 1;
     };
     let mut end = index + 1;
-    for (_, after, after_row) in rows {
-        if !wraps(page, row, (after, after_row)) {
+    for after in rows {
+        if !wraps(row, after) {
             break;
         }
         end += 1;
-        (page, row) = (after, after_row);
+        row = after;
     }
     end
 }
@@ -159,20 +162,19 @@ pub(crate) fn find_forward(
     let mut line = Line::default();
     // The row of `from` in the first line.
     let mut first = Some(index - start);
-    while let Some((id, page, row)) = rows.next() {
+    while let Some(mut row) = rows.next() {
         Cancelled::check(cancel)?;
         line.clear();
-        line.push_row(id, page, row, 0);
-        let (mut page, mut row) = (page, row);
+        line.push_row(row, 0);
         let mut line_row = 0;
-        while let Some(&(id, after, after_row)) = rows.peek() {
-            if !wraps(page, row, (after, after_row)) {
+        while let Some(&after) = rows.peek() {
+            if !wraps(row, after) {
                 break;
             }
             rows.next();
             line_row += 1;
-            line.push_row(id, after, after_row, line_row);
-            (page, row) = (after, after_row);
+            line.push_row(after, line_row);
+            row = after;
         }
         line.finish(query.lowers_ascii());
         let min = first
@@ -196,7 +198,7 @@ pub(crate) fn find_backward(
 ) -> Found {
     let start = line_start(list, index);
     let mut rows = list.rows_before(line_end(list, index)).peekable();
-    let mut group: Vec<(PageId, &Page, u16)> = Vec::new();
+    let mut group: Vec<ListRow<'_>> = Vec::new();
     let mut line = Line::default();
     let mut first = Some(index - start);
     while let Some(newest) = rows.next() {
@@ -204,17 +206,17 @@ pub(crate) fn find_backward(
         // The line's rows, newest first.
         group.clear();
         group.push(newest);
-        while let Some(&(id, before, before_row)) = rows.peek() {
-            let &(_, page, row) = group.last().expect("the newest row");
-            if !wraps(before, before_row, (page, row)) {
+        while let Some(&before) = rows.peek() {
+            let &row = group.last().expect("the newest row");
+            if !wraps(before, row) {
                 break;
             }
             rows.next();
-            group.push((id, before, before_row));
+            group.push(before);
         }
         line.clear();
-        for (line_row, &(id, page, row)) in group.iter().rev().enumerate() {
-            line.push_row(id, page, row, line_row);
+        for (line_row, &row) in group.iter().rev().enumerate() {
+            line.push_row(row, line_row);
         }
         line.finish(query.lowers_ascii());
         // Every match of the line, which is not empty, starts before its

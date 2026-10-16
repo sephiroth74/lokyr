@@ -427,8 +427,8 @@ impl Terminal {
         &self.screen().rows
     }
 
-    /// The rows of the active screen, to pin cells and warm cold pages in,
-    /// as search and selection do. Laying the rows out, by scrolling,
+    /// The rows of the active screen, to pin cells in, as search and
+    /// selection do. Laying the rows out, by scrolling,
     /// resizing or reflowing them, is the terminal's: doing it here would
     /// leave its cursor and margins behind.
     pub fn screen_rows_mut(&mut self) -> &mut PageList {

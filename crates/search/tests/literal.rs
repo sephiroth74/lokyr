@@ -305,26 +305,73 @@ fn a_match_whose_cells_left_the_scrollback_is_lost() {
 }
 
 #[test]
-fn cold_pages_are_searched() {
+fn cold_pages_are_searched_as_they_are() {
     let mut parser = Parser::new();
     let mut terminal = Terminal::new(80, 24, Options::default());
-    parser.advance(&mut terminal, b"the needle is old\r\n");
+    parser.advance(
+        &mut terminal,
+        "the needle is old, caf\u{e9}\u{301} \u{4e2d}x\r\n".as_bytes(),
+    );
     parser.advance(&mut terminal, "line\r\n".repeat(3000).as_bytes());
     assert!(terminal.compact_scrollback() > 0);
-    let literal = Query::literal("needle", Case::Sensitive).unwrap();
     let from = at(&terminal, 0, 0);
-    let found = find(
-        terminal.screen_rows_mut(),
-        &literal,
-        from,
-        Direction::Backward,
-    )
-    .unwrap();
+    let mut found = |text: &str| {
+        let literal = Query::literal(text, Case::Sensitive).unwrap();
+        let rows = terminal.screen_rows_mut();
+        let found = find(rows, &literal, from, Direction::Backward).unwrap();
+        let start = rows.pin_position(found.start).unwrap();
+        let end = rows.pin_position(found.end).unwrap();
+        found.release(rows);
+        (rows.row_index(start.page, start.row), start.col, end.col)
+    };
+    assert_eq!(found("needle"), (Some(0), 4, 9));
+    // A cluster, and a wide character with the cell after it.
+    assert_eq!(found("\u{e9}\u{301} "), (Some(0), 22, 23));
+    assert_eq!(found("\u{4e2d}x"), (Some(0), 24, 26));
     let rows = terminal.screen_rows();
-    assert_eq!(
-        rows.row_index(rows.pin_position(found.start).unwrap().page, 0),
-        Some(0)
+    let (page, _) = rows.row_at(0).unwrap();
+    assert!(rows.page(page).is_none(), "the page stays cold");
+}
+
+#[test]
+fn a_cold_row_reads_its_empty_cells_too() {
+    // A row that wraps, whose end a selective erase empties, keeping the
+    // wrap: its line still reads the empty cells, as spaces, which a cold
+    // page does not keep.
+    let mut parser = Parser::new();
+    let mut terminal = Terminal::new(10, 4, Options::default());
+    parser.advance(&mut terminal, b"aaaaaaaaaabbb\x1b[A\r\x1b[5C\x1b[?K\r\n\n");
+    let literal = Query::literal("a     b", Case::Sensitive).unwrap();
+    let first = |terminal: &Terminal| {
+        let (page, row) = terminal.screen_rows().row_at(0).unwrap();
+        Position { page, row, col: 0 }
+    };
+    let search = |terminal: &mut Terminal| {
+        let from = first(terminal);
+        let rows = terminal.screen_rows_mut();
+        let found = find(rows, &literal, from, Direction::Forward)?;
+        let start = rows.pin_position(found.start).unwrap();
+        let end = rows.pin_position(found.end).unwrap();
+        found.release(rows);
+        Some((
+            rows.row_index(start.page, start.row)?,
+            start.col,
+            rows.row_index(end.page, end.row)?,
+            end.col,
+        ))
+    };
+    let warm = search(&mut terminal);
+    assert_eq!(warm, Some((0, 4, 1, 0)));
+    // Enough rows after it that its page goes cold.
+    let page_rows = usize::from(bolt_vt_core::page::Capacity::standard(10).rows);
+    parser.advance(&mut terminal, "\r\n".repeat(page_rows + 50).as_bytes());
+    assert!(terminal.compact_scrollback() > 0);
+    let (page, _) = terminal.screen_rows().row_at(0).unwrap();
+    assert!(
+        terminal.screen_rows().page(page).is_none(),
+        "the row is cold"
     );
+    assert_eq!(search(&mut terminal), warm);
 }
 
 /// The logical lines of `lines` printed at `cols` columns: each line,

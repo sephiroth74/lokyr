@@ -51,6 +51,17 @@ impl CompactPage {
         self.page.len()
     }
 
+    /// The page without its cells: its rows' metadata and its tables.
+    pub(crate) fn page(&self) -> &Page {
+        &self.page
+    }
+
+    /// The kept cells of row `y`: those up to its last that is not empty.
+    pub(crate) fn cells(&self, y: u16) -> &[Cell] {
+        let y = usize::from(y);
+        &self.cells[self.starts[y] as usize..self.starts[y + 1] as usize]
+    }
+
     /// The bytes that the page takes, as kept.
     pub(crate) fn memory(&self) -> usize {
         self.page.memory() + size_of_val(&*self.cells) + size_of_val(&*self.starts)

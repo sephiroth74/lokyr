@@ -21,7 +21,7 @@ use grapheme::GraphemeTable;
 pub use cell::{Cell, Content, Semantic, Width};
 pub use hyperlink::{Hyperlink, HyperlinkId, HyperlinkTable};
 pub use list::{
-    Budget, Grow, PageId, PageList, SCROLLBACK_BUDGET_BYTES, SCROLLBACK_BYTES, Scrollback,
+    Budget, Grow, ListRow, PageId, PageList, SCROLLBACK_BUDGET_BYTES, SCROLLBACK_BYTES, Scrollback,
 };
 pub use pin::{PinId, Position};
 pub use row::{Row, RowFlag};
@@ -315,6 +315,13 @@ impl Page {
             Content::Grapheme(_) => self.graphemes.get(Self::key(index)),
             _ => &[],
         }
+    }
+
+    /// The codepoints after the first of the grapheme of the cell at column
+    /// `x` of row `y`, which holds one, read from the table alone, as on a
+    /// cold page, which has no cells.
+    pub(crate) fn grapheme_of(&self, y: u16, x: u16) -> &[char] {
+        self.graphemes.get(Self::key(self.cell_index(y, x)))
     }
 
     /// Adds `c` to the grapheme at column `x` of row `y`, as when a
