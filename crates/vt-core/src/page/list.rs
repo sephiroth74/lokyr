@@ -493,8 +493,8 @@ impl PageList {
     /// pages are rebuilt at the new width, the old ones leaving the limits
     /// as the new ones come. A taller screen takes its new rows as `grow`
     /// says. A shorter one drops the empty rows below the cursor first, then
-    /// sends rows from the top to the scrollback, as far as the cursor's
-    /// row, and drops the rest from the bottom.
+    /// sends rows from the top to the scrollback; no text is dropped, so
+    /// when the cursor's row goes too, the cursor stays in the first row.
     pub fn resize(&mut self, cols: u16, rows: u16, cursor: (u16, u16), grow: Grow) -> (u16, u16) {
         let (mut x, mut y) = cursor;
         let (cols, rows) = (cols.max(1), rows.max(1));
@@ -521,10 +521,11 @@ impl PageList {
     /// their styles, graphemes and links, and pins follow them; a pin on
     /// an empty cell left out goes after the line's text.
     ///
-    /// When rewrapping adds rows, the empty rows below the cursor take
-    /// them, as far as there are some, so that the text above stays on
-    /// screen; the cursor always stays on screen, the rows below it going
-    /// first. A taller or shorter screen then takes or gives rows as
+    /// When rewrapping adds rows above the cursor, the empty rows below it
+    /// take them, as far as there are some, so that the text stays on
+    /// screen. No text is dropped: when the rows below the cursor push its
+    /// row into the scrollback, the cursor stays in the screen's first row.
+    /// A taller or shorter screen then takes or gives rows as
     /// [`PageList::resize`] does with [`Grow::FromScrollback`].
     pub fn reflow(&mut self, cols: u16, rows: u16, cursor: (u16, u16)) -> (u16, u16) {
         let (cols, rows) = (cols.max(1), rows.max(1));
@@ -572,35 +573,46 @@ impl PageList {
     /// cursor goes, as [`PageList::reflow`] describes.
     fn rewrap(&mut self, cols: u16, cursor: (u16, u16)) -> (u16, u16) {
         let old_cols = self.cols();
-        let old_total = self.total_rows;
         let cursor_row = self.scrollback_rows() + usize::from(cursor.1);
-        let (page, row) = self.screen_row_id(cursor.1);
-        let cursor_pin = self
-            .pin(Position {
-                page,
-                row,
-                col: cursor.0,
-            })
-            .expect("the cursor's cell is in the list");
+        // The cursor's cell and the screen's first are pinned, so that they
+        // follow their text.
+        let pin_cell = |list: &mut Self, x, y| {
+            let (page, row) = list.screen_row_id(y);
+            list.pin(Position { page, row, col: x })
+                .expect("a cell of the screen is in the list")
+        };
+        let cursor_pin = pin_cell(self, cursor.0, cursor.1);
+        let top_pin = pin_cell(self, 0, 0);
         let mut writer = Writer {
             cols,
             x: 0,
             last: None,
             carried: Vec::new(),
         };
-        let mut wrapped = false;
+        let mut continued = false;
         let mut source_row = 0;
-        for (page, pins) in self.take_pages(cols) {
+        let mut pages = self.take_pages(cols).into_iter().peekable();
+        while let Some((page, pins)) = pages.next() {
             let mut pins = pins.into_iter().peekable();
             for row in 0..page.len() {
                 let metadata = page.row(row);
                 let cells = page.cells(row);
-                let wraps = metadata.has(RowFlag::SoftWrapped);
-                if !wrapped {
+                // A row goes on into the next only when it soft-wraps and
+                // the next is its continuation: rows that edits moved can
+                // keep a flag that no longer holds.
+                let next_continues = if row + 1 < page.len() {
+                    page.row(row + 1).has(RowFlag::Continuation)
+                } else {
+                    pages.peek().is_some_and(|(next, _)| {
+                        !next.is_empty() && next.row(0).has(RowFlag::Continuation)
+                    })
+                };
+                let goes_on = metadata.has(RowFlag::SoftWrapped) && next_continues;
+                if !continued {
                     self.start_line(&mut writer, metadata);
                 }
                 let last = cells[usize::from(old_cols) - 1];
-                let mut len = if wraps {
+                let mut len = if goes_on {
                     old_cols - u16::from(last.width() == Width::SpacerHead)
                 } else {
                     // Fewer cells than a row holds.
@@ -609,7 +621,10 @@ impl PageList {
                         .rposition(|cell| !cell.is_empty())
                         .map_or(0, |x| x as u16 + 1)
                 };
-                if source_row == cursor_row {
+                // The cursor keeps its place at the end of its line; on a
+                // spacer head, it goes with the wide character, as the
+                // head's pins do.
+                if source_row == cursor_row && !goes_on {
                     len = len.max(cursor.0 + 1);
                 }
                 let mut col = 0;
@@ -631,7 +646,7 @@ impl PageList {
                     .filter(|&&pin| self.pins.place_of(pin).map(|p| p.row) == Some(row))
                 {
                     pins.next();
-                    if wraps {
+                    if goes_on {
                         writer.carried.push(pin);
                     } else {
                         let col = self.pins.place_of(pin).expect("a pin in use").col;
@@ -639,17 +654,17 @@ impl PageList {
                         self.move_pin(pin, at);
                     }
                 }
-                if !wraps {
+                if !goes_on {
                     for pin in std::mem::take(&mut writer.carried) {
                         let at = self.after_text(&writer, 0);
                         self.move_pin(pin, at);
                     }
                 }
-                wrapped = wraps;
+                continued = goes_on;
                 source_row += 1;
             }
         }
-        self.settle_cursor(cursor_pin, old_total)
+        self.settle_cursor(cursor_pin, top_pin, cursor.1)
     }
 
     /// Starts a line in a row of its own, which takes the prompt mark of
@@ -684,7 +699,7 @@ impl PageList {
     fn place(&mut self, writer: &mut Writer, source: &Page, row: u16, col: u16) -> (u32, u16, u16) {
         let cell = source.cells(row)[usize::from(col)];
         let wide = cell.width() == Width::Wide && writer.cols >= 2;
-        if writer.x + 1 + u16::from(wide) > writer.cols {
+        if u32::from(writer.x) + 1 + u32::from(wide) > u32::from(writer.cols) {
             // A wide character that the edge would split leaves a spacer
             // head in the last column.
             if writer.x < writer.cols {
@@ -787,28 +802,36 @@ impl PageList {
         self.nodes[node as usize].pins.push(pin);
     }
 
-    /// Settles the screen after rewrapping, which may have changed how many
-    /// rows the list has, from `old_total`, and returns where the cursor,
-    /// whose pin is `cursor_pin`, is on it.
-    fn settle_cursor(&mut self, cursor_pin: PinId, old_total: usize) -> (u16, u16) {
-        let index = |list: &Self| {
-            let position = list.pin_position(cursor_pin)?;
+    /// Settles the screen after rewrapping, and returns where the cursor,
+    /// whose pin is `cursor_pin`, is on it; `top_pin` is on the old
+    /// screen's first cell, and the cursor was in row `old_y` of it.
+    fn settle_cursor(&mut self, cursor_pin: PinId, top_pin: PinId, old_y: u16) -> (u16, u16) {
+        let index = |list: &Self, pin| {
+            let position = list.pin_position(pin)?;
             list.row_index(position.page, position.row)
         };
+        let top = index(self, top_pin);
+        self.unpin(top_pin);
         // A line longer than the scrollback can take, which goes on past
         // the cursor, can push the cursor's row out of the list: the
         // cursor then starts the screen's last row.
-        let Some(cursor) = index(self) else {
+        let Some(cursor) = index(self, cursor_pin) else {
+            self.unpin(cursor_pin);
             while self.total_rows < usize::from(self.rows) {
                 self.push_row();
             }
             return (0, self.rows - 1);
         };
-        // The empty rows below the cursor take the rows that rewrapping
-        // added, as far as there are some.
-        let added = self.total_rows.saturating_sub(old_total);
+        // The empty rows below the cursor take the rows that the text from
+        // the screen's first row to the cursor gained, as far as there are
+        // some, so that the text stays on screen.
+        let gained = top.map_or(0, |top| {
+            cursor
+                .saturating_sub(top)
+                .saturating_sub(usize::from(old_y))
+        });
         let below = self.total_rows - 1 - cursor;
-        let empty = (0..below.min(added))
+        let empty = (0..below.min(gained))
             .take_while(|&n| {
                 self.row_at(self.total_rows - 1 - n)
                     .and_then(|(page, row)| Some(page_row_is_empty(self.page(page)?, row)))
@@ -816,11 +839,6 @@ impl PageList {
             })
             .count();
         for _ in 0..empty {
-            self.pop_row();
-        }
-        // The cursor stays on screen: the rows below it go first.
-        let excess = (self.total_rows - 1 - cursor).saturating_sub(usize::from(self.rows) - 1);
-        for _ in 0..excess {
             self.pop_row();
         }
         while self.total_rows < usize::from(self.rows) {
@@ -832,12 +850,11 @@ impl PageList {
         let col = self
             .pin_position(cursor_pin)
             .map_or(0, |position| position.col);
-        let y = index(self).map_or(usize::from(self.rows) - 1, |index| {
-            index - self.scrollback_rows()
-        });
         self.unpin(cursor_pin);
+        // No text goes: when the rows below the cursor push its row up into
+        // the scrollback, the cursor stays in the screen's first row.
         // Within the screen, so it fits.
-        (col, y as u16)
+        (col, cursor.saturating_sub(self.scrollback_rows()) as u16)
     }
 
     /// Rebuilds every page at `cols` columns, each row cut or extended.
@@ -899,7 +916,10 @@ impl PageList {
     }
 
     /// Takes `n` rows off the screen, whose cursor is in row `y`, and
-    /// returns the cursor's new row.
+    /// returns the cursor's new row. The empty rows below the cursor go
+    /// first, and the others go to the scrollback from the top; no text is
+    /// dropped, so when the cursor's row goes too, the cursor stays in the
+    /// screen's first row.
     fn remove_rows(&mut self, n: u16, y: u16) -> u16 {
         let blank_below = (y + 1..self.rows)
             .rev()
@@ -909,9 +929,7 @@ impl PageList {
             })
             .count() as u16;
         let trimmed = blank_below.min(n);
-        let to_scrollback = (n - trimmed).min(y);
-        let dropped = n - trimmed - to_scrollback;
-        for _ in 0..trimmed + dropped {
+        for _ in 0..trimmed {
             self.pop_row();
         }
         self.rows -= n;
@@ -919,7 +937,7 @@ impl PageList {
         while let Some(page) = self.pool.pop() {
             self.give(page.memory());
         }
-        y - to_scrollback
+        y.saturating_sub(n - trimmed)
     }
 
     /// Drops the last row of the list, with its pins, and the page that it
@@ -1739,14 +1757,20 @@ mod tests {
         assert_eq!(list.scrollback_rows(), 10);
         assert_eq!(screen_numbers(&list)[13], Some(23));
         // The rest is dropped from the bottom.
+        // No text is dropped: when the cursor's row goes to the scrollback
+        // too, the cursor stays in the first row.
         let mut list = numbered_screen();
         assert_eq!(list.resize(80, 14, (0, 5), Grow::FromScrollback), (0, 0));
-        assert_eq!(list.scrollback_rows(), 5);
-        assert_eq!(screen_numbers(&list)[0], Some(5));
-        assert_eq!(screen_numbers(&list)[13], Some(18));
+        assert_eq!(list.scrollback_rows(), 10);
+        assert_eq!(screen_numbers(&list)[0], Some(10));
+        assert_eq!(screen_numbers(&list)[13], Some(23));
         assert_eq!(list.memory(), counted(&list));
-        // A page that the dropped rows empty is freed.
+        // A page that the empty rows below the cursor leave empty is freed.
         let mut list = straddling();
+        for y in 12..24 {
+            let (page, row) = list.screen_row_mut(y);
+            page.clear_row(row);
+        }
         let (lower, _) = list.screen_row_id(12);
         let pin = pin_at(&mut list, 0, 20);
         assert_eq!(list.resize(80, 12, (0, 0), Grow::FromScrollback), (0, 0));
@@ -1840,6 +1864,79 @@ mod tests {
         assert_eq!(page.styles().len(), 1);
         assert_eq!(list.memory(), counted(&list));
         assert_pins_listed(&list);
+    }
+
+    #[test]
+    fn a_line_that_goes_on_into_the_next_page_stays_one() {
+        let mut list = straddling();
+        for (y, c) in [(11, 'a'), (12, 'b')] {
+            let (page, row) = list.screen_row_mut(y);
+            page.clear_row(row);
+            for x in 0..80 {
+                page.set_cell(row, x, Cell::EMPTY.with_content(Content::Char(c)));
+            }
+        }
+        let (page, row) = list.screen_row_mut(11);
+        page.row_mut(row)
+            .set(crate::page::RowFlag::SoftWrapped, true);
+        let (page, row) = list.screen_row_mut(12);
+        page.row_mut(row)
+            .set(crate::page::RowFlag::Continuation, true);
+        list.reflow(160, 24, (0, 23));
+        let (page, row) = list
+            .iter_rows()
+            .find(|(page, row)| page.cells(*row)[0].content() == Content::Char('a'))
+            .expect("the line's row");
+        assert_eq!(page.cells(row)[79].content(), Content::Char('a'));
+        assert_eq!(
+            page.cells(row)[80].content(),
+            Content::Char('b'),
+            "one line"
+        );
+    }
+
+    #[test]
+    fn the_pins_of_a_spacer_head_that_ends_the_list_are_placed() {
+        let mut list = PageList::new(4, 2, pages(4, 4));
+        let (page, row) = list.screen_row_mut(1);
+        page.set_cell(row, 0, Cell::EMPTY.with_content(Content::Char('a')));
+        page.set_cell(
+            row,
+            3,
+            Cell::EMPTY.with_width(crate::page::Width::SpacerHead),
+        );
+        page.row_mut(row)
+            .set(crate::page::RowFlag::SoftWrapped, true);
+        let pin = pin_at(&mut list, 3, 1);
+        list.reflow(6, 2, (0, 0));
+        assert_pins_listed(&list);
+        assert_eq!(
+            list.pin_on_screen(pin),
+            Some((3, 1)),
+            "as far after the text"
+        );
+        list.resize(6, 1, (0, 0), Grow::FromScrollback);
+        assert_pins_listed(&list);
+    }
+
+    #[test]
+    fn a_width_near_the_largest_does_not_overflow() {
+        let mut list = PageList::new(40_000, 2, pages(40_000, 8));
+        for y in 0..2 {
+            let (page, row) = list.screen_row_mut(y);
+            for x in 0..40_000 {
+                page.set_cell(row, x, numbered(u32::from(x)));
+            }
+        }
+        let (page, row) = list.screen_row_mut(0);
+        page.row_mut(row)
+            .set(crate::page::RowFlag::SoftWrapped, true);
+        let (page, row) = list.screen_row_mut(1);
+        page.row_mut(row)
+            .set(crate::page::RowFlag::Continuation, true);
+        list.reflow(u16::MAX, 2, (0, 1));
+        assert_eq!(list.cols(), u16::MAX);
+        assert_eq!(list.memory(), counted(&list));
     }
 
     #[test]
@@ -2253,9 +2350,10 @@ mod tests {
         Delete(u16, u16, u16, u16),
         /// Pins a cell of the row at an index of the list, modulo its rows.
         Pin(usize, u16),
-        /// Resizes the list: 0 cuts, taking new rows from the scrollback; 1
-        /// cuts, adding them at the bottom; 2 rewraps.
-        Resize(u16, u16, u8),
+        /// Resizes the list, with the cursor at a column and a row of the
+        /// screen, modulo its size: 0 cuts, taking new rows from the
+        /// scrollback; 1 cuts, adding them at the bottom; 2 rewraps.
+        Resize(u16, u16, u8, u16, u16),
         /// Lets go of a pin, modulo how many there are.
         Unpin(usize),
     }
@@ -2275,8 +2373,8 @@ mod tests {
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
-            2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3)
-                .prop_map(|(cols, rows, how)| Op::Resize(cols, rows, how)),
+            2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3, any::<u16>(), any::<u16>())
+                .prop_map(|(cols, rows, how, x, y)| Op::Resize(cols, rows, how, x, y)),
         ]
     }
 
@@ -2352,8 +2450,8 @@ mod tests {
                             prop_assert_eq!(list.pin_position(pin), None);
                         }
                     }
-                    Op::Resize(cols, rows, how) => {
-                        let cursor = (0, list.rows() - 1);
+                    Op::Resize(cols, rows, how, x, y) => {
+                        let cursor = (x % list.cols(), y % list.rows());
                         let _ = match how {
                             0 => list.resize(cols, rows, cursor, Grow::FromScrollback),
                             1 => list.resize(cols, rows, cursor, Grow::AtTheBottom),

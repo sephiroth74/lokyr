@@ -331,10 +331,11 @@ pub struct Terminal {
 }
 
 impl Terminal {
-    /// A terminal of `cols` columns and `rows` rows, both at least 1, with
-    /// empty screens and the cursor at the top left.
+    /// A terminal of `cols` columns and `rows` rows, at least two columns,
+    /// so that a wide character always fits, and one row, with empty
+    /// screens and the cursor at the top left.
     pub fn new(cols: u16, rows: u16, options: Options) -> Self {
-        let (cols, rows) = (cols.max(1), rows.max(1));
+        let (cols, rows) = (cols.max(2), rows.max(1));
         let screen = |scrollback| Screen {
             rows: PageList::new(cols, rows, scrollback),
             cursor: Cursor::default(),
@@ -457,8 +458,9 @@ impl Terminal {
         self.pen = style;
     }
 
-    /// Gives the terminal `cols` columns and `rows` rows, at least one of
-    /// each. The primary screen rewraps its lines, as [`PageList::reflow`]
+    /// Gives the terminal `cols` columns and `rows` rows, at least two
+    /// columns and one row, as [`Terminal::new`] has them. The primary
+    /// screen rewraps its lines, as [`PageList::reflow`]
     /// does; the alternate screen's are cut or extended, as
     /// [`PageList::resize`] does, its new rows at the bottom. Each cursor
     /// follows its cell, and the cursors that DECSC saved follow theirs,
@@ -468,7 +470,7 @@ impl Terminal {
     /// every eight columns past the old width, and the cluster being
     /// printed ends.
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        let (cols, rows) = (cols.max(1), rows.max(1));
+        let (cols, rows) = (cols.max(2), rows.max(1));
         if (cols, rows) == (self.cols, self.rows) {
             return;
         }
@@ -770,14 +772,16 @@ impl Handler for Terminal {
 /// their cells.
 fn resize_screen(screen: &mut Screen, cols: u16, rows: u16, reflow: bool) {
     let cursor = screen.cursor;
-    // The saved cursor's cell is pinned, so that it follows its text.
+    // The saved cursor's cell is pinned, so that it follows its text; when
+    // columns are cut, the cell in the last column that stays.
     let saved = screen.saved.map(|saved| {
         let (page, row) = screen.rows.screen_row_id(saved.cursor.y);
-        screen.rows.pin(Position {
-            page,
-            row,
-            col: saved.cursor.x,
-        })
+        let col = if reflow {
+            saved.cursor.x
+        } else {
+            saved.cursor.x.min(cols - 1)
+        };
+        screen.rows.pin(Position { page, row, col })
     });
     let (x, y) = if reflow {
         screen.rows.reflow(cols, rows, (cursor.x, cursor.y))
@@ -791,8 +795,9 @@ fn resize_screen(screen: &mut Screen, cols: u16, rows: u16, reflow: bool) {
         let old = saved.cursor;
         let (x, y) = match screen.rows.pin_on_screen(pin) {
             Some(point) => point,
-            // Its text went to the scrollback, or was cut off.
+            // Its text went to the scrollback.
             None if screen.rows.pin_position(pin).is_some() => (old.x.min(cols - 1), 0),
+            // Its row was dropped.
             None => (old.x.min(cols - 1), old.y.min(rows - 1)),
         };
         saved.cursor = after_resize(old.pending_wrap, x, y, cols);

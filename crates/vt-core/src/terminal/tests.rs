@@ -122,18 +122,18 @@ fn a_wide_character_without_autowrap_moves_back_a_column() {
 }
 
 #[test]
-fn a_wide_character_never_fits_one_column() {
+fn a_wide_character_always_has_room() {
+    // A terminal has two columns at least, and DECSLRM leaves two.
     let mut term = Term::new(1, 2);
-    term.feed("中a");
-    assert_eq!(term.screen(), ["a", ""]);
-    // The wrap before the dropped character scrolled the screen, so a mark
-    // after it has no cluster to join.
-    let mut term = Term::new(1, 1);
-    term.terminal.set_pen(blue_background());
-    term.feed(" 中\u{301}");
-    let (page, row) = term.terminal.screen_rows().screen_row(0);
-    assert_eq!(page.grapheme(row, 0), []);
-    assert_eq!(term.cell(0, 0).content(), Content::BgPalette(4));
+    assert_eq!(term.terminal.cols(), 2);
+    term.feed("\x1b[2G中a");
+    assert_eq!(
+        term.screen(),
+        ["中", "a"],
+        "the wide character went on in the next row"
+    );
+    term.feed("\x1b[H\x1b[2J\x1b[?69h\x1b[2;2s\x1b[1;2H中");
+    assert_eq!(term.screen()[1], "中", "a margin of one column is refused");
 }
 
 #[test]
@@ -3226,7 +3226,7 @@ fn resizing_keeps_the_text_and_moves_the_cursor_with_it() {
     assert_eq!(term.screen(), ["c", "de", "f"]);
     assert_eq!(term.cursor(), (1, 2, false));
     term.terminal.resize(0, 0);
-    assert_eq!((term.terminal.cols(), term.terminal.rows()), (1, 1));
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (2, 1));
 }
 
 #[test]
@@ -3475,6 +3475,104 @@ fn reflow_keeps_the_prompt_mark_on_the_first_row_of_its_line() {
     term.terminal.resize(12, 3);
     assert!(term.row(0).has(RowFlag::PromptStart));
     assert!(!term.row(1).has(RowFlag::PromptStart));
+}
+
+#[test]
+fn narrowing_a_cleared_screen_keeps_it_clear() {
+    let mut term = Term::new(10, 4);
+    term.feed("ABCDEFGHIJ\r\nabcdefghij\r\nKLMNOPQRST\r\nklmnopqrst");
+    term.feed("\x1b[H\x1b[2J$ ");
+    assert_eq!(term.screen(), ["$", "", "", ""]);
+    term.terminal.resize(5, 4);
+    assert_eq!(
+        term.screen(),
+        ["$", "", "", ""],
+        "the scrollback grew, not the screen"
+    );
+    assert_eq!(term.cursor(), (2, 0, false));
+}
+
+#[test]
+fn rows_that_edits_moved_do_not_join_lines() {
+    let line_up = |feed: &str, rows: u16| {
+        let mut term = Term::new(10, rows);
+        term.feed(feed);
+        term.terminal.resize(20, rows);
+        (term.screen(), term.cursor())
+    };
+    // DL takes the continuation away.
+    assert_eq!(
+        line_up("0123456789abc\r\nprompt\x1b[2;1H\x1b[M", 3),
+        (
+            ["0123456789", "prompt", ""].map(String::from).to_vec(),
+            (0, 1, false)
+        )
+    );
+    // IL puts a row between the line's rows.
+    assert_eq!(
+        line_up("0123456789abc\x1b[2;1H\x1b[L", 3),
+        (
+            ["0123456789", "", "abc"].map(String::from).to_vec(),
+            (0, 1, false)
+        )
+    );
+    // RI pushes the continuation off, and LF brings a new row in.
+    let (screen, _) = line_up("x\r\n0123456789abc\x1b[H\x1bM\x1b[3;1H\r\n$ ls", 3);
+    assert_eq!(screen, ["x", "0123456789", "$ ls"]);
+    // Reverse wraparound does not go back into a row that is not its own.
+    let mut term = Term::new(10, 3);
+    term.feed("0123456789abc\x1b[2;1H\x1b[L\x1b[?45h\x08");
+    assert_eq!(term.cursor(), (0, 1, false));
+}
+
+#[test]
+fn rows_left_last_by_a_shorter_screen_do_not_wrap() {
+    let mut term = Term::new(5, 6);
+    term.feed("\x1b[3Habcdefghijklmnopqrst\x1b[H");
+    term.terminal.resize(5, 4);
+    term.feed("\x1b[4H\r\nNEW");
+    term.terminal.resize(20, 4);
+    assert!(
+        term.screen().contains(&"NEW".to_owned()),
+        "{:?}",
+        term.screen()
+    );
+}
+
+#[test]
+fn a_cursor_on_a_spacer_head_goes_with_its_wide_character() {
+    let mut term = Term::new(5, 3);
+    term.feed("abcd\u{4E2D}\x1b[1;5H");
+    assert_eq!(term.cell(4, 0).width(), Width::SpacerHead);
+    term.terminal.resize(10, 3);
+    assert_eq!(term.screen()[0], "abcd\u{4E2D}");
+    assert_eq!(term.cursor(), (4, 0, false));
+}
+
+#[test]
+fn reflow_keeps_the_text_below_the_cursor_and_the_cursor_on_screen() {
+    let mut term = Term::new(6, 2);
+    term.feed("abcdefghijk\x1b[H");
+    term.terminal.resize(3, 2);
+    assert_eq!(
+        term.screen(),
+        ["ghi", "jk"],
+        "the text below the cursor stays"
+    );
+    assert_eq!(term.cursor(), (0, 0, false), "the cursor's row went up");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 2);
+    term.terminal.resize(6, 2);
+    assert_eq!(term.screen(), ["abcdef", "ghijk"]);
+}
+
+#[test]
+fn a_saved_cursor_in_a_cut_column_keeps_its_row() {
+    let mut term = Term::new(10, 10);
+    term.feed("\x1b[?1049h\x1b[6;1HROW5\x1b[6;9H\x1b7\x1b[10;1H");
+    term.terminal.resize(5, 5);
+    assert_eq!(term.screen()[0], "ROW5");
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (4, 0, false));
 }
 
 #[test]
@@ -3936,7 +4034,9 @@ fn logical_lines(terminal: &Terminal) -> Vec<Vec<LineCell>> {
     let mut lines: Vec<Vec<LineCell>> = Vec::new();
     let mut wrapped = false;
     for (page, row) in terminal.primary.rows.iter_rows() {
-        if !wrapped {
+        // A row goes on from the one before it only when that one
+        // soft-wraps and this one is its continuation.
+        if !(wrapped && page.row(row).has(RowFlag::Continuation)) {
             lines.push(Vec::new());
         }
         let line = lines.last_mut().expect("a line was started");
@@ -3989,7 +4089,13 @@ fn reflow_text() -> impl Strategy<Value = String> {
         1 => Just("\x1b]8;;http://a\x07".to_owned()),
         1 => Just("\x1b]8;;\x07".to_owned()),
         2 => Just("\r\n".to_owned()),
+        1 => prop::sample::select(vec![
+            "\x1b[H", "\x1b[2;3H", "\x1b[A", "\x1b[3D", "\x1b[L", "\x1b[M", "\x1bM", "\x1b[2;3r",
+            "\x1b[r", "\x1b[S", "\x1b[T", "\x1b[2J", "\x1b[K",
+        ])
+        .prop_map(str::to_owned),
     ];
+    // The cursor ends wherever the text leaves it: no resize drops text.
     prop::collection::vec(piece, 1..80).prop_map(|pieces| pieces.concat())
 }
 

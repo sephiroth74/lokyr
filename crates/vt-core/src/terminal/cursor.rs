@@ -72,8 +72,14 @@ impl Terminal {
             if count == 0 || y <= self.margins.top {
                 break;
             }
-            let (page, row) = self.screen().rows.screen_row(y - 1);
-            if !page.row(row).has(RowFlag::SoftWrapped) {
+            // The row above wraps into this one only when this one is its
+            // continuation too: rows that edits moved can keep the flag.
+            let rows = &self.screen().rows;
+            let (above, row_above) = rows.screen_row(y - 1);
+            let (page, row) = rows.screen_row(y);
+            if !(above.row(row_above).has(RowFlag::SoftWrapped)
+                && page.row(row).has(RowFlag::Continuation))
+            {
                 break;
             }
             (x, y) = (self.margins.right, y - 1);

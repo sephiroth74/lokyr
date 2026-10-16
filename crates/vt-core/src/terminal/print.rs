@@ -148,17 +148,11 @@ impl Terminal {
             self.wrap();
         }
         // A wide character does not fit in the last column of the line.
+        // Lines have two columns at least, as the screen and the margins
+        // do, so it fits in the next row, or one column back.
         let Cursor { x, y, .. } = self.cursor();
         let end = self.line_end(x);
         if width == 2 && x == end - 1 {
-            let start = if x >= self.margins.left {
-                self.margins.left
-            } else {
-                0
-            };
-            if end - start < 2 {
-                return;
-            }
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
