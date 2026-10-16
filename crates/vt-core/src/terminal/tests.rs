@@ -3924,3 +3924,99 @@ proptest! {
         }
     }
 }
+
+/// A cell of a line as it reads, wherever its page keeps its style,
+/// grapheme and link: its cluster, its style and its link's target.
+type LineCell = (Vec<char>, Style, Option<LinkTarget>);
+
+/// The logical lines of the primary screen and its scrollback, oldest
+/// first, as their cells read: without the spacers of wide characters, the
+/// empty cells that end each line, and the empty lines at the end.
+fn logical_lines(terminal: &Terminal) -> Vec<Vec<LineCell>> {
+    let mut lines: Vec<Vec<LineCell>> = Vec::new();
+    let mut wrapped = false;
+    for (page, row) in terminal.primary.rows.iter_rows() {
+        if !wrapped {
+            lines.push(Vec::new());
+        }
+        let line = lines.last_mut().expect("a line was started");
+        for (x, &cell) in (0..).zip(page.cells(row)) {
+            if matches!(cell.width(), Width::SpacerHead | Width::SpacerTail) {
+                continue;
+            }
+            let cluster = match cell.content() {
+                Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => Vec::new(),
+                Content::Char(c) | Content::Grapheme(c) => {
+                    let mut cluster = vec![c];
+                    cluster.extend_from_slice(page.grapheme(row, x));
+                    cluster
+                }
+            };
+            let link = page.hyperlink(row, x).map(|id| {
+                let link = page.hyperlinks().get(id);
+                (link.id.to_vec(), link.uri.to_vec())
+            });
+            line.push((cluster, *page.styles().get(cell.style()), link));
+        }
+        wrapped = page.row(row).has(RowFlag::SoftWrapped);
+    }
+    for line in &mut lines {
+        while line
+            .last()
+            .is_some_and(|(cluster, _, link)| cluster.is_empty() && link.is_none())
+        {
+            line.pop();
+        }
+    }
+    while lines.last().is_some_and(Vec::is_empty) {
+        lines.pop();
+    }
+    lines
+}
+
+/// Text to fill a screen with: words and spaces, wide characters, emoji,
+/// combining marks, colors, links, and new lines.
+fn reflow_text() -> impl Strategy<Value = String> {
+    let piece = prop_oneof![
+        4 => "[a-z]{1,8}",
+        2 => Just(" ".to_owned()),
+        2 => Just("\u{4E2D}".to_owned()),
+        1 => Just("\u{1F600}".to_owned()),
+        1 => Just("e\u{301}".to_owned()),
+        1 => Just("\x1b[31m".to_owned()),
+        1 => Just("\x1b[1;44m".to_owned()),
+        1 => Just("\x1b[m".to_owned()),
+        1 => Just("\x1b]8;;http://a\x07".to_owned()),
+        1 => Just("\x1b]8;;\x07".to_owned()),
+        2 => Just("\r\n".to_owned()),
+    ];
+    prop::collection::vec(piece, 1..80).prop_map(|pieces| pieces.concat())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    /// Shrinking a screen, then widening it back, keeps every line, cell
+    /// by cell, with its styles, graphemes and links, and so do the sizes
+    /// between, narrower or wider, shorter or taller.
+    #[test]
+    fn reflow_round_trips_keep_every_line(
+        cols in 4_u16..=16,
+        rows in 2_u16..=6,
+        narrower in 2_u16..=15,
+        sizes in prop::collection::vec((2_u16..=20, 1_u16..=8), 0..4),
+        text in reflow_text(),
+    ) {
+        let narrower = narrower.min(cols - 1);
+        let mut term = Term::new(cols, rows);
+        term.feed(&text);
+        let before = logical_lines(&term.terminal);
+        for (cols, rows) in std::iter::once((narrower, rows)).chain(sizes) {
+            term.terminal.resize(cols, rows);
+            prop_assert_eq!(&logical_lines(&term.terminal), &before, "at {}x{}", cols, rows);
+        }
+        term.terminal.resize(cols, rows);
+        prop_assert_eq!(logical_lines(&term.terminal), before);
+        assert_tables_counted(&term.terminal.primary);
+    }
+}

@@ -177,7 +177,7 @@ The metadata fits in one byte.
   - When the lines take more rows, the empty rows below the cursor take them first, so that the text above stays on screen, as iTerm2 keeps it; the cursor always stays on screen, the rows below it going first, and a screen with too few rows gets empty ones at the bottom.
   - The old pages leave the limits before the new ones come, as for a cut.
 - **Alternate screen**: resized without reflow, as xterm does.
-- **Cost and correctness**: cost is linear in the scrollback size. Property tests check that shrinking and then widening again loses no content.
+- **Cost and correctness**: cost is linear in the scrollback size, about 1 µs per row of 120 columns. A property test checks that shrinking and then widening again, through other sizes on the way, loses no content: every line keeps its cells, with their styles, graphemes and links.
 
 ## Unicode
 
