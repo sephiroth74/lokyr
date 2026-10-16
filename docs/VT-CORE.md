@@ -155,8 +155,9 @@ The metadata fits in one byte.
   - A pane that needs a page past either limit makes room with its own oldest pages: a busy pane never takes the scrollback of an idle one.
   - A screen always gets its pages, even past the limits. When a page grows, or another pane's screen passes the budget, the pane frees its oldest pages, at its next new page, until it is within the limits again. So only the pages that screens need can pass them.
 - **Cold-page compaction**:
-  - Short lines waste space in fixed-width pages. So a few screens away from the viewport, rows are rewritten in a variable-length format that drops trailing blank cells.
-  - A compacted page returns to the normal format when it is needed again (scrolling, search).
+  - Short lines waste space in fixed-width pages. `PageList::compact(keep)` keeps small the pages whose rows are all `keep` rows or more above the last, and never the screen's: a cold page keeps each row's cells up to its last that is not entirely empty, one row after the other, and the rest of the page as it is, its tables and its rows' blocks with it, so that the entries keyed by cell are still right when it comes back. Its rows, ids and pins stay. On a scrollback of short lines at 80 columns, such as `ls -la`, it gives back about three quarters of the bytes; on lines of 40 characters, about two fifths.
+  - `Terminal::compact_scrollback` compacts what is three screens or more above the primary screen's last row. It is for an idle terminal: compacting allocates, and a cold page that leaves the list is freed, not pooled, so output does not do it.
+  - A cold page returns to the normal format when it is needed: `PageList::warm` brings back the pages of a range of rows, for whoever reads them, and resizing and reflow bring back what they rewrite. Reading a cold page's rows without warming it fails, rather than skipping them.
   - lz4 compression on top of compaction is deferred to F7.
 - **Pins**:
   - A pin is a cell of the list, `(page, row, column)`, that the list keeps track of: `PageList::pin` puts one on a cell, `pin_position` says where the cell is now, and `unpin` lets it go. `row_at` and `row_index` go between a row's index in the list, oldest first, and its page and row.

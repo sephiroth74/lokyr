@@ -3,6 +3,7 @@
 mod arena;
 mod cell;
 mod cell_map;
+mod compact;
 mod grapheme;
 mod hyperlink;
 mod index;

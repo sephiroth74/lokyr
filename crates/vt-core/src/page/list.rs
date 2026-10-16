@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::compact::CompactPage;
 use super::pin::{Pins, Place};
 use super::{Capacity, Cell, Page, PinId, Position, Row, RowFlag, TableFull, WhenFull, Width};
 
@@ -140,6 +141,8 @@ struct Node {
     next: u32,
     /// How many pages the slot has held, so that ids go stale.
     generation: u32,
+    /// The page while it is cold, in place of `page`.
+    cold: Option<CompactPage>,
     /// The pins in the page.
     pins: Vec<u32>,
 }
@@ -276,7 +279,8 @@ impl PageList {
         (self.id(index), row)
     }
 
-    /// The page with `id`, or `None` if it has left the list.
+    /// The page with `id`, or `None` if it has left the list, or is cold
+    /// until [`PageList::warm`] brings it back.
     pub fn page(&self, id: PageId) -> Option<&Page> {
         let node = self.nodes.get(id.index as usize)?;
         if node.generation == id.generation {
@@ -292,7 +296,7 @@ impl PageList {
         let mut node = self.head;
         let mut start = 0;
         while node != NONE {
-            let len = usize::from(self.page_at(node).len());
+            let len = usize::from(self.node_len(node));
             if index < start + len {
                 // Fewer rows than the page holds.
                 return Some((self.id(node), (index - start) as u16));
@@ -306,14 +310,14 @@ impl PageList {
     /// The index in the list, oldest first, of row `row` of the page with
     /// `id`, if the page is in the list and has that row.
     pub fn row_index(&self, id: PageId, row: u16) -> Option<usize> {
-        let page = self.page(id)?;
-        if row >= page.len() {
+        let node = self.node_of(id)?;
+        if row >= self.node_len(node) {
             return None;
         }
         let mut node = self.head;
         let mut start = 0;
         while node != id.index {
-            start += usize::from(self.page_at(node).len());
+            start += usize::from(self.node_len(node));
             node = self.nodes[node as usize].next;
         }
         Some(start + usize::from(row))
@@ -321,8 +325,8 @@ impl PageList {
 
     /// Pins the cell at `position`, if it is in the list.
     pub fn pin(&mut self, position: Position) -> Option<PinId> {
-        let page = self.page(position.page)?;
-        if position.row >= page.len() || position.col >= self.cols() {
+        let node = self.node_of(position.page)?;
+        if position.row >= self.node_len(node) || position.col >= self.cols() {
             return None;
         }
         let node = position.page.index;
@@ -372,6 +376,84 @@ impl PageList {
     /// How many pins the list keeps track of.
     pub fn pins(&self) -> usize {
         self.pins.len()
+    }
+
+    /// Keeps small the pages whose rows are all `keep` rows or more above
+    /// the last row, and the screen's rows at least, and returns the bytes
+    /// that this gave back. A cold page
+    /// keeps the cells of each row up to its last that is not empty, and
+    /// the rest of the page as it is; its rows, pins and ids stay, and
+    /// [`PageList::warm`] brings its cells back.
+    ///
+    /// Keeping a page small allocates, and a cold page that leaves the
+    /// list is freed rather than pooled, so this is for an idle list, not
+    /// for one that output scrolls.
+    pub fn compact(&mut self, keep: usize) -> usize {
+        let keep = keep.max(usize::from(self.rows));
+        let mut saved = 0;
+        let mut index = self.head;
+        let mut end = 0;
+        while index != NONE {
+            end += usize::from(self.node_len(index));
+            let next = self.nodes[index as usize].next;
+            if end + keep > self.total_rows {
+                break;
+            }
+            let node = &mut self.nodes[index as usize];
+            if let Some(page) = node.page.take() {
+                let before = page.memory();
+                let cold = CompactPage::new(page);
+                saved += before - cold.memory();
+                node.cold = Some(cold);
+            }
+            index = next;
+        }
+        self.give(saved);
+        saved
+    }
+
+    /// Brings back the cells of the cold pages that hold rows of `rows`,
+    /// indexes in the list, oldest first, so that they can be read.
+    pub fn warm(&mut self, rows: Range<usize>) {
+        let mut index = self.head;
+        let mut start = 0;
+        while index != NONE && start < rows.end {
+            let len = usize::from(self.node_len(index));
+            if start + len > rows.start {
+                self.warm_node(index);
+            }
+            start += len;
+            index = self.nodes[index as usize].next;
+        }
+    }
+
+    /// Brings back the cells of the page of node `index`, if it is cold.
+    fn warm_node(&mut self, index: u32) {
+        let node = &mut self.nodes[index as usize];
+        if let Some(cold) = node.cold.take() {
+            let before = cold.memory();
+            let page = cold.expand();
+            let added = page.memory() - before;
+            node.page = Some(page);
+            self.take(added);
+        }
+    }
+
+    /// The node of the page with `id`, warm or cold, if it is in the list.
+    fn node_of(&self, id: PageId) -> Option<u32> {
+        let node = self.nodes.get(id.index as usize)?;
+        let linked = node.page.is_some() || node.cold.is_some();
+        (linked && node.generation == id.generation).then_some(id.index)
+    }
+
+    /// How many rows the page of node `index` has in use, warm or cold.
+    fn node_len(&self, index: u32) -> u16 {
+        let node = &self.nodes[index as usize];
+        match (&node.page, &node.cold) {
+            (Some(page), _) => page.len(),
+            (None, Some(cold)) => cold.len(),
+            (None, None) => panic!("a linked node has a page"),
+        }
     }
 
     /// Rebuilds the page that holds row `y` of the screen with room in the
@@ -619,13 +701,24 @@ impl PageList {
         let mut bytes = 0;
         while index != NONE {
             let node = &mut self.nodes[index as usize];
-            let page = node.page.take().expect("a linked node has a page");
+            // A cold page's cells come back to be copied, outside the
+            // limits, which the old pages leave anyway.
+            let page = match (node.page.take(), node.cold.take()) {
+                (Some(page), _) => {
+                    bytes += page.memory();
+                    page
+                }
+                (None, Some(cold)) => {
+                    bytes += cold.memory();
+                    cold.expand()
+                }
+                (None, None) => panic!("a linked node has a page"),
+            };
             node.generation = node.generation.wrapping_add(1);
             let mut pins = std::mem::take(&mut node.pins);
             let next = node.next;
             let places = &self.pins;
             pins.sort_by_key(|&pin| places.place_of(pin).map(|place| (place.row, place.col)));
-            bytes += page.memory();
             self.free.push(index);
             old.push((page, pins));
             index = next;
@@ -1085,6 +1178,8 @@ impl PageList {
             let head = self.head;
             // Fewer rows than the page holds.
             let extra = extra as u16;
+            // The page left first holds rows of the screen, which is never
+            // cold.
             self.page_at_mut(head).drop_first_rows(extra);
             self.total_rows -= usize::from(extra);
             let pins = &mut self.pins;
@@ -1192,7 +1287,12 @@ impl PageList {
             }
             let node = &self.nodes[index as usize];
             index = node.next;
-            node.page.as_ref()
+            let page = node.page.as_ref();
+            assert!(
+                page.is_some(),
+                "a cold page is warmed before its rows are read"
+            );
+            page
         })
     }
 
@@ -1242,6 +1342,7 @@ impl PageList {
             prev: self.tail,
             next: NONE,
             generation: 0,
+            cold: None,
             pins: Vec::new(),
         };
         let index = match self.free.pop() {
@@ -1273,7 +1374,7 @@ impl PageList {
     /// with `coming` more rows about to be added.
     fn can_evict(&self, coming: usize) -> bool {
         self.head != NONE
-            && self.total_rows + coming - usize::from(self.page_at(self.head).len())
+            && self.total_rows + coming - usize::from(self.node_len(self.head))
                 >= usize::from(self.rows)
     }
 
@@ -1282,7 +1383,8 @@ impl PageList {
     fn evict_head(&mut self) {
         let index = self.head;
         let node = &mut self.nodes[index as usize];
-        let mut page = node.page.take().expect("a linked node has a page");
+        let page = node.page.take();
+        let cold = node.cold.take();
         node.generation = node.generation.wrapping_add(1);
         for &pin in &node.pins {
             self.pins.lose(pin);
@@ -1297,12 +1399,22 @@ impl PageList {
         }
         self.free.push(index);
         self.pages -= 1;
-        self.total_rows -= usize::from(page.len());
-        if page.capacity() == self.capacity {
-            page.reset();
-            self.pool.push(page);
-        } else {
-            self.give(page.memory());
+        match (page, cold) {
+            (Some(mut page), _) => {
+                self.total_rows -= usize::from(page.len());
+                if page.capacity() == self.capacity {
+                    page.reset();
+                    self.pool.push(page);
+                } else {
+                    self.give(page.memory());
+                }
+            }
+            // A cold page has no cells to hand out again.
+            (None, Some(cold)) => {
+                self.total_rows -= usize::from(cold.len());
+                self.give(cold.memory());
+            }
+            (None, None) => panic!("a linked node has a page"),
         }
     }
 
@@ -1366,8 +1478,7 @@ impl PageList {
         let mut index = self.tail;
         let mut end = self.total_rows;
         loop {
-            let page = self.page_at(index);
-            let start = end - usize::from(page.len());
+            let start = end - usize::from(self.node_len(index));
             if row >= start {
                 return (index, (row - start) as u16);
             }
@@ -2040,6 +2151,105 @@ mod tests {
         assert_eq!(list.memory(), counted(&list));
     }
 
+    /// A list of 80 columns whose scrollback holds `pages` pages of short
+    /// numbered lines.
+    fn short_lines(pages_of_rows: u32) -> PageList {
+        let mut list = PageList::new(80, 24, pages(80, 8));
+        scroll(
+            &mut list,
+            0,
+            pages_of_rows * u32::from(Capacity::standard(80).rows),
+        );
+        list
+    }
+
+    #[test]
+    fn cold_pages_take_less_memory_and_come_back_as_they_were() {
+        let mut list = short_lines(4);
+        let numbers_before = numbers(&list);
+        let pin = {
+            let (page, row) = list.row_at(10).unwrap();
+            list.pin(Position { page, row, col: 0 }).unwrap()
+        };
+        let before = list.memory();
+        let saved = list.compact(3 * 24);
+        assert!(saved > before / 2, "{saved} of {before} bytes");
+        assert_eq!(list.memory(), before - saved);
+        assert_eq!(list.memory(), counted(&list));
+        let (page, row) = list.row_at(10).unwrap();
+        assert!(list.page(page).is_none(), "a cold page is not read");
+        assert_eq!(list.row_index(page, row), Some(10));
+        assert_eq!(list.pin_position(pin), Some(Position { page, row, col: 0 }));
+        // A page whose last row is `keep` rows above the list's goes cold,
+        // and the next one stays.
+        list.warm(0..list.total_rows());
+        let (first, _) = list.row_at(0).unwrap();
+        let first_rows = usize::from(list.page(first).unwrap().len());
+        let (second, _) = list.row_at(first_rows).unwrap();
+        list.compact(list.total_rows() - first_rows);
+        assert!(list.page(first).is_none());
+        assert!(list.page(second).is_some());
+        // The screen stays warm, whatever `keep` says.
+        list.compact(0);
+        let (screen_page, _) = list.screen_row_id(0);
+        assert!(list.page(screen_page).is_some());
+        list.warm(0..list.total_rows());
+        assert_eq!(numbers(&list), numbers_before);
+        assert_eq!(list.memory(), before);
+        assert_eq!(list.memory(), counted(&list));
+        assert_pins_listed(&list);
+    }
+
+    #[test]
+    #[should_panic(expected = "a cold page is warmed before its rows are read")]
+    fn the_rows_of_a_cold_page_are_not_read() {
+        let mut list = short_lines(2);
+        list.compact(3 * 24);
+        let _ = numbers(&list);
+    }
+
+    #[test]
+    fn cold_pages_leave_and_resize_as_warm_ones_do() {
+        let budget = Arc::new(Budget::new(8 * Capacity::standard(80).bytes()));
+        let shared = Scrollback {
+            budget: Some(Arc::clone(&budget)),
+            ..Scrollback::default()
+        };
+        let mut list = PageList::new(80, 24, shared);
+        let page_rows = u32::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, 3 * page_rows);
+        list.compact(48);
+        assert_eq!(budget.used(), list.memory());
+        // More output: the cold pages leave, freed.
+        scroll(&mut list, 3 * page_rows, 6 * page_rows);
+        assert_eq!(budget.used(), list.memory());
+        assert_eq!(list.memory(), counted(&list));
+        // A reflow and a cut bring the cold pages back. Wider rows take
+        // more bytes, so the oldest leave for the budget, but the rows that
+        // stay are the newest, in order.
+        let lines = numbers_after_warming(&mut list);
+        list.compact(48);
+        list.reflow(100, 24, (0, 23));
+        list.compact(48);
+        list.resize(90, 20, (0, 19), Grow::FromScrollback);
+        let after = numbers_after_warming(&mut list);
+        assert!(after.len() > 2 * page_rows as usize);
+        assert!(lines.ends_with(&after));
+        assert_eq!(budget.used(), list.memory());
+        // ED 3 with a cold page first.
+        list.compact(48);
+        list.clear_scrollback();
+        assert_eq!(list.scrollback_rows(), 0);
+        assert_eq!(list.memory(), counted(&list));
+        assert_eq!(budget.used(), list.memory());
+    }
+
+    /// The numbers of the rows, after warming every cold page.
+    fn numbers_after_warming(list: &mut PageList) -> Vec<Option<u32>> {
+        list.warm(0..list.total_rows());
+        numbers(list)
+    }
+
     #[test]
     fn a_page_at_its_largest_does_not_grow() {
         let mut list = PageList::new(80, 24, Scrollback::default());
@@ -2066,10 +2276,19 @@ mod tests {
         PageList::new(80, 24, pages(80, 4)).screen_row(24);
     }
 
-    /// The bytes of the pages, counted one by one.
+    /// The bytes of the pages, warm or cold, counted one by one.
     fn counted(list: &PageList) -> usize {
-        list.iter_pages().map(Page::memory).sum::<usize>()
-            + list.pool.iter().map(Page::memory).sum::<usize>()
+        let mut bytes = list.pool.iter().map(Page::memory).sum::<usize>();
+        let mut index = list.head;
+        while index != NONE {
+            let node = &list.nodes[index as usize];
+            bytes += node.page.as_ref().map_or_else(
+                || node.cold.as_ref().map_or(0, CompactPage::memory),
+                Page::memory,
+            );
+            index = node.next;
+        }
+        bytes
     }
 
     /// Writes a row in a style of its own, `n`, growing the page when its
@@ -2261,7 +2480,7 @@ mod tests {
             for &pin in &node.pins {
                 let place = list.pins.place_of(pin).expect("a listed pin is in use");
                 assert_eq!(place.node, index, "pin {pin} is listed in its node");
-                assert!(place.row < list.page_at(index).len());
+                assert!(place.row < list.node_len(index));
             }
             listed += node.pins.len();
             index = node.next;
@@ -2457,6 +2676,9 @@ mod tests {
         Resize(u16, u16, u8, u16, u16),
         /// Lets go of a pin, modulo how many there are.
         Unpin(usize),
+        /// Keeps small the pages that many rows above the last, so that the
+        /// next operation meets cold pages.
+        Compact(usize),
     }
 
     fn op() -> impl Strategy<Value = Op> {
@@ -2474,6 +2696,7 @@ mod tests {
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
+            2 => (0_usize..200).prop_map(Op::Compact),
             2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3, any::<u16>(), any::<u16>())
                 .prop_map(|(cols, rows, how, x, y)| Op::Resize(cols, rows, how, x, y)),
         ]
@@ -2551,6 +2774,10 @@ mod tests {
                             prop_assert_eq!(list.pin_position(pin), None);
                         }
                     }
+                    Op::Compact(keep) => {
+                        list.compact(keep);
+                        continue;
+                    }
                     Op::Resize(cols, rows, how, x, y) => {
                         let cursor = (x % list.cols(), y % list.rows());
                         let _ = match how {
@@ -2560,6 +2787,8 @@ mod tests {
                         };
                     }
                 }
+                list.warm(0..list.total_rows());
+                prop_assert_eq!(list.memory(), counted(&list));
                 assert_pins_listed(&list);
                 let span = usize::from(SPAN.min(list.cols()));
                 let present: std::collections::HashSet<u32> = list

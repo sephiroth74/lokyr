@@ -3607,6 +3607,28 @@ fn a_flag_after_a_prepended_character_takes_two_cells() {
 }
 
 #[test]
+fn compacting_the_scrollback_keeps_its_text() {
+    let mut term = Term::new(80, 24);
+    term.feed("\x1b[31mls -la\x1b[m\r\n".repeat(4000));
+    let screen = term.screen();
+    let before = term.terminal.screen_rows().memory();
+    let saved = term.terminal.compact_scrollback();
+    assert!(saved > before / 2, "{saved} of {before} bytes");
+    assert_eq!(term.screen(), screen, "the screen stays");
+    term.feed("more");
+    // A resize brings the cold pages back, and every line with them.
+    term.terminal.resize(40, 24);
+    let lines = logical_lines(&term.terminal);
+    assert_eq!(lines.len(), 4001);
+    assert!(
+        lines[..4000]
+            .iter()
+            .all(|line| line.len() == 6 && line[0].1.fg == Color::Palette(1))
+    );
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
 fn a_run_of_ascii_holds_a_reference_to_its_style_in_each_cell() {
     let mut term = Term::new(10, 2);
     let red = Style {

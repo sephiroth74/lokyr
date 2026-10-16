@@ -490,6 +490,15 @@ impl Terminal {
         self.margins = Margins::screen(cols, rows);
     }
 
+    /// Keeps small the primary screen's pages that are three screens or
+    /// more above its last row, as [`PageList::compact`] does, and returns
+    /// the bytes that this gave back. For an idle terminal: compacting
+    /// allocates, and output brings the pages back as it needs them.
+    pub fn compact_scrollback(&mut self) -> usize {
+        let keep = 3 * usize::from(self.rows);
+        self.primary.rows.compact(keep)
+    }
+
     /// Whether autowrap (DECAWM) is on.
     pub fn autowrap(&self) -> bool {
         self.autowrap
