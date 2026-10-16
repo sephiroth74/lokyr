@@ -69,20 +69,35 @@ fn a_regex_matches_across_wrapped_rows() {
 }
 
 #[test]
-fn backward_finds_matches_that_overlap() {
+fn matches_do_not_overlap_either_way() {
     let mut terminal = printed(10, 2, "aaa");
     let query = regex("aa");
     assert_eq!(
         search(&mut terminal, &query, (1, 0), Direction::Backward),
-        Some(((0, 1), (0, 2)))
-    );
-    assert_eq!(
-        search(&mut terminal, &query, (0, 1), Direction::Backward),
         Some(((0, 0), (0, 1)))
     );
     assert_eq!(
         search(&mut terminal, &query, (0, 1), Direction::Forward),
-        Some(((0, 1), (0, 2)))
+        None
+    );
+    // A run is one match, whichever of its cells the search starts from.
+    let mut terminal = printed(20, 2, "id 12345 axxxb");
+    let digits = regex("[0-9]+");
+    assert_eq!(
+        search(&mut terminal, &digits, (0, 0), Direction::Forward),
+        Some(((0, 3), (0, 7)))
+    );
+    assert_eq!(
+        search(&mut terminal, &digits, (0, 4), Direction::Forward),
+        None
+    );
+    assert_eq!(
+        search(&mut terminal, &digits, (1, 0), Direction::Backward),
+        Some(((0, 3), (0, 7)))
+    );
+    assert_eq!(
+        search(&mut terminal, &regex("x*"), (0, 11), Direction::Backward),
+        Some(((0, 10), (0, 12)))
     );
 }
 
@@ -151,6 +166,15 @@ fn whole_words_are_a_filter_on_the_matches() {
         search(&mut terminal, &query, (1, 0), Direction::Backward),
         Some(((0, 0), (0, 1)))
     );
+    // A whole word can start inside a match that is not one.
+    let mut terminal = printed(10, 2, "ba a a");
+    let query = Query::literal("a a", Case::Sensitive)
+        .unwrap()
+        .whole_word(true);
+    assert_eq!(
+        search(&mut terminal, &query, (0, 0), Direction::Forward),
+        Some(((0, 3), (0, 5)))
+    );
     // Words in other scripts.
     let mut terminal = printed(30, 2, "été étés");
     let query = Query::literal("été", Case::Sensitive)
@@ -160,6 +184,78 @@ fn whole_words_are_a_filter_on_the_matches() {
         search(&mut terminal, &query, (0, 1), Direction::Forward),
         None
     );
+}
+
+#[test]
+fn a_match_starts_at_a_cell_and_ends_with_one() {
+    // "Résumé", decomposed: each e shares its cell with its accent.
+    let mut terminal = printed(20, 2, "Re\u{301}sume\u{301} ok");
+    let word = |text: &str| {
+        Query::literal(text, Case::Sensitive)
+            .unwrap()
+            .whole_word(true)
+    };
+    for query in [
+        word("sume"),
+        word("sum"),
+        regex(r"\bsume\b"),
+        regex("\u{301}"),
+    ] {
+        assert_eq!(
+            search(&mut terminal, &query, (0, 0), Direction::Forward),
+            None,
+            "{query:?}"
+        );
+    }
+    assert_eq!(
+        search(
+            &mut terminal,
+            &word("Re\u{301}sume\u{301}"),
+            (0, 0),
+            Direction::Forward
+        ),
+        Some(((0, 0), (0, 5)))
+    );
+    // Of two matches that start in one cell, only the one that starts with
+    // the cell counts, either way.
+    let mut terminal = printed(10, 2, "e\u{301}x");
+    let query = regex("e\u{301}|\u{301}x");
+    assert_eq!(
+        search(&mut terminal, &query, (0, 0), Direction::Forward),
+        Some(((0, 0), (0, 0)))
+    );
+    assert_eq!(
+        search(&mut terminal, &query, (1, 0), Direction::Backward),
+        Some(((0, 0), (0, 0)))
+    );
+}
+
+#[test]
+fn a_long_line_takes_time_in_proportion_to_its_length() {
+    // Lines of 64 000 cells, on screens that hold them.
+    let timed = |terminal: &mut Terminal, query: &Query, from, direction| {
+        let started = Instant::now();
+        assert_eq!(search(terminal, query, from, direction), None);
+        started.elapsed()
+    };
+    // An empty match at every cell, which does not count: backward goes
+    // through the line once, rather than from its start again after each.
+    let mut letters = printed(80, 801, &"b".repeat(64_000));
+    let empty = timed(&mut letters, &regex("x*"), (800, 0), Direction::Backward);
+    // A match at every cell, none of them a whole word: whole word reads
+    // the cells next to each, rather than the whole line's text.
+    let mut wide = printed(160, 801, &"\u{4e2d}".repeat(64_000));
+    let word = Query::literal("\u{4e2d}", Case::Sensitive)
+        .unwrap()
+        .whole_word(true);
+    let forward = timed(&mut wide, &word, (0, 0), Direction::Forward);
+    let backward = timed(&mut wide, &word, (800, 0), Direction::Backward);
+    for took in [empty, forward, backward] {
+        assert!(
+            took < Duration::from_secs(2),
+            "{empty:?}, {forward:?}, {backward:?}"
+        );
+    }
 }
 
 #[test]
@@ -305,8 +401,41 @@ fn starts_backward(terminal: &mut Terminal, query: &Query) -> Vec<Position> {
     found
 }
 
+/// `text` as a regex that matches it, for text of letters, spaces, `_`
+/// and `.`.
+fn escaped(text: &str) -> String {
+    text.replace('.', "\\.")
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::prelude::ProptestConfig::with_cases(256))]
+
+    /// Forward from each match's next cell and backward from each match's
+    /// first, literal text and a regex of it find the same matches, with
+    /// wide characters, clusters, either case and whole words.
+    #[test]
+    fn either_way_and_either_kind_find_the_same_matches(
+        lines in proptest::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
+        needle in "[aAb_.\u{4e2d}\u{e9}\u{301}]{1,3}",
+        cols in 3_u16..12,
+        insensitive in proptest::bool::ANY,
+        whole_word in proptest::bool::ANY,
+    ) {
+        let mut text = String::new();
+        for line in &lines {
+            text.push_str(line);
+            text.push_str("\r\n");
+        }
+        let mut terminal = printed(cols, 4, &text);
+        let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
+        let literal = Query::literal(&needle, case).unwrap().whole_word(whole_word);
+        let regex = Query::regex(&escaped(&needle), case).unwrap().whole_word(whole_word);
+        let forward = starts(&mut terminal, &literal, cols);
+        proptest::prop_assert_eq!(&starts_backward(&mut terminal, &literal), &forward);
+        proptest::prop_assert_eq!(&starts(&mut terminal, &regex, cols), &forward);
+        proptest::prop_assert_eq!(&starts_backward(&mut terminal, &regex), &forward);
+        proptest::prop_assert_eq!(terminal.screen_rows().pins(), 0);
+    }
 
     /// A regex of plain letters finds what the same literal finds, whole
     /// words or not, either way.
@@ -351,15 +480,15 @@ fn an_insensitive_regex_sees_the_text_as_it_is() {
 
 #[test]
 fn a_search_stops_inside_a_long_line() {
-    // One logical line of 64 000 letters, on a screen that holds it: tried
-    // from each of its starts, the matches of `a+` take minutes to go
-    // through.
+    // One logical line of 64 000 letters, on a screen that holds it: `a+`
+    // matches from each of them, but none of its matches is a whole word,
+    // as a letter follows each, so the search tries every one, either way,
+    // which takes minutes.
     let mut terminal = printed(80, 801, &format!("{}b", "a".repeat(63_999)));
+    let query = regex("a+").whole_word(true);
     let searches = [
-        // Forward, a whole word that no match is, as a letter follows each.
-        (regex("a+").whole_word(true), (0, 0), Direction::Forward),
-        // Backward, every match from the line's start, for the last one.
-        (regex("a+"), (800, 0), Direction::Backward),
+        (query.clone(), (0, 0), Direction::Forward),
+        (query, (800, 0), Direction::Backward),
     ];
     for (query, from, direction) in searches {
         let from = at(&terminal, from.0, from.1);

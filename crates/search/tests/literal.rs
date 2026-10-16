@@ -150,9 +150,12 @@ fn wide_characters_and_clusters_are_found_whole() {
         forward(&mut terminal, "e\u{301} o", (0, 0)),
         Some(((0, 3), (0, 5)))
     );
+    // A match starts at a cell and ends with one, never inside a cluster.
+    assert_eq!(forward(&mut terminal, "\u{301}", (0, 0)), None);
+    assert_eq!(forward(&mut terminal, "cafe", (0, 0)), None);
     assert_eq!(
-        forward(&mut terminal, "\u{301}", (0, 0)),
-        Some(((0, 3), (0, 3)))
+        forward(&mut terminal, "cafe\u{301}", (0, 0)),
+        Some(((0, 0), (0, 3)))
     );
 }
 
@@ -334,6 +337,25 @@ fn cold_pages_are_searched_as_they_are() {
 }
 
 #[test]
+fn a_cell_past_the_last_column_finds_nothing() {
+    let mut terminal = printed(10, 3, "one\r\ntwo");
+    for (y, text, direction) in [
+        (0, "two", Direction::Forward),
+        (1, "one", Direction::Backward),
+    ] {
+        let from = Position {
+            col: 500,
+            ..at(&terminal, y, 0)
+        };
+        assert_eq!(
+            search(&mut terminal, text, Case::Sensitive, from, direction),
+            None,
+            "{direction:?}"
+        );
+    }
+}
+
+#[test]
 fn a_cold_row_reads_its_empty_cells_too() {
     // A row that wraps, whose end a selective erase empties, keeping the
     // wrap: its line still reads the empty cells, as spaces, which a cold
@@ -383,19 +405,18 @@ fn logical(lines: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// How many times `needle` starts in `text`, overlaps included.
+/// How many times `needle` is in `text`, from its start, none of them
+/// overlapping another.
 fn occurrences(text: &str, needle: &str) -> usize {
-    (0..text.len())
-        .filter(|&at| text[at..].starts_with(needle))
-        .count()
+    text.matches(needle).count()
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// Going forward from each match's next cell, and backward from each
-    /// match's first, finds every occurrence, overlaps included, as a
-    /// search of the lines' text does.
+    /// match's first, finds every occurrence, none overlapping another, as
+    /// a search of the lines' text from their starts does.
     #[test]
     fn every_occurrence_is_found_either_way(
         lines in prop::collection::vec("[ab ]{0,30}", 1..20),

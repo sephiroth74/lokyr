@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 50d6848cff9c531c2cac23597957559f60338ea1e76b68dcaf2294906cd5be84 # shrinks to lines = ["a aaa"], needle = "a", cols = 3
+cc cfec80ac80c9b036a68c836e87b61a37ece8392c169e1df9532529e14c4a8408 # shrinks to lines = ["aaa"], needle = "aa", cols = 3

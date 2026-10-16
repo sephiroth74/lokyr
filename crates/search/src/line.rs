@@ -5,28 +5,34 @@ use std::sync::atomic::AtomicBool;
 
 use bolt_vt_core::page::{Content, ListRow, PageList, Position, RowFlag, Width};
 
+use crate::query::Text;
 use crate::{Cancelled, Query};
 
-/// A cell that shows something, and where its text starts in its line's.
-#[derive(Clone, Copy, Debug)]
-struct Spot {
-    offset: usize,
-    /// The row of the line that the cell is in, from 0.
-    line_row: usize,
-    position: Position,
-}
-
-/// The text of a logical line, as UTF-8.
+/// The text of a logical line, as UTF-8, and its cells that show
+/// something.
 #[derive(Debug, Default)]
 struct Line {
     text: Vec<u8>,
-    spots: Vec<Spot>,
+    /// Where the text of each cell starts.
+    starts: Vec<usize>,
+    /// The cells, in the same order, each with the row of the line that it
+    /// is in, from 0.
+    cells: Vec<(usize, Position)>,
 }
 
 impl Line {
     fn clear(&mut self) {
         self.text.clear();
-        self.spots.clear();
+        self.starts.clear();
+        self.cells.clear();
+    }
+
+    /// The text, as a query searches it.
+    fn text(&self) -> Text<'_> {
+        Text {
+            bytes: &self.text,
+            starts: &self.starts,
+        }
     }
 
     /// Adds the text of `row`, row `line_row` of the line. Empty cells read
@@ -38,15 +44,13 @@ impl Line {
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }
-            self.spots.push(Spot {
-                offset: self.text.len(),
-                line_row,
-                position: Position {
-                    page: row.page(),
-                    row: row.row(),
-                    col,
-                },
-            });
+            self.starts.push(self.text.len());
+            let position = Position {
+                page: row.page(),
+                row: row.row(),
+                col,
+            };
+            self.cells.push((line_row, position));
             match cell.content() {
                 Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
                     self.text.push(b' ');
@@ -74,8 +78,9 @@ impl Line {
             .rposition(|&byte| byte != b' ')
             .map_or(0, |at| at + 1);
         self.text.truncate(len);
-        let spots = self.spots.partition_point(|spot| spot.offset < len);
-        self.spots.truncate(spots);
+        let cells = self.starts.partition_point(|&start| start < len);
+        self.starts.truncate(cells);
+        self.cells.truncate(cells);
         if lower {
             self.text.make_ascii_lowercase();
         }
@@ -85,19 +90,17 @@ impl Line {
     /// of the line, or after it, starts.
     fn offset_of(&self, line_row: usize, col: u16) -> usize {
         let at = self
-            .spots
-            .partition_point(|spot| (spot.line_row, spot.position.col) < (line_row, col));
-        self.spots
-            .get(at)
-            .map_or(self.text.len(), |spot| spot.offset)
+            .cells
+            .partition_point(|&(row, position)| (row, position.col) < (line_row, col));
+        self.starts.get(at).copied().unwrap_or(self.text.len())
     }
 
     /// The first and the last cell of the text in `range`, which is not
     /// empty.
     fn cells_of(&self, range: std::ops::Range<usize>) -> (Position, Position) {
         let cell = |offset| {
-            let at = self.spots.partition_point(|spot| spot.offset <= offset);
-            self.spots[at - 1].position
+            let at = self.starts.partition_point(|&start| start <= offset);
+            self.cells[at - 1].1
         };
         (cell(range.start), cell(range.end - 1))
     }
@@ -180,7 +183,7 @@ pub(crate) fn find_forward(
         let min = first
             .take()
             .map_or(0, |line_row| line.offset_of(line_row, from.col));
-        if let Some(found) = query.first_from(&line.text, min, cancel)? {
+        if let Some(found) = query.first_from(&line.text(), min, cancel)? {
             return Ok(Some(line.cells_of(found)));
         }
     }
@@ -224,7 +227,7 @@ pub(crate) fn find_backward(
         let before = first.take().map_or(line.text.len(), |line_row| {
             line.offset_of(line_row, from.col)
         });
-        if let Some(found) = query.last_before(&line.text, before, cancel)? {
+        if let Some(found) = query.last_before(&line.text(), before, cancel)? {
             return Ok(Some(line.cells_of(found)));
         }
     }

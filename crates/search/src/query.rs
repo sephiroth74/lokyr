@@ -5,7 +5,7 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use memchr::memmem::{Finder, FinderRev};
+use memchr::memmem::Finder;
 use regex_automata::Input;
 use regex_automata::meta::{BuildError, Regex};
 use regex_automata::util::syntax;
@@ -33,10 +33,7 @@ pub struct Query {
 
 #[derive(Clone, Debug)]
 enum Matcher {
-    Literal {
-        forward: Finder<'static>,
-        backward: FinderRev<'static>,
-    },
+    Literal(Finder<'static>),
     Regex(Box<Regex>),
 }
 
@@ -67,10 +64,7 @@ impl Query {
         if case == Case::Insensitive {
             needle.make_ascii_lowercase();
         }
-        let matcher = Matcher::Literal {
-            forward: Finder::new(&needle).into_owned(),
-            backward: FinderRev::new(&needle).into_owned(),
-        };
+        let matcher = Matcher::Literal(Finder::new(&needle).into_owned());
         Some(Self {
             matcher,
             case,
@@ -95,8 +89,9 @@ impl Query {
         })
     }
 
-    /// The query, matching whole words only, if `on`: a match then has
-    /// neither a letter, a digit nor `_` right before it or right after it.
+    /// The query, matching whole words only, if `on`: the cells right before
+    /// and right after a match then start with neither a letter, a digit nor
+    /// `_`.
     #[must_use]
     pub fn whole_word(mut self, on: bool) -> Self {
         self.whole_word = on;
@@ -106,68 +101,98 @@ impl Query {
     /// Whether the text is searched in lower case, as an insensitive
     /// literal is.
     pub(crate) fn lowers_ascii(&self) -> bool {
-        matches!(self.matcher, Matcher::Literal { .. }) && self.case == Case::Insensitive
+        matches!(self.matcher, Matcher::Literal(_)) && self.case == Case::Insensitive
     }
 
-    /// The first match in `text` that starts at `from` or after it, unless
-    /// `cancel` is set first.
+    /// The first of the matches of `text` that starts at `min` or after
+    /// it, unless `cancel` is set first.
     pub(crate) fn first_from(
         &self,
-        text: &[u8],
-        mut from: usize,
+        text: &Text<'_>,
+        min: usize,
         cancel: &AtomicBool,
     ) -> Result<Option<Range<usize>>, Cancelled> {
-        while from <= text.len() {
-            let Some(found) = self.any_from(text, from) else {
+        let mut at = 0;
+        while let Some(found) = self.next_match(text, at, cancel)? {
+            if found.start >= min {
+                return Ok(Some(found));
+            }
+            at = found.end;
+        }
+        Ok(None)
+    }
+
+    /// The last of the matches of `text` that starts before `before`,
+    /// unless `cancel` is set first.
+    pub(crate) fn last_before(
+        &self,
+        text: &Text<'_>,
+        before: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Option<Range<usize>>, Cancelled> {
+        let mut last = None;
+        let mut at = 0;
+        while let Some(found) = self.next_match(text, at, cancel)? {
+            if found.start >= before {
+                break;
+            }
+            at = found.end;
+            last = Some(found);
+        }
+        Ok(last)
+    }
+
+    /// The match that comes next from `at`: the leftmost-first one that
+    /// counts, a match that does not count letting the search go on a
+    /// character after its start. From the start of the text, then from
+    /// the end of each match, this gives the text's matches, none of them
+    /// overlapping another.
+    fn next_match(
+        &self,
+        text: &Text<'_>,
+        mut at: usize,
+        cancel: &AtomicBool,
+    ) -> Result<Option<Range<usize>>, Cancelled> {
+        while at <= text.bytes.len() {
+            Cancelled::check(cancel)?;
+            let Some(found) = self.any_from(text.bytes, at) else {
                 break;
             };
             if self.accepts(text, &found) {
                 return Ok(Some(found));
             }
-            Cancelled::check(cancel)?;
-            from = next_char(text, found.start);
+            at = next_char(text.bytes, found.start);
         }
         Ok(None)
     }
 
-    /// The last match in `text` that starts before `before`, unless
-    /// `cancel` is set first.
-    pub(crate) fn last_before(
-        &self,
-        text: &[u8],
-        mut before: usize,
-        cancel: &AtomicBool,
-    ) -> Result<Option<Range<usize>>, Cancelled> {
-        while let Some(found) = self.any_before(text, before, cancel)? {
-            if self.accepts(text, &found) {
-                return Ok(Some(found));
-            }
-            before = found.start;
-        }
-        Ok(None)
-    }
-
-    /// Whether `found` counts: not empty, and a whole word if the query
-    /// asks for whole words.
-    fn accepts(&self, text: &[u8], found: &Range<usize>) -> bool {
-        if found.is_empty() {
+    /// Whether `found` counts: not empty, from the start of a cell to the
+    /// end of one, and a whole word if the query asks for whole words.
+    fn accepts(&self, text: &Text<'_>, found: &Range<usize>) -> bool {
+        let Some(cell) = text.cell_at(found.start) else {
+            return false;
+        };
+        if found.is_empty() || !(found.end == text.bytes.len() || text.cell_at(found.end).is_some())
+        {
             return false;
         }
         if !self.whole_word {
             return true;
         }
         let word = |c: char| c.is_alphanumeric() || c == '_';
-        let before = str_of(&text[..found.start]).chars().next_back();
-        let after = str_of(&text[found.end..]).chars().next();
+        let before = cell
+            .checked_sub(1)
+            .and_then(|before| text.first_char(text.starts[before]));
+        let after = text.first_char(found.end);
         !before.is_some_and(word) && !after.is_some_and(word)
     }
 
     /// The first match that starts at `from` or after it, of any kind.
     fn any_from(&self, text: &[u8], from: usize) -> Option<Range<usize>> {
         match &self.matcher {
-            Matcher::Literal { forward, .. } => {
-                let at = from + forward.find(&text[from..])?;
-                Some(at..at + forward.needle().len())
+            Matcher::Literal(finder) => {
+                let at = from + finder.find(&text[from..])?;
+                Some(at..at + finder.needle().len())
             }
             Matcher::Regex(regex) => {
                 let found = regex.find(Input::new(text).range(from..))?;
@@ -175,49 +200,31 @@ impl Query {
             }
         }
     }
-
-    /// The last match that starts before `before`, of any kind, overlaps
-    /// with later ones included, unless `cancel` is set first.
-    fn any_before(
-        &self,
-        text: &[u8],
-        before: usize,
-        cancel: &AtomicBool,
-    ) -> Result<Option<Range<usize>>, Cancelled> {
-        match &self.matcher {
-            Matcher::Literal { backward, .. } => {
-                // A match that starts before `before` ends before it and the
-                // literal's length, but for its last byte.
-                let len = backward.needle().len();
-                let end = (before + len - 1).min(text.len());
-                Ok(backward.rfind(&text[..end]).map(|at| at..at + len))
-            }
-            Matcher::Regex(_) => {
-                // Each match from the start of the line, one per start: a
-                // long line with long matches that overlap takes long.
-                let mut last = None;
-                let mut from = 0;
-                while from < before {
-                    let Some(found) = self.any_from(text, from) else {
-                        break;
-                    };
-                    if found.start >= before {
-                        break;
-                    }
-                    Cancelled::check(cancel)?;
-                    from = next_char(text, found.start);
-                    last = Some(found);
-                }
-                Ok(last)
-            }
-        }
-    }
 }
 
-/// `text` as a `str`: the text of a line is UTF-8, and a match starts and
-/// ends between two characters.
-fn str_of(text: &[u8]) -> &str {
-    std::str::from_utf8(text).expect("a line's text is UTF-8, cut between characters")
+/// The text of a line, as a query searches it.
+pub(crate) struct Text<'a> {
+    /// The text, in UTF-8.
+    pub(crate) bytes: &'a [u8],
+    /// Where the text of each of the line's cells starts, in order.
+    pub(crate) starts: &'a [usize],
+}
+
+impl Text<'_> {
+    /// The index of the cell whose text starts at `at`, if one does.
+    fn cell_at(&self, at: usize) -> Option<usize> {
+        self.starts.binary_search(&at).ok()
+    }
+
+    /// The character that starts at `at`, between two characters, unless
+    /// the text ends there.
+    fn first_char(&self, at: usize) -> Option<char> {
+        let end = next_char(self.bytes, at).min(self.bytes.len());
+        std::str::from_utf8(self.bytes.get(at..end)?)
+            .ok()?
+            .chars()
+            .next()
+    }
 }
 
 /// Where the character after the one at `at` starts, or past the end.

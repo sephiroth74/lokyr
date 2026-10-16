@@ -67,10 +67,16 @@ impl Cancelled {
 }
 
 /// Finds `query` in `list`: forward, the first match that starts at `from`
-/// or after it; backward, the last one that starts before it. The text of
-/// a logical line, whose soft-wrapped rows are joined, is searched whole,
-/// so that a match can cross the right margin; empty cells read as spaces,
-/// but those that end a line are left out. Empty matches do not count.
+/// or after it; backward, the last one that starts before it.
+///
+/// The text of a logical line, whose soft-wrapped rows are joined, is
+/// searched whole, so that a match can cross the right margin; empty cells
+/// read as spaces, but those that end a line are left out. The matches of
+/// a line are its leftmost-first matches, found from its start, none of
+/// them overlapping another, for literal text and regexes alike, so that
+/// both ways go through the same matches. A match starts at a cell and
+/// ends with one: one that starts or ends inside a cluster does not count,
+/// nor does an empty match.
 ///
 /// The search stops with [`Cancelled`] once `cancel` is set, which another
 /// thread can do: it looks at it before each line, and between the matches
@@ -87,6 +93,9 @@ pub fn find(
     let Some(index) = list.row_index(from.page, from.row) else {
         return Ok(None);
     };
+    if from.col >= list.cols() {
+        return Ok(None);
+    }
     let found = match direction {
         Direction::Forward => line::find_forward(list, index, query, from, cancel)?,
         Direction::Backward => line::find_backward(list, index, query, from, cancel)?,
