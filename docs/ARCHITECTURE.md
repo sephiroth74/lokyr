@@ -66,7 +66,8 @@ Workspace
 | Thread | Does | Never does |
 |---|---|---|
 | Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Luau plugin |
-| I/O, one per pane | `read` from the PTY, parsing, grid updates, writing input | Wait for the main thread |
+| I/O, one per pane | `read` from the PTY, parsing, grid updates | Wait for the main thread, or for the program to read its input |
+| Writer, one per pane | Writing input and replies to the PTY; ending synchronized updates at their deadline | Wait for the main thread |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
@@ -81,7 +82,7 @@ Workspace
 **From a key press to the program**
 1. The native event reaches the main thread. The IME gets it first (composition text, candidates).
 2. The keymap resolves the key combination in the current context (`when`). If a binding matches, the command runs. Otherwise:
-3. The `vt-core` encoder translates the key according to the pane's modes (legacy xterm or kitty keyboard) and queues it for the I/O thread, which writes it to the PTY.
+3. The `vt-core` encoder translates the key according to the pane's modes (legacy xterm or kitty keyboard) and queues it for the pane's writer thread, which writes it to the PTY.
 4. If the terminal was idle, the next frame is drawn immediately instead of waiting for the display link. This is the lowest-latency path.
 
 ## Frame pacing

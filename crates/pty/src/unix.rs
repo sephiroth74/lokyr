@@ -2,9 +2,9 @@
 //! the PTY as its controlling terminal.
 
 use std::collections::BTreeMap;
-use std::ffi::{CStr, OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, ErrorKind, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -39,8 +39,7 @@ pub struct PtyWriter(File);
 
 /// Opens a pseudo-terminal and starts the program of `options` in it.
 pub fn spawn(options: &Options) -> Result<Pty, Error> {
-    let (master, slave) = open(options.size).map_err(Error::Open)?;
-    let tty = tty_name(&slave).map_err(Error::Open)?;
+    let (master, slave, tty) = open(options.size).map_err(Error::Open)?;
     let account = Account::current();
     let (program, args, arg0) = command_line(&options.program, &account);
     let mut command = Command::new(&program);
@@ -220,34 +219,59 @@ impl Write for PtyWriter {
     }
 }
 
-/// Opens a pseudo-terminal of `size`, and returns its master and its slave,
-/// neither inherited across exec.
-fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut window = winsize(size);
-    let (mut master, mut slave) = (-1, -1);
-    // SAFETY: the descriptors and the size are valid places to write and
-    // read; without a name buffer, `openpty` writes no name.
-    let opened = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            &mut window,
-        )
+/// The errno with which macOS's kernel asks itself to open a device again:
+/// it reaches the caller of `open` at times when several processes open
+/// `/dev/ptmx` at once, and opening again succeeds.
+const EREDRIVEOPEN: i32 = -6;
+
+/// How many times to open again when the kernel gives [`EREDRIVEOPEN`].
+const REDRIVE_TRIES: usize = 1000;
+
+/// Opens a pseudo-terminal of `size`, and returns its master, its slave,
+/// neither inherited across exec, and the slave's path.
+///
+/// `openpty` would do it in one call, but it closes the descriptors on exec
+/// only after opening them, so that a fork elsewhere in the meantime can
+/// inherit them, and it gives up on [`EREDRIVEOPEN`]. Each step here is
+/// safe to run on several threads at once.
+fn open(size: Size) -> io::Result<(OwnedFd, OwnedFd, PathBuf)> {
+    let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
+    let open = |path: &CStr| {
+        for _ in 0..REDRIVE_TRIES {
+            // SAFETY: `path` is a terminated string.
+            let fd = unsafe { libc::open(path.as_ptr(), flags) };
+            if fd != -1 {
+                // SAFETY: `open` returned a descriptor that belongs to no
+                // one else.
+                return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
+            }
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(EREDRIVEOPEN) {
+                return Err(error);
+            }
+            std::thread::yield_now();
+        }
+        Err(io::Error::from_raw_os_error(EREDRIVEOPEN))
     };
-    if opened == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: `openpty` opened both, and nothing else owns them.
-    let (master, slave) = unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-    for fd in [&master, &slave] {
-        // SAFETY: `fd` is open, and setting its flags touches nothing else.
-        if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
+    let master = open(c"/dev/ptmx")?;
+    // SAFETY: both act on the master, which `master` owns.
+    unsafe {
+        if libc::grantpt(master.as_raw_fd()) == -1 || libc::unlockpt(master.as_raw_fd()) == -1 {
             return Err(io::Error::last_os_error());
         }
     }
-    Ok((master, slave))
+    let tty = tty_name(&master)?;
+    let path = CString::new(tty.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(ErrorKind::InvalidData))?;
+    // Without O_NOCTTY, opening the slave would make it the app's own
+    // controlling terminal, when the app leads a session without one.
+    let slave = open(&path)?;
+    let window = winsize(size);
+    // SAFETY: `TIOCSWINSZ` reads a `winsize`, which `window` is.
+    if unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &window) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((master, slave, tty))
 }
 
 fn winsize(size: Size) -> libc::winsize {
@@ -259,16 +283,30 @@ fn winsize(size: Size) -> libc::winsize {
     }
 }
 
-/// The path of the terminal that `fd` is open on.
-fn tty_name(fd: &OwnedFd) -> io::Result<PathBuf> {
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    /// Writes the path of the slave of the pseudo-terminal whose master is
+    /// `fd` to `buf`, `buflen` bytes at most: in macOS's libc since 10.13.4,
+    /// though the `libc` crate does not declare it there.
+    fn ptsname_r(fd: libc::c_int, buf: *mut libc::c_char, buflen: libc::size_t) -> libc::c_int;
+}
+
+#[cfg(not(target_os = "macos"))]
+use libc::ptsname_r;
+
+/// The path of the slave of the pseudo-terminal whose master is `master`.
+fn tty_name(master: &OwnedFd) -> io::Result<PathBuf> {
     let mut name = [0 as libc::c_char; 128];
-    // SAFETY: `ttyname_r` writes at most `name.len()` bytes, a terminated
+    // SAFETY: `ptsname_r` writes at most `name.len()` bytes, a terminated
     // string when it succeeds.
-    let failed = unsafe { libc::ttyname_r(fd.as_raw_fd(), name.as_mut_ptr(), name.len()) };
-    if failed != 0 {
-        return Err(io::Error::from_raw_os_error(failed));
+    let failed = unsafe { ptsname_r(master.as_raw_fd(), name.as_mut_ptr(), name.len()) };
+    match failed {
+        0 => {}
+        // macOS returns -1 and sets errno; glibc returns the error.
+        -1 => return Err(io::Error::last_os_error()),
+        error => return Err(io::Error::from_raw_os_error(error)),
     }
-    // SAFETY: `ttyname_r` succeeded, so `name` holds a terminated string.
+    // SAFETY: `ptsname_r` succeeded, so `name` holds a terminated string.
     let name = unsafe { CStr::from_ptr(name.as_ptr()) };
     Ok(PathBuf::from(OsStr::from_bytes(name.to_bytes())))
 }

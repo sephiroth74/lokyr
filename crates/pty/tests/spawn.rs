@@ -269,3 +269,20 @@ fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
     // The shell went on past its job.
     output.until("after");
 }
+
+#[test]
+fn many_threads_open_terminals_at_once() {
+    let threads: Vec<_> = (0..16)
+        .map(|_| {
+            std::thread::spawn(|| {
+                for _ in 0..4 {
+                    let mut pty = spawn(&Options::new(sh("exit 0"), "xterm-256color")).unwrap();
+                    assert_eq!(pty.wait().unwrap(), Exit::Code(0));
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+}

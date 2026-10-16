@@ -589,6 +589,7 @@ version = "0.1.0"
 dependencies = [
  "saetta-pty",
  "saetta-vt-core",
+ "thiserror",
 ]
 
 [[package]]
