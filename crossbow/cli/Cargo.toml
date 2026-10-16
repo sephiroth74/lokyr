@@ -1,6 +1,6 @@
 [package]
-name = "faretra-cli"
-description = "Faretra, the plugin package manager for Saetta"
+name = "crossbow-cli"
+description = "Crossbow, the plugin package manager for Bolt"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,13 +10,13 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "faretra"
+name = "crossbow"
 path = "src/main.rs"
 
 [dependencies]
-faretra-index.workspace = true
-faretra-resolver.workspace = true
-saetta-pkg-model.workspace = true
+crossbow-index.workspace = true
+crossbow-resolver.workspace = true
+bolt-pkg-model.workspace = true
 
 [lints]
 workspace = true

@@ -36,21 +36,21 @@ wildcards = "deny"
 # Internal crates are private and use path dependencies without a version.
 allow-wildcard-paths = true
 deny = [
-    # Only Faretra may use the network or an async runtime: the app never opens
-    # network connections. Crates of Faretra's HTTP stack that depend directly
+    # Only Crossbow may use the network or an async runtime: the app never opens
+    # network connections. Crates of Crossbow's HTTP stack that depend directly
     # on these (for example hyper-util) must be added to the wrappers.
-    { crate = "reqwest", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
-    { crate = "hyper", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
-    { crate = "rustls", wrappers = ["faretra-index"], reason = "only Faretra may use the network" },
-    { crate = "tokio", wrappers = ["faretra-cli", "faretra-index"], reason = "only Faretra may use an async runtime" },
+    { crate = "reqwest", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
+    { crate = "hyper", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
+    { crate = "rustls", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
+    { crate = "tokio", wrappers = ["crossbow-cli", "crossbow-index"], reason = "only Crossbow may use an async runtime" },
     # Not used anywhere: TLS is rustls, and the only async runtime is tokio.
     { crate = "native-tls", reason = "TLS is provided by rustls" },
     { crate = "openssl", reason = "TLS is provided by rustls" },
-    { crate = "async-std", reason = "the only async runtime is tokio, in Faretra" },
+    { crate = "async-std", reason = "the only async runtime is tokio, in Crossbow" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
-    { crate = "saetta-kernel", wrappers = ["saetta-app"], reason = "only the app may depend on the kernel" },
+    { crate = "bolt-kernel", wrappers = ["bolt-app"], reason = "only the app may depend on the kernel" },
     # Luau, a C++ runtime, stays behind the plugin host and its feature.
-    { crate = "mlua", wrappers = ["saetta-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
+    { crate = "mlua", wrappers = ["bolt-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
 ]
 
 [sources]

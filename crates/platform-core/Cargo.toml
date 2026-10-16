@@ -1,5 +1,5 @@
 [package]
-name = "saetta-platform-core"
+name = "bolt-platform-core"
 description = "Platform interface implemented by each OS backend"
 version.workspace = true
 edition.workspace = true

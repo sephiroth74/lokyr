@@ -1,13 +1,13 @@
 # Plugin system
 
-Everything you see in Saetta is a plugin: the tab bar, splits, the find bar, themes, the palette. The kernel provides data and services, and plugins decide how things behave and look ([ADR 0002](adr/0002-micro-kernel-and-plugins.md), [ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
+Everything you see in Bolt is a plugin: the tab bar, splits, the find bar, themes, the palette. The kernel provides data and services, and plugins decide how things behave and look ([ADR 0002](adr/0002-micro-kernel-and-plugins.md), [ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
 
 ## Two tiers, one API
 
 | | First-party plugins | Third-party plugins |
 |---|---|---|
 | Form | Rust crate in `plugins/`, statically linked | Luau scripts, each plugin in its own sandboxed VM |
-| Loading | At startup, from the distribution (`dist/*.toml`) | From disk (installed by Faretra), only when needed |
+| Loading | At startup, from the distribution (`dist/*.toml`) | From disk (installed by Crossbow), only when needed |
 | Trust | Our own reviewed code | Sandboxed: only the capabilities granted to it |
 | Cost | Direct calls, zero overhead | One Luau VM (about 1–2 MB when active); calls copy data |
 | API | `plugin-sdk`, the Rust front end | The Luau front end of the same API |
@@ -65,7 +65,7 @@ The API is defined once, in Rust: the `HostApi` trait and its types live in `plu
 **Rust**, for first-party plugins:
 
 ```rust
-use saetta_plugin_sdk::{prelude::*, types::*};
+use bolt_plugin_sdk::{prelude::*, types::*};
 
 #[derive(Default)]
 struct Search { query: String }
@@ -121,14 +121,14 @@ return Search
 - **Conformance**: the conformance suite runs the same scenarios through both front ends, with Rust and Luau test plugins, and compares their command and event traces.
 - **Testing for plugin authors**:
   - The Rust SDK ships a fake host for unit tests. It simulates events, lets tests assert on commands and view trees, and snapshots view trees.
-  - For Luau, `faretra test` runs the plugin in the same headless host.
+  - For Luau, `crossbow test` runs the plugin in the same headless host.
 
 ## The Luau API
 
 - **Shape**:
   - A plugin is a package of Luau modules. Its entry point, `src/init.luau`, returns the table of callbacks shown above. Every callback is optional.
   - `require` resolves only the modules inside the plugin's own package.
-- **Types**: a definitions file declares the API's types (`Cx`, `Event`, `View`, …) for Luau's type checker. Faretra's templates include it, with a `luau-lsp` configuration that points to it. Plugins are written with `--!strict`.
+- **Types**: a definitions file declares the API's types (`Cx`, `Event`, `View`, …) for Luau's type checker. Crossbow's templates include it, with a `luau-lsp` configuration that points to it. Plugins are written with `--!strict`.
 - **Errors**: host calls that can fail return their result, or `nil` and an error, as Lua's standard library does. A Lua error raised by a callback ends the call, and counts as a plugin failure.
 - **Data**:
   - Small values are plain tables, possibly nested: command arguments, view trees, events.
@@ -149,7 +149,7 @@ return Search
 > This sketch only illustrates the shape of the API. Names and signatures will be settled in F3, and the definitions file will be generated from the Rust types.
 
 ```luau
--- saetta.d.luau: the types of the plugin API, for the type checker.
+-- bolt.d.luau: the types of the plugin API, for the type checker.
 
 type WindowId = number
 type TabId = number
@@ -293,13 +293,13 @@ type Plugin = {
 | `global-hotkey` | System-wide shortcuts | Medium |
 
 - **Declaration and consent**:
-  - Capabilities are declared in the manifest. Faretra shows them at install time, and the app asks for confirmation on first use.
-  - Decisions are stored in `~/.config/saetta/permissions.toml`, which can be versioned with dotfiles and revoked at any time.
+  - Capabilities are declared in the manifest. Crossbow shows them at install time, and the app asks for confirmation on first use.
+  - Decisions are stored in `~/.config/bolt/permissions.toml`, which can be versioned with dotfiles and revoked at any time.
 - **Enforcement**:
   - Every host function exists in every plugin. Without the capability it returns a `denied` error, so a plugin can treat a capability as optional and request it at the moment it's needed.
   - The VM itself reaches nothing outside the computation: it has no `io`, `os` or `debug` library, and its `require` stays inside the package. Files, processes and the network exist only as host functions, limited to the granted paths and hosts.
 - **Networking without an HTTP client in the app**:
-  - Requests from plugins with `net:<host>` go through a helper process started on demand (`faretra net-helper`), which enforces the host allowlist.
+  - Requests from plugins with `net:<host>` go through a helper process started on demand (`crossbow net-helper`), which enforces the host allowlist.
   - The app itself still contains no HTTP/TLS client ([ADR 0008](adr/0008-separate-package-manager.md)).
 - **First-party plugins** are trusted code and don't go through capabilities, but they are still limited to the SDK.
 
@@ -315,7 +315,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 - **Lazy activation** through `activation.on`: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`.
 - **Zero cost without third-party plugins**: no Luau VM exists until the first one activates.
 - **Backoff**: after 3 failures within a minute, the plugin stays disabled until the user re-enables it.
-- **Hot reload**: `faretra dev` watches the plugin's sources and reloads it into the running app over IPC. Reloading means creating a fresh VM: nothing needs to be compiled ahead.
+- **Hot reload**: `crossbow dev` watches the plugin's sources and reloads it into the running app over IPC. Reloading means creating a fresh VM: nothing needs to be compiled ahead.
 
 ## Limits and isolation
 
@@ -352,7 +352,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-macos` | Default macOS shortcuts | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
-| `plugin-manager` | UI for Faretra (calls `faretra --json`) | F4 |
+| `plugin-manager` | UI for Crossbow (calls `crossbow --json`) | F4 |
 | `shell-integration`, `blocks` | Prompt marks, command + output blocks | F5a |
 | `tmux-cc`, `quick-terminal`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `hints`, `images` | Hints, URLs, inline images | F5c |

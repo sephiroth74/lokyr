@@ -1,5 +1,5 @@
 [package]
-name = "saetta-render-core"
+name = "bolt-render-core"
 description = "Rendering interface shared by the GPU backends: Renderer trait and display list"
 version.workspace = true
 edition.workspace = true

@@ -6,8 +6,8 @@ wit_bindgen::generate!({
     world: "plugin",
 });
 
-use exports::saetta::spike::bench::{Guest, Node, Span};
-use saetta::spike::host_log;
+use exports::bolt::spike::bench::{Guest, Node, Span};
+use bolt::spike::host_log;
 
 struct Bench;
 

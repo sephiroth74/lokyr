@@ -1,4 +1,4 @@
-//! Build automation for the Saetta workspace, run as `cargo xtask <task>`.
+//! Build automation for the Bolt workspace, run as `cargo xtask <task>`.
 
 mod check_deps;
 mod ucd;

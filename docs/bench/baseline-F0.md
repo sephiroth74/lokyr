@@ -1,6 +1,6 @@
 # Baseline of existing terminals (F0)
 
-Measured on 2026-10-12 with `saetta-bench`, to check the [budgets](../PERFORMANCE.md#budgets) against the terminals people use today. The raw reports are in [baseline-F0/](baseline-F0/).
+Measured on 2026-10-12 with `bolt-bench`, to check the [budgets](../PERFORMANCE.md#budgets) against the terminals people use today. The raw reports are in [baseline-F0/](baseline-F0/).
 
 To repeat the measurement:
 - run `tools/bench/baseline.sh <app> <name> <dir>` once per terminal;
@@ -9,10 +9,10 @@ To repeat the measurement:
 ## Method
 
 For each terminal, `baseline.sh`:
-1. times the startup over 10 launches, after 2 warmup launches (`saetta-bench startup`);
+1. times the startup over 10 launches, after 2 warmup launches (`bolt-bench startup`);
 2. launches the terminal once more, and leaves it idle for 10 s;
-3. samples its memory once a second for 10 s (`saetta-bench memory`);
-4. counts its wakeups for 60 s (`saetta-bench idle`), with its window in front and nobody at the keyboard;
+3. samples its memory once a second for 10 s (`bolt-bench memory`);
+4. counts its wakeups for 60 s (`bolt-bench idle`), with its window in front and nobody at the keyboard;
 5. quits it.
 
 The startup time runs from the start of the process to its first window on screen, which approximates the first presented frame. The footprint is `phys_footprint`, and the probe reports GPU memory separately.

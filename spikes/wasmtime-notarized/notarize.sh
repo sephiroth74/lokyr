@@ -6,12 +6,12 @@
 # If Apple rejects the bundle, the script prints the notarization log.
 #
 # Environment:
-#   SPIKE_NOTARY_PROFILE  notarytool keychain profile (default: saetta-notary)
+#   SPIKE_NOTARY_PROFILE  notarytool keychain profile (default: bolt-notary)
 set -euo pipefail
 
 bundle="${1:?usage: notarize.sh <bundle.app>}"
 app="$(cd "$(dirname "$bundle")" && pwd)/$(basename "$bundle")"
-profile="${SPIKE_NOTARY_PROFILE:-saetta-notary}"
+profile="${SPIKE_NOTARY_PROFILE:-bolt-notary}"
 zip="${app%.app}.zip"
 
 rm -f "$zip"

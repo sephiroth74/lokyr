@@ -28,12 +28,12 @@ fn there_is_a_seed_for_every_input() {
 }
 
 /// Writes the seeds, one per file, to the directory that the
-/// `SAETTA_FUZZ_SEEDS` environment variable names.
+/// `BOLT_FUZZ_SEEDS` environment variable names.
 #[test]
 #[ignore = "it writes files, for `just fuzz`"]
 fn export_fuzz_seeds() {
     let dir = PathBuf::from(
-        env::var_os("SAETTA_FUZZ_SEEDS").expect("SAETTA_FUZZ_SEEDS names the seed directory"),
+        env::var_os("BOLT_FUZZ_SEEDS").expect("BOLT_FUZZ_SEEDS names the seed directory"),
     );
     fs::create_dir_all(&dir).expect("the seed directory can be created");
     for (index, seed) in seeds().iter().enumerate() {

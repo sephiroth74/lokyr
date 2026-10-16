@@ -281,27 +281,27 @@ mod tests {
 
     /// Workspace members of the test graph, shaped like the real workspace.
     const MEMBERS: &[(&str, &str)] = &[
-        ("faretra-cli", "faretra/cli"),
-        ("faretra-index", "faretra/index"),
-        ("faretra-resolver", "faretra/resolver"),
-        ("saetta-app", "crates/app"),
-        ("saetta-bench", "tools/bench"),
-        ("saetta-core-actions", "plugins/core-actions"),
-        ("saetta-font-coretext", "crates/font-coretext"),
-        ("saetta-kernel", "crates/kernel"),
-        ("saetta-pkg-model", "crates/pkg-model"),
-        ("saetta-platform-core", "crates/platform-core"),
-        ("saetta-platform-macos", "crates/platform-macos"),
-        ("saetta-plugin-host-luau", "crates/plugin-host-luau"),
-        ("saetta-plugin-sdk", "crates/plugin-sdk"),
-        ("saetta-pty", "crates/pty"),
-        ("saetta-render-core", "crates/render-core"),
-        ("saetta-render-metal", "crates/render-metal"),
-        ("saetta-search", "crates/search"),
-        ("saetta-session", "crates/session"),
-        ("saetta-text-core", "crates/text-core"),
-        ("saetta-ui-core", "crates/ui-core"),
-        ("saetta-vt-core", "crates/vt-core"),
+        ("crossbow-cli", "crossbow/cli"),
+        ("crossbow-index", "crossbow/index"),
+        ("crossbow-resolver", "crossbow/resolver"),
+        ("bolt-app", "crates/app"),
+        ("bolt-bench", "tools/bench"),
+        ("bolt-core-actions", "plugins/core-actions"),
+        ("bolt-font-coretext", "crates/font-coretext"),
+        ("bolt-kernel", "crates/kernel"),
+        ("bolt-pkg-model", "crates/pkg-model"),
+        ("bolt-platform-core", "crates/platform-core"),
+        ("bolt-platform-macos", "crates/platform-macos"),
+        ("bolt-plugin-host-luau", "crates/plugin-host-luau"),
+        ("bolt-plugin-sdk", "crates/plugin-sdk"),
+        ("bolt-pty", "crates/pty"),
+        ("bolt-render-core", "crates/render-core"),
+        ("bolt-render-metal", "crates/render-metal"),
+        ("bolt-search", "crates/search"),
+        ("bolt-session", "crates/session"),
+        ("bolt-text-core", "crates/text-core"),
+        ("bolt-ui-core", "crates/ui-core"),
+        ("bolt-vt-core", "crates/vt-core"),
         ("xtask", "tools/xtask"),
     ];
 
@@ -310,37 +310,37 @@ mod tests {
 
     /// Dependencies of the test graph; they satisfy every rule.
     const EDGES: &[(&str, &str)] = &[
-        ("faretra-cli", "faretra-index"),
-        ("faretra-cli", "faretra-resolver"),
-        ("faretra-cli", "saetta-pkg-model"),
-        ("faretra-index", "reqwest"),
-        ("faretra-index", "saetta-pkg-model"),
-        ("faretra-resolver", "saetta-pkg-model"),
+        ("crossbow-cli", "crossbow-index"),
+        ("crossbow-cli", "crossbow-resolver"),
+        ("crossbow-cli", "bolt-pkg-model"),
+        ("crossbow-index", "reqwest"),
+        ("crossbow-index", "bolt-pkg-model"),
+        ("crossbow-resolver", "bolt-pkg-model"),
         ("hyper", "tokio"),
         ("reqwest", "hyper"),
         ("reqwest", "tokio"),
-        ("saetta-app", "saetta-core-actions"),
-        ("saetta-app", "saetta-font-coretext"),
-        ("saetta-app", "saetta-kernel"),
-        ("saetta-app", "saetta-platform-macos"),
-        ("saetta-app", "saetta-plugin-host-luau"),
-        ("saetta-app", "saetta-render-metal"),
-        ("saetta-core-actions", "saetta-plugin-sdk"),
-        ("saetta-font-coretext", "saetta-text-core"),
-        ("saetta-kernel", "saetta-pkg-model"),
-        ("saetta-kernel", "saetta-plugin-sdk"),
-        ("saetta-kernel", "saetta-search"),
-        ("saetta-kernel", "saetta-session"),
-        ("saetta-kernel", "saetta-ui-core"),
-        ("saetta-platform-macos", "objc2"),
-        ("saetta-platform-macos", "saetta-platform-core"),
-        ("saetta-plugin-host-luau", "saetta-plugin-sdk"),
-        ("saetta-render-metal", "saetta-render-core"),
-        ("saetta-search", "saetta-vt-core"),
-        ("saetta-session", "saetta-pty"),
-        ("saetta-session", "saetta-vt-core"),
-        ("saetta-ui-core", "saetta-render-core"),
-        ("saetta-ui-core", "saetta-text-core"),
+        ("bolt-app", "bolt-core-actions"),
+        ("bolt-app", "bolt-font-coretext"),
+        ("bolt-app", "bolt-kernel"),
+        ("bolt-app", "bolt-platform-macos"),
+        ("bolt-app", "bolt-plugin-host-luau"),
+        ("bolt-app", "bolt-render-metal"),
+        ("bolt-core-actions", "bolt-plugin-sdk"),
+        ("bolt-font-coretext", "bolt-text-core"),
+        ("bolt-kernel", "bolt-pkg-model"),
+        ("bolt-kernel", "bolt-plugin-sdk"),
+        ("bolt-kernel", "bolt-search"),
+        ("bolt-kernel", "bolt-session"),
+        ("bolt-kernel", "bolt-ui-core"),
+        ("bolt-platform-macos", "objc2"),
+        ("bolt-platform-macos", "bolt-platform-core"),
+        ("bolt-plugin-host-luau", "bolt-plugin-sdk"),
+        ("bolt-render-metal", "bolt-render-core"),
+        ("bolt-search", "bolt-vt-core"),
+        ("bolt-session", "bolt-pty"),
+        ("bolt-session", "bolt-vt-core"),
+        ("bolt-ui-core", "bolt-render-core"),
+        ("bolt-ui-core", "bolt-text-core"),
     ];
 
     /// The test graph, with an optional extra dependency.
@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn selectors_match_by_directory_or_by_name() {
         let member = Crate {
-            name: "saetta-vt-core".to_owned(),
+            name: "bolt-vt-core".to_owned(),
             path: Some("crates/vt-core".to_owned()),
         };
         let external = Crate {
@@ -416,21 +416,15 @@ mod tests {
     #[test]
     fn each_rule_catches_its_own_violation() {
         let cases = [
-            ("pure-terminal-core", ("saetta-vt-core", "saetta-ui-core")),
-            (
-                "sdk-stands-alone",
-                ("saetta-plugin-sdk", "saetta-pkg-model"),
-            ),
-            (
-                "plugins-use-the-sdk",
-                ("saetta-core-actions", "saetta-session"),
-            ),
+            ("pure-terminal-core", ("bolt-vt-core", "bolt-ui-core")),
+            ("sdk-stands-alone", ("bolt-plugin-sdk", "bolt-pkg-model")),
+            ("plugins-use-the-sdk", ("bolt-core-actions", "bolt-session")),
             (
                 "kernel-only-in-app",
-                ("saetta-plugin-host-luau", "saetta-kernel"),
+                ("bolt-plugin-host-luau", "bolt-kernel"),
             ),
-            ("app-without-network", ("saetta-kernel", "tokio")),
-            ("portable-without-macos", ("saetta-session", "objc2")),
+            ("app-without-network", ("bolt-kernel", "tokio")),
+            ("portable-without-macos", ("bolt-session", "objc2")),
         ];
         let tested: BTreeSet<&str> = cases.iter().map(|(rule, _)| *rule).collect();
         let all: BTreeSet<String> = real_rules().into_iter().map(|rule| rule.name).collect();
@@ -452,7 +446,7 @@ mod tests {
 
     #[test]
     fn forbid_reports_the_dependency_path() {
-        let graph = workspace(Some(("saetta-kernel", "tokio")));
+        let graph = workspace(Some(("bolt-kernel", "tokio")));
         let messages: Vec<String> = real_rules()
             .iter()
             .flat_map(|rule| rule.check(&graph))
@@ -460,7 +454,7 @@ mod tests {
             .collect();
         assert_eq!(
             messages,
-            ["`saetta-app` depends on `tokio`: saetta-app → saetta-kernel → tokio"]
+            ["`bolt-app` depends on `tokio`: bolt-app → bolt-kernel → tokio"]
         );
     }
 

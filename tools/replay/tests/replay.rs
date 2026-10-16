@@ -1,4 +1,4 @@
-//! `saetta-replay` run as a program, on the recordings in `tests/data/`.
+//! `bolt-replay` run as a program, on the recordings in `tests/data/`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -11,19 +11,19 @@ fn data(name: &str) -> PathBuf {
 }
 
 fn replay(args: &[&str], stdin: Option<&[u8]>) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_saetta-replay"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bolt-replay"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("saetta-replay runs");
+        .expect("bolt-replay runs");
     let mut input = child.stdin.take().expect("a pipe");
     if let Some(bytes) = stdin {
         input.write_all(bytes).expect("writing standard input");
     }
     drop(input);
-    child.wait_with_output().expect("saetta-replay ends")
+    child.wait_with_output().expect("bolt-replay ends")
 }
 
 fn stdout(output: &Output) -> &str {

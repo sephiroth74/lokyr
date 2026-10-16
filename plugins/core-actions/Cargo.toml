@@ -1,5 +1,5 @@
 [package]
-name = "saetta-core-actions"
+name = "bolt-core-actions"
 description = "Built-in plugin with the basic terminal actions"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-plugin-sdk.workspace = true
+bolt-plugin-sdk.workspace = true
 
 [lints]
 workspace = true

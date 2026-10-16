@@ -1,5 +1,5 @@
 [package]
-name = "saetta-platform-macos"
+name = "bolt-platform-macos"
 description = "macOS platform backend built on AppKit"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-platform-core.workspace = true
+bolt-platform-core.workspace = true
 
 [lints]
 workspace = true

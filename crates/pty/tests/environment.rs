@@ -3,7 +3,7 @@
 
 use std::io::Read;
 
-use saetta_pty::{Options, Program, spawn};
+use bolt_pty::{Options, Program, spawn};
 
 #[test]
 fn the_variables_of_another_terminal_do_not_reach_the_program() {
@@ -12,10 +12,10 @@ fn the_variables_of_another_terminal_do_not_reach_the_program() {
     unsafe {
         std::env::set_var("TERMINFO", "/opt/other/terminfo");
         std::env::set_var("COLUMNS", "132");
-        std::env::set_var("SAETTA_RESOURCES_DIR", "/stale");
-        std::env::set_var("SAETTA_TEST_INHERITED", "kept");
+        std::env::set_var("BOLT_RESOURCES_DIR", "/stale");
+        std::env::set_var("BOLT_TEST_INHERITED", "kept");
     }
-    let script = r#"echo "[$TERMINFO][$COLUMNS][$SAETTA_RESOURCES_DIR][$SAETTA_TEST_INHERITED]""#;
+    let script = r#"echo "[$TERMINFO][$COLUMNS][$BOLT_RESOURCES_DIR][$BOLT_TEST_INHERITED]""#;
     let pty = spawn(&Options::new(
         Program::command("/bin/sh", ["-c", script]),
         "xterm-256color",

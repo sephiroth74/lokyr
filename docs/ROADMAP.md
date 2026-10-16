@@ -11,10 +11,10 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Phase | Contents | Exit criteria | Duration |
 |---|---|---|---|
 | F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
-| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `saetta-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
+| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `bolt-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette | Every must-have requirement in place | 10–14 weeks |
-| F4 Plugin ecosystem | Luau host, Luau API, Faretra, registry v0 | Publishing and installing work end to end | 8–10 weeks |
+| F4 Plugin ecosystem | Luau host, Luau API, Crossbow, registry v0 | Publishing and installing work end to end | 8–10 weeks |
 | F5a Shell integration and blocks | OSC 133, prompt jumping, Warp-style blocks, ssh integration | Verified in zsh, bash and fish, including over ssh | 4–6 weeks |
 | F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast, IPC | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -42,7 +42,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 - **`vt-core`**: parser, state, paged grid, scrollback, reflow, Unicode, input encoding.
 - **Other crates**: `pty`, `session` and the `search` engine.
-- **`saetta-replay`** plus the test battery:
+- **`bolt-replay`** plus the test battery:
   - golden tests from recorded sessions;
   - esctest and vttest;
   - differential tests against `alacritty_terminal`;
@@ -100,15 +100,15 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - `plugin-host-luau`, with one VM per plugin, capabilities, the memory limit and the watchdog;
   - the Luau front end and its type definitions, generated from the Rust types;
   - the conformance suite, and the hostile plugins in CI.
-- **Faretra**:
+- **Crossbow**:
   - `new`, `check`, `test`, `dev`;
   - `add` from a path, from git, and then from the registry;
   - the shared `pkg-model` formats.
-- **`plugin-manager` plugin**: the in-app UI for Faretra.
+- **`plugin-manager` plugin**: the in-app UI for Crossbow.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors.
 
 **Exit**:
-- the `faretra new → check → dev` loop works;
+- the `crossbow new → check → dev` loop works;
 - a published plugin installs on another Mac and activates without a restart;
 - the hostile test plugins are stopped.
 
@@ -130,7 +130,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
 - **Windows and sessions**: hotkey window and quick terminal, input broadcast, session restore.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
-- **IPC and remote CLI** (`saetta cli …`).
+- **IPC and remote CLI** (`bolt cli …`).
 - **Search**: filter mode.
 - **Settings**: a panel generated from the config schemas.
 - **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
@@ -177,7 +177,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Version | Contents |
 |---|---|
 | 0.1 | macOS MVP (F3) |
-| 0.2 | Luau plugins and Faretra (F4) |
+| 0.2 | Luau plugins and Crossbow (F4) |
 | 0.3–0.5 | F5a, F5b, F5c |
 | 1.0 | macOS only. Stable plugin API 1.0, complete docs, no open critical bug for three months |
 | 1.x | Linux (F7), registry v1 |
@@ -209,7 +209,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | `crates/pty/src/{lib,unix}.rs` | PTY and fork+exec |
 | `crates/session/src/{lib,io,snapshot}.rs` | I/O thread and snapshots |
 | `crates/search/src/{lib,literal,regex}.rs` | Search engine |
-| `tools/replay/src/main.rs` | `saetta-replay` |
+| `tools/replay/src/main.rs` | `bolt-replay` |
 | `fuzz/fuzz_targets/parser.rs` | First fuzz target |
 | `crates/vt-core/tests/recordings/` | Recorded sessions and their `insta` snapshots |
 
@@ -220,10 +220,10 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 |
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
-| How `faretra check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
+| How `crossbow check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
-| Final names (Saetta and Faretra are provisional) and the registry domain | Before the public 0.1 |
+| The registry domain, and the names Bolt and Crossbow in Homebrew and other registries ([ADR 0014](adr/0014-names-bolt-and-crossbow.md)) | Before the public 0.1 |
 | Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
 | License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |

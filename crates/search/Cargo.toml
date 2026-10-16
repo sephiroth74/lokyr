@@ -1,5 +1,5 @@
 [package]
-name = "saetta-search"
+name = "bolt-search"
 description = "Literal and regex search over the terminal grid"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-vt-core.workspace = true
+bolt-vt-core.workspace = true
 
 [lints]
 workspace = true

@@ -10,7 +10,7 @@ alias t := test
 fuzz_toolchain := "nightly-2026-10-12"
 
 # Platform-independent crates, which must keep building for Linux.
-portable := "-p saetta-vt-core -p saetta-pty -p saetta-session -p saetta-search -p saetta-kernel -p saetta-text-core -p saetta-render-core -p saetta-ui-core -p saetta-platform-core -p saetta-replay"
+portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay"
 
 # List available commands.
 _default:
@@ -78,7 +78,7 @@ fuzz target="parser" seconds="600": fuzz-seeds
 
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
-    SAETTA_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p saetta-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact
+    BOLT_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p bolt-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact
 
 # Build the signed app bundle (not implemented yet).
 bundle:

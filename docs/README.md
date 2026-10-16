@@ -1,15 +1,15 @@
-# Saetta — project documentation
+# Bolt — project documentation
 
-> **Saetta** (the terminal; Italian for "lightning bolt") and **Faretra** (the plugin package manager; Italian for "quiver") are provisional names.
+> **Bolt** is the terminal, and **Crossbow** its plugin package manager: a crossbow shoots bolts. The names replaced the provisional Saetta and Faretra ([ADR 0014](adr/0014-names-bolt-and-crossbow.md)).
 
-Saetta is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011](adr/0011-macos-only-1-0.md)). The architecture keeps the door open for Linux, planned after 1.0, and later for Windows. Goals:
+Bolt is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011](adr/0011-macos-only-1-0.md)). The architecture keeps the door open for Linux, planned after 1.0, and later for Windows. Goals:
 
 - **Fast and light on memory**, with budgets measured in CI ([PERFORMANCE.md](PERFORMANCE.md)).
 - **The best of existing terminals**: the speed and protocols of Ghostty and kitty; the tabs, tmux -CC and triggers of iTerm2; the restraint of Alacritty; the blocks of Warp.
 - **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
-- **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Faretra**. Faretra is a separate program from the app, the same way cargo is separate from rustc.
+- **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Crossbow**. Crossbow is a separate program from the app, the same way cargo is separate from rustc.
 
-**Status**: F0, the foundations. The workspace skeleton, CI, the dependency rules and the measurement tools exist; the terminal itself starts in F1. This folder holds the architecture, the decisions and the roadmap.
+**Status**: F1, the headless terminal core. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid, the input encoders, the PTY and the session so far. This folder holds the architecture, the decisions and the roadmap.
 
 ## Documents
 
@@ -20,7 +20,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Principles, layers, data model, threads, workspace layout, dependency rules, libraries |
 | [VT-CORE.md](VT-CORE.md) | Parser, cells, pages, pins, Unicode, input, PTY, terminfo, supported protocols |
 | [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md) | Extension points, execution model, Rust and Luau front ends, the Luau API, capabilities, lifecycle, limits |
-| [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md) | Faretra, file formats, resolution, installation, index, registry |
+| [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md) | Crossbow, file formats, resolution, installation, index, registry |
 | [UI-AND-FEATURES.md](UI-AND-FEATURES.md) | UI engine, tabs, splits, search, iTerm2 themes, command palette |
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
@@ -47,8 +47,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
-| Central package manager and online registry | Faretra, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
-| Plugin fetching separate from the app | The `saetta` binary contains no networking code, enforced in CI | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
+| Central package manager and online registry | Crossbow, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
+| Plugin fetching separate from the app | The `bolt` binary contains no networking code, enforced in CI | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
 
 ## Architecture decisions
 
@@ -61,12 +61,13 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
-| [0008](adr/0008-separate-package-manager.md) | Faretra as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
+| [0008](adr/0008-separate-package-manager.md) | Crossbow as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
 | [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before 0.1 |
 | [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted; Intel question settled by 0013 |
 | [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
 | [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
+| [0014](adr/0014-names-bolt-and-crossbow.md) | Names: Bolt for the terminal, Crossbow for the package manager | Accepted |
 
 ## Glossary
 

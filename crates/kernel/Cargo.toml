@@ -1,6 +1,6 @@
 [package]
-name = "saetta-kernel"
-description = "The Saetta kernel: workspace model, commands, keymap, events, config, services"
+name = "bolt-kernel"
+description = "The Bolt kernel: workspace model, commands, keymap, events, config, services"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,11 +10,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-pkg-model.workspace = true
-saetta-plugin-sdk.workspace = true
-saetta-search.workspace = true
-saetta-session.workspace = true
-saetta-ui-core.workspace = true
+bolt-pkg-model.workspace = true
+bolt-plugin-sdk.workspace = true
+bolt-search.workspace = true
+bolt-session.workspace = true
+bolt-ui-core.workspace = true
 
 [lints]
 workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "saetta-font-coretext"
+name = "bolt-font-coretext"
 description = "CoreText font backend for macOS"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-text-core.workspace = true
+bolt-text-core.workspace = true
 
 [lints]
 workspace = true

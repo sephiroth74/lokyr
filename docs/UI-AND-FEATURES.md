@@ -229,7 +229,7 @@ This gives every imported iTerm2 theme matching tabs right away.
   - `Device`, or missing: treated as sRGB.
 - **`(Light)` / `(Dark)` suffixes**: keys from profiles that use separate colors for light and dark mode. They become the theme's two variants.
 - **Missing keys**: sensible defaults (bold = foreground, cursor text = background, derived selection).
-- **Theme locations**: `~/.config/saetta/themes/`, or `themes` packages.
+- **Theme locations**: `~/.config/bolt/themes/`, or `themes` packages.
 - **Other formats**: importers for Ghostty, kitty, Alacritty and base16 ship as separate plugins.
 
 ### Usage

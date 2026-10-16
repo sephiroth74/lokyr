@@ -2,8 +2,8 @@
 
 use std::fmt::Write as _;
 
-use saetta_vt_core::page::{Color, Content, Rgb, Style, Underline};
-use saetta_vt_core::terminal::Terminal;
+use bolt_vt_core::page::{Color, Content, Rgb, Style, Underline};
+use bolt_vt_core::terminal::Terminal;
 
 /// Every row of the screen, a line each, trailing spaces taken off.
 pub fn text(terminal: &Terminal) -> String {
@@ -115,8 +115,8 @@ fn hex(Rgb { r, g, b }: Rgb) -> String {
 
 #[cfg(test)]
 mod tests {
-    use saetta_vt_core::parser::Parser;
-    use saetta_vt_core::terminal::Options;
+    use bolt_vt_core::parser::Parser;
+    use bolt_vt_core::terminal::Options;
 
     use super::*;
 

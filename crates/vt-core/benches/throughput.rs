@@ -3,9 +3,9 @@
 
 use std::hint::black_box;
 
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{Options, Terminal};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-use saetta_vt_core::parser::Parser;
-use saetta_vt_core::terminal::{Options, Terminal};
 
 /// About how many bytes each input has.
 const SIZE: usize = 1024 * 1024;

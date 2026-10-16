@@ -1,5 +1,5 @@
 [package]
-name = "saetta-replay"
+name = "bolt-replay"
 description = "Replays a byte stream or a recording into the VT core and prints the screen"
 version.workspace = true
 edition.workspace = true
@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-saetta-vt-core.workspace = true
+bolt-vt-core.workspace = true
 serde_json.workspace = true
 
 [lints]

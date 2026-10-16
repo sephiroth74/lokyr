@@ -57,6 +57,148 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
+name = "bolt-app"
+version = "0.1.0"
+dependencies = [
+ "bolt-core-actions",
+ "bolt-font-coretext",
+ "bolt-kernel",
+ "bolt-platform-macos",
+ "bolt-plugin-host-luau",
+ "bolt-render-metal",
+]
+
+[[package]]
+name = "bolt-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bolt-core-actions"
+version = "0.1.0"
+dependencies = [
+ "bolt-plugin-sdk",
+]
+
+[[package]]
+name = "bolt-font-coretext"
+version = "0.1.0"
+dependencies = [
+ "bolt-text-core",
+]
+
+[[package]]
+name = "bolt-kernel"
+version = "0.1.0"
+dependencies = [
+ "bolt-pkg-model",
+ "bolt-plugin-sdk",
+ "bolt-search",
+ "bolt-session",
+ "bolt-ui-core",
+]
+
+[[package]]
+name = "bolt-pkg-model"
+version = "0.1.0"
+
+[[package]]
+name = "bolt-platform-core"
+version = "0.1.0"
+
+[[package]]
+name = "bolt-platform-macos"
+version = "0.1.0"
+dependencies = [
+ "bolt-platform-core",
+]
+
+[[package]]
+name = "bolt-plugin-host-luau"
+version = "0.1.0"
+dependencies = [
+ "bolt-plugin-sdk",
+]
+
+[[package]]
+name = "bolt-plugin-sdk"
+version = "0.1.0"
+
+[[package]]
+name = "bolt-pty"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
+]
+
+[[package]]
+name = "bolt-render-core"
+version = "0.1.0"
+
+[[package]]
+name = "bolt-render-metal"
+version = "0.1.0"
+dependencies = [
+ "bolt-render-core",
+]
+
+[[package]]
+name = "bolt-replay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bolt-vt-core",
+ "serde_json",
+]
+
+[[package]]
+name = "bolt-search"
+version = "0.1.0"
+dependencies = [
+ "bolt-vt-core",
+]
+
+[[package]]
+name = "bolt-session"
+version = "0.1.0"
+dependencies = [
+ "bolt-pty",
+ "bolt-vt-core",
+ "thiserror",
+]
+
+[[package]]
+name = "bolt-text-core"
+version = "0.1.0"
+
+[[package]]
+name = "bolt-ui-core"
+version = "0.1.0"
+dependencies = [
+ "bolt-render-core",
+ "bolt-text-core",
+]
+
+[[package]]
+name = "bolt-vt-core"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "proptest",
+ "thiserror",
+ "unicode-normalization",
+ "vte",
+]
+
+[[package]]
 name = "camino"
 version = "1.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -223,6 +365,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbow-cli"
+version = "0.1.0"
+dependencies = [
+ "bolt-pkg-model",
+ "crossbow-index",
+ "crossbow-resolver",
+]
+
+[[package]]
+name = "crossbow-index"
+version = "0.1.0"
+dependencies = [
+ "bolt-pkg-model",
+]
+
+[[package]]
+name = "crossbow-resolver"
+version = "0.1.0"
+dependencies = [
+ "bolt-pkg-model",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -239,29 +404,6 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
-
-[[package]]
-name = "faretra-cli"
-version = "0.1.0"
-dependencies = [
- "faretra-index",
- "faretra-resolver",
- "saetta-pkg-model",
-]
-
-[[package]]
-name = "faretra-index"
-version = "0.1.0"
-dependencies = [
- "saetta-pkg-model",
-]
-
-[[package]]
-name = "faretra-resolver"
-version = "0.1.0"
-dependencies = [
- "saetta-pkg-model",
-]
 
 [[package]]
 name = "find-msvc-tools"
@@ -472,148 +614,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "saetta-app"
-version = "0.1.0"
-dependencies = [
- "saetta-core-actions",
- "saetta-font-coretext",
- "saetta-kernel",
- "saetta-platform-macos",
- "saetta-plugin-host-luau",
- "saetta-render-metal",
-]
-
-[[package]]
-name = "saetta-bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libc",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "saetta-core-actions"
-version = "0.1.0"
-dependencies = [
- "saetta-plugin-sdk",
-]
-
-[[package]]
-name = "saetta-font-coretext"
-version = "0.1.0"
-dependencies = [
- "saetta-text-core",
-]
-
-[[package]]
-name = "saetta-kernel"
-version = "0.1.0"
-dependencies = [
- "saetta-pkg-model",
- "saetta-plugin-sdk",
- "saetta-search",
- "saetta-session",
- "saetta-ui-core",
-]
-
-[[package]]
-name = "saetta-pkg-model"
-version = "0.1.0"
-
-[[package]]
-name = "saetta-platform-core"
-version = "0.1.0"
-
-[[package]]
-name = "saetta-platform-macos"
-version = "0.1.0"
-dependencies = [
- "saetta-platform-core",
-]
-
-[[package]]
-name = "saetta-plugin-host-luau"
-version = "0.1.0"
-dependencies = [
- "saetta-plugin-sdk",
-]
-
-[[package]]
-name = "saetta-plugin-sdk"
-version = "0.1.0"
-
-[[package]]
-name = "saetta-pty"
-version = "0.1.0"
-dependencies = [
- "libc",
- "thiserror",
-]
-
-[[package]]
-name = "saetta-render-core"
-version = "0.1.0"
-
-[[package]]
-name = "saetta-render-metal"
-version = "0.1.0"
-dependencies = [
- "saetta-render-core",
-]
-
-[[package]]
-name = "saetta-replay"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "saetta-vt-core",
- "serde_json",
-]
-
-[[package]]
-name = "saetta-search"
-version = "0.1.0"
-dependencies = [
- "saetta-vt-core",
-]
-
-[[package]]
-name = "saetta-session"
-version = "0.1.0"
-dependencies = [
- "saetta-pty",
- "saetta-vt-core",
- "thiserror",
-]
-
-[[package]]
-name = "saetta-text-core"
-version = "0.1.0"
-
-[[package]]
-name = "saetta-ui-core"
-version = "0.1.0"
-dependencies = [
- "saetta-render-core",
- "saetta-text-core",
-]
-
-[[package]]
-name = "saetta-vt-core"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "proptest",
- "thiserror",
- "unicode-normalization",
- "vte",
-]
 
 [[package]]
 name = "same-file"

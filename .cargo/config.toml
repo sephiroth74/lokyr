@@ -2,7 +2,7 @@
 xtask = "run --quiet --package xtask --"
 
 [env]
-# Saetta runs on macOS 26 or later. Without this, binaries would target
+# Bolt runs on macOS 26 or later. Without this, binaries would target
 # rustc's default (macOS 11), and C code built through the cc crate would
 # follow the SDK.
 MACOSX_DEPLOYMENT_TARGET = "26.0"

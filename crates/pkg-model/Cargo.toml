@@ -1,6 +1,6 @@
 [package]
-name = "saetta-pkg-model"
-description = "Package formats shared by Saetta, Faretra and the registry"
+name = "bolt-pkg-model"
+description = "Package formats shared by Bolt, Crossbow and the registry"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

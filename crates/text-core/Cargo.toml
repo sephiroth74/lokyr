@@ -1,5 +1,5 @@
 [package]
-name = "saetta-text-core"
+name = "bolt-text-core"
 description = "Text pipeline shared by the font backends: shaping cache, glyph atlas, sprites"
 version.workspace = true
 edition.workspace = true

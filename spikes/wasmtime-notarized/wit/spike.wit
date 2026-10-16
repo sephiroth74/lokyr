@@ -1,4 +1,4 @@
-package saetta:spike;
+package bolt:spike;
 
 /// What the host offers to plugins.
 interface host-log {

@@ -1,4 +1,4 @@
-//! `saetta-replay`: feeds a byte stream, raw or an asciicast recording, to
+//! `bolt-replay`: feeds a byte stream, raw or an asciicast recording, to
 //! the VT core, headless, and prints the screen it leaves.
 
 mod recording;
@@ -9,8 +9,8 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use saetta_vt_core::parser::Parser;
-use saetta_vt_core::terminal::{Options, Terminal};
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{Options, Terminal};
 
 use recording::Recording;
 
@@ -84,7 +84,7 @@ fn main() -> ExitCode {
 
 fn print_help() {
     println!(
-        "Usage: saetta-replay [options] <file>\n\n\
+        "Usage: bolt-replay [options] <file>\n\n\
          Feeds <file>, a raw byte stream or an asciicast recording (v2 or v3), to the VT core,\n\
          headless, and prints the screen it leaves. `-` reads standard input.\n\n\
          Options:\n  \

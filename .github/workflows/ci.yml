@@ -23,7 +23,7 @@ jobs:
     # Only the checks that need macOS run here, because macOS runners are the
     # most expensive ones.
     name: macos
-    # The oldest macOS that Saetta supports, pinned so that the job does not
+    # The oldest macOS that Bolt supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
     timeout-minutes: 30

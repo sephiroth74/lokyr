@@ -3,10 +3,10 @@
 
 use std::hint::black_box;
 
+use bolt_vt_core::page::Scrollback;
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{Options, Terminal};
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use saetta_vt_core::page::Scrollback;
-use saetta_vt_core::parser::Parser;
-use saetta_vt_core::terminal::{Options, Terminal};
 
 /// A terminal of 120 columns whose scrollback holds `lines` lines of
 /// colored text, each a little shorter than a row.

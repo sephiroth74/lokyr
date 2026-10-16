@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use saetta_pty::{Exit, Options, Program, PtyReader, ReadOutcome, Size, spawn};
+use bolt_pty::{Exit, Options, Program, PtyReader, ReadOutcome, Size, spawn};
 
 /// What the program writes, read on a thread of its own so that a test
 /// gives up rather than hang.
@@ -84,7 +84,7 @@ fn a_shell_reads_its_terminal_and_term() {
 fn the_program_gets_the_environment_and_the_size() {
     let dir = std::env::temp_dir().canonicalize().unwrap();
     let mut options = Options::new(
-        sh(r#"echo "$COLORTERM $TERM_PROGRAM $SAETTA_RESOURCES_DIR"; pwd; stty size"#),
+        sh(r#"echo "$COLORTERM $TERM_PROGRAM $BOLT_RESOURCES_DIR"; pwd; stty size"#),
         "xterm-256color",
     );
     options.working_directory = Some(dir.clone());
@@ -100,7 +100,7 @@ fn the_program_gets_the_environment_and_the_size() {
     let mut text = String::new();
     pty.reader().unwrap().read_to_string(&mut text).unwrap();
     let lines: Vec<&str> = text.split("\r\n").collect();
-    assert_eq!(lines[0], "truecolor saetta /resources");
+    assert_eq!(lines[0], "truecolor bolt /resources");
     assert_eq!(lines[1], dir.to_str().unwrap());
     assert_eq!(lines[2], "30 100");
 }

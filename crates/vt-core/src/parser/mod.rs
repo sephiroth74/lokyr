@@ -48,7 +48,7 @@ const MAX_INTERMEDIATES: usize = 2;
 /// string that passes its [`Limits`] is dropped as it arrives.
 ///
 /// ```
-/// use saetta_vt_core::parser::{Action, Parser, Recorder};
+/// use bolt_vt_core::parser::{Action, Parser, Recorder};
 ///
 /// let mut parser = Parser::new();
 /// let mut recorder = Recorder::new();

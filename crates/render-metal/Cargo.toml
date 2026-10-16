@@ -1,5 +1,5 @@
 [package]
-name = "saetta-render-metal"
+name = "bolt-render-metal"
 description = "Metal renderer for macOS"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-render-core.workspace = true
+bolt-render-core.workspace = true
 
 [lints]
 workspace = true

@@ -1,6 +1,6 @@
 [package]
-name = "faretra-resolver"
-description = "Version resolution for Faretra"
+name = "crossbow-index"
+description = "Registry index client for Crossbow"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-pkg-model.workspace = true
+bolt-pkg-model.workspace = true
 
 [lints]
 workspace = true

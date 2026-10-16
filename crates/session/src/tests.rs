@@ -1,12 +1,12 @@
 use std::sync::atomic::AtomicUsize;
 
-use saetta_pty::Program;
-use saetta_vt_core::input::{Key, KeyAction, Mods};
+use bolt_pty::Program;
+use bolt_vt_core::input::{Key, KeyAction, Mods};
 
 use super::*;
 
 fn options(program: &str, args: &[&str]) -> Options {
-    Options::new(saetta_pty::Options::new(
+    Options::new(bolt_pty::Options::new(
         Program::command(program, args.iter().copied()),
         "xterm-256color",
     ))
@@ -251,7 +251,7 @@ fn an_update_that_an_exited_program_left_ends_with_its_output() {
 
 #[test]
 fn a_reply_never_lands_inside_a_bracketed_paste() {
-    let out = std::env::temp_dir().join(format!("saetta-paste-{}", std::process::id()));
+    let out = std::env::temp_dir().join(format!("bolt-paste-{}", std::process::id()));
     let _ = std::fs::remove_file(&out);
     // Bracketed paste on, raw mode, what is typed saved to `out`, and a
     // stream of DA1 queries, as a program that polls the terminal sends.

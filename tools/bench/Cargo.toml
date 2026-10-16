@@ -1,6 +1,6 @@
 [package]
-name = "saetta-bench"
-description = "Measurement tools for the Saetta performance budgets"
+name = "bolt-bench"
+description = "Measurement tools for the Bolt performance budgets"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "saetta-session"
+name = "bolt-session"
 description = "The session behind a pane: PTY, child process and terminal state"
 version.workspace = true
 edition.workspace = true
@@ -10,8 +10,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-saetta-pty.workspace = true
-saetta-vt-core.workspace = true
+bolt-pty.workspace = true
+bolt-vt-core.workspace = true
 thiserror.workspace = true
 
 [lints]

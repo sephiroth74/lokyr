@@ -1,5 +1,5 @@
 [package]
-name = "saetta-fuzz"
+name = "bolt-fuzz"
 description = "Fuzz targets, run with cargo-fuzz on a nightly toolchain"
 version = "0.0.0"
 edition = "2024"
@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
-saetta-vt-core = { path = "../crates/vt-core" }
+bolt-vt-core = { path = "../crates/vt-core" }
 
 [[bin]]
 name = "parser"

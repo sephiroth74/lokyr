@@ -1,4 +1,4 @@
-//! Faretra, the plugin package manager for Saetta.
+//! Crossbow, the plugin package manager for Bolt.
 //!
 //! Scaffolds, builds, tests and publishes plugins, and installs them for the
 //! app: it resolves versions, downloads and verifies packages, and writes
@@ -11,11 +11,11 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("--version" | "-V") => {
-            println!("faretra {}", env!("CARGO_PKG_VERSION"));
+            println!("crossbow {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("Usage: faretra --version");
+            eprintln!("Usage: crossbow --version");
             ExitCode::FAILURE
         }
     }

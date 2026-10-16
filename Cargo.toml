@@ -2,7 +2,7 @@
 resolver = "3"
 # Cargo rejects member globs that match no directory, so a glob is added
 # only once its directory exists.
-members = ["crates/*", "faretra/*", "plugins/*", "tools/*"]
+members = ["crates/*", "crossbow/*", "plugins/*", "tools/*"]
 # Spikes are throwaway experiments with their own manifests, and the fuzz
 # targets build only with nightly.
 exclude = ["fuzz", "spikes"]
@@ -13,7 +13,7 @@ edition = "2024"
 rust-version = "1.99"
 license = "MIT"
 authors = ["Alessandro Crugnola <alessandro.crugnola@gmail.com>"]
-repository = "https://github.com/sephiroth74/saetta"
+repository = "https://github.com/sephiroth74/bolt"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -36,24 +36,24 @@ unicode-normalization = "0.1.25"
 vte = "0.15.0"
 
 # Internal crates
-faretra-index = { path = "faretra/index" }
-faretra-resolver = { path = "faretra/resolver" }
-saetta-core-actions = { path = "plugins/core-actions" }
-saetta-font-coretext = { path = "crates/font-coretext" }
-saetta-kernel = { path = "crates/kernel" }
-saetta-pkg-model = { path = "crates/pkg-model" }
-saetta-platform-core = { path = "crates/platform-core" }
-saetta-platform-macos = { path = "crates/platform-macos" }
-saetta-plugin-host-luau = { path = "crates/plugin-host-luau" }
-saetta-plugin-sdk = { path = "crates/plugin-sdk" }
-saetta-pty = { path = "crates/pty" }
-saetta-render-core = { path = "crates/render-core" }
-saetta-render-metal = { path = "crates/render-metal" }
-saetta-search = { path = "crates/search" }
-saetta-session = { path = "crates/session" }
-saetta-text-core = { path = "crates/text-core" }
-saetta-ui-core = { path = "crates/ui-core" }
-saetta-vt-core = { path = "crates/vt-core" }
+crossbow-index = { path = "crossbow/index" }
+crossbow-resolver = { path = "crossbow/resolver" }
+bolt-core-actions = { path = "plugins/core-actions" }
+bolt-font-coretext = { path = "crates/font-coretext" }
+bolt-kernel = { path = "crates/kernel" }
+bolt-pkg-model = { path = "crates/pkg-model" }
+bolt-platform-core = { path = "crates/platform-core" }
+bolt-platform-macos = { path = "crates/platform-macos" }
+bolt-plugin-host-luau = { path = "crates/plugin-host-luau" }
+bolt-plugin-sdk = { path = "crates/plugin-sdk" }
+bolt-pty = { path = "crates/pty" }
+bolt-render-core = { path = "crates/render-core" }
+bolt-render-metal = { path = "crates/render-metal" }
+bolt-search = { path = "crates/search" }
+bolt-session = { path = "crates/session" }
+bolt-text-core = { path = "crates/text-core" }
+bolt-ui-core = { path = "crates/ui-core" }
+bolt-vt-core = { path = "crates/vt-core" }
 
 # Members opt in with `[lints] workspace = true`.
 [workspace.lints.rust]

@@ -1,5 +1,5 @@
 [package]
-name = "saetta-pty"
+name = "bolt-pty"
 description = "Pseudo-terminals and child processes"
 version.workspace = true
 edition.workspace = true

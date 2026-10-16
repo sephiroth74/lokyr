@@ -15,10 +15,10 @@ use std::sync::{Arc, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use saetta_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
-use saetta_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
-use saetta_vt_core::parser::Parser;
-use saetta_vt_core::terminal::{self, Terminal};
+use bolt_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
+use bolt_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{self, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -34,7 +34,7 @@ const PASTE_CHUNK: usize = 4 * 1024;
 pub struct Options {
     /// The program and its terminal; the terminal starts at the size that
     /// this gives.
-    pub pty: saetta_pty::Options,
+    pub pty: bolt_pty::Options,
     /// How the terminal behaves.
     pub terminal: terminal::Options,
     /// How long a synchronized update (mode 2026) may hold the screen
@@ -45,7 +45,7 @@ pub struct Options {
 impl Options {
     /// Options for `pty`, with the terminal's defaults and a second for
     /// synchronized updates.
-    pub fn new(pty: saetta_pty::Options) -> Self {
+    pub fn new(pty: bolt_pty::Options) -> Self {
         Self {
             pty,
             terminal: terminal::Options::default(),
@@ -59,7 +59,7 @@ impl Options {
 pub enum Error {
     /// The program, or its terminal, could not start.
     #[error(transparent)]
-    Pty(#[from] saetta_pty::Error),
+    Pty(#[from] bolt_pty::Error),
     /// The session's threads, or their ends of the terminal, could not be
     /// made.
     #[error("cannot start the session's threads: {0}")]
@@ -117,7 +117,7 @@ impl Session {
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Result<Self, Error> {
         let size = options.pty.size;
-        let pty = saetta_pty::spawn(&options.pty)?;
+        let pty = bolt_pty::spawn(&options.pty)?;
         let reader = pty.reader().map_err(Error::Threads)?;
         let writer = pty.writer().map_err(Error::Threads)?;
         let shared = Arc::new(Shared {

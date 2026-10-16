@@ -1,4 +1,4 @@
-//! The Saetta plugin API and its Rust SDK.
+//! The Bolt plugin API and its Rust SDK.
 //!
 //! Defines the `HostApi` trait that the host implements, with its types, and
 //! the Rust front end that built-in plugins use. Third-party plugins reach the

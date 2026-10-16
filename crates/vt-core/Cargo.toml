@@ -1,5 +1,5 @@
 [package]
-name = "saetta-vt-core"
+name = "bolt-vt-core"
 description = "Terminal emulation core: escape-sequence parser, terminal state and paged grid"
 version.workspace = true
 edition.workspace = true

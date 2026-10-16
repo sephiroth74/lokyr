@@ -212,7 +212,7 @@ mod tests {
     fn reads_its_own_name() {
         // Test binaries are named after the crate, with a hash appended.
         let name = name(own_pid()).unwrap();
-        assert!(name.starts_with("saetta_bench"), "{name}");
+        assert!(name.starts_with("bolt_bench"), "{name}");
     }
 
     #[test]

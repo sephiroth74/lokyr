@@ -6,8 +6,8 @@
 
 #![no_main]
 
+use bolt_vt_core::parser::{Action, Limits, Parser, Recorder};
 use libfuzzer_sys::fuzz_target;
-use saetta_vt_core::parser::{Action, Limits, Parser, Recorder};
 
 /// The lengths of the reads that the input is split into, taken in turn.
 const READS: [usize; 5] = [1, 7, 2, 13, 3];

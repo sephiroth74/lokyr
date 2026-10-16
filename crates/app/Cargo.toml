@@ -1,6 +1,6 @@
 [package]
-name = "saetta-app"
-description = "The Saetta terminal emulator"
+name = "bolt-app"
+description = "The Bolt terminal emulator"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,23 +10,23 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "saetta"
+name = "bolt"
 path = "src/main.rs"
 
 [features]
 default = ["luau-plugins"]
 # Support for third-party plugins written in Luau.
-luau-plugins = ["dep:saetta-plugin-host-luau"]
+luau-plugins = ["dep:bolt-plugin-host-luau"]
 
 [dependencies]
-saetta-core-actions.workspace = true
-saetta-kernel.workspace = true
-saetta-plugin-host-luau = { workspace = true, optional = true }
+bolt-core-actions.workspace = true
+bolt-kernel.workspace = true
+bolt-plugin-host-luau = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-saetta-font-coretext.workspace = true
-saetta-platform-macos.workspace = true
-saetta-render-metal.workspace = true
+bolt-font-coretext.workspace = true
+bolt-platform-macos.workspace = true
+bolt-render-metal.workspace = true
 
 [lints]
 workspace = true

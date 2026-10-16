@@ -1,4 +1,4 @@
-//! Version resolution for Faretra.
+//! Version resolution for Crossbow.
 //!
 //! Picks one version of each plugin that satisfies every semver requirement,
 //! including the host API version required by the installed app, and explains

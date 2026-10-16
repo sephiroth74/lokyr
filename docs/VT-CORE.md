@@ -197,7 +197,7 @@ The metadata fits in one byte.
 - **The width of a codepoint**, as Markus Kuhn's `wcwidth` counts it: none for controls, nonspacing and enclosing marks, format and default-ignorable characters, and the Hangul vowels and final consonants that combine into syllables, but one for the soft hyphen, and the cells of their East Asian width for the Hangul fillers U+115F, U+3164 and U+FFA0, which are default ignorable; two for wide and fullwidth characters, and for the ambiguous ones when they count as wide; one otherwise.
 - **Mode 2027**: lets programs query and switch the mode.
 - **Width tables that match the programs'**: a program that counts a character's width differently from the terminal misplaces the cursor and the text after it. Two options make the terminal count as the programs do, in either mode:
-  - `unicode-widths`: the tables of the Unicode version that Saetta ships, or those of Unicode 8, for programs that predate Unicode 9. Unicode 8 gives most emoji one cell, and Unicode 9 gave them two. `xtask ucd` generates the Unicode 8 table too.
+  - `unicode-widths`: the tables of the Unicode version that Bolt ships, or those of Unicode 8, for programs that predate Unicode 9. Unicode 8 gives most emoji one cell, and Unicode 9 gave them two. `xtask ucd` generates the Unicode 8 table too.
   - `ambiguous-width`: the cells that East Asian Ambiguous characters take (①, ※, ○, Greek and Cyrillic letters…): 1 by default, 2 for CJK setups whose programs count them as two, like vim's `ambiwidth=double`. It is an explicit option, not a guess from the locale, because it must match the programs.
   - A change applies to new output; the cells already written keep their widths.
 - **Normalization**: the `normalization` option puts the text in a Unicode normal form as it is printed: none (the default), NFC, NFD, or HFS+, Apple's variant of NFD, which leaves the ranges U+2000–U+2FFF, U+F900–U+FAFF and U+2F800–U+2FAFF alone. NFC shows the decomposed names of macOS files composed, Hangul included, and a composed character takes no grapheme entry. Each cluster is normalized as it is built, and text already in the normal form passes a quick check without being rewritten. The terminal's buffers are reused, but the crate keeps up to four combining marks inline while it reorders them, so a cluster with more allocates. The data comes from the `unicode-normalization` crate, at Unicode 17 while the tables are at 18: canonical decompositions never change for existing characters, so the gap covers at most the new characters of Unicode 18 that have one.
@@ -208,7 +208,7 @@ The `[terminal]` section of the config:
 
 ```toml
 [terminal]
-term = "xterm-256color"   # what TERM tells programs: xterm-saetta, xterm-256color, xterm, ansi, vt100, vt220, dtterm, linux…
+term = "xterm-256color"   # what TERM tells programs: xterm-bolt, xterm-256color, xterm, ansi, vt100, vt220, dtterm, linux…
 unicode-widths = "current" # current | 8
 ambiguous-width = 1       # 1 | 2
 normalization = "none"    # none | nfc | nfd | hfs+
@@ -257,9 +257,9 @@ normalization = "none"    # none | nfc | nfd | hfs+
   - The program starts in the working directory that the caller gives, or the user's home directory, read from the user database with the name and the shell.
 - **Login shell**: on macOS, launched as Terminal.app launches it: `/usr/bin/login -flp $USER /bin/bash --noprofile --norc -c "exec -l -a <name> <shell>"`. `login` records the session as a terminal's; `-f` skips the password, the user being logged in already; `-p` keeps the environment; `-l` keeps the working directory, and keeps the shell from being a login shell too, so bash starts it with `-` before its name. On Linux, the shell is started with `argv[0]` prefixed by `-`.
 - **Environment**:
-  - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR` when the caller gives it, and the caller's own variables last.
+  - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=bolt`, `TERM_PROGRAM_VERSION`, `BOLT_RESOURCES_DIR` when the caller gives it, and the caller's own variables last.
   - A UTF-8 locale in `LANG` if none of `LC_ALL`, `LC_CTYPE` and `LANG` is set; the caller chooses it ([SECURITY.md](SECURITY.md#macos-environment)).
-  - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-saetta`.
+  - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-bolt`.
 - **Resize**: `Pty::resize`, `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. The kernel sends SIGWINCH to the foreground process group. Resizes are coalesced while a divider is being dragged.
 - **Process exit**: EOF on the master plus `waitpid`: `Pty::wait` and `Pty::try_wait` tell an `Exit`, a status or the signal that ended the program. The end that the master reads can come after the program's exit, when processes that it started still have the terminal open, or never, so the exit is told apart from it. What happens next is configurable: close the pane, or show the exit code.
 - **Closing**: dropping a `Pty` hangs the program up as closing a terminal does, with SIGHUP to the program and to a job in the terminal's foreground, and ends what its readers and writers wait for: reads end, writes fail, and the terminal closes once they drop, so that a program that ignores SIGHUP sees the end of its input. A thread waits for the program, so that it leaves no zombie.
@@ -277,7 +277,7 @@ normalization = "none"    # none | nfc | nfd | hfs+
 
 ## Terminfo
 
-- **Capabilities of `xterm-saetta`**: it derives from `xterm-256color` and adds:
+- **Capabilities of `xterm-bolt`**: it derives from `xterm-256color` and adds:
   - `Tc`/`RGB` (truecolor);
   - `Smulx` (styled underlines) and `Setulc` (underline color);
   - `Ss`/`Se` (cursor style);
@@ -286,7 +286,7 @@ normalization = "none"    # none | nfc | nfd | hfs+
   - `Ms` (OSC 52);
   - `fsl`/`tsl`/`hs` (title) and `XT`.
 - **Build and install**: compiled at build time with `tic -x` from a recent ncurses (the one shipped with macOS is very old). It is bundled with the app: `Contents/Resources/terminfo` on macOS, `share/terminfo` on Linux.
-- **Default `TERM`**: `xterm-256color`, because remote hosts usually don't know `xterm-saetta`. The `term` option chooses another ([Settings](#settings)). The default will change once the ssh integration (F5a) can install the terminfo on remote hosts or fall back automatically.
+- **Default `TERM`**: `xterm-256color`, because remote hosts usually don't know `xterm-bolt`. The `term` option chooses another ([Settings](#settings)). The default will change once the ssh integration (F5a) can install the terminfo on remote hosts or fall back automatically.
 
 ## Supported protocols
 

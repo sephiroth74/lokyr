@@ -5,9 +5,9 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
 
-use saetta_vt_core::page::{Capacity, Cell, Content, PageList, Rgb, Scrollback};
-use saetta_vt_core::parser::Parser;
-use saetta_vt_core::terminal::{Options, Terminal};
+use bolt_vt_core::page::{Capacity, Cell, Content, PageList, Rgb, Scrollback};
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{Options, Terminal};
 
 /// The system allocator, counting the allocations of each thread, so that
 /// tests that run in parallel do not count each other's.

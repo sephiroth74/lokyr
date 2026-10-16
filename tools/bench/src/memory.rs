@@ -1,4 +1,4 @@
-//! `saetta-bench memory`: samples the memory footprint of a process, with
+//! `bolt-bench memory`: samples the memory footprint of a process, with
 //! and without its GPU memory.
 //!
 //! The footprint comes from the kernel, and the GPU memory from Apple's
