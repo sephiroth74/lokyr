@@ -249,15 +249,16 @@ normalization = "none"    # none | nfc | nfd | hfs+
 
 ## PTY and processes (`pty`)
 
-- **Spawning**:
-  - `openpty`, then **fork+exec** through `std::process::Command`.
-  - An async-signal-safe `pre_exec` runs `setsid()` and `ioctl(TIOCSCTTY)`, and restores the signal mask and handlers.
+- **Spawning**: `pty::spawn(&Options)` returns a `Pty`, which gives readers and writers of the terminal, its device's name, the program's process id and the terminal's foreground process group.
+  - `openpty`, with the terminal's size, both sides closed on exec, then **fork+exec** through `std::process::Command`, with the slave as standard input, output and error. The parent keeps no copy of the slave, so the master reads the end when the program and its children have gone; the reader turns the EIO that Linux gives then into the end.
+  - An async-signal-safe `pre_exec` runs `setsid()` and `ioctl(TIOCSCTTY)`, and gives every signal its default action, since an ignored one stays ignored across exec; the standard library has already emptied the signal mask.
   - We do not use `posix_spawn`, because it cannot set the controlling terminal.
-- **Login shell**: on macOS, launched like Terminal.app does (`/usr/bin/login -flp $USER <shell>`). On Linux, the shell is started with `argv[0]` prefixed by `-`.
+  - The program starts in the working directory that the caller gives, or the user's home directory, read from the user database with the name and the shell.
+- **Login shell**: on macOS, launched as Terminal.app launches it: `/usr/bin/login -flp $USER /bin/bash --noprofile --norc -c "exec -l -a <name> <shell>"`. `login` records the session as a terminal's; `-f` skips the password, the user being logged in already; `-p` keeps the environment; `-l` keeps the working directory, and keeps the shell from being a login shell too, so bash starts it with `-` before its name. On Linux, the shell is started with `argv[0]` prefixed by `-`.
 - **Environment**:
-  - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR`.
-  - A UTF-8 locale if none is set ([SECURITY.md](SECURITY.md#macos-environment)).
-  - `TERMINFO` is set only when `TERM=xterm-saetta`.
+  - `TERM`, from the `term` option ([Settings](#settings)), `COLORTERM=truecolor`, `TERM_PROGRAM=saetta`, `TERM_PROGRAM_VERSION`, `SAETTA_RESOURCES_DIR` when the caller gives it, and the caller's own variables last.
+  - A UTF-8 locale in `LANG` if none of `LC_ALL`, `LC_CTYPE` and `LANG` is set; the caller chooses it ([SECURITY.md](SECURITY.md#macos-environment)).
+  - `TERMINFO`, `COLUMNS` and `LINES` are not inherited: they would describe the terminal that started this one, if one did. `TERMINFO` is set only when `TERM=xterm-saetta`.
 - **Resize**: `TIOCSWINSZ` with sizes in both cells and pixels; sixel and kitty graphics need the pixels. Resizes are coalesced while a divider is being dragged.
 - **Process exit**: EOF on the master plus `waitpid`. What happens next is configurable: close the pane, or show the exit code.
 - **Portable API**: the public interface (reader, writer, resize, child) exposes no `RawFd`. A future ConPTY implementation for Windows will therefore not change any callers.

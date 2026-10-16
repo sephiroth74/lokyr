@@ -70,7 +70,7 @@ Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
 ## macOS environment
 
 - **Locale**: when the app is launched from the Dock, `LANG` is not set. In that case we set a UTF-8 locale that matches the system preferences.
-- **Login shell**: started the way Terminal.app does (`/usr/bin/login -flp $USER <shell>`).
+- **Login shell**: started the way Terminal.app does, through `login` (`/usr/bin/login -flp $USER /bin/bash --noprofile --norc -c "exec -l -a <name> <shell>"`).
 - **TCC**:
   - Permissions requested by child processes (microphone, camera, Apple Events, protected folders, …) are attributed to the terminal.
   - The bundle therefore includes the required usage strings in `Info.plist`, worded like "A program started in the terminal wants to use…". Examples:

@@ -551,6 +551,10 @@ version = "0.1.0"
 [[package]]
 name = "saetta-pty"
 version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
+]
 
 [[package]]
 name = "saetta-render-core"

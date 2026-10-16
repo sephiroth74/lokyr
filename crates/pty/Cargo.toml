@@ -11,3 +11,7 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+libc.workspace = true
+thiserror.workspace = true
