@@ -160,11 +160,13 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 
 - **Literal search**: `memchr::memmem` over the text of logical lines, forward or backward from a cell; empty cells read as spaces, but those that end a line do not. Case-insensitive literal search folds ASCII; Unicode case folding goes through the regex engine, with the literal escaped.
 - **Regex search**:
-  - Forward and reverse lazy DFAs from `regex-automata`, advanced **one cell at a time** as Alacritty does, because `regex-automata` has no chunked-input API.
-  - This avoids building intermediate strings for the whole scrollback.
-- **Whole word**: a boundary filter applied after each match, because Unicode `\b` makes the DFAs give up on non-ASCII text.
+  - `regex-automata`'s meta regex, over the same text of logical lines. Its lazy DFAs, forward and reverse, fall back to its other engines where they give up, as Unicode `\b` makes them do on text that is not ASCII.
+  - The text is built **one logical line at a time**, never for the whole scrollback. Alacritty instead advances its DFAs one cell at a time, because `regex-automata` has no chunked-input API; with a line's text at hand, the meta regex picks the engine and handles the fallback itself.
+  - Backward, the regex looks for its matches forward from the line's start and keeps the last one that starts before the cell, so that it finds overlapping matches as literal search does. A very long line whose matches are long and overlap makes this slow; cancellation still stops it.
+- **Whole word**: for literal text and regexes alike, a filter applied after each match: neither a letter, a digit nor `_` right before the match or right after it. A pattern can still use `\b`.
+- **Empty matches** never count, so `x*` finds the runs of `x`, and `^` alone finds nothing.
 - **Logical lines**: *soft-wrapped* rows count as one line, so words broken at the edge are still found.
-- **Order and cancellation**: the search runs in chunks on a worker thread, starting at the viewport and moving outward so nearby results arrive first. Each keystroke in the find bar cancels the previous search.
+- **Order and cancellation**: the search runs in chunks on a worker thread, starting at the viewport and moving outward so nearby results arrive first. Each keystroke in the find bar cancels the previous search: the engine looks at a flag before each logical line, and between the matches it tries in one.
 - **Results**:
   - Stored as stable pins, on a match's first and last cells, which stay valid as new output arrives, and go when the cells leave the scrollback.
   - At most 100k are kept; past that, only the count.

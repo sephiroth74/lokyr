@@ -1,10 +1,22 @@
 //! Literal search over a terminal's rows, as programs print them.
 
-use bolt_search::{Case, Direction, Literal, Match, find};
+use std::sync::atomic::AtomicBool;
+
+use bolt_search::{Case, Direction, Match, Query};
 use bolt_vt_core::page::{Content, Position};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
 use proptest::prelude::*;
+
+/// Finds `query`, without cancelling.
+fn find(
+    list: &mut bolt_vt_core::page::PageList,
+    query: &Query,
+    from: Position,
+    direction: Direction,
+) -> Option<Match> {
+    bolt_search::find(list, query, from, direction, &AtomicBool::new(false)).unwrap()
+}
 
 fn printed(cols: u16, rows: u16, text: &str) -> Terminal {
     let mut terminal = Terminal::new(cols, rows, Options::default());
@@ -35,7 +47,7 @@ fn search(
     from: Position,
     direction: Direction,
 ) -> Option<((u16, u16), (u16, u16))> {
-    let literal = Literal::new(text, case).unwrap();
+    let literal = Query::literal(text, case).unwrap();
     let found = find(terminal.screen_rows_mut(), &literal, from, direction)?;
     let places = (place(terminal, found.start)?, place(terminal, found.end)?);
     found.release(terminal.screen_rows_mut());
@@ -82,7 +94,7 @@ fn matches_are_found_forward_and_backward() {
     );
     assert_eq!(backward(&mut terminal, "one", (0, 0)), None);
     assert_eq!(forward(&mut terminal, "three", (0, 0)), None);
-    assert!(Literal::new("", Case::Sensitive).is_none());
+    assert!(Query::literal("", Case::Sensitive).is_none());
 }
 
 #[test]
@@ -216,7 +228,7 @@ fn matches_stay_on_their_cells_as_output_scrolls() {
     let mut parser = Parser::new();
     let mut terminal = Terminal::new(20, 4, Options::default());
     parser.advance(&mut terminal, b"find the needle\r\n");
-    let literal = Literal::new("needle", Case::Sensitive).unwrap();
+    let literal = Query::literal("needle", Case::Sensitive).unwrap();
     let from = at(&terminal, 0, 0);
     let found: Match = find(
         terminal.screen_rows_mut(),
@@ -269,7 +281,7 @@ fn a_match_whose_cells_left_the_scrollback_is_lost() {
     // At 80 columns, a page holds 778 rows.
     let mut terminal = Terminal::new(80, 4, options);
     parser.advance(&mut terminal, b"needle\r\n");
-    let literal = Literal::new("needle", Case::Sensitive).unwrap();
+    let literal = Query::literal("needle", Case::Sensitive).unwrap();
     let from = at(&terminal, 0, 0);
     let found = find(
         terminal.screen_rows_mut(),
@@ -299,7 +311,7 @@ fn cold_pages_are_searched() {
     parser.advance(&mut terminal, b"the needle is old\r\n");
     parser.advance(&mut terminal, "line\r\n".repeat(3000).as_bytes());
     assert!(terminal.compact_scrollback() > 0);
-    let literal = Literal::new("needle", Case::Sensitive).unwrap();
+    let literal = Query::literal("needle", Case::Sensitive).unwrap();
     let from = at(&terminal, 0, 0);
     let found = find(
         terminal.screen_rows_mut(),
@@ -350,7 +362,7 @@ proptest! {
         }
         let mut terminal = printed(cols, 4, &text);
         let expected: usize = logical(&lines).iter().map(|line| occurrences(line, &needle)).sum();
-        let literal = Literal::new(&needle, Case::Sensitive).unwrap();
+        let literal = Query::literal(&needle, Case::Sensitive).unwrap();
         let first = {
             let (page, row) = terminal.screen_rows().row_at(0).unwrap();
             Position { page, row, col: 0 }
@@ -414,7 +426,7 @@ fn a_match_crosses_from_one_page_into_the_next() {
     let (next_page, next_row) = rows.row_at(per_page).unwrap();
     assert_eq!((last_page, last_row), (first_page, (per_page - 1) as u16));
     assert_ne!(next_page, first_page, "the line goes on in another page");
-    let literal = Literal::new("needle", Case::Sensitive).unwrap();
+    let literal = Query::literal("needle", Case::Sensitive).unwrap();
     let start = Position {
         page: first_page,
         row: 0,

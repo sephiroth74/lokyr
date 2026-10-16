@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 bolt-vt-core.workspace = true
 memchr.workspace = true
+regex-automata.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

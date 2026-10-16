@@ -1,9 +1,11 @@
 //! The text of logical lines, the rows that soft-wrap into each other, with
 //! where the text of each cell starts, read in one pass either way.
 
+use std::sync::atomic::AtomicBool;
+
 use bolt_vt_core::page::{Content, Page, PageId, PageList, Position, RowFlag, Width};
 
-use crate::literal::{Case, Literal};
+use crate::{Cancelled, Query};
 
 /// A cell that shows something, and where its text starts in its line's.
 #[derive(Clone, Copy, Debug)]
@@ -60,9 +62,9 @@ impl Line {
         }
     }
 
-    /// Ends the line: the spaces that end it go, and with `case`, it is put
-    /// in lower case, as the literal is.
-    fn finish(&mut self, case: Case) {
+    /// Ends the line: the spaces that end it go, and it is put in lower
+    /// case if `lower`, as an insensitive literal is.
+    fn finish(&mut self, lower: bool) {
         let len = self
             .text
             .iter()
@@ -71,7 +73,7 @@ impl Line {
         self.text.truncate(len);
         let spots = self.spots.partition_point(|spot| spot.offset < len);
         self.spots.truncate(spots);
-        if case == Case::Insensitive {
+        if lower {
             self.text.make_ascii_lowercase();
         }
     }
@@ -87,13 +89,14 @@ impl Line {
             .map_or(self.text.len(), |spot| spot.offset)
     }
 
-    /// The first and the last cell of `len` bytes of text at `start`.
-    fn cells_of(&self, start: usize, len: usize) -> (Position, Position) {
+    /// The first and the last cell of the text in `range`, which is not
+    /// empty.
+    fn cells_of(&self, range: std::ops::Range<usize>) -> (Position, Position) {
         let cell = |offset| {
             let at = self.spots.partition_point(|spot| spot.offset <= offset);
             self.spots[at - 1].position
         };
-        (cell(start), cell(start + len - 1))
+        (cell(range.start), cell(range.end - 1))
     }
 }
 
@@ -139,20 +142,25 @@ fn line_end(list: &PageList, index: usize) -> usize {
     end
 }
 
-/// The first match of `literal` that starts at `from`, in the row at
-/// `index` of `list`, or after it.
+/// A match's first and last cells.
+pub(crate) type Found = Result<Option<(Position, Position)>, Cancelled>;
+
+/// The first match of `query` that starts at `from`, in the row at `index`
+/// of `list`, or after it, unless `cancel` is set first.
 pub(crate) fn find_forward(
     list: &PageList,
     index: usize,
-    literal: &Literal,
+    query: &Query,
     from: Position,
-) -> Option<(Position, Position)> {
+    cancel: &AtomicBool,
+) -> Found {
     let start = line_start(list, index);
     let mut rows = list.rows_from(start).peekable();
     let mut line = Line::default();
     // The row of `from` in the first line.
     let mut first = Some(index - start);
     while let Some((id, page, row)) = rows.next() {
+        Cancelled::check(cancel)?;
         line.clear();
         line.push_row(id, page, row, 0);
         let (mut page, mut row) = (page, row);
@@ -166,31 +174,33 @@ pub(crate) fn find_forward(
             line.push_row(id, after, after_row, line_row);
             (page, row) = (after, after_row);
         }
-        line.finish(literal.case());
+        line.finish(query.lowers_ascii());
         let min = first
             .take()
             .map_or(0, |line_row| line.offset_of(line_row, from.col));
-        if let Some(at) = literal.find_in(&line.text[min..]) {
-            return Some(line.cells_of(min + at, literal.len()));
+        if let Some(found) = query.first_from(&line.text, min, cancel)? {
+            return Ok(Some(line.cells_of(found)));
         }
     }
-    None
+    Ok(None)
 }
 
-/// The last match of `literal` that starts before `from`, in the row at
-/// `index` of `list`, or before it.
+/// The last match of `query` that starts before `from`, in the row at
+/// `index` of `list`, or before it, unless `cancel` is set first.
 pub(crate) fn find_backward(
     list: &PageList,
     index: usize,
-    literal: &Literal,
+    query: &Query,
     from: Position,
-) -> Option<(Position, Position)> {
+    cancel: &AtomicBool,
+) -> Found {
     let start = line_start(list, index);
     let mut rows = list.rows_before(line_end(list, index)).peekable();
     let mut group: Vec<(PageId, &Page, u16)> = Vec::new();
     let mut line = Line::default();
     let mut first = Some(index - start);
     while let Some(newest) = rows.next() {
+        Cancelled::check(cancel)?;
         // The line's rows, newest first.
         group.clear();
         group.push(newest);
@@ -206,16 +216,15 @@ pub(crate) fn find_backward(
         for (line_row, &(id, page, row)) in group.iter().rev().enumerate() {
             line.push_row(id, page, row, line_row);
         }
-        line.finish(literal.case());
-        // A match that starts before `from` ends before `from` and the
-        // literal's length, but its last byte.
-        let end = first.take().map_or(line.text.len(), |line_row| {
-            let before = line.offset_of(line_row, from.col);
-            (before + literal.len() - 1).min(line.text.len())
+        line.finish(query.lowers_ascii());
+        // Every match of the line, which is not empty, starts before its
+        // end.
+        let before = first.take().map_or(line.text.len(), |line_row| {
+            line.offset_of(line_row, from.col)
         });
-        if let Some(at) = literal.rfind_in(&line.text[..end]) {
-            return Some(line.cells_of(at, literal.len()));
+        if let Some(found) = query.last_before(&line.text, before, cancel)? {
+            return Ok(Some(line.cells_of(found)));
         }
     }
-    None
+    Ok(None)
 }

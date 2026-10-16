@@ -166,6 +166,7 @@ dependencies = [
  "bolt-vt-core",
  "memchr",
  "proptest",
+ "regex-automata",
 ]
 
 [[package]]

@@ -6,9 +6,12 @@
 #![forbid(unsafe_code)]
 
 mod line;
-mod literal;
+mod query;
 
-pub use literal::{Case, Literal};
+pub use query::{Case, PatternError, Query};
+
+use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bolt_vt_core::page::{PageList, PinId, Position};
 
@@ -40,30 +43,64 @@ impl Match {
     }
 }
 
-/// Finds `literal` in `list`: forward, the first match that starts at
-/// `from` or after it; backward, the last one that starts before it. The
-/// text of a logical line, whose soft-wrapped rows are joined, is searched
-/// whole, so that a match can cross the right margin; empty cells read as
-/// spaces, but those that end a line are left out.
+/// A search that stopped, as another thread asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cancelled;
+
+impl fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the search was cancelled")
+    }
+}
+
+impl std::error::Error for Cancelled {}
+
+impl Cancelled {
+    /// `Err` once `cancel` is set.
+    pub(crate) fn check(cancel: &AtomicBool) -> Result<(), Self> {
+        if cancel.load(Ordering::Relaxed) {
+            Err(Self)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Finds `query` in `list`: forward, the first match that starts at `from`
+/// or after it; backward, the last one that starts before it. The text of
+/// a logical line, whose soft-wrapped rows are joined, is searched whole,
+/// so that a match can cross the right margin; empty cells read as spaces,
+/// but those that end a line are left out. Empty matches do not count.
 ///
-/// The pages that it reads are warmed first. `from` is a cell of the list;
-/// a position that is not in it finds nothing.
+/// The search stops with [`Cancelled`] once `cancel` is set, which another
+/// thread can do: it looks at it before each line, and between the matches
+/// that it tries in a line, which can be long. The pages that it reads
+/// are warmed first. `from` is a cell of the list; a position that is not
+/// in it finds nothing.
 pub fn find(
     list: &mut PageList,
-    literal: &Literal,
+    query: &Query,
     from: Position,
     direction: Direction,
-) -> Option<Match> {
-    let index = list.row_index(from.page, from.row)?;
-    list.warm(0..list.total_rows());
-    let (start, end) = match direction {
-        Direction::Forward => line::find_forward(list, index, literal, from)?,
-        Direction::Backward => line::find_backward(list, index, literal, from)?,
+    cancel: &AtomicBool,
+) -> Result<Option<Match>, Cancelled> {
+    let Some(index) = list.row_index(from.page, from.row) else {
+        return Ok(None);
     };
-    let start = list.pin(start)?;
+    list.warm(0..list.total_rows());
+    let found = match direction {
+        Direction::Forward => line::find_forward(list, index, query, from, cancel)?,
+        Direction::Backward => line::find_backward(list, index, query, from, cancel)?,
+    };
+    let Some((start, end)) = found else {
+        return Ok(None);
+    };
+    let Some(start) = list.pin(start) else {
+        return Ok(None);
+    };
     let Some(end) = list.pin(end) else {
         list.unpin(start);
-        return None;
+        return Ok(None);
     };
-    Some(Match { start, end })
+    Ok(Some(Match { start, end }))
 }
