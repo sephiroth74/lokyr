@@ -70,7 +70,13 @@ pub(super) fn encode_key(
             }
             return;
         }
-        if action == KeyAction::Press && !flags.contains(KeyboardFlags::DISAMBIGUATE) {
+        // xterm's sequences carry Shift, Control and an Alt that acts as
+        // Meta, but no other modifier and no lock: a press with those sends
+        // its escape code, as its release does.
+        if action == KeyAction::Press
+            && !flags.contains(KeyboardFlags::DISAMBIGUATE)
+            && mods & !(SHIFT | ALT | CONTROL) == 0
+        {
             let start = out.len();
             encode_legacy(event, modes, options, out);
             // Keys that xterm sends nothing for are reported as keys.
@@ -901,6 +907,30 @@ mod tests {
         assert_eq!(
             send(with(KeyAction::Repeat, named(Key::Up, "")), EVENTS),
             "\x1b[1;1:2A"
+        );
+        // Nor do presses with modifiers that xterm cannot carry, which
+        // send what their releases send.
+        let super_up = named(Key::Up, "super");
+        assert_eq!(send(super_up, EVENTS), "\x1b[1;9A");
+        assert_eq!(
+            send(with(KeyAction::Release, super_up), EVENTS),
+            "\x1b[1;9:3A"
+        );
+        assert_eq!(
+            send(event(Key::Char('a'), "super", "a", "a"), EVENTS),
+            "\x1b[97;9u"
+        );
+        assert_eq!(
+            send(event(Key::Char('a'), "ctrl+super", "\x01", "a"), EVENTS),
+            "\x1b[97;13u"
+        );
+        assert_eq!(send(named(Key::Up, "caps"), EVENTS), "\x1b[1;65A");
+        assert_eq!(send(named(Key::Up, "hyper"), ALTERNATES), "\x1b[1;17A");
+        assert_eq!(send(named(Key::Escape, "meta"), TEXT), "\x1b[27;33u");
+        assert_eq!(
+            send(event(Key::Char('a'), "caps", "A", "a"), EVENTS),
+            "A",
+            "it types"
         );
         // Keys that xterm sends nothing for are reported as keys.
         assert_eq!(send(named(Key::PrintScreen, ""), EVENTS), "\x1b[57361u");

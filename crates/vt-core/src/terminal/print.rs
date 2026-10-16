@@ -292,15 +292,25 @@ impl Terminal {
     }
 
     /// Makes the wide cluster at `cluster` narrow, and moves the cursor back
-    /// if it was right after it.
+    /// if it was right after it. The second half becomes a blank with the
+    /// cluster's style, protection and zone; in insert mode, it goes, and
+    /// the rest of the row moves back left, as widening moved it right.
     fn narrow(&mut self, cluster: Cluster) {
         let Cluster { x, y } = cluster;
         let end = self.line_end(x);
+        let head = self.cell(x, y);
         {
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
             page.set_width(row, x, Width::Narrow);
         }
-        self.put(x + 1, y, Cell::EMPTY);
+        let blank = Cell::EMPTY
+            .with_style(head.style())
+            .with_protected(head.is_protected())
+            .with_semantic(head.semantic());
+        self.put(x + 1, y, blank);
+        if self.insert {
+            self.screen_mut().rows.delete_cells(y, x + 1, 1, end);
+        }
         let cursor = &mut self.screen_mut().cursor;
         let right_after = if cursor.pending_wrap {
             x + 2 == end && cursor.x == end - 1

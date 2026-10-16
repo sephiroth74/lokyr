@@ -2229,6 +2229,10 @@ fn programs_set_and_query_modify_other_keys() {
     assert_eq!(level(&term), 0, "and so does CSI > 4 n");
     term.feed("\x1b[>4;1m\x1b[>1;2m");
     assert_eq!(level(&term), 1, "other resources are not this one");
+    term.feed("\x1b[>m");
+    assert_eq!(level(&term), 0, "no parameters reset every resource");
+    term.feed("\x1b[>4;1m\x1b[>0;1m");
+    assert_eq!(level(&term), 1, "setting another resource");
     term.feed("\x1bc");
     assert_eq!(level(&term), 0, "RIS resets it");
 }
@@ -3605,6 +3609,37 @@ fn a_cluster_that_widens_in_insert_mode_moves_the_line_right() {
     term.feed("abc\r\x1b[4h\u{600}\u{4E2D}");
     assert_eq!(term.screen()[0], "\u{600}\u{4E2D}abc");
     assert_eq!(cluster_at(&term, 0, 0), ['\u{600}', '\u{4E2D}']);
+}
+
+#[test]
+fn a_cluster_that_narrows_in_insert_mode_moves_the_line_back() {
+    let mut term = Term::new(10, 2);
+    term.feed("abc\r");
+    let b = pin(&mut term, 1, 0);
+    term.feed("\x1b[4h\u{231A}\u{FE0E}");
+    assert_eq!(term.screen()[0], "\u{231A}\u{FE0E}abc");
+    assert_eq!(term.cursor(), (1, 0, false));
+    let rows = &term.terminal.primary.rows;
+    assert_eq!(rows.pin_position(b).map(|position| position.col), Some(2));
+    assert_eq!(pinned_char(&term, b), Some('b'));
+    term.feed("x");
+    assert_eq!(term.screen()[0], "\u{231A}\u{FE0E}xabc");
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn the_cell_that_a_narrowed_cluster_frees_keeps_its_style() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b]133;A\x07\x1b[41m\x1b[1\"q\u{231A}\u{FE0E}");
+    let (head, freed) = (term.cell(0, 0), term.cell(1, 0));
+    assert_eq!(freed.content(), Content::Char('\0'));
+    assert_eq!(freed.width(), Width::Narrow);
+    assert_eq!(freed.style(), head.style());
+    assert_ne!(head.style(), StyleId::DEFAULT);
+    assert!(freed.is_protected());
+    assert_ne!(head.semantic(), Cell::EMPTY.semantic());
+    assert_eq!(freed.semantic(), head.semantic());
+    assert_tables_counted(&term.terminal.primary);
 }
 
 #[test]

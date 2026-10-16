@@ -358,14 +358,10 @@ pub(super) fn encode_legacy(
         }
         // Shift makes Tab a back tab, `CSI Z`, which Control leaves as it
         // is and Meta sends after an escape, as with xterm's ISO_Left_Tab,
-        // unless `modifyOtherKeys` reports the key.
+        // unless `modifyOtherKeys` reports the key, as it does with a
+        // modifier other than Shift.
         Key::Tab if modifiers.shift => {
-            let reported = match modes.modify_other_keys {
-                0 => false,
-                1 => modifiers.control,
-                _ => modifiers.control || modifiers.meta,
-            };
-            if reported {
+            if modes.modify_other_keys > 0 && (modifiers.control || modifiers.meta) {
                 modify_other_key(9, modifiers, out);
             } else {
                 if modifiers.meta {
@@ -375,11 +371,19 @@ pub(super) fn encode_legacy(
             }
         }
         Key::Tab => encode_c0(9, b"\t", modifiers, modes, modifiers.control, out),
-        Key::Backspace => {
-            // Control sends BS, as xterm's Backarrow key does.
-            let bytes: &[u8] = if modifiers.control { b"\x08" } else { b"\x7f" };
-            encode_c0(127, bytes, modifiers, modes, false, out);
+        // Control sends BS, as xterm's Backarrow key does, which
+        // `modifyOtherKeys` at 2 reports, as BS, only with another modifier.
+        Key::Backspace if modifiers.control => {
+            if modes.modify_other_keys == 2 && (modifiers.shift || modifiers.meta) {
+                modify_other_key(8, modifiers, out);
+            } else {
+                if modifiers.meta {
+                    out.push(ESC);
+                }
+                out.push(0x08);
+            }
         }
+        Key::Backspace => encode_c0(127, b"\x7f", modifiers, modes, false, out),
         Key::Escape => encode_c0(27, b"\x1b", modifiers, modes, false, out),
         Key::Up => encode_cursor(b'A', modifiers, modes, out),
         Key::Down => encode_cursor(b'B', modifiers, modes, out),
@@ -434,10 +438,24 @@ impl Modifiers {
 
 /// A key that types a character.
 fn encode_char(event: &KeyEvent<'_>, modifiers: Modifiers, modes: &InputModes, out: &mut Vec<u8>) {
-    let base = single_char(event.unmodified).or(match event.key {
+    let mut unmodified = event.unmodified;
+    let mut base = single_char(unmodified).or(match event.key {
         Key::Char(c) => Some(c),
         _ => None,
     });
+    // Control and Meta take a key whose character is not ASCII, as in a
+    // Cyrillic layout, as the key of the base layout, so that Control with
+    // `с` interrupts as Control with `c` does.
+    let mut latin = [0; 4];
+    if let (Some(c), Some(key)) = (base, event.base_layout)
+        && (modifiers.control || modifiers.meta)
+        && !modifiers.shift
+        && !c.is_ascii()
+        && key.is_ascii()
+    {
+        base = Some(key);
+        unmodified = key.encode_utf8(&mut latin);
+    }
     let control = modifiers
         .control
         .then(|| base.and_then(control_byte))
@@ -447,8 +465,15 @@ fn encode_char(event: &KeyEvent<'_>, modifiers: Modifiers, modes: &InputModes, o
         // and a letter, would lose a modifier.
         let lossy = modifiers.control
             && (control.is_none() || (modifiers.shift && base.is_ascii_alphabetic()));
-        let modified = modifiers.control || modifiers.meta;
-        if (modes.modify_other_keys == 2 && modified) || (modes.modify_other_keys == 1 && lossy) {
+        // At 2, as in xterm, Shift alone reports space and the characters
+        // that Control makes control codes of, from `@` to DEL.
+        let shifted = modifiers.shift && (base == ' ' || ('@'..='\x7f').contains(&base));
+        let reported = match modes.modify_other_keys {
+            0 => false,
+            1 => lossy,
+            _ => modifiers.control || modifiers.meta || shifted,
+        };
+        if reported {
             modify_other_key(u32::from(base), modifiers, out);
             return;
         }
@@ -459,7 +484,7 @@ fn encode_char(event: &KeyEvent<'_>, modifiers: Modifiers, modes: &InputModes, o
     match control {
         Some(byte) => out.push(byte),
         None if modifiers.meta || modifiers.control => {
-            out.extend_from_slice(event.unmodified.as_bytes());
+            out.extend_from_slice(unmodified.as_bytes());
         }
         None => out.extend_from_slice(event.text.as_bytes()),
     }
@@ -547,11 +572,21 @@ fn encode_keypad(
         Keypad::Delete => return encode_tilde(3, modifiers, out),
         Keypad::PageUp => return encode_tilde(5, modifiers, out),
         Keypad::PageDown => return encode_tilde(6, modifiers, out),
-        Keypad::Enter if !modes.keypad_application => {
-            let newline: &[u8] = if modes.newline { b"\r\n" } else { b"\r" };
-            return encode_c0(13, newline, modifiers, modes, false, out);
+        // Otherwise the keys type what they type, as in xterm, which maps
+        // none with Control nor reports any for `modifyOtherKeys`; Meta
+        // sends an escape first.
+        _ if !modes.keypad_application => {
+            if modifiers.meta {
+                out.push(ESC);
+            }
+            let typed: &[u8] = match key {
+                Keypad::Enter if modes.newline => b"\r\n",
+                Keypad::Enter => b"\r",
+                _ if modifiers.meta => event.unmodified.as_bytes(),
+                _ => event.text.as_bytes(),
+            };
+            return out.extend_from_slice(typed);
         }
-        _ if !modes.keypad_application => return encode_char(event, modifiers, modes, out),
         Keypad::Digit(digit) => b'p' + digit.min(9),
         Keypad::Decimal => b'n',
         Keypad::Enter => b'M',
@@ -823,25 +858,161 @@ mod tests {
         assert_eq!(send(Key::Enter, ALT, "", "", &one), "\x1b\r");
         assert_eq!(send(Key::Tab, CONTROL, "", "", &one), "\x1b[27;5;9~");
         assert_eq!(send(Key::Backspace, CONTROL, "", "", &one), "\x08");
-        // At 2, every modified key.
+        // At 2, every key with Control or Meta, and some with Shift.
         let two = level(2);
         assert_eq!(
             send(Key::Char('a'), CONTROL, "", "a", &two),
             "\x1b[27;5;97~"
         );
         assert_eq!(send(Key::Char('a'), ALT, "", "a", &two), "\x1b[27;3;97~");
-        assert_eq!(
-            send(Key::Backspace, CONTROL, "", "", &two),
-            "\x1b[27;5;127~"
-        );
         assert_eq!(send(Key::Escape, SHIFT, "", "", &two), "\x1b[27;2;27~");
         assert_eq!(send(Key::Char('a'), NONE, "a", "a", &two), "a");
-        assert_eq!(
-            send(Key::Char('A'), SHIFT, "A", "A", &two),
-            "A",
-            "Shift alone types"
-        );
         assert_eq!(send(Key::Up, CONTROL, "", "", &two), "\x1b[1;5A");
+    }
+
+    #[test]
+    fn modify_other_keys_at_2_follows_xterm() {
+        let two = InputModes {
+            modify_other_keys: 2,
+            ..InputModes::default()
+        };
+        let both = Mods {
+            control: true,
+            shift: true,
+            ..NONE
+        };
+        let alt_shift = Mods { shift: true, ..ALT };
+        let char_key = |c, mods, typed| send(Key::Char(c), mods, typed, typed, &two);
+        // Shift alone reports space and the characters from `@` to DEL,
+        // which Control makes control codes of, and types the others.
+        assert_eq!(char_key(' ', SHIFT, " "), "\x1b[27;2;32~");
+        assert_eq!(char_key('a', SHIFT, "A"), "\x1b[27;2;65~");
+        assert_eq!(char_key('[', SHIFT, "{"), "\x1b[27;2;123~");
+        assert_eq!(char_key('`', SHIFT, "~"), "\x1b[27;2;126~");
+        assert_eq!(char_key('1', SHIFT, "!"), "!");
+        assert_eq!(char_key(';', SHIFT, ":"), ":");
+        assert_eq!(char_key('2', SHIFT, "@"), "\x1b[27;2;64~");
+        assert_eq!(char_key('é', SHIFT, "É"), "É");
+        // Backspace with Control is BS, reported only with another
+        // modifier, as BS too; without Control, with any.
+        assert_eq!(send(Key::Backspace, CONTROL, "", "", &two), "\x08");
+        assert_eq!(send(Key::Backspace, both, "", "", &two), "\x1b[27;6;8~");
+        let control_alt = Mods {
+            control: true,
+            ..ALT
+        };
+        assert_eq!(
+            send(Key::Backspace, control_alt, "", "", &two),
+            "\x1b[27;7;8~"
+        );
+        assert_eq!(send(Key::Backspace, SHIFT, "", "", &two), "\x1b[27;2;127~");
+        assert_eq!(send(Key::Backspace, ALT, "", "", &two), "\x1b[27;3;127~");
+        assert_eq!(named(Key::Backspace, control_alt), "\x1b\x08");
+        // The keypad is not reported, nor mapped with Control.
+        let keypad = |key, mods, typed| send(Key::Keypad(key), mods, typed, typed, &two);
+        assert_eq!(keypad(Keypad::Digit(5), CONTROL, "5"), "5");
+        assert_eq!(keypad(Keypad::Digit(5), ALT, "5"), "\x1b5");
+        assert_eq!(keypad(Keypad::Enter, CONTROL, ""), "\r");
+        assert_eq!(keypad(Keypad::Enter, ALT, ""), "\x1b\r");
+        // Meta sends what the key types without it.
+        assert_eq!(
+            send(Key::Keypad(Keypad::Digit(5)), ALT, "§", "5", &two),
+            "\x1b5"
+        );
+        let newline = InputModes {
+            newline: true,
+            ..two
+        };
+        assert_eq!(
+            send(Key::Keypad(Keypad::Enter), CONTROL, "", "", &newline),
+            "\r\n"
+        );
+        assert_eq!(send(Key::Tab, alt_shift, "", "", &two), "\x1b[27;4;9~");
+    }
+
+    #[test]
+    fn control_and_meta_take_the_key_of_the_base_layout() {
+        let cyrillic = |mods, modes: &InputModes| {
+            let event = KeyEvent {
+                key: Key::Char('с'),
+                action: KeyAction::Press,
+                mods,
+                text: "",
+                unmodified: "с",
+                base_layout: Some('c'),
+            };
+            let mut out = Vec::new();
+            encode_key(
+                &event,
+                modes,
+                KeyboardFlags::NONE,
+                KeyOptions::default(),
+                &mut out,
+            );
+            String::from_utf8(out).unwrap()
+        };
+        let plain = InputModes::default();
+        let control_alt = Mods {
+            control: true,
+            ..ALT
+        };
+        assert_eq!(
+            cyrillic(CONTROL, &plain),
+            "\x03",
+            "Control with с interrupts"
+        );
+        assert_eq!(cyrillic(ALT, &plain), "\x1bc");
+        assert_eq!(cyrillic(control_alt, &plain), "\x1b\x03");
+        let two = InputModes {
+            modify_other_keys: 2,
+            ..InputModes::default()
+        };
+        assert_eq!(cyrillic(CONTROL, &two), "\x1b[27;5;99~");
+        // Not with Shift, nor for a key whose character is ASCII.
+        let both = Mods {
+            control: true,
+            shift: true,
+            ..NONE
+        };
+        assert_eq!(cyrillic(both, &plain), "с");
+        let azerty = KeyEvent {
+            key: Key::Char('a'),
+            action: KeyAction::Press,
+            mods: CONTROL,
+            text: "",
+            unmodified: "a",
+            base_layout: Some('q'),
+        };
+        let mut out = Vec::new();
+        encode_key(
+            &azerty,
+            &plain,
+            KeyboardFlags::NONE,
+            KeyOptions::default(),
+            &mut out,
+        );
+        assert_eq!(out, b"\x01");
+        // Nor for a base layout that is not ASCII, nor without a base
+        // layout, nor without Control or Meta.
+        let not_ascii = KeyEvent {
+            key: Key::Char('с'),
+            action: KeyAction::Press,
+            mods: CONTROL,
+            text: "",
+            unmodified: "с",
+            base_layout: Some('ж'),
+        };
+        let mut out = Vec::new();
+        encode_key(
+            &not_ascii,
+            &plain,
+            KeyboardFlags::NONE,
+            KeyOptions::default(),
+            &mut out,
+        );
+        assert_eq!(out, "с".as_bytes());
+        assert_eq!(char_key('с', CONTROL, "", "с"), "с");
+        assert_eq!(char_key('с', NONE, "с", "с"), "с");
     }
 
     #[test]
@@ -859,7 +1030,7 @@ mod tests {
             ..InputModes::default()
         };
         assert_eq!(send(Key::Tab, both, "", "", &level(1)), "\x1b[27;6;9~");
-        assert_eq!(send(Key::Tab, alt_shift, "", "", &level(1)), "\x1b\x1b[Z");
+        assert_eq!(send(Key::Tab, alt_shift, "", "", &level(1)), "\x1b[27;4;9~");
         assert_eq!(send(Key::Tab, SHIFT, "", "", &level(2)), "\x1b[Z");
         assert_eq!(send(Key::Tab, alt_shift, "", "", &level(2)), "\x1b[27;4;9~");
     }

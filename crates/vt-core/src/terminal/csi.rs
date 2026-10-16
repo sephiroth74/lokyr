@@ -60,9 +60,14 @@ impl Terminal {
             ([], b't') => self.window_ops(params),
             ([], b'm') => self.select_graphic_rendition(params),
             // XTMODKEYS for modifyOtherKeys, its reset (XTMODKEYS without a
-            // value, and the older `CSI > 4 n`), and its query.
+            // value, or without parameters, which resets every resource and
+            // reads as `CSI > 0 m`, and the older `CSI > 4 n`), and its
+            // query.
             ([b'>'], b'm') if params.value(0) == 4 => {
                 self.input.modify_other_keys = params.value(1).min(2) as u8;
+            }
+            ([b'>'], b'm') if params.len() == 1 && params.value(0) == 0 => {
+                self.input.modify_other_keys = 0;
             }
             ([b'>'], b'n') if params.value(0) == 4 => self.input.modify_other_keys = 0,
             ([b'?'], b'm') if params.value(0) == 4 => {
