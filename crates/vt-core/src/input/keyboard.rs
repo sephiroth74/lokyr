@@ -1,9 +1,11 @@
 //! Keys, and how xterm encodes them:
-//! <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys>.
+//! <https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys>,
+//! or the kitty keyboard protocol, once a program asks for it.
 
 use std::io::Write;
 
-use crate::terminal::InputModes;
+use super::kitty;
+use crate::terminal::{InputModes, KeyboardFlags};
 
 /// A key that was pressed, as the platform reports it, once it has
 /// resolved dead keys and input methods: composition text never reaches
@@ -12,7 +14,11 @@ use crate::terminal::InputModes;
 pub struct KeyEvent<'a> {
     /// The key.
     pub key: Key,
-    /// The modifiers held.
+    /// Whether the key went down, repeats or went up.
+    pub action: KeyAction,
+    /// The modifiers held. For a modifier key, they are as the event leaves
+    /// them: pressing Control holds Control, and releasing it does not,
+    /// unless the other Control is still down.
     pub mods: Mods,
     /// What the key types with every modifier held, as the platform
     /// composed it: on macOS, Option's characters. Empty for keys that type
@@ -22,6 +28,22 @@ pub struct KeyEvent<'a> {
     /// macOS's `charactersIgnoringModifiers` gives it: what an Alt that acts
     /// as Meta sends after its escape, and what Control maps.
     pub unmodified: &'a str,
+    /// The key in the same place on the standard PC-101 layout, US
+    /// English's, if the platform knows it: `c` for the key that types `с`
+    /// in a Cyrillic layout.
+    pub base_layout: Option<char>,
+}
+
+/// What happened to a key.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyAction {
+    /// It went down.
+    #[default]
+    Press,
+    /// It is held, and the platform repeats it.
+    Repeat,
+    /// It went up.
+    Release,
 }
 
 /// A key of the keyboard.
@@ -57,16 +79,43 @@ pub enum Key {
     Insert,
     /// Forward Delete.
     Delete,
-    /// A function key, from F1 to F20.
+    /// A function key, from F1 to F35. xterm's sequences stop at F20.
     F(u8),
     /// A key of the numeric keypad.
     Keypad(Keypad),
+    /// Caps Lock.
+    CapsLock,
+    /// Scroll Lock.
+    ScrollLock,
+    /// Num Lock, or Clear on Apple keyboards.
+    NumLock,
+    /// Print Screen.
+    PrintScreen,
+    /// Pause.
+    Pause,
+    /// The context menu key.
+    Menu,
+    /// A media key.
+    Media(Media),
+    /// A modifier key, pressed or released on its own.
+    Modifier(ModifierKey),
+}
+
+impl Key {
+    /// Whether the key is a modifier or a lock, which only the kitty
+    /// protocol's report of every key sends.
+    pub(super) fn is_modifier(self) -> bool {
+        matches!(
+            self,
+            Self::Modifier(_) | Self::CapsLock | Self::ScrollLock | Self::NumLock
+        )
+    }
 }
 
 /// A key of the numeric keypad.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keypad {
-    /// A digit, from 0 to 9.
+    /// A digit, from 0 to 9; those past 9 count as 9.
     Digit(u8),
     /// The decimal point.
     Decimal,
@@ -84,10 +133,98 @@ pub enum Keypad {
     Separator,
     /// `=`, which Apple keyboards have.
     Equal,
+    /// The left arrow, which the 4 key is without Num Lock.
+    Left,
+    /// The right arrow, the 6 key without Num Lock.
+    Right,
+    /// The up arrow, the 8 key without Num Lock.
+    Up,
+    /// The down arrow, the 2 key without Num Lock.
+    Down,
+    /// Page Up, the 9 key without Num Lock.
+    PageUp,
+    /// Page Down, the 3 key without Num Lock.
+    PageDown,
+    /// Home, the 7 key without Num Lock.
+    Home,
+    /// End, the 1 key without Num Lock.
+    End,
+    /// Insert, the 0 key without Num Lock.
+    Insert,
+    /// Delete, the decimal point without Num Lock.
+    Delete,
+    /// The 5 key without Num Lock, which xterm calls Begin.
+    Begin,
 }
 
-/// The modifiers held with a key. Alt is Option on macOS, and the two
-/// keys are told apart, as each can act as Meta or not.
+/// A media key, numbered as the kitty protocol numbers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Media {
+    /// Play.
+    Play = 57428,
+    /// Pause.
+    Pause = 57429,
+    /// Play or pause.
+    PlayPause = 57430,
+    /// Reverse.
+    Reverse = 57431,
+    /// Stop.
+    Stop = 57432,
+    /// Fast forward.
+    FastForward = 57433,
+    /// Rewind.
+    Rewind = 57434,
+    /// The next track.
+    TrackNext = 57435,
+    /// The previous track.
+    TrackPrevious = 57436,
+    /// Record.
+    Record = 57437,
+    /// Lower the volume.
+    LowerVolume = 57438,
+    /// Raise the volume.
+    RaiseVolume = 57439,
+    /// Mute.
+    MuteVolume = 57440,
+}
+
+/// A modifier key, numbered as the kitty protocol numbers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ModifierKey {
+    /// The left Shift.
+    LeftShift = 57441,
+    /// The left Control.
+    LeftControl = 57442,
+    /// The left Alt, or Option.
+    LeftAlt = 57443,
+    /// The left Super, or Command.
+    LeftSuper = 57444,
+    /// The left Hyper.
+    LeftHyper = 57445,
+    /// The left Meta.
+    LeftMeta = 57446,
+    /// The right Shift.
+    RightShift = 57447,
+    /// The right Control.
+    RightControl = 57448,
+    /// The right Alt, or Option.
+    RightAlt = 57449,
+    /// The right Super, or Command.
+    RightSuper = 57450,
+    /// The right Hyper.
+    RightHyper = 57451,
+    /// The right Meta.
+    RightMeta = 57452,
+    /// AltGr, ISO's level 3 shift.
+    IsoLevel3Shift = 57453,
+    /// ISO's level 5 shift.
+    IsoLevel5Shift = 57454,
+}
+
+/// The modifiers held with a key, and the locks on. Alt is Option on
+/// macOS, and the two keys are told apart, as each can act as Meta or not.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mods {
     /// Shift.
@@ -98,6 +235,37 @@ pub struct Mods {
     pub left_alt: bool,
     /// The right Alt, or Option.
     pub right_alt: bool,
+    /// Super: Command on macOS, the logo key elsewhere.
+    pub super_key: bool,
+    /// Hyper, which some X11 and Wayland layouts have.
+    pub hyper: bool,
+    /// Meta, a modifier of its own on some X11 and Wayland layouts, apart
+    /// from an Alt that acts as Meta.
+    pub meta: bool,
+    /// Caps Lock is on.
+    pub caps_lock: bool,
+    /// Num Lock is on.
+    pub num_lock: bool,
+}
+
+impl Mods {
+    /// No modifier, and no lock.
+    pub const NONE: Self = Self {
+        shift: false,
+        control: false,
+        left_alt: false,
+        right_alt: false,
+        super_key: false,
+        hyper: false,
+        meta: false,
+        caps_lock: false,
+        num_lock: false,
+    };
+
+    /// Whether an Alt that acts as Meta, as `options` says, is held.
+    pub(super) fn alt_as_meta(self, options: KeyOptions) -> bool {
+        (self.left_alt && options.left_alt_is_meta) || (self.right_alt && options.right_alt_is_meta)
+    }
 }
 
 /// How the keyboard is set up, from the configuration.
@@ -123,26 +291,56 @@ impl Default for KeyOptions {
 
 const ESC: u8 = 0x1B;
 
-/// Appends to `out` what xterm sends for `event`, with the terminal's
-/// `modes` and the keyboard's `options`.
+/// Appends to `out` what `event` sends, with the terminal's `modes`, the
+/// kitty protocol's `flags` in force and the keyboard's `options`.
 ///
+/// With no flag, keys go as xterm sends them, and releases send nothing.
 /// An Alt that acts as Meta sends ESC before the key, whatever mode 1036
 /// says: xterm's eight-bit Meta does not suit UTF-8. With
 /// `modifyOtherKeys` at 1, keys whose usual sequence would lose a modifier,
 /// such as Control with a digit or Control and Shift with a letter, send
 /// `CSI 27 ; modifiers ; code ~`; at 2, every modified key does.
+///
+/// With flags, keys go as the kitty keyboard protocol has them:
+/// <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.
 pub fn encode_key(
+    event: &KeyEvent<'_>,
+    modes: &InputModes,
+    flags: KeyboardFlags,
+    options: KeyOptions,
+    out: &mut Vec<u8>,
+) {
+    if flags != KeyboardFlags::NONE {
+        kitty::encode_key(event, modes, flags, options, out);
+    } else if event.action != KeyAction::Release {
+        encode_legacy(event, modes, options, out);
+    }
+}
+
+/// Appends to `out` what `text` sends when no key typed it, as when an
+/// input method commits it: the text itself, or, when the kitty protocol
+/// reports every key as an escape code along with its text,
+/// `CSI 0 ; ; codepoints u`.
+pub fn encode_text(text: &str, flags: KeyboardFlags, out: &mut Vec<u8>) {
+    if flags.contains(KeyboardFlags::REPORT_ALL_KEYS) && flags.contains(KeyboardFlags::REPORT_TEXT)
+    {
+        kitty::encode_text(text, out);
+    } else {
+        out.extend_from_slice(text.as_bytes());
+    }
+}
+
+/// Appends to `out` what xterm sends for `event`.
+pub(super) fn encode_legacy(
     event: &KeyEvent<'_>,
     modes: &InputModes,
     options: KeyOptions,
     out: &mut Vec<u8>,
 ) {
     let mods = event.mods;
-    let meta = (mods.left_alt && options.left_alt_is_meta)
-        || (mods.right_alt && options.right_alt_is_meta);
     let modifiers = Modifiers {
         shift: mods.shift,
-        meta,
+        meta: mods.alt_as_meta(options),
         control: mods.control,
     };
     match event.key {
@@ -158,8 +356,23 @@ pub fn encode_key(
                 out,
             );
         }
-        Key::Tab if modifiers.shift && !modifiers.control && !modifiers.meta => {
-            out.extend_from_slice(b"\x1b[Z");
+        // Shift makes Tab a back tab, `CSI Z`, which Control leaves as it
+        // is and Meta sends after an escape, as with xterm's ISO_Left_Tab,
+        // unless `modifyOtherKeys` reports the key.
+        Key::Tab if modifiers.shift => {
+            let reported = match modes.modify_other_keys {
+                0 => false,
+                1 => modifiers.control,
+                _ => modifiers.control || modifiers.meta,
+            };
+            if reported {
+                modify_other_key(9, modifiers, out);
+            } else {
+                if modifiers.meta {
+                    out.push(ESC);
+                }
+                out.extend_from_slice(b"\x1b[Z");
+            }
         }
         Key::Tab => encode_c0(9, b"\t", modifiers, modes, modifiers.control, out),
         Key::Backspace => {
@@ -187,6 +400,15 @@ pub fn encode_key(
         }
         Key::F(_) => {}
         Key::Keypad(key) => encode_keypad(key, event, modifiers, modes, out),
+        // xterm sends F16's sequence for Menu.
+        Key::Menu => encode_tilde(29, modifiers, out),
+        Key::CapsLock
+        | Key::ScrollLock
+        | Key::NumLock
+        | Key::PrintScreen
+        | Key::Pause
+        | Key::Media(_)
+        | Key::Modifier(_) => {}
     }
 }
 
@@ -304,7 +526,8 @@ fn encode_tilde(code: u16, modifiers: Modifiers, out: &mut Vec<u8>) {
 }
 
 /// A key of the keypad: `SS3 code` in application mode (DECKPAM), what it
-/// types otherwise, as the platform gives it.
+/// types otherwise, as the platform gives it. Without Num Lock, the keys
+/// send what the keys they stand for send, in either mode.
 fn encode_keypad(
     key: Keypad,
     event: &KeyEvent<'_>,
@@ -312,27 +535,34 @@ fn encode_keypad(
     modes: &InputModes,
     out: &mut Vec<u8>,
 ) {
-    if modes.keypad_application {
-        let code = match key {
-            Keypad::Digit(digit) => b'p' + digit.min(9),
-            Keypad::Decimal => b'n',
-            Keypad::Enter => b'M',
-            Keypad::Add => b'k',
-            Keypad::Subtract => b'm',
-            Keypad::Multiply => b'j',
-            Keypad::Divide => b'o',
-            Keypad::Separator => b'l',
-            Keypad::Equal => b'X',
-        };
-        out.extend_from_slice(&[ESC, b'O', code]);
-        return;
-    }
-    if key == Keypad::Enter {
-        let newline: &[u8] = if modes.newline { b"\r\n" } else { b"\r" };
-        encode_c0(13, newline, modifiers, modes, false, out);
-        return;
-    }
-    encode_char(event, modifiers, modes, out);
+    let code = match key {
+        Keypad::Left => return encode_cursor(b'D', modifiers, modes, out),
+        Keypad::Right => return encode_cursor(b'C', modifiers, modes, out),
+        Keypad::Up => return encode_cursor(b'A', modifiers, modes, out),
+        Keypad::Down => return encode_cursor(b'B', modifiers, modes, out),
+        Keypad::Home => return encode_cursor(b'H', modifiers, modes, out),
+        Keypad::End => return encode_cursor(b'F', modifiers, modes, out),
+        Keypad::Begin => return encode_cursor(b'E', modifiers, modes, out),
+        Keypad::Insert => return encode_tilde(2, modifiers, out),
+        Keypad::Delete => return encode_tilde(3, modifiers, out),
+        Keypad::PageUp => return encode_tilde(5, modifiers, out),
+        Keypad::PageDown => return encode_tilde(6, modifiers, out),
+        Keypad::Enter if !modes.keypad_application => {
+            let newline: &[u8] = if modes.newline { b"\r\n" } else { b"\r" };
+            return encode_c0(13, newline, modifiers, modes, false, out);
+        }
+        _ if !modes.keypad_application => return encode_char(event, modifiers, modes, out),
+        Keypad::Digit(digit) => b'p' + digit.min(9),
+        Keypad::Decimal => b'n',
+        Keypad::Enter => b'M',
+        Keypad::Add => b'k',
+        Keypad::Subtract => b'm',
+        Keypad::Multiply => b'j',
+        Keypad::Divide => b'o',
+        Keypad::Separator => b'l',
+        Keypad::Equal => b'X',
+    };
+    out.extend_from_slice(&[ESC, b'O', code]);
 }
 
 /// The control code that Control sends with `c`, as xterm maps it: the
@@ -355,7 +585,7 @@ fn control_byte(c: char) -> Option<u8> {
 }
 
 /// The character of `text`, if it has one and only one.
-fn single_char(text: &str) -> Option<char> {
+pub(super) fn single_char(text: &str) -> Option<char> {
     let mut chars = text.chars();
     let c = chars.next()?;
     chars.next().is_none().then_some(c)
@@ -365,12 +595,7 @@ fn single_char(text: &str) -> Option<char> {
 mod tests {
     use super::*;
 
-    const NONE: Mods = Mods {
-        shift: false,
-        control: false,
-        left_alt: false,
-        right_alt: false,
-    };
+    const NONE: Mods = Mods::NONE;
     const SHIFT: Mods = Mods {
         shift: true,
         ..NONE
@@ -404,12 +629,14 @@ mod tests {
     ) -> String {
         let event = KeyEvent {
             key,
+            action: KeyAction::Press,
             mods,
             text,
             unmodified,
+            base_layout: None,
         };
         let mut out = Vec::new();
-        encode_key(&event, modes, options, &mut out);
+        encode_key(&event, modes, KeyboardFlags::NONE, options, &mut out);
         String::from_utf8(out).unwrap()
     }
 
@@ -560,6 +787,7 @@ mod tests {
         assert_eq!(keypad(Keypad::Enter, "", &numeric), "\r");
         assert_eq!(keypad(Keypad::Digit(0), "0", &application), "\x1bOp");
         assert_eq!(keypad(Keypad::Digit(9), "9", &application), "\x1bOy");
+        assert_eq!(keypad(Keypad::Digit(12), "", &application), "\x1bOy");
         assert_eq!(keypad(Keypad::Enter, "", &application), "\x1bOM");
         assert_eq!(keypad(Keypad::Decimal, ".", &application), "\x1bOn");
         assert_eq!(keypad(Keypad::Add, "+", &application), "\x1bOk");
@@ -614,5 +842,71 @@ mod tests {
             "Shift alone types"
         );
         assert_eq!(send(Key::Up, CONTROL, "", "", &two), "\x1b[1;5A");
+    }
+
+    #[test]
+    fn shift_makes_tab_a_back_tab_whatever_else_is_held() {
+        let both = Mods {
+            control: true,
+            shift: true,
+            ..NONE
+        };
+        let alt_shift = Mods { shift: true, ..ALT };
+        assert_eq!(named(Key::Tab, both), "\x1b[Z");
+        assert_eq!(named(Key::Tab, alt_shift), "\x1b\x1b[Z");
+        let level = |n| InputModes {
+            modify_other_keys: n,
+            ..InputModes::default()
+        };
+        assert_eq!(send(Key::Tab, both, "", "", &level(1)), "\x1b[27;6;9~");
+        assert_eq!(send(Key::Tab, alt_shift, "", "", &level(1)), "\x1b\x1b[Z");
+        assert_eq!(send(Key::Tab, SHIFT, "", "", &level(2)), "\x1b[Z");
+        assert_eq!(send(Key::Tab, alt_shift, "", "", &level(2)), "\x1b[27;4;9~");
+    }
+
+    #[test]
+    fn the_keypad_without_num_lock_sends_the_keys_it_stands_for() {
+        let application = InputModes {
+            cursor_keys_application: true,
+            keypad_application: true,
+            ..InputModes::default()
+        };
+        let numeric = InputModes::default();
+        let cases = [
+            (Keypad::Left, NONE, "\x1b[D", "\x1bOD"),
+            (Keypad::Right, NONE, "\x1b[C", "\x1bOC"),
+            (Keypad::Up, NONE, "\x1b[A", "\x1bOA"),
+            (Keypad::Down, NONE, "\x1b[B", "\x1bOB"),
+            (Keypad::Home, NONE, "\x1b[H", "\x1bOH"),
+            (Keypad::End, NONE, "\x1b[F", "\x1bOF"),
+            (Keypad::Begin, NONE, "\x1b[E", "\x1bOE"),
+            (Keypad::Begin, CONTROL, "\x1b[1;5E", "\x1b[1;5E"),
+            (Keypad::Insert, NONE, "\x1b[2~", "\x1b[2~"),
+            (Keypad::Delete, NONE, "\x1b[3~", "\x1b[3~"),
+            (Keypad::PageUp, NONE, "\x1b[5~", "\x1b[5~"),
+            (Keypad::PageDown, SHIFT, "\x1b[6;2~", "\x1b[6;2~"),
+        ];
+        for (key, mods, normal, in_application) in cases {
+            let keypad = |modes| send(Key::Keypad(key), mods, "", "", modes);
+            assert_eq!(keypad(&numeric), normal, "{key:?}");
+            assert_eq!(keypad(&application), in_application, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn menu_is_f16_and_keys_without_a_sequence_send_nothing() {
+        assert_eq!(named(Key::Menu, NONE), "\x1b[29~");
+        assert_eq!(named(Key::Menu, CONTROL), "\x1b[29;5~");
+        for key in [
+            Key::CapsLock,
+            Key::ScrollLock,
+            Key::NumLock,
+            Key::PrintScreen,
+            Key::Pause,
+            Key::Media(Media::Play),
+            Key::Modifier(ModifierKey::LeftShift),
+        ] {
+            assert_eq!(named(key, NONE), "", "{key:?}");
+        }
     }
 }

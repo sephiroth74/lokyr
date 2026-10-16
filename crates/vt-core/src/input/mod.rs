@@ -2,5 +2,8 @@
 //! that programs expect.
 
 mod keyboard;
+mod kitty;
 
-pub use keyboard::{Key, KeyEvent, KeyOptions, Keypad, Mods, encode_key};
+pub use keyboard::{
+    Key, KeyAction, KeyEvent, KeyOptions, Keypad, Media, ModifierKey, Mods, encode_key, encode_text,
+};
