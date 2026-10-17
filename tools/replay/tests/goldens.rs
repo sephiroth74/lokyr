@@ -1,7 +1,7 @@
 //! Golden snapshots of the screen, from the recorded sessions of the VT
 //! core: the text, the attributes and the cursor, at each marker of a
 //! recording and at its end, `exit`, as `bolt-replay --attributes` prints
-//! them.
+//! them, and the terminal's replies to the program since the point before.
 //!
 //! `cargo insta review` shows the snapshots that a change of the terminal,
 //! or a recording made again, changes.
@@ -18,8 +18,8 @@ fn recordings() -> PathBuf {
 }
 
 /// The screen as a snapshot keeps it: which screen and whether the cursor
-/// shows, then what `bolt-replay --attributes` prints.
-fn snapshot(terminal: &Terminal) -> String {
+/// shows, then what `bolt-replay --attributes` prints, then `replies`.
+fn snapshot(terminal: &Terminal, replies: &[u8]) -> String {
     let screen = if terminal.is_alternate_screen() {
         "alternate"
     } else {
@@ -30,8 +30,13 @@ fn snapshot(terminal: &Terminal) -> String {
     } else {
         "hidden"
     };
+    let replies = if replies.is_empty() {
+        "none".to_owned()
+    } else {
+        format!("{:?}", String::from_utf8_lossy(replies))
+    };
     format!(
-        "the {screen} screen, the cursor {cursor}\n{}",
+        "the {screen} screen, the cursor {cursor}\n{}replies: {replies}\n",
         screen::with_attributes(terminal)
     )
 }
@@ -61,7 +66,8 @@ fn golden(name: &str) {
                 parser.advance(&mut terminal, chunk);
             }
             fed = chunks;
-            insta::assert_snapshot!(format!("{name}@{label}"), snapshot(&terminal));
+            let replies = terminal.take_replies();
+            insta::assert_snapshot!(format!("{name}@{label}"), snapshot(&terminal, &replies));
         }
     });
 }

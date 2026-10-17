@@ -3,26 +3,26 @@ source: tools/replay/tests/goldens.rs
 ---
 the alternate screen, the cursor hidden
 
-    0[97.0]   3[97.0]  6[100.]            9[100.]  12[100.]  15[100.]
-  2-4 fg=6; 5-5 bold; 6-8 fg=2; 9-9 fg=1; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-18 fg=2; 19-19 fg=1; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-27 fg=2; 28-28 fg=1; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 fg=2; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-54 fg=2; 55-57 fg=1; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-65 fg=2; 66-67 fg=1; 68-68 bold
-    1[97.0]   4[97.0]  7[99.0]           10[100.]  13[100.]  16[100.]
-  2-4 fg=6; 5-5 bold; 6-8 fg=2; 9-9 fg=1; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-18 fg=2; 19-19 fg=1; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-28 fg=2; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 fg=2; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-54 fg=2; 55-57 fg=1; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-65 fg=2; 66-67 fg=1; 68-68 bold
-    2[97.0]   5[96.0]  8[100.]           11[100.]  14[100.]  17[100.]
-  2-4 fg=6; 5-5 bold; 6-8 fg=2; 9-9 fg=1; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-18 fg=2; 19-19 fg=1; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-28 fg=2; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 fg=2; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-55 fg=2; 56-57 fg=1; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-65 fg=2; 66-67 fg=1; 68-68 bold
-  Mem[|||||||||||||||||||||43.5G/64.0G] Tasks: 1125, 5054 thr, 0 kthr; 18 runn
-  2-4 fg=6; 5-5 bold; 6-9 fg=2; 10-10 fg=5; 11-27 bold fg=8; 28-28 bold fg=4; 29-30 fg=3; 31-37 fg=6; 38-38 bold; 40-46 fg=6; 47-50 bold fg=6; 51-52 fg=6; 53-56 bold fg=2; 57-60 fg=6; 61-68 bold fg=8; 69-70 fg=6; 71-72 bold fg=2; 73-77 fg=6
-  Swp[|||||||||||||||||||||3.95G/5.00G] Load average: 3.22 3.08 3.12
+    0[19.2]   3[9.9%]  6[0.0%]            9[0.0%]  12[18.6]  15[18.8]
+  2-4 fg=6; 5-5 bold; 6-6 fg=2; 7-7 fg=1; 8-9 bold fg=8; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-16 fg=2; 17-17 fg=1; 18-19 bold fg=8; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-28 bold fg=8; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 bold fg=8; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-54 fg=2; 55-55 fg=1; 56-57 bold fg=8; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-64 fg=2; 65-65 fg=1; 66-67 bold fg=8; 68-68 bold
+    1[15.0]   4[9.8%]  7[0.0%]           10[0.0%]  13[18.4]  16[17.8]
+  2-4 fg=6; 5-5 bold; 6-6 fg=2; 7-7 fg=1; 8-9 bold fg=8; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-16 fg=2; 17-17 fg=1; 18-19 bold fg=8; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-28 bold fg=8; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 bold fg=8; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-54 fg=2; 55-55 fg=1; 56-57 bold fg=8; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-64 fg=2; 65-65 fg=1; 66-67 bold fg=8; 68-68 bold
+    2[13.0]   5[5.9%]  8[0.0%]           11[0.0%]  14[17.0]  17[18.6]
+  2-4 fg=6; 5-5 bold; 6-6 fg=2; 7-7 fg=1; 8-9 bold fg=8; 10-10 bold; 12-14 fg=6; 15-15 bold; 16-16 fg=2; 17-17 fg=1; 18-19 bold fg=8; 20-20 bold; 21-23 fg=6; 24-24 bold; 25-28 bold fg=8; 29-29 bold; 40-42 fg=6; 43-43 bold; 44-47 bold fg=8; 48-48 bold; 50-52 fg=6; 53-53 bold; 54-54 fg=2; 55-55 fg=1; 56-57 bold fg=8; 58-58 bold; 60-62 fg=6; 63-63 bold; 64-64 fg=2; 65-65 fg=1; 66-67 bold fg=8; 68-68 bold
+  Mem[|||||||||||||||||||||42.9G/64.0G] Tasks: 1090, 5021 thr, 0 kthr; 2 runni
+  2-4 fg=6; 5-5 bold; 6-8 fg=2; 9-9 fg=5; 10-26 bold fg=8; 27-27 bold fg=4; 28-29 fg=3; 30-37 fg=6; 38-38 bold; 40-46 fg=6; 47-50 bold fg=6; 51-52 fg=6; 53-56 bold fg=2; 57-60 fg=6; 61-68 bold fg=8; 69-70 fg=6; 71-71 bold fg=2; 72-77 fg=6
+  Swp[|||||||||||||||||||||3.92G/5.00G] Load average: 3.10 3.88 3.58
   2-4 fg=6; 5-5 bold; 6-31 fg=1; 32-37 bold fg=8; 38-38 bold; 40-53 fg=6; 54-58 bold; 59-63 bold fg=6; 64-68 fg=6
-                                        Uptime: 16 days, 19:36:49
+                                        Uptime: 16 days, 20:46:13
   40-47 fg=6; 48-64 bold fg=6
 
   [Main]
   2-2 fg=2 bg=2; 3-6 fg=0 bg=2; 7-7 fg=2 bg=2
      PID PRI  NI  VIRT   RES S  CPU%▽MEM%   TIME+  Command
   0-3 bg=2; 4-30 fg=0 bg=2; 31-36 fg=0 bg=6; 37-57 fg=0 bg=2; 58-79 bg=2
-   63543   0   0  466G 15936 R   0.7  0.0  0:00.05 htop -p 63543
+   43895  24   0  466G  9648 R   0.2  0.0  0:00.02 htop -p 43895
   0-63 fg=0 bg=6; 64-79 bg=6
-56176339  31   0     0     0 ?   0.0  0.0  0:00.05 htop
+56514898  31   0     0     0 ?   0.0  0.0  0:00.03 htop
   13-16 bold fg=8; 31-41 bold fg=8; 51-54 fg=2
 
 
@@ -38,3 +38,4 @@ the alternate screen, the cursor hidden
 F1Help  F2Setup F3SearchF4FilterF5Tree  F6SortByF7Nice -F8Nice +F9Kill  F10Quit
   2-7 fg=0 bg=6; 10-15 fg=0 bg=6; 18-23 fg=0 bg=6; 26-31 fg=0 bg=6; 34-39 fg=0 bg=6; 42-47 fg=0 bg=6; 50-55 fg=0 bg=6; 58-63 fg=0 bg=6; 66-71 fg=0 bg=6; 75-78 fg=0 bg=6; 79-79 bg=6
 cursor 79,23
+replies: none

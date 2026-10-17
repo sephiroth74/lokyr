@@ -40,19 +40,22 @@ pub struct Script {
 /// What a script does once the program runs.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Step {
-    /// Waits until a row of the screen shows the text, for so long at most.
+    /// Waits until a row of the screen shows the text, and no synchronized
+    /// update is under way, for so long at most.
     Wait(String, Duration),
-    /// Waits until the program writes nothing for so long, for as long as
-    /// the second says at most.
+    /// Waits until the program writes nothing for so long, with no
+    /// synchronized update under way, for as long as the second says at
+    /// most.
     Quiet(Duration, Duration),
     /// Lets the program run for so long, as one that redraws all the time
     /// is never quiet.
     Sleep(Duration),
     /// Types the bytes, once the program takes them, for so long at most.
     Send(Vec<u8>, Duration),
-    /// Marks the moment, for tests to look at the screen there, by a label
-    /// of its own: not `exit`, which the end takes, and without `/`, as the
-    /// tests' snapshots are named after them.
+    /// Marks the moment, once no synchronized update is under way, for tests
+    /// to look at the screen there, by a label of its own: not `exit`, which
+    /// the end takes, and without `/`, as the tests' snapshots are named
+    /// after them.
     Mark(String),
     /// Waits for the program's output to end, for so long at most.
     Exit(Duration),

@@ -1,7 +1,7 @@
 ---
 source: tools/replay/tests/goldens.rs
 ---
-the alternate screen, the cursor hidden
+the alternate screen, the cursor shown
 
 
 
@@ -38,4 +38,5 @@ the alternate screen, the cursor hidden
   2-6 fg=144; 7-78 fg=59
 >
   0-0 bold fg=110; 1-1 fg=110
-cursor 28,22
+cursor 2,23
+replies: "\u{1b}[1;1R\u{1b}[?2004;2$y\u{1b}[1;1R"

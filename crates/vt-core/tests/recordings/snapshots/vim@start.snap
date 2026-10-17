@@ -50,3 +50,4 @@ the alternate screen, the cursor shown
   0-79 fg=12
 :set number hlsearch
 cursor 4,0
+replies: "\u{1b}[2;2R\u{1b}[3;1R\u{1b}[>1;10;0c\u{1b}[>4;2m\u{1b}[?12;2$y"

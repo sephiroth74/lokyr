@@ -20,10 +20,10 @@ anyhow = "1.0.104"
 cargo_metadata = "0.23.1"
 # Benchmarks, without plots or rayon.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
-libc = "0.2.190"
-# Literal search over the grid's text.
 # Golden snapshots of the screen, from recorded sessions.
 insta = { version = "1.49.0", default-features = false }
+libc = "0.2.190"
+# Literal search over the grid's text.
 memchr = "2.8.3"
 # Regex search over the grid's text.
 regex-automata = "0.4.18"

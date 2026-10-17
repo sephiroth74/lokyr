@@ -46,3 +46,4 @@ s   F4 \: incremental name filtering          F7 ]: higher priority (root only)
        K: hide/show kernel threads               w: wrap process command in mult
   1-9 bold fg=6; 27-33 fg=2; 43-51 bold fg=6
 cursor 79,23 pending wrap
+replies: none

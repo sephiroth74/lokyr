@@ -206,6 +206,9 @@ enum Read {
     End,
 }
 
+/// How long a marker waits at most for an update under way to end.
+const WAIT: Duration = Duration::from_secs(10);
+
 /// How long a read or a write waits at most while the other has to go on.
 const TURN: Duration = Duration::from_millis(10);
 
@@ -214,7 +217,7 @@ impl Recorder {
         match step {
             Step::Wait(text, limit) => {
                 let deadline = Instant::now() + *limit;
-                while !self.shows(text) {
+                while !self.shows(text) || self.terminal.synchronized_output() {
                     match self.read(deadline)? {
                         Read::Output => {}
                         Read::TimedOut => {
@@ -226,7 +229,12 @@ impl Recorder {
             }
             Step::Quiet(time, limit) => {
                 let deadline = Instant::now() + *limit;
-                while let Read::Output = self.read(Instant::now() + *time)? {
+                loop {
+                    match self.read(Instant::now() + *time)? {
+                        Read::End => break,
+                        Read::TimedOut if !self.terminal.synchronized_output() => break,
+                        Read::Output | Read::TimedOut => {}
+                    }
                     if Instant::now() >= deadline {
                         bail!(
                             "the program did not go quiet in {limit:?}:\n{}",
@@ -244,7 +252,18 @@ impl Recorder {
                 self.pending.extend_from_slice(bytes);
                 self.flush(*limit)?;
             }
-            Step::Mark(label) => self.cast.mark(label),
+            Step::Mark(label) => {
+                // Not in a frame half drawn.
+                let deadline = Instant::now() + WAIT;
+                while self.terminal.synchronized_output() {
+                    match self.read(deadline)? {
+                        Read::Output => {}
+                        Read::TimedOut => bail!("an update did not end in {WAIT:?} for `{label}`"),
+                        Read::End => break,
+                    }
+                }
+                self.cast.mark(label);
+            }
             Step::Exit(limit) => {
                 let deadline = Instant::now() + *limit;
                 loop {

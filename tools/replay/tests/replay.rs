@@ -191,8 +191,8 @@ fn a_step_that_cannot_end_fails_the_recording() {
         ),
         (
             "busy",
-            "run yes\nquiet 100 500\n",
-            "did not go quiet in 500ms",
+            "run yes\nquiet 1000 3000\n",
+            "did not go quiet in 3s",
         ),
     ] {
         let (output, cast) = record(name, script, &[]);
@@ -299,4 +299,30 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!stale.exists());
+}
+
+#[test]
+fn a_wait_a_quiet_and_a_mark_do_not_end_inside_a_synchronized_update() {
+    // An update that shows `ready` at once, and ends half a second later.
+    let program = "run sh -c \"printf '\\\\033[?2026hready'; sleep 0.5; printf ' done\\\\033[?2026l'; read x\"";
+    for (name, steps, after) in [
+        ("wait", "wait ready\nsend \"x\\r\"\n", r#","i","x\r"]"#),
+        ("quiet", "quiet 200\nsend \"x\\r\"\n", r#","i","x\r"]"#),
+        (
+            "mark",
+            "sleep 100\nmark here\nsend \"x\\r\"\n",
+            r#","m","here"]"#,
+        ),
+    ] {
+        let (output, cast) = record(name, &format!("{program}\n{steps}exit\n"), &[]);
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let cast = cast.unwrap();
+        let end = cast.find("\\u001b[?2026l").expect("the update's end");
+        let next = cast.find(after).expect("the step after");
+        assert!(end < next, "{name}: {cast}");
+    }
 }
