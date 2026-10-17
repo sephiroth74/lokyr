@@ -61,22 +61,28 @@ fn workspace_root() -> PathBuf {
 /// entries that `out` may hold.
 fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
-    let staging = Staging(out.join(format!(".{ENTRY}-{}", std::process::id())));
+    remove_stale_staging(out);
+    let staging = Staging(out.join(format!("{}{}", staging_prefix(), std::process::id())));
     let _ = fs::remove_dir_all(&staging.0);
     fs::create_dir_all(&staging.0)?;
     check(source, &staging.0)?;
+    let mut compiled = None;
     for dir in fs::read_dir(&staging.0)? {
         let dir = dir?;
         for file in fs::read_dir(dir.path())? {
             let file = file?;
             let into = out.join(dir.file_name());
             fs::create_dir_all(&into)?;
-            fs::rename(file.path(), into.join(file.file_name())).with_context(|| {
+            let to = into.join(file.file_name());
+            fs::rename(file.path(), &to).with_context(|| {
                 format!("moving {} into {}", file.path().display(), into.display())
             })?;
+            if file.file_name() == ENTRY {
+                compiled = Some(to);
+            }
         }
     }
-    compiled_file(out)
+    compiled.with_context(|| format!("tic compiled no {ENTRY}"))
 }
 
 /// A directory that is removed as it drops.
@@ -86,6 +92,43 @@ impl Drop for Staging {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+/// What the staging directories' names start with, before the process id
+/// of the run that made them.
+fn staging_prefix() -> String {
+    format!(".{ENTRY}-")
+}
+
+/// Removes the staging directories in `out` that runs which were killed
+/// left, those whose process has gone.
+fn remove_stale_staging(out: &Path) {
+    let Ok(entries) = fs::read_dir(out) else {
+        return;
+    };
+    let prefix = staging_prefix();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|pid| pid.parse::<libc::pid_t>().ok())
+        else {
+            continue;
+        };
+        if pid > 0 && gone(pid) {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Whether no process has the id `pid`, which is positive: one that is not
+/// this user's still has it.
+fn gone(pid: libc::pid_t) -> bool {
+    // SAFETY: with no signal, `kill` sends nothing, and only looks for the
+    // process; a positive `pid` names one process.
+    let found = unsafe { libc::kill(pid, 0) } == 0;
+    !found && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
 
 /// Compiles `source` into `dir`, which holds no entry, and checks it.
@@ -321,6 +364,40 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert!(names.iter().all(|name| !name.starts_with('.')), "{names:?}");
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    fn the_file_reported_is_the_one_moved_into_place() {
+        let out = temp_dir("moved");
+        let source = workspace_root().join(SOURCE);
+        let compiled = compile(&source, &out).unwrap();
+        // A stale entry in the other layout, which a run of another `tic`
+        // left.
+        let layout = compiled.parent().unwrap().file_name().unwrap();
+        let other = if layout == "x" { "78" } else { "x" };
+        fs::create_dir_all(out.join(other)).unwrap();
+        fs::write(out.join(other).join(ENTRY), b"stale").unwrap();
+        assert_eq!(compile(&source, &out).unwrap(), compiled);
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    fn the_staging_directories_of_killed_runs_are_removed() {
+        let out = temp_dir("stale");
+        let mut child = Command::new("true").spawn().unwrap();
+        child.wait().unwrap();
+        let killed = out.join(format!("{}{}", staging_prefix(), child.id()));
+        // A process that is not this user's, which runs.
+        let running = out.join(format!("{}1", staging_prefix()));
+        let other = out.join(".other-1");
+        for dir in [&killed, &running, &other] {
+            fs::create_dir_all(dir.join("78")).unwrap();
+        }
+        compile(&workspace_root().join(SOURCE), &out).unwrap();
+        assert!(!killed.exists());
+        assert!(running.exists());
+        assert!(other.exists());
         fs::remove_dir_all(&out).unwrap();
     }
 

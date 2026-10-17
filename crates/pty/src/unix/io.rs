@@ -32,7 +32,8 @@ impl PtyReader {
     }
 
     /// Reads what the program wrote into `buf`, waiting for it until
-    /// `deadline` at most, or for as long as it takes without one. The end
+    /// `deadline` at most, or for as long as it takes without one; a
+    /// deadline that has passed reads what is there, without waiting. The end
     /// comes once the program and every process that it left have closed
     /// the terminal, or once the PTY has dropped.
     pub fn read_until(
@@ -92,7 +93,8 @@ impl PtyWriter {
 impl PtyWriter {
     /// Writes some of `buf`, once the program has room for it, waiting for
     /// that until `deadline` at most, or for as long as it takes without
-    /// one: how many bytes, or `None` if the deadline came first. A program
+    /// one: how many bytes, or `None` if the deadline came first. A deadline
+    /// that has passed writes what fits, without waiting. A program
     /// that does not read its input keeps the room from coming; once the PTY
     /// drops, this fails with `BrokenPipe`.
     pub fn write_until(
@@ -154,17 +156,16 @@ fn wait(
     deadline: Option<Instant>,
 ) -> io::Result<Ready> {
     loop {
-        let timeout = match deadline {
-            None => -1,
+        // A deadline that has passed still looks once, without waiting.
+        let (timeout, last) = match deadline {
+            None => (-1, false),
             Some(deadline) => {
                 let left = deadline.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Ok(Ready::TimedOut);
-                }
                 // Rounded up, so that the wait does not end before the
                 // deadline and spin.
                 let millis = left.as_nanos().div_ceil(1_000_000);
-                libc::c_int::try_from(millis).unwrap_or(libc::c_int::MAX)
+                let timeout = libc::c_int::try_from(millis).unwrap_or(libc::c_int::MAX);
+                (timeout, left.is_zero())
             }
         };
         let mut fds = [
@@ -193,6 +194,9 @@ fn wait(
         }
         if fds[0].revents != 0 {
             return Ok(Ready::Master);
+        }
+        if last {
+            return Ok(Ready::TimedOut);
         }
         // Timed out: the deadline, checked again, ends the wait.
     }

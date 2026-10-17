@@ -59,12 +59,17 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     }
     command
         .env_clear()
-        .envs(environment(options, std::env::vars_os()))
-        .current_dir(options.working_directory.as_ref().unwrap_or(&account.home));
+        .envs(environment(options, std::env::vars_os()));
     let spawn_error = |source| Error::Spawn {
         program: program.display().to_string(),
         source,
     };
+    // The working directory, opened here, before the spawns' lock, rather
+    // than entered by the child under it: a directory on a mount that does
+    // not answer holds this spawn alone.
+    let dir = open_directory(options.working_directory.as_ref().unwrap_or(&account.home))
+        .map_err(spawn_error)?;
+    let dir_fd = dir.as_raw_fd();
     for stdio in 0..3 {
         let slave = Stdio::from(slave.try_clone().map_err(spawn_error)?);
         match stdio {
@@ -74,9 +79,13 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         };
     }
     // SAFETY: the closure runs in the child between fork and exec, and calls
-    // only functions that are async-signal-safe, without allocating.
+    // only functions that are async-signal-safe, without allocating; the
+    // directory's descriptor stays open in the parent until the spawn ends.
     unsafe {
-        command.pre_exec(lead_session);
+        command.pre_exec(move || {
+            enter(dir_fd)?;
+            lead_session()
+        });
     }
     let (closed, closing) = closing::closing().map_err(Error::Open)?;
     let child = {
@@ -87,6 +96,7 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     // none, so that the master reads the end when the program goes.
     drop(command);
     drop(slave);
+    drop(dir);
     Ok(Pty {
         master,
         closed,
@@ -314,6 +324,35 @@ fn tty_name(master: &OwnedFd) -> std::io::Result<PathBuf> {
     Ok(PathBuf::from(OsStr::from_bytes(name.to_bytes())))
 }
 
+/// How a working directory is opened: to be entered, not read, so that a
+/// directory that can be searched but not listed is entered, as `chdir`
+/// enters it, and a path that is not a directory fails at once, a FIFO's
+/// too, rather than wait for a writer.
+#[cfg(target_os = "macos")]
+const SEARCH: libc::c_int = libc::O_SEARCH;
+#[cfg(not(target_os = "macos"))]
+const SEARCH: libc::c_int = libc::O_PATH | libc::O_DIRECTORY;
+
+/// Opens the directory at `path`, for the child to enter.
+fn open_directory(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(SEARCH)
+        .open(path)
+}
+
+/// Enters the directory that `fd` holds open, in the child, between fork
+/// and exec, as `fchdir` is async-signal-safe.
+fn enter(fd: std::os::fd::RawFd) -> std::io::Result<()> {
+    // SAFETY: `fchdir` changes only the process's working directory, to the
+    // directory that `fd`, open in the parent too, holds.
+    if unsafe { libc::fchdir(fd) } == -1 {
+        return Err(IoError::last_os_error());
+    }
+    Ok(())
+}
+
 /// Makes the child the leader of a session, with the terminal on its
 /// standard input as the controlling terminal, empties the signal mask,
 /// which the child has from the thread that spawned it, and gives every
@@ -526,6 +565,22 @@ fn environment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_directory_that_cannot_be_opened_fails_without_the_spawns_lock() {
+        let held = SPAWNING.lock().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let spawning = std::thread::spawn(move || {
+            let mut options =
+                Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
+            options.working_directory = Some("/no/such/directory".into());
+            sender.send(spawn(&options).map(drop)).unwrap();
+        });
+        let failed = receiver.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        spawning.join().unwrap();
+        assert!(matches!(failed, Ok(Err(Error::Spawn { .. }))), "{failed:?}");
+    }
 
     fn vars(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
         pairs

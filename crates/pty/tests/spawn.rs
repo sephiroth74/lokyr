@@ -388,3 +388,88 @@ fn a_write_to_a_program_that_does_not_read_times_out() {
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_eq!(writer.write_until(&[], None).unwrap(), Some(0));
 }
+
+#[test]
+fn a_deadline_that_has_passed_still_reads_and_writes_what_it_can() {
+    let pty = spawn(&Options::new(
+        sh("stty raw -echo; echo armed; exec cat"),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let mut reader = pty.reader().unwrap();
+    let mut buffer = [0; 64];
+    let mut read = Vec::new();
+    while !read.ends_with(b"armed\n") {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        match reader.read_until(&mut buffer, Some(deadline)).unwrap() {
+            ReadOutcome::Read(n) => read.extend_from_slice(&buffer[..n]),
+            outcome => panic!("{outcome:?} before the program was ready"),
+        }
+    }
+    let past = std::time::Instant::now();
+    std::thread::sleep(Duration::from_millis(5));
+    let mut writer = pty.writer().unwrap();
+    assert_eq!(writer.write_until(b"x", Some(past)).unwrap(), Some(1));
+    // `cat` sends it back, which a read with the past deadline then takes.
+    let started = std::time::Instant::now();
+    loop {
+        match reader.read_until(&mut buffer, Some(past)).unwrap() {
+            ReadOutcome::Read(n) => {
+                assert_eq!(&buffer[..n], b"x");
+                break;
+            }
+            ReadOutcome::TimedOut => {}
+            ReadOutcome::End => panic!("the end"),
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "never read");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// A new directory of the temporary one, named for the test.
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("bolt-pty-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn a_working_directory_that_can_be_searched_but_not_read_is_entered() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = temp_dir("search");
+    std::fs::write(dir.join("marker"), "inside\n").unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o100)).unwrap();
+    let mut options = Options::new(sh("cat marker"), "xterm-256color");
+    options.working_directory = Some(dir.clone());
+    let read = spawn(&options).map(|pty| Output::new(pty.reader().unwrap()).rest());
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(read.unwrap().contains("inside"));
+}
+
+#[test]
+fn a_working_directory_that_is_a_fifo_fails_without_waiting_for_a_writer() {
+    let dir = temp_dir("fifo");
+    let fifo = dir.join("fifo");
+    let path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: `path` is a C string, which lives through the call.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    let (sender, receiver) = mpsc::channel();
+    let working_directory = fifo.clone();
+    std::thread::spawn(move || {
+        let mut options = Options::new(sh("true"), "xterm-256color");
+        options.working_directory = Some(working_directory);
+        sender.send(spawn(&options).map(drop)).unwrap();
+    });
+    let failed = receiver.recv_timeout(Duration::from_secs(5));
+    if failed.is_err() {
+        // Lets the open that waits go, so that the thread ends.
+        let _ = std::fs::OpenOptions::new().write(true).open(&fifo);
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        matches!(failed, Ok(Err(bolt_pty::Error::Spawn { .. }))),
+        "{failed:?}"
+    );
+}
