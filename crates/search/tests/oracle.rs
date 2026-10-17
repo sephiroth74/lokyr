@@ -67,11 +67,16 @@ fn lines(list: &PageList) -> Vec<Line> {
     lines
 }
 
-/// The first cell of each match of `needle` in `line`, by brute force: from
-/// the line's start, the first place, then the first after each match's
-/// end, where the needle starts, from the start of a cell to the end of
-/// one, a whole word if `whole_word`.
-fn expected(line: &Line, needle: &str, insensitive: bool, whole_word: bool) -> Vec<Position> {
+/// The first and the last cell of each match of `needle` in `line`, by
+/// brute force: from the line's start, the first place, then the first
+/// after each match's end, where the needle starts, from the start of a
+/// cell to the end of one, a whole word if `whole_word`.
+fn expected(
+    line: &Line,
+    needle: &str,
+    insensitive: bool,
+    whole_word: bool,
+) -> Vec<(Position, Position)> {
     let (text, needle) = if insensitive {
         (line.text.to_ascii_lowercase(), needle.to_ascii_lowercase())
     } else {
@@ -96,15 +101,25 @@ fn expected(line: &Line, needle: &str, insensitive: bool, whole_word: bool) -> V
     let mut found = Vec::new();
     let mut at = 0;
     while let Some(start) = (at..text.len()).find(|&start| counts(start)) {
-        found.push(line.cells[cell(start).unwrap()].1);
-        at = start + needle.len();
+        let end = start + needle.len();
+        // The cell that holds the match's last byte.
+        let last = line
+            .cells
+            .iter()
+            .rev()
+            .find(|&&(cell_start, _)| cell_start < end)
+            .unwrap();
+        found.push((line.cells[cell(start).unwrap()].1, last.1));
+        at = end;
     }
     found
 }
 
-/// The first cell of every match, going forward from each match's next
-/// cell, and in one pass.
-fn found(terminal: &mut Terminal, query: &Query) -> (Vec<Position>, Vec<Position>) {
+/// The first and last cells of every match, going forward from each match's
+/// next cell, and in one pass over the rows `rows`.
+type Cells = Vec<(Position, Position)>;
+
+fn found(terminal: &mut Terminal, query: &Query, rows: std::ops::Range<usize>) -> (Cells, Cells) {
     let cancel = AtomicBool::new(false);
     let list = terminal.screen_rows_mut();
     let mut stepped = Vec::new();
@@ -113,8 +128,9 @@ fn found(terminal: &mut Terminal, query: &Query) -> (Vec<Position>, Vec<Position
     while let Some(hit) = bolt_search::find(list, query, from, Direction::Forward, &cancel).unwrap()
     {
         let start = list.pin_position(hit.start).unwrap();
+        let end = list.pin_position(hit.end).unwrap();
         hit.release(list);
-        stepped.push(start);
+        stepped.push((start, end));
         from = if start.col + 1 < list.cols() {
             Position {
                 col: start.col + 1,
@@ -128,15 +144,17 @@ fn found(terminal: &mut Terminal, query: &Query) -> (Vec<Position>, Vec<Position
             }
         };
     }
-    let all =
-        bolt_search::find_all(list, query, 0..list.total_rows(), usize::MAX, &cancel).unwrap();
+    let all = bolt_search::find_all(list, query, rows, usize::MAX, &cancel).unwrap();
     let all = all
         .pinned
         .into_iter()
         .map(|hit| {
-            let start = list.pin_position(hit.start).unwrap();
+            let cells = (
+                list.pin_position(hit.start).unwrap(),
+                list.pin_position(hit.end).unwrap(),
+            );
             hit.release(list);
-            start
+            cells
         })
         .collect();
     (stepped, all)
@@ -146,7 +164,8 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
     /// A literal finds what the oracle finds, whole words or not, either
-    /// case, with wide characters and clusters, stepping or in one pass.
+    /// case, with wide characters and clusters, stepping, or in one pass
+    /// over a range of rows, its matches' first and last cells alike.
     #[test]
     fn a_literal_finds_what_the_oracle_finds(
         lines_in in prop::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
@@ -154,6 +173,8 @@ proptest! {
         cols in 3_u16..12,
         insensitive in any::<bool>(),
         whole_word in any::<bool>(),
+        first_row in 0_usize..40,
+        row_count in 0_usize..40,
     ) {
         let mut text = String::new();
         for line in &lines_in {
@@ -162,15 +183,22 @@ proptest! {
         }
         let mut terminal = Terminal::new(cols, 4, Options::default());
         Parser::new().advance(&mut terminal, text.as_bytes());
-        let expected: Vec<Position> = lines(terminal.screen_rows())
+        let list = terminal.screen_rows();
+        let expected: Cells = lines(list)
             .iter()
             .flat_map(|line| expected(line, &needle, insensitive, whole_word))
             .collect();
+        let rows = first_row..first_row + row_count;
+        let in_rows: Cells = expected
+            .iter()
+            .copied()
+            .filter(|(start, _)| rows.contains(&list.row_index(start.page, start.row).unwrap()))
+            .collect();
         let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
         let query = Query::literal(&needle, case).unwrap().whole_word(whole_word);
-        let (stepped, all) = found(&mut terminal, &query);
+        let (stepped, all) = found(&mut terminal, &query, rows);
         prop_assert_eq!(&stepped, &expected);
-        prop_assert_eq!(&all, &expected);
+        prop_assert_eq!(&all, &in_rows);
         prop_assert_eq!(terminal.screen_rows().pins(), 0);
     }
 }

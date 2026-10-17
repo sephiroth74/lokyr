@@ -198,7 +198,7 @@ impl Query {
         let word = |c: char| c.is_alphanumeric() || c == '_';
         let before = cell
             .checked_sub(1)
-            .and_then(|before| text.first_char(text.starts[before]));
+            .and_then(|before| text.first_char(text.starts[before] as usize));
         let after = text.first_char(found.end);
         !before.is_some_and(word) && !after.is_some_and(word)
     }
@@ -223,13 +223,13 @@ pub(crate) struct Text<'a> {
     /// The text, in UTF-8.
     pub(crate) bytes: &'a [u8],
     /// Where the text of each of the line's cells starts, in order.
-    pub(crate) starts: &'a [usize],
+    pub(crate) starts: &'a [u32],
 }
 
 impl Text<'_> {
     /// The index of the cell whose text starts at `at`, if one does.
     fn cell_at(&self, at: usize) -> Option<usize> {
-        self.starts.binary_search(&at).ok()
+        self.starts.binary_search(&u32::try_from(at).ok()?).ok()
     }
 
     /// The character that starts at `at`, between two characters, unless

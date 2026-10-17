@@ -80,11 +80,12 @@ impl Cancelled {
 /// ends with one: one that starts or ends inside a cluster does not count,
 /// nor does an empty match.
 ///
-/// Forward, a line's matches are gone through from its start, so that a
-/// search from the end of a long line takes time in proportion to the
-/// matches before it, and, for a regex whose first branch scans to the
-/// line's end, as `a.*b|a`, time that grows with the square of the line's
-/// length; [`find_all`] goes through a range of rows once.
+/// Either way, a line's matches are gone through from its start: a step
+/// near the end of a long line takes time in proportion to the matches
+/// before it, backward as forward, and, for a regex whose search scans past
+/// its match to the line's end, as `a.*b|a` does, time that grows with the
+/// square of the line's length. [`find_all`] goes through a range of rows
+/// once.
 ///
 /// The search stops with [`Cancelled`] once `cancel` is set, which another
 /// thread can do: it looks at it before each line, and between the matches
@@ -136,7 +137,11 @@ pub struct Matches {
 /// found in one pass, for counting them and showing them. The first `limit`
 /// are pinned, and the others only counted, as pins cost memory and time to
 /// keep. Each logical line that holds one of the rows is read once, whole,
-/// and its matches gone through once.
+/// and its matches gone through once: in time in proportion to the line's
+/// length when each match's search ends near the match, and to its square
+/// for a regex that scans to the line's end, as `a.*b|a`, as regex-automata's
+/// own iterators do. A range in the middle of a long line reads all of it,
+/// so that ranges of a line, searched one after the other, read it each.
 ///
 /// The search stops with [`Cancelled`] as [`find`] does, and reads cold
 /// pages as it does. A match whose cells cannot be pinned is left out of

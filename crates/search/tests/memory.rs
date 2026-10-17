@@ -49,6 +49,8 @@ fn a_long_line_takes_a_few_bytes_a_cell() {
     let mut terminal = Terminal::new(80, 24, options);
     let cells = 400_000;
     Parser::new().advance(&mut terminal, "x".repeat(cells).as_bytes());
+    // The scrollback keeps the line whole.
+    assert!(terminal.screen_rows().total_rows() >= cells / 80);
     let (page, row) = terminal.screen_rows().screen_row_id(23);
     let from = Position { page, row, col: 0 };
     let query = Query::literal("needle", Case::Sensitive).unwrap();
@@ -64,6 +66,7 @@ fn a_long_line_takes_a_few_bytes_a_cell() {
     );
     assert_eq!(found, Ok(None));
     let taken = PEAK.load(Ordering::Relaxed) - before;
-    // The text's byte and the cell's place, as the vectors grow.
-    assert!(taken < 40 * cells, "{} bytes a cell", taken / cells);
+    // The text's byte, where the cell's text starts and its column, about 7
+    // bytes, as the vectors grow: a layout twice as large fails.
+    assert!(taken < 16 * cells, "{} bytes a cell", taken / cells);
 }

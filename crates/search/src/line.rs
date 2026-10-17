@@ -15,8 +15,9 @@ use crate::{Cancelled, Query};
 #[derive(Debug, Default)]
 struct Line {
     text: Vec<u8>,
-    /// Where the text of each cell starts.
-    starts: Vec<usize>,
+    /// Where the text of each cell starts: a line's text holds fewer than
+    /// 2^32 bytes, as [`Line::push_row`] stops there.
+    starts: Vec<u32>,
     /// The column of each cell.
     cols: Vec<u16>,
     /// The line's rows, in order: each one's page and row, and its first
@@ -42,7 +43,9 @@ impl Line {
 
     /// Adds the text of `row`, the line's next. Empty cells read as spaces;
     /// the halves of wide characters that show nothing, as their second
-    /// halves and the heads that wrapping leaves, have no text.
+    /// halves and the heads that wrapping leaves, have no text. A line whose
+    /// text would pass 4 GiB, which only a scrollback that large can hold,
+    /// stops there: the rest of it is not searched.
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];
@@ -50,7 +53,10 @@ impl Line {
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }
-            self.starts.push(self.text.len());
+            let Ok(start) = u32::try_from(self.text.len()) else {
+                return;
+            };
+            self.starts.push(start);
             self.cols.push(col);
             match cell.content() {
                 Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
@@ -79,7 +85,7 @@ impl Line {
             .rposition(|&byte| byte != b' ')
             .map_or(0, |at| at + 1);
         self.text.truncate(len);
-        let cells = self.starts.partition_point(|&start| start < len);
+        let cells = self.starts.partition_point(|&start| (start as usize) < len);
         self.starts.truncate(cells);
         self.cols.truncate(cells);
         if lower {
@@ -104,13 +110,18 @@ impl Line {
     fn offset_of(&self, line_row: usize, col: u16) -> usize {
         let cells = self.cells_in(line_row);
         let at = cells.start + self.cols[cells].partition_point(|&other| other < col);
-        self.starts.get(at).copied().unwrap_or(self.text.len())
+        self.starts
+            .get(at)
+            .map_or(self.text.len(), |&start| start as usize)
     }
 
     /// The row of the line, from 0, that holds the cell whose text holds
     /// the byte at `offset`, and the cell.
     fn cell_at(&self, offset: usize) -> (usize, usize) {
-        let cell = self.starts.partition_point(|&start| start <= offset) - 1;
+        let cell = self
+            .starts
+            .partition_point(|&start| start as usize <= offset)
+            - 1;
         let line_row = self.rows.partition_point(|&(.., first)| first <= cell) - 1;
         (line_row, cell)
     }
