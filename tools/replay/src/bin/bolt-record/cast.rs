@@ -2,18 +2,19 @@
 //! <https://docs.asciinema.org/manual/asciicast/v2/>.
 
 use std::fmt::Write as _;
-use std::time::Instant;
+use std::time::Duration;
 
 use serde_json::json;
 
 /// A recording under way: its header and its events, one JSON line each.
 #[derive(Debug)]
 pub struct Cast {
-    started: Instant,
     lines: Vec<String>,
     /// The end of the last output, when it stops inside a character, which
     /// waits for the rest: an event's data is text.
     partial: Vec<u8>,
+    /// When the last event came.
+    last: Duration,
 }
 
 impl Cast {
@@ -25,14 +26,14 @@ impl Cast {
             "env": { "TERM": term },
         });
         Self {
-            started: Instant::now(),
             lines: vec![header.to_string()],
             partial: Vec::new(),
+            last: Duration::ZERO,
         }
     }
 
-    /// The program wrote `bytes`.
-    pub fn output(&mut self, bytes: &[u8]) {
+    /// The program wrote `bytes`, `at` after the start.
+    pub fn output(&mut self, at: Duration, bytes: &[u8]) {
         self.partial.extend_from_slice(bytes);
         let complete = complete(&self.partial);
         if complete == 0 {
@@ -41,24 +42,27 @@ impl Cast {
         let rest = self.partial.split_off(complete);
         let text = String::from_utf8_lossy(&self.partial).into_owned();
         self.partial = rest;
-        self.event("o", &text);
+        self.event(at, "o", &text);
     }
 
-    /// The bytes typed into the program: keys, or the terminal's replies.
-    pub fn input(&mut self, bytes: &[u8]) {
-        self.event("i", &String::from_utf8_lossy(bytes));
+    /// The bytes typed into the program, `at` after the start: keys, or the
+    /// terminal's replies.
+    pub fn input(&mut self, at: Duration, bytes: &[u8]) {
+        self.event(at, "i", &String::from_utf8_lossy(bytes));
     }
 
-    /// A marker, for tests to look at the screen there.
-    pub fn mark(&mut self, label: &str) {
-        self.event("m", label);
+    /// A marker, `at` after the start, for tests to look at the screen
+    /// there.
+    pub fn mark(&mut self, at: Duration, label: &str) {
+        self.event(at, "m", label);
     }
 
     /// The recording, header first, a line each.
     pub fn finish(mut self) -> String {
         if !self.partial.is_empty() {
             let text = String::from_utf8_lossy(&std::mem::take(&mut self.partial)).into_owned();
-            self.event("o", &text);
+            let at = self.last;
+            self.event(at, "o", &text);
         }
         let mut text = String::new();
         for line in &self.lines {
@@ -82,9 +86,10 @@ impl Cast {
         )
     }
 
-    fn event(&mut self, kind: &str, data: &str) {
+    fn event(&mut self, at: Duration, kind: &str, data: &str) {
+        self.last = at;
         // In milliseconds, so that the files stay short.
-        let seconds = (self.started.elapsed().as_secs_f64() * 1000.0).round() / 1000.0;
+        let seconds = (at.as_secs_f64() * 1000.0).round() / 1000.0;
         self.lines.push(json!([seconds, kind, data]).to_string());
     }
 }
@@ -119,17 +124,19 @@ fn complete(bytes: &[u8]) -> usize {
 mod tests {
     use super::*;
 
+    const T: Duration = Duration::from_millis(1);
+
     #[test]
     fn a_character_that_two_outputs_split_comes_whole() {
         let mut cast = Cast::new(10, 2, "xterm-256color");
-        cast.output("a\u{4e2d}".as_bytes().split_at(2).0);
-        cast.output(&"a\u{4e2d}".as_bytes()[2..]);
-        cast.input(b"\x1b[A");
-        cast.mark("start");
-        cast.output(b"\xff!");
+        cast.output(T, "a\u{4e2d}".as_bytes().split_at(2).0);
+        cast.output(T, &"a\u{4e2d}".as_bytes()[2..]);
+        cast.input(T, b"\x1b[A");
+        cast.mark(T, "start");
+        cast.output(T, b"\xff!");
         // A byte that is not UTF-8, then a character that a read cuts.
-        cast.output(b"a\xff\xe4\xb8");
-        cast.output(b"\xadb");
+        cast.output(T, b"a\xff\xe4\xb8");
+        cast.output(T, b"\xadb");
         assert_eq!(
             cast.outputs().collect::<Vec<_>>(),
             ["a", "\u{4e2d}", "\u{fffd}!", "a\u{fffd}", "\u{4e2d}b"]

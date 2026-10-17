@@ -3,8 +3,9 @@
 //! replay.
 //!
 //! `bolt-record SCRIPT...` writes each script's recording next to it, with
-//! the extension `cast`. The program sees a terminal as the session gives
-//! it, which answers its queries; it runs with no environment but the one
+//! the extension `cast`. The program runs in a headless terminal, which
+//! answers its queries as the session's does; it runs with no environment
+//! but the one
 //! that every recording has and the script's, in a directory of its own,
 //! which is also its home, so that nothing of the machine shows in the
 //! recording. A recording that shows the user's name, the host's or the
@@ -16,13 +17,10 @@ mod script;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use bolt_pty::{Program, PtyReader, PtyWriter, ReadOutcome, Size};
+use bolt_replay::harness::{Event, Harness, HarnessOptions};
 use bolt_vt_core::page::Content;
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
 
 use cast::Cast;
 use script::{Script, Step};
@@ -132,263 +130,81 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
         let name = from.file_name().context("a file to copy")?;
         fs::copy(&from, home.join(name)).with_context(|| format!("copying {}", from.display()))?;
     }
-    let mut args = vec![
-        "-i".to_owned(),
-        format!("HOME={}", home.display()),
-        format!("PATH={PATH}"),
-        format!("TERM={TERM}"),
-        "LANG=en_US.UTF-8".to_owned(),
-        "COLORTERM=truecolor".to_owned(),
+    let mut env = vec![
+        ("HOME".to_owned(), home.display().to_string()),
+        ("PATH".to_owned(), PATH.to_owned()),
+        ("LANG".to_owned(), "en_US.UTF-8".to_owned()),
+        ("COLORTERM".to_owned(), "truecolor".to_owned()),
     ];
-    args.extend(
-        script
-            .env
-            .iter()
-            .map(|(name, value)| format!("{name}={value}")),
-    );
-    args.extend(script.run.iter().cloned());
-    let mut options = bolt_pty::Options::new(Program::command("/usr/bin/env", args), TERM);
-    options.working_directory = Some(home.to_owned());
-    options.size = Size {
+    env.extend(script.env.iter().cloned());
+    let options = HarnessOptions {
+        program: script.run.clone(),
+        env,
+        term: TERM.to_owned(),
+        dir: home.to_owned(),
         cols: script.cols,
         rows: script.rows,
-        width: 0,
-        height: 0,
     };
-    let pty = bolt_pty::spawn(&options).context("starting the program")?;
-    let terminal = Options {
-        term: TERM.to_owned(),
-        ..Options::default()
-    };
-    let mut recorder = Recorder {
-        reader: pty.reader()?,
-        writer: pty.writer()?,
-        terminal: Terminal::new(script.cols, script.rows, terminal),
-        parser: Parser::new(),
-        cast: Cast::new(script.cols, script.rows, TERM),
-        buffer: vec![0; 64 * 1024],
-        pending: Vec::new(),
-        output: Vec::new(),
-        private: private_names(home),
-    };
+    let mut harness = Harness::spawn(&options)?;
+    let private = private_names(home);
+    harness.forbid(private.clone());
     for step in &script.steps {
-        recorder.step(step)?;
+        match step {
+            Step::Wait(text, limit) => harness.wait(text, *limit)?,
+            Step::Quiet(time, limit) => harness.quiet(*time, *limit)?,
+            Step::Sleep(time) => harness.sleep(*time)?,
+            Step::Send(bytes, limit) => harness.send(bytes, *limit)?,
+            Step::Mark(label) => harness.mark(label)?,
+            Step::Exit(limit) => harness.exit(*limit)?,
+        }
     }
     // A program that has not ended is hung up as the terminal closes.
-    drop(pty);
-    recorder.check_all()?;
-    Ok(recorder.cast)
+    harness.hang_up();
+    check_all(&harness, &private)?;
+    let mut cast = Cast::new(script.cols, script.rows, TERM);
+    for (at, event) in harness.events() {
+        match event {
+            Event::Output(bytes) => cast.output(*at, bytes),
+            Event::Input(bytes) => cast.input(*at, bytes),
+            Event::Mark(label) => cast.mark(*at, label),
+        }
+    }
+    Ok(cast)
 }
 
-/// What the program and the terminal do together, as the recording keeps
-/// it.
-struct Recorder {
-    reader: PtyReader,
-    writer: PtyWriter,
-    terminal: Terminal,
-    parser: Parser,
-    cast: Cast,
-    buffer: Vec<u8>,
-    /// What waits to be written to the program: keys, and the terminal's
-    /// replies.
-    pending: Vec<u8>,
-    /// Everything that the program wrote.
-    output: Vec<u8>,
-    /// What must not show: the user's name, the host's, the user's home,
-    /// the program's.
-    private: Vec<String>,
-}
-
-/// What a read found.
-enum Read {
-    Output,
-    TimedOut,
-    End,
-}
-
-/// How long a marker waits at most for an update under way to end.
-const WAIT: Duration = Duration::from_secs(10);
-
-/// How long a read or a write waits at most while the other has to go on.
-const TURN: Duration = Duration::from_millis(10);
-
-impl Recorder {
-    fn step(&mut self, step: &Step) -> Result<()> {
-        match step {
-            Step::Wait(text, limit) => {
-                let deadline = Instant::now() + *limit;
-                while !self.shows(text) || self.terminal.synchronized_output() {
-                    match self.read(deadline)? {
-                        Read::Output => {}
-                        Read::TimedOut => {
-                            bail!("`{text}` did not show in {limit:?}:\n{}", self.screen())
-                        }
-                        Read::End => bail!("the program ended before `{text}` showed"),
+/// Fails if the recording, whole, shows one of `private`: in what the
+/// program wrote, without its escape sequences, so that a name that two
+/// reads split, or that an escape breaks, shows; and in every row that the
+/// terminal keeps, the scrollback's too.
+fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
+    let plain = plain(harness.output());
+    let rows: Vec<String> = harness
+        .terminal()
+        .screen_rows()
+        .rows_from(0)
+        .map(|row| {
+            row.cells()
+                .enumerate()
+                .map(|(x, cell)| {
+                    let mut text = String::new();
+                    if let Content::Char(c) | Content::Grapheme(c) = cell.content()
+                        && c != '\0'
+                    {
+                        text.push(c);
+                        // A row has fewer than 2^16 columns.
+                        text.extend(row.grapheme(x as u16));
                     }
-                }
-            }
-            Step::Quiet(time, limit) => {
-                let deadline = Instant::now() + *limit;
-                loop {
-                    match self.read(Instant::now() + *time)? {
-                        Read::End => break,
-                        Read::TimedOut if !self.terminal.synchronized_output() => break,
-                        Read::Output | Read::TimedOut => {}
-                    }
-                    if Instant::now() >= deadline {
-                        bail!(
-                            "the program did not go quiet in {limit:?}:\n{}",
-                            self.screen()
-                        );
-                    }
-                }
-            }
-            Step::Sleep(time) => {
-                let deadline = Instant::now() + *time;
-                while let Read::Output = self.read(deadline)? {}
-            }
-            Step::Send(bytes, limit) => {
-                self.cast.input(bytes);
-                self.pending.extend_from_slice(bytes);
-                self.flush(*limit)?;
-            }
-            Step::Mark(label) => {
-                // Not in a frame half drawn.
-                let deadline = Instant::now() + WAIT;
-                while self.terminal.synchronized_output() {
-                    match self.read(deadline)? {
-                        Read::Output => {}
-                        Read::TimedOut => bail!("an update did not end in {WAIT:?} for `{label}`"),
-                        Read::End => break,
-                    }
-                }
-                self.cast.mark(label);
-            }
-            Step::Exit(limit) => {
-                let deadline = Instant::now() + *limit;
-                loop {
-                    match self.read(deadline)? {
-                        Read::Output => {}
-                        Read::TimedOut => {
-                            bail!("the program did not end in {limit:?}:\n{}", self.screen())
-                        }
-                        Read::End => break,
-                    }
-                }
-            }
+                    text
+                })
+                .collect()
+        })
+        .collect();
+    for name in private {
+        if plain.contains(name.as_str()) || rows.iter().any(|row| row.contains(name.as_str())) {
+            bail!("the program showed `{name}`, which a recording must not keep");
         }
-        Ok(())
     }
-
-    /// Reads what the program writes, until `deadline` at most: records it,
-    /// shows it on the terminal, and queues the terminal's replies, which
-    /// go as soon as the program has room for them.
-    fn read(&mut self, deadline: Instant) -> Result<Read> {
-        self.write_some(Instant::now() + Duration::from_millis(1))?;
-        let n = match self.reader.read_until(&mut self.buffer, Some(deadline))? {
-            ReadOutcome::Read(n) => n,
-            ReadOutcome::TimedOut => return Ok(Read::TimedOut),
-            ReadOutcome::End => return Ok(Read::End),
-        };
-        let bytes = self.buffer[..n].to_vec();
-        self.cast.output(&bytes);
-        self.output.extend_from_slice(&bytes);
-        self.parser.advance(&mut self.terminal, &bytes);
-        let replies = self.terminal.take_replies();
-        if !replies.is_empty() {
-            self.cast.input(&replies);
-            self.pending.extend_from_slice(&replies);
-        }
-        // What the screen shows now, which the next output can take away.
-        let screen = self.screen();
-        if let Some(name) = self
-            .private
-            .iter()
-            .find(|name| screen.contains(name.as_str()))
-        {
-            bail!("the program showed `{name}`, which a recording must not keep:\n{screen}");
-        }
-        Ok(Read::Output)
-    }
-
-    /// Writes what waits, reading the output meanwhile, as a program can
-    /// wait to write before it reads more; for `limit` at most.
-    fn flush(&mut self, limit: Duration) -> Result<()> {
-        let deadline = Instant::now() + limit;
-        while !self.pending.is_empty() {
-            self.write_some(Instant::now() + TURN)?;
-            if self.pending.is_empty() {
-                break;
-            }
-            if Instant::now() >= deadline {
-                bail!("the program did not take what was typed in {limit:?}");
-            }
-            if let Read::End = self.read(Instant::now() + TURN)? {
-                bail!("the program ended before it took what was typed");
-            }
-        }
-        Ok(())
-    }
-
-    /// Writes what of the pending bytes the program has room for, by
-    /// `deadline`.
-    fn write_some(&mut self, deadline: Instant) -> Result<()> {
-        if self.pending.is_empty() {
-            return Ok(());
-        }
-        let written = self
-            .writer
-            .write_until(&self.pending, Some(deadline))
-            .context("writing to the program")?;
-        self.pending.drain(..written.unwrap_or(0));
-        Ok(())
-    }
-
-    /// Fails if the recording, whole, shows something private: in what the
-    /// program wrote, without its escape sequences, so that a name that two
-    /// reads split, or that an escape breaks, shows; and in every row that
-    /// the terminal keeps, the scrollback's too.
-    fn check_all(&self) -> Result<()> {
-        let plain = plain(&self.output);
-        let rows: Vec<String> = self
-            .terminal
-            .screen_rows()
-            .rows_from(0)
-            .map(|row| {
-                row.cells()
-                    .enumerate()
-                    .map(|(x, cell)| {
-                        let mut text = String::new();
-                        if let Content::Char(c) | Content::Grapheme(c) = cell.content()
-                            && c != '\0'
-                        {
-                            text.push(c);
-                            // A row has fewer than 2^16 columns.
-                            text.extend(row.grapheme(x as u16));
-                        }
-                        text
-                    })
-                    .collect()
-            })
-            .collect();
-        for name in &self.private {
-            if plain.contains(name.as_str()) || rows.iter().any(|row| row.contains(name.as_str())) {
-                bail!("the program showed `{name}`, which a recording must not keep");
-            }
-        }
-        Ok(())
-    }
-
-    fn shows(&self, text: &str) -> bool {
-        (0..self.terminal.rows()).any(|y| self.terminal.row_text(y).contains(text))
-    }
-
-    fn screen(&self) -> String {
-        (0..self.terminal.rows())
-            .map(|y| self.terminal.row_text(y))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
+    Ok(())
 }
 
 /// The text of `bytes` without escape sequences and control characters,
