@@ -89,30 +89,44 @@ impl PtyWriter {
     }
 }
 
-impl Write for PtyWriter {
-    /// Writes some of `buf`, once the program has room for it: a program
-    /// that does not read its input can keep this waiting, until the PTY
-    /// drops, when it fails with `BrokenPipe`.
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+impl PtyWriter {
+    /// Writes some of `buf`, once the program has room for it, waiting for
+    /// that until `deadline` at most, or for as long as it takes without
+    /// one: how many bytes, or `None` if the deadline came first. A program
+    /// that does not read its input keeps the room from coming; once the PTY
+    /// drops, this fails with `BrokenPipe`.
+    pub fn write_until(
+        &mut self,
+        buf: &[u8],
+        deadline: Option<Instant>,
+    ) -> io::Result<Option<usize>> {
         if buf.is_empty() {
-            return Ok(0);
+            return Ok(Some(0));
         }
         loop {
-            match wait(&self.master, &self.closed, libc::POLLOUT, None)? {
+            match wait(&self.master, &self.closed, libc::POLLOUT, deadline)? {
                 Ready::Closed => return Err(ErrorKind::BrokenPipe.into()),
-                Ready::TimedOut | Ready::Master => {}
+                Ready::TimedOut => return Ok(None),
+                Ready::Master => {}
             }
             // SAFETY: `write` reads at most `buf.len()` bytes from `buf`.
             let n = unsafe { libc::write(self.master.as_raw_fd(), buf.as_ptr().cast(), buf.len()) };
             if n >= 0 {
                 // Not negative, and at most `buf.len()`.
-                return Ok(n as usize);
+                return Ok(Some(n as usize));
             }
             let error = io::Error::last_os_error();
             if !matches!(error.raw_os_error(), Some(libc::EAGAIN | libc::EINTR)) {
                 return Err(error);
             }
         }
+    }
+}
+
+impl Write for PtyWriter {
+    /// Writes as [`PtyWriter::write_until`] does without a deadline.
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(self.write_until(buf, None)?.unwrap_or(0))
     }
 
     fn flush(&mut self) -> io::Result<()> {

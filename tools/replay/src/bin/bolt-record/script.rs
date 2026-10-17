@@ -48,9 +48,11 @@ pub enum Step {
     /// Lets the program run for so long, as one that redraws all the time
     /// is never quiet.
     Sleep(Duration),
-    /// Types the bytes.
-    Send(Vec<u8>),
-    /// Marks the moment, for tests to look at the screen there.
+    /// Types the bytes, once the program takes them, for so long at most.
+    Send(Vec<u8>, Duration),
+    /// Marks the moment, for tests to look at the screen there, by a label
+    /// of its own: not `exit`, which the end takes, and without `/`, as the
+    /// tests' snapshots are named after them.
     Mark(String),
     /// Waits for the program's output to end, for so long at most.
     Exit(Duration),
@@ -132,8 +134,22 @@ impl Script {
                 self.steps.push(Step::Quiet(millis(time)?, wait(rest)?));
             }
             "sleep" => self.steps.push(Step::Sleep(millis(one()?)?)),
-            "send" => self.steps.push(Step::Send(one()?.as_bytes().to_vec())),
-            "mark" => self.steps.push(Step::Mark(one()?.to_owned())),
+            "send" => {
+                let (text, rest) = args.split_first().context("`send` takes the keys")?;
+                self.steps
+                    .push(Step::Send(text.as_bytes().to_vec(), wait(rest)?));
+            }
+            "mark" => {
+                let label = one()?;
+                let taken = self
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, Step::Mark(other) if other == label));
+                if label.is_empty() || label == "exit" || label.contains('/') || taken {
+                    bail!("a mark has a label of its own, which is not `exit` and has no `/`");
+                }
+                self.steps.push(Step::Mark(label.to_owned()));
+            }
             "exit" => self.steps.push(Step::Exit(wait(args)?)),
             other => bail!("unknown command `{other}`"),
         }
@@ -229,7 +245,7 @@ mod tests {
                 steps: vec![
                     Step::Wait("a b".to_owned(), Duration::from_millis(500)),
                     Step::Mark("start".to_owned()),
-                    Step::Send(b"\x1b[A\x03\"\\\r".to_vec()),
+                    Step::Send(b"\x1b[A\x03\"\\\r".to_vec(), WAIT),
                     Step::Quiet(Duration::from_millis(200), WAIT),
                     Step::Quiet(Duration::from_millis(100), Duration::from_millis(900)),
                     Step::Sleep(Duration::from_millis(50)),
@@ -254,6 +270,10 @@ mod tests {
             ("run a\njump\n", "unknown command `jump`"),
             ("size 0 1\nrun a\n", "a column and a row"),
             ("size 80 24\n", "it needs a `run` line"),
+            ("run a\nmark exit\n", "a label of its own"),
+            ("run a\nmark a/b\n", "a label of its own"),
+            ("run a\nmark x\nmark x\n", "a label of its own"),
+            ("run a\nsend x soon\n", "milliseconds"),
         ] {
             let message = format!("{:#}", Script::parse(text).unwrap_err());
             assert!(message.contains(error), "{text:?}: {message}");

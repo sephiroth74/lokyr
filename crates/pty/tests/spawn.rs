@@ -358,3 +358,33 @@ fn many_threads_open_terminals_at_once() {
         thread.join().unwrap();
     }
 }
+
+#[test]
+fn a_write_to_a_program_that_does_not_read_times_out() {
+    let pty = spawn(&Options::new(
+        sh("stty raw -echo; echo armed; sleep 30"),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("armed");
+    let mut writer = pty.writer().unwrap();
+    // More than the terminal's input holds.
+    let bytes = vec![b'x'; 1 << 20];
+    let started = std::time::Instant::now();
+    let mut written = 0;
+    loop {
+        let deadline = std::time::Instant::now() + Duration::from_millis(200);
+        match writer
+            .write_until(&bytes[written..], Some(deadline))
+            .unwrap()
+        {
+            Some(n) => written += n,
+            None => break,
+        }
+        assert!(written < bytes.len(), "the program took it all");
+    }
+    assert!(written > 0, "some of it fitted");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(writer.write_until(&[], None).unwrap(), Some(0));
+}

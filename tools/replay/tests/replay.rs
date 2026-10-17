@@ -116,7 +116,7 @@ fn the_recorded_sessions_replay() {
 /// own, with `env` set, and returns its output and the recording, if it
 /// wrote one.
 fn record(name: &str, lines: &str, env: &[(&str, &str)]) -> (Output, Option<String>) {
-    let dir = std::env::temp_dir().join(format!("bolt-record-test-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("bolt-replay-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join(format!("{name}.script"));
@@ -201,4 +201,102 @@ fn a_step_that_cannot_end_fails_the_recording() {
         assert!(stderr.contains(error), "{name}: {stderr}");
         assert_eq!(cast, None, "{name}");
     }
+}
+
+#[test]
+fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
+    let user = [("USER", "zz-someone-zz")];
+    for (name, program) in [
+        // Split between two reads, and scrolled away before the second ends.
+        (
+            "split",
+            r"printf 'zz-some'; sleep 0.3; printf 'one-zz\\n\\n\\n\\n'; sleep 0.3",
+        ),
+        // Broken by an escape, and erased before the read ends.
+        (
+            "escape",
+            r"printf 'zz-some\\033[mone-zz\\r\\033[K'; sleep 0.3",
+        ),
+    ] {
+        let script = format!("size 20 3\nrun sh -c \"{program}\"\nexit\n");
+        let (output, cast) = record(name, &script, &user);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("showed `zz-someone-zz`"),
+            "{name}: {stderr}"
+        );
+        assert_eq!(cast, None, "{name}");
+    }
+}
+
+#[test]
+fn the_programs_own_home_is_private_too() {
+    // As the system resolves it, and as the program's `HOME` names it.
+    for (name, program) in [("pwd", "pwd"), ("home", "echo $HOME")] {
+        let script = format!("run sh -c \"{program}; sleep 0.3\"\nexit\n");
+        let (output, cast) = record(name, &script, &[]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(&format!("bolt-record-{name}-")),
+            "{name}: {stderr}"
+        );
+        assert_eq!(cast, None, "{name}");
+    }
+    // A home whose path holds the user's name keeps the name private.
+    let tmp = std::env::temp_dir().join(format!("zz-someone-zz-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    let (output, cast) = record(
+        "named",
+        "run sh -c \"echo zz-someone-zz; sleep 0.3\"\nexit\n",
+        &[("USER", "zz-someone-zz"), ("TMPDIR", tmp.to_str().unwrap())],
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("showed"));
+    assert_eq!(cast, None);
+}
+
+#[test]
+fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
+    let keys = "x".repeat(20_000);
+    // A program that reads, and echoes what it reads: its output has to be
+    // read for it to read on.
+    let (output, cast) = record(
+        "echo-keys",
+        &format!(
+            "run sh -c \"stty raw -echo; exec cat\"\nsleep 200\nsend \"{keys}\"\nwait xxxxxxxxxx\n"
+        ),
+        &[],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(cast.is_some());
+    // A program that never reads.
+    let (output, cast) = record(
+        "deaf",
+        &format!(
+            "run sh -c \"stty raw -echo; sleep 30\"\nsleep 200\nsend \"{}\" 500\n",
+            "x".repeat(70_000)
+        ),
+        &[],
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("did not take what was typed in 500ms")
+    );
+    assert_eq!(cast, None);
+}
+
+#[test]
+fn a_killed_recorders_home_goes_with_the_next_run() {
+    let stale = std::env::temp_dir().join("bolt-record-stale-2147483646");
+    std::fs::create_dir_all(&stale).unwrap();
+    let (output, _) = record("next", "run true\nexit\n", &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!stale.exists());
 }

@@ -14,13 +14,13 @@ mod cast;
 mod script;
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use bolt_pty::{Program, PtyReader, PtyWriter, ReadOutcome, Size};
+use bolt_vt_core::page::Content;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
 
@@ -66,19 +66,65 @@ fn record(path: &Path) -> Result<PathBuf> {
         .file_stem()
         .context("a script has a name")?
         .to_string_lossy();
-    let home = std::env::temp_dir().join(format!("bolt-record-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&home);
-    fs::create_dir_all(&home).with_context(|| format!("creating {}", home.display()))?;
-    let result = run(&script, path, &home);
-    let _ = fs::remove_dir_all(&home);
-    let cast = result?;
+    remove_stale_homes();
+    let home = Home::new(&name)?;
+    let cast = run(&script, path, &home.0)?;
     let out = path.with_extension("cast");
     fs::write(&out, cast.finish()).with_context(|| format!("writing {}", out.display()))?;
     Ok(out)
 }
 
+/// The directory that a program runs in, which is also its home, removed
+/// as it drops, however the recording ends.
+struct Home(PathBuf);
+
+/// What the homes' names start with, before the script's name and the
+/// recorder's process id.
+const HOME_PREFIX: &str = "bolt-record-";
+
+impl Home {
+    fn new(name: &str) -> Result<Self> {
+        let path = std::env::temp_dir().join(format!("{HOME_PREFIX}{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).with_context(|| format!("creating {}", path.display()))?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for Home {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Removes the homes that recorders that were killed left, those whose
+/// process has gone.
+fn remove_stale_homes() {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(pid) = name
+            .strip_prefix(HOME_PREFIX)
+            .and_then(|rest| rest.rsplit('-').next())
+            .and_then(|pid| pid.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let alive = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !alive {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// Runs the script's program in `home`, as the script says, and returns
-/// what it recorded.
+/// what it recorded, once nothing private shows in it.
 fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
     let dir = path.parent().unwrap_or(Path::new("."));
     for copy in &script.copies {
@@ -121,6 +167,8 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
         parser: Parser::new(),
         cast: Cast::new(script.cols, script.rows, TERM),
         buffer: vec![0; 64 * 1024],
+        pending: Vec::new(),
+        output: Vec::new(),
         private: private_names(home),
     };
     for step in &script.steps {
@@ -128,6 +176,7 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
     }
     // A program that has not ended is hung up as the terminal closes.
     drop(pty);
+    recorder.check_all()?;
     Ok(recorder.cast)
 }
 
@@ -140,7 +189,13 @@ struct Recorder {
     parser: Parser,
     cast: Cast,
     buffer: Vec<u8>,
-    /// What must not show: the user's name, the host's, the user's home.
+    /// What waits to be written to the program: keys, and the terminal's
+    /// replies.
+    pending: Vec<u8>,
+    /// Everything that the program wrote.
+    output: Vec<u8>,
+    /// What must not show: the user's name, the host's, the user's home,
+    /// the program's.
     private: Vec<String>,
 }
 
@@ -150,6 +205,9 @@ enum Read {
     TimedOut,
     End,
 }
+
+/// How long a read or a write waits at most while the other has to go on.
+const TURN: Duration = Duration::from_millis(10);
 
 impl Recorder {
     fn step(&mut self, step: &Step) -> Result<()> {
@@ -181,7 +239,11 @@ impl Recorder {
                 let deadline = Instant::now() + *time;
                 while let Read::Output = self.read(deadline)? {}
             }
-            Step::Send(bytes) => self.send(bytes)?,
+            Step::Send(bytes, limit) => {
+                self.cast.input(bytes);
+                self.pending.extend_from_slice(bytes);
+                self.flush(*limit)?;
+            }
             Step::Mark(label) => self.cast.mark(label),
             Step::Exit(limit) => {
                 let deadline = Instant::now() + *limit;
@@ -200,8 +262,10 @@ impl Recorder {
     }
 
     /// Reads what the program writes, until `deadline` at most: records it,
-    /// shows it on the terminal, and sends the terminal's replies back.
+    /// shows it on the terminal, and queues the terminal's replies, which
+    /// go as soon as the program has room for them.
     fn read(&mut self, deadline: Instant) -> Result<Read> {
+        self.write_some(Instant::now() + Duration::from_millis(1))?;
         let n = match self.reader.read_until(&mut self.buffer, Some(deadline))? {
             ReadOutcome::Read(n) => n,
             ReadOutcome::TimedOut => return Ok(Read::TimedOut),
@@ -209,28 +273,91 @@ impl Recorder {
         };
         let bytes = self.buffer[..n].to_vec();
         self.cast.output(&bytes);
+        self.output.extend_from_slice(&bytes);
         self.parser.advance(&mut self.terminal, &bytes);
         let replies = self.terminal.take_replies();
         if !replies.is_empty() {
-            self.send(&replies)?;
+            self.cast.input(&replies);
+            self.pending.extend_from_slice(&replies);
         }
+        // What the screen shows now, which the next output can take away.
         let screen = self.screen();
-        let output = String::from_utf8_lossy(&bytes);
         if let Some(name) = self
             .private
             .iter()
-            .find(|name| screen.contains(name.as_str()) || output.contains(name.as_str()))
+            .find(|name| screen.contains(name.as_str()))
         {
             bail!("the program showed `{name}`, which a recording must not keep:\n{screen}");
         }
         Ok(Read::Output)
     }
 
-    fn send(&mut self, bytes: &[u8]) -> Result<()> {
-        self.cast.input(bytes);
-        self.writer
-            .write_all(bytes)
-            .context("writing to the program")
+    /// Writes what waits, reading the output meanwhile, as a program can
+    /// wait to write before it reads more; for `limit` at most.
+    fn flush(&mut self, limit: Duration) -> Result<()> {
+        let deadline = Instant::now() + limit;
+        while !self.pending.is_empty() {
+            self.write_some(Instant::now() + TURN)?;
+            if self.pending.is_empty() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                bail!("the program did not take what was typed in {limit:?}");
+            }
+            if let Read::End = self.read(Instant::now() + TURN)? {
+                bail!("the program ended before it took what was typed");
+            }
+        }
+        Ok(())
+    }
+
+    /// Writes what of the pending bytes the program has room for, by
+    /// `deadline`.
+    fn write_some(&mut self, deadline: Instant) -> Result<()> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        let written = self
+            .writer
+            .write_until(&self.pending, Some(deadline))
+            .context("writing to the program")?;
+        self.pending.drain(..written.unwrap_or(0));
+        Ok(())
+    }
+
+    /// Fails if the recording, whole, shows something private: in what the
+    /// program wrote, without its escape sequences, so that a name that two
+    /// reads split, or that an escape breaks, shows; and in every row that
+    /// the terminal keeps, the scrollback's too.
+    fn check_all(&self) -> Result<()> {
+        let plain = plain(&self.output);
+        let rows: Vec<String> = self
+            .terminal
+            .screen_rows()
+            .rows_from(0)
+            .map(|row| {
+                row.cells()
+                    .enumerate()
+                    .map(|(x, cell)| {
+                        let mut text = String::new();
+                        if let Content::Char(c) | Content::Grapheme(c) = cell.content()
+                            && c != '\0'
+                        {
+                            text.push(c);
+                            // A row has fewer than 2^16 columns.
+                            text.extend(row.grapheme(x as u16));
+                        }
+                        text
+                    })
+                    .collect()
+            })
+            .collect();
+        for name in &self.private {
+            if plain.contains(name.as_str()) || rows.iter().any(|row| row.contains(name.as_str())) {
+                bail!("the program showed `{name}`, which a recording must not keep");
+            }
+        }
+        Ok(())
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -245,20 +372,71 @@ impl Recorder {
     }
 }
 
-/// The names that a recording must not show: the user's, the host's, and
-/// the user's home, but for the program's own, `home`.
+/// The text of `bytes` without escape sequences and control characters,
+/// but for the line breaks.
+fn plain(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\x1b' => match chars.next() {
+                // CSI: up to its final byte.
+                Some('[') => {
+                    for c in chars.by_ref() {
+                        if ('\x40'..='\x7e').contains(&c) {
+                            break;
+                        }
+                    }
+                }
+                // OSC, DCS, APC, PM and SOS: up to BEL or ST.
+                Some(']' | 'P' | '_' | '^' | 'X') => {
+                    while let Some(c) = chars.next() {
+                        if c == '\x07' || (c == '\x1b' && chars.next_if_eq(&'\\').is_some()) {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            '\n' => out.push('\n'),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The names that a recording must not show: the user's, the user's full
+/// name, the host's and the computer's, the user's home, and the program's
+/// own, `home`, which is the machine's.
 fn private_names(home: &Path) -> Vec<String> {
     let mut names: Vec<String> = ["USER", "LOGNAME", "HOME"]
         .into_iter()
         .filter_map(|name| std::env::var(name).ok())
         .collect();
-    for args in [&["-s"][..], &[]] {
-        if let Ok(output) = Command::new("hostname").args(args).output() {
+    let commands: [(&str, &[&str]); 5] = [
+        ("hostname", &["-s"]),
+        ("hostname", &[]),
+        ("scutil", &["--get", "ComputerName"]),
+        ("scutil", &["--get", "LocalHostName"]),
+        ("id", &["-F"]),
+    ];
+    for (program, args) in commands {
+        if let Ok(output) = Command::new(program)
+            .args(args)
+            .stderr(std::process::Stdio::null())
+            .output()
+            && output.status.success()
+        {
             names.push(String::from_utf8_lossy(&output.stdout).trim().to_owned());
         }
     }
-    let home = home.to_string_lossy();
-    names.retain(|name| name.len() >= 3 && !home.contains(name.as_str()));
+    names.push(home.display().to_string());
+    if let Ok(resolved) = home.canonicalize() {
+        names.push(resolved.display().to_string());
+    }
+    names.retain(|name| name.len() >= 3);
     names.sort();
     names.dedup();
     names

@@ -34,13 +34,7 @@ impl Cast {
     /// The program wrote `bytes`.
     pub fn output(&mut self, bytes: &[u8]) {
         self.partial.extend_from_slice(bytes);
-        let complete = match std::str::from_utf8(&self.partial) {
-            Ok(_) => self.partial.len(),
-            // An error that the end of the bytes cuts short is a character
-            // that goes on in the next output.
-            Err(error) if error.error_len().is_none() => error.valid_up_to(),
-            Err(_) => self.partial.len(),
-        };
+        let complete = complete(&self.partial);
         if complete == 0 {
             return;
         }
@@ -95,6 +89,32 @@ impl Cast {
     }
 }
 
+/// How many of `bytes` come before a character that their end cuts short,
+/// which goes on in the next output; bytes that are not UTF-8 before it
+/// count, as they will not be whole later either.
+fn complete(bytes: &[u8]) -> usize {
+    let continuations = bytes
+        .iter()
+        .rev()
+        .take(3)
+        .take_while(|&&byte| byte & 0xC0 == 0x80)
+        .count();
+    let Some(lead) = bytes.len().checked_sub(continuations + 1) else {
+        return bytes.len();
+    };
+    let needs = match bytes[lead] {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => return bytes.len(),
+    };
+    if continuations + 1 < needs {
+        lead
+    } else {
+        bytes.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,9 +127,12 @@ mod tests {
         cast.input(b"\x1b[A");
         cast.mark("start");
         cast.output(b"\xff!");
+        // A byte that is not UTF-8, then a character that a read cuts.
+        cast.output(b"a\xff\xe4\xb8");
+        cast.output(b"\xadb");
         assert_eq!(
             cast.outputs().collect::<Vec<_>>(),
-            ["a", "\u{4e2d}", "\u{fffd}!"]
+            ["a", "\u{4e2d}", "\u{fffd}!", "a\u{fffd}", "\u{4e2d}b"]
         );
         let text = cast.finish();
         let lines: Vec<serde_json::Value> = text
@@ -122,7 +145,7 @@ mod tests {
             .iter()
             .map(|event| event[1].as_str().unwrap())
             .collect();
-        assert_eq!(kinds, ["o", "o", "i", "m", "o"]);
+        assert_eq!(kinds, ["o", "o", "i", "m", "o", "o", "o"]);
         assert_eq!(lines[3][2], "\u{1b}[A");
     }
 }
