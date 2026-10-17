@@ -39,7 +39,8 @@ impl Terminal {
     /// Queues `bytes`, a reply to a program's query, unless the replies
     /// that wait would take more than [`REPLY_BYTES`].
     pub(super) fn reply(&mut self, bytes: &[u8]) {
-        if self.replies.len() + bytes.len() <= REPLY_BYTES {
+        if self.reply_bytes + bytes.len() <= REPLY_BYTES {
+            self.reply_bytes += bytes.len();
             self.replies.extend_from_slice(bytes);
         }
     }

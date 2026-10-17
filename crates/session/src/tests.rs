@@ -608,3 +608,26 @@ fn replies_far_longer_than_their_queries_wait_up_to_a_limit() {
     // The queue's limit, and a take of the terminal's replies at most.
     assert!(most <= 2 * REPLY_BYTES + 4 * SLICE, "{most} bytes waited");
 }
+
+#[test]
+fn a_clipboard_answer_reaches_a_program_that_waits_for_it_in_silence() {
+    // In raw mode, a read of the clipboard, and the answer read back, with
+    // ESC as E and BEL as B.
+    let script = r#"stty raw -echo; printf '\033]52;c;?\007'; r=$(dd bs=1 count=12 2>/dev/null); stty sane; printf 'got:%s\n' "$r" | tr '\033\007' EB"#;
+    let mut options = sh(script);
+    options.terminal.clipboard_reads = true;
+    let session = Session::spawn(&options, || {}).unwrap();
+    let start = Instant::now();
+    let request = loop {
+        let events = session.lock().take_events();
+        if let Some(&terminal::Event::ClipboardRead(request)) = events.first() {
+            break request;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "no read");
+        thread::sleep(Duration::from_millis(10));
+    };
+    session.reply_clipboard(request, b"hi");
+    wait_for(&session, "the answer", |terminal| {
+        shows(terminal, "got:E]52;c;aGk=B")
+    });
+}

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use bolt_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
 use bolt_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{self, Snapshot, Terminal};
+use bolt_vt_core::terminal::{self, ClipboardRequest, Snapshot, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -230,6 +230,16 @@ impl Session {
         let mut bytes = Vec::new();
         input::encode_focus(focused, &self.lock().input_modes(), &mut bytes);
         self.write(bytes);
+    }
+
+    /// Answers `request`, a program's read of the clipboard that the user
+    /// allowed, with `data`, what the clipboard holds: the answer goes to
+    /// the program at once, whole, as keys do, as a program can wait for it
+    /// without writing anything.
+    pub fn reply_clipboard(&self, request: ClipboardRequest, data: &[u8]) {
+        self.shared
+            .queue
+            .push(Terminal::clipboard_answer(request, data));
     }
 
     /// Pastes `text`, in one entry of the queue, so that no reply comes

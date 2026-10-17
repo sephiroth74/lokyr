@@ -10,6 +10,7 @@ mod cursor;
 mod edit;
 mod erase;
 mod escape;
+mod events;
 mod keyboard;
 mod modes;
 mod osc;
@@ -292,6 +293,9 @@ pub struct Terminal {
     /// What the terminal sends back to the program, such as replies to
     /// queries, for the embedder to write to the PTY.
     replies: Vec<u8>,
+    /// The bytes of the replies to queries among them, which the limit of
+    /// the replies counts.
+    reply_bytes: usize,
     /// The `TERM` that programs see.
     term: String,
     /// Whether programs may read the title back.
@@ -319,7 +323,7 @@ pub struct Terminal {
     /// The OSC string being read.
     osc: Vec<u8>,
     /// What the embedder has to act on, oldest first.
-    events: Vec<Event>,
+    events: events::Events,
     /// The working directory that OSC 7 gave last.
     working_directory: Option<WorkingDirectory>,
     /// The tab's color, from OSC 6;1.
@@ -381,6 +385,7 @@ impl Terminal {
             synchronized_updates: 0,
             configured_widths: options.widths,
             replies: Vec::new(),
+            reply_bytes: 0,
             term: options.term,
             title_reports: options.title_reports,
             clipboard_reads: options.clipboard_reads,
@@ -396,7 +401,7 @@ impl Terminal {
             query: None,
             query_bytes: Vec::new(),
             osc: Vec::new(),
-            events: Vec::new(),
+            events: events::Events::default(),
             working_directory: None,
             tab_color: None,
             segmenter: Segmenter::new(),
@@ -667,7 +672,7 @@ impl Terminal {
 
     /// Takes what the embedder has to act on, oldest first.
     pub fn take_events(&mut self) -> Vec<Event> {
-        std::mem::take(&mut self.events)
+        self.events.take()
     }
 
     /// Sets the size of a cell in pixels, which CSI 14 t and 16 t report;
@@ -683,6 +688,7 @@ impl Terminal {
     /// replies far longer than its queries. An answer to the clipboard,
     /// which the user allowed, goes whole.
     pub fn take_replies(&mut self) -> Vec<u8> {
+        self.reply_bytes = 0;
         std::mem::take(&mut self.replies)
     }
 

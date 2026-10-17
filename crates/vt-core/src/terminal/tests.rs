@@ -2516,7 +2516,8 @@ fn osc_0_1_and_2_set_the_titles() {
         (term.terminal.title(), term.terminal.icon_title()),
         ("window", "icon")
     );
-    assert_eq!(term.terminal.take_events(), vec![Event::TitleChanged; 3]);
+    // One change to tell, however many titles changed since the last take.
+    assert_eq!(term.terminal.take_events(), [Event::TitleChanged]);
     // UTF-8, without its controls, and split across reads.
     term.feed("\x1b]2;caf\u{E9} \u{9B}x");
     term.feed("y\x1b\\");
@@ -2592,22 +2593,37 @@ fn osc_9_and_777_send_notifications() {
 #[test]
 fn osc_9_4_reports_progress() {
     let mut term = Term::new(10, 1);
-    term.feed("\x1b]9;4;1;42\x07\x1b]9;4;1;150\x07\x1b]9;4;2\x07\x1b]9;4;2;7\x07");
-    term.feed("\x1b]9;4;3\x07\x1b]9;4;4;9\x07\x1b]9;4;0\x07\x1b]9;4\x07\x1b]9;4;5\x07");
-    let progress: Vec<Event> = [
-        Progress::Set(42),
-        Progress::Set(100),
-        Progress::Error(None),
-        Progress::Error(Some(7)),
-        Progress::Indeterminate,
-        Progress::Paused(Some(9)),
-        Progress::Remove,
-        Progress::Remove,
-    ]
-    .into_iter()
-    .map(Event::Progress)
-    .collect();
-    assert_eq!(term.terminal.take_events(), progress, "5 is no state");
+    // Each taken as it comes.
+    for (feed, progress) in [
+        ("1;42", Progress::Set(42)),
+        ("1;150", Progress::Set(100)),
+        ("2", Progress::Error(None)),
+        ("2;7", Progress::Error(Some(7))),
+        ("3", Progress::Indeterminate),
+        ("4;9", Progress::Paused(Some(9))),
+        ("0", Progress::Remove),
+        ("", Progress::Remove),
+    ] {
+        let osc = if feed.is_empty() {
+            "\x1b]9;4\x07".to_owned()
+        } else {
+            format!("\x1b]9;4;{feed}\x07")
+        };
+        term.feed(osc);
+        assert_eq!(
+            term.terminal.take_events(),
+            [Event::Progress(progress)],
+            "{feed:?}"
+        );
+    }
+    term.feed("\x1b]9;4;5\x07");
+    assert_eq!(term.terminal.take_events(), [], "5 is no state");
+    // Before a take, the latest progress is told, once.
+    term.feed("\x1b]9;4;1;10\x07\x1b]9;4;1;20\x07");
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::Progress(Progress::Set(20))]
+    );
     term.feed("\x1b]9;42\x07");
     assert!(matches!(
         &term.terminal.take_events()[..],
@@ -2618,38 +2634,44 @@ fn osc_9_4_reports_progress() {
 #[test]
 fn osc_6_1_sets_the_tab_color_a_component_at_a_time() {
     let mut term = Term::new(10, 1);
-    term.feed("\x1b]6;1;bg;red;brightness;255\x07\x1b]6;1;bg;blue;brightness;16\x07");
+    term.feed("\x1b]6;1;bg;red;brightness;255\x07");
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::TabColor(Some(Rgb::new(255, 0, 0)))]
+    );
+    term.feed("\x1b]6;1;bg;blue;brightness;16\x07");
     assert_eq!(term.terminal.tab_color(), Some(Rgb::new(255, 0, 16)));
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::TabColor(Some(Rgb::new(255, 0, 16)))]
+    );
     term.feed("\x1b]6;1;bg;pink;brightness;1\x07\x1b]6;1;bg;red;brightness;300\x07");
     assert_eq!(
         term.terminal.tab_color(),
         Some(Rgb::new(255, 0, 16)),
         "ignored"
     );
+    assert_eq!(term.terminal.take_events(), [], "nothing changed");
     term.feed("\x1b]6;1;bg;*;default\x07");
     assert_eq!(term.terminal.tab_color(), None);
-    assert_eq!(
-        term.terminal.take_events(),
-        [
-            Event::TabColor(Some(Rgb::new(255, 0, 0))),
-            Event::TabColor(Some(Rgb::new(255, 0, 16))),
-            Event::TabColor(None),
-        ]
-    );
+    assert_eq!(term.terminal.take_events(), [Event::TabColor(None)]);
 }
 
 #[test]
 fn ris_tells_the_embedder_what_it_dropped() {
     let mut term = Term::new(10, 1);
-    term.feed("\x1b]2;t\x07\x1b]6;1;bg;red;brightness;1\x07\x1bc");
+    term.feed("\x1b]2;t\x07\x1b]6;1;bg;red;brightness;1\x07");
     assert_eq!(
         term.terminal.take_events(),
         [
             Event::TitleChanged,
             Event::TabColor(Some(Rgb::new(1, 0, 0))),
-            Event::TitleChanged,
-            Event::TabColor(None),
         ]
+    );
+    term.feed("\x1bc");
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::TitleChanged, Event::TabColor(None)]
     );
     term.feed("\x1bc");
     assert_eq!(term.terminal.take_events(), [], "nothing left to drop");
@@ -4352,4 +4374,59 @@ fn replies_wait_up_to_a_limit_but_an_allowed_clipboard_goes_whole() {
     let replies = term.terminal.take_replies();
     assert!(replies.len() > 2 * limit, "{} bytes", replies.len());
     assert!(replies.ends_with(b"\x07"));
+}
+
+#[test]
+fn events_wait_within_limits() {
+    let mut term = Term::new(10, 1);
+    // A title changed again and again, then the colors, are told once each.
+    term.feed("\x1b]2;x\x07".repeat(10_000));
+    term.feed("\x1b]4;1;rgb:00/ff/00\x07".repeat(1_000));
+    assert_eq!(
+        term.terminal.take_events(),
+        [Event::TitleChanged, Event::ColorsChanged]
+    );
+    // Writes to the clipboard, with their data, wait up to a limit.
+    let write = format!("\x1b]52;c;{}\x07", "eHh4".repeat(256));
+    term.feed(write.repeat(2_000));
+    let events = term.terminal.take_events();
+    let bytes: usize = events
+        .iter()
+        .map(|event| match event {
+            Event::ClipboardWrite { data, .. } => size_of::<Event>() + data.len(),
+            other => panic!("{other:?}"),
+        })
+        .sum();
+    assert!(bytes <= super::events::EVENT_BYTES, "{bytes} bytes");
+    assert!(
+        events.len() > 100 && events.len() < 2_000,
+        "{} events",
+        events.len()
+    );
+    // A take makes room again.
+    term.feed(&write);
+    assert_eq!(term.terminal.take_events().len(), 1);
+}
+
+#[test]
+fn a_clipboard_answer_does_not_take_the_room_of_replies() {
+    let options = Options {
+        clipboard_reads: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1b]52;c;?\x07");
+    let [Event::ClipboardRead(request)] = term.terminal.take_events()[..] else {
+        panic!("a read");
+    };
+    let limit = super::reports::REPLY_BYTES;
+    term.terminal
+        .reply_clipboard(request, &vec![b'x'; 2 * limit]);
+    term.feed("\x1b[c");
+    let replies = term.terminal.take_replies();
+    assert!(replies.ends_with(b"\x1b[?62;22c"), "DA1 after the answer");
+    assert_eq!(
+        Terminal::clipboard_answer(request, b"hi"),
+        b"\x1b]52;c;aGk=\x07"
+    );
 }

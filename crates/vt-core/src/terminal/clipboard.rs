@@ -51,16 +51,24 @@ impl Terminal {
         }
     }
 
-    /// Answers `request` with `data`, what the clipboard holds.
+    /// Answers `request` with `data`, what the clipboard holds: the answer
+    /// waits with the replies, whole, past their limit, as the user allowed
+    /// it. An embedder that writes it itself, at once, takes it from
+    /// [`Terminal::clipboard_answer`].
     pub fn reply_clipboard(&mut self, request: ClipboardRequest, data: &[u8]) {
+        self.answer(&Self::clipboard_answer(request, data));
+    }
+
+    /// The answer to `request`, with `data`, what the clipboard holds, for
+    /// the program.
+    pub fn clipboard_answer(request: ClipboardRequest, data: &[u8]) -> Vec<u8> {
         let letter = if request.target.clipboard { 'c' } else { 'p' };
         let end = if request.bel {
             StringEnd::Bel
         } else {
             StringEnd::St
         };
-        // What the user allowed goes whole, past the replies' limit.
-        self.answer(super::colors::osc(&format!("52;{letter};{}", encode(data)), end).as_bytes());
+        super::colors::osc(&format!("52;{letter};{}", encode(data)), end).into_bytes()
     }
 }
 

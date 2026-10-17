@@ -97,10 +97,11 @@ impl Terminal {
             clipboard_reads: self.clipboard_reads,
             link_schemes: std::mem::take(&mut self.link_schemes),
         };
-        let (bells, updates, replies, cell_size) = (
+        let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,
             self.synchronized_updates,
             std::mem::take(&mut self.replies),
+            self.reply_bytes,
             self.cell_size,
         );
         let working_directory = self.working_directory.take();
@@ -116,7 +117,8 @@ impl Terminal {
         }
         let colors = std::mem::take(&mut self.default_colors);
         *self = Self::new(self.cols, self.rows, options);
-        (self.bells, self.replies, self.cell_size) = (bells, replies, cell_size);
+        (self.bells, self.replies, self.reply_bytes, self.cell_size) =
+            (bells, replies, reply_bytes, cell_size);
         self.synchronized_updates = updates;
         self.working_directory = working_directory;
         self.events = events;
