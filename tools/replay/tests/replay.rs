@@ -217,6 +217,57 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "escape",
             r"printf 'zz-some\\033[mone-zz\\r\\033[K'; sleep 0.3",
         ),
+        // Broken by an escape with an intermediate byte, which chooses a
+        // character set.
+        (
+            "charset",
+            r"printf 'zz-some\\033(B\\033[mone-zz\\r\\033[K'; sleep 0.3",
+        ),
+        // After an OSC string that an escape ends, or that CAN cancels.
+        (
+            "osc-escape",
+            r"printf '\\033]0;t\\033[mzz-someone-zz\\r\\033[K'; sleep 0.3",
+        ),
+        (
+            "osc-cancel",
+            r"printf '\\033]0;t\\030zz-someone-zz\\r\\033[K'; sleep 0.3",
+        ),
+        // In a title, a link's URI, a working directory that percent-encoding
+        // hides, and a PM string, which the terminal drops.
+        (
+            "title",
+            r"printf '\\033]0;zz-someone-zz\\007ok\\n'; sleep 0.3",
+        ),
+        // In a title that a control character breaks, which the string
+        // leaves out.
+        (
+            "title-control",
+            r"printf '\\033]0;zz-some\\001one-zz\\007ok\\n'; sleep 0.3",
+        ),
+        (
+            "link",
+            r"printf '\\033]8;;file://zz-someone-zz/x\\033\\\\link\\033]8;;\\033\\\\\\n'; sleep 0.3",
+        ),
+        (
+            "directory",
+            r"printf '\\033]7;file:///%%7Az-someone-zz\\007ok\\n'; sleep 0.3",
+        ),
+        (
+            "pm",
+            r"printf '\\033^zz-someone-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        // Put together by moving the cursor back, then scrolled away: only
+        // the rows show it.
+        (
+            "moved",
+            r"printf '\\033[8Gone-zz\\rzz-some\\n\\n\\n\\n'; sleep 0.3",
+        ),
+        // The same, with the alternate screen on at the end, so that the
+        // primary screen's rows, inactive, show it.
+        (
+            "alternate",
+            r"printf '\\033[8Gone-zz\\rzz-some\\n\\n\\n\\n\\033[?1049h'; sleep 0.3",
+        ),
     ] {
         let script = format!("size 20 3\nrun sh -c \"{program}\"\nexit\n");
         let (output, cast) = record(name, &script, &user);
@@ -227,6 +278,28 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
         );
         assert_eq!(cast, None, "{name}");
     }
+}
+
+#[test]
+fn the_temporary_directory_is_private_too() {
+    let (output, cast) = record(
+        "temp",
+        "run sh -c \"cd ../..; pwd; sleep 0.3\"\nexit\n",
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let temp = std::env::temp_dir().canonicalize().unwrap();
+    let temp = temp.to_str().unwrap().trim_end_matches('/');
+    assert!(stderr.contains(&format!("showed `{temp}`")), "{stderr}");
+    assert_eq!(cast, None);
+}
+
+#[test]
+fn a_name_that_cannot_be_looked_up_is_said() {
+    let (output, cast) = record("lookup", "run true\nexit\n", &[("PATH", "/nonexistent")]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("warning: `hostname -s` failed"), "{stderr}");
+    assert!(cast.is_some(), "{stderr}");
 }
 
 #[test]
@@ -263,7 +336,7 @@ fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
     let (output, cast) = record(
         "echo-keys",
         &format!(
-            "run sh -c \"stty raw -echo; exec cat\"\nsleep 200\nsend \"{keys}\"\nwait xxxxxxxxxx\n"
+            "run sh -c \"stty raw -echo; echo armed; exec cat\"\nwait armed\nsend \"{keys}\"\nwait xxxxxxxxxx\n"
         ),
         &[],
     );
@@ -277,7 +350,7 @@ fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
     let (output, cast) = record(
         "deaf",
         &format!(
-            "run sh -c \"stty raw -echo; sleep 30\"\nsleep 200\nsend \"{}\" 500\n",
+            "run sh -c \"stty raw -echo; echo armed; sleep 30\"\nwait armed\nsend \"{}\" 500\n",
             "x".repeat(70_000)
         ),
         &[],
@@ -290,15 +363,35 @@ fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
 
 #[test]
 fn a_killed_recorders_home_goes_with_the_next_run() {
-    let stale = std::env::temp_dir().join("bolt-record-stale-2147483646");
-    std::fs::create_dir_all(&stale).unwrap();
-    let (output, _) = record("next", "run true\nexit\n", &[]);
+    let temp = std::env::temp_dir().join(format!("bolt-replay-stale-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&temp);
+    // A home that a recorder marked, whose process has gone; one of a
+    // process that runs, as another user; and a directory that is not a
+    // home, though its name looks like one.
+    let stale = temp.join("bolt-record-stale-2147483646");
+    let running = temp.join("bolt-record-root-1");
+    let other = temp.join("bolt-record-notes-2024");
+    for dir in [&stale, &running, &other] {
+        std::fs::create_dir_all(dir.join("home")).unwrap();
+    }
+    for dir in [&stale, &running] {
+        std::fs::write(dir.join(".bolt-record"), b"").unwrap();
+    }
+    let (output, _) = record(
+        "next",
+        "run true\nexit\n",
+        &[("TMPDIR", temp.to_str().unwrap())],
+    );
+    let kept = (running.exists(), other.exists());
+    let removed = !stale.exists();
+    let _ = std::fs::remove_dir_all(&temp);
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!stale.exists());
+    assert!(removed);
+    assert_eq!(kept, (true, true));
 }
 
 #[test]

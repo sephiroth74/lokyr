@@ -440,6 +440,17 @@ impl Terminal {
         &mut self.screen_mut().rows
     }
 
+    /// The rows of the screen that is not active: the primary one, with
+    /// its scrollback, while the alternate one is active, and the other way
+    /// around.
+    pub fn inactive_screen_rows(&self) -> &PageList {
+        if self.alternate_active {
+            &self.primary.rows
+        } else {
+            &self.alternate.rows
+        }
+    }
+
     /// Whether the alternate screen is the active one.
     pub fn is_alternate_screen(&self) -> bool {
         self.alternate_active

@@ -394,6 +394,28 @@ fn the_screens_keep_their_rows_and_cursors() {
     assert_eq!(term.screen(), ["main", ""]);
 }
 
+#[test]
+fn the_inactive_screens_rows_are_the_other_screens() {
+    let mut term = Term::new(4, 2);
+    term.feed("main");
+    let first = |list: &PageList| list.rows_from(0).next().unwrap().cells().next().unwrap();
+    term.terminal.set_alternate_screen(true);
+    term.feed("alt");
+    assert_eq!(
+        first(term.terminal.inactive_screen_rows()).content(),
+        Content::Char('m')
+    );
+    assert_eq!(
+        first(term.terminal.screen_rows()).content(),
+        Content::Char('a')
+    );
+    term.terminal.set_alternate_screen(false);
+    assert_eq!(
+        first(term.terminal.inactive_screen_rows()).content(),
+        Content::Char('a')
+    );
+}
+
 fn normalizing(normalization: Normalization) -> Term {
     Term::with(
         10,
