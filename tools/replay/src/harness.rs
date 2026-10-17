@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 pub use bolt_pty::Exit;
 use bolt_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
+use bolt_vt_core::page::RowFlag;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{self, Options, Terminal};
 
@@ -377,6 +378,27 @@ impl Harness {
             .join("\n")
     }
 
+    /// The screen's lines, a line each, a row that soft-wraps into the next
+    /// joined to it.
+    fn lines(&self) -> String {
+        let list = self.terminal.screen_rows();
+        let flag = |y, flag| {
+            let (page, row) = list.screen_row(y);
+            page.row(row).has(flag)
+        };
+        let rows = self.terminal.rows();
+        let mut text = String::new();
+        for y in 0..rows {
+            text.push_str(&self.terminal.row_text(y));
+            let goes_on =
+                y + 1 < rows && flag(y, RowFlag::SoftWrapped) && flag(y + 1, RowFlag::Continuation);
+            if !goes_on {
+                text.push('\n');
+            }
+        }
+        text
+    }
+
     /// Everything that the program wrote.
     pub fn output(&self) -> Vec<u8> {
         self.events
@@ -470,14 +492,18 @@ impl Harness {
         if self.forbidden.is_empty() {
             return Ok(Read::Output);
         }
-        // What the screen shows now, which the next output can take away.
-        let screen = self.screen();
+        // What the screen shows now, which the next output can take away,
+        // its rows that soft-wrap joined to the next.
+        let lines = self.lines();
         if let Some(text) = self
             .forbidden
             .iter()
-            .find(|text| screen.contains(text.as_str()))
+            .find(|text| lines.contains(text.as_str()))
         {
-            bail!("the program showed `{text}`, which a recording must not keep:\n{screen}");
+            bail!(
+                "the program showed `{text}`, which a recording must not keep:\n{}",
+                self.screen()
+            );
         }
         Ok(Read::Output)
     }

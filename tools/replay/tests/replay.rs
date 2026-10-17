@@ -262,6 +262,31 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "moved",
             r"printf '\\033[8Gone-zz\\rzz-some\\n\\n\\n\\n'; sleep 0.3",
         ),
+        // Written to the clipboard, in base64.
+        (
+            "clipboard",
+            r"printf '\\033]52;c;%s\\007' $(printf zz-someone-zz | base64); sleep 0.3",
+        ),
+        // Broken by a control character in a DCS or a PM string, which
+        // keep them.
+        (
+            "dcs-control",
+            r"printf '\\033Ppzz-some\\001one-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        (
+            "pm-control",
+            r"printf '\\033^zz-some\\001one-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        // Percent-encoded past the limit of a link's string.
+        (
+            "long-link",
+            r"printf '\\033]8;;'; head -c 70000 /dev/zero | tr '\\000' x; printf '%%7Az-someone-zz\\033\\\\link\\n'; sleep 0.3",
+        ),
+        // Across a soft wrap, as the cursor's moves put it together.
+        (
+            "wrapped",
+            r"printf '\\033[2;2Hne-zz\\033[1;14Hzz-someo'; sleep 0.3",
+        ),
         // The same, with the alternate screen on at the end, so that the
         // primary screen's rows, inactive, show it.
         (
@@ -280,18 +305,73 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
     }
 }
 
+/// A new directory of the user's own, named for the test, for a `TMPDIR`
+/// that does not depend on the machine's.
+fn own_temp(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("bolt-replay-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.canonicalize().unwrap()
+}
+
 #[test]
-fn the_temporary_directory_is_private_too() {
+fn the_temporary_directory_and_the_users_folders_above_it_are_private() {
+    let base = own_temp("temp");
+    let inner = base.join("inner");
+    std::fs::create_dir(&inner).unwrap();
+    // The temporary directory, and the folder above it, which is the
+    // user's too.
+    for (name, up, shown) in [("temp", "../..", &inner), ("above", "../../..", &base)] {
+        let (output, cast) = record(
+            name,
+            &format!("run sh -c \"cd {up}; pwd; sleep 0.3\"\nexit\n"),
+            &[("TMPDIR", inner.to_str().unwrap())],
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(&format!("showed `{}`", shown.display())),
+            "{name}: {stderr}"
+        );
+        assert_eq!(cast, None, "{name}");
+    }
+    std::fs::remove_dir_all(&base).unwrap();
+}
+
+#[test]
+fn a_name_that_two_writes_split_as_it_is_typed_is_caught() {
+    let keys = format!("{}zz-someone-zz", "x".repeat(1015));
     let (output, cast) = record(
-        "temp",
-        "run sh -c \"cd ../..; pwd; sleep 0.3\"\nexit\n",
-        &[],
+        "typed",
+        &format!(
+            "run sh -c \"stty raw -echo; echo armed; exec cat >/dev/null\"\nwait armed\nsend \"{keys}\"\nsleep 300\n"
+        ),
+        &[("USER", "zz-someone-zz")],
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let temp = std::env::temp_dir().canonicalize().unwrap();
-    let temp = temp.to_str().unwrap().trim_end_matches('/');
-    assert!(stderr.contains(&format!("showed `{temp}`")), "{stderr}");
+    assert!(stderr.contains("showed `zz-someone-zz`"), "{stderr}");
     assert_eq!(cast, None);
+}
+
+#[test]
+fn a_home_that_the_program_made_read_only_goes_too() {
+    let temp = own_temp("read-only");
+    let (output, cast) = record(
+        "ro",
+        "run sh -c \"mkdir -p d/e; touch d/e/f; chmod 555 d/e d\"\nexit\n",
+        &[("TMPDIR", temp.to_str().unwrap())],
+    );
+    let left: Vec<_> = std::fs::read_dir(&temp)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    std::fs::remove_dir_all(&temp).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(cast.is_some());
+    assert!(left.is_empty(), "the home stays: {left:?}");
 }
 
 #[test]
@@ -400,14 +480,16 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
 
 #[test]
 fn a_wait_a_quiet_and_a_mark_do_not_end_inside_a_synchronized_update() {
-    // An update that shows `ready` at once, and ends half a second later.
-    let program = "run sh -c \"printf '\\\\033[?2026hready'; sleep 0.5; printf ' done\\\\033[?2026l'; read x\"";
+    // `started`, then an update that shows `ready` at once, and ends more
+    // than a second later.
+    let program = "run sh -c \"echo started; sleep 0.1; printf '\\\\033[?2026hready'; sleep 1.5; printf ' done\\\\033[?2026l'; read x\"";
     for (name, steps, after) in [
         ("wait", "wait ready\nsend \"x\\r\"\n", r#","i","x\r"]"#),
         ("quiet", "quiet 200\nsend \"x\\r\"\n", r#","i","x\r"]"#),
+        // The mark, well inside the update, which has long started.
         (
             "mark",
-            "sleep 100\nmark here\nsend \"x\\r\"\n",
+            "wait started\nsleep 800\nmark here\nsend \"x\\r\"\n",
             r#","m","here"]"#,
         ),
     ] {

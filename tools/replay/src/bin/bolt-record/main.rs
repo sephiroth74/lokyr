@@ -19,7 +19,7 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
 use bolt_replay::harness::{Event, Harness, HarnessOptions};
-use bolt_vt_core::page::{Content, PageList};
+use bolt_vt_core::page::{Content, PageList, RowFlag};
 use bolt_vt_core::parser::{Handler, Params, Parser};
 use bolt_vt_core::terminal::Options;
 
@@ -91,7 +91,7 @@ const MARK: &str = ".bolt-record";
 impl Home {
     fn new(name: &str) -> Result<Self> {
         let root = std::env::temp_dir().join(format!("{HOME_PREFIX}{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        remove(&root);
         fs::create_dir_all(&root).with_context(|| format!("creating {}", root.display()))?;
         let home = Self { root };
         fs::write(home.root.join(MARK), b"")?;
@@ -107,7 +107,37 @@ impl Home {
 
 impl Drop for Home {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
+        remove(&self.root);
+    }
+}
+
+/// Removes the directory at `path`, if it is there, making its directories
+/// writable first if they keep it from going, as a program can leave them
+/// read-only; says so if it stays still.
+fn remove(path: &Path) {
+    if fs::remove_dir_all(path).is_ok() || fs::symlink_metadata(path).is_err() {
+        return;
+    }
+    writable(path);
+    if let Err(error) = fs::remove_dir_all(path) {
+        eprintln!("warning: {} stays: {error}", path.display());
+    }
+}
+
+/// Makes the directory at `path`, and those in it, writable, and readable,
+/// by the user, without following links.
+fn writable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if !metadata.is_dir() {
+        return;
+    }
+    let mode = metadata.permissions().mode() | 0o700;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(mode));
+    for entry in fs::read_dir(path).into_iter().flatten().flatten() {
+        writable(&entry.path());
     }
 }
 
@@ -133,7 +163,7 @@ fn remove_stale_homes() {
             continue;
         };
         if pid > 0 && entry.path().join(MARK).is_file() && gone(pid) {
-            let _ = fs::remove_dir_all(entry.path());
+            remove(&entry.path());
         }
     }
 }
@@ -220,30 +250,51 @@ fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
 }
 
 /// The texts that a recording holds, which a name must show in none of:
-/// - the bytes that the program wrote, as they are, and those typed into
-///   it, so that the recording holds no name whole, in a string that the
-///   terminal drops or a sequence that it ignores;
+/// - the bytes that the program wrote, as they are, without their C0
+///   controls but for the line breaks, as DCS, PM and SOS strings keep
+///   them, and with their percent-encoding undone too, so that the
+///   recording holds no name whole, in a string that the terminal drops,
+///   or one that passes its limit;
+/// - the bytes typed into the program, all of them, as two writes can
+///   split a name typed;
 /// - the text that the VT core's parser prints from the output, without its
 ///   escape sequences and control characters but for the line breaks, so
 ///   that a name that an escape breaks shows;
 /// - the payload of each OSC, DCS and APC string, as it is and with its
-///   percent-encoding undone, as links and the working directory have it;
+///   percent-encoding undone, as links and the working directory have it,
+///   which notifications are too, and what an OSC 52 string writes to the
+///   clipboard, decoded from its base64;
 /// - the titles and the working directory, as the terminal keeps them;
-/// - every row of both screens, the scrollback's too, so that a name that
-///   the cursor's moves put together shows.
+/// - every line of both screens, the scrollback's too, its soft-wrapped
+///   rows joined, so that a name that the cursor's moves put together, or
+///   that wraps, shows.
 fn texts(harness: &Harness) -> Vec<String> {
+    let lossy = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
     let output = harness.output();
     let mut plain = Plain::default();
     Parser::new().advance(&mut plain, &output);
-    let mut texts = vec![String::from_utf8_lossy(&output).into_owned(), plain.text];
-    for (_, event) in harness.events() {
-        if let Event::Input(bytes) = event {
-            texts.push(String::from_utf8_lossy(bytes).into_owned());
-        }
-    }
+    let input: Vec<u8> = harness
+        .events()
+        .iter()
+        .filter_map(|(_, event)| match event {
+            Event::Input(bytes) => Some(&bytes[..]),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    let mut texts = vec![
+        lossy(&output),
+        lossy(&without_controls(&output)),
+        lossy(&without_controls(&percent_decoded(&output))),
+        lossy(&input),
+        plain.text,
+    ];
     for payload in &plain.strings {
-        texts.push(String::from_utf8_lossy(payload).into_owned());
-        texts.push(String::from_utf8_lossy(&percent_decoded(payload)).into_owned());
+        texts.push(lossy(payload));
+        texts.push(lossy(&percent_decoded(payload)));
+        if let Some(data) = clipboard_data(payload) {
+            texts.push(lossy(&data));
+        }
     }
     let terminal = harness.terminal();
     texts.push(terminal.title().to_owned());
@@ -252,9 +303,53 @@ fn texts(harness: &Harness) -> Vec<String> {
         texts.push(format!("{}{}", dir.host, dir.path));
     }
     for list in [terminal.screen_rows(), terminal.inactive_screen_rows()] {
-        texts.extend(rows(list));
+        texts.extend(lines(list));
     }
     texts
+}
+
+/// `bytes` without their C0 controls, but for the line breaks.
+fn without_controls(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .copied()
+        .filter(|&byte| byte >= 0x20 || byte == b'\n')
+        .collect()
+}
+
+/// What the OSC 52 string with `payload` writes to the clipboard, decoded,
+/// if it is one: `52`, the clipboards, then the data in base64.
+fn clipboard_data(payload: &[u8]) -> Option<Vec<u8>> {
+    let rest = payload.strip_prefix(b"52;")?;
+    let at = rest.iter().position(|&byte| byte == b';')?;
+    Some(base64_decoded(&rest[at + 1..]))
+}
+
+/// The bytes that `text` stands for in base64, up to the first byte that is
+/// not of it, its padding included: a string that passed its limit decodes
+/// as far as it came.
+fn base64_decoded(text: &[u8]) -> Vec<u8> {
+    let value = |byte: u8| match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut bits, mut count) = (0_u32, 0);
+    for value in text.iter().map_while(|&byte| value(byte)) {
+        bits = (bits << 6) | u32::from(value);
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            // The byte that the last bits make.
+            out.push((bits >> count) as u8);
+            bits &= (1 << count) - 1;
+        }
+    }
+    out
 }
 
 /// What the parser finds in the program's output: the text that it prints,
@@ -331,29 +426,37 @@ fn percent_decoded(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The text of each row of `list`, its clusters whole.
-fn rows(list: &PageList) -> impl Iterator<Item = String> + '_ {
-    list.rows_from(0).map(|row| {
-        row.cells()
-            .enumerate()
-            .map(|(x, cell)| {
-                let mut text = String::new();
-                if let Content::Char(c) | Content::Grapheme(c) = cell.content()
-                    && c != '\0'
-                {
-                    text.push(c);
-                    // A row has fewer than 2^16 columns.
-                    text.extend(row.grapheme(x as u16));
-                }
-                text
-            })
-            .collect()
-    })
+/// The text of each line of `list`, its clusters whole, the rows that
+/// soft-wrap into the next joined to it.
+fn lines(list: &PageList) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut rows = list.rows_from(0).peekable();
+    while let Some(row) = rows.next() {
+        for (x, cell) in row.cells().enumerate() {
+            if let Content::Char(c) | Content::Grapheme(c) = cell.content()
+                && c != '\0'
+            {
+                line.push(c);
+                // A row has fewer than 2^16 columns.
+                line.extend(row.grapheme(x as u16));
+            }
+        }
+        let goes_on = row.metadata().has(RowFlag::SoftWrapped)
+            && rows
+                .peek()
+                .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
+        if !goes_on {
+            lines.push(std::mem::take(&mut line));
+        }
+    }
+    lines
 }
 
 /// The names that a recording must not show: the user's, the user's full
 /// name, the host's and the computer's, the user's home, the temporary
-/// directory, when it is the user's own, and the program's home, which is
+/// directory and the folders above it, when they are the user's own, and
+/// the program's home, which is
 /// the machine's; longest first, so that a failure names the most of what
 /// showed. A name that cannot be looked up is said, and one shorter than 3
 /// characters, which would match too much, is left out.
@@ -393,8 +496,15 @@ fn private_names(home: &Path) -> Vec<String> {
     }
     let temp = std::env::temp_dir();
     let mut paths = vec![home.to_owned()];
-    if users_own(&temp) {
-        paths.push(temp);
+    // The temporary directory, and the folders above it, as long as they
+    // are the user's own, as macOS's per-user folder is, which holds the
+    // user's caches too.
+    for form in [temp.clone(), temp.canonicalize().unwrap_or(temp)] {
+        paths.extend(
+            form.ancestors()
+                .take_while(|dir| users_own(dir))
+                .map(Path::to_owned),
+        );
     }
     for path in paths {
         names.push(path.display().to_string().trim_end_matches('/').to_owned());
