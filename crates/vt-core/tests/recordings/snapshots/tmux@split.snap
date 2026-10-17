@@ -1,0 +1,53 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+3[4;32munderlined\033[0m \033[7mreverse\│9
+  40-40 fg=#b3b3b3
+033[0m\n'                               │10
+  40-40 fg=#b3b3b3
+red underlined reverse                  │11
+  0-2 bold fg=1; 4-13 underline=single fg=2; 15-21 inverse; 40-40 fg=#b3b3b3
+sh-3.2$                                 │12
+  40-40 fg=#b3b3b3
+                                        │13
+  40-40 fg=#b3b3b3
+                                        │14
+  40-40 fg=#b3b3b3
+                                        │15
+  40-40 fg=#b3b3b3
+                                        │16
+  40-40 fg=#b3b3b3
+                                        │17
+  40-40 fg=#b3b3b3
+                                        │18
+  40-40 fg=#b3b3b3
+                                        │19
+  40-40 fg=#b3b3b3
+                                        │20
+  40-40 fg=#b3b3b3
+                                        │21
+  40-40 fg=#9acd32
+                                        │22
+  40-40 fg=#9acd32
+                                        │23
+  40-40 fg=#9acd32
+                                        │24
+  40-40 fg=#9acd32
+                                        │25
+  40-40 fg=#9acd32
+                                        │26
+  40-40 fg=#9acd32
+                                        │27
+  40-40 fg=#9acd32
+                                        │28
+  40-40 fg=#9acd32
+                                        │29
+  40-40 fg=#9acd32
+                                        │30
+  40-40 fg=#9acd32
+                                        │sh-3.2$
+  40-40 fg=#9acd32
+[rec] 0:bash*                                                               bolt
+  0-5 fg=#0d0d0d bg=#9acd32; 6-12 underline=single fg=#0d0d0d bg=#9acd32; 13-75 bg=#9acd32; 76-79 fg=#0d0d0d bg=#9acd32
+cursor 49,22

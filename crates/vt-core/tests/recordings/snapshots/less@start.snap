@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+  1 the page line, with café and 中文 to show
+  2 the scroll line, with café and 中文 to show
+  3 the search line, with café and 中文 to show
+  4 the cell line, with café and 中文 to show
+  5 the cluster line, with café and 中文 to show
+  6 the wrap line, with café and 中文 to show
+  7 the margin line, with café and 中文 to show
+  8 the cursor line, with café and 中文 to show
+  9 the screen line, with café and 中文 to show
+ 10 the terminal line, with café and 中文 to show
+ 11 the page line, with café and 中文 to show
+  12 a long line that goes on past the edge of the screen, so that the pager has
+ to wrap it onto the next row, where it goes on
+ 13 the search line, with café and 中文 to show
+ 14 the cell line, with café and 中文 to show
+ 15 the cluster line, with café and 中文 to show
+ 16 the wrap line, with café and 中文 to show
+ 17 the margin line, with café and 中文 to show
+ 18 the cursor line, with café and 中文 to show
+ 19 the screen line, with café and 中文 to show
+ 20 the terminal line, with café and 中文 to show
+ 21 the page line, with café and 中文 to show
+ 22 the scroll line, with café and 中文 to show
+text.txt
+  0-7 inverse
+cursor 8,23

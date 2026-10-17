@@ -12,6 +12,8 @@ pub struct Recording {
     pub size: Option<(u16, u16)>,
     /// The output, chunk by chunk.
     pub chunks: Vec<Vec<u8>>,
+    /// The markers, each with how many chunks come before it.
+    pub marks: Vec<(usize, String)>,
     /// How many resizes the recording has, which the replay leaves out.
     pub resizes: usize,
 }
@@ -34,6 +36,7 @@ impl Recording {
             _ => Ok(Self {
                 size: None,
                 chunks: bytes.chunks(RAW_CHUNK).map(<[u8]>::to_vec).collect(),
+                marks: Vec::new(),
                 resizes: 0,
             }),
         }
@@ -60,6 +63,7 @@ impl Recording {
         let mut recording = Self {
             size,
             chunks: Vec::new(),
+            marks: Vec::new(),
             resizes: 0,
         };
         let text = std::str::from_utf8(bytes).context("an asciicast is UTF-8")?;
@@ -77,6 +81,9 @@ impl Recording {
             ) {
                 (Some("o"), Some(data)) => recording.chunks.push(data.as_bytes().to_vec()),
                 (Some("r"), Some(_)) => recording.resizes += 1,
+                (Some("m"), Some(label)) => recording
+                    .marks
+                    .push((recording.chunks.len(), label.to_owned())),
                 (Some(_), Some(_)) => {}
                 _ => bail!("line {number} is not an event"),
             }
@@ -134,10 +141,13 @@ mod tests {
             "# a comment\n",
             "[0.5, \"o\", \"hi\"]\n",
             "[0.1, \"m\", \"\"]\n",
+            "[0.6, \"o\", \"!\"]\n",
+            "[0.7, \"m\", \"end\"]\n",
         );
         let recording = Recording::parse(cast.as_bytes()).unwrap();
         assert_eq!(recording.size, Some((100, 30)));
-        assert_eq!(recording.output(), b"hi");
+        assert_eq!(recording.output(), b"hi!");
+        assert_eq!(recording.marks, [(1, String::new()), (2, "end".to_owned())]);
     }
 
     #[test]

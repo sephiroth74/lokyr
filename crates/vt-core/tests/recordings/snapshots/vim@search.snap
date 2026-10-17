@@ -1,0 +1,52 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+  1 //! A sample to edit: a few functions, comments and strings.
+  0-3 fg=130; 4-63 fg=5
+  2
+  0-3 fg=130
+  3 use std::collections::HashMap;
+  0-6 fg=130; 8-25 fg=5
+  4
+  0-3 fg=130
+  5 /// Counts the words of `text`.
+  0-3 fg=130; 4-34 fg=5
+  6 fn count(text: &str) -> HashMap<&str, usize> {
+  0-3 fg=130; 4-5 fg=130 bg=11; 7-11 fg=6; 19-22 fg=2; 25-26 fg=130; 35-35 fg=130; 36-39 fg=2; 42-46 fg=2; 47-47 fg=130
+  7     let mut counts = HashMap::new();
+  0-3 fg=130; 8-10 fg=130; 12-14 fg=2; 23-23 fg=130; 25-33 fg=5; 34-36 fg=6
+  8     for word in text.split_whitespace() {
+  0-3 fg=130; 8-10 fg=130; 17-18 fg=130; 25-40 fg=6
+  9         *counts.entry(word).or_insert(0) += 1;
+  0-3 fg=130; 12-12 fg=2; 20-24 fg=6; 32-40 fg=6; 42-42 fg=1; 45-46 fg=130; 48-48 fg=1
+ 10     }
+  0-3 fg=130
+ 11     counts
+  0-3 fg=130
+ 12 }
+  0-3 fg=130
+ 13
+  0-3 fg=130
+ 14 fn main() {
+  0-3 fg=130; 4-5 fg=130 bg=11; 7-10 fg=6
+ 15     let text = "the cat and the hat, café and 中文";
+  0-3 fg=130; 8-10 fg=130; 17-17 fg=130; 19-54 fg=1
+ 16     let counts = count(text);
+  0-3 fg=130; 8-10 fg=130; 19-19 fg=130; 21-25 fg=6
+ 17     for (word, n) in &counts {
+  0-3 fg=130; 8-10 fg=130; 22-23 fg=130; 25-25 fg=2
+ 18         println!("{word}: {n}");
+  0-3 fg=130; 12-19 fg=5; 21-33 fg=1
+ 19     }
+  0-3 fg=130
+ 20 }
+  0-3 fg=130
+~
+  0-79 fg=12
+~
+  0-79 fg=12
+~
+  0-79 fg=12
+/fn
+cursor 4,5

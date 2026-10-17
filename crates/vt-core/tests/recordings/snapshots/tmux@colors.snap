@@ -1,0 +1,31 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+sh-3.2$ printf '\033[1;31mred\033[0m \033[4;32munderlined\033[0m \033[7mreverse\
+033[0m\n'
+red underlined reverse
+  0-2 bold fg=1; 4-13 underline=single fg=2; 15-21 inverse
+sh-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[rec] 0:tmux*                                                               bolt
+  0-5 fg=#0d0d0d bg=#9acd32; 6-12 underline=single fg=#0d0d0d bg=#9acd32; 13-75 bg=#9acd32; 76-79 fg=#0d0d0d bg=#9acd32
+cursor 8,3

@@ -1,0 +1,53 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+  4
+  0-3 fg=130
+  5 /// Counts the words of `text`.
+  0-3 fg=130; 4-34 fg=5
+  6 fn count(text: &str) -> HashMap<&str, usize> {
+  0-3 fg=130; 4-50 fg=0 bg=248
+  7     let mut counts = HashMap::new();
+  0-3 fg=130; 4-40 fg=0 bg=248
+  8     for word in text.split_whitespace() {
+  0-3 fg=130; 5-45 fg=0 bg=248
+  9         *counts.entry(word).or_insert(0) += 1;
+  0-3 fg=130; 12-12 fg=2; 20-24 fg=6; 32-40 fg=6; 42-42 fg=1; 45-46 fg=130; 48-48 fg=1
+ 10     }
+  0-3 fg=130
+ 11     counts
+  0-3 fg=130
+ 12 }
+  0-3 fg=130
+ 13
+  0-3 fg=130
+ 14 fn main() {
+  0-3 fg=130; 4-5 fg=130 bg=11; 7-10 fg=6
+sample.rs
+  0-79 bold inverse
+  4
+  0-3 fg=130
+  5 /// Counts the words of `text`.
+  0-3 fg=130; 4-34 fg=5
+  6 fn count(text: &str) -> HashMap<&str, usize> {
+  0-3 fg=130; 4-50 fg=0 bg=248
+  7     let mut counts = HashMap::new();
+  0-3 fg=130; 4-40 fg=0 bg=248
+  8     for word in text.split_whitespace() {
+  0-3 fg=130; 4-45 fg=0 bg=248
+  9         *counts.entry(word).or_insert(0) += 1;
+  0-3 fg=130; 12-12 fg=2; 20-24 fg=6; 32-40 fg=6; 42-42 fg=1; 45-46 fg=130; 48-48 fg=1
+ 10     }
+  0-3 fg=130
+ 11     counts
+  0-3 fg=130
+ 12 }
+  0-3 fg=130
+ 13
+  0-3 fg=130
+sample.rs
+  0-79 inverse
+-- VISUAL LINE --                                                    3
+  0-16 bold
+cursor 4,4

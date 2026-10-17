@@ -1,0 +1,32 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor shown
+ 38 the cursor line, with café and 中文 to show
+ 39 the screen line, with café and 中文 to show
+ 40 the terminal line, with café and 中文 to show
+ 41 the page line, with café and 中文 to show
+ 42 the scroll line, with café and 中文 to show
+ 43 the search line, with café and 中文 to show
+ 44 the cell line, with café and 中文 to show
+ 45 the cluster line, with café and 中文 to show
+ 46 the wrap line, with café and 中文 to show
+  8-11 inverse
+ 47 the margin line, with café and 中文 to show
+ 48 the cursor line, with café and 中文 to show
+ 49 the screen line, with café and 中文 to show
+ 50 the terminal line, with café and 中文 to show
+ 51 the page line, with café and 中文 to show
+ 52 the scroll line, with café and 中文 to show
+ 53 the search line, with café and 中文 to show
+ 54 the cell line, with café and 中文 to show
+ 55 the cluster line, with café and 中文 to show
+ 56 the wrap line, with café and 中文 to show
+  8-11 inverse
+ 57 the margin line, with café and 中文 to show
+ 58 the cursor line, with café and 中文 to show
+ 59 the screen line, with café and 中文 to show
+ 60 the terminal line, with café and 中文 to show
+(END)
+  0-4 inverse
+cursor 5,23

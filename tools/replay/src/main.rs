@@ -1,18 +1,15 @@
 //! `bolt-replay`: feeds a byte stream, raw or an asciicast recording, to
 //! the VT core, headless, and prints the screen it leaves.
 
-mod recording;
-mod screen;
-
 use std::io::Read as _;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use bolt_replay::recording::Recording;
+use bolt_replay::screen;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
-
-use recording::Recording;
 
 /// The size of the screen when neither the command line nor the recording
 /// gives one.

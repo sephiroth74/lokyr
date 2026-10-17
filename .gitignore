@@ -1,6 +1,9 @@
 # Rust build output
 target/
 **/*.rs.bk
+# Snapshots that insta proposes, before they are reviewed
+*.snap.new
+*.pending-snap
 *.profraw
 *.profdata
 

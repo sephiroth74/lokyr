@@ -1,0 +1,41 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the alternate screen, the cursor hidden
+
+
+
+
+
+
+
+
+
+
+
+
+▌ kiwi fruit
+  0-0 fg=236
+▌ grape
+  0-0 fg=236
+▌ fig
+  0-0 fg=236
+▌ elderberry
+  0-0 fg=236
+▌ date palm
+  0-0 fg=236
+▌ cherry
+  0-0 fg=236
+▌ blueberry
+  0-0 fg=236
+▌ banana
+  0-0 fg=236
+▌ apricot
+  0-0 fg=236
+▌ apple
+  0-0 bold fg=161 bg=236; 1-1 bg=236; 2-6 bold fg=254 bg=236
+  10/10 ───────────────────────────────────────────────────────────────────────
+  2-6 fg=144; 7-78 fg=59
+>
+  0-0 bold fg=110; 1-1 fg=110
+cursor 28,22
