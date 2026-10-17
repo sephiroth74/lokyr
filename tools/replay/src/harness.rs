@@ -4,6 +4,7 @@
 //! recordings are made with it, and test suites that drive a program, as
 //! esctest and vttest do, run in it.
 
+use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -55,8 +56,16 @@ pub struct Harness {
     terminal: Terminal,
     parser: Parser,
     buffer: Vec<u8>,
-    /// What waits to be written to the program.
-    pending: Vec<u8>,
+    /// What waits to be written to the program, oldest first.
+    pending: VecDeque<Pending>,
+    /// The bytes of the replies that wait.
+    reply_bytes: usize,
+    /// The id of the next bytes to wait.
+    next_id: u64,
+    /// The id of the last bytes written whole: those before it were too.
+    written: u64,
+    /// How many replies were dropped, past [`PENDING`].
+    dropped: usize,
     /// Whether the program can no longer be written to, as it has ended or
     /// has been hung up.
     closed: bool,
@@ -64,6 +73,15 @@ pub struct Harness {
     events: Vec<(Duration, Event)>,
     /// Texts that the screen must never show.
     forbidden: Vec<String>,
+}
+
+/// Bytes that wait to be written: keys that a test typed, or the
+/// terminal's replies.
+struct Pending {
+    id: u64,
+    /// What is left to write.
+    bytes: Vec<u8>,
+    reply: bool,
 }
 
 /// What a read found.
@@ -79,10 +97,10 @@ const TURN: Duration = Duration::from_millis(10);
 /// How long a marker waits at most for an update under way to end.
 const UPDATE: Duration = Duration::from_secs(10);
 
-/// How many bytes wait to be written at most for the terminal's replies to
-/// be queued: past them, the replies of a read are dropped, as a program
+/// How many bytes of the terminal's replies wait to be written at most:
+/// past them, the replies of a read are dropped, and counted, as a program
 /// that floods queries and never reads its input would grow them without
-/// end. Typed keys always wait.
+/// end. Typed keys always wait, and do not count.
 const PENDING: usize = 1 << 20;
 
 impl Harness {
@@ -97,23 +115,25 @@ impl Harness {
                 .map(|(name, value)| format!("{name}={value}")),
         );
         args.extend(options.program.iter().cloned());
+        // The terminal first, which clamps the size, for the PTY to have the
+        // same.
+        let terminal = Terminal::new(options.cols, options.rows, options.terminal.clone());
         let mut pty_options = bolt_pty::Options::new(Program::command("/usr/bin/env", args), term);
         pty_options.working_directory = Some(options.dir.clone());
-        pty_options.size = Size {
-            cols: options.cols,
-            rows: options.rows,
-            width: 0,
-            height: 0,
-        };
+        pty_options.size = size(&terminal);
         let pty = bolt_pty::spawn(&pty_options).context("starting the program")?;
         Ok(Self {
             reader: pty.reader()?,
             writer: pty.writer()?,
             pty: Some(pty),
-            terminal: Terminal::new(options.cols, options.rows, options.terminal.clone()),
+            terminal,
             parser: Parser::new(),
             buffer: vec![0; 64 * 1024],
-            pending: Vec::new(),
+            pending: VecDeque::new(),
+            reply_bytes: 0,
+            next_id: 1,
+            written: 0,
+            dropped: 0,
             closed: false,
             started: Instant::now(),
             events: Vec::new(),
@@ -134,6 +154,9 @@ impl Harness {
             match self.read(deadline)? {
                 Read::Output => {}
                 Read::TimedOut => bail!("`{text}` did not show in {limit:?}:\n{}", self.screen()),
+                Read::End if self.shows(text) => {
+                    bail!("the program ended inside a synchronized update, with `{text}` shown")
+                }
                 Read::End => bail!("the program ended before `{text}` showed"),
             }
         }
@@ -170,13 +193,32 @@ impl Harness {
 
     /// Types `bytes`, once the program takes them, for `limit` at most,
     /// reading what it writes meanwhile; it ends once they are written,
-    /// inside a synchronized update or not.
+    /// inside a synchronized update or not, even if the program ends just
+    /// after. If the limit comes first, what of them was not written is
+    /// taken back, rather than left for the next step to type.
     pub fn send(&mut self, bytes: &[u8], limit: Duration) -> Result<()> {
         if self.closed {
             bail!("the program ended before it took what was typed");
         }
-        self.pending.extend_from_slice(bytes);
-        self.flush(limit)
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let id = self.queue(bytes.to_vec(), false);
+        let deadline = Instant::now() + limit;
+        loop {
+            self.write_some(Instant::now() + TURN)?;
+            if self.written >= id {
+                return Ok(());
+            }
+            if self.closed {
+                bail!("the program ended before it took what was typed");
+            }
+            if Instant::now() >= deadline {
+                self.take_back(id);
+                bail!("the program did not take what was typed in {limit:?}");
+            }
+            self.read(Instant::now() + TURN)?;
+        }
     }
 
     /// Marks the moment, once no synchronized update is under way.
@@ -206,6 +248,17 @@ impl Harness {
                 Read::End => return Ok(()),
             }
         }
+    }
+
+    /// How the program ended, if it has, without waiting for it or reading
+    /// what it writes: `None` while it runs. On macOS, a program that ends
+    /// with output unread is not gone until the output is read, as closing
+    /// a terminal waits for its output to drain.
+    pub fn try_exit_status(&mut self) -> Result<Option<Exit>> {
+        let Some(pty) = &mut self.pty else {
+            bail!("the program was hung up, which leaves how it ended untold");
+        };
+        pty.try_wait().context("waiting for the program")
     }
 
     /// How the program ended, once it has, for `limit` at most, reading
@@ -238,19 +291,23 @@ impl Harness {
     }
 
     /// Resizes the terminal and tells the program, as a window that
-    /// changes size does.
+    /// changes size does, with the size that the terminal takes, in cells
+    /// and, once a cell's size is set, in pixels.
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
         self.terminal.resize(cols, rows);
         if let Some(pty) = &self.pty {
-            let size = Size {
-                cols: self.terminal.cols(),
-                rows: self.terminal.rows(),
-                width: 0,
-                height: 0,
-            };
-            pty.resize(size).context("resizing the terminal")?;
+            pty.resize(size(&self.terminal))
+                .context("resizing the terminal")?;
         }
         Ok(())
+    }
+
+    /// Sets the size of a cell in pixels, which the terminal reports, and
+    /// tells the program the terminal's size in pixels.
+    pub fn set_cell_size(&mut self, width: u16, height: u16) -> Result<()> {
+        self.terminal.set_cell_size(width, height);
+        let (cols, rows) = (self.terminal.cols(), self.terminal.rows());
+        self.resize(cols, rows)
     }
 
     /// Runs `work` while another thread serves the program, reading what it
@@ -293,10 +350,10 @@ impl Harness {
         &self.terminal
     }
 
-    /// The terminal, for what the harness does not do itself, such as
-    /// setting the size of a cell; a resize goes through
-    /// [`Harness::resize`], which tells the program too, and the replies
-    /// are the harness's to take.
+    /// The terminal, for what the harness does not do itself; a resize and
+    /// a cell's size go through [`Harness::resize`] and
+    /// [`Harness::set_cell_size`], which tell the program too, and the
+    /// replies are the harness's to take.
     pub fn terminal_mut(&mut self) -> &mut Terminal {
         &mut self.terminal
     }
@@ -337,6 +394,12 @@ impl Harness {
         &self.events
     }
 
+    /// How many reads' replies were dropped, as a MiB of replies waited for
+    /// a program that did not read them.
+    pub fn dropped_replies(&self) -> usize {
+        self.dropped
+    }
+
     fn event(&mut self, event: Event) {
         self.events.push((self.started.elapsed(), event));
     }
@@ -344,7 +407,24 @@ impl Harness {
     /// Ends the writes, as the program can take no more.
     fn close(&mut self) {
         self.closed = true;
-        self.pending = Vec::new();
+        self.pending = VecDeque::new();
+        self.reply_bytes = 0;
+    }
+
+    /// Queues `bytes` to be written, and returns their id.
+    fn queue(&mut self, bytes: Vec<u8>, reply: bool) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        if reply {
+            self.reply_bytes += bytes.len();
+        }
+        self.pending.push_back(Pending { id, bytes, reply });
+        id
+    }
+
+    /// Takes back what of the bytes with `id` waits still.
+    fn take_back(&mut self, id: u64) {
+        self.pending.retain(|pending| pending.id != id);
     }
 
     /// Reads what the program writes, until `deadline` at most: shows it on
@@ -354,24 +434,38 @@ impl Harness {
     /// there, and a program that writes all the time would keep the steps
     /// from ever timing out.
     fn read(&mut self, deadline: Instant) -> Result<Read> {
-        if Instant::now() >= deadline {
-            return Ok(Read::TimedOut);
-        }
-        self.write_some(Instant::now() + Duration::from_millis(1))?;
-        let n = match self.reader.read_until(&mut self.buffer, Some(deadline))? {
-            ReadOutcome::Read(n) => n,
-            ReadOutcome::TimedOut => return Ok(Read::TimedOut),
-            ReadOutcome::End => {
-                self.close();
-                return Ok(Read::End);
+        let n = loop {
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(Read::TimedOut);
+            }
+            self.write_some(now + Duration::from_millis(1))?;
+            // While bytes wait, the read gives way to the writes now and
+            // then, as the program can make room for them without writing.
+            let until = if self.pending.is_empty() {
+                deadline
+            } else {
+                deadline.min(Instant::now() + TURN)
+            };
+            match self.reader.read_until(&mut self.buffer, Some(until))? {
+                ReadOutcome::Read(n) => break n,
+                ReadOutcome::TimedOut => {}
+                ReadOutcome::End => {
+                    self.close();
+                    return Ok(Read::End);
+                }
             }
         };
         let bytes = self.buffer[..n].to_vec();
         self.parser.advance(&mut self.terminal, &bytes);
         self.event(Event::Output(bytes));
         let replies = self.terminal.take_replies();
-        if !self.closed && self.pending.len() + replies.len() <= PENDING {
-            self.pending.extend_from_slice(&replies);
+        if !replies.is_empty() && !self.closed {
+            if self.reply_bytes + replies.len() <= PENDING {
+                self.queue(replies, true);
+            } else {
+                self.dropped += 1;
+            }
         }
         if self.forbidden.is_empty() {
             return Ok(Read::Output);
@@ -388,36 +482,24 @@ impl Harness {
         Ok(Read::Output)
     }
 
-    /// Writes what waits, reading the output meanwhile, as a program can
-    /// wait to write before it reads more; for `limit` at most.
-    fn flush(&mut self, limit: Duration) -> Result<()> {
-        let deadline = Instant::now() + limit;
-        loop {
-            self.write_some(Instant::now() + TURN)?;
-            if self.closed {
-                bail!("the program ended before it took what was typed");
-            }
-            if self.pending.is_empty() {
-                return Ok(());
-            }
-            if Instant::now() >= deadline {
-                bail!("the program did not take what was typed in {limit:?}");
-            }
-            self.read(Instant::now() + TURN)?;
-        }
-    }
-
-    /// Writes what of the pending bytes the program has room for, by
-    /// `deadline`, and keeps them as input. A program that has ended, so
+    /// Writes what of the first bytes that wait the program has room for,
+    /// by `deadline`, and keeps them as input. A program that has ended, so
     /// that the write fails with EIO, or that has been hung up, so that it
     /// fails with a broken pipe, takes nothing more: what waits goes.
     fn write_some(&mut self, deadline: Instant) -> Result<()> {
-        if self.pending.is_empty() {
+        let Some(first) = self.pending.front_mut() else {
             return Ok(());
-        }
-        match self.writer.write_until(&self.pending, Some(deadline)) {
+        };
+        match self.writer.write_until(&first.bytes, Some(deadline)) {
             Ok(Some(written @ 1..)) => {
-                let bytes: Vec<u8> = self.pending.drain(..written).collect();
+                let bytes: Vec<u8> = first.bytes.drain(..written).collect();
+                if first.reply {
+                    self.reply_bytes -= written;
+                }
+                if first.bytes.is_empty() {
+                    self.written = first.id;
+                    self.pending.pop_front();
+                }
                 self.event(Event::Input(bytes));
             }
             Ok(_) => {}
@@ -430,6 +512,19 @@ impl Harness {
             Err(error) => return Err(error).context("writing to the program"),
         }
         Ok(())
+    }
+}
+
+/// The size of `terminal`, for its PTY: in cells, and in pixels once a
+/// cell's size is set.
+fn size(terminal: &Terminal) -> Size {
+    let (cols, rows) = (terminal.cols(), terminal.rows());
+    let (width, height) = terminal.cell_size().unwrap_or((0, 0));
+    Size {
+        cols,
+        rows,
+        width: cols.saturating_mul(width),
+        height: rows.saturating_mul(height),
     }
 }
 
@@ -452,9 +547,86 @@ mod tests {
         };
         let mut harness = Harness::spawn(&options).unwrap();
         harness.wait("done", Duration::from_secs(30)).unwrap();
-        let waiting = harness.pending.len();
+        let waiting = harness.reply_bytes;
+        let held: usize = harness
+            .pending
+            .iter()
+            .map(|pending| pending.bytes.len())
+            .sum();
+        let dropped = harness.dropped_replies();
         harness.hang_up();
         assert!(waiting > 0, "replies wait");
         assert!(waiting <= PENDING, "{waiting} bytes wait");
+        assert_eq!(held, waiting, "replies alone");
+        assert!(dropped > 0, "and some were dropped");
+    }
+
+    #[test]
+    fn a_reply_to_a_program_that_has_ended_goes_with_the_writes() {
+        let options = HarnessOptions {
+            program: vec![
+                "sh".to_owned(),
+                "-c".to_owned(),
+                r"printf 'bye\033[c'".to_owned(),
+            ],
+            env: vec![("PATH".to_owned(), "/usr/bin:/bin".to_owned())],
+            terminal: Options::default(),
+            dir: PathBuf::from("/"),
+            cols: 20,
+            rows: 3,
+        };
+        let mut harness = Harness::spawn(&options).unwrap();
+        // The output read to its end without the harness, which would write
+        // the reply, and the program gone.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut output = Vec::new();
+        while let ReadOutcome::Read(n) = harness
+            .reader
+            .read_until(&mut harness.buffer, Some(deadline))
+            .unwrap()
+        {
+            output.extend_from_slice(&harness.buffer[..n]);
+        }
+        assert_eq!(output, b"bye\x1b[c");
+        while harness.try_exit_status().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "the program did not end");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        harness.queue(b"\x1b[?62;22c".to_vec(), true);
+        harness.exit(Duration::from_secs(10)).unwrap();
+        harness.sleep(Duration::from_millis(10)).unwrap();
+        assert!(
+            !harness
+                .events()
+                .iter()
+                .any(|(_, event)| matches!(event, Event::Input(_))),
+            "the reply was never written"
+        );
+        let error = harness.send(b"x", Duration::from_secs(1)).unwrap_err();
+        assert!(error.to_string().contains("ended before"), "{error:#}");
+    }
+
+    #[test]
+    fn the_pty_has_the_terminals_size_in_cells_and_pixels() {
+        let options = HarnessOptions {
+            program: vec!["sleep".to_owned(), "30".to_owned()],
+            env: vec![("PATH".to_owned(), "/usr/bin:/bin".to_owned())],
+            terminal: Options::default(),
+            dir: PathBuf::from("/"),
+            cols: 1,
+            rows: 3,
+        };
+        let mut harness = Harness::spawn(&options).unwrap();
+        let pty_size = |harness: &Harness| {
+            let size = harness.pty.as_ref().unwrap().size().unwrap();
+            (size.cols, size.rows, size.width, size.height)
+        };
+        // The terminal has two columns at least.
+        assert_eq!(pty_size(&harness), (2, 3, 0, 0));
+        harness.set_cell_size(8, 16).unwrap();
+        assert_eq!(pty_size(&harness), (2, 3, 16, 48));
+        harness.resize(10, 4).unwrap();
+        assert_eq!(pty_size(&harness), (10, 4, 80, 64));
+        harness.hang_up();
     }
 }

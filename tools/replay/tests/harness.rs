@@ -98,14 +98,15 @@ fn a_program_that_goes_on_is_hung_up_and_its_screen_stays() {
 #[test]
 fn a_program_that_ends_with_a_reply_queued_ends_the_steps_cleanly() {
     let mut harness = harness(20, 3, r"printf 'bye\033[c'");
-    // The program ends before the harness reads its query, so that the
-    // reply meets a terminal that no one has open.
+    // The program ends as the harness reads its query, so that the reply
+    // meets, most of the time, a terminal that no one has open; whether it
+    // does depends on the timing, which a unit test of the harness takes
+    // out.
     std::thread::sleep(Duration::from_millis(300));
     harness.exit(LIMIT).unwrap();
     harness.sleep(Duration::from_millis(10)).unwrap();
     harness.quiet(Duration::from_millis(10), LIMIT).unwrap();
     assert!(harness.shows("bye"));
-    assert_eq!(inputs(&harness), [b""; 0], "the reply was never written");
     let error = harness.send(b"x", LIMIT).unwrap_err();
     assert!(error.to_string().contains("ended before"), "{error:#}");
 }
@@ -203,4 +204,82 @@ fn a_step_ends_at_its_limit_while_the_program_writes_all_the_time() {
     assert!(error.to_string().contains("did not show"), "{error:#}");
     assert!(started.elapsed() < Duration::from_secs(6), "waited on");
     harness.hang_up();
+}
+
+#[test]
+fn a_reply_goes_once_the_program_has_room_for_it() {
+    // The program fills its input, asks for DA1, then reads what fills its
+    // input and waits for the reply, in silence.
+    let script = r"stty raw -echo; echo armed; sleep 0.5; printf '\033[c'; sleep 0.5; head -c 1022 >/dev/null; dd bs=1 count=9 >/dev/null 2>&1; echo got";
+    let mut harness = harness(20, 3, script);
+    harness.wait("armed", LIMIT).unwrap();
+    harness.send(&[b'x'; 1022], LIMIT).unwrap();
+    harness.wait("got", Duration::from_secs(5)).unwrap();
+}
+
+#[test]
+fn a_send_that_the_program_takes_whole_succeeds_though_it_ends() {
+    // Each program reads what is typed, and ends: the last bytes can go as
+    // the harness reads, which then meets the end, for some of the sizes.
+    for n in (1500..9730).step_by(211) {
+        let script = format!("stty raw -echo; echo armed; exec head -c {n} >/dev/null");
+        let mut harness = harness(20, 3, &script);
+        harness.wait("armed", LIMIT).unwrap();
+        harness.send(&vec![b'x'; n], LIMIT).unwrap();
+        harness.exit(LIMIT).unwrap();
+    }
+}
+
+#[test]
+fn a_send_that_times_out_takes_back_what_it_did_not_write() {
+    let mut harness = harness(
+        20,
+        3,
+        "stty raw -echo; echo armed; sleep 1; exec cat >/dev/null",
+    );
+    harness.wait("armed", LIMIT).unwrap();
+    let typed = |harness: &Harness| {
+        inputs(harness)
+            .iter()
+            .map(|bytes| bytes.len())
+            .sum::<usize>()
+    };
+    let error = harness
+        .send(&[b'x'; 70_000], Duration::from_millis(200))
+        .unwrap_err();
+    assert!(error.to_string().contains("did not take"), "{error:#}");
+    let before = typed(&harness);
+    assert!(before < 70_000, "{before} bytes typed");
+    harness.sleep(Duration::from_secs(2)).unwrap();
+    assert_eq!(typed(&harness), before, "nothing more typed");
+    harness.hang_up();
+}
+
+#[test]
+fn keys_typed_do_not_count_against_the_replies_that_wait() {
+    // More than a MiB typed, which waits while the program sleeps, and then
+    // a query, whose reply waits after the keys.
+    let script = r"stty raw -echo; echo armed; sleep 1; printf '\033[c'; exec cat >/dev/null";
+    let mut harness = harness(20, 3, script);
+    harness.wait("armed", LIMIT).unwrap();
+    harness
+        .send(&vec![b'x'; (1 << 20) + 4096], Duration::from_secs(20))
+        .unwrap();
+    let started = std::time::Instant::now();
+    while !inputs(&harness).contains(&&b"\x1b[?62;22c"[..]) {
+        assert!(started.elapsed() < LIMIT, "the reply never went");
+        harness.sleep(Duration::from_millis(50)).unwrap();
+    }
+    assert_eq!(harness.dropped_replies(), 0);
+    harness.hang_up();
+}
+
+#[test]
+fn a_wait_says_when_the_program_ends_inside_an_update() {
+    let mut harness = harness(20, 3, r"printf '\033[?2026hshown'");
+    let error = harness.wait("shown", LIMIT).unwrap_err();
+    assert!(
+        error.to_string().contains("inside a synchronized update"),
+        "{error:#}"
+    );
 }

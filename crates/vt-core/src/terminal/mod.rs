@@ -692,6 +692,11 @@ impl Terminal {
         self.cell_size = Some((width, height));
     }
 
+    /// The size of a cell in pixels, width and height, once it is set.
+    pub fn cell_size(&self) -> Option<(u16, u16)> {
+        self.cell_size
+    }
+
     /// Takes what the terminal has to send back to the program, such as
     /// replies to queries, oldest first, for the embedder to write to the
     /// PTY. The replies to queries that wait take a MiB at most: past it, a

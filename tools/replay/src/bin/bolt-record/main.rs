@@ -189,6 +189,12 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
     }
     // A program that has not ended is hung up as the terminal closes.
     harness.hang_up();
+    if harness.dropped_replies() > 0 {
+        eprintln!(
+            "warning: the program left a MiB of replies unread, so that the replies of {} reads were dropped",
+            harness.dropped_replies()
+        );
+    }
     check_all(&harness, &private)?;
     let mut cast = Cast::new(script.cols, script.rows, TERM);
     for (at, event) in harness.events() {
