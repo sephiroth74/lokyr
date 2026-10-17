@@ -1,0 +1,8 @@
+# Recorded sessions
+
+Each recording here is a real program, run in a pseudo-terminal and driven by a script, as asciicast v2: `vim`, `htop`, `tmux`, `less` and `fzf`. The tests replay them through the VT core, and look at the screen at their markers and at their end.
+
+- **A script** (`*.script`) sets the program up, with `size`, `copy` (a file of `files/` into the program's directory), `env` and `run`, then drives it, with `wait "text"` (until the screen shows it), `quiet` (until the output stops for a while), `sleep`, `send "keys"`, `mark name` and `exit`. The scripts say what each recording shows.
+- **Recording again**: `just record` runs every script with `bolt-record`, which needs the five programs installed, and writes each recording next to its script. A recording changes with the programs' versions, which the tests' snapshots then show.
+- **What the programs see**: the session's terminal, which answers their queries, `TERM=xterm-256color`, and no environment but a few variables, in a directory of their own that is also their home, so that no user's configuration plays a part. `htop` shows itself alone, without the user's column, from `files/htoprc`, and `tmux` a status line without the host or the time, from `files/tmux.conf`.
+- **Nothing private**: the recorder refuses to write a recording that shows the user's name, the host's or the user's home. The machine's load, memory and uptime, in `htop`'s header, are not private.

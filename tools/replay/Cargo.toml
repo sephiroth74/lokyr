@@ -8,9 +8,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 publish = false
+default-run = "bolt-replay"
 
 [dependencies]
 anyhow.workspace = true
+bolt-pty.workspace = true
 bolt-vt-core.workspace = true
 serde_json.workspace = true
 

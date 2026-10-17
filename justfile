@@ -70,6 +70,10 @@ ucd:
 ucd-check:
     cargo xtask ucd --check
 
+# Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf).
+record:
+    cargo run -q -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
+
 # Run the benchmarks (not implemented yet).
 bench:
     @echo "bench: not implemented yet" >&2 && exit 1

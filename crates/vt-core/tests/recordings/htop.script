@@ -1,0 +1,19 @@
+# htop: its meters and the process list, showing htop alone and no user,
+# refreshed, then the tree view and the help screen.
+size 80 24
+copy files/htoprc
+env HTOPRC=htoprc
+run sh -c "exec htop -p $$"
+wait "PID"
+sleep 2500
+mark start
+send "t"
+sleep 1500
+mark tree
+send "h"
+sleep 500
+mark help
+send "q"
+sleep 500
+send "q"
+exit

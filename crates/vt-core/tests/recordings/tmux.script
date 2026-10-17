@@ -1,0 +1,25 @@
+# tmux: its status line, colored text in a shell, a pane split side by
+# side and another below, each with output, then the server's end.
+size 80 24
+copy files/tmux.conf
+run tmux -f tmux.conf -S tmux.sock new-session
+wait "[rec]"
+wait "sh-3.2$"
+mark start
+send "printf '\\033[1;31mred\\033[0m \\033[4;32munderlined\\033[0m \\033[7mreverse\\033[0m\\n'\r"
+quiet 300
+mark colors
+send "\x02%"
+quiet 500
+send "printf 'right pane\\n'; seq 1 30\r"
+quiet 500
+mark split
+send "\x02\""
+quiet 500
+send "printf 'bottom pane\\n'\r"
+quiet 500
+mark below
+send "\x02:"
+quiet 300
+send "kill-server\r"
+exit

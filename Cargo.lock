@@ -155,6 +155,7 @@ name = "bolt-replay"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bolt-pty",
  "bolt-vt-core",
  "serde_json",
 ]

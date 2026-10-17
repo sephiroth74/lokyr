@@ -1,0 +1,19 @@
+# less: a file longer than the screen, a page down, a search that
+# highlights its matches, and the end of the file.
+size 80 24
+copy files/text.txt
+env LESSHISTFILE=-
+run less text.txt
+wait "text.txt"
+mark start
+send " "
+quiet 300
+mark page
+send "/wrap\r"
+quiet 300
+mark search
+send "G"
+quiet 300
+mark end
+send "q"
+exit

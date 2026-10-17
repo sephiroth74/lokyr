@@ -1,0 +1,21 @@
+# vim: a file with syntax highlighting and line numbers, a search that
+# highlights its matches, a split window and a visual selection.
+size 80 24
+copy files/sample.rs
+run vim -u NONE -N -i NONE -n sample.rs
+wait "sample.rs"
+send ":syntax on\r"
+send ":set number hlsearch\r"
+quiet 500
+mark start
+send "/fn\r"
+quiet 300
+mark search
+send ":split\r"
+quiet 300
+mark split
+send "Vjj"
+quiet 300
+mark visual
+send "\e:qa!\r"
+exit

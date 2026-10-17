@@ -1,0 +1,14 @@
+# fzf: a list to filter, a query that narrows it and highlights what
+# matches, a move down the list, and the choice.
+size 80 24
+run sh -c "printf '%s\\n' apple apricot banana blueberry cherry 'date palm' elderberry fig grape 'kiwi fruit' | fzf --no-mouse"
+wait "10/10"
+mark start
+send "er"
+quiet 300
+mark query
+send "\e[A"
+quiet 300
+mark moved
+send "\r"
+exit
