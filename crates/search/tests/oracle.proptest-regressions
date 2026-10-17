@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c5a9fc9bd539e7f80e350056df9bf23d0248f9989afa64372432ffbc8789f23b # shrinks to lines_in = ["Aé.A"], needle = "A", cols = 3, insensitive = false, whole_word = true
+cc bc3fb3549a77a30d0dc297fdc5bc5c18a30fe31c1f51dd0e47084469b07d36f5 # shrinks to lines_in = ["a\u{301}"], needle = "\u{301}", cols = 3, insensitive = false, whole_word = false
+cc 7438fb3c4999545894fe67abcbe3547b55daa18972d1bfe0a4e3e39620cec84f # shrinks to lines_in = ["a\u{301}"], needle = "A", cols = 3, insensitive = true, whole_word = false

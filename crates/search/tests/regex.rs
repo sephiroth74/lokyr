@@ -158,13 +158,14 @@ fn whole_words_are_a_filter_on_the_matches() {
         search(&mut terminal, &any, (0, 1), Direction::Forward),
         Some(((0, 7), (0, 9)))
     );
-    // Backward, a whole word can start a character before a match that is
-    // not one, and overlap it.
-    let mut terminal = printed(10, 2, "ab");
-    let query = regex("b|ab").whole_word(true);
+    // Backward too, a whole word can start inside a match that is not one.
+    let mut terminal = printed(10, 2, "ba a a");
+    let query = Query::literal("a a", Case::Sensitive)
+        .unwrap()
+        .whole_word(true);
     assert_eq!(
         search(&mut terminal, &query, (1, 0), Direction::Backward),
-        Some(((0, 0), (0, 1)))
+        Some(((0, 3), (0, 5)))
     );
     // A whole word can start inside a match that is not one.
     let mut terminal = printed(10, 2, "ba a a");
@@ -216,18 +217,22 @@ fn a_match_starts_at_a_cell_and_ends_with_one() {
         ),
         Some(((0, 0), (0, 5)))
     );
-    // Of two matches that start in one cell, only the one that starts with
-    // the cell counts, either way.
+    // A match that starts inside a cluster does not count, nor one that
+    // ends inside it, either way, even when nothing else takes its place.
     let mut terminal = printed(10, 2, "e\u{301}x");
-    let query = regex("e\u{301}|\u{301}x");
-    assert_eq!(
-        search(&mut terminal, &query, (0, 0), Direction::Forward),
-        Some(((0, 0), (0, 0)))
-    );
-    assert_eq!(
-        search(&mut terminal, &query, (1, 0), Direction::Backward),
-        Some(((0, 0), (0, 0)))
-    );
+    for pattern in ["\u{301}x", "e", "e|\u{301}x"] {
+        let query = regex(pattern);
+        assert_eq!(
+            search(&mut terminal, &query, (0, 0), Direction::Forward),
+            None,
+            "{pattern:?}"
+        );
+        assert_eq!(
+            search(&mut terminal, &query, (1, 0), Direction::Backward),
+            None,
+            "{pattern:?}"
+        );
+    }
 }
 
 #[test]

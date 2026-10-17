@@ -367,8 +367,9 @@ impl PageList {
         (self.id(index), row)
     }
 
-    /// The page with `id`, or `None` if it has left the list, or is cold
-    /// until [`PageList::warm`] brings it back.
+    /// The page with `id`, or `None` if it has left the list, or is cold:
+    /// [`PageList::rows_from`] and [`PageList::rows_before`] read a cold
+    /// page's rows.
     pub fn page(&self, id: PageId) -> Option<&Page> {
         let node = self.nodes.get(id.index as usize)?;
         if node.generation == id.generation {
@@ -535,9 +536,10 @@ impl PageList {
     /// the last row, and the screen's rows at least, and returns the bytes
     /// that this gave back. A cold page keeps the cells of each row up to
     /// its last that is not empty, and the rest of the page as it is; its
-    /// rows, pins and ids stay, and [`PageList::warm`] brings its cells
-    /// back. A page that this would not make smaller, as one whose rows are
-    /// full, stays as it is.
+    /// rows, pins and ids stay, [`PageList::rows_from`] and
+    /// [`PageList::rows_before`] read its rows as it keeps them, and it
+    /// takes its full size again only to be written to. A page that this
+    /// would not make smaller, as one whose rows are full, stays as it is.
     ///
     /// Keeping a page small allocates, and a cold page that leaves the
     /// list is freed rather than pooled, so this is for an idle list, not
@@ -1473,7 +1475,7 @@ impl PageList {
             let page = node.page.as_ref();
             assert!(
                 page.is_some(),
-                "a cold page is warmed before its rows are read"
+                "a cold page's rows are read through rows_from or rows_before"
             );
             page
         })
@@ -2384,7 +2386,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "a cold page is warmed before its rows are read")]
+    #[should_panic(expected = "a cold page's rows are read through rows_from or rows_before")]
     fn the_rows_of_a_cold_page_are_not_read() {
         let mut list = short_lines(2);
         list.compact(3 * 24);

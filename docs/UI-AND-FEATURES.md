@@ -158,7 +158,7 @@ The kernel's `search` service (the engine) plus the `search` plugin (UI and comm
 
 ### Engine
 
-- **Literal search**: `memchr::memmem` over the text of logical lines; empty cells read as spaces, but those that end a line do not. Case-insensitive literal search folds ASCII; Unicode case folding goes through the regex engine, with the literal escaped.
+- **Literal search**: `memchr::memmem` over the text of logical lines; empty cells read as spaces, and the spaces that end a line go, printed or empty, so that `b ` matches nowhere at a line's end. Case-insensitive literal search folds ASCII; Unicode case folding goes through the regex engine, with the literal escaped.
 - **Regex search**:
   - `regex-automata`'s meta regex, over the same text of logical lines. Its lazy DFAs, forward and reverse, fall back to its other engines where they give up, as Unicode `\b` makes them do on text that is not ASCII.
   - The text is built **one logical line at a time**, never for the whole scrollback. Alacritty instead advances its DFAs one cell at a time, because `regex-automata` has no chunked-input API; with a line's text at hand, the meta regex picks the engine and handles the fallback itself.

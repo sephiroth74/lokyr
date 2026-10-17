@@ -72,7 +72,8 @@ impl Cancelled {
 ///
 /// The text of a logical line, whose soft-wrapped rows are joined, is
 /// searched whole, so that a match can cross the right margin; empty cells
-/// read as spaces, but those that end a line are left out. The matches of
+/// read as spaces, and the spaces that end a line go, those that a program
+/// printed too, so that `b ` matches nowhere at a line's end. The matches of
 /// a line are its leftmost-first matches, found from its start, none of
 /// them overlapping another, for literal text and regexes alike, so that
 /// both ways go through the same matches. A match starts at a cell and
