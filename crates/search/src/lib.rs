@@ -80,12 +80,13 @@ impl Cancelled {
 /// ends with one: one that starts or ends inside a cluster does not count,
 /// nor does an empty match.
 ///
-/// Either way, a line's matches are gone through from its start: a step
-/// near the end of a long line takes time in proportion to the matches
-/// before it, backward as forward, and, for a regex whose search scans past
-/// its match to the line's end, as `a.*b|a` does, time that grows with the
-/// square of the line's length. [`find_all`] goes through a range of rows
-/// once.
+/// Either way, each step reads the whole logical line that it starts in
+/// first, which takes time in proportion to the line's length, and goes
+/// through the line's matches from its start: a step near the end of a long
+/// line takes time in proportion to the matches before it too, backward as
+/// forward, and, for a regex whose search scans past its match to the
+/// line's end, as `a.*b|a` does, time that grows with the square of the
+/// line's length. [`find_all`] goes through a range of rows once.
 ///
 /// The search stops with [`Cancelled`] once `cancel` is set, which another
 /// thread can do: it looks at it before each line, and between the matches

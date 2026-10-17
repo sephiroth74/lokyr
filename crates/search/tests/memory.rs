@@ -1,9 +1,10 @@
-//! The memory that a search takes for a long line, counted by an
-//! allocator of its own: the test is the only one in its binary, so that
-//! nothing else allocates meanwhile.
+//! The memory that a search takes for a long line, and that the matches
+//! that it keeps hold, counted by an allocator of its own: the tests take
+//! turns, so that nothing else allocates while one counts.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use bolt_search::{Case, Direction, Query};
 use bolt_vt_core::page::{Position, Scrollback};
@@ -36,8 +37,12 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
+/// Held while a test counts.
+static TURN: Mutex<()> = Mutex::new(());
+
 #[test]
 fn a_long_line_takes_a_few_bytes_a_cell() {
+    let _turn = TURN.lock().unwrap_or_else(PoisonError::into_inner);
     // One logical line of 400 000 cells, which the scrollback keeps.
     let options = Options {
         scrollback: Scrollback {
@@ -69,4 +74,38 @@ fn a_long_line_takes_a_few_bytes_a_cell() {
     // The text's byte, where the cell's text starts and its column, about 7
     // bytes, as the vectors grow: a layout twice as large fails.
     assert!(taken < 16 * cells, "{} bytes a cell", taken / cells);
+}
+
+#[test]
+fn a_kept_match_takes_a_few_dozen_bytes() {
+    let _turn = TURN.lock().unwrap_or_else(PoisonError::into_inner);
+    // A match in each of 100 000 rows, which the scrollback keeps.
+    let options = Options {
+        scrollback: Scrollback {
+            limit: 64 << 20,
+            budget: None,
+        },
+        ..Options::default()
+    };
+    let mut terminal = Terminal::new(20, 24, options);
+    let lines = 100_000;
+    Parser::new().advance(&mut terminal, "x needle\r\n".repeat(lines).as_bytes());
+    let query = Query::literal("needle", Case::Sensitive).unwrap();
+    let rows = terminal.screen_rows_mut();
+    let total = rows.total_rows();
+    let before = IN_USE.load(Ordering::Relaxed);
+    let matches =
+        bolt_search::find_all(rows, &query, 0..total, usize::MAX, &AtomicBool::new(false)).unwrap();
+    assert_eq!(matches.pinned.len(), lines);
+    let held = IN_USE.load(Ordering::Relaxed) - before;
+    let results = matches.pinned.capacity() * size_of::<bolt_search::Match>();
+    let per_match = (held - results) / lines;
+    eprintln!("{per_match} bytes a match, besides the results");
+    // Two pins of 20 bytes in the list's slab, which grows by doubling,
+    // and the first pin of their row: a map of the rows, or an allocation
+    // for each, fails.
+    assert!(per_match < 70, "{per_match} bytes a match");
+    for found in matches.pinned {
+        found.release(rows);
+    }
 }

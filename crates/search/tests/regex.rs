@@ -298,6 +298,47 @@ fn a_pass_pins_as_many_matches_as_it_is_asked_and_counts_them_all() {
 }
 
 #[test]
+fn a_limit_pins_the_first_matches_of_any_range() {
+    // Lines of 17 cells, each across two rows of 10.
+    let mut terminal = printed(10, 12, &"ab ab ab ab ab ab\r\n".repeat(6));
+    let query = Query::literal("ab", Case::Sensitive).unwrap();
+    let rows = terminal.screen_rows_mut();
+    let cancel = AtomicBool::new(false);
+    // Where the start of each match is: its row's index and its column.
+    let starts = |rows: &PageList, matches: &[Match]| -> Vec<(Option<usize>, u16)> {
+        matches
+            .iter()
+            .map(|found| {
+                let start = rows.pin_position(found.start).unwrap();
+                (rows.row_index(start.page, start.row), start.col)
+            })
+            .collect()
+    };
+    // From the first row, and from a row that goes on the line before it.
+    for range in [0..12, 1..12, 3..8] {
+        let all = bolt_search::find_all(rows, &query, range.clone(), usize::MAX, &cancel).unwrap();
+        let every = starts(rows, &all.pinned);
+        assert_eq!(all.count, every.len());
+        for limit in [0, 1, 3, all.count, all.count + 5] {
+            let some = bolt_search::find_all(rows, &query, range.clone(), limit, &cancel).unwrap();
+            assert_eq!(some.count, all.count, "{range:?}, {limit}");
+            assert_eq!(
+                starts(rows, &some.pinned),
+                every[..limit.min(all.count)],
+                "{range:?}, {limit}"
+            );
+            for found in some.pinned {
+                found.release(rows);
+            }
+        }
+        for found in all.pinned {
+            found.release(rows);
+        }
+    }
+    assert_eq!(rows.pins(), 0);
+}
+
+#[test]
 fn a_cancelled_pass_stops() {
     let mut terminal = printed(10, 2, "abc");
     let rows = terminal.screen_rows_mut();

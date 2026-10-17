@@ -490,7 +490,9 @@ impl PageList {
             col: position.col,
         });
         let index = self.pins.index(pin).expect("a new pin is in use");
-        self.nodes[node as usize].pins.push(position.row, index);
+        self.nodes[node as usize]
+            .pins
+            .push(&mut self.pins, position.row, index);
         Some(pin)
     }
 
@@ -522,7 +524,7 @@ impl PageList {
         let index = self.pins.index(pin).expect("a pin with a place is in use");
         self.nodes[place.node as usize]
             .pins
-            .remove(place.row, index);
+            .remove(&mut self.pins, place.row, index);
         self.pins.lose(index);
     }
 
@@ -753,7 +755,7 @@ impl PageList {
 
     /// Loses the pins in row `row` of node `node`.
     fn lose_row_pins(&mut self, node: u32, row: u16) {
-        for pin in self.nodes[node as usize].pins.take_row(row) {
+        for pin in self.nodes[node as usize].pins.take_row(&self.pins, row) {
             self.pins.lose(pin);
         }
     }
@@ -885,7 +887,7 @@ impl PageList {
                 (None, None) => panic!("a linked node has a page"),
             };
             node.generation = node.generation.wrapping_add(1);
-            let mut pins = node.pins.take_all();
+            let mut pins = node.pins.take_all(&self.pins);
             let next = node.next;
             let places = &self.pins;
             pins.sort_by_key(|&pin| places.place_of(pin).map(|place| (place.row, place.col)));
@@ -1130,7 +1132,9 @@ impl PageList {
     fn move_pin(&mut self, pin: u32, at: (u32, u16, u16)) {
         let (node, row, col) = at;
         *self.pins.place_mut(pin) = Place { node, row, col };
-        self.nodes[node as usize].pins.push(row, pin);
+        self.nodes[node as usize]
+            .pins
+            .push(&mut self.pins, row, pin);
     }
 
     /// Settles the screen after rewrapping, and returns where the cursor,
@@ -1222,7 +1226,7 @@ impl PageList {
                             row: to,
                             col: place.col,
                         };
-                        self.nodes[tail as usize].pins.push(to, pin);
+                        self.nodes[tail as usize].pins.push(&mut self.pins, to, pin);
                     } else {
                         self.pins.lose(pin);
                     }
@@ -1357,13 +1361,15 @@ impl PageList {
             // cold.
             self.page_at_mut(head).drop_first_rows(extra);
             self.total_rows -= usize::from(extra);
-            for (row, listed) in self.nodes[head as usize].pins.take() {
+            for (row, listed) in self.nodes[head as usize].pins.take(&self.pins) {
                 for pin in listed {
                     if row < extra {
                         self.pins.lose(pin);
                     } else {
                         self.pins.place_mut(pin).row -= extra;
-                        self.nodes[head as usize].pins.push(row - extra, pin);
+                        self.nodes[head as usize]
+                            .pins
+                            .push(&mut self.pins, row - extra, pin);
                     }
                 }
             }
@@ -1376,14 +1382,22 @@ impl PageList {
     fn move_pins(&mut self, from: (u32, u16), to: (u32, u16), columns: Range<u16>) {
         let ((source, from_row), (target, to_row)) = (from, to);
         // Only the pins of the two rows: the page's others stay as they are.
-        for pin in self.nodes[target as usize].pins.take_row(to_row) {
+        for pin in self.nodes[target as usize]
+            .pins
+            .take_row(&self.pins, to_row)
+        {
             if columns.contains(&self.pins.place_mut(pin).col) {
                 self.pins.lose(pin);
             } else {
-                self.nodes[target as usize].pins.push(to_row, pin);
+                self.nodes[target as usize]
+                    .pins
+                    .push(&mut self.pins, to_row, pin);
             }
         }
-        for pin in self.nodes[source as usize].pins.take_row(from_row) {
+        for pin in self.nodes[source as usize]
+            .pins
+            .take_row(&self.pins, from_row)
+        {
             let place = self.pins.place_mut(pin);
             if columns.contains(&place.col) {
                 *place = Place {
@@ -1391,9 +1405,13 @@ impl PageList {
                     row: to_row,
                     col: place.col,
                 };
-                self.nodes[target as usize].pins.push(to_row, pin);
+                self.nodes[target as usize]
+                    .pins
+                    .push(&mut self.pins, to_row, pin);
             } else {
-                self.nodes[source as usize].pins.push(from_row, pin);
+                self.nodes[source as usize]
+                    .pins
+                    .push(&mut self.pins, from_row, pin);
             }
         }
     }
@@ -1407,7 +1425,7 @@ impl PageList {
         columns: Range<u16>,
         to: impl Fn(u16) -> Option<u16>,
     ) {
-        for pin in self.nodes[node as usize].pins.take_row(row) {
+        for pin in self.nodes[node as usize].pins.take_row(&self.pins, row) {
             let place = self.pins.place_mut(pin);
             let kept = if columns.contains(&place.col) {
                 to(place.col).map(|col| place.col = col).is_some()
@@ -1415,7 +1433,9 @@ impl PageList {
                 true
             };
             if kept {
-                self.nodes[node as usize].pins.push(row, pin);
+                self.nodes[node as usize]
+                    .pins
+                    .push(&mut self.pins, row, pin);
             } else {
                 self.pins.lose(pin);
             }
@@ -1545,7 +1565,7 @@ impl PageList {
         let page = node.page.take();
         let cold = node.cold.take();
         node.generation = node.generation.wrapping_add(1);
-        for pin in node.pins.take_all() {
+        for pin in node.pins.take_all(&self.pins) {
             self.pins.lose(pin);
         }
         let next = node.next;
@@ -2400,6 +2420,27 @@ mod tests {
     }
 
     #[test]
+    fn many_pins_in_a_row_go_in_time_in_proportion() {
+        // 50 000 pins in one row, let go of from the last, which a list of
+        // the row's pins found at its end, each after all the others.
+        let mut list = PageList::new(2000, 2, pages(2000, 4));
+        let (page, row) = list.row_at(0).unwrap();
+        let mut pins = Vec::new();
+        for _ in 0..25 {
+            for col in 0..list.cols() {
+                pins.push(list.pin(Position { page, row, col }).unwrap());
+            }
+        }
+        let started = std::time::Instant::now();
+        for pin in pins.into_iter().rev() {
+            list.unpin(pin);
+        }
+        let took = started.elapsed();
+        assert_eq!(list.pins(), 0);
+        assert!(took < std::time::Duration::from_secs(1), "{took:?}");
+    }
+
+    #[test]
     fn pins_in_the_scrollback_do_not_slow_a_scroll_region() {
         // Pins in the rows above the screen, in the screen's page.
         let mut list = PageList::new(80, 24, pages(80, 4));
@@ -2793,7 +2834,7 @@ mod tests {
         let mut index = list.head;
         while index != NONE {
             let node = &list.nodes[index as usize];
-            for (row, pin) in node.pins.iter() {
+            for (row, pin) in node.pins.iter(&list.pins) {
                 let place = list.pins.place_of(pin).expect("a listed pin is in use");
                 assert_eq!(place.node, index, "pin {pin} is listed in its node");
                 assert_eq!(place.row, row, "pin {pin} is listed in its row");
@@ -2987,6 +3028,9 @@ mod tests {
         Delete(u16, u16, u16, u16),
         /// Pins a cell of the row at an index of the list, modulo its rows.
         Pin(usize, u16),
+        /// Pins an empty cell past the numbered ones, as a selection can
+        /// end past a line's text, in the row at an index of the list.
+        PinEmpty(usize, u16),
         /// Resizes the list, with the cursor at a column and a row of the
         /// screen, modulo its size: 0 cuts, taking new rows from the
         /// scrollback; 1 cuts, adding them at the bottom; 2 rewraps.
@@ -3018,6 +3062,7 @@ mod tests {
                 .prop_map(|(y, x, n, end)| Op::Delete(y, x.min(end - 1), n, end)),
             1 => y().prop_map(Op::Grow),
             4 => (any::<usize>(), 0_u16..COLUMNS).prop_map(|(row, col)| Op::Pin(row, col)),
+            2 => (any::<usize>(), COLUMNS..SPAN).prop_map(|(row, col)| Op::PinEmpty(row, col)),
             1 => any::<usize>().prop_map(Op::Unpin),
             2 => (y(), y(), 1_u16..10, any::<bool>())
                 .prop_map(|(top, bottom, n, up)| Op::Shift(top, bottom, n, up)),
@@ -3056,6 +3101,7 @@ mod tests {
             let mut list = PageList::new(2000, 8, pages(2000, 3));
             let mut next = 0;
             let mut pins: Vec<(PinId, u32)> = Vec::new();
+            let mut empty_pins: Vec<PinId> = Vec::new();
             for op in &ops {
                 // The operations stay within the list's size as it changes.
                 let (cols, rows) = (list.cols(), list.rows());
@@ -3092,6 +3138,18 @@ mod tests {
                         if let Some(number) = number_at(&list, position) {
                             pins.push((list.pin(position).unwrap(), number));
                         }
+                    }
+                    Op::PinEmpty(index, col) => {
+                        let (page, row) = list.row_at(index % list.total_rows()).unwrap();
+                        let position = Position { page, row, col: col.min(cols - 1) };
+                        if list.page(page).is_some() && number_at(&list, position).is_none() {
+                            empty_pins.push(list.pin(position).unwrap());
+                        }
+                    }
+                    Op::Unpin(k) if k % 3 == 0 && !empty_pins.is_empty() => {
+                        let pin = empty_pins.swap_remove(k % empty_pins.len());
+                        list.unpin(pin);
+                        prop_assert_eq!(list.pin_position(pin), None);
                     }
                     Op::Unpin(k) => {
                         if !pins.is_empty() {
@@ -3158,7 +3216,17 @@ mod tests {
                         None => prop_assert!(!present.contains(&number), "{} is lost but here, after {:?}", number, op),
                     }
                 }
-                let live = pins.iter().filter(|(pin, _)| list.pin_position(*pin).is_some()).count();
+                // A pin on an empty cell, which reflow puts after its line's
+                // text, stays on a cell of the list.
+                for &pin in &empty_pins {
+                    if let Some(position) = list.pin_position(pin) {
+                        prop_assert!(list.row_index(position.page, position.row).is_some(), "after {:?}", op);
+                        prop_assert!(position.col < list.cols(), "after {:?}", op);
+                    }
+                }
+                let live = pins.iter().map(|(pin, _)| *pin).chain(empty_pins.iter().copied())
+                    .filter(|&pin| list.pin_position(pin).is_some())
+                    .count();
                 prop_assert_eq!(list.pins(), live);
             }
         }

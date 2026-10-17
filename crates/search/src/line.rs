@@ -15,8 +15,9 @@ use crate::{Cancelled, Query};
 #[derive(Debug, Default)]
 struct Line {
     text: Vec<u8>,
-    /// Where the text of each cell starts: a line's text holds fewer than
-    /// 2^32 bytes, as [`Line::push_row`] stops there.
+    /// Where the text of each cell starts: every cell starts before 4 GiB,
+    /// as [`Line::push_row`] leaves out the cells past it, though the last
+    /// cell's text can end past it.
     starts: Vec<u32>,
     /// The column of each cell.
     cols: Vec<u16>,
@@ -43,9 +44,10 @@ impl Line {
 
     /// Adds the text of `row`, the line's next. Empty cells read as spaces;
     /// the halves of wide characters that show nothing, as their second
-    /// halves and the heads that wrapping leaves, have no text. A line whose
-    /// text would pass 4 GiB, which only a scrollback that large can hold,
-    /// stops there: the rest of it is not searched.
+    /// halves and the heads that wrapping leaves, have no text. The cells of
+    /// a line that would start past 4 GiB of text, which only a scrollback
+    /// that large can hold, are left out: the rest of the line is not
+    /// searched.
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];

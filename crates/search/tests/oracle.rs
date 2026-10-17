@@ -1,11 +1,11 @@
 //! Whole words and clusters against an oracle of their own: the matches of
 //! a literal that a search of each logical line's text finds by brute
-//! force, the line read from its cells here.
+//! force, the line read from its cells here, before its pages go cold.
 
 use std::sync::atomic::AtomicBool;
 
 use bolt_search::{Case, Direction, Query};
-use bolt_vt_core::page::{Content, PageList, Position, RowFlag, Width};
+use bolt_vt_core::page::{Capacity, Content, PageList, Position, RowFlag, Width};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
 use proptest::prelude::*;
@@ -116,10 +116,15 @@ fn expected(
 }
 
 /// The first and last cells of every match, going forward from each match's
-/// next cell, and in one pass over the rows `rows`.
+/// next cell, going backward from each match's first cell, oldest first,
+/// and in one pass over the rows `rows`.
 type Cells = Vec<(Position, Position)>;
 
-fn found(terminal: &mut Terminal, query: &Query, rows: std::ops::Range<usize>) -> (Cells, Cells) {
+fn found(
+    terminal: &mut Terminal,
+    query: &Query,
+    rows: std::ops::Range<usize>,
+) -> (Cells, Cells, Cells) {
     let cancel = AtomicBool::new(false);
     let list = terminal.screen_rows_mut();
     let mut stepped = Vec::new();
@@ -144,6 +149,25 @@ fn found(terminal: &mut Terminal, query: &Query, rows: std::ops::Range<usize>) -
             }
         };
     }
+    // Backward from the last cell, in the last row, which is empty, as the
+    // text ends with a line break.
+    let mut back = Vec::new();
+    let (page, row) = list.row_at(list.total_rows() - 1).unwrap();
+    let mut from = Position {
+        page,
+        row,
+        col: list.cols() - 1,
+    };
+    while let Some(hit) =
+        bolt_search::find(list, query, from, Direction::Backward, &cancel).unwrap()
+    {
+        let start = list.pin_position(hit.start).unwrap();
+        let end = list.pin_position(hit.end).unwrap();
+        hit.release(list);
+        back.push((start, end));
+        from = start;
+    }
+    back.reverse();
     let all = bolt_search::find_all(list, query, rows, usize::MAX, &cancel).unwrap();
     let all = all
         .pinned
@@ -157,15 +181,17 @@ fn found(terminal: &mut Terminal, query: &Query, rows: std::ops::Range<usize>) -
             cells
         })
         .collect();
-    (stepped, all)
+    (stepped, back, all)
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
     /// A literal finds what the oracle finds, whole words or not, either
-    /// case, with wide characters and clusters, stepping, or in one pass
-    /// over a range of rows, its matches' first and last cells alike.
+    /// case, with wide characters and clusters, stepping either way, or in
+    /// one pass over a range of rows, its matches' first and last cells
+    /// alike, with lines that cross from one page into the next, and pages
+    /// gone cold.
     #[test]
     fn a_literal_finds_what_the_oracle_finds(
         lines_in in prop::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
@@ -175,11 +201,29 @@ proptest! {
         whole_word in any::<bool>(),
         first_row in 0_usize..40,
         row_count in 0_usize..40,
+        crossing in any::<bool>(),
+        cold in any::<bool>(),
     ) {
-        let mut text = String::new();
+        // Empty lines up to the first page's last row, and there the needle
+        // in the last column, so that it goes on in the next page.
+        let filler = if crossing {
+            usize::from(Capacity::standard(cols).rows) - 1
+        } else {
+            0
+        };
+        let mut text = "\r\n".repeat(filler);
+        if crossing {
+            text.push_str(&" ".repeat(usize::from(cols) - 1));
+            text.push_str(&needle);
+            text.push_str("\r\n");
+        }
         for line in &lines_in {
             text.push_str(line);
             text.push_str("\r\n");
+        }
+        // Rows enough after them that the pages before the last go cold.
+        if cold {
+            text.push_str(&"\r\n".repeat(16));
         }
         let mut terminal = Terminal::new(cols, 4, Options::default());
         Parser::new().advance(&mut terminal, text.as_bytes());
@@ -188,7 +232,7 @@ proptest! {
             .iter()
             .flat_map(|line| expected(line, &needle, insensitive, whole_word))
             .collect();
-        let rows = first_row..first_row + row_count;
+        let rows = filler + first_row..filler + first_row + row_count;
         let in_rows: Cells = expected
             .iter()
             .copied()
@@ -196,8 +240,12 @@ proptest! {
             .collect();
         let case = if insensitive { Case::Insensitive } else { Case::Sensitive };
         let query = Query::literal(&needle, case).unwrap().whole_word(whole_word);
-        let (stepped, all) = found(&mut terminal, &query, rows);
+        if cold {
+            terminal.compact_scrollback();
+        }
+        let (stepped, back, all) = found(&mut terminal, &query, rows);
         prop_assert_eq!(&stepped, &expected);
+        prop_assert_eq!(&back, &expected);
         prop_assert_eq!(&all, &in_rows);
         prop_assert_eq!(terminal.screen_rows().pins(), 0);
     }
