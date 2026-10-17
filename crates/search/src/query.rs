@@ -142,6 +142,22 @@ impl Query {
         Ok(last)
     }
 
+    /// Goes through the matches of `text`, from its start, with `found`,
+    /// unless `cancel` is set first.
+    pub(crate) fn each(
+        &self,
+        text: &Text<'_>,
+        cancel: &AtomicBool,
+        mut found: impl FnMut(Range<usize>),
+    ) -> Result<(), Cancelled> {
+        let mut at = 0;
+        while let Some(range) = self.next_match(text, at, cancel)? {
+            at = range.end;
+            found(range);
+        }
+        Ok(())
+    }
+
     /// The match that comes next from `at`: the leftmost-first one that
     /// counts, a match that does not count letting the search go on a
     /// character after its start. From the start of the text, then from

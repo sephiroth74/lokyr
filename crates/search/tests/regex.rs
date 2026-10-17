@@ -259,6 +259,35 @@ fn a_long_line_takes_time_in_proportion_to_its_length() {
 }
 
 #[test]
+fn every_match_of_a_long_line_comes_in_one_pass() {
+    // One logical line of 64 000 cells, 21 333 matches: found one at a time,
+    // each search went through the line again, in seconds.
+    let mut terminal = printed(80, 801, &"ab ".repeat(21_333));
+    let query = Query::literal("ab", Case::Sensitive).unwrap();
+    let started = Instant::now();
+    let found = all_starts(&mut terminal, &query, 0..801);
+    let took = started.elapsed();
+    assert_eq!(found.len(), 21_333);
+    assert!(took < Duration::from_secs(2), "{took:?}");
+    assert_eq!(terminal.screen_rows().pins(), 0);
+}
+
+#[test]
+fn a_cancelled_pass_stops() {
+    let mut terminal = printed(10, 2, "abc");
+    let rows = terminal.screen_rows_mut();
+    let query = regex("b");
+    assert_eq!(
+        bolt_search::find_all(rows, &query, 0..2, &AtomicBool::new(true)),
+        Err(Cancelled)
+    );
+    assert_eq!(
+        bolt_search::find_all(rows, &query, 1..1, &AtomicBool::new(false)),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
 fn unicode_word_boundaries_work_on_text_that_is_not_ascii() {
     let mut terminal = printed(20, 2, "un étés été chaud");
     let query = regex(r"\bété\b");
@@ -401,6 +430,25 @@ fn starts_backward(terminal: &mut Terminal, query: &Query) -> Vec<Position> {
     found
 }
 
+/// The first cell of every match that starts in the rows `rows`, found in
+/// one pass.
+fn all_starts(
+    terminal: &mut Terminal,
+    query: &Query,
+    rows: std::ops::Range<usize>,
+) -> Vec<Position> {
+    let list = terminal.screen_rows_mut();
+    let found = bolt_search::find_all(list, query, rows, &AtomicBool::new(false)).unwrap();
+    found
+        .into_iter()
+        .map(|hit| {
+            let start = list.pin_position(hit.start).unwrap();
+            hit.release(list);
+            start
+        })
+        .collect()
+}
+
 /// `text` as a regex that matches it, for text of letters, spaces, `_`
 /// and `.`.
 fn escaped(text: &str) -> String {
@@ -434,6 +482,15 @@ proptest::proptest! {
         proptest::prop_assert_eq!(&starts_backward(&mut terminal, &literal), &forward);
         proptest::prop_assert_eq!(&starts(&mut terminal, &regex, cols), &forward);
         proptest::prop_assert_eq!(&starts_backward(&mut terminal, &regex), &forward);
+        // In one pass, over every row, or over two ranges that meet.
+        let total = terminal.screen_rows().total_rows();
+        for query in [&literal, &regex] {
+            proptest::prop_assert_eq!(&all_starts(&mut terminal, query, 0..total + 3), &forward);
+            let split = total / 2;
+            let mut halves = all_starts(&mut terminal, query, 0..split);
+            halves.extend(all_starts(&mut terminal, query, split..total));
+            proptest::prop_assert_eq!(&halves, &forward);
+        }
         proptest::prop_assert_eq!(terminal.screen_rows().pins(), 0);
     }
 

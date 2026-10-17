@@ -1,9 +1,11 @@
 //! The text of logical lines, the rows that soft-wrap into each other, with
 //! where the text of each cell starts, read in one pass either way.
 
+use std::iter::Peekable;
+use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use bolt_vt_core::page::{Content, ListRow, PageList, Position, RowFlag, Width};
+use bolt_vt_core::page::{Content, ListRow, PageId, PageList, Position, RowFlag, Width};
 
 use crate::query::Text;
 use crate::{Cancelled, Query};
@@ -15,16 +17,19 @@ struct Line {
     text: Vec<u8>,
     /// Where the text of each cell starts.
     starts: Vec<usize>,
-    /// The cells, in the same order, each with the row of the line that it
-    /// is in, from 0.
-    cells: Vec<(usize, Position)>,
+    /// The column of each cell.
+    cols: Vec<u16>,
+    /// The line's rows, in order: each one's page and row, and its first
+    /// cell, an index into `starts`.
+    rows: Vec<(PageId, u16, usize)>,
 }
 
 impl Line {
     fn clear(&mut self) {
         self.text.clear();
         self.starts.clear();
-        self.cells.clear();
+        self.cols.clear();
+        self.rows.clear();
     }
 
     /// The text, as a query searches it.
@@ -35,22 +40,18 @@ impl Line {
         }
     }
 
-    /// Adds the text of `row`, row `line_row` of the line. Empty cells read
-    /// as spaces; the halves of wide characters that show nothing, as their
-    /// second halves and the heads that wrapping leaves, have no text.
-    fn push_row(&mut self, row: ListRow<'_>, line_row: usize) {
+    /// Adds the text of `row`, the line's next. Empty cells read as spaces;
+    /// the halves of wide characters that show nothing, as their second
+    /// halves and the heads that wrapping leaves, have no text.
+    fn push_row(&mut self, row: ListRow<'_>) {
+        self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];
         for (col, cell) in (0..).zip(row.cells()) {
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }
             self.starts.push(self.text.len());
-            let position = Position {
-                page: row.page(),
-                row: row.row(),
-                col,
-            };
-            self.cells.push((line_row, position));
+            self.cols.push(col);
             match cell.content() {
                 Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
                     self.text.push(b' ');
@@ -80,30 +81,78 @@ impl Line {
         self.text.truncate(len);
         let cells = self.starts.partition_point(|&start| start < len);
         self.starts.truncate(cells);
-        self.cells.truncate(cells);
+        self.cols.truncate(cells);
         if lower {
             self.text.make_ascii_lowercase();
         }
     }
 
+    /// The cells of row `line_row` of the line, as indexes into `starts`.
+    fn cells_in(&self, line_row: usize) -> std::ops::Range<usize> {
+        let first = |line_row: usize| {
+            self.rows
+                .get(line_row)
+                .map_or(self.starts.len(), |&(.., first)| {
+                    first.min(self.starts.len())
+                })
+        };
+        first(line_row)..first(line_row + 1)
+    }
+
     /// Where the text of the first cell at column `col` of row `line_row`
     /// of the line, or after it, starts.
     fn offset_of(&self, line_row: usize, col: u16) -> usize {
-        let at = self
-            .cells
-            .partition_point(|&(row, position)| (row, position.col) < (line_row, col));
+        let cells = self.cells_in(line_row);
+        let at = cells.start + self.cols[cells].partition_point(|&other| other < col);
         self.starts.get(at).copied().unwrap_or(self.text.len())
+    }
+
+    /// The row of the line, from 0, that holds the cell whose text holds
+    /// the byte at `offset`, and the cell.
+    fn cell_at(&self, offset: usize) -> (usize, usize) {
+        let cell = self.starts.partition_point(|&start| start <= offset) - 1;
+        let line_row = self.rows.partition_point(|&(.., first)| first <= cell) - 1;
+        (line_row, cell)
     }
 
     /// The first and the last cell of the text in `range`, which is not
     /// empty.
     fn cells_of(&self, range: std::ops::Range<usize>) -> (Position, Position) {
-        let cell = |offset| {
-            let at = self.starts.partition_point(|&start| start <= offset);
-            self.cells[at - 1].1
+        let position = |offset| {
+            let (line_row, cell) = self.cell_at(offset);
+            let (page, row, _) = self.rows[line_row];
+            Position {
+                page,
+                row,
+                col: self.cols[cell],
+            }
         };
-        (cell(range.start), cell(range.end - 1))
+        (position(range.start), position(range.end - 1))
     }
+}
+
+/// Reads the next logical line of `rows` into `line`, oldest row first,
+/// and ends it as `query` searches it; false once the rows have run out.
+fn read_line<'a>(
+    rows: &mut Peekable<impl Iterator<Item = ListRow<'a>>>,
+    line: &mut Line,
+    query: &Query,
+) -> bool {
+    let Some(mut row) = rows.next() else {
+        return false;
+    };
+    line.clear();
+    line.push_row(row);
+    while let Some(&after) = rows.peek() {
+        if !wraps(row, after) {
+            break;
+        }
+        rows.next();
+        line.push_row(after);
+        row = after;
+    }
+    line.finish(query.lowers_ascii());
+    true
 }
 
 /// Whether `row` goes on into `next`, the row after it, which continues
@@ -165,21 +214,11 @@ pub(crate) fn find_forward(
     let mut line = Line::default();
     // The row of `from` in the first line.
     let mut first = Some(index - start);
-    while let Some(mut row) = rows.next() {
+    loop {
         Cancelled::check(cancel)?;
-        line.clear();
-        line.push_row(row, 0);
-        let mut line_row = 0;
-        while let Some(&after) = rows.peek() {
-            if !wraps(row, after) {
-                break;
-            }
-            rows.next();
-            line_row += 1;
-            line.push_row(after, line_row);
-            row = after;
+        if !read_line(&mut rows, &mut line, query) {
+            return Ok(None);
         }
-        line.finish(query.lowers_ascii());
         let min = first
             .take()
             .map_or(0, |line_row| line.offset_of(line_row, from.col));
@@ -187,7 +226,6 @@ pub(crate) fn find_forward(
             return Ok(Some(line.cells_of(found)));
         }
     }
-    Ok(None)
 }
 
 /// The last match of `query` that starts before `from`, in the row at
@@ -218,8 +256,8 @@ pub(crate) fn find_backward(
             group.push(before);
         }
         line.clear();
-        for (line_row, &row) in group.iter().rev().enumerate() {
-            line.push_row(row, line_row);
+        for &row in group.iter().rev() {
+            line.push_row(row);
         }
         line.finish(query.lowers_ascii());
         // Every match of the line, which is not empty, starts before its
@@ -232,4 +270,38 @@ pub(crate) fn find_backward(
         }
     }
     Ok(None)
+}
+
+/// Every match of `query` that starts in a row of `list` whose index is in
+/// `rows`, in order, unless `cancel` is set first: each logical line is
+/// read once, and its matches gone through once.
+pub(crate) fn find_all(
+    list: &PageList,
+    rows: Range<usize>,
+    query: &Query,
+    cancel: &AtomicBool,
+) -> Result<Vec<(Position, Position)>, Cancelled> {
+    let mut found = Vec::new();
+    if rows.is_empty() {
+        return Ok(found);
+    }
+    // The index of the first row of the line that is read next.
+    let mut index = line_start(list, rows.start);
+    let mut lines = list.rows_from(index).peekable();
+    let mut line = Line::default();
+    while index < rows.end {
+        Cancelled::check(cancel)?;
+        if !read_line(&mut lines, &mut line, query) {
+            break;
+        }
+        let first = index;
+        index += line.rows.len();
+        query.each(&line.text(), cancel, |range| {
+            let (line_row, _) = line.cell_at(range.start);
+            if rows.contains(&(first + line_row)) {
+                found.push(line.cells_of(range));
+            }
+        })?;
+    }
+    Ok(found)
 }

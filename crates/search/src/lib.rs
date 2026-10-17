@@ -11,6 +11,7 @@ mod query;
 pub use query::{Case, PatternError, Query};
 
 use std::fmt;
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bolt_vt_core::page::{PageList, PinId, Position};
@@ -78,6 +79,12 @@ impl Cancelled {
 /// ends with one: one that starts or ends inside a cluster does not count,
 /// nor does an empty match.
 ///
+/// Forward, a line's matches are gone through from its start, so that a
+/// search from the end of a long line takes time in proportion to the
+/// matches before it, and, for a regex whose first branch scans to the
+/// line's end, as `a.*b|a`, time that grows with the square of the line's
+/// length; [`find_all`] goes through a range of rows once.
+///
 /// The search stops with [`Cancelled`] once `cancel` is set, which another
 /// thread can do: it looks at it before each line, and between the matches
 /// that it tries in a line, which can be long. It reads cold pages as they
@@ -111,4 +118,35 @@ pub fn find(
         return Ok(None);
     };
     Ok(Some(Match { start, end }))
+}
+
+/// Every match of `query` that starts in a row of `list` whose index, oldest
+/// first, is in `rows`, in order: the matches that [`find`] steps through,
+/// found in one pass, for counting them and showing them all. Each logical
+/// line that holds one of the rows is read once, whole, and its matches gone
+/// through once, so that a long line of many matches takes time in
+/// proportion to its length.
+///
+/// The search stops with [`Cancelled`] as [`find`] does, and reads cold
+/// pages as it does. A match whose cells cannot be pinned is left out.
+pub fn find_all(
+    list: &mut PageList,
+    query: &Query,
+    rows: Range<usize>,
+    cancel: &AtomicBool,
+) -> Result<Vec<Match>, Cancelled> {
+    let total = list.total_rows();
+    let rows = rows.start.min(total)..rows.end.min(total);
+    let found = line::find_all(list, rows, query, cancel)?;
+    Ok(found
+        .into_iter()
+        .filter_map(|(start, end)| {
+            let start = list.pin(start)?;
+            let Some(end) = list.pin(end) else {
+                list.unpin(start);
+                return None;
+            };
+            Some(Match { start, end })
+        })
+        .collect())
 }

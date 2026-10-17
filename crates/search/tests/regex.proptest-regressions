@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0a179b06f53d49110f58c3b344dfcc98a464d0fa4ad08eb8306873c5011fdac7 # shrinks to lines = ["__中.é", "é中a中中__", ""], needle = "_", cols = 3, insensitive = false, whole_word = false
