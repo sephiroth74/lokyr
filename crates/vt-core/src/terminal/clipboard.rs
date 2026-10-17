@@ -14,14 +14,54 @@ pub struct ClipboardTarget {
     pub primary: bool,
 }
 
-/// A program's request to read a clipboard, which the embedder answers
-/// with [`Terminal::reply_clipboard`].
+/// A program's request to read a clipboard. An embedder with a session
+/// answers it with the session's `reply_clipboard`, which writes the answer
+/// at once; one without, with [`Terminal::reply_clipboard`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClipboardRequest {
     /// The clipboards it asks for.
     pub target: ClipboardTarget,
+    /// The letters that named them, which the answer names them with.
+    selection: Selection,
     /// Whether the request ended with BEL, as the reply must.
     bel: bool,
+}
+
+/// How many letters of a request's selection its answer keeps at most:
+/// those of every clipboard and cut buffer, once each.
+const SELECTION: usize = 12;
+
+/// The letters of OSC 52's first field that name clipboards or cut
+/// buffers, in order, as many as [`SELECTION`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Selection {
+    letters: [u8; SELECTION],
+    len: u8,
+}
+
+impl Selection {
+    fn new(field: &[u8]) -> Self {
+        let mut selection = Self {
+            letters: [0; SELECTION],
+            len: 0,
+        };
+        for &letter in field
+            .iter()
+            .filter(|letter| b"cpqs01234567".contains(letter))
+        {
+            let Some(slot) = selection.letters.get_mut(usize::from(selection.len)) else {
+                break;
+            };
+            *slot = letter;
+            selection.len += 1;
+        }
+        selection
+    }
+
+    fn as_str(&self) -> &str {
+        // The letters are ASCII.
+        std::str::from_utf8(&self.letters[..usize::from(self.len)]).unwrap_or_default()
+    }
 }
 
 impl Terminal {
@@ -40,6 +80,7 @@ impl Terminal {
             if self.clipboard_reads {
                 let request = ClipboardRequest {
                     target,
+                    selection: Selection::new(&fields[..at]),
                     bel: end == StringEnd::Bel,
                 };
                 self.events.push(Event::ClipboardRead(request));
@@ -51,24 +92,29 @@ impl Terminal {
         }
     }
 
-    /// Answers `request` with `data`, what the clipboard holds: the answer
-    /// waits with the replies, whole, past their limit, as the user allowed
-    /// it. An embedder that writes it itself, at once, takes it from
-    /// [`Terminal::clipboard_answer`].
+    /// Answers `request` with `data`, what the clipboard holds, for an
+    /// embedder that takes the replies and writes them itself: the answer
+    /// waits with the replies, past their limit, as the user allowed it,
+    /// until the next take. An embedder with a session answers with the
+    /// session's `reply_clipboard` instead, which writes the answer at once
+    /// and never drops it, where this one would wait for the program's next
+    /// output, and count against the session's replies. An embedder that
+    /// writes the answer itself takes it from [`Terminal::clipboard_answer`].
     pub fn reply_clipboard(&mut self, request: ClipboardRequest, data: &[u8]) {
         self.answer(&Self::clipboard_answer(request, data));
     }
 
     /// The answer to `request`, with `data`, what the clipboard holds, for
-    /// the program.
+    /// the program: it names the clipboards with the letters of the
+    /// request, as xterm does, and ends as the request did.
     pub fn clipboard_answer(request: ClipboardRequest, data: &[u8]) -> Vec<u8> {
-        let letter = if request.target.clipboard { 'c' } else { 'p' };
         let end = if request.bel {
             StringEnd::Bel
         } else {
             StringEnd::St
         };
-        super::colors::osc(&format!("52;{letter};{}", encode(data)), end).into_bytes()
+        let selection = request.selection.as_str();
+        super::colors::osc(&format!("52;{selection};{}", encode(data)), end).into_bytes()
     }
 }
 

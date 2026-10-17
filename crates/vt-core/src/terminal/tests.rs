@@ -2824,37 +2824,95 @@ fn the_resets_bring_back_the_theme_and_so_does_ris() {
 #[test]
 fn osc_52_writes_the_clipboards() {
     let mut term = Term::new(10, 1);
-    term.feed("\x1b]52;c;aGVsbG8=\x07\x1b]52;;d29ybGQ\x07\x1b]52;ps;eA==\x07\x1b]52;c;\x07");
-    term.feed("\x1b]52;0;eA==\x07\x1b]52;c;!!\x07\x1b]52;c\x07");
-    let clipboard = ClipboardTarget {
-        clipboard: true,
-        primary: false,
-    };
-    let primary = ClipboardTarget {
-        clipboard: false,
-        primary: true,
-    };
+    let mut writes = Vec::new();
+    // Taken one at a time, as a write overwrites the one before it.
+    for sequence in [
+        "\x1b]52;c;aGVsbG8=\x07",
+        "\x1b]52;;d29ybGQ\x07",
+        "\x1b]52;ps;eA==\x07",
+        "\x1b]52;c;\x07",
+        "\x1b]52;0;eA==\x07",
+        "\x1b]52;c;!!\x07",
+        "\x1b]52;c\x07",
+    ] {
+        term.feed(sequence);
+        writes.extend(term.terminal.take_events());
+    }
     assert_eq!(
-        term.terminal.take_events(),
+        writes,
         [
-            Event::ClipboardWrite {
-                target: clipboard,
-                data: b"hello".to_vec()
-            },
-            Event::ClipboardWrite {
-                target: clipboard,
-                data: b"world".to_vec()
-            },
-            Event::ClipboardWrite {
-                target: primary,
-                data: b"x".to_vec()
-            },
-            Event::ClipboardWrite {
-                target: clipboard,
-                data: Vec::new()
-            },
+            write(CLIPBOARD, b"hello"),
+            write(CLIPBOARD, b"world"),
+            write(PRIMARY, b"x"),
+            write(CLIPBOARD, b""),
         ],
         "the cut buffers, bad base64 and no data at all are left out"
+    );
+}
+
+fn write(target: ClipboardTarget, data: &[u8]) -> Event {
+    Event::ClipboardWrite {
+        target,
+        data: data.to_vec(),
+    }
+}
+
+const CLIPBOARD: ClipboardTarget = ClipboardTarget {
+    clipboard: true,
+    primary: false,
+};
+
+const PRIMARY: ClipboardTarget = ClipboardTarget {
+    clipboard: false,
+    primary: true,
+};
+
+const BOTH: ClipboardTarget = ClipboardTarget {
+    clipboard: true,
+    primary: true,
+};
+
+#[test]
+fn the_latest_write_to_a_clipboard_is_told() {
+    let mut term = Term::new(10, 1);
+    // Many writes, past the events' limit, and then the last.
+    let earlier = format!("\x1b]52;c;{}\x07", "eHh4".repeat(256));
+    term.feed(earlier.repeat(2_000));
+    term.feed("\x1b]52;c;Yg==\x07");
+    assert_eq!(term.terminal.take_events(), [write(CLIPBOARD, b"b")]);
+    // Two writes that do not both fit: the second is told.
+    term.feed(format!("\x1b]52;c;{}\x07", "YWFh".repeat(200_000)));
+    term.feed(format!("\x1b]52;c;{}\x07", "YmJi".repeat(200_000)));
+    assert_eq!(
+        term.terminal.take_events(),
+        [write(CLIPBOARD, &b"bbb".repeat(200_000))]
+    );
+}
+
+#[test]
+fn a_write_overwrites_those_to_its_clipboards_since_the_last_read() {
+    let options = Options {
+        clipboard_reads: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    // `a`, read, then `b`, which `c` to both clipboards overwrites, as it
+    // does `e` to the primary selection, and then `d`.
+    term.feed("\x1b]52;c;YQ==\x07\x1b]52;c;?\x07\x1b]52;c;Yg==\x07\x1b]52;p;ZQ==\x07");
+    term.feed("\x1b]52;cp;Yw==\x07\x1b]52;c;ZA==\x07");
+    let events = term.terminal.take_events();
+    assert!(matches!(events[1], Event::ClipboardRead(_)), "{events:?}");
+    assert_eq!(events[0], write(CLIPBOARD, b"a"), "the read comes after it");
+    assert_eq!(
+        events[2..],
+        [write(BOTH, b"c"), write(CLIPBOARD, b"d")],
+        "the primary selection keeps `c`"
+    );
+    // A write to one clipboard leaves one to both.
+    term.feed("\x1b]52;cp;YQ==\x07\x1b]52;p;Yg==\x07");
+    assert_eq!(
+        term.terminal.take_events(),
+        [write(BOTH, b"a"), write(PRIMARY, b"b")]
     );
 }
 
@@ -2885,6 +2943,18 @@ fn osc_52_reads_only_when_the_configuration_allows_them() {
         replies(&mut term),
         "\x1b]52;c;aGVsbG8=\x07\x1b]52;p;\x1b\\",
         "each ends as its request did"
+    );
+    // The answer names the clipboards as the request did.
+    term.feed("\x1b]52;s;?\x07\x1b]52;s0;?\x07\x1b]52;cp;?\x07\x1b]52;xc;?\x07");
+    for request in term.terminal.take_events() {
+        let Event::ClipboardRead(request) = request else {
+            panic!("{request:?}");
+        };
+        term.terminal.reply_clipboard(request, b"hi");
+    }
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]52;s;aGk=\x07\x1b]52;s0;aGk=\x07\x1b]52;cp;aGk=\x07\x1b]52;c;aGk=\x07"
     );
 }
 
@@ -4408,14 +4478,14 @@ fn events_wait_within_limits() {
         term.terminal.take_events(),
         [Event::TitleChanged, Event::ColorsChanged]
     );
-    // Writes to the clipboard, with their data, wait up to a limit.
-    let write = format!("\x1b]52;c;{}\x07", "eHh4".repeat(256));
-    term.feed(write.repeat(2_000));
+    // Notifications, with their text, wait up to a limit.
+    let notification = format!("\x1b]9;{}\x07", "x".repeat(768));
+    term.feed(notification.repeat(2_000));
     let events = term.terminal.take_events();
     let bytes: usize = events
         .iter()
         .map(|event| match event {
-            Event::ClipboardWrite { data, .. } => size_of::<Event>() + data.len(),
+            Event::Notification { title, body } => size_of::<Event>() + title.len() + body.len(),
             other => panic!("{other:?}"),
         })
         .sum();
@@ -4426,7 +4496,7 @@ fn events_wait_within_limits() {
         events.len()
     );
     // A take makes room again.
-    term.feed(&write);
+    term.feed(&notification);
     assert_eq!(term.terminal.take_events().len(), 1);
 }
 

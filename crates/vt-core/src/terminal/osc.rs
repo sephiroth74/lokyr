@@ -57,7 +57,8 @@ pub enum Event {
         data: Vec<u8>,
     },
     /// A program asks to read the clipboards (OSC 52), which the
-    /// configuration allows; the embedder answers with
+    /// configuration allows. An embedder with a session answers with the
+    /// session's `reply_clipboard`; one without, with
     /// [`Terminal::reply_clipboard`].
     ClipboardRead(ClipboardRequest),
 }
