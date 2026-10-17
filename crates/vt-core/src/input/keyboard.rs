@@ -300,9 +300,11 @@ const ESC: u8 = 0x1B;
 /// `modifyOtherKeys` at 1, keys whose usual sequence would lose a modifier,
 /// such as Control with a digit or Control and Shift with a letter, send
 /// `CSI 27 ; modifiers ; code ~`; at 2, as xterm's `input.c` has it, every
-/// key with Control or Meta does, and with Shift alone, space and the
-/// characters from `@` to DEL that the key types, but Backspace with
-/// Control alone, and the keypad.
+/// key that types a character does with Control or Meta, and so do Return,
+/// Escape and Backspace with any modifier, Shift alone included, but for
+/// Backspace with Control alone, which sends BS; with Shift alone, so do
+/// space and the characters from `@` to DEL that the key types. The keypad,
+/// the cursor keys and the function keys keep their own sequences.
 ///
 /// With flags, keys go as the kitty keyboard protocol has them:
 /// <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.

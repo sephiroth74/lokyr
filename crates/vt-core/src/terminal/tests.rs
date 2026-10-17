@@ -2469,7 +2469,7 @@ fn xtgettcap_reports_capabilities_by_name() {
             hex("kbs"),
             hex("kcuu1"),
             hex("Smulx"),
-            hex(r"\E[4\:%p1%dm"),
+            hex(r"\E[4:%p1%dm"),
             hex("colors"),
             hex("256"),
             hex("name"),
@@ -3665,6 +3665,25 @@ fn a_cluster_past_the_right_margin_narrows_in_insert_mode() {
     assert_eq!(term.cell(4, 0).width(), Width::Narrow);
     assert_eq!(term.cell(5, 0).width(), Width::Narrow);
     assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn a_cluster_that_narrows_under_a_pending_wrap_frees_it_past_a_margin_too() {
+    // A wide cluster in the last two columns, the wrap pending after it,
+    // and a right margin set later over the cluster's first half.
+    let place = |margin: &str| {
+        let mut term = Term::new(10, 2);
+        term.feed(format!("\x1b[1;9H\u{231A}\x1b7{margin}\x1b8\u{FE0E}"));
+        let cursor = term.cursor();
+        term.feed("b");
+        (cursor, term.screen())
+    };
+    let free = (
+        (9, 0, false),
+        ["        \u{231A}\u{FE0E}b", ""].map(String::from).to_vec(),
+    );
+    assert_eq!(place(""), free);
+    assert_eq!(place("\x1b[?69h\x1b[1;9s"), free);
 }
 
 #[test]

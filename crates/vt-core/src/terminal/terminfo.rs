@@ -12,8 +12,9 @@ pub(super) enum Capability {
     /// A boolean, which the entry has.
     Flag,
     /// A number, in decimal, or a string: the bytes that the terminal reads
-    /// or sends, or, for a string with parameters, the string as the source
-    /// writes it, for the program to fill in.
+    /// or sends, without the padding that only `tputs` reads, or, for a
+    /// string with parameters, the string as the source writes it, for the
+    /// program to fill in.
     Value(Vec<u8>),
 }
 
@@ -45,7 +46,7 @@ fn parse(source: &str) -> Vec<(String, Capability)> {
                 let value = if value.contains('%') {
                     value.as_bytes().to_vec()
                 } else {
-                    unescape(value)
+                    without_padding(&unescape(value))
                 };
                 (name.to_owned(), Capability::Value(value))
             } else if let Some((name, number)) = field.split_once('#') {
@@ -85,6 +86,33 @@ fn fields(text: &str) -> impl Iterator<Item = &str> {
         }
         None
     })
+}
+
+/// `bytes` without padding, which terminfo(5) writes as `$<5>` or `$<100/>`:
+/// a delay for `tputs` to make, which the terminal never receives.
+fn without_padding(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some(at) = rest.windows(2).position(|pair| pair == b"$<") {
+        let delay = rest[at + 2..]
+            .iter()
+            .position(|&byte| byte == b'>')
+            .filter(|&len| {
+                let delay = &rest[at + 2..at + 2 + len];
+                delay.iter().any(u8::is_ascii_digit)
+                    && delay
+                        .iter()
+                        .all(|byte| matches!(byte, b'0'..=b'9' | b'.' | b'*' | b'/'))
+            });
+        let end = delay.map_or(at + 2, |len| at + 2 + len + 1);
+        out.extend_from_slice(&rest[..at]);
+        if delay.is_none() {
+            out.extend_from_slice(b"$<");
+        }
+        rest = &rest[end..];
+    }
+    out.extend_from_slice(rest);
+    out
 }
 
 /// The bytes of a string in the source, its escapes undone, as
@@ -165,7 +193,7 @@ mod tests {
         assert_eq!(value("kcuu1"), b"\x1bOA");
         assert_eq!(value("dsl"), b"\x1b]2;\x07");
         assert_eq!(value("Se"), b"\x1b[0 q");
-        assert_eq!(value("flash"), b"\x1b[?5h$<100/>\x1b[?5l");
+        assert_eq!(value("flash"), b"\x1b[?5h\x1b[?5l", "without padding");
         assert_eq!(
             value("acsc"),
             b"``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~"
@@ -174,7 +202,7 @@ mod tests {
 
     #[test]
     fn strings_with_parameters_come_as_the_source_writes_them() {
-        assert_eq!(value("Smulx"), br"\E[4\:%p1%dm");
+        assert_eq!(value("Smulx"), br"\E[4:%p1%dm");
         assert_eq!(value("cup"), br"\E[%i%p1%d;%p2%dH");
         assert_eq!(value("Sync"), br"\E[?2026%?%p1%{1}%-%tl%eh%;");
     }
@@ -229,5 +257,10 @@ mod tests {
         // Three octal digits at most.
         assert_eq!(unescape("\\0101"), b"\x081");
         assert_eq!(unescape("\\n\\l\\r\\t\\b\\f\\e"), b"\n\n\r\t\x08\x0c\x1b");
+        // Padding goes, and what only looks like it stays.
+        assert_eq!(
+            without_padding(b"a$<5>b$<10.5*/>c$<x>d$<>e$<3"),
+            b"abc$<x>d$<>e$<3"
+        );
     }
 }

@@ -67,9 +67,9 @@ impl Row {
 }
 
 /// The flags that a renderer shows, which mark the row to draw again when
-/// they change.
-const SHOWN: u8 =
-    RowFlag::SoftWrapped as u8 | RowFlag::Continuation as u8 | RowFlag::PromptStart as u8;
+/// they change. A continuation changes with the soft wrap of the row
+/// before, which shows it.
+const SHOWN: u8 = RowFlag::SoftWrapped as u8 | RowFlag::PromptStart as u8;
 
 /// Shows the flags that are set.
 impl fmt::Debug for Row {
@@ -102,11 +102,7 @@ mod tests {
 
     #[test]
     fn a_change_that_shows_marks_the_row_to_draw() {
-        for flag in [
-            RowFlag::SoftWrapped,
-            RowFlag::Continuation,
-            RowFlag::PromptStart,
-        ] {
+        for flag in [RowFlag::SoftWrapped, RowFlag::PromptStart] {
             let mut row = Row::default();
             row.set(flag, false);
             assert_eq!(row, Row::default(), "no change, no mark");
@@ -124,12 +120,13 @@ mod tests {
             RowFlag::Hyperlinks,
             RowFlag::Images,
             RowFlag::Styles,
+            RowFlag::Continuation,
         ] {
             row.set(flag, true);
         }
         assert!(
             !row.has(RowFlag::Dirty),
-            "the cells' flags come with cells that mark it"
+            "the cells' flags come with cells that mark it, and a continuation with the row before"
         );
     }
 

@@ -494,7 +494,7 @@ fn environment(
             set("BOLT_RESOURCES_DIR", dir.clone().into());
             // The terminal's own entry, which the app keeps with its
             // resources, where programs would not otherwise find it.
-            if options.term == "xterm-bolt" {
+            if matches!(options.term.as_str(), "xterm-bolt" | "bolt") {
                 set("TERMINFO", dir.join("terminfo").into());
             }
         }
@@ -591,6 +591,12 @@ mod tests {
         // Without the resources, there is no entry to point to.
         assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
         options.resources_dir = Some("/Applications/Bolt.app/Contents/Resources".into());
+        assert_eq!(
+            get(&environment(&options, inherited()), "TERMINFO"),
+            Some("/Applications/Bolt.app/Contents/Resources/terminfo")
+        );
+        // And for the entry's other name.
+        options.term = "bolt".to_owned();
         assert_eq!(
             get(&environment(&options, inherited()), "TERMINFO"),
             Some("/Applications/Bolt.app/Contents/Resources/terminfo")

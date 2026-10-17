@@ -22,6 +22,8 @@ pub struct Snapshot {
     changed: Vec<bool>,
     /// How many rows the last update moved its lines up by.
     scrolled: u16,
+    /// Whether the last update found other colors, or reverse video.
+    colors_changed: bool,
     cursor: SnapshotCursor,
     reverse_video: bool,
     colors: Colors,
@@ -53,6 +55,7 @@ pub struct Line {
     /// codepoints start in `codepoints`, and how many there are.
     clusters: Vec<(u16, u32, u32)>,
     soft_wrapped: bool,
+    prompt_start: bool,
 }
 
 impl Snapshot {
@@ -98,6 +101,13 @@ impl Snapshot {
     pub fn colors(&self) -> &Colors {
         &self.colors
     }
+
+    /// Whether the last update found the colors or reverse video changed
+    /// since the update before: the renderer then draws every row again,
+    /// those that the update did not copy too.
+    pub fn colors_changed(&self) -> bool {
+        self.colors_changed
+    }
 }
 
 impl Line {
@@ -129,6 +139,12 @@ impl Line {
     /// Whether the row's text goes on to the next row, as it wrapped there.
     pub fn soft_wrapped(&self) -> bool {
         self.soft_wrapped
+    }
+
+    /// Whether a prompt starts in the row, as shell integration marks it
+    /// (OSC 133), for a renderer to show.
+    pub fn prompt_start(&self) -> bool {
+        self.prompt_start
     }
 
     /// Makes the line a copy of row `row` of `page`.
@@ -165,6 +181,7 @@ impl Line {
             }
         }
         self.soft_wrapped = metadata.has(RowFlag::SoftWrapped);
+        self.prompt_start = metadata.has(RowFlag::PromptStart);
     }
 }
 
@@ -182,7 +199,10 @@ impl Terminal {
             style: self.cursor_style(),
             blink: self.cursor_blink(),
         };
-        snapshot.reverse_video = self.reverse_video();
+        let reverse_video = self.reverse_video();
+        snapshot.colors_changed =
+            snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
+        snapshot.reverse_video = reverse_video;
         if snapshot.colors != self.colors {
             snapshot.colors.clone_from(&self.colors);
         }
@@ -243,6 +263,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         changed: vec![true; lines.len()],
         lines,
         scrolled: 0,
+        colors_changed: false,
         cursor: SnapshotCursor {
             position: terminal.cursor(),
             visible: terminal.cursor_visible(),
@@ -364,6 +385,32 @@ mod tests {
     }
 
     #[test]
+    fn an_update_tells_when_the_colors_changed() {
+        let (mut terminal, mut parser) = terminal(10, 4);
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        for change in [
+            "\x1b]4;1;rgb:00/ff/00\x07",
+            "\x1b[?5h",
+            "\x1b]11;rgb:10/20/30\x07",
+        ] {
+            feed(&mut terminal, &mut parser, change);
+            assert_eq!(terminal.snapshot(&mut snapshot), 0, "{change:?}: no row");
+            assert!(snapshot.colors_changed(), "{change:?}");
+            assert_eq!(terminal.snapshot(&mut snapshot), 0);
+            assert!(!snapshot.colors_changed(), "{change:?}, once");
+        }
+        // The same colors again change nothing.
+        feed(
+            &mut terminal,
+            &mut parser,
+            "\x1b]4;1;rgb:00/ff/00\x07\x1b[?5h",
+        );
+        terminal.snapshot(&mut snapshot);
+        assert!(!snapshot.colors_changed());
+    }
+
+    #[test]
     fn a_line_has_its_styles_and_clusters() {
         let (mut terminal, mut parser) = terminal(10, 2);
         feed(
@@ -395,6 +442,11 @@ mod tests {
         terminal.snapshot(&mut snapshot);
         assert!(snapshot.line(0).soft_wrapped());
         assert!(!snapshot.line(1).soft_wrapped());
+        // A prompt's start, which marks its row to draw.
+        assert!(!snapshot.line(1).prompt_start());
+        feed(&mut terminal, &mut parser, "\x1b]133;A\x07");
+        assert_eq!(terminal.snapshot(&mut snapshot), 1);
+        assert!(snapshot.line(1).prompt_start());
     }
 
     /// Pieces of output that change the screen in every way they can.
@@ -450,6 +502,8 @@ mod tests {
         "\x1b[?69h\x1b[2;6s",
         "\x1b[?69l",
         "\x1b]8;;http://x\x07link\x1b]8;;\x07",
+        "\x1b]133;A\x07",
+        "\x1b]11;rgb:10/20/30\x07",
         "\x1bc",
     ];
 
@@ -482,7 +536,10 @@ mod tests {
                     Op::Feed(piece) => feed(&mut terminal, &mut parser, PIECES[piece]),
                     Op::Resize(cols, rows) => terminal.resize(cols, rows),
                     Op::Snapshot => {
+                        let before = (snapshot.colors().clone(), snapshot.reverse_video());
                         let copied = terminal.snapshot(&mut snapshot);
+                        let after = (terminal.colors().clone(), terminal.reverse_video());
+                        prop_assert_eq!(snapshot.colors_changed(), before != after);
                         prop_assert!(copied <= usize::from(snapshot.rows()));
                         assert_same(&snapshot, &copy_of(&terminal));
                         prop_assert_eq!(terminal.snapshot(&mut snapshot), 0, "nothing changed since");

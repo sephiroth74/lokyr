@@ -8,10 +8,10 @@
 //! `PATH`, or the one that `TIC` names, and `infocmp` sits next to it.
 //!
 //! The task then checks that `tic` warned of nothing, that `infocmp` reads
-//! every capability of the source back, and that the entry is in the
-//! legacy format, which every ncurses reads.
+//! every capability of the source back, with its value, and that the entry
+//! is in the legacy format, which every ncurses reads.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -84,9 +84,9 @@ fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    same_names(
-        &names(&fs::read_to_string(source)?),
-        &names(&String::from_utf8(output.stdout)?),
+    same_capabilities(
+        &capabilities(&fs::read_to_string(source)?)?,
+        &capabilities(&String::from_utf8(output.stdout)?)?,
     )?;
     let compiled = compiled_file(out)?;
     let bytes = fs::read(&compiled)?;
@@ -108,21 +108,44 @@ fn compiled_file(out: &Path) -> Result<PathBuf> {
 }
 
 /// Fails unless the capabilities that `infocmp` reads back are those of the
-/// source.
-fn same_names(written: &BTreeSet<String>, read_back: &BTreeSet<String>) -> Result<()> {
-    if read_back != written {
+/// source, with the same values.
+fn same_capabilities(
+    written: &BTreeMap<String, Value>,
+    read_back: &BTreeMap<String, Value>,
+) -> Result<()> {
+    let missing: Vec<_> = written
+        .keys()
+        .filter(|name| !read_back.contains_key(*name))
+        .collect();
+    let added: Vec<_> = read_back
+        .keys()
+        .filter(|name| !written.contains_key(*name))
+        .collect();
+    let changed: Vec<_> = written
+        .iter()
+        .filter(|&(name, value)| read_back.get(name).is_some_and(|back| back != value))
+        .map(|(name, _)| name)
+        .collect();
+    if !missing.is_empty() || !added.is_empty() || !changed.is_empty() {
         bail!(
-            "infocmp reads back other capabilities: missing {:?}, added {:?}",
-            written.difference(read_back).collect::<Vec<_>>(),
-            read_back.difference(written).collect::<Vec<_>>()
+            "infocmp reads back other capabilities: missing {missing:?}, added {added:?}, changed {changed:?}"
         );
     }
     Ok(())
 }
 
-/// The names of the capabilities in `text`, a terminfo source or what
-/// `infocmp` prints, without the entry's names and those cancelled.
-fn names(text: &str) -> BTreeSet<String> {
+/// What a capability holds, as `tic` reads it, whichever way it is written.
+#[derive(Debug, PartialEq, Eq)]
+enum Value {
+    Flag,
+    Number(u32),
+    /// The string's bytes, its escapes undone, its parameters as they are.
+    Text(Vec<u8>),
+}
+
+/// The capabilities in `text`, a terminfo source or what `infocmp` prints,
+/// without the entry's names and those cancelled.
+fn capabilities(text: &str) -> Result<BTreeMap<String, Value>> {
     let text: String = text
         .lines()
         .filter(|line| !line.starts_with('#'))
@@ -142,20 +165,92 @@ fn names(text: &str) -> BTreeSet<String> {
         }
         at += 1;
     }
-    fields
-        .into_iter()
-        .skip(1)
-        .filter_map(|field| {
-            if field.contains(['=', '#']) {
-                field.split(['=', '#']).next()
-            } else if field.is_empty() || field.ends_with('@') {
-                None
-            } else {
-                Some(field)
+    let mut capabilities = BTreeMap::new();
+    for field in fields.into_iter().skip(1) {
+        let (name, value) = if let Some((name, value)) = field.split_once('=') {
+            (name, Value::Text(unescape(value)))
+        } else if let Some((name, number)) = field.split_once('#') {
+            (name, Value::Number(parse_number(number)?))
+        } else if field.is_empty() || field.ends_with('@') {
+            continue;
+        } else {
+            (field, Value::Flag)
+        };
+        capabilities.insert(name.to_owned(), value);
+    }
+    Ok(capabilities)
+}
+
+/// A number as terminfo(5) writes it: in decimal, or in hexadecimal after
+/// `0x`, or in octal after `0`.
+fn parse_number(text: &str) -> Result<u32> {
+    let parsed = if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16)
+    } else if text.len() > 1 && text.starts_with('0') {
+        u32::from_str_radix(&text[1..], 8)
+    } else {
+        text.parse()
+    };
+    parsed.with_context(|| format!("`{text}` is not a number"))
+}
+
+/// The bytes of a string, its escapes undone, as terminfo(5) lists them:
+/// `\\E` for ESC, `^X` for a control character, three octal digits, and a
+/// backslash before a character that stands for itself.
+fn unescape(value: &str) -> Vec<u8> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        at += 1;
+        match byte {
+            b'\\' => {
+                let Some(&escaped) = bytes.get(at) else {
+                    out.push(b'\\');
+                    break;
+                };
+                at += 1;
+                out.push(match escaped {
+                    b'E' | b'e' => 0x1B,
+                    b'n' | b'l' => b'\n',
+                    b'r' => b'\r',
+                    b't' => b'\t',
+                    b'b' => 0x08,
+                    b'f' => 0x0C,
+                    b's' => b' ',
+                    b'0'..=b'7' => {
+                        let digits = bytes[at - 1..]
+                            .iter()
+                            .take(3)
+                            .take_while(|digit| matches!(digit, b'0'..=b'7'))
+                            .count();
+                        let octal = bytes[at - 1..at - 1 + digits]
+                            .iter()
+                            .fold(0_u8, |n, digit| {
+                                n.wrapping_mul(8).wrapping_add(digit - b'0')
+                            });
+                        at += digits - 1;
+                        // A string ends at a NUL, so `\\0` stands for 0x80.
+                        if octal == 0 { 0x80 } else { octal }
+                    }
+                    other => other,
+                });
             }
-        })
-        .map(str::to_owned)
-        .collect()
+            b'^' => match bytes.get(at) {
+                Some(&control) => {
+                    at += 1;
+                    out.push(if control == b'?' {
+                        0x7F
+                    } else {
+                        control & 0x1F
+                    });
+                }
+                None => out.push(b'^'),
+            },
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -190,20 +285,37 @@ mod tests {
     }
 
     #[test]
-    fn a_capability_lost_or_added_fails_the_task() {
-        let set = |names: &[&str]| names.iter().map(|&name| name.to_owned()).collect();
-        assert!(same_names(&set(&["am", "cols"]), &set(&["am", "cols"])).is_ok());
-        let error = same_names(&set(&["am", "cols"]), &set(&["am", "bw"])).unwrap_err();
+    fn a_capability_lost_added_or_changed_fails_the_task() {
+        let read = |text: &str| capabilities(&format!("name|A terminal,\n\t{text}\n")).unwrap();
+        let written = read("am, cols#80, x=\\E[1m,");
+        assert!(same_capabilities(&written, &read("am, cols#80, x=\\E[1m,")).is_ok());
+        assert!(
+            same_capabilities(&written, &read("am, cols#80, x=\\E[2m,")).is_err(),
+            "a value alone"
+        );
+        let error = same_capabilities(&written, &read("bw, cols#81, x=\\E[1m,")).unwrap_err();
         assert_eq!(
             error.to_string(),
-            r#"infocmp reads back other capabilities: missing ["cols"], added ["bw"]"#
+            r#"infocmp reads back other capabilities: missing ["am"], added ["bw"], changed ["cols"]"#
         );
     }
 
     #[test]
-    fn names_leave_out_the_entry_and_cancelled_capabilities() {
-        let text = "#\tA comment, with a comma\nxterm-bolt|Bolt terminal,\n\tam, bw@,\n\tcols#80, x=a\\,b, ich=\\E[%p1%d@,\n";
-        let names: Vec<String> = names(text).into_iter().collect();
-        assert_eq!(names, ["am", "cols", "ich", "x"]);
+    fn capabilities_are_read_as_tic_reads_them() {
+        let text = "#\tA comment, with a comma\nxterm-bolt|Bolt terminal,\n\tam, bw@,\n\tcols#80, it#010, lines#0x18, x=a\\,b, ich=\\E[%p1%d@,\n\ty=\\E[4\\:%p1%dm^G\\177,\n";
+        let read = capabilities(text).unwrap();
+        let names: Vec<&String> = read.keys().collect();
+        assert_eq!(names, ["am", "cols", "ich", "it", "lines", "x", "y"]);
+        assert_eq!(read["it"], Value::Number(8));
+        assert_eq!(read["lines"], Value::Number(24));
+        assert_eq!(read["x"], Value::Text(b"a,b".to_vec()));
+        // An escaped colon, a control character and octal are their bytes,
+        // however written.
+        assert_eq!(read["y"], Value::Text(b"\x1b[4:%p1%dm\x07\x7f".to_vec()));
+        assert_eq!(
+            capabilities("n|N t,\n\ty=\\e[4:%p1%dm\\007^?,\n").unwrap()["y"],
+            read["y"]
+        );
+        assert!(capabilities("n|N t,\n\tcols#eighty,\n").is_err());
     }
 }

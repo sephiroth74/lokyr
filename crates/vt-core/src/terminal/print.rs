@@ -314,8 +314,11 @@ impl Terminal {
             self.screen_mut().rows.delete_cells(y, x + 1, 1, end);
         }
         let cursor = &mut self.screen_mut().cursor;
+        // A wrap pends at the end of the cursor's line, which can be past a
+        // margin that the cluster's line ends at: on the freed half, the
+        // cursor is right after the cluster.
         let right_after = if cursor.pending_wrap {
-            x + 2 == end && cursor.x == end - 1
+            cursor.x == x + 1
         } else {
             cursor.x == x + 2
         };

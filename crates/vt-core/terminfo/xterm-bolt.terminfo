@@ -3,7 +3,8 @@
 # It is xterm-256color as ncurses 6.0 describes it, without what Bolt does
 # not do: the soft reset (DECSTR) of is2 and rs2, printing (mc0, mc4, mc5,
 # mc5i), meta mode (smm, rmm) and memory lock (meml, memu). Backspace sends
-# DEL (kbs), and Se restores the cursor style that the user chose. Then come
+# DEL (kbs), Se restores the cursor style that the user chose, and kmous and
+# XM ask for SGR mouse reports, which X10's stop at column 223. Then come
 # the extensions that Bolt supports, as ncurses, tmux and other terminals
 # name them. RGB is left out: with 256 colors, ncurses would read it as
 # direct color with 3, 3 and 2 bits; Tc and setrgbf tell programs that 24-bit
@@ -11,7 +12,9 @@
 #
 # The entry stands alone, with no use=, so that it compiles the same on any
 # machine. Its numbers stay below 32768, so that tic writes the legacy
-# format, which every ncurses reads, macOS's own library included.
+# format, which every ncurses reads, macOS's own library included. Colons
+# are written plain, as XTGETTCAP sends the strings with parameters as they
+# are written.
 #
 # `cargo xtask terminfo` compiles it.
 xterm-bolt|bolt|Bolt terminal emulator,
@@ -78,7 +81,7 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	il1=\E[L,
 	ind=^J,
 	indn=\E[%p1%dS,
-	initc=\E]4;%p1%d;rgb\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\E\\,
+	initc=\E]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\E\\,
 	invis=\E[8m,
 	kDC=\E[3;2~,
 	kEND=\E[1;2F,
@@ -164,7 +167,7 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	khome=\EOH,
 	kich1=\E[2~,
 	kind=\E[1;2B,
-	kmous=\E[M,
+	kmous=\E[<,
 	knp=\E[6~,
 	kpp=\E[5~,
 	kri=\E[1;2A,
@@ -263,9 +266,9 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	kUP5=\E[1;5A,
 	kUP6=\E[1;6A,
 	kUP7=\E[1;7A,
-# Extensions that Bolt adds: bracketed paste, focus events, overline and
-# strikethrough, styled and colored underlines, 24-bit color and
-# synchronized updates.
+# Extensions that Bolt adds: bracketed paste, focus events, SGR mouse
+# reports, overline and strikethrough, styled and colored underlines,
+# 24-bit color and synchronized updates.
 	BD=\E[?2004l,
 	BE=\E[?2004h,
 	PE=\E[201~,
@@ -274,12 +277,13 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	fe=\E[?1004h,
 	kxIN=\E[I,
 	kxOUT=\E[O,
+	XM=\E[?1006;1000%?%p1%{1}%=%th%el%;,
 	Rmol=\E[55m,
 	Smol=\E[53m,
 	rmxx=\E[29m,
 	smxx=\E[9m,
-	Setulc=\E[58\:2\:\:%p1%{65536}%/%d\:%p1%{256}%/%{255}%&%d\:%p1%{255}%&%dm,
-	Smulx=\E[4\:%p1%dm,
+	Setulc=\E[58:2::%p1%{65536}%/%d:%p1%{256}%/%{255}%&%d:%p1%{255}%&%dm,
+	Smulx=\E[4:%p1%dm,
 	setrgbb=\E[48;2;%p1%d;%p2%d;%p3%dm,
 	setrgbf=\E[38;2;%p1%d;%p2%d;%p3%dm,
 	Sync=\E[?2026%?%p1%{1}%-%tl%eh%;,
