@@ -371,10 +371,14 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
     let stale = temp.join("bolt-record-stale-2147483646");
     let running = temp.join("bolt-record-root-1");
     let other = temp.join("bolt-record-notes-2024");
-    for dir in [&stale, &running, &other] {
+    // Marked, but with a sign or leading zeros, which a recorder never
+    // writes.
+    let signed = temp.join("bolt-record-signed-+2147483646");
+    let padded = temp.join("bolt-record-padded-002147483646");
+    for dir in [&stale, &running, &other, &signed, &padded] {
         std::fs::create_dir_all(dir.join("home")).unwrap();
     }
-    for dir in [&stale, &running] {
+    for dir in [&stale, &running, &signed, &padded] {
         std::fs::write(dir.join(".bolt-record"), b"").unwrap();
     }
     let (output, _) = record(
@@ -382,7 +386,7 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
         "run true\nexit\n",
         &[("TMPDIR", temp.to_str().unwrap())],
     );
-    let kept = (running.exists(), other.exists());
+    let kept = [&running, &other, &signed, &padded].map(|dir| dir.exists());
     let removed = !stale.exists();
     let _ = std::fs::remove_dir_all(&temp);
     assert!(
@@ -391,7 +395,7 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(removed);
-    assert_eq!(kept, (true, true));
+    assert_eq!(kept, [true; 4]);
 }
 
 #[test]

@@ -52,23 +52,28 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     let (master, slave, tty) = open(options.size).map_err(Error::Open)?;
     let account = Account::current();
     let (program, args, arg0) = command_line(&options.program, &account);
-    let mut command = Command::new(&program);
-    command.args(&args);
-    if let Some(arg0) = arg0 {
-        command.arg0(arg0);
-    }
-    command
-        .env_clear()
-        .envs(environment(options, std::env::vars_os()));
+    let env = environment(options, std::env::vars_os());
     let spawn_error = |source| Error::Spawn {
         program: program.display().to_string(),
         source,
     };
-    // The working directory, opened here, before the spawns' lock, rather
-    // than entered by the child under it: a directory on a mount that does
-    // not answer holds this spawn alone.
-    let dir = open_directory(options.working_directory.as_ref().unwrap_or(&account.home))
-        .map_err(spawn_error)?;
+    let working_directory = options.working_directory.as_ref().unwrap_or(&account.home);
+    // The program and the working directory, looked for and opened here,
+    // before the spawns' lock, rather than by the child under it: a mount
+    // that does not answer holds this spawn alone. The exec itself, which
+    // reads the program, stays under the lock.
+    let path = find_program(
+        &program,
+        env.get(OsStr::new("PATH")).map(OsString::as_os_str),
+        working_directory,
+    )
+    .ok_or_else(|| spawn_error(ErrorKind::NotFound.into()))?;
+    let mut command = Command::new(&path);
+    command.args(&args);
+    // The program's name, as it was given, rather than where it was found.
+    command.arg0(arg0.as_deref().unwrap_or(program.as_os_str()));
+    command.env_clear().envs(env);
+    let dir = open_directory(working_directory).map_err(spawn_error)?;
     let dir_fd = dir.as_raw_fd();
     for stdio in 0..3 {
         let slave = Stdio::from(slave.try_clone().map_err(spawn_error)?);
@@ -324,6 +329,35 @@ fn tty_name(master: &OwnedFd) -> std::io::Result<PathBuf> {
     Ok(PathBuf::from(OsStr::from_bytes(name.to_bytes())))
 }
 
+/// Where `program` is: itself, if it names a path, as a name with a `/`
+/// does; otherwise the first file of that name that this user can execute
+/// in the directories of `path`, or of `/usr/bin:/bin` without one, as
+/// `execvp` looks for it, those that are relative, the empty one included,
+/// in the child's `working_directory`. `None` if there is none.
+fn find_program(program: &Path, path: Option<&OsStr>, working_directory: &Path) -> Option<PathBuf> {
+    let name = program.as_os_str();
+    if name.as_bytes().contains(&b'/') {
+        return Some(program.to_owned());
+    }
+    if name.is_empty() {
+        return None;
+    }
+    std::env::split_paths(path.unwrap_or(OsStr::new("/usr/bin:/bin")))
+        .map(|dir| working_directory.join(dir).join(program))
+        .find(|candidate| executable(candidate))
+}
+
+/// Whether `path` is a file that this user can execute.
+fn executable(path: &Path) -> bool {
+    let Ok(name) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `name` is a C string that lives through the call, which only
+    // looks at the file.
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+        && unsafe { libc::access(name.as_ptr(), libc::X_OK) } == 0
+}
+
 /// How a working directory is opened: to be entered, not read, so that a
 /// directory that can be searched but not listed is entered, as `chdir`
 /// enters it, and a path that is not a directory fails at once, a FIFO's
@@ -565,6 +599,60 @@ fn environment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_program_that_is_not_there_fails_without_the_spawns_lock() {
+        let held = SPAWNING.lock().unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let spawning = std::thread::spawn(move || {
+            let options = Options::new(
+                Program::command("bolt-no-such-program", [""; 0]),
+                "xterm-256color",
+            );
+            sender.send(spawn(&options).map(drop)).unwrap();
+        });
+        let failed = receiver.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        spawning.join().unwrap();
+        assert!(
+            matches!(&failed, Ok(Err(Error::Spawn { source, .. })) if source.kind() == ErrorKind::NotFound),
+            "{failed:?}"
+        );
+    }
+
+    #[test]
+    fn a_program_is_found_as_execvp_finds_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("bolt-pty-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["a", "b", "c/tool"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+        }
+        // Not executable in `a`, a directory in `c`, and executable in `b`.
+        std::fs::write(dir.join("a/tool"), "").unwrap();
+        std::fs::write(dir.join("b/tool"), "").unwrap();
+        std::fs::set_permissions(dir.join("b/tool"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let path = |dirs: &str| OsString::from(dirs);
+        let find = |program: &str, path: Option<&OsString>| {
+            find_program(Path::new(program), path.map(OsString::as_os_str), &dir)
+        };
+        let all = path(&format!("/nonexistent:{0}/a:{0}/c:{0}/b", dir.display()));
+        assert_eq!(find("tool", Some(&all)), Some(dir.join("b/tool")));
+        // Relative to the working directory, the empty entry too.
+        assert_eq!(find("tool", Some(&path("a:c:b"))), Some(dir.join("b/tool")));
+        assert_eq!(find("tool", Some(&path(""))), None);
+        // A name with a slash is a path; without `PATH`, the system's.
+        assert_eq!(find("./tool", Some(&all)), Some(PathBuf::from("./tool")));
+        let system = find("sh", None).unwrap();
+        assert!(
+            ["/usr/bin/sh", "/bin/sh"]
+                .map(PathBuf::from)
+                .contains(&system)
+        );
+        assert_eq!(find("", Some(&all)), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_directory_that_cannot_be_opened_fails_without_the_spawns_lock() {

@@ -473,3 +473,14 @@ fn a_working_directory_that_is_a_fifo_fails_without_waiting_for_a_writer() {
         "{failed:?}"
     );
 }
+
+#[test]
+fn a_program_found_in_path_keeps_its_name_as_given() {
+    let pty = spawn(&Options::new(
+        Program::command("sh", ["-c", r#"echo "arg0:$0""#]),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let text = Output::new(pty.reader().unwrap()).rest();
+    assert!(text.contains("arg0:sh\r\n"), "{text:?}");
+}

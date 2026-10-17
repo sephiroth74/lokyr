@@ -119,10 +119,16 @@ fn remove_stale_homes() {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
+        // A process id as a recorder writes it, without a sign or leading
+        // zeros.
         let Some(pid) = name
             .strip_prefix(HOME_PREFIX)
             .and_then(|rest| rest.rsplit_once('-'))
-            .and_then(|(_, pid)| pid.parse::<libc::pid_t>().ok())
+            .and_then(|(_, pid)| {
+                pid.parse::<libc::pid_t>()
+                    .ok()
+                    .filter(|id| id.to_string() == pid)
+            })
         else {
             continue;
         };

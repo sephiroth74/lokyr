@@ -109,10 +109,17 @@ fn remove_stale_staging(out: &Path) {
     let prefix = staging_prefix();
     for entry in entries.flatten() {
         let name = entry.file_name();
+        // A process id as a run writes it, without a sign or leading zeros.
+        // A file of that name stays, as does the target of a link, which
+        // `remove_dir_all` leaves.
         let Some(pid) = name
             .to_str()
             .and_then(|name| name.strip_prefix(&prefix))
-            .and_then(|pid| pid.parse::<libc::pid_t>().ok())
+            .and_then(|pid| {
+                pid.parse::<libc::pid_t>()
+                    .ok()
+                    .filter(|id| id.to_string() == pid)
+            })
         else {
             continue;
         };
@@ -390,14 +397,21 @@ mod tests {
         let killed = out.join(format!("{}{}", staging_prefix(), child.id()));
         // A process that is not this user's, which runs.
         let running = out.join(format!("{}1", staging_prefix()));
+        // Names that only look like a staging directory's.
         let other = out.join(".other-1");
-        for dir in [&killed, &running, &other] {
+        let signed = out.join(format!("{}+{}", staging_prefix(), child.id()));
+        let padded = out.join(format!("{}00{}", staging_prefix(), child.id()));
+        for dir in [&killed, &running, &other, &signed, &padded] {
             fs::create_dir_all(dir.join("78")).unwrap();
         }
+        // A file, not a directory.
+        let file = out.join(format!("{}{}", staging_prefix(), u32::MAX / 2));
+        fs::write(&file, b"").unwrap();
         compile(&workspace_root().join(SOURCE), &out).unwrap();
         assert!(!killed.exists());
-        assert!(running.exists());
-        assert!(other.exists());
+        for kept in [&running, &other, &signed, &padded, &file] {
+            assert!(kept.exists(), "{}", kept.display());
+        }
         fs::remove_dir_all(&out).unwrap();
     }
 
