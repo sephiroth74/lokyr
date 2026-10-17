@@ -12,11 +12,18 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 pub use io::{PtyReader, PtyWriter};
 
 use crate::{Error, Exit, Options, Program, Size};
+
+/// Held while this crate spawns: on macOS, `std` opens the pipe through
+/// which a spawn learns that its child failed to exec, then marks it closed
+/// on exec, and a spawn on another thread in between would give its child
+/// that pipe, which would keep this spawn waiting until the other child
+/// exits.
+static SPAWNING: Mutex<()> = Mutex::new(());
 
 /// A pseudo-terminal, with the program that runs in it.
 ///
@@ -72,7 +79,10 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         command.pre_exec(lead_session);
     }
     let (closed, closing) = closing::closing().map_err(Error::Open)?;
-    let child = command.spawn().map_err(spawn_error)?;
+    let child = {
+        let _spawning = SPAWNING.lock().unwrap_or_else(PoisonError::into_inner);
+        command.spawn().map_err(spawn_error)?
+    };
     // The child has its copies of the terminal's side; the parent keeps
     // none, so that the master reads the end when the program goes.
     drop(command);

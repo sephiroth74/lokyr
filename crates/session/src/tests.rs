@@ -566,3 +566,45 @@ fn a_snapshot_lets_the_next_change_wake_the_main_thread() {
         thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn a_wake_that_always_panics_ends_the_session_without_aborting() {
+    // As a wake that sends to an event loop that has gone would.
+    let session = Session::spawn(&sh("echo hello; sleep 30"), || {
+        panic!("the event loop has gone");
+    })
+    .unwrap();
+    let start = Instant::now();
+    while !session.has_ended() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the session goes on"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn replies_far_longer_than_their_queries_wait_up_to_a_limit() {
+    // A title of 60 KiB, reported again and again, and never read.
+    let script = r#"stty raw -echo; printf '\033]2;%s\007' "$(head -c 61440 /dev/zero | tr '\0' t)"; q=$(printf '\033[21t'); exec yes "$q""#;
+    let mut options = sh(script);
+    options.terminal.title_reports = true;
+    let session = Session::spawn(&options, || {}).unwrap();
+    let start = Instant::now();
+    let mut most = 0;
+    // Each slice's replies, before the limits, take megabytes: a hundred
+    // fill the queue many times over.
+    while session.slices() < 100 {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "{} slices",
+            session.slices()
+        );
+        // The replies that wait, and the one that the writer writes.
+        most = most.max(session.shared.queue.replies());
+        thread::sleep(Duration::from_millis(5));
+    }
+    // The queue's limit, and a take of the terminal's replies at most.
+    assert!(most <= 2 * REPLY_BYTES + 4 * SLICE, "{most} bytes waited");
+}

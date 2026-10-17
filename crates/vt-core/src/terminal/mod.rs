@@ -678,7 +678,10 @@ impl Terminal {
 
     /// Takes what the terminal has to send back to the program, such as
     /// replies to queries, oldest first, for the embedder to write to the
-    /// PTY.
+    /// PTY. The replies to queries that wait take a MiB at most: past it, a
+    /// reply is dropped whole until the next take, as a program can ask for
+    /// replies far longer than its queries. An answer to the clipboard,
+    /// which the user allowed, goes whole.
     pub fn take_replies(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.replies)
     }

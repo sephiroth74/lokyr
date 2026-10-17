@@ -12,8 +12,11 @@ pub(crate) const REPLY_BYTES: usize = 1 << 20;
 struct State {
     /// The writes, each with whether it is a reply.
     entries: VecDeque<(Vec<u8>, bool)>,
-    /// The bytes of the replies among them.
+    /// The bytes of the replies among them, and of the reply that the
+    /// writer writes, until it asks for the next entry.
     replies: usize,
+    /// The bytes of the reply that the writer writes.
+    in_flight: usize,
     closed: bool,
 }
 
@@ -76,6 +79,7 @@ impl Queue {
         state.closed = true;
         state.entries.clear();
         state.replies = 0;
+        state.in_flight = 0;
         self.ready.notify_one();
     }
 
@@ -84,16 +88,18 @@ impl Queue {
         self.state().closed
     }
 
-    /// Waits for the next entry, or for the queue to close.
+    /// Waits for the next entry, or for the queue to close; the entry
+    /// before, which the writer has written, no longer counts.
     pub(crate) fn next(&self) -> Option<Vec<u8>> {
         let mut state = self.state();
+        state.replies -= std::mem::take(&mut state.in_flight);
         loop {
             if state.closed {
                 return None;
             }
             if let Some((bytes, reply)) = state.entries.pop_front() {
                 if reply {
-                    state.replies -= bytes.len();
+                    state.in_flight = bytes.len();
                 }
                 return Some(bytes);
             }
@@ -136,13 +142,18 @@ mod tests {
         queue.push_replies(b"dropped".to_vec());
         queue.push(b"key".to_vec());
         assert_eq!(queue.replies(), REPLY_BYTES);
-        // A reply written makes room for the next.
+        // A reply that the writer writes still counts, until it asks for
+        // the next entry, having written it.
         assert_eq!(queue.next(), Some(reply.clone()));
+        assert_eq!(queue.replies(), REPLY_BYTES);
+        queue.push_replies(b"dropped".to_vec());
+        assert_eq!(queue.next(), Some(reply));
         assert_eq!(queue.replies(), REPLY_BYTES / 2);
         queue.push_replies(b"kept".to_vec());
-        assert_eq!(queue.next(), Some(reply));
         assert_eq!(queue.next(), Some(b"key".to_vec()));
         assert_eq!(queue.next(), Some(b"kept".to_vec()));
+        queue.push(b"last".to_vec());
+        assert_eq!(queue.next(), Some(b"last".to_vec()));
         assert_eq!(queue.replies(), 0);
     }
 

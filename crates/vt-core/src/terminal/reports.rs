@@ -14,6 +14,12 @@ use super::{CursorShape, Event, Terminal};
 use crate::page::{Color, Style, Underline};
 use crate::parser::{Params, StringEnd};
 
+/// The bytes of the replies to programs' queries that wait to be taken, at
+/// most: past them, a reply is dropped whole, as some queries make replies
+/// far longer than they are, and a program that sends them without
+/// reading would grow memory without end.
+pub(super) const REPLY_BYTES: usize = 1 << 20;
+
 /// The longest DCS query that the terminal reads.
 const QUERY_BYTES: usize = 1024;
 
@@ -30,8 +36,17 @@ pub(super) enum Query {
 }
 
 impl Terminal {
-    /// Queues `bytes` to send back to the program.
+    /// Queues `bytes`, a reply to a program's query, unless the replies
+    /// that wait would take more than [`REPLY_BYTES`].
     pub(super) fn reply(&mut self, bytes: &[u8]) {
+        if self.replies.len() + bytes.len() <= REPLY_BYTES {
+            self.replies.extend_from_slice(bytes);
+        }
+    }
+
+    /// Queues `bytes`, the embedder's answer to a request that the user
+    /// allowed, whatever its length.
+    pub(super) fn answer(&mut self, bytes: &[u8]) {
         self.replies.extend_from_slice(bytes);
     }
 

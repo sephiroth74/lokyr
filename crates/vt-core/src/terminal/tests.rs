@@ -4321,3 +4321,35 @@ proptest! {
         assert_tables_counted(&term.terminal.primary);
     }
 }
+
+#[test]
+fn replies_wait_up_to_a_limit_but_an_allowed_clipboard_goes_whole() {
+    let mut term = Term::new(10, 2);
+    // XTGETTCAP for `sgr`, whose reply is many times as long as its query.
+    let query = "\x1bP+q736772\x1b\\";
+    term.feed(query.repeat(64 * 1024 / query.len()));
+    let replies = term.terminal.take_replies();
+    let limit = super::reports::REPLY_BYTES;
+    assert!(replies.len() <= limit, "{} bytes", replies.len());
+    assert!(replies.len() > limit / 2, "{} bytes", replies.len());
+    assert!(replies.ends_with(b"\x1b\\"), "whole replies only");
+    // A take makes room again.
+    term.feed(query);
+    assert!(!term.terminal.take_replies().is_empty());
+    // An answer to the clipboard, which the user allowed, goes whole.
+    let options = Options {
+        clipboard_reads: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1b]52;c;?\x07");
+    let [Event::ClipboardRead(request)] = term.terminal.take_events()[..] else {
+        panic!("a read");
+    };
+    term.feed(query.repeat(64 * 1024 / query.len()));
+    term.terminal
+        .reply_clipboard(request, &vec![b'x'; 2 * limit]);
+    let replies = term.terminal.take_replies();
+    assert!(replies.len() > 2 * limit, "{} bytes", replies.len());
+    assert!(replies.ends_with(b"\x07"));
+}

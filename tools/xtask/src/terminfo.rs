@@ -54,14 +54,48 @@ fn workspace_root() -> PathBuf {
 
 /// Compiles `source` into the directory `out`, checks the entry, and
 /// returns the compiled file.
+///
+/// `tic` warns that a name is defined twice when the entry is in its
+/// directory already, so it compiles into a new directory, where the entry
+/// is checked, and the entry's files then move into `out`, past the other
+/// entries that `out` may hold.
 fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
+    let staging = Staging(out.join(format!(".{ENTRY}-{}", std::process::id())));
+    let _ = fs::remove_dir_all(&staging.0);
+    fs::create_dir_all(&staging.0)?;
+    check(source, &staging.0)?;
+    for dir in fs::read_dir(&staging.0)? {
+        let dir = dir?;
+        for file in fs::read_dir(dir.path())? {
+            let file = file?;
+            let into = out.join(dir.file_name());
+            fs::create_dir_all(&into)?;
+            fs::rename(file.path(), into.join(file.file_name())).with_context(|| {
+                format!("moving {} into {}", file.path().display(), into.display())
+            })?;
+        }
+    }
+    compiled_file(out)
+}
+
+/// A directory that is removed as it drops.
+struct Staging(PathBuf);
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Compiles `source` into `dir`, which holds no entry, and checks it.
+fn check(source: &Path, dir: &Path) -> Result<()> {
     let tic = PathBuf::from(std::env::var_os("TIC").unwrap_or_else(|| "tic".into()));
     let infocmp = tic.with_file_name("infocmp");
-    fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     let output = Command::new(&tic)
         .arg("-x")
         .arg("-o")
-        .arg(out)
+        .arg(dir)
         .arg(source)
         .output()
         .with_context(|| format!("running {}", tic.display()))?;
@@ -74,7 +108,7 @@ fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
     }
     let output = Command::new(&infocmp)
         .args(["-x", "-1", "-A"])
-        .arg(out)
+        .arg(dir)
         .arg(ENTRY)
         .output()
         .with_context(|| format!("running {}", infocmp.display()))?;
@@ -88,12 +122,12 @@ fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
         &capabilities(&fs::read_to_string(source)?)?,
         &capabilities(&String::from_utf8(output.stdout)?)?,
     )?;
-    let compiled = compiled_file(out)?;
+    let compiled = compiled_file(dir)?;
     let bytes = fs::read(&compiled)?;
     if bytes.get(..2) != Some(&LEGACY_MAGIC[..]) {
-        bail!("{} is not in the legacy format", compiled.display());
+        bail!("{} is not in the legacy format", ENTRY);
     }
-    Ok(compiled)
+    Ok(())
 }
 
 /// The compiled entry in `out`, under its first letter or the letter's
@@ -272,6 +306,25 @@ mod tests {
     }
 
     #[test]
+    fn the_entry_compiles_again_into_a_directory_that_has_it() {
+        let out = temp_dir("again");
+        let source = workspace_root().join(SOURCE);
+        let first = compile(&source, &out).unwrap();
+        // Another entry, which a directory such as `~/.terminfo` holds.
+        let other = first.with_file_name("other");
+        fs::write(&other, b"another entry").unwrap();
+        let again = compile(&source, &out).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(fs::read(&other).unwrap(), b"another entry");
+        let names: Vec<String> = fs::read_dir(&out)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().all(|name| !name.starts_with('.')), "{names:?}");
+        fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
     fn a_warning_from_tic_fails_the_task() {
         let out = temp_dir("warning");
         fs::create_dir_all(&out).unwrap();
@@ -279,8 +332,11 @@ mod tests {
         // for another name.
         let source = out.join("warns.terminfo");
         fs::write(&source, "xterm-bolt|Bolt,\n\tam,\n").unwrap();
-        let error = compile(&source, &out.join("compiled")).unwrap_err();
+        let compiled = out.join("compiled");
+        let error = compile(&source, &compiled).unwrap_err();
         assert!(error.to_string().contains("cleanly"), "{error:#}");
+        // An entry that fails is not installed.
+        assert_eq!(fs::read_dir(&compiled).unwrap().count(), 0);
         fs::remove_dir_all(&out).unwrap();
     }
 

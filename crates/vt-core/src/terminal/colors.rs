@@ -149,13 +149,18 @@ impl Terminal {
 
     /// Queues `OSC` `text`, ended as the query that asked for it was.
     pub(super) fn reply_osc(&mut self, text: &str, end: StringEnd) {
-        let terminator = if end == StringEnd::Bel {
-            "\x07"
-        } else {
-            "\x1b\\"
-        };
-        self.reply(format!("\x1b]{text}{terminator}").as_bytes());
+        self.reply(osc(text, end).as_bytes());
     }
+}
+
+/// `text` as an OSC string, ended with BEL or ST as `end` says.
+pub(super) fn osc(text: &str, end: StringEnd) -> String {
+    let terminator = if end == StringEnd::Bel {
+        "\x07"
+    } else {
+        "\x1b\\"
+    };
+    format!("\x1b]{text}{terminator}")
 }
 
 /// `color` as xterm reports it: `rgb:` and 16 bits of each component, in

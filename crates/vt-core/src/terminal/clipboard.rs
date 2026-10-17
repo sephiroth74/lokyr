@@ -59,7 +59,8 @@ impl Terminal {
         } else {
             StringEnd::St
         };
-        self.reply_osc(&format!("52;{letter};{}", encode(data)), end);
+        // What the user allowed goes whole, past the replies' limit.
+        self.answer(super::colors::osc(&format!("52;{letter};{}", encode(data)), end).as_bytes());
     }
 }
 

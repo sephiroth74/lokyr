@@ -10,6 +10,7 @@ mod lock;
 mod queue;
 
 use std::io::{self, ErrorKind, Write};
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, MutexGuard};
 use std::thread;
@@ -181,7 +182,9 @@ impl Session {
     }
 
     /// Whether the program's output has ended: the program, and every
-    /// process that it left, have closed the terminal.
+    /// process that it left, have closed the terminal; or the session can
+    /// no longer read it, as when its I/O thread panicked, with the program
+    /// still there.
     pub fn has_ended(&self) -> bool {
         self.shared.ended.load(Ordering::Acquire)
     }
@@ -316,7 +319,13 @@ impl Drop for Ending<'_> {
         self.0.terminal.lock_in_turn().end_synchronized_output();
         self.0.ended.store(true, Ordering::Release);
         self.0.woken.store(true, Ordering::Release);
-        (self.0.wake)();
+        if thread::panicking() {
+            // A wake that panics again, as the thread unwinds, would abort
+            // the app.
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| (self.0.wake)()));
+        } else {
+            (self.0.wake)();
+        }
     }
 }
 
