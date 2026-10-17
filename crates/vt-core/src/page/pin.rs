@@ -1,6 +1,8 @@
 //! Pins: cells of a page list that the list keeps track of while their rows
 //! move, for selections, marks and search results.
 
+use std::collections::BTreeMap;
+
 use super::PageId;
 
 /// A cell of a [`PageList`](super::PageList): a column of a row of a page.
@@ -115,5 +117,59 @@ impl Pins {
     /// How many pins are in use.
     pub(super) fn len(&self) -> usize {
         self.slots.len() - self.free.len()
+    }
+}
+
+/// The pins of a node, by row, so that a row's pins are found, moved and let
+/// go without going through the page's others.
+#[derive(Debug, Default)]
+pub(super) struct RowPins(BTreeMap<u16, Vec<u32>>);
+
+impl RowPins {
+    /// Lists the pin at `index`, in row `row`.
+    pub(super) fn push(&mut self, row: u16, index: u32) {
+        self.0.entry(row).or_default().push(index);
+    }
+
+    /// Lets go of the pin at `index`, in row `row`.
+    pub(super) fn remove(&mut self, row: u16, index: u32) {
+        let Some(pins) = self.0.get_mut(&row) else {
+            return;
+        };
+        if let Some(at) = pins.iter().position(|&other| other == index) {
+            pins.swap_remove(at);
+        }
+        if pins.is_empty() {
+            self.0.remove(&row);
+        }
+    }
+
+    /// The pins of row `row`, which the node no longer lists.
+    pub(super) fn take_row(&mut self, row: u16) -> Vec<u32> {
+        self.0.remove(&row).unwrap_or_default()
+    }
+
+    /// The rows that have pins, in order, with their pins, which the node
+    /// no longer lists.
+    pub(super) fn take(&mut self) -> BTreeMap<u16, Vec<u32>> {
+        std::mem::take(&mut self.0)
+    }
+
+    /// Every pin, row by row, which the node no longer lists.
+    pub(super) fn take_all(&mut self) -> Vec<u32> {
+        self.take().into_values().flatten().collect()
+    }
+
+    /// Every pin, with its row, row by row.
+    #[cfg(test)]
+    pub(super) fn iter(&self) -> impl Iterator<Item = (u16, u32)> + '_ {
+        self.0
+            .iter()
+            .flat_map(|(&row, pins)| pins.iter().map(move |&pin| (row, pin)))
+    }
+
+    /// Lets go of every pin.
+    pub(super) fn clear(&mut self) {
+        self.0.clear();
     }
 }

@@ -272,18 +272,21 @@ pub(crate) fn find_backward(
     Ok(None)
 }
 
-/// Every match of `query` that starts in a row of `list` whose index is in
-/// `rows`, in order, unless `cancel` is set first: each logical line is
-/// read once, and its matches gone through once.
+/// The first `limit` matches of `query` that start in a row of `list` whose
+/// index is in `rows`, in order, and how many there are, unless `cancel` is
+/// set first: each logical line is read once, and its matches gone through
+/// once.
 pub(crate) fn find_all(
     list: &PageList,
     rows: Range<usize>,
     query: &Query,
+    limit: usize,
     cancel: &AtomicBool,
-) -> Result<Vec<(Position, Position)>, Cancelled> {
+) -> Result<(Vec<(Position, Position)>, usize), Cancelled> {
     let mut found = Vec::new();
+    let mut count = 0;
     if rows.is_empty() {
-        return Ok(found);
+        return Ok((found, count));
     }
     // The index of the first row of the line that is read next.
     let mut index = line_start(list, rows.start);
@@ -299,9 +302,12 @@ pub(crate) fn find_all(
         query.each(&line.text(), cancel, |range| {
             let (line_row, _) = line.cell_at(range.start);
             if rows.contains(&(first + line_row)) {
-                found.push(line.cells_of(range));
+                if found.len() < limit {
+                    found.push(line.cells_of(range));
+                }
+                count += 1;
             }
         })?;
     }
-    Ok(found)
+    Ok((found, count))
 }

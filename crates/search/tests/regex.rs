@@ -278,17 +278,40 @@ fn every_match_of_a_long_line_comes_in_one_pass() {
 }
 
 #[test]
+fn a_pass_pins_as_many_matches_as_it_is_asked_and_counts_them_all() {
+    let mut terminal = printed(80, 801, &"ab ".repeat(21_333));
+    let query = Query::literal("ab", Case::Sensitive).unwrap();
+    let rows = terminal.screen_rows_mut();
+    let found = bolt_search::find_all(rows, &query, 0..801, 10, &AtomicBool::new(false)).unwrap();
+    assert_eq!(found.count, 21_333);
+    assert_eq!(found.pinned.len(), 10);
+    assert_eq!(rows.pins(), 20, "a start and an end each");
+    let first = rows.pin_position(found.pinned[0].start).unwrap();
+    assert_eq!(
+        (rows.row_index(first.page, first.row), first.col),
+        (Some(0), 0)
+    );
+    for hit in found.pinned {
+        hit.release(rows);
+    }
+    assert_eq!(rows.pins(), 0);
+}
+
+#[test]
 fn a_cancelled_pass_stops() {
     let mut terminal = printed(10, 2, "abc");
     let rows = terminal.screen_rows_mut();
     let query = regex("b");
     assert_eq!(
-        bolt_search::find_all(rows, &query, 0..2, &AtomicBool::new(true)),
+        bolt_search::find_all(rows, &query, 0..2, usize::MAX, &AtomicBool::new(true)),
         Err(Cancelled)
     );
     assert_eq!(
-        bolt_search::find_all(rows, &query, 1..1, &AtomicBool::new(false)),
-        Ok(Vec::new())
+        bolt_search::find_all(rows, &query, 1..1, usize::MAX, &AtomicBool::new(false)),
+        Ok(bolt_search::Matches {
+            pinned: Vec::new(),
+            count: 0
+        })
     );
 }
 
@@ -443,8 +466,11 @@ fn all_starts(
     rows: std::ops::Range<usize>,
 ) -> Vec<Position> {
     let list = terminal.screen_rows_mut();
-    let found = bolt_search::find_all(list, query, rows, &AtomicBool::new(false)).unwrap();
+    let found =
+        bolt_search::find_all(list, query, rows, usize::MAX, &AtomicBool::new(false)).unwrap();
+    assert_eq!(found.count, found.pinned.len());
     found
+        .pinned
         .into_iter()
         .map(|hit| {
             let start = list.pin_position(hit.start).unwrap();

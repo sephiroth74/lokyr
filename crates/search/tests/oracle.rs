@@ -128,8 +128,10 @@ fn found(terminal: &mut Terminal, query: &Query) -> (Vec<Position>, Vec<Position
             }
         };
     }
-    let all = bolt_search::find_all(list, query, 0..list.total_rows(), &cancel).unwrap();
+    let all =
+        bolt_search::find_all(list, query, 0..list.total_rows(), usize::MAX, &cancel).unwrap();
     let all = all
+        .pinned
         .into_iter()
         .map(|hit| {
             let start = list.pin_position(hit.start).unwrap();

@@ -163,6 +163,7 @@ The metadata fits in one byte.
   - A pin is a cell of the list, `(page, row, column)`, that the list keeps track of: `PageList::pin` puts one on a cell, `pin_position` says where the cell is now, and `unpin` lets it go. `row_at` and `row_index` go between a row's index in the list, oldest first, and its page and row.
   - A pin follows its cell. Scrolling moves no row, so pins stay; when rows or cells move, as scroll regions, IL, DL, RI, ICH, DCH and insert mode move them, their pins go along; a page that grows keeps them; reflow carries them to where their cells go, and a cold page keeps them.
   - When its cell leaves the list, with its page or the scrollback, or a move drops it, the pin is lost: `pin_position` returns `None`, never a dangling position. Erasing a cell where it is leaves its pins.
+  - A page keeps its pins by row, so that letting a pin go looks through its row's pins only, and a row that moves takes its pins along without the page's others being looked at: many pins in a page, as a search's results, cost nothing to the rows that move without them.
   - Pins live in a slab with generations, so a lost pin frees its slot at once and its id goes stale. Each page's node lists the pins in it, so a move looks only at the pins of the two pages involved, and a page without pins costs nothing.
   - Used by selection, OSC 133 marks, search results, images and link hover.
 

@@ -121,25 +121,37 @@ pub fn find(
     Ok(Some(Match { start, end }))
 }
 
-/// Every match of `query` that starts in a row of `list` whose index, oldest
+/// What [`find_all`] found.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Matches {
+    /// The first matches, in order, pinned: as many as the search's limit
+    /// at most.
+    pub pinned: Vec<Match>,
+    /// How many matches there are, those past the limit too.
+    pub count: usize,
+}
+
+/// The matches of `query` that start in a row of `list` whose index, oldest
 /// first, is in `rows`, in order: the matches that [`find`] steps through,
-/// found in one pass, for counting them and showing them all. Each logical
-/// line that holds one of the rows is read once, whole, and its matches gone
-/// through once, so that a long line of many matches takes time in
-/// proportion to its length.
+/// found in one pass, for counting them and showing them. The first `limit`
+/// are pinned, and the others only counted, as pins cost memory and time to
+/// keep. Each logical line that holds one of the rows is read once, whole,
+/// and its matches gone through once.
 ///
 /// The search stops with [`Cancelled`] as [`find`] does, and reads cold
-/// pages as it does. A match whose cells cannot be pinned is left out.
+/// pages as it does. A match whose cells cannot be pinned is left out of
+/// the pinned ones.
 pub fn find_all(
     list: &mut PageList,
     query: &Query,
     rows: Range<usize>,
+    limit: usize,
     cancel: &AtomicBool,
-) -> Result<Vec<Match>, Cancelled> {
+) -> Result<Matches, Cancelled> {
     let total = list.total_rows();
     let rows = rows.start.min(total)..rows.end.min(total);
-    let found = line::find_all(list, rows, query, cancel)?;
-    Ok(found
+    let (found, count) = line::find_all(list, rows, query, limit, cancel)?;
+    let pinned = found
         .into_iter()
         .filter_map(|(start, end)| {
             let start = list.pin(start)?;
@@ -149,5 +161,6 @@ pub fn find_all(
             };
             Some(Match { start, end })
         })
-        .collect())
+        .collect();
+    Ok(Matches { pinned, count })
 }

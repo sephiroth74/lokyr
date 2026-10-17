@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use super::compact::CompactPage;
-use super::pin::{Pins, Place};
+use super::pin::{Pins, Place, RowPins};
 use super::{
     Capacity, Cell, Content, Page, PinId, Position, Row, RowFlag, TableFull, WhenFull, Width,
 };
@@ -199,8 +199,8 @@ struct Node {
     generation: u32,
     /// The page while it is cold, in place of `page`.
     cold: Option<CompactPage>,
-    /// The pins in the page.
-    pins: Vec<u32>,
+    /// The pins in the page, by row.
+    pins: RowPins,
 }
 
 /// The rows of a screen and of its scrollback, in pages of one width.
@@ -490,7 +490,7 @@ impl PageList {
             col: position.col,
         });
         let index = self.pins.index(pin).expect("a new pin is in use");
-        self.nodes[node as usize].pins.push(index);
+        self.nodes[node as usize].pins.push(position.row, index);
         Some(pin)
     }
 
@@ -520,10 +520,9 @@ impl PageList {
             return;
         };
         let index = self.pins.index(pin).expect("a pin with a place is in use");
-        let pins = &mut self.nodes[place.node as usize].pins;
-        if let Some(at) = pins.iter().position(|&other| other == index) {
-            pins.swap_remove(at);
-        }
+        self.nodes[place.node as usize]
+            .pins
+            .remove(place.row, index);
         self.pins.lose(index);
     }
 
@@ -754,14 +753,9 @@ impl PageList {
 
     /// Loses the pins in row `row` of node `node`.
     fn lose_row_pins(&mut self, node: u32, row: u16) {
-        let pins = &mut self.pins;
-        self.nodes[node as usize].pins.retain(|&pin| {
-            let lost = pins.place_mut(pin).row == row;
-            if lost {
-                pins.lose(pin);
-            }
-            !lost
-        });
+        for pin in self.nodes[node as usize].pins.take_row(row) {
+            self.pins.lose(pin);
+        }
     }
 
     /// Moves the cells of `columns` in row `from` of the screen into the
@@ -891,7 +885,7 @@ impl PageList {
                 (None, None) => panic!("a linked node has a page"),
             };
             node.generation = node.generation.wrapping_add(1);
-            let mut pins = std::mem::take(&mut node.pins);
+            let mut pins = node.pins.take_all();
             let next = node.next;
             let places = &self.pins;
             pins.sort_by_key(|&pin| places.place_of(pin).map(|place| (place.row, place.col)));
@@ -1136,7 +1130,7 @@ impl PageList {
     fn move_pin(&mut self, pin: u32, at: (u32, u16, u16)) {
         let (node, row, col) = at;
         *self.pins.place_mut(pin) = Place { node, row, col };
-        self.nodes[node as usize].pins.push(pin);
+        self.nodes[node as usize].pins.push(row, pin);
     }
 
     /// Settles the screen after rewrapping, and returns where the cursor,
@@ -1228,7 +1222,7 @@ impl PageList {
                             row: to,
                             col: place.col,
                         };
-                        self.nodes[tail as usize].pins.push(pin);
+                        self.nodes[tail as usize].pins.push(to, pin);
                     } else {
                         self.pins.lose(pin);
                     }
@@ -1363,16 +1357,16 @@ impl PageList {
             // cold.
             self.page_at_mut(head).drop_first_rows(extra);
             self.total_rows -= usize::from(extra);
-            let pins = &mut self.pins;
-            self.nodes[head as usize].pins.retain(|&pin| {
-                let place = pins.place_mut(pin);
-                if place.row < extra {
-                    pins.lose(pin);
-                    return false;
+            for (row, listed) in self.nodes[head as usize].pins.take() {
+                for pin in listed {
+                    if row < extra {
+                        self.pins.lose(pin);
+                    } else {
+                        self.pins.place_mut(pin).row -= extra;
+                        self.nodes[head as usize].pins.push(row - extra, pin);
+                    }
                 }
-                place.row -= extra;
-                true
-            });
+            }
         }
     }
 
@@ -1381,41 +1375,27 @@ impl PageList {
     /// the pins of the cells that the move drops.
     fn move_pins(&mut self, from: (u32, u16), to: (u32, u16), columns: Range<u16>) {
         let ((source, from_row), (target, to_row)) = (from, to);
-        let pins = &mut self.pins;
-        let moves = |place: &Place, row| place.row == row && columns.contains(&place.col);
-        self.nodes[target as usize].pins.retain(|&pin| {
-            let dropped = moves(pins.place_mut(pin), to_row);
-            if dropped {
-                pins.lose(pin);
+        // Only the pins of the two rows: the page's others stay as they are.
+        for pin in self.nodes[target as usize].pins.take_row(to_row) {
+            if columns.contains(&self.pins.place_mut(pin).col) {
+                self.pins.lose(pin);
+            } else {
+                self.nodes[target as usize].pins.push(to_row, pin);
             }
-            !dropped
-        });
-        if source == target {
-            for &pin in &self.nodes[source as usize].pins {
-                let place = pins.place_mut(pin);
-                if moves(place, from_row) {
-                    place.row = to_row;
-                }
-            }
-            return;
         }
-        let [source_node, target_node] = self
-            .nodes
-            .get_disjoint_mut([source as usize, target as usize])
-            .expect("two nodes of the list");
-        source_node.pins.retain(|&pin| {
-            let place = pins.place_mut(pin);
-            if !moves(place, from_row) {
-                return true;
+        for pin in self.nodes[source as usize].pins.take_row(from_row) {
+            let place = self.pins.place_mut(pin);
+            if columns.contains(&place.col) {
+                *place = Place {
+                    node: target,
+                    row: to_row,
+                    col: place.col,
+                };
+                self.nodes[target as usize].pins.push(to_row, pin);
+            } else {
+                self.nodes[source as usize].pins.push(from_row, pin);
             }
-            *place = Place {
-                node: target,
-                row: to_row,
-                col: place.col,
-            };
-            target_node.pins.push(pin);
-            false
-        });
+        }
     }
 
     /// Moves the pins in `columns` of row `row` of a node to the column that
@@ -1427,23 +1407,19 @@ impl PageList {
         columns: Range<u16>,
         to: impl Fn(u16) -> Option<u16>,
     ) {
-        let pins = &mut self.pins;
-        self.nodes[node as usize].pins.retain(|&pin| {
-            let place = pins.place_mut(pin);
-            if place.row != row || !columns.contains(&place.col) {
-                return true;
+        for pin in self.nodes[node as usize].pins.take_row(row) {
+            let place = self.pins.place_mut(pin);
+            let kept = if columns.contains(&place.col) {
+                to(place.col).map(|col| place.col = col).is_some()
+            } else {
+                true
+            };
+            if kept {
+                self.nodes[node as usize].pins.push(row, pin);
+            } else {
+                self.pins.lose(pin);
             }
-            match to(place.col) {
-                Some(col) => {
-                    place.col = col;
-                    true
-                }
-                None => {
-                    pins.lose(pin);
-                    false
-                }
-            }
-        });
+        }
     }
 
     /// The id of the page of node `index`.
@@ -1528,15 +1504,13 @@ impl PageList {
             next: NONE,
             generation: 0,
             cold: None,
-            pins: Vec::new(),
+            pins: RowPins::default(),
         };
         let index = match self.free.pop() {
             Some(index) => {
-                // The slot keeps the buffer of its pins.
                 let slot = &mut self.nodes[index as usize];
                 *slot = Node {
                     generation: slot.generation,
-                    pins: std::mem::take(&mut slot.pins),
                     ..node
                 };
                 index
@@ -1571,10 +1545,9 @@ impl PageList {
         let page = node.page.take();
         let cold = node.cold.take();
         node.generation = node.generation.wrapping_add(1);
-        for &pin in &node.pins {
+        for pin in node.pins.take_all() {
             self.pins.lose(pin);
         }
-        node.pins.clear();
         let next = node.next;
         self.head = next;
         if next == NONE {
@@ -2393,6 +2366,58 @@ mod tests {
         let _ = numbers(&list);
     }
 
+    /// Pins every cell of the first `rows` rows of the list.
+    fn pin_rows(list: &mut PageList, rows: usize) -> Vec<PinId> {
+        let mut pins = Vec::new();
+        for index in 0..rows {
+            let (page, row) = list.row_at(index).unwrap();
+            for col in 0..list.cols() {
+                pins.push(list.pin(Position { page, row, col }).unwrap());
+            }
+        }
+        pins
+    }
+
+    #[test]
+    fn many_pins_in_a_page_go_in_time_in_proportion() {
+        // A page's rows full of pins, as a search's matches can be, let go
+        // of from the last, which a page's list of all its pins found at
+        // its end, each after all the others.
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        let rows = usize::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, rows as u32);
+        let pins = pin_rows(&mut list, rows);
+        let (first, _) = list.row_at(0).unwrap();
+        let (last, _) = list.row_at(rows - 1).unwrap();
+        assert_eq!(first, last, "one page");
+        let started = std::time::Instant::now();
+        for pin in pins.into_iter().rev() {
+            list.unpin(pin);
+        }
+        let took = started.elapsed();
+        assert_eq!(list.pins(), 0);
+        assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+    }
+
+    #[test]
+    fn pins_in_the_scrollback_do_not_slow_a_scroll_region() {
+        // Pins in the rows above the screen, in the screen's page.
+        let mut list = PageList::new(80, 24, pages(80, 4));
+        scroll(&mut list, 0, 400);
+        let (screen, _) = list.screen_row_id(0);
+        let (first, _) = list.row_at(0).unwrap();
+        assert_eq!(first, screen, "one page");
+        let pins = pin_rows(&mut list, 300);
+        let started = std::time::Instant::now();
+        for _ in 0..2000 {
+            list.shift_rows_up(1, 22, 1);
+        }
+        let took = started.elapsed();
+        assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+        assert!(pins.iter().all(|&pin| list.pin_position(pin).is_some()));
+        assert_pins_listed(&list);
+    }
+
     #[test]
     fn cold_rows_read_as_they_did_warm() {
         let mut list = short_lines(4);
@@ -2768,12 +2793,13 @@ mod tests {
         let mut index = list.head;
         while index != NONE {
             let node = &list.nodes[index as usize];
-            for &pin in &node.pins {
+            for (row, pin) in node.pins.iter() {
                 let place = list.pins.place_of(pin).expect("a listed pin is in use");
                 assert_eq!(place.node, index, "pin {pin} is listed in its node");
+                assert_eq!(place.row, row, "pin {pin} is listed in its row");
                 assert!(place.row < list.node_len(index));
+                listed += 1;
             }
-            listed += node.pins.len();
             index = node.next;
         }
         assert_eq!(listed, list.pins(), "every pin in use is listed once");
