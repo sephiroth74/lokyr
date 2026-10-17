@@ -190,3 +190,17 @@ fn replies_go_out_while_the_test_does_something_else() {
     assert!(found, "the program never got its reply");
     assert_eq!(inputs(&harness), [b"\x1b[?62;22c"]);
 }
+
+#[test]
+fn a_step_ends_at_its_limit_while_the_program_writes_all_the_time() {
+    let mut harness = harness(20, 3, "exec yes");
+    let started = std::time::Instant::now();
+    harness.sleep(Duration::from_millis(300)).unwrap();
+    assert!(started.elapsed() < Duration::from_secs(3), "slept on");
+    let error = harness
+        .wait("never", Duration::from_millis(300))
+        .unwrap_err();
+    assert!(error.to_string().contains("did not show"), "{error:#}");
+    assert!(started.elapsed() < Duration::from_secs(6), "waited on");
+    harness.hang_up();
+}

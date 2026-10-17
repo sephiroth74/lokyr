@@ -33,9 +33,11 @@ impl PtyReader {
 
     /// Reads what the program wrote into `buf`, waiting for it until
     /// `deadline` at most, or for as long as it takes without one; a
-    /// deadline that has passed reads what is there, without waiting. The end
-    /// comes once the program and every process that it left have closed
-    /// the terminal, or once the PTY has dropped.
+    /// deadline that has passed reads what is there, without waiting, so
+    /// that a program that writes all the time never makes a read time out:
+    /// a caller that reads until a deadline looks at the time after each
+    /// read. The end comes once the program and every process that it left
+    /// have closed the terminal, or once the PTY has dropped.
     pub fn read_until(
         &mut self,
         buf: &mut [u8],
@@ -94,7 +96,8 @@ impl PtyWriter {
     /// Writes some of `buf`, once the program has room for it, waiting for
     /// that until `deadline` at most, or for as long as it takes without
     /// one: how many bytes, or `None` if the deadline came first. A deadline
-    /// that has passed writes what fits, without waiting. A program
+    /// that has passed writes what fits, without waiting, as a read takes
+    /// what is there. A program
     /// that does not read its input keeps the room from coming; once the PTY
     /// drops, this fails with `BrokenPipe`.
     pub fn write_until(

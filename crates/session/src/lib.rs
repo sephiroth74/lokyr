@@ -282,20 +282,22 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
     let mut update = 0;
     let mut deadline = None;
     loop {
+        // A read past the deadline still takes what is there, so that output
+        // that never stops never times a read out: the deadline is looked
+        // at before each read, rather than left to the read.
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            deadline = None;
+            let mut terminal = shared.terminal.lock_in_turn();
+            let late = terminal.synchronized_output() && terminal.synchronized_updates() == update;
+            if late {
+                terminal.end_synchronized_output();
+                drop(terminal);
+                shared.changed();
+            }
+        }
         let n = match reader.read_until(&mut buffer, deadline) {
             Ok(ReadOutcome::Read(n)) => n,
-            Ok(ReadOutcome::TimedOut) => {
-                deadline = None;
-                let mut terminal = shared.terminal.lock_in_turn();
-                let late =
-                    terminal.synchronized_output() && terminal.synchronized_updates() == update;
-                if late {
-                    terminal.end_synchronized_output();
-                    drop(terminal);
-                    shared.changed();
-                }
-                continue;
-            }
+            Ok(ReadOutcome::TimedOut) => continue,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
             Ok(ReadOutcome::End) | Err(_) => break,
         };

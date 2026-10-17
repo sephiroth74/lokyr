@@ -349,8 +349,14 @@ impl Harness {
 
     /// Reads what the program writes, until `deadline` at most: shows it on
     /// the terminal, and queues the terminal's replies, which go as soon as
-    /// the program has room for them.
+    /// the program has room for them. Once the deadline has passed, it
+    /// times out without reading, as a read past it would take what is
+    /// there, and a program that writes all the time would keep the steps
+    /// from ever timing out.
     fn read(&mut self, deadline: Instant) -> Result<Read> {
+        if Instant::now() >= deadline {
+            return Ok(Read::TimedOut);
+        }
         self.write_some(Instant::now() + Duration::from_millis(1))?;
         let n = match self.reader.read_until(&mut self.buffer, Some(deadline))? {
             ReadOutcome::Read(n) => n,

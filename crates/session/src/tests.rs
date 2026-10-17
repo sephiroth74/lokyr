@@ -220,6 +220,21 @@ fn output_during_a_synchronized_update_does_not_put_off_its_deadline() {
 }
 
 #[test]
+fn output_that_never_stops_does_not_put_off_an_updates_deadline() {
+    let mut options = sh(r#"printf '\033[?2026h'; exec yes"#);
+    options.sync_timeout = Duration::from_millis(300);
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "the update", |terminal| {
+        terminal.synchronized_updates() == 1
+    });
+    let start = Instant::now();
+    wait_for(&session, "the deadline", |terminal| {
+        !terminal.synchronized_output()
+    });
+    assert!(start.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
 fn dropping_the_session_ends_its_threads() {
     let session = Session::spawn(&sh("echo ready; while :; do sleep 0.05; done"), || {}).unwrap();
     wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
