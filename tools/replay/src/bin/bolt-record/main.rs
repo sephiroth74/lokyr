@@ -21,6 +21,7 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, Result, bail};
 use bolt_replay::harness::{Event, Harness, HarnessOptions};
 use bolt_vt_core::page::Content;
+use bolt_vt_core::terminal::Options;
 
 use cast::Cast;
 use script::{Script, Step};
@@ -140,7 +141,10 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
     let options = HarnessOptions {
         program: script.run.clone(),
         env,
-        term: TERM.to_owned(),
+        terminal: Options {
+            term: TERM.to_owned(),
+            ..Options::default()
+        },
         dir: home.to_owned(),
         cols: script.cols,
         rows: script.rows,
@@ -177,7 +181,7 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
 /// reads split, or that an escape breaks, shows; and in every row that the
 /// terminal keeps, the scrollback's too.
 fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
-    let plain = plain(harness.output());
+    let plain = plain(&harness.output());
     let rows: Vec<String> = harness
         .terminal()
         .screen_rows()
