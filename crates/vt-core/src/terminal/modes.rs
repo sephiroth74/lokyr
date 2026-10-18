@@ -1,8 +1,6 @@
 //! The modes that programs set, reset and query: ANSI's, with SM and RM,
 //! and DEC's private ones, with DECSET and DECRST; DECRQM queries both.
 
-use std::io::Write as _;
-
 use super::{MouseEncoding, MouseTracking, Terminal};
 use crate::parser::Params;
 use crate::unicode::Mode;
@@ -151,7 +149,8 @@ impl Terminal {
     /// Queues the reply to DECRQM: `CSI` `marker` `mode` `;` the state's
     /// `value` `$y`.
     fn reply_mode(&mut self, marker: &str, mode: u16, value: u8) {
-        write!(self.replies, "\x1b[{marker}{mode};{value}$y").expect("writing to a Vec");
+        let reply = format!("\x1b[{marker}{mode};{value}$y");
+        self.reply(reply.as_bytes());
     }
 
     /// Makes the alternate screen, or the primary one, the active one, as

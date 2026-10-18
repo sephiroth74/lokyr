@@ -9,12 +9,10 @@
 
 use std::fmt::Write as _;
 
-use crate::page::{Content, Width};
-
 use super::osc::hex_byte;
 use super::terminfo::{self, Capability};
 use super::{CursorShape, Event, Terminal};
-use crate::page::{Color, Style, Underline};
+use crate::page::{Color, Content, Style, Underline, Width};
 use crate::parser::{Params, StringEnd};
 
 /// The bytes of the replies to programs' queries that wait to be taken, at
@@ -82,17 +80,28 @@ impl Terminal {
     /// to row `Pb` and column `Pr`, all included, which count from the
     /// margins' top left in origin mode and stay within them, the screen's
     /// edges by default. Each cell counts its character, an empty one a
-    /// space and the second half of a wide one nothing, and the sum is
-    /// negated, as the VT520 does, then told after the request's id, `Pid`:
-    /// `DCS Pid ! ~ XXXX ST`. The page, `Pp`, is the screen's only one.
+    /// space and the second half of a wide one nothing; not its attributes,
+    /// which DEC's terminals add, as xterm leaves them out with its
+    /// `checksumExtension` set to, and as test suites such as esctest read
+    /// the screen's characters through it. The sum is negated, as DEC's
+    /// terminals do, then told after the request's id, `Pid`:
+    /// `DCS Pid ! ~ XXXX ST`. The page, `Pp`, is the screen's only one. A
+    /// request whose reply could not be queued is not counted.
     pub(super) fn report_checksum(&mut self, params: &Params) {
+        let id = params.value(0);
+        // `DCS`, the id, `! ~`, four digits and `ST`.
+        let len = 10 + id.to_string().len();
+        if self.reply_bytes + len > REPLY_BYTES {
+            return;
+        }
         let (top, left, bottom, right) = if self.origin {
             let margins = self.margins;
             (margins.top, margins.left, margins.bottom, margins.right)
         } else {
             (0, 0, self.rows - 1, self.cols - 1)
         };
-        let from = |value: u16, start: u16| start.saturating_add(value.max(1) - 1);
+        let from =
+            |value: u16, start: u16, end: u16| start.saturating_add(value.max(1) - 1).min(end);
         let to = |value: u16, start: u16, end: u16| {
             if value == 0 {
                 end
@@ -101,8 +110,8 @@ impl Terminal {
             }
         };
         let rect = (
-            from(params.value(2), top),
-            from(params.value(3), left),
+            from(params.value(2), top, bottom),
+            from(params.value(3), left, right),
             to(params.value(4), top, bottom),
             to(params.value(5), left, right),
         );
@@ -115,7 +124,7 @@ impl Terminal {
                     break;
                 };
                 let code = match (cell.width(), cell.content()) {
-                    (Width::SpacerTail | Width::SpacerHead, _) => 0,
+                    (Width::SpacerTail | Width::SpacerHead, _) => continue,
                     (_, Content::Char(c) | Content::Grapheme(c)) if c != '\0' => u32::from(c),
                     _ => u32::from(' '),
                 };
@@ -123,7 +132,7 @@ impl Terminal {
                 sum = sum.wrapping_add(code as u16);
             }
         }
-        let reply = format!("\x1bP{}!~{:04X}\x1b\\", params.value(0), sum.wrapping_neg());
+        let reply = format!("\x1bP{id}!~{:04X}\x1b\\", sum.wrapping_neg());
         self.reply(reply.as_bytes());
     }
 
@@ -154,7 +163,7 @@ impl Terminal {
             // The keyboard: its language not known, as the VT220 tells it.
             26 => "\x1b[?27;0n".to_owned(),
             // No locator, and its type none.
-            53 | 55 => "\x1b[?50n".to_owned(),
+            53 | 55 => "\x1b[?53n".to_owned(),
             56 => "\x1b[?57;0n".to_owned(),
             // DECMSR: no space for macros.
             62 => "\x1b[0*{".to_owned(),

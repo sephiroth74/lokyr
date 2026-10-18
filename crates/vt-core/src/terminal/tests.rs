@@ -4686,7 +4686,7 @@ fn the_dec_device_reports_tell_what_an_emulator_has() {
     term.feed("\x1b[2;3H\x1b[?6n\x1b[?15n\x1b[?25n\x1b[?26n\x1b[?55n\x1b[?56n");
     assert_eq!(
         replies(&mut term),
-        "\x1b[?2;3R\x1b[?13n\x1b[?21n\x1b[?27;0n\x1b[?50n\x1b[?57;0n"
+        "\x1b[?2;3R\x1b[?13n\x1b[?21n\x1b[?27;0n\x1b[?53n\x1b[?57;0n"
     );
     term.feed("\x1b[?62n\x1b[?63;9n\x1b[?75n\x1b[?85n\x1b[?99n");
     assert_eq!(
@@ -4696,4 +4696,101 @@ fn the_dec_device_reports_tell_what_an_emulator_has() {
     // DECID answers as DA does.
     term.feed("\x1bZ\x1b[c");
     assert_eq!(replies(&mut term), "\x1b[?62;22c\x1b[?62;22c");
+}
+
+#[test]
+fn extended_reverse_wraparound_goes_round_the_margins_at_once() {
+    // Margins of rows 2 to 4 and columns 3 to 6, a turn of 12 cells.
+    let setup = "\x1b[?1045h\x1b[?69h\x1b[3;6s\x1b[2;4r";
+    let mut stepped = Term::new(10, 5);
+    let mut at_once = Term::new(10, 5);
+    for n in [1_u16, 3, 4, 5, 11, 12, 13, 25, 100] {
+        stepped.feed(setup).feed("\x1b[3;5H");
+        at_once.feed(setup).feed("\x1b[3;5H");
+        for _ in 0..n {
+            stepped.feed("\x08");
+        }
+        at_once.feed(format!("\x1b[{n}D"));
+        assert_eq!(stepped.cursor(), at_once.cursor(), "{n}");
+    }
+    // A whole turn comes back; one more is the cell before.
+    at_once.feed(setup).feed("\x1b[3;5H\x1b[12D");
+    assert_eq!(at_once.cursor(), (4, 2, false));
+    at_once.feed("\x1b[13D");
+    assert_eq!(at_once.cursor(), (3, 2, false));
+    // From the top margin's left to the bottom one's right.
+    at_once.feed("\x1b[2;3H\x08");
+    assert_eq!(at_once.cursor(), (5, 3, false));
+    // Left of the left margin and below the bottom one, it goes up a row
+    // at a time, to the right margin, then on to the left.
+    let mut below = Term::new(10, 6);
+    below.feed(setup).feed("\x1b[6;1H\x1b[2D");
+    assert_eq!(below.cursor(), (4, 4, false));
+    // A pending wrap takes one move.
+    let mut wrap = Term::new(5, 2);
+    wrap.feed("\x1b[?1045habcde\x08");
+    assert_eq!(wrap.cursor(), (4, 0, false));
+}
+
+#[test]
+fn many_long_moves_round_narrow_margins_cost_little() {
+    let mut term = Term::new(80, 24);
+    term.feed("\x1b[?1045h\x1b[?69h\x1b[1;2s\x1b[5;5H");
+    let started = std::time::Instant::now();
+    term.feed("\x1b[65535D".repeat(10_000));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn decrqm_replies_keep_within_the_replies_limit() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b[?1$p".repeat(200_000));
+    let replies = term.terminal.take_replies();
+    assert!(
+        replies.len() <= super::reports::REPLY_BYTES,
+        "{} bytes",
+        replies.len()
+    );
+    assert!(!replies.is_empty());
+}
+
+#[test]
+fn rectangle_checksums_clamp_count_attributes_and_skip_halves() {
+    let options = Options {
+        rectangle_checksums: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 4, options);
+    // A top and a left past the screen are its last row and column.
+    term.feed("\x1b[4;1HZ\x1b[1;1;9;1;9;1*y");
+    assert_eq!(replies(&mut term), "\x1bP1!~FFA6\x1b\\");
+    term.feed("\x1b[4;10HY\x1b[2;1;4;30;4;30*y");
+    assert_eq!(replies(&mut term), "\x1bP2!~FFA7\x1b\\");
+    // Attributes add nothing: a bold `a` is 0x61.
+    term.feed("\x1b[1;1H\x1b[1ma\x1b[m\x1b[3;1;1;1;1;1*y");
+    assert_eq!(replies(&mut term), "\x1bP3!~FF9F\x1b\\");
+    // The second half of a wide character counts nothing.
+    term.feed("\x1b[2;1H\u{4e2d}\x1b[4;1;2;2;2;2*y\x1b[5;1;2;1;2;2*y");
+    assert_eq!(
+        replies(&mut term),
+        "\x1bP4!~0000\x1b\\\x1bP5!~B1D3\x1b\\",
+        "0x4E2D negated"
+    );
+    // An inverted rectangle counts nothing; no parameters, the screen.
+    term.feed("\x1b[6;1;3;1;2;5*y");
+    assert_eq!(replies(&mut term), "\x1bP6!~0000\x1b\\");
+    let mut empty = Term::with(
+        2,
+        1,
+        Options {
+            rectangle_checksums: true,
+            ..Options::default()
+        },
+    );
+    empty.feed("\x1b[*y");
+    assert_eq!(replies(&mut empty), "\x1bP0!~FFC0\x1b\\", "two spaces");
 }

@@ -68,6 +68,7 @@ impl Terminal {
             return;
         }
         let mut count = if pending_wrap { n - 1 } else { n };
+        let margins = self.margins;
         loop {
             let step = count.min(x - left);
             x -= step;
@@ -75,30 +76,50 @@ impl Terminal {
             if count == 0 {
                 break;
             }
-            if y == self.margins.top && extended {
-                // From the top margin to the bottom one.
-                (x, y) = (self.margins.right, self.margins.bottom);
-                count -= 1;
-                continue;
+            if extended && left == margins.left && (margins.top..=margins.bottom).contains(&y) {
+                // Within the margins, the rest of the moves goes round them,
+                // a turn at a time, to one place.
+                (x, y) = self.round_the_margins(y, count);
+                break;
             }
-            if y <= self.margins.top {
+            if y <= margins.top {
                 break;
             }
             // The row above wraps into this one only when this one is its
             // continuation too: rows that edits moved can keep the flag. The
             // extended mode goes up whatever the rows are.
-            let rows = &self.screen().rows;
-            let (above, row_above) = rows.screen_row(y - 1);
-            let (page, row) = rows.screen_row(y);
-            let wraps = above.row(row_above).has(RowFlag::SoftWrapped)
-                && page.row(row).has(RowFlag::Continuation);
-            if !(wraps || extended) {
-                break;
+            if !extended {
+                let rows = &self.screen().rows;
+                let (above, row_above) = rows.screen_row(y - 1);
+                let (page, row) = rows.screen_row(y);
+                if !(above.row(row_above).has(RowFlag::SoftWrapped)
+                    && page.row(row).has(RowFlag::Continuation))
+                {
+                    break;
+                }
             }
-            (x, y) = (self.margins.right, y - 1);
+            (x, y) = (margins.right, y - 1);
             count -= 1;
         }
         self.move_to(x, y);
+    }
+
+    /// Where `count` moves left from the left margin of row `y`, within the
+    /// margins, go with the extended reverse wraparound: each from a row's
+    /// left margin to the right margin of the row above, and from the top
+    /// margin to the bottom one, round the margins, so that whole turns go
+    /// to the same place.
+    fn round_the_margins(&self, y: u16, count: u16) -> (u16, u16) {
+        let margins = self.margins;
+        let width = u32::from(margins.right - margins.left) + 1;
+        let turn = width * (u32::from(margins.bottom - margins.top) + 1);
+        let from = u32::from(y - margins.top) * width;
+        let to = (from + turn - u32::from(count) % turn) % turn;
+        // Within the margins, which a u16 holds.
+        (
+            margins.left + (to % width) as u16,
+            margins.top + (to / width) as u16,
+        )
     }
 
     /// CUP and HVP: to row `row` and column `col`, both from 0.
