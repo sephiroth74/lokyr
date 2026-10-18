@@ -13,6 +13,7 @@ Each recording here is a real program, run in a pseudo-terminal and driven by a 
   - the bytes typed into it, all of them together;
   - the text that the VT core's parser prints from the output, without its escape sequences;
   - the titles and the working directory;
-  - every line of both screens, the scrollback's too, its soft-wrapped rows joined, as the screen shows them: an empty cell is a space, so that text that a tab or a move of the cursor separates is not joined.
+  - every line of both screens, the scrollback's too, its soft-wrapped rows joined, as the screen shows them: an empty cell is a space, so that text that a tab or a move of the cursor separates is not joined;
+  - the screen of a terminal on which the output replays, before each control and escape sequence, which are what take text away: a name that one read draws and erases shows there.
 
   A name that the recorder cannot look up, as when `hostname` fails, is said on its standard error and not checked. So are names shorter than 3 characters, which would match too much. The machine's cores, load, memory and uptime, in `htop`'s header, are not private.

@@ -326,6 +326,29 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "dcs-percent",
             r"printf '\\033Pp%%7Az-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
         ),
+        // In an SOS string after a byte that the escape passes over, and
+        // put together by a tab at the right margin, or by the cursor's
+        // moves, then erased or written over by the same read.
+        (
+            "sos-high",
+            r"printf '\\033\\303Xzz-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        (
+            "tab-wrap",
+            r"printf '\\033[13Gzz-some\\tone-zz\\033[1;1H\\033[2K\\033[2;1H\\033[2K'; sleep 0.3",
+        ),
+        (
+            "moved-erased",
+            r"printf '\\033[8Gone-zz\\rzz-some\\033[2K'; sleep 0.3",
+        ),
+        (
+            "moved-overwritten",
+            r"printf '\\033[8Gone-zz\\rzz-some\\rxxxxxxxxxxxxx'; sleep 0.3",
+        ),
+        (
+            "moved-reset",
+            r"printf '\\033[8Gone-zz\\rzz-some\\033c'; sleep 0.3",
+        ),
         // In base64 split between the chunks of a transfer: kitty's
         // graphics, and iTerm2's file in parts.
         (

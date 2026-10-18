@@ -19,8 +19,8 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
 use bolt_replay::harness::{Event, Harness, HarnessOptions, lines};
-use bolt_vt_core::parser::{Handler, Limits, Params, Parser};
-use bolt_vt_core::terminal::Options;
+use bolt_vt_core::parser::{Handler, Limits, Params, Parser, StringEnd};
+use bolt_vt_core::terminal::{Options, Terminal};
 
 use cast::Cast;
 use script::{Script, Step};
@@ -224,7 +224,7 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
             harness.dropped_replies()
         );
     }
-    check_all(&harness, &private)?;
+    check_all(&harness, &private, (script.cols, script.rows))?;
     let mut cast = Cast::new(script.cols, script.rows, TERM);
     for (at, event) in harness.events() {
         match event {
@@ -237,15 +237,123 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
 }
 
 /// Fails if the recording, whole, shows one of `private`, in any of the
-/// texts that [`texts`] reads it as.
-fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
+/// texts that [`texts`] reads it as, or on the screen before a control or
+/// an escape sequence of the output, which [`Watch`] replays on a terminal
+/// of `size`.
+fn check_all(harness: &Harness, private: &[String], size: (u16, u16)) -> Result<()> {
     let texts = texts(harness);
     for name in private {
         if texts.iter().any(|text| text.contains(name.as_str())) {
             bail!("the program showed `{name}`, which a recording must not keep");
         }
     }
+    let mut watch = Watch {
+        terminal: Terminal::new(
+            size.0,
+            size.1,
+            Options {
+                term: TERM.to_owned(),
+                ..Options::default()
+            },
+        ),
+        private,
+        shown: None,
+    };
+    Parser::new().advance(&mut watch, &harness.output());
+    if let Some(name) = watch.shown {
+        bail!("the program showed `{name}` in passing, which a recording must not keep");
+    }
     Ok(())
+}
+
+/// A terminal that the output replays on, which looks at its screen before
+/// each control and escape sequence, as they are what take text away from
+/// the screen: an erase, a scroll, a switch of screens, or a move of the
+/// cursor that the text after overwrites with. A name that a read draws
+/// and takes away, which no read ends with, shows there.
+struct Watch<'a> {
+    terminal: Terminal,
+    private: &'a [String],
+    /// The first name that showed.
+    shown: Option<String>,
+}
+
+impl Watch<'_> {
+    /// Notes the first name that the screen shows now, if none showed yet.
+    fn look(&mut self) {
+        if self.shown.is_some() {
+            return;
+        }
+        let list = self.terminal.screen_rows();
+        let lines = lines(list, list.scrollback_rows());
+        self.shown = self
+            .private
+            .iter()
+            .find(|name| lines.iter().any(|line| line.contains(name.as_str())))
+            .cloned();
+    }
+}
+
+impl Handler for Watch<'_> {
+    fn print(&mut self, c: char) {
+        self.terminal.print(c);
+    }
+
+    fn print_ascii(&mut self, text: &[u8]) {
+        self.terminal.print_ascii(text);
+    }
+
+    fn execute(&mut self, byte: u8) {
+        self.look();
+        self.terminal.execute(byte);
+    }
+
+    fn esc_dispatch(&mut self, intermediates: &[u8], final_byte: u8) {
+        self.look();
+        self.terminal.esc_dispatch(intermediates, final_byte);
+    }
+
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.look();
+        self.terminal
+            .csi_dispatch(params, intermediates, final_byte);
+    }
+
+    fn osc_start(&mut self) {
+        self.terminal.osc_start();
+    }
+
+    fn osc_put(&mut self, data: &[u8]) {
+        self.terminal.osc_put(data);
+    }
+
+    fn osc_end(&mut self, end: StringEnd) {
+        self.terminal.osc_end(end);
+    }
+
+    fn dcs_start(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.terminal.dcs_start(params, intermediates, final_byte);
+    }
+
+    fn dcs_put(&mut self, data: &[u8]) {
+        self.terminal.dcs_put(data);
+    }
+
+    fn dcs_end(&mut self, end: StringEnd) {
+        self.terminal.dcs_end(end);
+    }
+
+    fn apc_start(&mut self) {
+        self.terminal.apc_start();
+    }
+
+    fn apc_put(&mut self, data: &[u8]) {
+        self.terminal.apc_put(data);
+    }
+
+    fn apc_end(&mut self, end: StringEnd) {
+        self.terminal.apc_end(end);
+    }
 }
 
 /// The texts that a recording holds, which a name must show in none of:
@@ -352,16 +460,16 @@ fn without_controls(bytes: &[u8]) -> Vec<u8> {
 /// The bytes of each DCS, SOS, PM and APC string in `bytes`, from its
 /// introducer, `P`, `X`, `^` or `_`, to the ESC that ends it, or the CAN or
 /// SUB that cancels it, or the end. The introducer follows an ESC, with the
-/// C0 controls and DEL between them that the parser's escape state passes
-/// over: all but CAN and SUB, which cancel the escape, and ESC, which
-/// starts it again.
+/// bytes between them that the parser's escape state passes over: the C0
+/// controls but CAN and SUB, which cancel the escape, and ESC, which starts
+/// it again; DEL; and the bytes from 0x80 up.
 fn control_strings(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut strings = Vec::new();
     let mut at = 0;
     while let Some(escape) = bytes[at..].iter().position(|&byte| byte == 0x1B) {
         at += escape + 1;
         while let Some(&byte) = bytes.get(at)
-            && ((byte < 0x20 && !matches!(byte, 0x18 | 0x1A | 0x1B)) || byte == 0x7F)
+            && ((byte < 0x20 && !matches!(byte, 0x18 | 0x1A | 0x1B)) || byte >= 0x7F)
         {
             at += 1;
         }
@@ -721,7 +829,7 @@ mod tests {
     #[test]
     fn control_strings_start_where_the_parser_starts_them() {
         let strings = control_strings(
-            b"a\x1bPpzz-some\none-zz\x1b\\b\x1b^x\x7fy\x18z\x1b_end\x1b\x01\x7fPdcs\x1b\x18Xno\x1b\x1bXsos",
+            b"a\x1bPpzz-some\none-zz\x1b\\b\x1b^x\x7fy\x18z\x1b_end\x1b\x01\x7fPdcs\x1b\x18Xno\x1b\x1bXsos\x1b\xc3\x80^pm",
         );
         assert_eq!(
             strings,
@@ -731,6 +839,7 @@ mod tests {
                 b"end".to_vec(),
                 b"dcs".to_vec(),
                 b"sos".to_vec(),
+                b"pm".to_vec(),
             ]
         );
     }
