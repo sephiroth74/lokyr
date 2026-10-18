@@ -67,7 +67,7 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         env.get(OsStr::new("PATH")).map(OsString::as_os_str),
         working_directory,
     )
-    .ok_or_else(|| spawn_error(ErrorKind::NotFound.into()))?;
+    .map_err(spawn_error)?;
     let mut command = Command::new(&path);
     command.args(&args);
     // The program's name, as it was given, rather than where it was found.
@@ -329,33 +329,62 @@ fn tty_name(master: &OwnedFd) -> std::io::Result<PathBuf> {
     Ok(PathBuf::from(OsStr::from_bytes(name.to_bytes())))
 }
 
+/// The directories that `execvp` looks for a program in without a `PATH`:
+/// the system's.
+#[cfg(target_os = "macos")]
+const DEFAULT_PATH: &str = "/usr/bin:/bin";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_PATH: &str = "/bin:/usr/bin";
+
 /// Where `program` is: itself, if it names a path, as a name with a `/`
 /// does; otherwise the first file of that name that this user can execute
-/// in the directories of `path`, or of `/usr/bin:/bin` without one, as
+/// in the directories of `path`, or of [`DEFAULT_PATH`] without one, as
 /// `execvp` looks for it, those that are relative, the empty one included,
-/// in the child's `working_directory`. `None` if there is none.
-fn find_program(program: &Path, path: Option<&OsStr>, working_directory: &Path) -> Option<PathBuf> {
+/// in the child's `working_directory`, made absolute, as the child runs the
+/// program from there. It fails as `execvp` does: with `EACCES` if a file
+/// of that name, or a directory on the way, could not be executed or
+/// searched, and with `ENOENT` otherwise.
+fn find_program(
+    program: &Path,
+    path: Option<&OsStr>,
+    working_directory: &Path,
+) -> std::io::Result<PathBuf> {
     let name = program.as_os_str();
     if name.as_bytes().contains(&b'/') {
-        return Some(program.to_owned());
+        return Ok(program.to_owned());
     }
-    if name.is_empty() {
-        return None;
+    let mut denied = false;
+    if !name.is_empty() {
+        let working_directory = std::path::absolute(working_directory)?;
+        for dir in std::env::split_paths(path.unwrap_or(OsStr::new(DEFAULT_PATH))) {
+            let candidate = working_directory.join(dir).join(program);
+            match std::fs::metadata(&candidate) {
+                Ok(metadata) if metadata.is_file() && executable(&candidate) => {
+                    return Ok(candidate);
+                }
+                // A file that cannot be executed, or a directory, which
+                // `execve` refuses with `EACCES`.
+                Ok(_) => denied = true,
+                Err(error) if error.kind() == ErrorKind::PermissionDenied => denied = true,
+                Err(_) => {}
+            }
+        }
     }
-    std::env::split_paths(path.unwrap_or(OsStr::new("/usr/bin:/bin")))
-        .map(|dir| working_directory.join(dir).join(program))
-        .find(|candidate| executable(candidate))
+    Err(IoError::from_raw_os_error(if denied {
+        libc::EACCES
+    } else {
+        libc::ENOENT
+    }))
 }
 
-/// Whether `path` is a file that this user can execute.
+/// Whether this user can execute the file at `path`.
 fn executable(path: &Path) -> bool {
     let Ok(name) = CString::new(path.as_os_str().as_bytes()) else {
         return false;
     };
     // SAFETY: `name` is a C string that lives through the call, which only
     // looks at the file.
-    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
-        && unsafe { libc::access(name.as_ptr(), libc::X_OK) } == 0
+    unsafe { libc::access(name.as_ptr(), libc::X_OK) == 0 }
 }
 
 /// How a working directory is opened: to be entered, not read, so that a
@@ -620,11 +649,30 @@ mod tests {
         );
     }
 
+    /// A directory of the temporary one, removed as it drops, however the
+    /// test ends.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("bolt-pty-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     #[test]
     fn a_program_is_found_as_execvp_finds_it() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("bolt-pty-find-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let temp = TempDir::new("find");
+        let dir = &temp.0;
         for sub in ["a", "b", "c/tool"] {
             std::fs::create_dir_all(dir.join(sub)).unwrap();
         }
@@ -635,23 +683,61 @@ mod tests {
             .unwrap();
         let path = |dirs: &str| OsString::from(dirs);
         let find = |program: &str, path: Option<&OsString>| {
-            find_program(Path::new(program), path.map(OsString::as_os_str), &dir)
+            find_program(Path::new(program), path.map(OsString::as_os_str), dir)
         };
+        let error = |found: std::io::Result<PathBuf>| found.unwrap_err().raw_os_error();
         let all = path(&format!("/nonexistent:{0}/a:{0}/c:{0}/b", dir.display()));
-        assert_eq!(find("tool", Some(&all)), Some(dir.join("b/tool")));
+        assert_eq!(find("tool", Some(&all)).unwrap(), dir.join("b/tool"));
         // Relative to the working directory, the empty entry too.
-        assert_eq!(find("tool", Some(&path("a:c:b"))), Some(dir.join("b/tool")));
-        assert_eq!(find("tool", Some(&path(""))), None);
+        assert_eq!(
+            find("tool", Some(&path("a:c:b"))).unwrap(),
+            dir.join("b/tool")
+        );
+        assert_eq!(error(find("tool", Some(&path("")))), Some(libc::ENOENT));
+        // A file that cannot be executed, and a directory, are refused.
+        assert_eq!(error(find("tool", Some(&path("a")))), Some(libc::EACCES));
+        assert_eq!(error(find("tool", Some(&path("c")))), Some(libc::EACCES));
+        assert_eq!(
+            error(find("tool", Some(&path("nonexistent")))),
+            Some(libc::ENOENT)
+        );
+        // A directory that cannot be searched, which a file of that name may
+        // be in.
+        std::fs::create_dir(dir.join("d")).unwrap();
+        std::fs::write(dir.join("d/tool"), "").unwrap();
+        std::fs::set_permissions(dir.join("d"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let unsearchable = error(find("tool", Some(&path("d"))));
+        std::fs::set_permissions(dir.join("d"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(unsearchable, Some(libc::EACCES));
         // A name with a slash is a path; without `PATH`, the system's.
-        assert_eq!(find("./tool", Some(&all)), Some(PathBuf::from("./tool")));
+        assert_eq!(find("./tool", Some(&all)).unwrap(), PathBuf::from("./tool"));
         let system = find("sh", None).unwrap();
         assert!(
             ["/usr/bin/sh", "/bin/sh"]
                 .map(PathBuf::from)
                 .contains(&system)
         );
-        assert_eq!(find("", Some(&all)), None);
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(error(find("", Some(&all))), Some(libc::ENOENT));
+    }
+
+    #[test]
+    fn a_relative_working_directory_is_where_relative_entries_are() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDir::new("relative");
+        let tool = temp.0.join("wd/bin/tool");
+        std::fs::create_dir_all(tool.parent().unwrap()).unwrap();
+        std::fs::write(&tool, "").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // The working directory, relative to this one.
+        let here = std::env::current_dir().unwrap();
+        let mut relative = PathBuf::new();
+        for _ in here.components().skip(1) {
+            relative.push("..");
+        }
+        relative.push(temp.0.join("wd").strip_prefix("/").unwrap());
+        let found = find_program(Path::new("tool"), Some(OsStr::new("bin")), &relative).unwrap();
+        assert!(found.is_absolute(), "{}", found.display());
+        assert_eq!(found.canonicalize().unwrap(), tool.canonicalize().unwrap());
     }
 
     #[test]
