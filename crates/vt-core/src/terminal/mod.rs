@@ -22,7 +22,7 @@ mod terminfo;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
-pub use colors::Colors;
+pub use colors::{Colors, SPECIAL_COLORS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};

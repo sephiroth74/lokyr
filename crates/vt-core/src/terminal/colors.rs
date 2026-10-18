@@ -1,6 +1,6 @@
-//! The colors that programs can change: the palette (OSC 4 and 104), and
-//! the default foreground, background and cursor colors (OSC 10 to 12, and
-//! 110 to 112).
+//! The colors that programs can change: the palette (OSC 4 and 104), the
+//! special colors (OSC 5 and 105), and the default foreground, background
+//! and cursor colors (OSC 10 to 12, and 110 to 112).
 
 use super::{Event, Terminal};
 use crate::page::Rgb;
@@ -17,7 +17,18 @@ pub struct Colors {
     pub background: Rgb,
     /// The cursor's color.
     pub cursor: Rgb,
+    /// xterm's special colors, of bold, underlined, blinking, reverse and
+    /// italic text, in this order, which themes call the bold and the
+    /// underline colors. OSC 5 numbers them from 0, and OSC 4 from 256,
+    /// after the palette.
+    pub special: [Rgb; SPECIAL_COLORS],
 }
+
+/// How many special colors there are.
+pub const SPECIAL_COLORS: usize = 5;
+
+/// The number of the first special color in OSC 4 and 104.
+const FIRST_SPECIAL: u16 = 256;
 
 impl Default for Colors {
     /// xterm's colors, until the embedder gives the theme's.
@@ -63,26 +74,38 @@ impl Default for Colors {
             foreground,
             background: palette[0],
             cursor: foreground,
+            // As xterm's, the foreground until a theme gives others.
+            special: [foreground; SPECIAL_COLORS],
         }
     }
 }
 
 impl Terminal {
-    /// OSC 4: pairs of an index of the palette and a color, or `?` to ask
-    /// for the color, which gets a reply.
-    pub(super) fn set_palette(&mut self, fields: &[u8], end: StringEnd) {
+    /// OSC 4, or OSC 5 with `special`: pairs of a color's number and a
+    /// color, or `?` to ask for the color, which gets a reply. OSC 4
+    /// numbers the palette, then the special colors from 256; OSC 5 the
+    /// special colors, from 0.
+    pub(super) fn set_palette(&mut self, fields: &[u8], end: StringEnd, special: bool) {
         let mut fields = fields.split(|&byte| byte == b';');
         let mut changed = false;
-        while let (Some(index), Some(spec)) = (fields.next(), fields.next()) {
-            let Some(index) = super::osc::decimal(index).filter(|&index| index < 256) else {
+        while let (Some(number), Some(spec)) = (fields.next(), fields.next()) {
+            let Some(number) = super::osc::decimal(number).and_then(|n| u16::try_from(n).ok())
+            else {
                 continue;
             };
-            let index = index as usize;
+            let (osc, color) = if special {
+                (5, self.colors.special.get_mut(usize::from(number)))
+            } else {
+                (4, palette_color(&mut self.colors, number))
+            };
+            let Some(color) = color else {
+                continue;
+            };
             if spec == b"?" {
-                let color = color_spec(self.colors.palette[index]);
-                self.reply_osc(&format!("4;{index};{color}"), end);
-            } else if let Some(color) = parse_color(spec) {
-                self.colors.palette[index] = color;
+                let spec = color_spec(*color);
+                self.reply_osc(&format!("{osc};{number};{spec}"), end);
+            } else if let Some(new) = parse_color(spec) {
+                *color = new;
                 changed = true;
             }
         }
@@ -91,16 +114,32 @@ impl Terminal {
         }
     }
 
-    /// OSC 104: brings back the theme's colors of the palette at the
-    /// indexes, or of the whole palette without any.
-    pub(super) fn reset_palette(&mut self, fields: &[u8]) {
+    /// OSC 104, or OSC 105 with `special`: brings back the theme's colors
+    /// with the numbers, as [`Terminal::set_palette`] numbers them, or of
+    /// the whole palette and the special colors, or of the special colors
+    /// alone, without any.
+    pub(super) fn reset_palette(&mut self, fields: &[u8], special: bool) {
         if fields.is_empty() {
-            self.colors.palette = self.default_colors.palette;
+            if !special {
+                self.colors.palette = self.default_colors.palette;
+            }
+            self.colors.special = self.default_colors.special;
         } else {
-            for index in fields.split(|&byte| byte == b';') {
-                if let Some(index) = super::osc::decimal(index).filter(|&index| index < 256) {
-                    let index = index as usize;
-                    self.colors.palette[index] = self.default_colors.palette[index];
+            let theme = &self.default_colors;
+            for number in fields.split(|&byte| byte == b';') {
+                let Some(number) = super::osc::decimal(number).and_then(|n| u16::try_from(n).ok())
+                else {
+                    continue;
+                };
+                let (color, default) = if special {
+                    let index = usize::from(number);
+                    (self.colors.special.get_mut(index), theme.special.get(index))
+                } else {
+                    let default = palette_color_of(theme, number);
+                    (palette_color(&mut self.colors, number), default)
+                };
+                if let (Some(color), Some(&default)) = (color, default) {
+                    *color = default;
                 }
             }
         }
@@ -150,6 +189,23 @@ impl Terminal {
     /// Queues `OSC` `text`, ended as the query that asked for it was.
     pub(super) fn reply_osc(&mut self, text: &str, end: StringEnd) {
         self.reply(osc(text, end).as_bytes());
+    }
+}
+
+/// The color of `colors` that OSC 4 and 104 number: the palette's, then
+/// the special colors from 256.
+fn palette_color(colors: &mut Colors, number: u16) -> Option<&mut Rgb> {
+    match number.checked_sub(FIRST_SPECIAL) {
+        None => colors.palette.get_mut(usize::from(number)),
+        Some(index) => colors.special.get_mut(usize::from(index)),
+    }
+}
+
+/// [`palette_color`], to read.
+fn palette_color_of(colors: &Colors, number: u16) -> Option<&Rgb> {
+    match number.checked_sub(FIRST_SPECIAL) {
+        None => colors.palette.get(usize::from(number)),
+        Some(index) => colors.special.get(usize::from(index)),
     }
 }
 

@@ -6,9 +6,9 @@
 //! `bolt-esctest DIR [ARG...]` runs `DIR/esctest.py` with `python3`, from a
 //! checkout that the repository does not keep, and passes it the ARGs, as
 //! `--include=REGEX`. The terminal is 80 by 25, the size that esctest asks
-//! for, with cells of 8 by 16 pixels, and reports titles and the checksums
-//! of rectangles, through which esctest reads the screen, as xterm does
-//! when it is allowed to.
+//! for, with cells of 8 by 16 pixels and xterm's default colors, black on
+//! white, and reports titles and the checksums of rectangles, through which
+//! esctest reads the screen, as xterm does when it is allowed to.
 //!
 //! The suite must run to its end: esctest exits with status 0, and its
 //! log ends with the closing line, whose counts must be those of the tests
@@ -26,7 +26,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bolt_pty::Exit;
 use bolt_replay::harness::{Harness, HarnessOptions};
-use bolt_vt_core::terminal::Options;
+use bolt_vt_core::page::Rgb;
+use bolt_vt_core::terminal::{Colors, Options, SPECIAL_COLORS};
 
 /// How long esctest waits for each byte of a reply, in seconds: shorter
 /// than its own default of a second, as a reply that a headless terminal
@@ -100,6 +101,16 @@ fn suite(options: &HarnessOptions, temp: &mut Temp, log: &Path) -> Result<Vec<(S
     let mut harness = Harness::spawn(options)?;
     // Cells of a font, so that the sizes in pixels are told, as a window's.
     harness.set_cell_size(8, 16)?;
+    // xterm's default colors, black on white, which esctest sets before
+    // each test, and expects the resets to bring back.
+    let (black, white) = (Rgb::new(0, 0, 0), Rgb::new(255, 255, 255));
+    harness.terminal_mut().set_default_colors(Colors {
+        foreground: black,
+        background: white,
+        cursor: black,
+        special: [black; SPECIAL_COLORS],
+        ..Colors::default()
+    });
     ended(&mut harness, log).map_err(|error| {
         temp.kept = true;
         anyhow!(

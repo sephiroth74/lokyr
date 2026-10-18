@@ -2779,6 +2779,43 @@ fn osc_4_sets_and_reports_the_palette() {
 }
 
 #[test]
+fn osc_5_and_osc_4_from_256_set_and_report_the_special_colors() {
+    let mut term = Term::new(10, 1);
+    let foreground = Colors::default().foreground;
+    assert_eq!(term.terminal.colors().special, [foreground; SPECIAL_COLORS]);
+    // Bold's in OSC 5, underline's in OSC 4 past the palette, and a number
+    // past the five.
+    term.feed("\x1b]5;0;#102030;5;#fff\x07\x1b]4;257;rgb:40/50/60;261;#fff\x07");
+    let special = term.terminal.colors().special;
+    assert_eq!(special[0], Rgb::new(16, 32, 48));
+    assert_eq!(special[1], Rgb::new(64, 80, 96));
+    assert_eq!(special[2..], [foreground; 3]);
+    assert_eq!(term.terminal.take_events(), [Event::ColorsChanged]);
+    // Each asked for as it is numbered.
+    term.feed("\x1b]5;1;?;0;?\x07\x1b]4;256;?\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]5;1;rgb:4040/5050/6060\x07\x1b]5;0;rgb:1010/2020/3030\x07\x1b]4;256;rgb:1010/2020/3030\x1b\\"
+    );
+    // OSC 105 resets the special colors it numbers, then all; OSC 104
+    // past the palette, and without numbers, them too.
+    term.feed("\x1b]105;1\x07");
+    assert_eq!(term.terminal.colors().special[1], foreground);
+    assert_eq!(term.terminal.colors().special[0], Rgb::new(16, 32, 48));
+    term.feed("\x1b]4;1;#fff\x07\x1b]105\x07");
+    assert_eq!(term.terminal.colors().special, [foreground; SPECIAL_COLORS]);
+    assert_eq!(
+        term.terminal.colors().palette[1],
+        Rgb::new(240, 240, 240),
+        "the palette stays"
+    );
+    term.feed("\x1b]5;4;#fff\x07\x1b]104;260\x07");
+    assert_eq!(term.terminal.colors().special[4], foreground);
+    term.feed("\x1b]5;3;#fff\x07\x1b]104\x07");
+    assert_eq!(term.terminal.colors(), &Colors::default());
+}
+
+#[test]
 fn osc_10_to_12_set_and_report_the_dynamic_colors() {
     let mut term = Term::new(10, 1);
     term.feed("\x1b]10;#102030;#405060\x07\x1b]12;rgb:ff/00/00\x07");
