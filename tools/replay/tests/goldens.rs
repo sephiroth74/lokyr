@@ -47,7 +47,11 @@ fn golden(name: &str) {
     let bytes = std::fs::read(recordings().join(format!("{name}.cast"))).unwrap();
     let recording = Recording::parse(&bytes).unwrap();
     let (cols, rows) = recording.size.expect("a recording has its size");
-    let mut terminal = Terminal::new(cols, rows, Options::default());
+    let options = Options {
+        window_ops: recording.window_ops,
+        ..Options::default()
+    };
+    let mut terminal = Terminal::new(cols, rows, options);
     let mut parser = Parser::new();
     let mut fed = 0;
     let mut points: Vec<(usize, &str)> = recording
@@ -95,4 +99,9 @@ fn less() {
 #[test]
 fn fzf() {
     golden("fzf");
+}
+
+#[test]
+fn vttest() {
+    golden("vttest");
 }

@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+Test of leading zeros in ESC sequences.
+Two lines below you should see the sentence "This is a correct sentence".
+
+This is a correct sentence
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Push <RETURN>
+
+
+
+
+cursor 13,19
+replies: none

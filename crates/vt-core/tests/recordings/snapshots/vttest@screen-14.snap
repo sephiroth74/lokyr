@@ -1,0 +1,38 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+                   Graphic rendition test pattern:
+
+
+vanilla                                bold
+  39-42 bold
+
+     underline                              bold underline
+  5-13 underline=single; 44-57 bold underline=single
+
+blink                                  bold blink
+  0-4 blink; 39-48 bold blink
+
+     underline blink                        bold underline blink
+  5-19 blink underline=single; 44-63 bold blink underline=single
+
+negative                               bold negative
+  0-7 inverse; 39-51 bold inverse
+
+     underline negative                     bold underline negative
+  5-22 inverse underline=single; 44-66 bold inverse underline=single
+
+blink negative                         bold blink negative
+  0-13 blink inverse; 39-57 bold blink inverse
+
+     underline blink negative               bold underline blink negative
+  5-28 blink inverse underline=single; 44-72 bold blink inverse underline=single
+
+
+
+
+Light background. Push <RETURN>
+
+cursor 31,22
+replies: none

@@ -1,0 +1,32 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+
+Test of the "Request Terminal Parameters" feature, argument 0.
+
+
+Report is:  -- Bad format
+  10-10 inverse
+
+
+
+
+Test of the "Request Terminal Parameters" feature, argument 1.
+
+
+Report is:  -- Bad format
+  10-10 inverse
+
+
+
+
+
+
+
+
+
+
+Push <RETURN>
+cursor 13,23
+replies: none

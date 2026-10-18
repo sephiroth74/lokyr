@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+********************************************************************************
+********************************************************************************
+********************************************************************************
+
+This should be three identical lines of *'s completely filling
+the top of the screen without any empty lines between.
+(Test of WRAP AROUND mode setting.)
+Push <RETURN>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cursor 13,7
+replies: none

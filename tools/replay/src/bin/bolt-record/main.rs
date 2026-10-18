@@ -197,6 +197,7 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
         env,
         terminal: Options {
             term: TERM.to_owned(),
+            window_ops: script.window_ops,
             ..Options::default()
         },
         dir: home.to_owned(),
@@ -224,8 +225,8 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
             harness.dropped_replies()
         );
     }
-    check_all(&harness, &private, (script.cols, script.rows))?;
-    let mut cast = Cast::new(script.cols, script.rows, TERM);
+    check_all(&harness, &private, script)?;
+    let mut cast = Cast::new(script.cols, script.rows, TERM, script.window_ops);
     for (at, event) in harness.events() {
         match event {
             Event::Output(bytes) => cast.output(*at, bytes),
@@ -239,8 +240,8 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
 /// Fails if the recording, whole, shows one of `private`, in any of the
 /// texts that [`texts`] reads it as, or on the screen before a control or
 /// an escape sequence of the output, which [`Watch`] replays on a terminal
-/// of `size`.
-fn check_all(harness: &Harness, private: &[String], size: (u16, u16)) -> Result<()> {
+/// as the script's.
+fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<()> {
     let texts = texts(harness);
     for name in private {
         if texts.iter().any(|text| text.contains(name.as_str())) {
@@ -249,10 +250,11 @@ fn check_all(harness: &Harness, private: &[String], size: (u16, u16)) -> Result<
     }
     let mut watch = Watch {
         terminal: Terminal::new(
-            size.0,
-            size.1,
+            script.cols,
+            script.rows,
             Options {
                 term: TERM.to_owned(),
+                window_ops: script.window_ops,
                 ..Options::default()
             },
         ),

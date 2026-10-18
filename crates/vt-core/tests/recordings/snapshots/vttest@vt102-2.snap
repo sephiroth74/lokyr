@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Top line: A's, bottom line: X's, this line, nothing more. Push <RETURN>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+cursor 71,1
+replies: none

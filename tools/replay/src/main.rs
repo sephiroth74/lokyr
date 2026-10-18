@@ -125,9 +125,18 @@ fn run(args: &Args) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// The terminal's options for `recording`: the defaults, with the window's
+/// operations if the recording was made with them.
+fn options(recording: &Recording) -> Options {
+    Options {
+        window_ops: recording.window_ops,
+        ..Options::default()
+    }
+}
+
 /// A terminal of `size` that the recording's output went through.
 fn replay(recording: &Recording, (cols, rows): (u16, u16)) -> Terminal {
-    let mut terminal = Terminal::new(cols, rows, Options::default());
+    let mut terminal = Terminal::new(cols, rows, options(recording));
     feed(&mut terminal, recording);
     terminal
 }
@@ -145,7 +154,7 @@ fn bench(recording: &Recording, (cols, rows): (u16, u16), runs: u32) {
     let bytes: usize = recording.chunks.iter().map(Vec::len).sum();
     let mut times: Vec<Duration> = (0..runs)
         .map(|_| {
-            let mut terminal = Terminal::new(cols, rows, Options::default());
+            let mut terminal = Terminal::new(cols, rows, options(recording));
             let start = Instant::now();
             feed(&mut terminal, recording);
             start.elapsed()

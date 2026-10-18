@@ -1,0 +1,33 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+Test of Device Status Report 5 (report terminal status).
+Report is: <27> [ 0 n  -- means "TERMINAL OK"
+  10-21 inverse
+
+Test of Device Status Report 6 (report cursor position).
+Report is: <27> [ 5 ; 1 R  -- OK
+  10-25 inverse
+
+
+Report is: <27> [ 5 ; 1 R  -- OK
+  10-25 inverse
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Push <RETURN>
+
+cursor 13,22
+replies: "\u{1b}[0n\u{1b}[5;1R\u{1b}[5;1R"

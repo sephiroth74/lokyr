@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+      *     *     *     *     *     *     *     *     *     *     *     *     *
+      *     *     *     *     *     *     *     *     *     *     *     *     *
+
+Test of TAB setting/resetting. These two lines
+should look the same. Push <RETURN>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cursor 35,4
+replies: none

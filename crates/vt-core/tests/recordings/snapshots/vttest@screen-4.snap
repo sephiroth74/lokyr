@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+
+  This is 80 column mode, light background.
+   This is 80 column mode, light background.
+    This is 80 column mode, light background.
+     This is 80 column mode, light background.
+      This is 80 column mode, light background.
+       This is 80 column mode, light background.
+        This is 80 column mode, light background.
+         This is 80 column mode, light background.
+          This is 80 column mode, light background.
+           This is 80 column mode, light background.
+            This is 80 column mode, light background.
+             This is 80 column mode, light background.
+              This is 80 column mode, light background.
+               This is 80 column mode, light background.
+                This is 80 column mode, light background.
+                 This is 80 column mode, light background.
+                  This is 80 column mode, light background.
+                   This is 80 column mode, light background.Push <RETURN>
+
+
+
+
+cursor 73,19
+replies: none

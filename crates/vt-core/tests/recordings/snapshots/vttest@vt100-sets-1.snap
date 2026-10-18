@@ -1,0 +1,35 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+         Selected as G0 (with SI)              Selected as G1 (with SO)
+
+Character set B (US ASCII)
+  0-25 bold
+          !"#$%&'()*+,-./0123456789:;<=>?       !"#$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_      @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~       `abcdefghijklmnopqrstuvwxyz{|}~
+Character set A (British)
+  0-24 bold
+          !"£$%&'()*+,-./0123456789:;<=>?       !"£$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_      @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~       `abcdefghijklmnopqrstuvwxyz{|}~
+Character set 0 (DEC Special graphics and line drawing)
+  0-54 bold
+          !"#$%&'()*+,-./0123456789:;<=>?       !"#$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^       @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^
+         ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·       ◆▒␉␌␍␊°±␤␋┘┐┌└┼⎺⎻─⎼⎽├┤┴┬│≤≥π≠£·
+Character set 1 (DEC Alternate character ROM standard characters)
+  0-64 bold
+          !"#$%&'()*+,-./0123456789:;<=>?       !"#$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_      @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~       `abcdefghijklmnopqrstuvwxyz{|}~
+Character set 2 (DEC Alternate character ROM special graphics)
+  0-61 bold
+          !"#$%&'()*+,-./0123456789:;<=>?       !"#$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_      @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~       `abcdefghijklmnopqrstuvwxyz{|}~
+
+These are the installed character sets. Push <RETURN>
+cursor 53,23
+replies: none

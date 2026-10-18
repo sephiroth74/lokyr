@@ -34,6 +34,10 @@ pub struct Script {
     pub env: Vec<(String, String)>,
     /// The program and its arguments.
     pub run: Vec<String>,
+    /// Whether the terminal lets the program operate on the window, as
+    /// `allow window-ops` says: change its size, as vttest's tests of 132
+    /// columns do.
+    pub window_ops: bool,
     pub steps: Vec<Step>,
 }
 
@@ -69,6 +73,7 @@ impl Script {
             copies: Vec::new(),
             env: Vec::new(),
             run: Vec::new(),
+            window_ops: false,
             steps: Vec::new(),
         };
         for (number, line) in (1..).zip(text.lines()) {
@@ -100,10 +105,11 @@ impl Script {
             [limit] => millis(limit),
             _ => bail!("`{command}` takes a limit in milliseconds at most"),
         };
-        if !self.run.is_empty() && matches!(command.as_str(), "size" | "copy" | "env" | "run") {
+        let setup = matches!(command.as_str(), "size" | "copy" | "env" | "allow" | "run");
+        if !self.run.is_empty() && setup {
             bail!("`{command}` comes before `run`");
         }
-        if self.run.is_empty() && !matches!(command.as_str(), "size" | "copy" | "env" | "run") {
+        if self.run.is_empty() && !setup {
             bail!("`{command}` comes after `run`");
         }
         match command.as_str() {
@@ -118,6 +124,10 @@ impl Script {
                 }
             }
             "copy" => self.copies.push(one()?.to_owned()),
+            "allow" => match one()? {
+                "window-ops" => self.window_ops = true,
+                other => bail!("`allow` takes `window-ops`, not `{other}`"),
+            },
             "env" => {
                 let (name, value) = one()?.split_once('=').context("`env` takes NAME=VALUE")?;
                 self.env.push((name.to_owned(), value.to_owned()));
@@ -224,6 +234,7 @@ mod tests {
             "size 100 30\n",
             "copy files/a.txt\n",
             "env LESS=\n",
+            "allow window-ops\n",
             "run sh -c \"printf 'a b'; read x\"\n",
             "\n",
             "wait \"a b\" 500\n",
@@ -245,6 +256,7 @@ mod tests {
                 run: ["sh", "-c", "printf 'a b'; read x"]
                     .map(String::from)
                     .to_vec(),
+                window_ops: true,
                 steps: vec![
                     Step::Wait("a b".to_owned(), Duration::from_millis(500)),
                     Step::Mark("start".to_owned()),
@@ -277,6 +289,11 @@ mod tests {
             ("run a\nmark a/b\n", "a label of its own"),
             ("run a\nmark x\nmark x\n", "a label of its own"),
             ("run a\nsend x soon\n", "milliseconds"),
+            (
+                "allow mouse\nrun a\n",
+                "`allow` takes `window-ops`, not `mouse`",
+            ),
+            ("run a\nallow window-ops\n", "`allow` comes before `run`"),
         ] {
             let message = format!("{:#}", Script::parse(text).unwrap_err());
             assert!(message.contains(error), "{text:?}: {message}");

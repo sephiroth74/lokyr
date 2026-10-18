@@ -16,6 +16,10 @@ pub struct Recording {
     pub marks: Vec<(usize, String)>,
     /// How many resizes the recording has, which the replay leaves out.
     pub resizes: usize,
+    /// Whether the terminal that the recording was made in let the program
+    /// operate on the window, as `bolt-record` notes in the header, so that
+    /// a replay changes its size as the program asked.
+    pub window_ops: bool,
 }
 
 /// The size of the chunks of a raw stream, as a terminal session reads them.
@@ -38,6 +42,7 @@ impl Recording {
                 chunks: bytes.chunks(RAW_CHUNK).map(<[u8]>::to_vec).collect(),
                 marks: Vec::new(),
                 resizes: 0,
+                window_ops: false,
             }),
         }
     }
@@ -65,6 +70,7 @@ impl Recording {
             chunks: Vec::new(),
             marks: Vec::new(),
             resizes: 0,
+            window_ops: header["bolt"]["window_ops"].as_bool().unwrap_or(false),
         };
         let text = std::str::from_utf8(bytes).context("an asciicast is UTF-8")?;
         for (number, line) in (1..).zip(text.lines()).skip(1) {
@@ -132,6 +138,11 @@ mod tests {
         assert_eq!(recording.size, Some((40, 10)));
         assert_eq!(recording.output(), b"hello\r\n\x1b[1mworld");
         assert_eq!(recording.resizes, 1);
+        assert!(!recording.window_ops);
+        // The window's operations that `bolt-record` notes.
+        let cast =
+            "{\"version\": 2, \"width\": 4, \"height\": 2, \"bolt\": {\"window_ops\": true}}\n";
+        assert!(Recording::parse(cast.as_bytes()).unwrap().window_ops);
     }
 
     #[test]

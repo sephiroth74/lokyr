@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+AB
+
+
+Test of 'Delete Character'. The top line should be 'AB'. Push <RETURN>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cursor 70,3
+replies: none

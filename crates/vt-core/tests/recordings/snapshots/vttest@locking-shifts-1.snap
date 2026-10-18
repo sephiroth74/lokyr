@@ -1,0 +1,35 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+         Locking shifts, with NRC disabled:
+
+Character set A (ISO Latin-1) in G1            Maps G1 into GR (LS1R)
+  0-34 bold
+     !"#$%&'()*+,-./0123456789:;<=>?   ��������������������������������
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_   ��������������������������������
+    `abcdefghijklmnopqrstuvwxyz{|}~    ��������������������������������
+Character set A (ISO Latin-1) in G2            Maps G2 into GL (LS2)
+  0-34 bold
+     !"£$%&'()*+,-./0123456789:;<=>?   ��������������������������������
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_   ��������������������������������
+    `abcdefghijklmnopqrstuvwxyz{|}~    ��������������������������������
+Character set A (ISO Latin-1) in G2            Maps G2 into GR (LS2R)
+  0-34 bold
+     !"#$%&'()*+,-./0123456789:;<=>?   ��������������������������������
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_   ��������������������������������
+    `abcdefghijklmnopqrstuvwxyz{|}~    ��������������������������������
+Character set A (ISO Latin-1) in G3            Maps G3 into GL (LS3)
+  0-34 bold
+     !"£$%&'()*+,-./0123456789:;<=>?   ��������������������������������
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_   ��������������������������������
+    `abcdefghijklmnopqrstuvwxyz{|}~    ��������������������������������
+Character set A (ISO Latin-1) in G3            Maps G3 into GR (LS3R)
+  0-34 bold
+     !"#$%&'()*+,-./0123456789:;<=>?   ��������������������������������
+    @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_   ��������������������������������
+    `abcdefghijklmnopqrstuvwxyz{|}~    ��������������������������������
+
+Push <RETURN>
+cursor 13,23
+replies: none

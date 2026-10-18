@@ -94,7 +94,7 @@ fn recordings() -> PathBuf {
 
 #[test]
 fn the_recorded_sessions_replay() {
-    for name in ["vim", "htop", "tmux", "less", "fzf"] {
+    for name in ["vim", "htop", "tmux", "less", "fzf", "vttest"] {
         let path = recordings().join(format!("{name}.cast"));
         let cast = std::fs::read_to_string(&path).expect("the recording exists");
         let marks = cast

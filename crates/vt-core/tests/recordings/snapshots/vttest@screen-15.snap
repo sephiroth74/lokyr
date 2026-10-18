@@ -1,0 +1,34 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+AAAAA
+AAAAA
+AAAAA
+AAAAA
+
+
+
+           normal      bold        underscored blinking    reversed
+
+stars:     **********  **********  **********  **********  **********
+  23-32 bold; 35-44 underline=single; 47-56 blink; 59-68 inverse
+
+line:      ──────────  ──────────  ──────────  ──────────  ──────────
+  23-32 bold; 35-44 underline=single; 47-56 blink; 59-68 inverse
+
+x'es:      xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx  xxxxxxxxxx
+  23-32 bold; 35-44 underline=single; 47-56 blink; 59-68 inverse
+
+diamonds:  ◆◆◆◆◆◆◆◆◆◆  ◆◆◆◆◆◆◆◆◆◆  ◆◆◆◆◆◆◆◆◆◆  ◆◆◆◆◆◆◆◆◆◆  ◆◆◆◆◆◆◆◆◆◆
+  23-32 bold; 35-44 underline=single; 47-56 blink; 59-68 inverse
+
+
+
+
+Test of the SAVE/RESTORE CURSOR feature. There should
+be ten characters of each flavour, and a rectangle
+of 5 x 4 A's filling the top left of the screen.
+Push <RETURN>
+cursor 13,23
+replies: none

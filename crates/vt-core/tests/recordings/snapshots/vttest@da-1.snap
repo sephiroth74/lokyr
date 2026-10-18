@@ -1,0 +1,31 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+Test of Device Attributes report (what are you)
+
+Report is: <27> [ ? 6 2 ; 2 2 c  VT200 family
+  10-31 inverse
+    22 = color
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Push <RETURN>
+
+cursor 13,22
+replies: "\u{1b}[?62;22c"

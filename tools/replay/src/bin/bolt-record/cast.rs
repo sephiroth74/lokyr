@@ -18,13 +18,19 @@ pub struct Cast {
 }
 
 impl Cast {
-    pub fn new(cols: u16, rows: u16, term: &str) -> Self {
-        let header = json!({
+    /// A recording of a terminal of `cols` by `rows`, with `TERM` `term`,
+    /// whose header tells, past asciicast's fields, whether the terminal let
+    /// the program operate on the window, so that a replay does as it did.
+    pub fn new(cols: u16, rows: u16, term: &str, window_ops: bool) -> Self {
+        let mut header = json!({
             "version": 2,
             "width": cols,
             "height": rows,
             "env": { "TERM": term },
         });
+        if window_ops {
+            header["bolt"] = json!({ "window_ops": true });
+        }
         Self {
             lines: vec![header.to_string()],
             partial: Vec::new(),
@@ -128,7 +134,7 @@ mod tests {
 
     #[test]
     fn a_character_that_two_outputs_split_comes_whole() {
-        let mut cast = Cast::new(10, 2, "xterm-256color");
+        let mut cast = Cast::new(10, 2, "xterm-256color", false);
         cast.output(T, "a\u{4e2d}".as_bytes().split_at(2).0);
         cast.output(T, &"a\u{4e2d}".as_bytes()[2..]);
         cast.input(T, b"\x1b[A");
@@ -154,5 +160,19 @@ mod tests {
             .collect();
         assert_eq!(kinds, ["o", "o", "i", "m", "o", "o", "o"]);
         assert_eq!(lines[3][2], "\u{1b}[A");
+    }
+
+    #[test]
+    fn the_header_tells_the_window_operations_when_they_were_allowed() {
+        let header = |window_ops| {
+            let text = Cast::new(10, 2, "xterm-256color", window_ops).finish();
+            text.lines().next().unwrap().to_owned()
+        };
+        assert!(!header(false).contains("bolt"));
+        assert!(
+            header(true).contains("\"bolt\":{\"window_ops\":true}"),
+            "{}",
+            header(true)
+        );
     }
 }

@@ -1,0 +1,32 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+         These are the G0 and G1 character sets.
+
+Character set B (US ASCII)                     Selected as G0 (with SI)
+  0-25 bold
+          !"#$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~
+Character set A (ISO Latin-1)                  Selected as G1 (with SO)
+  0-28 bold
+          !"£$%&'()*+,-./0123456789:;<=>?
+         @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+         `abcdefghijklmnopqrstuvwxyz{|}~
+
+
+
+
+
+
+
+
+
+
+
+
+
+Push <RETURN>
+cursor 13,23
+replies: none

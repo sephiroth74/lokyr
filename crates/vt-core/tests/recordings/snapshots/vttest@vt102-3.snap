@@ -1,0 +1,30 @@
+---
+source: tools/replay/tests/goldens.rs
+---
+the primary screen, the cursor shown
+A******************************************************************************B
+
+
+Test of 'Insert Mode'. The top line should be 'A*** ... ***B'. Push <RETURN>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cursor 76,3
+replies: none

@@ -13,6 +13,11 @@ fuzz_toolchain := "nightly-2026-10-12"
 # `just esctest` runs: bump it in a dedicated commit.
 esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 
+# The commit of vttest (https://github.com/ThomasDickey/vttest-snapshots)
+# that `just vttest` builds, its snapshot t20251205: bump it in a dedicated
+# commit.
+vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
+
 # Platform-independent crates, which must keep building for Linux.
 portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay"
 
@@ -74,8 +79,8 @@ ucd:
 ucd-check:
     cargo xtask ucd --check
 
-# Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf).
-record:
+# Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf, and builds vttest).
+record: vttest
     cargo run -q -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
 
 # Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, each whole, as `--include='CUP|CUB'`.
@@ -94,6 +99,22 @@ esctest *args:
         echo {{ esctest_commit }} > "$dir/.commit"
     fi
     cargo run -q --release -p bolt-replay --bin bolt-esctest -- "$dir/esctest" "$@"
+
+# Build vttest from the pinned commit into target/vttest (downloads it), for the recording of its screens.
+vttest:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=target/vttest
+    if [ "$(cat "$dir/.commit" 2>/dev/null)" != "{{ vttest_commit }}" ]; then
+        clone=$(mktemp -d)
+        trap 'rm -rf "$clone"' EXIT
+        git init -q --template= "$clone"
+        git -C "$clone" fetch -q --depth 1 https://github.com/ThomasDickey/vttest-snapshots {{ vttest_commit }}
+        rm -rf "$dir" && mkdir -p "$dir"
+        git -C "$clone" archive FETCH_HEAD | tar -x -C "$dir"
+        (cd "$dir" && ./configure --quiet > /dev/null && make --quiet > /dev/null)
+        echo {{ vttest_commit }} > "$dir/.commit"
+    fi
 
 # Run the benchmarks (not implemented yet).
 bench:
