@@ -287,6 +287,7 @@ mod tests {
         ("bolt-app", "crates/app"),
         ("bolt-bench", "tools/bench"),
         ("bolt-core-actions", "plugins/core-actions"),
+        ("bolt-differential", "tools/differential"),
         ("bolt-font-coretext", "crates/font-coretext"),
         ("bolt-kernel", "crates/kernel"),
         ("bolt-pkg-model", "crates/pkg-model"),
@@ -306,7 +307,7 @@ mod tests {
     ];
 
     /// External crates of the test graph.
-    const EXTERNALS: &[&str] = &["hyper", "objc2", "reqwest", "tokio"];
+    const EXTERNALS: &[&str] = &["alacritty_terminal", "hyper", "objc2", "reqwest", "tokio"];
 
     /// Dependencies of the test graph; they satisfy every rule.
     const EDGES: &[(&str, &str)] = &[
@@ -326,6 +327,8 @@ mod tests {
         ("bolt-app", "bolt-plugin-host-luau"),
         ("bolt-app", "bolt-render-metal"),
         ("bolt-core-actions", "bolt-plugin-sdk"),
+        ("bolt-differential", "alacritty_terminal"),
+        ("bolt-differential", "bolt-vt-core"),
         ("bolt-font-coretext", "bolt-text-core"),
         ("bolt-kernel", "bolt-pkg-model"),
         ("bolt-kernel", "bolt-plugin-sdk"),
@@ -425,6 +428,10 @@ mod tests {
             ),
             ("app-without-network", ("bolt-kernel", "tokio")),
             ("portable-without-macos", ("bolt-session", "objc2")),
+            (
+                "alacritty-only-in-the-differential-tests",
+                ("bolt-vt-core", "alacritty_terminal"),
+            ),
         ];
         let tested: BTreeSet<&str> = cases.iter().map(|(rule, _)| *rule).collect();
         let all: BTreeSet<String> = real_rules().into_iter().map(|rule| rule.name).collect();

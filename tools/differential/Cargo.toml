@@ -1,0 +1,18 @@
+[package]
+name = "bolt-differential"
+description = "Feeds the same bytes to the VT core and to alacritty_terminal, and compares their screens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+alacritty_terminal.workspace = true
+bolt-replay.workspace = true
+bolt-vt-core.workspace = true
+
+[lints]
+workspace = true

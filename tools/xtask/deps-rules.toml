@@ -58,6 +58,13 @@ crates = ["crates/kernel"]
 dependents = ["crates/app"]
 
 [[rule]]
+name = "alacritty-only-in-the-differential-tests"
+kind = "dependents-only"
+description = "Only the differential tests depend on alacritty_terminal, which they compare the VT core against: no crate of the terminal ever uses it."
+crates = ["alacritty_terminal"]
+dependents = ["tools/differential"]
+
+[[rule]]
 name = "app-without-network"
 kind = "forbid"
 description = "The app contains no HTTP, TLS or async-runtime crate: downloading plugins is Crossbow's job."

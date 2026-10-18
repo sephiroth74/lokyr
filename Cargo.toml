@@ -17,6 +17,9 @@ repository = "https://github.com/sephiroth74/bolt"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+# The terminal core that the differential tests compare vt-core against, without
+# serde, which they do not need.
+alacritty_terminal = { version = "0.26.0", default-features = false }
 cargo_metadata = "0.23.1"
 # Benchmarks, without plots or rayon.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
@@ -55,6 +58,7 @@ bolt-plugin-sdk = { path = "crates/plugin-sdk" }
 bolt-pty = { path = "crates/pty" }
 bolt-render-core = { path = "crates/render-core" }
 bolt-render-metal = { path = "crates/render-metal" }
+bolt-replay = { path = "tools/replay" }
 bolt-search = { path = "crates/search" }
 bolt-session = { path = "crates/session" }
 bolt-text-core = { path = "crates/text-core" }
