@@ -218,7 +218,7 @@ mod tests {
                 "{flag}"
             );
         }
-        for missing in ["RGB", "smm", "is2", "mc5i", "xterm-bolt", "bolt", ""] {
+        for missing in ["RGB", "smm", "mc0", "mc5i", "xterm-bolt", "bolt", ""] {
             assert_eq!(capability(missing.as_bytes()), None, "{missing}");
         }
     }

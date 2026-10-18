@@ -4594,12 +4594,61 @@ fn decscl_keeps_its_level_and_resets_softly() {
     let mut term = Term::new(10, 3);
     term.feed("\x1bP$q\"p\x1b\\");
     assert_eq!(replies(&mut term), "\x1bP1$r62;1\"p\x1b\\");
-    term.feed("\x1b[4h\x1b[65;1\"p\x1bP$q\"p\x1b\\");
-    assert_eq!(replies(&mut term), "\x1bP1$r65;1\"p\x1b\\");
+    // The VT100's level has no 8-bit controls to tell.
+    term.feed("\x1b[4h\x1b[61\"p\x1bP$q\"p\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r61\"p\x1b\\");
     assert!(!term.terminal.insert_mode(), "a soft reset");
-    // Another level does nothing.
-    term.feed("\x1b[70\"p\x1bP$q\"p\x1b\\");
-    assert_eq!(replies(&mut term), "\x1bP1$r65;1\"p\x1b\\");
+    // Above the VT220's that DA tells, or another value, does nothing.
+    for level in ["65", "63", "70"] {
+        term.feed(format!("\x1b[4h\x1b[{level};1\"p\x1bP$q\"p\x1b\\"));
+        assert_eq!(replies(&mut term), "\x1bP1$r61\"p\x1b\\", "{level}");
+        assert!(term.terminal.insert_mode(), "no reset for {level}");
+    }
+    term.feed("\x1b[62;1\"p\x1bP$q\"p\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r62;1\"p\x1b\\");
+}
+
+#[test]
+fn a_soft_reset_does_what_xterms_does_and_keeps_what_it_keeps() {
+    let mut term = Term::new(10, 3);
+    // The cursor's shape and blinking, modifyOtherKeys and the palette;
+    // the mouse, bracketed paste and the dynamic colors.
+    term.feed("\x1b[5 q\x1b[?12h\x1b[>4;2m\x1b]4;1;rgb:12/34/56\x07");
+    term.feed("\x1b[?1000h\x1b[?1006h\x1b[?2004h\x1b]11;rgb:01/02/03\x07");
+    term.feed("\x1b[?69h\x1b(0");
+    let background = term.terminal.colors().background;
+    term.terminal.take_events();
+    term.feed("\x1b[!p");
+    assert_eq!(term.terminal.take_events(), [Event::ColorsChanged]);
+    let terminal = &term.terminal;
+    assert_eq!(terminal.cursor_style(), None);
+    assert!(!terminal.cursor_blink());
+    assert_eq!(terminal.input_modes().modify_other_keys, 0);
+    assert_eq!(terminal.colors().palette, Colors::default().palette);
+    assert_eq!(terminal.input_modes().mouse_tracking, MouseTracking::Normal);
+    assert!(terminal.input_modes().bracketed_paste);
+    assert_eq!(
+        terminal.colors().background,
+        background,
+        "the dynamic colors stay"
+    );
+    // DECLRMM is off, and the character sets are back, without a DECRC.
+    term.feed("\x1b[?69$pq");
+    assert_eq!(replies(&mut term), "\x1b[?69;2$y");
+    assert_eq!(term.screen()[0], "q", "not a line-drawing character");
+}
+
+#[test]
+fn smooth_scrolling_is_told_to_whoever_draws() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?4h");
+    assert!(term.terminal.smooth_scroll());
+    let mut snapshot = super::Snapshot::default();
+    term.terminal.snapshot(&mut snapshot);
+    assert!(snapshot.smooth_scroll());
+    term.feed("\x1b[?4l");
+    term.terminal.snapshot(&mut snapshot);
+    assert!(!snapshot.smooth_scroll());
 }
 
 #[test]

@@ -81,14 +81,16 @@ impl Terminal {
     }
 
     /// DECSTR: the soft reset of the VT220, as xterm does it. The cursor
-    /// shows, and stays where it is; insert mode, origin mode and both
-    /// reverse wraparounds go off, and autowrap on, xterm's default; the cursor keys
-    /// and the keypad send their normal codes; the margins become the
-    /// screen's edges, with left and right margin mode off; the character
-    /// sets, the style and the protection of printed text go back to their
-    /// defaults; and the cursor that DECSC saved goes, so that DECRC homes
+    /// shows, and stays where it is, its shape and blinking back to the
+    /// configuration's; insert mode, origin mode and both reverse
+    /// wraparounds go off, and autowrap on, xterm's default; the cursor keys
+    /// and the keypad send their normal codes, and modifyOtherKeys goes
+    /// off; the margins become the screen's edges, with left and right
+    /// margin mode off; the character sets, the style and the protection of
+    /// printed text go back to their defaults, and the palette to the
+    /// theme's; and the cursor that DECSC saved goes, so that DECRC homes
     /// the cursor with the defaults. The screens' text, the modes of the
-    /// mouse and the title stay.
+    /// mouse, bracketed paste, the dynamic colors and the title stay.
     pub(super) fn soft_reset(&mut self) {
         self.cursor_visible = true;
         self.insert = false;
@@ -96,8 +98,15 @@ impl Terminal {
         self.reverse_wrap = false;
         self.reverse_wrap_extended = false;
         self.autowrap = true;
+        self.cursor_style = None;
+        self.cursor_blink = false;
         self.input.cursor_keys_application = false;
         self.input.keypad_application = false;
+        self.input.modify_other_keys = 0;
+        if self.colors.palette != self.default_colors.palette {
+            self.colors.palette = self.default_colors.palette;
+            self.events.push(Event::ColorsChanged);
+        }
         self.left_right_margins = false;
         self.margins = Margins::screen(self.cols, self.rows);
         self.charsets = Charsets::default();
@@ -106,12 +115,13 @@ impl Terminal {
         self.screen_mut().saved = None;
     }
 
-    /// DECSCL: the conformance level, 61 for the VT100's to 65 for the
-    /// VT500's, which DECRQSS tells, with a soft reset, as the VT510 does.
-    /// The terminal does what it does at any level; another value does
-    /// nothing.
+    /// DECSCL: the conformance level, 61 for the VT100's or 62 for the
+    /// VT220's that DA tells, which DECRQSS tells, with a soft reset, as the
+    /// VT220 and xterm do; the VT510 resets in full. The terminal does what
+    /// it does at either level; a level above the VT220's, as xterm refuses
+    /// one above its own, or another value, does nothing.
     pub(super) fn set_conformance_level(&mut self, level: u16) {
-        if (61..=65).contains(&level) {
+        if (61..=62).contains(&level) {
             self.conformance = level;
             self.soft_reset();
         }

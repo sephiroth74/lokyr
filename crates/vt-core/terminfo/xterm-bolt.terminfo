@@ -1,8 +1,8 @@
 # The terminfo entry of Bolt, which XTGETTCAP answers from too.
 #
 # It is xterm-256color as ncurses 6.0 describes it, without what Bolt does
-# not do: the soft reset (DECSTR) of is2 and rs2, printing (mc0, mc4, mc5,
-# mc5i), meta mode (smm, rmm) and memory lock (meml, memu). Backspace sends
+# not do: printing (mc0, mc4, mc5, mc5i), meta mode (smm, rmm) and memory
+# lock (meml, memu). Backspace sends
 # DEL (kbs), Se restores the cursor style that the user chose, and kmous and
 # XM ask for SGR mouse reports, which X10's stop at column 223. Then come
 # the extensions that Bolt supports, as ncurses, tmux and other terminals
@@ -186,7 +186,9 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	rmkx=\E[?1l\E>,
 	rmso=\E[27m,
 	rmul=\E[24m,
+	is2=\E[!p\E[?3;4l\E[4l\E>,
 	rs1=\Ec,
+	rs2=\E[!p\E[?3;4l\E[4l\E>,
 	sc=\E7,
 	setab=\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m,
 	setaf=\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m,

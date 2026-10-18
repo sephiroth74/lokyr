@@ -26,6 +26,7 @@ pub struct Snapshot {
     colors_changed: bool,
     cursor: SnapshotCursor,
     reverse_video: bool,
+    smooth_scroll: bool,
     colors: Colors,
 }
 
@@ -95,6 +96,11 @@ impl Snapshot {
     /// Whether the screen shows in reverse video (DECSCNM).
     pub fn reverse_video(&self) -> bool {
         self.reverse_video
+    }
+
+    /// Whether the program asked for smooth scrolling (DECSCLM).
+    pub fn smooth_scroll(&self) -> bool {
+        self.smooth_scroll
     }
 
     /// The colors to draw with.
@@ -203,6 +209,7 @@ impl Terminal {
         snapshot.colors_changed =
             snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
         snapshot.reverse_video = reverse_video;
+        snapshot.smooth_scroll = self.smooth_scroll();
         if snapshot.colors != self.colors {
             snapshot.colors.clone_from(&self.colors);
         }
@@ -271,6 +278,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
             blink: terminal.cursor_blink(),
         },
         reverse_video: terminal.reverse_video(),
+        smooth_scroll: terminal.smooth_scroll(),
         colors: terminal.colors().clone(),
     }
 }

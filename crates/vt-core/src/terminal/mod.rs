@@ -290,7 +290,7 @@ pub struct Terminal {
     /// Smooth scrolling (DECSCLM, mode 4), which a program asks for and the
     /// screen keeps for whoever draws it; it scrolls at once.
     smooth_scroll: bool,
-    /// The conformance level that DECSCL set, 61 to 65: 62 at first, the
+    /// The conformance level that DECSCL set, 61 or 62: 62 at first, the
     /// VT220 that DA tells of.
     conformance: u16,
     /// The extent of the attribute changes in rectangles that DECSACE set:
@@ -642,6 +642,12 @@ impl Terminal {
     /// Whether the program asked the cursor to blink (mode 12).
     pub fn cursor_blink(&self) -> bool {
         self.cursor_blink
+    }
+
+    /// Whether a program asked for smooth scrolling (DECSCLM, mode 4), for
+    /// whoever draws the screen to honor.
+    pub fn smooth_scroll(&self) -> bool {
+        self.smooth_scroll
     }
 
     /// Whether reverse wraparound (mode 45) is on.

@@ -292,7 +292,8 @@ impl Terminal {
             b" q" => Some(format!("{} q", self.cursor_style_value())),
             b"\"q" => Some(format!("{}\"q", u8::from(self.protected))),
             // The conformance level, with 7-bit controls, which the
-            // terminal's replies use.
+            // terminal's replies use, past the VT100's, which has no others.
+            b"\"p" if self.conformance == 61 => Some("61\"p".to_owned()),
             b"\"p" => Some(format!("{};1\"p", self.conformance)),
             b"*x" => Some(format!("{}*x", self.attribute_extent)),
             // No status line (DECSSDT) and the main display active
