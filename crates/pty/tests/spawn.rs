@@ -469,7 +469,7 @@ fn a_working_directory_that_is_a_fifo_fails_without_waiting_for_a_writer() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(
-        matches!(failed, Ok(Err(bolt_pty::Error::Spawn { .. }))),
+        matches!(failed, Ok(Err(bolt_pty::Error::WorkingDirectory { .. }))),
         "{failed:?}"
     );
 }

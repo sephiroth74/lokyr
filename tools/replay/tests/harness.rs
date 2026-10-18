@@ -119,7 +119,7 @@ fn a_program_hung_up_with_a_reply_queued_still_exits() {
     harness.exit(LIMIT).unwrap();
     assert_eq!(inputs(&harness), [b""; 0], "the reply was never written");
     let error = harness.send(b"x", LIMIT).unwrap_err();
-    assert!(error.to_string().contains("ended before"), "{error:#}");
+    assert!(error.to_string().contains("hung up"), "{error:#}");
 }
 
 #[test]
@@ -361,17 +361,130 @@ fn a_send_that_fails_on_an_error_takes_back_its_keys() {
     harness.hang_up();
 }
 
+/// How long `bytes` take to go straight to a program in a PTY that reads
+/// them without writing, written as fast as the PTY takes them.
+fn straight(bytes: &[u8]) -> Duration {
+    let script = "stty raw -echo; echo armed; exec cat >/dev/null";
+    let pty = bolt_pty::spawn(&bolt_pty::Options::new(
+        bolt_pty::Program::command("/bin/sh", ["-c", script]),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let mut reader = pty.reader().unwrap();
+    let mut writer = pty.writer().unwrap();
+    let (mut buffer, mut read) = ([0; 64], Vec::new());
+    while !read.ends_with(b"armed\n") {
+        let deadline = std::time::Instant::now() + LIMIT;
+        match reader.read_until(&mut buffer, Some(deadline)).unwrap() {
+            bolt_pty::ReadOutcome::Read(n) => read.extend_from_slice(&buffer[..n]),
+            outcome => panic!("{outcome:?} before the program was ready"),
+        }
+    }
+    let started = std::time::Instant::now();
+    let mut left = bytes;
+    while !left.is_empty() {
+        let written = writer.write_until(left, None).unwrap().unwrap();
+        left = &left[written..];
+    }
+    started.elapsed()
+}
+
 #[test]
 fn keys_go_as_fast_as_a_silent_program_reads_them() {
+    let keys = vec![b'x'; 512 << 10];
     let mut harness = harness(20, 3, "stty raw -echo; echo armed; exec cat >/dev/null");
     harness.wait("armed", LIMIT).unwrap();
     let started = std::time::Instant::now();
-    harness.send(&vec![b'x'; 1 << 20], LIMIT).unwrap();
-    // A turn of 10 ms for each KiB that the terminal takes took 6 s.
+    harness.send(&keys, LIMIT).unwrap();
+    let took = started.elapsed();
+    harness.hang_up();
+    // A turn of 10 ms for each write, as the harness took when it waited
+    // for output alone, against the same bytes written straight, which a
+    // busy machine slows too: three quarters of a turn a write, for what
+    // the harness does besides when the machine is busy.
+    let straight = straight(&keys);
+    let writes = u32::try_from(inputs(&harness).len()).unwrap();
+    let turns = Duration::from_micros(7_500) * writes;
     assert!(
-        started.elapsed() < Duration::from_secs(4),
-        "{:?}",
-        started.elapsed()
+        took < straight + turns,
+        "{took:?} for {writes} writes, {straight:?} straight"
+    );
+}
+
+#[test]
+fn a_reply_that_the_test_makes_goes_before_the_keys_that_follow() {
+    // The program asks for the clipboard, then reads the answer and a key.
+    let script = r#"stty raw -echo; echo armed; printf '\033]52;c;?\007'; a=$(dd bs=1 count=12 2>/dev/null); k=$(dd bs=1 count=1 2>/dev/null); stty sane; printf 'got:%s|%s\n' "$a" "$k" | tr '\033\007' 'EB'"#;
+    let mut options = options(40, 3, script);
+    options.terminal.clipboard_reads = true;
+    let mut harness = Harness::spawn(&options).unwrap();
+    harness.wait("armed", LIMIT).unwrap();
+    let started = std::time::Instant::now();
+    let request = loop {
+        let events = harness.take_terminal_events();
+        if let Some(TerminalEvent::ClipboardRead(request)) = events.into_iter().next() {
+            break request;
+        }
+        assert!(started.elapsed() < LIMIT, "no read came");
+        harness.sleep(Duration::from_millis(20)).unwrap();
+    };
+    harness.terminal_mut().reply_clipboard(request, b"hi");
+    harness.send(b"Z", LIMIT).unwrap();
+    harness.wait("got:E]52;c;aGk=B|Z", LIMIT).unwrap();
+}
+
+#[test]
+fn quiet_for_as_long_as_its_limit_succeeds_on_a_silent_program() {
+    let mut harness = harness(20, 3, "echo armed; sleep 30");
+    harness.wait("armed", LIMIT).unwrap();
+    for _ in 0..50 {
+        harness
+            .quiet(Duration::from_millis(20), Duration::from_millis(20))
+            .unwrap();
+    }
+    harness
+        .quiet(Duration::ZERO, Duration::from_millis(10))
+        .unwrap();
+    harness.hang_up();
+}
+
+#[test]
+fn a_send_after_a_hang_up_says_so() {
+    let mut harness = harness(20, 3, "echo armed; sleep 30");
+    harness.wait("armed", LIMIT).unwrap();
+    harness.hang_up();
+    let error = harness.send(b"x", LIMIT).unwrap_err();
+    assert!(error.to_string().contains("hung up"), "{error:#}");
+}
+
+#[test]
+fn a_mark_and_a_resize_write_the_replies_that_the_test_made() {
+    let script = r"stty raw -echo; echo armed; printf '\033]52;c;?\007\033]52;c;?\007'; sleep 30";
+    let mut options = options(20, 3, script);
+    options.terminal.clipboard_reads = true;
+    let mut harness = Harness::spawn(&options).unwrap();
+    harness.wait("armed", LIMIT).unwrap();
+    let started = std::time::Instant::now();
+    let mut requests = Vec::new();
+    while requests.len() < 2 {
+        for event in harness.take_terminal_events() {
+            if let TerminalEvent::ClipboardRead(request) = event {
+                requests.push(request);
+            }
+        }
+        assert!(started.elapsed() < LIMIT, "no reads came");
+        harness.sleep(Duration::from_millis(20)).unwrap();
+    }
+    let answer = b"\x1b]52;c;aGk=\x07";
+    harness.terminal_mut().reply_clipboard(requests[0], b"hi");
+    harness.mark("answered").unwrap();
+    assert_eq!(inputs(&harness), [&answer[..]], "written by the mark");
+    harness.terminal_mut().reply_clipboard(requests[1], b"hi");
+    harness.resize(30, 4).unwrap();
+    assert_eq!(
+        inputs(&harness),
+        [&answer[..], &answer[..]],
+        "and by the resize"
     );
     harness.hang_up();
 }

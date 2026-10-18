@@ -146,6 +146,15 @@ pub enum Error {
     /// No pseudo-terminal could be opened.
     #[error("cannot open a pseudo-terminal: {0}")]
     Open(#[source] io::Error),
+    /// The working directory could not be entered.
+    #[error("cannot enter {}: {source}", path.display())]
+    WorkingDirectory {
+        /// The directory, as it was asked for.
+        path: PathBuf,
+        /// Why.
+        #[source]
+        source: io::Error,
+    },
     /// The program could not start.
     #[error("cannot start {program}: {source}")]
     Spawn {

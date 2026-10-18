@@ -58,10 +58,14 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         source,
     };
     let working_directory = options.working_directory.as_ref().unwrap_or(&account.home);
-    // The program and the working directory, looked for and opened here,
+    // The working directory and the program, opened and looked for here,
     // before the spawns' lock, rather than by the child under it: a mount
     // that does not answer holds this spawn alone. The exec itself, which
     // reads the program, stays under the lock.
+    let dir = open_directory(working_directory).map_err(|source| Error::WorkingDirectory {
+        path: working_directory.clone(),
+        source,
+    })?;
     let path = find_program(
         &program,
         env.get(OsStr::new("PATH")).map(OsString::as_os_str),
@@ -73,7 +77,6 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     // The program's name, as it was given, rather than where it was found.
     command.arg0(arg0.as_deref().unwrap_or(program.as_os_str()));
     command.env_clear().envs(env);
-    let dir = open_directory(working_directory).map_err(spawn_error)?;
     let dir_fd = dir.as_raw_fd();
     for stdio in 0..3 {
         let slave = Stdio::from(slave.try_clone().map_err(spawn_error)?);
@@ -359,13 +362,18 @@ fn find_program(
         for dir in std::env::split_paths(path.unwrap_or(OsStr::new(DEFAULT_PATH))) {
             let candidate = working_directory.join(dir).join(program);
             match std::fs::metadata(&candidate) {
-                Ok(metadata) if metadata.is_file() && executable(&candidate) => {
+                Ok(metadata) if metadata.is_file() && executable(&candidate, &metadata) => {
                     return Ok(candidate);
                 }
                 // A file that cannot be executed, or a directory, which
                 // `execve` refuses with `EACCES`.
                 Ok(_) => denied = true,
-                Err(error) if error.kind() == ErrorKind::PermissionDenied => denied = true,
+                // A directory on the way that cannot be searched: `EACCES`
+                // with glibc's `execvp`, while macOS's tells it only of a
+                // file that is there.
+                Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+                    denied |= cfg!(not(target_os = "macos"));
+                }
                 Err(_) => {}
             }
         }
@@ -377,14 +385,18 @@ fn find_program(
     }))
 }
 
-/// Whether this user can execute the file at `path`.
-fn executable(path: &Path) -> bool {
+/// Whether this user can execute the file at `path`, whose `metadata`
+/// these are: it has an execute bit, which `execve` asks for whatever an
+/// ACL grants, and `access` lets this user execute it.
+fn executable(path: &Path, metadata: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
     let Ok(name) = CString::new(path.as_os_str().as_bytes()) else {
         return false;
     };
     // SAFETY: `name` is a C string that lives through the call, which only
     // looks at the file.
-    unsafe { libc::access(name.as_ptr(), libc::X_OK) == 0 }
+    metadata.permissions().mode() & 0o111 != 0
+        && unsafe { libc::access(name.as_ptr(), libc::X_OK) == 0 }
 }
 
 /// How a working directory is opened: to be entered, not read, so that a
@@ -708,7 +720,13 @@ mod tests {
         std::fs::set_permissions(dir.join("d"), std::fs::Permissions::from_mode(0o000)).unwrap();
         let unsearchable = error(find("tool", Some(&path("d"))));
         std::fs::set_permissions(dir.join("d"), std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(unsearchable, Some(libc::EACCES));
+        // macOS's `execvp` tells `EACCES` only of a file that is there.
+        let expected = if cfg!(target_os = "macos") {
+            libc::ENOENT
+        } else {
+            libc::EACCES
+        };
+        assert_eq!(unsearchable, Some(expected));
         // A name with a slash is a path; without `PATH`, the system's.
         assert_eq!(find("./tool", Some(&all)).unwrap(), PathBuf::from("./tool"));
         let system = find("sh", None).unwrap();
@@ -753,7 +771,50 @@ mod tests {
         let failed = receiver.recv_timeout(std::time::Duration::from_secs(5));
         drop(held);
         spawning.join().unwrap();
-        assert!(matches!(failed, Ok(Err(Error::Spawn { .. }))), "{failed:?}");
+        assert!(
+            matches!(&failed, Ok(Err(Error::WorkingDirectory { source, .. })) if source.kind() == ErrorKind::NotFound),
+            "{failed:?}"
+        );
+        let message = failed.unwrap().unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "cannot enter /no/such/directory: No such file or directory (os error 2)"
+        );
+    }
+
+    #[test]
+    fn an_empty_working_directory_is_not_there() {
+        let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
+        options.working_directory = Some(PathBuf::new());
+        let error = spawn(&options).unwrap_err();
+        assert!(
+            matches!(&error, Error::WorkingDirectory { source, .. } if source.raw_os_error() == Some(libc::ENOENT)),
+            "{error:?}"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_file_that_only_an_acl_lets_run_is_passed_over() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDir::new("acl");
+        for (dir, mode) in [("a", 0o644), ("b", 0o755)] {
+            std::fs::create_dir(temp.0.join(dir)).unwrap();
+            let tool = temp.0.join(dir).join("tool");
+            std::fs::write(&tool, "").unwrap();
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        let user =
+            String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
+        let granted = Command::new("chmod")
+            .arg("+a")
+            .arg(format!("{} allow execute", user.trim()))
+            .arg(temp.0.join("a/tool"))
+            .status()
+            .unwrap();
+        assert!(granted.success());
+        let found = find_program(Path::new("tool"), Some(OsStr::new("a:b")), &temp.0).unwrap();
+        assert_eq!(found, temp.0.join("b/tool"));
     }
 
     fn vars(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {

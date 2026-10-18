@@ -70,6 +70,8 @@ pub struct Harness {
     /// Whether the program can no longer be written to, as it has ended or
     /// has been hung up.
     closed: bool,
+    /// Whether the program was hung up.
+    hung_up: bool,
     started: Instant,
     events: Vec<(Duration, Event)>,
     /// Texts that the screen must never show.
@@ -136,6 +138,7 @@ impl Harness {
             written: 0,
             dropped: 0,
             closed: false,
+            hung_up: false,
             started: Instant::now(),
             events: Vec::new(),
             forbidden: Vec::new(),
@@ -167,20 +170,25 @@ impl Harness {
     /// Waits until the program writes nothing for `time`, with no
     /// synchronized update under way, for `limit` at most.
     pub fn quiet(&mut self, time: Duration, limit: Duration) -> Result<()> {
-        let deadline = Instant::now() + limit;
+        let mut now = Instant::now();
+        let deadline = now + limit;
         loop {
             // A turn at least, so that a quiet time of 0 still reads what
-            // the program writes, and no read past the limit.
-            let quiet = Instant::now() + time.max(TURN);
-            let until = quiet.min(deadline);
+            // the program writes, and no read past the limit; a read that
+            // timed out was quiet for as long as it waited.
+            let until = (now + time.max(TURN)).min(deadline);
             match self.read(until)? {
                 Read::End => return Ok(()),
-                Read::TimedOut if until == quiet && !self.terminal.synchronized_output() => {
+                Read::TimedOut
+                    if until.duration_since(now) >= time
+                        && !self.terminal.synchronized_output() =>
+                {
                     return Ok(());
                 }
                 Read::Output | Read::TimedOut => {}
             }
-            if Instant::now() >= deadline {
+            now = Instant::now();
+            if now >= deadline {
                 bail!(
                     "the program did not go quiet in {limit:?}:\n{}",
                     self.screen()
@@ -204,12 +212,17 @@ impl Harness {
     /// after. If the limit comes first, what of them was not written is
     /// taken back, rather than left for the next step to type.
     pub fn send(&mut self, bytes: &[u8], limit: Duration) -> Result<()> {
+        if self.hung_up {
+            bail!("the program was hung up, and takes nothing more");
+        }
         if self.closed {
             bail!("the program ended before it took what was typed");
         }
         if bytes.is_empty() {
             return Ok(());
         }
+        // The replies that the test made go before the keys.
+        self.queue_replies();
         let id = self.queue(bytes.to_vec(), false);
         let sent = self.wait_written(id, limit);
         // What was not written goes, however the send failed.
@@ -240,6 +253,7 @@ impl Harness {
 
     /// Marks the moment, once no synchronized update is under way.
     pub fn mark(&mut self, label: &str) -> Result<()> {
+        self.send_replies()?;
         let deadline = Instant::now() + UPDATE;
         while self.terminal.synchronized_output() {
             match self.read(deadline)? {
@@ -306,6 +320,7 @@ impl Harness {
     /// written goes.
     pub fn hang_up(&mut self) {
         self.pty = None;
+        self.hung_up = true;
         self.close();
     }
 
@@ -313,6 +328,7 @@ impl Harness {
     /// changes size does, with the size that the terminal takes, in cells
     /// and, once a cell's size is set, in pixels.
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
+        self.send_replies()?;
         self.terminal.resize(cols, rows);
         if let Some(pty) = &self.pty {
             pty.resize(size(&self.terminal))
@@ -446,6 +462,14 @@ impl Harness {
         }
         self.pending.push_back(Pending { id, bytes, reply });
         id
+    }
+
+    /// Queues the replies that the terminal has made, those that a test
+    /// made too, and writes what of them the program has room for, so that
+    /// a step that does not read leaves none waiting.
+    fn send_replies(&mut self) -> Result<()> {
+        self.queue_replies();
+        self.write_some(Instant::now())
     }
 
     /// Queues the replies that the terminal has made, while they fit.
