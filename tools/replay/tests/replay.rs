@@ -282,14 +282,8 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "long-link",
             r"printf '\\033]8;;'; head -c 70000 /dev/zero | tr '\\000' x; printf '%%7Az-someone-zz\\033\\\\link\\n'; sleep 0.3",
         ),
-        // Across a soft wrap, as the cursor's moves put it together, then
-        // erased, so that only the check after each read sees it.
-        (
-            "wrapped",
-            r"printf '\\033[2;2Hne-zz\\033[1;14Hzz-someo'; sleep 0.3; printf '\\033[1;1H\\033[2K\\033[2;1H\\033[2K'; sleep 0.3",
-        ),
-        // In base64 in kitty's graphics, as a path, in OSC 1337's file, after
-        // a space in OSC 52, and split by a line break.
+        // In base64 in kitty's graphics, as a path, in OSC 1337's file, and
+        // after a space in OSC 52.
         (
             "kitty",
             r"printf '\\033_Gt=f;%s\\033\\\\' $(printf /home/zz-someone-zz/a.png | base64); sleep 0.3",
@@ -301,10 +295,6 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
         (
             "clipboard-space",
             r"printf '\\033]52;c;%s %s\\007' $(printf abc | base64) $(printf zz-someone-zz | base64); sleep 0.3",
-        ),
-        (
-            "base64-wrapped",
-            r"printf 'enotc29t\\nZW9uZS16eg==\\n'; sleep 0.3; printf '\\033[2J'; sleep 0.3",
         ),
         // Broken by a line break in a DCS string, and by DEL in a PM one.
         (
@@ -321,6 +311,31 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "alternate",
             r"printf '\\033[8Gone-zz\\rzz-some\\n\\n\\n\\n\\033[?1049h'; sleep 0.3",
         ),
+        // In a DCS and a PM string that a control after the ESC hides from a
+        // scan for `ESC P` and `ESC ^`, and that a line break breaks; and in
+        // a DCS string, percent-encoded.
+        (
+            "dcs-after-control",
+            r"printf '\\033\\001Ppzz-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        (
+            "pm-after-control",
+            r"printf '\\033\\001^zz-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        (
+            "dcs-percent",
+            r"printf '\\033Pp%%7Az-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        // In base64 split between the chunks of a transfer: kitty's
+        // graphics, and iTerm2's file in parts.
+        (
+            "kitty-chunks",
+            r"b=$(printf /home/zz-someone-zz/a.png | base64); printf '\\033_Ga=T,f=100,m=1;%s\\033\\\\' $(echo $b | cut -c1-16); printf '\\033_Gm=0;%s\\033\\\\' $(echo $b | cut -c17-); sleep 0.3",
+        ),
+        (
+            "iterm-chunks",
+            r"b=$(printf zz-someone-zz | base64); printf '\\033]1337;MultipartFile=size=13\\007\\033]1337;FilePart=%s\\007\\033]1337;FilePart=%s\\007\\033]1337;FileEnd\\007' $(echo $b | cut -c1-8) $(echo $b | cut -c9-); sleep 0.3",
+        ),
     ] {
         let script = format!("size 20 3\nrun sh -c \"{program}\"\nexit\n");
         let (output, cast) = record(name, &script, &user);
@@ -331,6 +346,85 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
         );
         assert_eq!(cast, None, "{name}");
     }
+}
+
+#[test]
+fn a_name_drawn_then_erased_is_caught_while_it_shows() {
+    let user = [("USER", "zz-someone-zz")];
+    // The program draws, shows `ready`, and erases once a key comes, so
+    // that a read sees the name on the screen, however busy the machine.
+    for (name, program) in [
+        // Across a soft wrap, as the cursor's moves put it together, so
+        // that only the check after each read sees it.
+        (
+            "wrapped",
+            r"stty -echo; printf '\\033[2;2Hne-zz\\033[1;14Hzz-someo\\033[3;1Hready'; read line; printf '\\033[1;1H\\033[2K\\033[2;1H\\033[2K'",
+        ),
+        // In base64 that a line break splits.
+        (
+            "base64-wrapped",
+            r"stty -echo; printf 'enotc29t\\nZW9uZS16eg==\\nready'; read line; printf '\\033[2J'",
+        ),
+    ] {
+        let script =
+            format!("size 20 3\nrun sh -c \"{program}\"\nwait ready\nsend \"k\\r\"\nexit\n");
+        let (output, cast) = record(name, &script, &user);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("showed `zz-someone-zz`"),
+            "{name}: {stderr}"
+        );
+        assert_eq!(cast, None, "{name}");
+    }
+}
+
+#[test]
+fn a_short_name_one_in_base64_for_urls_and_one_of_wide_characters_are_caught() {
+    for (name, user, program) in [
+        // A name of 3 characters, whose base64 takes 4, in the clipboard.
+        (
+            "short",
+            "zzq",
+            r"printf '\\033]52;c;%s\\007' $(printf zzq | base64); sleep 0.3",
+        ),
+        // In base64 with `-` and `_` for `+` and `/`.
+        (
+            "url",
+            "zz~someone~zz",
+            r"printf '\\033]52;c;%s\\007' $(printf 'zz~someone~zz' | base64 | tr '+/' '-_'); sleep 0.3",
+        ),
+        // Put together by moving the cursor back, of wide characters, whose
+        // second halves are no spaces.
+        (
+            "wide",
+            "zz-\u{65e5}\u{672c}-zz",
+            "printf '\\\\033[4G\u{65e5}\u{672c}-zz\\\\rzz-\\\\n\\\\n\\\\n\\\\n'; sleep 0.3",
+        ),
+    ] {
+        let script = format!("size 20 3\nrun sh -c \"{program}\"\nexit\n");
+        let (output, cast) = record(name, &script, &[("USER", user)]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(&format!("showed `{user}`")),
+            "{name}: {stderr}"
+        );
+        assert_eq!(cast, None, "{name}");
+    }
+}
+
+#[test]
+fn text_that_a_tab_separates_shows_no_name() {
+    let (output, cast) = record(
+        "tab",
+        "size 20 3\nrun sh -c \"printf 'zz-some\\\\tone-zz\\\\n'\"\nexit\n",
+        &[("USER", "zz-someone-zz")],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(cast.is_some_and(|cast| cast.contains(r"zz-some\tone-zz")));
 }
 
 /// A new directory of the user's own, named for the test, for a `TMPDIR`

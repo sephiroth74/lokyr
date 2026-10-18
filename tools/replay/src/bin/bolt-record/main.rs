@@ -19,7 +19,7 @@ use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
 use bolt_replay::harness::{Event, Harness, HarnessOptions, lines};
-use bolt_vt_core::parser::{Handler, Params, Parser};
+use bolt_vt_core::parser::{Handler, Limits, Params, Parser};
 use bolt_vt_core::terminal::Options;
 
 use cast::Cast;
@@ -250,24 +250,26 @@ fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
 
 /// The texts that a recording holds, which a name must show in none of:
 /// - the bytes that the program wrote, as they are, without their C0
-///   controls and DEL but for the line breaks, and with their
-///   percent-encoding undone too, so that the recording holds no name
-///   whole, in a string that the terminal drops, or one that passes its
-///   limit;
-/// - the text of each DCS, PM, SOS and APC string, without its controls,
-///   line breaks and DEL included, which the parser keeps or drops;
+///   controls and DEL but for the line breaks and the tabs, which separate
+///   text as the screen does, and with their percent-encoding undone too,
+///   so that the recording holds no name whole, in a string that the
+///   terminal drops, or one that passes its limit;
+/// - the payload of each OSC, DCS and APC string, as the parser reads it
+///   with no limit, and the text of each SOS and PM string, which it drops,
+///   and of each DCS string that it ignores: each as it is and without its
+///   controls, line breaks and DEL included, which the string keeps, and
+///   each of those with its percent-encoding undone, as links and the
+///   working directory have it;
 /// - what each run of base64 in the output stands for, from each place
 ///   that its groups can start, and the same without the output's controls,
-///   which split a run: OSC 52 carries the clipboard so, kitty's graphics,
-///   OSC 1337's files and OSC 99 their paths;
+///   which split a run, and in the payloads of a transfer in chunks,
+///   joined: OSC 52 carries the clipboard so, kitty's graphics, OSC 1337's
+///   files and OSC 99 their paths;
 /// - the bytes typed into the program, all of them, as two writes can
 ///   split a name typed;
 /// - the text that the VT core's parser prints from the output, without its
-///   escape sequences and control characters but for the line breaks, so
-///   that a name that an escape breaks shows;
-/// - the payload of each OSC, DCS and APC string, as it is and with its
-///   percent-encoding undone, as links and the working directory have it,
-///   which notifications are too;
+///   escape sequences and control characters but for the line breaks and
+///   the tabs, so that a name that an escape breaks shows;
 /// - the titles and the working directory, as the terminal keeps them;
 /// - every line of both screens, the scrollback's too, its soft-wrapped
 ///   rows joined, so that a name that the cursor's moves put together, or
@@ -276,7 +278,14 @@ fn texts(harness: &Harness) -> Vec<String> {
     let lossy = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
     let output = harness.output();
     let mut plain = Plain::default();
-    Parser::new().advance(&mut plain, &output);
+    // No limit, so that the whole of a string past the terminal's shows.
+    let limits = Limits {
+        osc: usize::MAX,
+        osc_commands: Vec::new(),
+        dcs: usize::MAX,
+        apc: usize::MAX,
+    };
+    Parser::with_limits(limits).advance(&mut plain, &output);
     let input: Vec<u8> = harness
         .events()
         .iter()
@@ -298,13 +307,25 @@ fn texts(harness: &Harness) -> Vec<String> {
         lossy(&input),
         plain.text,
     ];
-    texts.extend(control_strings(&output).iter().map(|text| lossy(text)));
-    for bytes in [&output, &joined] {
-        texts.extend(base64_runs(bytes).iter().map(|data| lossy(data)));
+    let payloads = plain.strings.iter().map(|(_, payload)| payload.clone());
+    for string in payloads.chain(control_strings(&output)) {
+        let bare: Vec<u8> = string
+            .iter()
+            .copied()
+            .filter(|&byte| byte >= 0x20 && byte != 0x7F)
+            .collect();
+        for text in [string, bare] {
+            texts.push(lossy(&percent_decoded(&text)));
+            texts.push(lossy(&text));
+        }
     }
-    for payload in &plain.strings {
-        texts.push(lossy(payload));
-        texts.push(lossy(&percent_decoded(payload)));
+    // Runs of base64 decode to bytes that hold no NUL to match, so that one
+    // text, of them all, keeps them apart.
+    for bytes in [&output, &joined]
+        .into_iter()
+        .chain(&transfers(&plain.strings))
+    {
+        texts.push(lossy(&base64_runs(bytes).join(&0)));
     }
     let terminal = harness.terminal();
     texts.push(terminal.title().to_owned());
@@ -318,63 +339,111 @@ fn texts(harness: &Harness) -> Vec<String> {
     texts
 }
 
-/// `bytes` without their C0 controls and DEL, but for the line breaks.
+/// `bytes` without their C0 controls and DEL, but for the line breaks and
+/// the tabs.
 fn without_controls(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .copied()
-        .filter(|&byte| (byte >= 0x20 && byte != 0x7F) || byte == b'\n')
+        .filter(|&byte| (byte >= 0x20 && byte != 0x7F) || matches!(byte, b'\n' | b'\t'))
         .collect()
 }
 
-/// The text of each DCS, SOS, PM and APC string in `bytes`, without its C0
-/// controls and DEL: from `ESC P`, `ESC X`, `ESC ^` or `ESC _` to the ESC
-/// that ends it, or the CAN or SUB that cancels it, or the end.
+/// The bytes of each DCS, SOS, PM and APC string in `bytes`, from its
+/// introducer, `P`, `X`, `^` or `_`, to the ESC that ends it, or the CAN or
+/// SUB that cancels it, or the end. The introducer follows an ESC, with the
+/// C0 controls and DEL between them that the parser's escape state passes
+/// over: all but CAN and SUB, which cancel the escape, and ESC, which
+/// starts it again.
 fn control_strings(bytes: &[u8]) -> Vec<Vec<u8>> {
     let mut strings = Vec::new();
     let mut at = 0;
-    while let Some(start) = bytes[at..]
-        .windows(2)
-        .position(|pair| pair[0] == 0x1B && b"PX^_".contains(&pair[1]))
-    {
-        let mut string = Vec::new();
-        at += start + 2;
-        while let Some(&byte) = bytes.get(at) {
-            if matches!(byte, 0x1B | 0x18 | 0x1A) {
-                break;
-            }
-            if byte >= 0x20 && byte != 0x7F {
-                string.push(byte);
-            }
+    while let Some(escape) = bytes[at..].iter().position(|&byte| byte == 0x1B) {
+        at += escape + 1;
+        while let Some(&byte) = bytes.get(at)
+            && ((byte < 0x20 && !matches!(byte, 0x18 | 0x1A | 0x1B)) || byte == 0x7F)
+        {
             at += 1;
         }
-        strings.push(string);
+        if !bytes.get(at).is_some_and(|byte| b"PX^_".contains(byte)) {
+            continue;
+        }
+        let start = at + 1;
+        at = start;
+        while bytes
+            .get(at)
+            .is_some_and(|byte| !matches!(byte, 0x1B | 0x18 | 0x1A))
+        {
+            at += 1;
+        }
+        strings.push(bytes[start..at].to_vec());
     }
     strings
 }
 
-/// What each run of base64 in `bytes`, of 8 characters or more, stands
-/// for, from each of the four places that its groups can start, so that a
-/// name in base64 shows wherever its run starts. Shorter runs, as most
-/// words are, are left out.
+/// The payloads of the transfers that come in chunks, each joined, as their
+/// base64 is split between them: kitty's graphics, whose APC strings
+/// `G<keys>;<data>` go on while their keys hold `m=1`, and iTerm2's files,
+/// whose OSC 1337 strings `FilePart=<data>` go on to `FileEnd`. A transfer
+/// that does not end is kept too.
+fn transfers(strings: &[(Kind, Vec<u8>)]) -> Vec<Vec<u8>> {
+    let (mut kitty, mut iterm) = (Vec::new(), Vec::new());
+    let mut transfers = Vec::new();
+    for (kind, payload) in strings {
+        match kind {
+            Kind::Apc => {
+                if let Some(rest) = payload.strip_prefix(b"G") {
+                    let (keys, data) = match rest.iter().position(|&byte| byte == b';') {
+                        Some(at) => (&rest[..at], &rest[at + 1..]),
+                        None => (rest, &[][..]),
+                    };
+                    kitty.extend_from_slice(data);
+                    if !keys.split(|&byte| byte == b',').any(|key| key == b"m=1") {
+                        transfers.push(std::mem::take(&mut kitty));
+                    }
+                }
+            }
+            Kind::Osc => {
+                if let Some(data) = payload.strip_prefix(b"1337;FilePart=") {
+                    iterm.extend_from_slice(data);
+                } else if payload == b"1337;FileEnd" {
+                    transfers.push(std::mem::take(&mut iterm));
+                }
+            }
+            Kind::Dcs => {}
+        }
+    }
+    transfers.extend([kitty, iterm].into_iter().filter(|data| !data.is_empty()));
+    transfers
+}
+
+/// Whether `byte` is of base64, in its alphabet or in the one for URLs and
+/// file names, which has `-` and `_` for `+` and `/`.
+fn base64(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'-' | b'_')
+}
+
+/// What each run of base64 in `bytes`, of 4 characters or more, the most
+/// that 3 bytes take, stands for, from each of the four places that its
+/// groups can start, so that a name in base64 shows wherever its run
+/// starts. Shorter runs stand for less than a name.
 fn base64_runs(bytes: &[u8]) -> Vec<Vec<u8>> {
-    let base64 = |byte: &u8| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
     bytes
-        .split(|byte| !base64(byte))
-        .filter(|run| run.len() >= 8)
+        .split(|&byte| !base64(byte))
+        .filter(|run| run.len() >= 4)
         .flat_map(|run| (0..4).map(move |skip| base64_decoded(&run[skip..])))
         .collect()
 }
 
-/// The bytes that `text` stands for in base64, up to the first byte that is
-/// not of it, its padding included.
+/// The bytes that `text` stands for in base64, in either alphabet, up to
+/// the first byte that is not of it, its padding included.
 fn base64_decoded(text: &[u8]) -> Vec<u8> {
     let value = |byte: u8| match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
         b'a'..=b'z' => Some(byte - b'a' + 26),
         b'0'..=b'9' => Some(byte - b'0' + 52),
-        b'+' => Some(62),
-        b'/' => Some(63),
+        b'+' | b'-' => Some(62),
+        b'/' | b'_' => Some(63),
         _ => None,
     };
     let mut out = Vec::with_capacity(text.len() * 3 / 4);
@@ -392,17 +461,26 @@ fn base64_decoded(text: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The kind of a control string that the parser reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Osc,
+    Dcs,
+    Apc,
+}
+
 /// What the parser finds in the program's output: the text that it prints,
-/// with the line breaks, and the payloads of the control strings.
+/// with the line breaks and the tabs, and the payloads of the control
+/// strings, by kind.
 #[derive(Default)]
 struct Plain {
     text: String,
-    strings: Vec<Vec<u8>>,
+    strings: Vec<(Kind, Vec<u8>)>,
 }
 
 impl Plain {
     fn put(&mut self, data: &[u8]) {
-        if let Some(string) = self.strings.last_mut() {
+        if let Some((_, string)) = self.strings.last_mut() {
             string.extend_from_slice(data);
         }
     }
@@ -414,13 +492,13 @@ impl Handler for Plain {
     }
 
     fn execute(&mut self, byte: u8) {
-        if byte == b'\n' {
-            self.text.push('\n');
+        if matches!(byte, b'\n' | b'\t') {
+            self.text.push(char::from(byte));
         }
     }
 
     fn osc_start(&mut self) {
-        self.strings.push(Vec::new());
+        self.strings.push((Kind::Osc, Vec::new()));
     }
 
     fn osc_put(&mut self, data: &[u8]) {
@@ -428,7 +506,7 @@ impl Handler for Plain {
     }
 
     fn dcs_start(&mut self, _: &Params, _: &[u8], _: u8) {
-        self.strings.push(Vec::new());
+        self.strings.push((Kind::Dcs, Vec::new()));
     }
 
     fn dcs_put(&mut self, data: &[u8]) {
@@ -436,7 +514,7 @@ impl Handler for Plain {
     }
 
     fn apc_start(&mut self) {
-        self.strings.push(Vec::new());
+        self.strings.push((Kind::Apc, Vec::new()));
     }
 
     fn apc_put(&mut self, data: &[u8]) {
@@ -596,28 +674,64 @@ mod tests {
 
     #[test]
     fn base64_shows_from_wherever_its_run_starts() {
-        let named = |bytes: &[u8]| {
+        let named = |bytes: &[u8], name: &str| {
             base64_runs(bytes)
                 .iter()
-                .any(|data| String::from_utf8_lossy(data).contains("zz-someone-zz"))
+                .any(|data| String::from_utf8_lossy(data).contains(name))
         };
         // `zz-someone-zz` in base64, after one to three characters that
         // shift its groups, and after a space.
         for before in ["", "a", "ab", "abc", "YWJj "] {
             assert!(
-                named(format!("x;{before}enotc29tZW9uZS16eg==").as_bytes()),
+                named(
+                    format!("x;{before}enotc29tZW9uZS16eg==").as_bytes(),
+                    "zz-someone-zz"
+                ),
                 "{before:?}"
             );
         }
-        assert!(!named(b"x;enotc29t"), "a part");
+        assert!(!named(b"x;enotc29t", "zz-someone-zz"), "a part");
+        // A name of 3 characters, in 4, and one in the alphabet for URLs.
+        assert!(named(b"x;enpx;y", "zzq"));
+        assert!(named(b"x;enp-c29tZW9uZX56eg", "zz~someone~zz"));
+        assert!(named(b"x;enp+c29tZW9uZX56eg", "zz~someone~zz"));
     }
 
     #[test]
-    fn control_strings_lose_their_controls() {
-        let strings = control_strings(b"a\x1bPpzz-some\none-zz\x1b\\b\x1b^x\x7fy\x18z\x1b_end");
+    fn the_chunks_of_a_transfer_are_joined() {
+        let strings = [
+            (Kind::Apc, b"Ga=T,f=100,m=1;L2hvbWUvenotc29t".to_vec()),
+            (Kind::Osc, b"1337;MultipartFile=size=4".to_vec()),
+            (Kind::Osc, b"1337;FilePart=enot".to_vec()),
+            (Kind::Apc, b"Gm=0;ZW9uZS16ei9hLnBuZw==".to_vec()),
+            (Kind::Osc, b"1337;FilePart=c29tZW9uZS16eg==".to_vec()),
+            (Kind::Osc, b"1337;FileEnd".to_vec()),
+            (Kind::Apc, b"Gm=1;YWJj".to_vec()),
+        ];
+        assert_eq!(
+            transfers(&strings),
+            [
+                b"L2hvbWUvenotc29tZW9uZS16ei9hLnBuZw==".to_vec(),
+                b"enotc29tZW9uZS16eg==".to_vec(),
+                b"YWJj".to_vec(),
+            ]
+        );
+    }
+
+    #[test]
+    fn control_strings_start_where_the_parser_starts_them() {
+        let strings = control_strings(
+            b"a\x1bPpzz-some\none-zz\x1b\\b\x1b^x\x7fy\x18z\x1b_end\x1b\x01\x7fPdcs\x1b\x18Xno\x1b\x1bXsos",
+        );
         assert_eq!(
             strings,
-            [b"pzz-someone-zz".to_vec(), b"xy".to_vec(), b"end".to_vec()]
+            [
+                b"pzz-some\none-zz".to_vec(),
+                b"x\x7fy".to_vec(),
+                b"end".to_vec(),
+                b"dcs".to_vec(),
+                b"sos".to_vec(),
+            ]
         );
     }
 }

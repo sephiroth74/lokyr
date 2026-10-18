@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 pub use bolt_pty::Exit;
 use bolt_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
-use bolt_vt_core::page::{Content, PageList, RowFlag};
+use bolt_vt_core::page::{Content, PageList, RowFlag, Width};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{self, Options, Terminal};
 
@@ -583,21 +583,27 @@ impl Harness {
     }
 }
 
-/// The text of each line of `list` from the row at index `from`, its
-/// clusters whole, the spaces that a program wrote kept, the empty cells
-/// left out, and the rows that soft-wrap into the next joined to it.
+/// The text of each line of `list` from the row at index `from`, read as
+/// [`Terminal::row_text`] reads a row: its clusters whole, an empty cell a
+/// space, the second half of a wide character left out, and no spaces at
+/// its end; the rows that soft-wrap into the next are joined to it.
 pub fn lines(list: &PageList, from: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut rows = list.rows_from(from).peekable();
     while let Some(row) = rows.next() {
         for (x, cell) in row.cells().enumerate() {
-            if let Content::Char(c) | Content::Grapheme(c) = cell.content()
-                && c != '\0'
-            {
-                line.push(c);
-                // A row has fewer than 2^16 columns.
-                line.extend(row.grapheme(x as u16));
+            match (cell.width(), cell.content()) {
+                (Width::SpacerTail | Width::SpacerHead, _) => {}
+                (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
+                    line.push(' ');
+                }
+                (_, Content::Char(c)) => line.push(c),
+                (_, Content::Grapheme(c)) => {
+                    line.push(c);
+                    // A row has fewer than 2^16 columns.
+                    line.extend(row.grapheme(x as u16));
+                }
             }
         }
         let goes_on = row.metadata().has(RowFlag::SoftWrapped)
@@ -605,6 +611,7 @@ pub fn lines(list: &PageList, from: usize) -> Vec<String> {
                 .peek()
                 .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
         if !goes_on {
+            line.truncate(line.trim_end_matches(' ').len());
             lines.push(std::mem::take(&mut line));
         }
     }
@@ -627,6 +634,20 @@ fn size(terminal: &Terminal) -> Size {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lines_read_empty_cells_as_spaces_and_wide_characters_whole() {
+        let mut terminal = Terminal::new(10, 4, Options::default());
+        // Text that a tab separates, wide characters, and a row that wraps
+        // into the next, with what the cursor's moves leave empty at its
+        // end and between.
+        let output = "ab\tcd\r\n\u{65e5}\u{672c}x\r\n0123456789wrap\x1b[3Cz";
+        Parser::new().advance(&mut terminal, output.as_bytes());
+        assert_eq!(
+            lines(terminal.screen_rows(), 0),
+            ["ab      cd", "\u{65e5}\u{672c}x", "0123456789wrap   z"]
+        );
+    }
 
     #[test]
     fn the_replies_that_wait_are_bounded() {

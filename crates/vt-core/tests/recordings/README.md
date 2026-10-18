@@ -7,13 +7,12 @@ Each recording here is a real program, run in a pseudo-terminal and driven by a 
 - **Recording again**: `just record` runs every script with `bolt-record`, which needs the five programs installed, and writes each recording next to its script. A recording changes with the programs' versions, which the tests' snapshots then show.
 - **What the programs see**: the session's terminal, which answers their queries, `TERM=xterm-256color`, and no environment but a few variables, in a directory of their own that is also their home, so that no user's configuration plays a part. `htop` shows itself alone, without the user's column, from `files/htoprc`, and `tmux` a status line without the host or the time, from `files/tmux.conf`.
 - **Nothing private**: the recorder refuses to write a recording that shows the user's name or full name, the host's or the computer's name, the user's home, the temporary directory and the folders above it, when they are the user's own, as on macOS, the long name of one, or the program's own home, whose path is the machine's. It looks on the screen after each read and, once the program is done, in:
-  - the bytes that the program wrote, as they are, without their control characters, and with their percent-encoding undone;
-  - the text of each DCS, PM, SOS and APC string, without its control characters;
-  - what each run of base64 in the output stands for, from wherever its groups start, which covers OSC 52's clipboard, kitty's graphics and OSC 1337's files;
+  - the bytes that the program wrote, as they are, without their control characters but for the line breaks and the tabs, and with their percent-encoding undone;
+  - the payloads of the OSC, DCS and APC strings, which the parser reads, and the text of the SOS and PM strings, which it drops, found where its escape state finds them: each as it is and without its control characters, and each of those with its percent-encoding undone;
+  - what each run of base64 in the output stands for, of 4 characters or more, in the alphabet for URLs too, from wherever its groups start, with the chunks of kitty's graphics and of OSC 1337's files joined, which covers OSC 52's clipboard and the files;
   - the bytes typed into it, all of them together;
   - the text that the VT core's parser prints from the output, without its escape sequences;
-  - the payloads of the OSC, DCS and APC strings, as they are and with their percent-encoding undone;
   - the titles and the working directory;
-  - every line of both screens, the scrollback's too, its soft-wrapped rows joined.
+  - every line of both screens, the scrollback's too, its soft-wrapped rows joined, as the screen shows them: an empty cell is a space, so that text that a tab or a move of the cursor separates is not joined.
 
   A name that the recorder cannot look up, as when `hostname` fails, is said on its standard error and not checked. So are names shorter than 3 characters, which would match too much. The machine's cores, load, memory and uptime, in `htop`'s header, are not private.
