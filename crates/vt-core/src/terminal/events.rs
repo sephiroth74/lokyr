@@ -19,7 +19,9 @@ pub(super) const EVENT_BYTES: usize = 1 << 20;
 /// place of the writes that wait to the same clipboards, or to some of
 /// them, made since the last read, which is answered with what was written
 /// before it: the clipboards end with the program's last write, unless it
-/// does not fit, when it goes with those that it overwrites.
+/// does not fit, when it goes with those that it overwrites. The places of
+/// the writes overwritten stay empty until they are half the queue, when
+/// the queue closes them up.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Events {
     /// The events, and the places of those that a later one took.
@@ -34,7 +36,13 @@ pub(super) struct Events {
     writes: [Option<usize>; 3],
     /// The bytes of the events with a payload that wait.
     bytes: usize,
+    /// How many places of `events` are empty.
+    empty: usize,
 }
+
+/// How many empty places the queue keeps at least before it closes them
+/// up, so that a few overwrites do not move the queue each.
+const EMPTY: usize = 32;
 
 impl Events {
     /// Adds `event`, unless it adds nothing to what waits, or would take the
@@ -91,6 +99,20 @@ impl Events {
             self.writes[set - 1] = Some(self.events.len());
         }
         self.events.push(Some(event));
+        if self.empty > EMPTY && 2 * self.empty > self.events.len() {
+            self.close_up();
+        }
+    }
+
+    /// Takes out the empty places, and moves the places that the states
+    /// and the writes keep with their events.
+    fn close_up(&mut self) {
+        let events = &self.events;
+        for at in self.states.iter_mut().chain(&mut self.writes).flatten() {
+            *at -= events[..*at].iter().filter(|event| event.is_none()).count();
+        }
+        self.events.retain(Option::is_some);
+        self.empty = 0;
     }
 
     /// Drops the writes that wait to `set`, or to some of its clipboards,
@@ -105,6 +127,7 @@ impl Events {
             };
             if let Some(Event::ClipboardWrite { data, .. }) = self.events[at].take() {
                 self.bytes -= size_of::<Event>() + data.len();
+                self.empty += 1;
             }
         }
     }
@@ -130,4 +153,52 @@ impl Events {
 /// primary selection.
 fn clipboards(target: ClipboardTarget) -> usize {
     usize::from(target.clipboard) | usize::from(target.primary) << 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(clipboard: bool, primary: bool) -> Event {
+        Event::ClipboardWrite {
+            target: ClipboardTarget { clipboard, primary },
+            data: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn overwritten_writes_leave_a_bounded_queue() {
+        let mut events = Events::default();
+        events.push(Event::TabColor(None));
+        // The clipboard written again and again, and the three sets in turn,
+        // which leave the places of two writes each turn.
+        for _ in 0..100_000 {
+            events.push(write(true, false));
+        }
+        for _ in 0..100_000 {
+            events.push(write(true, false));
+            events.push(write(false, true));
+            events.push(write(true, true));
+        }
+        events.push(Event::TabColor(Some(crate::page::Rgb { r: 1, g: 2, b: 3 })));
+        assert!(
+            events.events.len() <= 3 * EMPTY,
+            "{} places",
+            events.events.len()
+        );
+        assert!(
+            events.events.capacity() <= 6 * EMPTY,
+            "{} places",
+            events.events.capacity()
+        );
+        // What is told: the tab's color, in its place, the latest, and the
+        // last write to both clipboards.
+        assert_eq!(
+            events.take(),
+            [
+                Event::TabColor(Some(crate::page::Rgb { r: 1, g: 2, b: 3 })),
+                write(true, true)
+            ]
+        );
+    }
 }

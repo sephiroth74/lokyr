@@ -32,7 +32,8 @@ pub struct ClipboardRequest {
 const SELECTION: usize = 12;
 
 /// The letters of OSC 52's first field that name clipboards or cut
-/// buffers, in order, as many as [`SELECTION`].
+/// buffers, in order, each once, as xterm keeps them: `s0` for none, as
+/// xterm reads an empty field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Selection {
     letters: [u8; SELECTION],
@@ -45,15 +46,17 @@ impl Selection {
             letters: [0; SELECTION],
             len: 0,
         };
+        let field = if field.is_empty() { b"s0" } else { field };
         for &letter in field
             .iter()
             .filter(|letter| b"cpqs01234567".contains(letter))
         {
-            let Some(slot) = selection.letters.get_mut(usize::from(selection.len)) else {
-                break;
-            };
-            *slot = letter;
-            selection.len += 1;
+            let len = usize::from(selection.len);
+            if !selection.letters[..len].contains(&letter) {
+                // Twelve letters, each once, fill it at most.
+                selection.letters[len] = letter;
+                selection.len += 1;
+            }
         }
         selection
     }

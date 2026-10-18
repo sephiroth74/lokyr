@@ -2946,6 +2946,8 @@ fn osc_52_reads_only_when_the_configuration_allows_them() {
     );
     // The answer names the clipboards as the request did.
     term.feed("\x1b]52;s;?\x07\x1b]52;s0;?\x07\x1b]52;cp;?\x07\x1b]52;xc;?\x07");
+    // Each letter once, and none read as `s0`, as xterm reads them.
+    term.feed("\x1b]52;cc;?\x07\x1b]52;ccccccccccccp;?\x07\x1b]52;;?\x07");
     for request in term.terminal.take_events() {
         let Event::ClipboardRead(request) = request else {
             panic!("{request:?}");
@@ -2954,7 +2956,8 @@ fn osc_52_reads_only_when_the_configuration_allows_them() {
     }
     assert_eq!(
         replies(&mut term),
-        "\x1b]52;s;aGk=\x07\x1b]52;s0;aGk=\x07\x1b]52;cp;aGk=\x07\x1b]52;c;aGk=\x07"
+        "\x1b]52;s;aGk=\x07\x1b]52;s0;aGk=\x07\x1b]52;cp;aGk=\x07\x1b]52;c;aGk=\x07\
+         \x1b]52;c;aGk=\x07\x1b]52;cp;aGk=\x07\x1b]52;s0;aGk=\x07"
     );
 }
 

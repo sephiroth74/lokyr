@@ -190,8 +190,8 @@ proptest! {
     /// A literal finds what the oracle finds, whole words or not, either
     /// case, with wide characters and clusters, stepping either way, or in
     /// one pass over a range of rows, its matches' first and last cells
-    /// alike, with lines that cross from one page into the next, and pages
-    /// gone cold.
+    /// alike, with lines that cross from one page into the next, and the
+    /// lines' pages gone cold.
     #[test]
     fn a_literal_finds_what_the_oracle_finds(
         lines_in in prop::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
@@ -221,12 +221,15 @@ proptest! {
             text.push_str(line);
             text.push_str("\r\n");
         }
-        // Rows enough after them that the pages before the last go cold.
-        if cold {
-            text.push_str(&"\r\n".repeat(16));
-        }
         let mut terminal = Terminal::new(cols, 4, Options::default());
         Parser::new().advance(&mut terminal, text.as_bytes());
+        // The row of the last line, which a page of rows after it, and some,
+        // sends to a page that goes cold.
+        let last_line = terminal.screen_rows().scrollback_rows() + usize::from(terminal.cursor().y) - 1;
+        if cold {
+            let rows = usize::from(Capacity::standard(cols).rows) + 16;
+            Parser::new().advance(&mut terminal, "\r\n".repeat(rows).as_bytes());
+        }
         let list = terminal.screen_rows();
         let expected: Cells = lines(list)
             .iter()
@@ -242,6 +245,9 @@ proptest! {
         let query = Query::literal(&needle, case).unwrap().whole_word(whole_word);
         if cold {
             terminal.compact_scrollback();
+            let rows = terminal.screen_rows();
+            let (page, _) = rows.row_at(last_line).unwrap();
+            prop_assert!(rows.page(page).is_none(), "the lines are cold");
         }
         let (stepped, back, all) = found(&mut terminal, &query, rows);
         prop_assert_eq!(&stepped, &expected);
