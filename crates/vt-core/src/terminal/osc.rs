@@ -56,6 +56,11 @@ pub enum Event {
         /// What it wrote, decoded.
         data: Vec<u8>,
     },
+    /// A program changed the terminal's size, which [`Terminal::cols`] and
+    /// [`Terminal::rows`] tell (DECCOLM, DECSLPP, DECSNLS and XTWINOPS 8 t):
+    /// the embedder gives it to the window and the PTY, or gives the
+    /// terminal back the window's.
+    SizeChanged,
     /// A program asks to read the clipboards (OSC 52), which the
     /// configuration allows. An embedder with a session answers with the
     /// session's `reply_clipboard`; one without, with
@@ -213,9 +218,18 @@ impl Terminal {
         };
     }
 
-    /// OSC 0, 1 and 2: the window's title, the icon's, or both.
+    /// OSC 0, 1 and 2: the window's title, the icon's, or both. In title
+    /// mode 0, the title comes in hexadecimal, two digits a byte, and one
+    /// that is not is ignored.
     fn set_titles(&mut self, title: &[u8], window: bool, icon: bool) {
-        let title = text(title);
+        let title = if self.hex_titles {
+            let Some(bytes) = title.chunks(2).map(hex_byte).collect::<Option<Vec<u8>>>() else {
+                return;
+            };
+            text(&bytes)
+        } else {
+            text(title)
+        };
         if icon {
             self.icon_title.clone_from(&title);
         }

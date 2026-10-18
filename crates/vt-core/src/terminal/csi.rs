@@ -62,6 +62,8 @@ impl Terminal {
             ([b'?'], b'n') => self.dec_device_status(params.value(0), params.value(1)),
             ([b'>'], b'q') if params.value(0) == 0 => self.report_version(),
             ([], b't') => self.window_ops(params),
+            ([b'>'], b't') => self.set_title_modes(params, true),
+            ([b'>'], b'T') => self.set_title_modes(params, false),
             ([b'!'], b'p') => self.soft_reset(),
             ([b'"'], b'p') => self.set_conformance_level(params.value(0)),
             ([b'*'], b'x') if params.value(0) <= 2 => self.attribute_extent = params.value(0),
@@ -90,6 +92,14 @@ impl Terminal {
             // SM and RM, DECSET and DECRST, and DECRQM for both kinds.
             ([], b'h') => self.set_ansi_modes(params, true),
             ([], b'l') => self.set_ansi_modes(params, false),
+            // XTSAVE and XTRESTORE.
+            ([b'?'], b's') => self.save_private_modes(params),
+            ([b'?'], b'r') => self.restore_private_modes(params),
+            // DECSNLS, which sets the rows when the configuration allows
+            // the window's operations.
+            ([b'*'], b'|') if self.window_ops && params.value(0) > 0 => {
+                self.take_size(self.cols, params.value(0));
+            }
             ([b'?'], b'h') => self.set_private_modes(params, true),
             ([b'?'], b'l') => self.set_private_modes(params, false),
             ([b'$'], b'p') => self.report_ansi_mode(params.value(0)),

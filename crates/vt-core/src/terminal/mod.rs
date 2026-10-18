@@ -66,6 +66,11 @@ pub struct Options {
     /// The schemes that links (OSC 8) may have, in any case: `http`,
     /// `https`, `mailto` and `file` by default.
     pub link_schemes: Vec<String>,
+    /// Whether programs may operate on the window, as xterm's
+    /// `allowWindowOps` lets them: change the terminal's size, in cells
+    /// (XTWINOPS 8 t, DECSLPP and DECSNLS), which the embedder then gives
+    /// the window: off by default.
+    pub window_ops: bool,
 }
 
 impl Default for Options {
@@ -81,9 +86,13 @@ impl Default for Options {
             link_schemes: ["http", "https", "mailto", "file"]
                 .map(str::to_owned)
                 .to_vec(),
+            window_ops: false,
         }
     }
 }
+
+/// The most columns, or rows, that a program can ask the terminal to take.
+pub const ASKED_SIZE: u16 = 1000;
 
 /// Where the cursor of a screen is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -307,6 +316,15 @@ pub struct Terminal {
     /// The extent of the attribute changes in rectangles that DECSACE set:
     /// 0 or 1 the stream of characters, 2 the rectangle.
     attribute_extent: u16,
+    /// Whether DECCOLM may switch between 80 and 132 columns (mode 40),
+    /// whether it did to 132 (mode 3), and whether the switch keeps the
+    /// screen rather than erase it (DECNCSM, mode 95).
+    column_switch: bool,
+    columns_132: bool,
+    keep_screen: bool,
+    /// The DEC private modes that XTSAVE saved, with their states, for
+    /// XTRESTORE.
+    saved_modes: Vec<(u16, bool)>,
     /// Reverse wraparound (mode 45): with autowrap, moving left past the
     /// left margin goes on at the end of the row above, when that row wraps
     /// into this one.
@@ -340,6 +358,8 @@ pub struct Terminal {
     rectangle_checksums: bool,
     /// The schemes that links may have.
     link_schemes: Vec<String>,
+    /// Whether programs may operate on the window.
+    window_ops: bool,
     /// The link that the text printed next is part of (OSC 8).
     link: osc::Link,
     /// The zone of the text printed next (OSC 133).
@@ -356,6 +376,10 @@ pub struct Terminal {
     icon_title: String,
     /// The titles that CSI 22 t pushed, the latest last.
     title_stack: Vec<(Option<String>, Option<String>)>,
+    /// xterm's title modes 0 and 1: titles are set, and reported, in
+    /// hexadecimal.
+    hex_titles: bool,
+    hex_title_reports: bool,
     /// The OSC string being read.
     osc: Vec<u8>,
     /// What the embedder has to act on, oldest first.
@@ -421,6 +445,10 @@ impl Terminal {
             smooth_scroll: false,
             conformance: 62,
             attribute_extent: 0,
+            column_switch: false,
+            columns_132: false,
+            keep_screen: false,
+            saved_modes: Vec::new(),
             reverse_wrap: false,
             reverse_wrap_extended: false,
             synchronized_output: false,
@@ -433,6 +461,7 @@ impl Terminal {
             clipboard_reads: options.clipboard_reads,
             rectangle_checksums: options.rectangle_checksums,
             link_schemes: options.link_schemes,
+            window_ops: options.window_ops,
             link: osc::Link::default(),
             zone: Semantic::Output,
             default_colors: Colors::default(),
@@ -441,6 +470,8 @@ impl Terminal {
             title: String::new(),
             icon_title: String::new(),
             title_stack: Vec::new(),
+            hex_titles: false,
+            hex_title_reports: false,
             query: None,
             query_bytes: Vec::new(),
             osc: Vec::new(),
@@ -562,6 +593,19 @@ impl Terminal {
             .collect();
         (self.cols, self.rows) = (cols, rows);
         self.margins = Margins::screen(cols, rows);
+    }
+
+    /// Takes the size that a program asked for, `cols` by `rows`, at most
+    /// [`ASKED_SIZE`] each way, at once, so that the program's next query
+    /// reads it, and tells the embedder, which gives it to the window and
+    /// the PTY.
+    fn take_size(&mut self, cols: u16, rows: u16) {
+        let (cols, rows) = (cols.min(ASKED_SIZE), rows.min(ASKED_SIZE));
+        let before = (self.cols, self.rows);
+        self.resize(cols, rows);
+        if (self.cols, self.rows) != before {
+            self.events.push(Event::SizeChanged);
+        }
     }
 
     /// Keeps small the primary screen's pages that are three screens or

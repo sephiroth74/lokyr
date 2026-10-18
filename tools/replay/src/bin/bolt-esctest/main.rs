@@ -7,8 +7,11 @@
 //! checkout that the repository does not keep, and passes it the ARGs, as
 //! `--include=REGEX`. The terminal is 80 by 25, the size that esctest asks
 //! for, with cells of 8 by 16 pixels and xterm's default colors, black on
-//! white, and reports titles and the checksums of rectangles, through which
-//! esctest reads the screen, as xterm does when it is allowed to.
+//! white. It reports titles and the checksums of rectangles, through which
+//! esctest reads the screen, and lets programs operate on the window and
+//! read the clipboards back, as xterm does when it is allowed to; the
+//! harness plays the window, and the runner the user who lets the reads
+//! through.
 //!
 //! The suite must run to its end: esctest exits with status 0, and its
 //! log ends with the closing line, whose counts must be those of the tests
@@ -21,13 +24,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use bolt_pty::Exit;
 use bolt_replay::harness::{Harness, HarnessOptions};
 use bolt_vt_core::page::Rgb;
-use bolt_vt_core::terminal::{Colors, Options, SPECIAL_COLORS};
+use bolt_vt_core::terminal::{Colors, Event, Options, SPECIAL_COLORS};
 
 /// How long esctest waits for each byte of a reply, in seconds: shorter
 /// than its own default of a second, as a reply that a headless terminal
@@ -36,6 +39,9 @@ const TIMEOUT: &str = "0.5";
 
 /// How long the whole suite may take.
 const LIMIT: Duration = Duration::from_secs(3 * 60 * 60);
+
+/// How long the suite runs between two looks at the terminal's events.
+const TURN: Duration = Duration::from_millis(10);
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -69,6 +75,9 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         // the rows that wrap and 1045 for the others.
         "--xterm-reverse-wrap=383".to_owned(),
         "--no-print-logs".to_owned(),
+        // The window's operations, which the terminal allows, as xterm's
+        // `allowWindowOps` does.
+        "--options=xtermWinopsEnabled".to_owned(),
         format!("--timeout={TIMEOUT}"),
         format!("--logfile={}", log.display()),
     ];
@@ -82,7 +91,9 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         ],
         terminal: Options {
             title_reports: true,
+            clipboard_reads: true,
             rectangle_checksums: true,
+            window_ops: true,
             ..Options::default()
         },
         dir: dir.to_owned(),
@@ -124,7 +135,7 @@ fn suite(options: &HarnessOptions, temp: &mut Temp, log: &Path) -> Result<Vec<(S
 /// The tests that the log tells of, once the suite ends with status 0
 /// and a log whose closing line counts them.
 fn ended(harness: &mut Harness, log: &Path) -> Result<Vec<(String, Outcome)>> {
-    harness.exit(LIMIT)?;
+    serve(harness)?;
     match harness.exit_status(LIMIT)? {
         Exit::Code(0) => {}
         Exit::Code(code) => bail!("esctest exited with status {code}"),
@@ -135,6 +146,32 @@ fn ended(harness: &mut Harness, log: &Path) -> Result<Vec<(String, Outcome)>> {
     let log = parse(&text);
     check(&log)?;
     Ok(log.tests)
+}
+
+/// Runs the suite to its end, as a window whose user lets the suite read
+/// the clipboards, as xterm's window operations do: each read gets what the
+/// suite wrote last.
+fn serve(harness: &mut Harness) -> Result<()> {
+    let deadline = Instant::now() + LIMIT;
+    let mut clipboard = Vec::new();
+    while harness.try_exit_status()?.is_none() {
+        ensure!(
+            Instant::now() < deadline,
+            "esctest did not end in {LIMIT:?}"
+        );
+        harness.sleep(TURN)?;
+        for event in harness.take_terminal_events() {
+            match event {
+                Event::ClipboardWrite { data, .. } => clipboard = data,
+                Event::ClipboardRead(request) => {
+                    harness.terminal_mut().reply_clipboard(request, &clipboard);
+                }
+                _ => {}
+            }
+        }
+    }
+    // What it wrote before it ended.
+    harness.exit(LIMIT)
 }
 
 /// A directory of the temporary one, for esctest's log and home, removed
@@ -507,7 +544,10 @@ mod tests {
                 log.display().to_string(),
             ],
             env: vec![("PATH".to_owned(), "/usr/bin:/bin".to_owned())],
-            terminal: Options::default(),
+            terminal: Options {
+                clipboard_reads: true,
+                ..Options::default()
+            },
             dir: temp.dir.clone(),
             cols: 40,
             rows: 5,
@@ -547,5 +587,15 @@ mod tests {
         let dir = temp.dir.clone();
         drop(temp);
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn the_suite_reads_back_what_it_wrote_to_the_clipboard() {
+        // The suite writes `hi`, asks for it, and passes if it comes back
+        // within 2 s.
+        let script = r#"stty raw -echo min 0 time 20; printf '\033]52;;aGk=\033\\\033]52;;?\033\\'; r=$(dd bs=1 count=14 2>/dev/null); [ "$r" = "$(printf '\033]52;s0;aGk=\033\\')" ] && printf 'Run test: A.test_a\nPassed.\n\n*** 1 test passed, 0 known bugs, 0 tests failed ***\n' > "$1""#;
+        let mut temp = Temp::new().unwrap();
+        let tests = fake(script, &mut temp).unwrap();
+        assert_eq!(tests, [("A.test_a".to_owned(), Outcome::Passed)]);
     }
 }

@@ -165,16 +165,15 @@ fn encode(data: &[u8]) -> String {
     text
 }
 
-/// The bytes that `text`, base64 with or without its padding, stands for.
+/// The bytes that `text`, base64 with or without its padding, stands for:
+/// it ends at the padding, or at the first byte that is not of base64, as
+/// xterm reads it, and a digit alone at its end stands for nothing. A text
+/// that stands for no byte, but for the empty one, is not base64.
 fn decode(text: &[u8]) -> Option<Vec<u8>> {
-    let padding = text.iter().rev().take_while(|&&byte| byte == b'=').count();
-    if padding > 2 {
-        return None;
-    }
-    let digits = &text[..text.len() - padding];
-    if digits.len() % 4 == 1 {
-        return None;
-    }
+    let digits = text
+        .iter()
+        .position(|byte| !ALPHABET.contains(byte))
+        .map_or(text, |end| &text[..end]);
     let mut data = Vec::with_capacity(digits.len() * 3 / 4);
     let (mut bits, mut count) = (0_u32, 0);
     for &byte in digits {
@@ -187,7 +186,7 @@ fn decode(text: &[u8]) -> Option<Vec<u8>> {
             bits &= (1 << count) - 1;
         }
     }
-    Some(data)
+    (!data.is_empty() || text.is_empty()).then_some(data)
 }
 
 #[cfg(test)]
@@ -207,9 +206,13 @@ mod tests {
         assert_eq!(decode(b"Zm8").unwrap(), b"fo", "without the padding");
         assert_eq!(decode(b"Zm8=").unwrap(), b"fo");
         assert_eq!(decode(b"").unwrap(), b"");
-        assert_eq!(decode(b"Zm9v!"), None);
-        assert_eq!(decode(b"Z"), None);
-        assert_eq!(decode(b"Zg==="), None);
+        // Up to the first byte that is not of base64, as xterm reads it,
+        // and as esctest writes it, with a quote at the end.
+        assert_eq!(decode(b"Zm9v!").unwrap(), b"foo");
+        assert_eq!(decode(b"Zg===").unwrap(), b"f");
+        assert_eq!(decode(b"dGVzdGluZyAxMjM='").unwrap(), b"testing 123");
+        assert_eq!(decode(b"Z"), None, "a digit alone");
+        assert_eq!(decode(b"!!"), None);
     }
 
     proptest! {

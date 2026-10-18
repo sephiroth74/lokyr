@@ -156,6 +156,7 @@ impl Terminal {
             clipboard_reads: self.clipboard_reads,
             rectangle_checksums: self.rectangle_checksums,
             link_schemes: std::mem::take(&mut self.link_schemes),
+            window_ops: self.window_ops,
         };
         let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,
@@ -176,7 +177,14 @@ impl Terminal {
             events.push(Event::ColorsChanged);
         }
         let colors = std::mem::take(&mut self.default_colors);
-        *self = Self::new(self.cols, self.rows, options);
+        // 132 columns that DECCOLM set go back to 80, as in xterm.
+        let cols = if self.columns_132 {
+            events.push(Event::SizeChanged);
+            80
+        } else {
+            self.cols
+        };
+        *self = Self::new(cols, self.rows, options);
         (self.bells, self.replies, self.reply_bytes, self.cell_size) =
             (bells, replies, reply_bytes, cell_size);
         self.synchronized_updates = updates;

@@ -4902,6 +4902,116 @@ fn many_long_moves_round_narrow_margins_cost_little() {
 }
 
 #[test]
+fn deccolm_switches_to_132_columns_and_back_through_mode_40() {
+    let mut term = Term::new(80, 4);
+    term.feed("\x1b[2;3Hxyz\x1b[?3h");
+    assert_eq!(term.terminal.cols(), 80, "not without mode 40");
+    assert_eq!(term.screen()[1], "  xyz");
+    term.terminal.take_events();
+    // The screen is erased, the margins go with DECLRMM, and the cursor goes
+    // home.
+    term.feed("\x1b[2;3r\x1b[?69h\x1b[2;5s\x1b[3;3H\x1b[?40h\x1b[?3h");
+    assert_eq!(term.terminal.cols(), 132);
+    assert_eq!(term.screen(), ["", "", "", ""]);
+    assert_eq!(term.cursor(), (0, 0, false));
+    assert_eq!(term.terminal.take_events(), [Event::SizeChanged]);
+    term.feed("\x1b[?69$p\x1b[r");
+    assert_eq!(replies(&mut term), "\x1b[?69;2$y");
+    assert_eq!(term.terminal.margins, Margins::screen(132, 4));
+    // DECNCSM keeps the screen; back to 80, and DECRQM tells all three.
+    term.feed("\x1b[?95h\x1b[2;2Hab\x1b[?3l");
+    assert_eq!(term.terminal.cols(), 80);
+    assert_eq!(term.screen()[1], " ab");
+    term.feed("\x1b[?3$p\x1b[?40$p\x1b[?95$p");
+    assert_eq!(replies(&mut term), "\x1b[?3;2$y\x1b[?40;1$y\x1b[?95;1$y");
+    // RIS goes back to 80 columns from 132.
+    term.feed("\x1b[?3h");
+    term.terminal.take_events();
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.cols(), 80);
+    assert!(term.terminal.take_events().contains(&Event::SizeChanged));
+}
+
+#[test]
+fn xtsave_and_xtrestore_save_and_bring_back_private_modes() {
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b[?7;25;9999s\x1b[?7l\x1b[?25l\x1b[?1l");
+    assert!(!term.terminal.autowrap());
+    term.feed("\x1b[?7;25;1;9999r");
+    assert!(term.terminal.autowrap());
+    assert!(term.terminal.cursor_visible());
+    term.feed("\x1b[?1$p");
+    assert_eq!(replies(&mut term), "\x1b[?1;2$y", "a mode not saved stays");
+    // A save replaces the one before.
+    term.feed("\x1b[?7l\x1b[?7s\x1b[?7h\x1b[?7r");
+    assert!(!term.terminal.autowrap());
+}
+
+#[test]
+fn programs_resize_the_terminal_in_cells_when_the_window_operations_are_allowed() {
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[8;6;20t\x1b[30t\x1b[5*|");
+    assert_eq!(
+        (term.terminal.cols(), term.terminal.rows()),
+        (10, 4),
+        "not by default"
+    );
+    let mut term = Term::with(
+        10,
+        4,
+        Options {
+            window_ops: true,
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b[8;5;19t\x1b[8;6;20t");
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (20, 6));
+    assert_eq!(term.terminal.take_events(), [Event::SizeChanged], "once");
+    // Omitted or 0, the current size; DECSLPP from 24 rows, and DECSNLS.
+    term.feed("\x1b[8;;30t\x1b[8;5;0t");
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (30, 5));
+    term.feed("\x1b[25t");
+    assert_eq!(term.terminal.rows(), 25);
+    term.feed("\x1b[7*|\x1bP$qt\x1b\\\x1bP$q*|\x1b\\");
+    assert_eq!(term.terminal.rows(), 7);
+    assert_eq!(replies(&mut term), "\x1bP1$r7t\x1b\\\x1bP1$r7*|\x1b\\");
+    // The same size tells nothing; past the most, the most.
+    term.terminal.take_events();
+    term.feed("\x1b[8;7;30t");
+    assert_eq!(term.terminal.take_events(), []);
+    term.feed("\x1b[8;60000;60000t");
+    assert_eq!(
+        (term.terminal.cols(), term.terminal.rows()),
+        (ASKED_SIZE, ASKED_SIZE)
+    );
+}
+
+#[test]
+fn title_modes_set_and_report_titles_in_hexadecimal() {
+    let mut term = Term::with(
+        10,
+        1,
+        Options {
+            title_reports: true,
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b[>0t\x1b]2;6162\x07\x1b]1;63\x07");
+    assert_eq!(
+        (term.terminal.title(), term.terminal.icon_title()),
+        ("ab", "c")
+    );
+    // A title that is not hexadecimal is ignored.
+    term.feed("\x1b]2;616\x07\x1b]2;6x\x07");
+    assert_eq!(term.terminal.title(), "ab");
+    term.feed("\x1b[>1t\x1b[21t\x1b[20t\x1b[>0;1T\x1b]2;ab\x07\x1b[21t");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b]l6162\x1b\\\x1b]L63\x1b\\\x1b]lab\x1b\\"
+    );
+}
+
+#[test]
 fn decrqm_replies_keep_within_the_replies_limit() {
     let mut term = Term::new(10, 2);
     term.feed("\x1b[?1$p".repeat(200_000));

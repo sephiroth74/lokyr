@@ -1,7 +1,7 @@
 //! The modes that programs set, reset and query: ANSI's, with SM and RM,
 //! and DEC's private ones, with DECSET and DECRST; DECRQM queries both.
 
-use super::{MouseEncoding, MouseTracking, Terminal};
+use super::{Cursor, Margins, MouseEncoding, MouseTracking, Terminal};
 use crate::parser::Params;
 use crate::unicode::Mode;
 
@@ -32,8 +32,11 @@ impl Terminal {
             1 => self.input.cursor_keys_application = on,
             5 => self.reverse_video = on,
             6 => self.set_origin_mode(on),
+            3 => self.set_column_mode(on),
             7 => self.autowrap = on,
+            40 => self.column_switch = on,
             41 => self.tab_wraps = on,
+            95 => self.keep_screen = on,
             4 => self.smooth_scroll = on,
             12 => self.cursor_blink = on,
             25 => self.cursor_visible = on,
@@ -95,6 +98,49 @@ impl Terminal {
         }
     }
 
+    /// XTSAVE, `CSI ? Pm s`: saves the state of each DEC private mode of
+    /// `params` that the terminal knows, for XTRESTORE.
+    pub(super) fn save_private_modes(&mut self, params: &Params) {
+        for mode in params.iter().map(|group| group[0]) {
+            if let Some(on) = self.private_mode(mode) {
+                self.saved_modes.retain(|&(saved, _)| saved != mode);
+                self.saved_modes.push((mode, on));
+            }
+        }
+    }
+
+    /// XTRESTORE, `CSI ? Pm r`: sets each DEC private mode of `params` back
+    /// as XTSAVE saved it, if it did.
+    pub(super) fn restore_private_modes(&mut self, params: &Params) {
+        for mode in params.iter().map(|group| group[0]) {
+            let saved = self.saved_modes.iter().find(|&&(saved, _)| saved == mode);
+            if let Some(&(_, on)) = saved {
+                self.set_private_mode(mode, on);
+            }
+        }
+    }
+
+    /// DECCOLM, mode 3: 132 columns, or 80, if mode 40 allows the switch,
+    /// as xterm does. The screen is erased, unless DECNCSM keeps it; the
+    /// margins go, as DECLRMM does with 132 columns, and the cursor goes
+    /// home.
+    fn set_column_mode(&mut self, on: bool) {
+        if !self.column_switch {
+            return;
+        }
+        self.columns_132 = on;
+        self.take_size(if on { 132 } else { 80 }, self.rows);
+        if !self.keep_screen {
+            self.erase_screen();
+        }
+        if on {
+            self.left_right_margins = false;
+        }
+        self.margins = Margins::screen(self.cols, self.rows);
+        self.screen_mut().cursor = Cursor::default();
+        self.moved();
+    }
+
     /// DECRQM for the ANSI mode `mode`.
     pub(super) fn report_ansi_mode(&mut self, mode: u16) {
         let value = match mode {
@@ -127,8 +173,11 @@ impl Terminal {
             4 => self.smooth_scroll,
             5 => self.reverse_video,
             6 => self.origin,
+            3 => self.columns_132,
             7 => self.autowrap,
+            40 => self.column_switch,
             41 => self.tab_wraps,
+            95 => self.keep_screen,
             12 => self.cursor_blink,
             25 => self.cursor_visible,
             45 => self.reverse_wrap,

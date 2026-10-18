@@ -147,6 +147,23 @@ fn a_resize_reaches_the_terminal_and_the_program() {
 }
 
 #[test]
+fn the_size_that_the_program_sets_reaches_the_pty() {
+    // The program asks for the size, then waits for a key, so that the
+    // harness has read the request before `stty` looks.
+    let script = r"printf '\033[8;10;30t'; echo ready; read line; stty size";
+    let mut options = options(40, 5, script);
+    options.terminal.window_ops = true;
+    let mut harness = Harness::spawn(&options).unwrap();
+    harness.wait("ready", LIMIT).unwrap();
+    harness.send(b"\r", LIMIT).unwrap();
+    harness.wait("10 30", LIMIT).unwrap();
+    assert_eq!(
+        (harness.terminal().cols(), harness.terminal().rows()),
+        (30, 10)
+    );
+}
+
+#[test]
 fn the_terminals_options_answer_and_its_events_are_taken() {
     // The title reported, then the size of a cell, with ESC shown as E.
     let script = r#"stty raw -echo; printf '\033]2;hi\007\033[21t\033[16t'; r=$(dd bs=1 count=16 2>/dev/null); stty sane; printf 'reply:%s\n' "$r" | tr '\033' E"#;

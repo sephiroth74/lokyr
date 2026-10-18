@@ -167,8 +167,10 @@ impl Terminal {
     }
 
     /// XTWINOPS: the sizes (14, 16 and 18), the title (21) if the
-    /// configuration allows it, and the title stack (22 and 23). The others,
-    /// which move and resize the window, do nothing.
+    /// configuration allows it, the title stack (22 and 23), and, if it
+    /// allows the window's operations, the resizes in cells (8, and 24 or
+    /// more, DECSLPP). The others, which move and resize the window in
+    /// pixels, do nothing.
     pub(super) fn window_ops(&mut self, params: &Params) {
         let (cols, rows) = (u32::from(self.cols), u32::from(self.rows));
         match params.value(0) {
@@ -185,16 +187,51 @@ impl Terminal {
             }
             18 => self.reply(format!("\x1b[8;{rows};{cols}t").as_bytes()),
             20 if self.title_reports => {
-                let reply = format!("\x1b]L{}\x1b\\", printable(&self.icon_title));
-                self.reply(reply.as_bytes());
+                let title = self.reported_title(&self.icon_title);
+                self.reply(format!("\x1b]L{title}\x1b\\").as_bytes());
             }
             21 if self.title_reports => {
-                let reply = format!("\x1b]l{}\x1b\\", printable(&self.title));
-                self.reply(reply.as_bytes());
+                let title = self.reported_title(&self.title);
+                self.reply(format!("\x1b]l{title}\x1b\\").as_bytes());
             }
             22 => self.push_title(params.value(1)),
             23 => self.pop_title(params.value(1)),
+            // Resizes in cells, when the configuration allows them: the
+            // text area's rows and columns, the current ones where they
+            // are omitted or 0; and DECSLPP, the rows, from 24.
+            8 if self.window_ops => {
+                let (rows, cols) = (params.value(1), params.value(2));
+                let cols = if cols == 0 { self.cols } else { cols };
+                let rows = if rows == 0 { self.rows } else { rows };
+                self.take_size(cols, rows);
+            }
+            rows @ 24.. if self.window_ops => self.take_size(self.cols, rows),
             _ => {}
+        }
+    }
+
+    /// `title` as CSI 20 t and 21 t report it: without its control
+    /// characters, and in hexadecimal in title mode 1.
+    fn reported_title(&self, title: &str) -> String {
+        let title = printable(title);
+        if self.hex_title_reports {
+            title.bytes().map(|byte| format!("{byte:02X}")).collect()
+        } else {
+            title
+        }
+    }
+
+    /// xterm's title modes, `CSI > Ps ; ... t` to set them and `CSI > Ps ;
+    /// ... T` to reset them: 0 sets titles in hexadecimal, 1 reports them
+    /// so; 2 and 3, which set and report them in UTF-8 rather than
+    /// Latin-1, change nothing, as titles are always UTF-8.
+    pub(super) fn set_title_modes(&mut self, params: &Params, on: bool) {
+        for mode in params.iter().map(|group| group[0]) {
+            match mode {
+                0 => self.hex_titles = on,
+                1 => self.hex_title_reports = on,
+                _ => {}
+            }
         }
     }
 
@@ -298,6 +335,9 @@ impl Terminal {
             b"\"p" if self.conformance == 61 => Some("61\"p".to_owned()),
             b"\"p" => Some(format!("{};1\"p", self.conformance)),
             b"*x" => Some(format!("{}*x", self.attribute_extent)),
+            // The rows, as DECSLPP and DECSNLS set them.
+            b"t" => Some(format!("{}t", self.rows)),
+            b"*|" => Some(format!("{}*|", self.rows)),
             // No status line (DECSSDT) and the main display active
             // (DECSASD), which the terminal has alone.
             b"$~" => Some("0$~".to_owned()),

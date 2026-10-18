@@ -76,6 +76,8 @@ pub struct Harness {
     events: Vec<(Duration, Event)>,
     /// Texts that the screen must never show.
     forbidden: Vec<String>,
+    /// The size that the PTY was given last.
+    size: Size,
 }
 
 /// Bytes that wait to be written: keys that a test typed, or the
@@ -125,6 +127,7 @@ impl Harness {
         pty_options.working_directory = Some(options.dir.clone());
         pty_options.size = size(&terminal);
         let pty = bolt_pty::spawn(&pty_options).context("starting the program")?;
+        let size = pty_options.size;
         Ok(Self {
             reader: pty.reader()?,
             writer: pty.writer()?,
@@ -142,6 +145,7 @@ impl Harness {
             started: Instant::now(),
             events: Vec::new(),
             forbidden: Vec::new(),
+            size,
         })
     }
 
@@ -330,10 +334,20 @@ impl Harness {
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<()> {
         self.send_replies()?;
         self.terminal.resize(cols, rows);
-        if let Some(pty) = &self.pty {
-            pty.resize(size(&self.terminal))
-                .context("resizing the terminal")?;
+        self.give_size()
+    }
+
+    /// Gives the PTY the terminal's size, if it changed, as a window that
+    /// follows the size that a program set does.
+    fn give_size(&mut self) -> Result<()> {
+        let size = size(&self.terminal);
+        if size == self.size {
+            return Ok(());
         }
+        if let Some(pty) = &self.pty {
+            pty.resize(size).context("resizing the terminal")?;
+        }
+        self.size = size;
         Ok(())
     }
 
@@ -531,6 +545,7 @@ impl Harness {
         self.parser.advance(&mut self.terminal, &bytes);
         self.event(Event::Output(bytes));
         self.queue_replies();
+        self.give_size()?;
         if self.forbidden.is_empty() {
             return Ok(Read::Output);
         }
