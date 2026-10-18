@@ -12,7 +12,7 @@ pub(super) const EVENT_BYTES: usize = 1 << 20;
 /// The events that wait, oldest first.
 ///
 /// An event that tells of a change that the terminal's state shows, a
-/// title's, the colors' or the size's, waits once: another of its kind adds nothing. An
+/// title's, the colors', the size's or the window's, waits once: another of its kind adds nothing. An
 /// event that carries the new state, the tab's color, the progress or the
 /// working directory, takes the place of the one of its kind that waits, so
 /// that the latest is told, once. A write to the clipboards takes the
@@ -29,6 +29,7 @@ pub(super) struct Events {
     title: bool,
     colors: bool,
     size: bool,
+    window: bool,
     /// Where the event of each kind that carries a state waits: the tab's
     /// color, the progress, the working directory.
     states: [Option<usize>; 3],
@@ -64,6 +65,12 @@ impl Events {
             }
             Event::SizeChanged => {
                 if std::mem::replace(&mut self.size, true) {
+                    return;
+                }
+                (None, None)
+            }
+            Event::WindowChanged => {
+                if std::mem::replace(&mut self.window, true) {
                     return;
                 }
                 (None, None)

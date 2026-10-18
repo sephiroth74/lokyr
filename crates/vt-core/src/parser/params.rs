@@ -26,6 +26,11 @@ pub struct Params {
     group_count: usize,
     /// The value being parsed, which is not in `values` yet.
     current: u16,
+    /// Whether the value being parsed has digits.
+    written: bool,
+    /// The groups whose first value had digits, a bit each, as some
+    /// sequences tell an empty parameter from 0.
+    given: u32,
 }
 
 impl Params {
@@ -37,10 +42,10 @@ impl Params {
         for &group in groups {
             if let Some((&last, rest)) = group.split_last() {
                 for &value in rest {
-                    params.current = value;
+                    (params.current, params.written) = (value, true);
                     params.end_sub_param();
                 }
-                params.current = last;
+                (params.current, params.written) = (last, true);
             }
             params.end_param();
         }
@@ -93,12 +98,20 @@ impl Params {
         }
     }
 
+    /// Whether the parameter at `index` has digits, rather than being empty
+    /// or missing, as XTWINOPS tells an omitted size from 0.
+    pub fn has_value(&self, index: usize) -> bool {
+        index < self.group_count && self.given & (1 << index) != 0
+    }
+
     /// Forgets every parameter, before a new sequence.
     pub(crate) fn clear(&mut self) {
         self.value_count = 0;
         self.group_count = 0;
         self.group_lens[0] = 0;
         self.current = 0;
+        self.written = false;
+        self.given = 0;
     }
 
     /// Appends a decimal digit to the value being parsed. A value too large
@@ -108,6 +121,7 @@ impl Params {
             .current
             .saturating_mul(10)
             .saturating_add(u16::from(digit));
+        self.written = true;
     }
 
     /// Ends the value being parsed, and the parameter with it: `;`, or the
@@ -129,11 +143,15 @@ impl Params {
         if self.value_count < MAX_PARAMS {
             // Every complete group has a value, so `group_count` is at most
             // `value_count`, which is below `MAX_PARAMS`.
+            if self.group_lens[self.group_count] == 0 && self.written {
+                self.given |= 1 << self.group_count;
+            }
             self.group_lens[self.group_count] += 1;
             self.values[self.value_count] = self.current;
             self.value_count += 1;
         }
         self.current = 0;
+        self.written = false;
     }
 }
 
@@ -175,6 +193,26 @@ mod tests {
     fn an_empty_group_reads_as_zero() {
         let params = Params::from_groups(&[&[], &[5]]);
         assert_eq!(groups(&params), [vec![0], vec![5]]);
+        assert!(!params.has_value(0) && params.has_value(1));
+    }
+
+    #[test]
+    fn digits_tell_a_zero_from_an_empty_parameter() {
+        // `8;;0;7:1`, the second parameter empty, the third 0.
+        let mut params = Params::default();
+        params.push_digit(8);
+        params.end_param();
+        params.end_param();
+        params.push_digit(0);
+        params.end_param();
+        params.push_digit(7);
+        params.end_sub_param();
+        params.push_digit(1);
+        params.end_param();
+        let given: Vec<bool> = (0..5).map(|index| params.has_value(index)).collect();
+        assert_eq!(given, [true, false, true, true, false]);
+        params.clear();
+        assert!(!params.has_value(0));
     }
 
     #[test]

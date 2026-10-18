@@ -20,6 +20,7 @@ mod reports;
 mod sgr;
 mod snapshot;
 mod terminfo;
+mod window;
 
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
@@ -27,6 +28,7 @@ pub use colors::{Colors, SPECIAL_COLORS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use window::Window;
 
 use std::ops::Range;
 
@@ -67,9 +69,11 @@ pub struct Options {
     /// `https`, `mailto` and `file` by default.
     pub link_schemes: Vec<String>,
     /// Whether programs may operate on the window, as xterm's
-    /// `allowWindowOps` lets them: change the terminal's size, in cells
-    /// (XTWINOPS 8 t, DECSLPP and DECSNLS), which the embedder then gives
-    /// the window: off by default.
+    /// `allowWindowOps` lets them: change the terminal's size (XTWINOPS 4
+    /// t and 8 t, DECSLPP and DECSNLS), which the embedder then gives the
+    /// window, iconify, move, maximize the window or make it fill the
+    /// display, and ask where it is and how large the display is: off by
+    /// default.
     pub window_ops: bool,
 }
 
@@ -371,6 +375,12 @@ pub struct Terminal {
     /// The size of a cell in pixels, width then height, once the embedder
     /// knows it.
     cell_size: Option<(u16, u16)>,
+    /// What the terminal knows of its window, the display's size in pixels
+    /// once the embedder tells it, and the size before the window was
+    /// maximized or filled the display, to bring back.
+    window: Window,
+    display_size: Option<(u16, u16)>,
+    restored_size: Option<(u16, u16)>,
     /// The window's title (OSC 2) and the icon's (OSC 1).
     title: String,
     icon_title: String,
@@ -467,6 +477,9 @@ impl Terminal {
             default_colors: Colors::default(),
             colors: Colors::default(),
             cell_size: None,
+            window: Window::default(),
+            display_size: None,
+            restored_size: None,
             title: String::new(),
             icon_title: String::new(),
             title_stack: Vec::new(),

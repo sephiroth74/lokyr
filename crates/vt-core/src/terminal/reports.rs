@@ -169,8 +169,7 @@ impl Terminal {
     /// XTWINOPS: the sizes (14, 16 and 18), the title (21) if the
     /// configuration allows it, the title stack (22 and 23), and, if it
     /// allows the window's operations, the resizes in cells (8, and 24 or
-    /// more, DECSLPP). The others, which move and resize the window in
-    /// pixels, do nothing.
+    /// more, DECSLPP) and the operations on the window.
     pub(super) fn window_ops(&mut self, params: &Params) {
         let (cols, rows) = (u32::from(self.cols), u32::from(self.rows));
         match params.value(0) {
@@ -196,16 +195,11 @@ impl Terminal {
             }
             22 => self.push_title(params.value(1)),
             23 => self.pop_title(params.value(1)),
-            // Resizes in cells, when the configuration allows them: the
-            // text area's rows and columns, the current ones where they
-            // are omitted or 0; and DECSLPP, the rows, from 24.
-            8 if self.window_ops => {
-                let (rows, cols) = (params.value(1), params.value(2));
-                let cols = if cols == 0 { self.cols } else { cols };
-                let rows = if rows == 0 { self.rows } else { rows };
-                self.take_size(cols, rows);
-            }
+            // With the window's operations allowed: the resize in cells,
+            // DECSLPP, the rows, from 24, and the others on the window.
+            8 if self.window_ops => self.resize_in_cells(params),
             rows @ 24.. if self.window_ops => self.take_size(self.cols, rows),
+            _ if self.window_ops => self.window_operation(params),
             _ => {}
         }
     }

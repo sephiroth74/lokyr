@@ -61,6 +61,11 @@ pub enum Event {
     /// the embedder gives it to the window and the PTY, or gives the
     /// terminal back the window's.
     SizeChanged,
+    /// A program asked the window to iconify, move, be maximized or fill
+    /// the display, which [`Terminal::window`] tells: the embedder does
+    /// what it can, and tells the terminal how the window ended with
+    /// [`Terminal::set_window`].
+    WindowChanged,
     /// A program asks to read the clipboards (OSC 52), which the
     /// configuration allows. An embedder with a session answers with the
     /// session's `reply_clipboard`; one without, with

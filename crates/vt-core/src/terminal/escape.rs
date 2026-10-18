@@ -139,13 +139,16 @@ impl Terminal {
 
     /// RIS: puts the terminal back as it was made, with its screens and
     /// scrollback empty, no title and the theme's colors. It keeps its
-    /// configuration: the size, the scrollback limits, the widths it was
-    /// made with, the normalization, the `TERM`, the title and clipboard
-    /// reports, the link schemes, the cell size and the theme. It keeps the
-    /// working directory too, which describes the shell rather than the
-    /// terminal. The bells that rang and the synchronized updates stay
-    /// counted, and the replies and events not yet taken stay queued, with
-    /// events for the titles, the tab color and the colors that RIS changed.
+    /// configuration: the size, but 132 columns that DECCOLM set, which go
+    /// back to 80, the scrollback limits, the widths it was made with, the
+    /// normalization, the `TERM`, the title and clipboard reports, the link
+    /// schemes, the window's operations, the cell size and the theme. It
+    /// keeps the working directory too, which describes the shell rather
+    /// than the terminal, and what it knows of the window and the display.
+    /// The bells that rang and the synchronized updates stay counted, and
+    /// the replies and events not yet taken stay queued, with events for
+    /// the titles, the tab color, the colors and the size that RIS
+    /// changed.
     fn full_reset(&mut self) {
         let options = Options {
             scrollback: self.primary.rows.scrollback().clone(),
@@ -165,6 +168,7 @@ impl Terminal {
             self.reply_bytes,
             self.cell_size,
         );
+        let (window, display_size) = (self.window, self.display_size);
         let working_directory = self.working_directory.take();
         let mut events = std::mem::take(&mut self.events);
         if !self.title.is_empty() || !self.icon_title.is_empty() {
@@ -187,6 +191,7 @@ impl Terminal {
         *self = Self::new(cols, self.rows, options);
         (self.bells, self.replies, self.reply_bytes, self.cell_size) =
             (bells, replies, reply_bytes, cell_size);
+        (self.window, self.display_size) = (window, display_size);
         self.synchronized_updates = updates;
         self.working_directory = working_directory;
         self.events = events;

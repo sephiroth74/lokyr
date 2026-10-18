@@ -110,8 +110,10 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
 /// with the screen, and `temp` is kept, for the log to be looked at.
 fn suite(options: &HarnessOptions, temp: &mut Temp, log: &Path) -> Result<Vec<(String, Outcome)>> {
     let mut harness = Harness::spawn(options)?;
-    // Cells of a font, so that the sizes in pixels are told, as a window's.
+    // Cells of a font, so that the sizes in pixels are told, as a window's,
+    // on a display of 1920 by 1080 pixels.
     harness.set_cell_size(8, 16)?;
+    harness.terminal_mut().set_display_size(1920, 1080);
     // xterm's default colors, black on white, which esctest sets before
     // each test, and expects the resets to bring back.
     let (black, white) = (Rgb::new(0, 0, 0), Rgb::new(255, 255, 255));

@@ -4986,6 +4986,111 @@ fn programs_resize_the_terminal_in_cells_when_the_window_operations_are_allowed(
     );
 }
 
+/// A terminal that allows the window's operations, with cells of 8 by 16
+/// pixels on a display of 800 by 480: 100 by 30 cells.
+fn windowed(cols: u16, rows: u16) -> Term {
+    let mut term = Term::with(
+        cols,
+        rows,
+        Options {
+            window_ops: true,
+            ..Options::default()
+        },
+    );
+    term.terminal.set_cell_size(8, 16);
+    term.terminal.set_display_size(800, 480);
+    term
+}
+
+#[test]
+fn the_window_reports_answer_only_when_the_window_operations_are_allowed() {
+    let mut term = Term::new(10, 4);
+    term.terminal.set_cell_size(8, 16);
+    term.terminal.set_display_size(800, 480);
+    term.feed("\x1b[2t\x1b[3;5;6t\x1b[11t\x1b[13t\x1b[15t\x1b[19t\x1b[9;1t");
+    assert_eq!(replies(&mut term), "");
+    assert_eq!(term.terminal.window(), Window::default());
+    assert_eq!(term.terminal.cols(), 10);
+}
+
+#[test]
+fn the_window_iconifies_moves_and_tells_the_display() {
+    let mut term = windowed(10, 4);
+    term.feed("\x1b[2t\x1b[11t\x1b[1t\x1b[11t");
+    assert_eq!(replies(&mut term), "\x1b[2t\x1b[1t");
+    assert_eq!(term.terminal.take_events(), [Event::WindowChanged], "once");
+    // An omitted place is 0, as in xterm.
+    term.feed("\x1b[3;5;6t\x1b[13t\x1b[3;7t\x1b[13t");
+    assert_eq!(replies(&mut term), "\x1b[3;5;6t\x1b[3;7;0t");
+    term.feed("\x1b[15t\x1b[19t");
+    assert_eq!(replies(&mut term), "\x1b[5;480;800t\x1b[9;30;100t");
+    // The embedder tells how the window ended, and RIS keeps it.
+    let window = Window {
+        x: 9,
+        y: 8,
+        iconified: true,
+        ..Window::default()
+    };
+    term.terminal.set_window(window);
+    term.feed("\x1bc\x1b[11t\x1b[13t\x1b[19t");
+    assert_eq!(term.terminal.window(), window);
+    assert_eq!(replies(&mut term), "\x1b[2t\x1b[3;9;8t\x1b[9;30;100t");
+    // Without the display's size, no report.
+    let mut term = Term::with(
+        10,
+        4,
+        Options {
+            window_ops: true,
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b[15t\x1b[19t");
+    assert_eq!(replies(&mut term), "");
+}
+
+#[test]
+fn the_window_resizes_in_pixels_and_cells_with_0_for_the_display() {
+    let mut term = windowed(10, 4);
+    let size = |term: &Term| (term.terminal.cols(), term.terminal.rows());
+    term.feed("\x1b[4;160;400t");
+    assert_eq!(size(&term), (50, 10));
+    // Omitted, the current size; 0, the display's; a part of a cell, none.
+    term.feed("\x1b[4;;200t");
+    assert_eq!(size(&term), (25, 10));
+    term.feed("\x1b[4;0;100t");
+    assert_eq!(size(&term), (12, 30));
+    term.feed("\x1b[4;70t");
+    assert_eq!(size(&term), (12, 4));
+    term.feed("\x1b[8;;0t");
+    assert_eq!(size(&term), (100, 4));
+    term.feed("\x1b[8;0t");
+    assert_eq!(size(&term), (100, 30));
+}
+
+#[test]
+fn the_window_maximizes_fills_the_display_and_comes_back() {
+    let mut term = windowed(10, 4);
+    let size = |term: &Term| (term.terminal.cols(), term.terminal.rows());
+    term.feed("\x1b[9;3t");
+    assert_eq!(size(&term), (100, 4));
+    assert!(term.terminal.window().maximized_horizontally);
+    term.feed("\x1b[9;2t");
+    assert_eq!(size(&term), (100, 30));
+    term.feed("\x1b[9;0t");
+    assert_eq!(size(&term), (10, 4), "the size before the first");
+    assert!(!term.terminal.window().maximized_vertically);
+    term.feed("\x1b[10;1t");
+    assert_eq!(size(&term), (100, 30));
+    assert!(term.terminal.window().full_screen);
+    term.feed("\x1b[10;2t");
+    assert_eq!(size(&term), (10, 4));
+    assert!(!term.terminal.window().full_screen);
+    term.feed("\x1b[10;0t\x1b[9;0t");
+    assert_eq!(size(&term), (10, 4), "nothing to bring back");
+    term.feed("\x1b[10;2t\x1b[10;0t");
+    assert_eq!(size(&term), (10, 4));
+}
+
 #[test]
 fn title_modes_set_and_report_titles_in_hexadecimal() {
     let mut term = Term::with(
