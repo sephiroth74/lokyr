@@ -8,7 +8,7 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::ReadOutcome;
+use crate::{ReadOutcome, Readiness};
 
 /// What the program writes to the terminal.
 #[derive(Debug)]
@@ -92,6 +92,31 @@ impl PtyWriter {
     }
 }
 
+impl PtyReader {
+    /// Waits until the program has written something, or has room for what
+    /// `writer`, of the same PTY, would type, until `deadline` at most, or
+    /// for as long as it takes without one: for a caller that reads and
+    /// writes on one thread, and so waits for both at once. A deadline that
+    /// has passed looks once, without waiting.
+    pub fn wait_either(
+        &self,
+        writer: &PtyWriter,
+        deadline: Option<Instant>,
+    ) -> io::Result<Readiness> {
+        let mut fds = [
+            pollfd(&self.master, libc::POLLIN),
+            pollfd(&writer.master, libc::POLLOUT),
+            pollfd(&self.closed, libc::POLLIN),
+        ];
+        poll(&mut fds, deadline)?;
+        let closed = fds[2].revents != 0;
+        Ok(Readiness {
+            output: closed || fds[0].revents != 0,
+            room: closed || fds[1].revents != 0,
+        })
+    }
+}
+
 impl PtyWriter {
     /// Writes some of `buf`, once the program has room for it, waiting for
     /// that until `deadline` at most, or for as long as it takes without
@@ -158,8 +183,30 @@ fn wait(
     events: libc::c_short,
     deadline: Option<Instant>,
 ) -> io::Result<Ready> {
+    let mut fds = [pollfd(master, events), pollfd(closed, libc::POLLIN)];
+    poll(&mut fds, deadline)?;
+    Ok(if fds[1].revents != 0 {
+        Ready::Closed
+    } else if fds[0].revents != 0 {
+        Ready::Master
+    } else {
+        Ready::TimedOut
+    })
+}
+
+/// An entry for `poll`, of `fd` for `events`.
+fn pollfd(fd: &OwnedFd, events: libc::c_short) -> libc::pollfd {
+    libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events,
+        revents: 0,
+    }
+}
+
+/// Waits for one of `fds` to be ready, or for `deadline`, after which none
+/// is: a deadline that has passed still looks once, without waiting.
+fn poll(fds: &mut [libc::pollfd], deadline: Option<Instant>) -> io::Result<()> {
     loop {
-        // A deadline that has passed still looks once, without waiting.
         let (timeout, last) = match deadline {
             None => (-1, false),
             Some(deadline) => {
@@ -171,20 +218,13 @@ fn wait(
                 (timeout, left.is_zero())
             }
         };
-        let mut fds = [
-            libc::pollfd {
-                fd: master.as_raw_fd(),
-                events,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: closed.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        // SAFETY: `poll` reads and writes the two entries of `fds`.
-        let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout) };
+        for fd in fds.iter_mut() {
+            fd.revents = 0;
+        }
+        // A few entries.
+        let count = fds.len() as libc::nfds_t;
+        // SAFETY: `poll` reads and writes the `count` entries of `fds`.
+        let ready = unsafe { libc::poll(fds.as_mut_ptr(), count, timeout) };
         if ready == -1 {
             let error = io::Error::last_os_error();
             if error.kind() == ErrorKind::Interrupted {
@@ -192,14 +232,8 @@ fn wait(
             }
             return Err(error);
         }
-        if fds[1].revents != 0 {
-            return Ok(Ready::Closed);
-        }
-        if fds[0].revents != 0 {
-            return Ok(Ready::Master);
-        }
-        if last {
-            return Ok(Ready::TimedOut);
+        if ready > 0 || last {
+            return Ok(());
         }
         // Timed out: the deadline, checked again, ends the wait.
     }

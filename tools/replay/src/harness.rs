@@ -169,9 +169,15 @@ impl Harness {
     pub fn quiet(&mut self, time: Duration, limit: Duration) -> Result<()> {
         let deadline = Instant::now() + limit;
         loop {
-            match self.read(Instant::now() + time)? {
+            // A turn at least, so that a quiet time of 0 still reads what
+            // the program writes, and no read past the limit.
+            let quiet = Instant::now() + time.max(TURN);
+            let until = quiet.min(deadline);
+            match self.read(until)? {
                 Read::End => return Ok(()),
-                Read::TimedOut if !self.terminal.synchronized_output() => return Ok(()),
+                Read::TimedOut if until == quiet && !self.terminal.synchronized_output() => {
+                    return Ok(());
+                }
                 Read::Output | Read::TimedOut => {}
             }
             if Instant::now() >= deadline {
@@ -205,6 +211,17 @@ impl Harness {
             return Ok(());
         }
         let id = self.queue(bytes.to_vec(), false);
+        let sent = self.wait_written(id, limit);
+        // What was not written goes, however the send failed.
+        if sent.is_err() {
+            self.take_back(id);
+        }
+        sent
+    }
+
+    /// Waits until the bytes with `id` are written, reading what the
+    /// program writes meanwhile, for `limit` at most.
+    fn wait_written(&mut self, id: u64, limit: Duration) -> Result<()> {
         let deadline = Instant::now() + limit;
         loop {
             self.write_some(Instant::now() + TURN)?;
@@ -215,7 +232,6 @@ impl Harness {
                 bail!("the program ended before it took what was typed");
             }
             if Instant::now() >= deadline {
-                self.take_back(id);
                 bail!("the program did not take what was typed in {limit:?}");
             }
             self.read(Instant::now() + TURN)?;
@@ -252,9 +268,11 @@ impl Harness {
     }
 
     /// How the program ended, if it has, without waiting for it or reading
-    /// what it writes: `None` while it runs. On macOS, a program that ends
-    /// with output unread is not gone until the output is read, as closing
-    /// a terminal waits for its output to drain.
+    /// what it writes: `None` while it runs. The status can come a moment
+    /// after the output ends, as the program closes the terminal before it
+    /// is gone, which [`Harness::exit_status`] waits for. On macOS, a
+    /// program that ends with output unread is not gone until the output is
+    /// read, as closing a terminal waits for its output to drain.
     pub fn try_exit_status(&mut self) -> Result<Option<Exit>> {
         let Some(pty) = &mut self.pty else {
             bail!("the program was hung up, which leaves how it ended untold");
@@ -354,7 +372,8 @@ impl Harness {
     /// The terminal, for what the harness does not do itself; a resize and
     /// a cell's size go through [`Harness::resize`] and
     /// [`Harness::set_cell_size`], which tell the program too, and the
-    /// replies are the harness's to take.
+    /// replies are the harness's to take: those made here, as an answer to
+    /// a clipboard read, go with the next step.
     pub fn terminal_mut(&mut self) -> &mut Terminal {
         &mut self.terminal
     }
@@ -444,6 +463,19 @@ impl Harness {
         id
     }
 
+    /// Queues the replies that the terminal has made, while they fit.
+    fn queue_replies(&mut self) {
+        let replies = self.terminal.take_replies();
+        if replies.is_empty() || self.closed {
+            return;
+        }
+        if self.reply_bytes + replies.len() <= PENDING {
+            self.queue(replies, true);
+        } else {
+            self.dropped += 1;
+        }
+    }
+
     /// Takes back what of the bytes with `id` waits still.
     fn take_back(&mut self, id: u64) {
         self.pending.retain(|pending| pending.id != id);
@@ -457,19 +489,27 @@ impl Harness {
     /// from ever timing out.
     fn read(&mut self, deadline: Instant) -> Result<Read> {
         let n = loop {
-            let now = Instant::now();
-            if now >= deadline {
+            if Instant::now() >= deadline {
                 return Ok(Read::TimedOut);
             }
-            self.write_some(now + Duration::from_millis(1))?;
-            // While bytes wait, the read gives way to the writes now and
-            // then, as the program can make room for them without writing.
-            let until = if self.pending.is_empty() {
-                deadline
+            // The terminal's replies, those that a test made too.
+            self.queue_replies();
+            // While bytes wait, the read waits for room too, and writes as
+            // soon as there is some, as the program can make room for them
+            // without writing.
+            let output = if self.pending.is_empty() {
+                true
             } else {
-                deadline.min(Instant::now() + TURN)
+                let ready = self.reader.wait_either(&self.writer, Some(deadline))?;
+                if ready.room {
+                    self.write_some(Instant::now())?;
+                }
+                ready.output
             };
-            match self.reader.read_until(&mut self.buffer, Some(until))? {
+            if !output {
+                continue;
+            }
+            match self.reader.read_until(&mut self.buffer, Some(deadline))? {
                 ReadOutcome::Read(n) => break n,
                 ReadOutcome::TimedOut => {}
                 ReadOutcome::End => {
@@ -481,14 +521,7 @@ impl Harness {
         let bytes = self.buffer[..n].to_vec();
         self.parser.advance(&mut self.terminal, &bytes);
         self.event(Event::Output(bytes));
-        let replies = self.terminal.take_replies();
-        if !replies.is_empty() && !self.closed {
-            if self.reply_bytes + replies.len() <= PENDING {
-                self.queue(replies, true);
-            } else {
-                self.dropped += 1;
-            }
-        }
+        self.queue_replies();
         if self.forbidden.is_empty() {
             return Ok(Read::Output);
         }

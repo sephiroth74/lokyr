@@ -484,3 +484,39 @@ fn a_program_found_in_path_keeps_its_name_as_given() {
     let text = Output::new(pty.reader().unwrap()).rest();
     assert!(text.contains("arg0:sh\r\n"), "{text:?}");
 }
+
+#[test]
+fn a_wait_for_either_tells_output_and_room() {
+    let pty = spawn(&Options::new(
+        sh("stty raw -echo; echo armed; exec cat"),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let mut reader = pty.reader().unwrap();
+    let mut writer = pty.writer().unwrap();
+    let mut buffer = [0; 64];
+    let mut read = Vec::new();
+    while !read.ends_with(b"armed\n") {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        match reader.read_until(&mut buffer, Some(deadline)).unwrap() {
+            ReadOutcome::Read(n) => read.extend_from_slice(&buffer[..n]),
+            outcome => panic!("{outcome:?} before the program was ready"),
+        }
+    }
+    let soon = || Some(std::time::Instant::now() + Duration::from_millis(200));
+    // Room, and nothing to read yet.
+    let ready = reader.wait_either(&writer, soon()).unwrap();
+    assert!(ready.room && !ready.output, "{ready:?}");
+    // `cat` sends back what is typed; room comes at once, and the output
+    // after it.
+    assert_eq!(writer.write_until(b"x", None).unwrap(), Some(1));
+    let started = std::time::Instant::now();
+    while !reader.wait_either(&writer, soon()).unwrap().output {
+        assert!(started.elapsed() < Duration::from_secs(5), "no output");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Both, once the PTY has dropped.
+    drop(pty);
+    let ready = reader.wait_either(&writer, soon()).unwrap();
+    assert!(ready.room && ready.output, "{ready:?}");
+}

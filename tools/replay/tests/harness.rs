@@ -283,3 +283,95 @@ fn a_wait_says_when_the_program_ends_inside_an_update() {
         "{error:#}"
     );
 }
+
+#[test]
+fn a_reply_that_the_test_makes_reaches_a_program_that_waits_in_silence() {
+    // The program asks for the clipboard, then waits for the answer.
+    let script = r"stty raw -echo; echo armed; printf '\033]52;c;?\007'; dd bs=1 count=12 >/dev/null 2>&1; echo got";
+    let mut options = options(20, 3, script);
+    options.terminal.clipboard_reads = true;
+    let mut harness = Harness::spawn(&options).unwrap();
+    harness.wait("armed", LIMIT).unwrap();
+    let started = std::time::Instant::now();
+    let request = loop {
+        let events = harness.take_terminal_events();
+        if let Some(TerminalEvent::ClipboardRead(request)) = events.into_iter().next() {
+            break request;
+        }
+        assert!(started.elapsed() < LIMIT, "no read came");
+        harness.sleep(Duration::from_millis(20)).unwrap();
+    };
+    harness.terminal_mut().reply_clipboard(request, b"hi");
+    harness.wait("got", Duration::from_secs(3)).unwrap();
+}
+
+#[test]
+fn quiet_reads_with_no_quiet_time_and_keeps_its_limit() {
+    // An update that ends after 0.2 s, which a quiet time of 0 waits for.
+    let mut harness = harness(
+        20,
+        3,
+        r"printf '\033[?2026hx'; sleep 0.2; printf '\033[?2026ly'; sleep 5",
+    );
+    let started = std::time::Instant::now();
+    while !harness.terminal().synchronized_output() {
+        assert!(started.elapsed() < LIMIT, "the update never started");
+        harness.sleep(Duration::from_millis(10)).unwrap();
+    }
+    harness.quiet(Duration::ZERO, LIMIT).unwrap();
+    assert!(harness.shows("y"), "{}", harness.screen());
+    // Silent inside an update: the limit, not the quiet time, ends it.
+    let mut silent = self::harness(20, 3, r"printf '\033[?2026hx'; sleep 5");
+    let started = std::time::Instant::now();
+    assert!(
+        silent
+            .quiet(Duration::from_secs(2), Duration::from_millis(300))
+            .is_err()
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    harness.hang_up();
+    silent.hang_up();
+}
+
+#[test]
+fn a_send_that_fails_on_an_error_takes_back_its_keys() {
+    let typed = |harness: &Harness| {
+        inputs(harness)
+            .iter()
+            .map(|bytes| bytes.len())
+            .sum::<usize>()
+    };
+    let mut harness = harness(
+        20,
+        3,
+        "stty raw -echo; echo armed; sleep 0.3; echo secret; sleep 1; exec cat >/dev/null",
+    );
+    harness.wait("armed", LIMIT).unwrap();
+    harness.forbid(vec!["secret".to_owned()]);
+    let error = harness.send(&[b'x'; 70_000], LIMIT).unwrap_err();
+    assert!(error.to_string().contains("showed `secret`"), "{error:#}");
+    harness.forbid(Vec::new());
+    let before = typed(&harness);
+    harness.sleep(Duration::from_secs(2)).unwrap();
+    assert_eq!(typed(&harness), before, "nothing more typed");
+    harness.hang_up();
+}
+
+#[test]
+fn keys_go_as_fast_as_a_silent_program_reads_them() {
+    let mut harness = harness(20, 3, "stty raw -echo; echo armed; exec cat >/dev/null");
+    harness.wait("armed", LIMIT).unwrap();
+    let started = std::time::Instant::now();
+    harness.send(&vec![b'x'; 1 << 20], LIMIT).unwrap();
+    // A turn of 10 ms for each KiB that the terminal takes took 6 s.
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "{:?}",
+        started.elapsed()
+    );
+    harness.hang_up();
+}

@@ -480,15 +480,27 @@ fn a_killed_recorders_home_goes_with_the_next_run() {
 
 #[test]
 fn a_wait_a_quiet_and_a_mark_do_not_end_inside_a_synchronized_update() {
-    // `started`, then an update that shows `ready` at once, and ends more
-    // than a second later.
-    let program = "run sh -c \"echo started; sleep 0.1; printf '\\\\033[?2026hready'; sleep 1.5; printf ' done\\\\033[?2026l'; read x\"";
-    for (name, steps, after) in [
-        ("wait", "wait ready\nsend \"x\\r\"\n", r#","i","x\r"]"#),
-        ("quiet", "quiet 200\nsend \"x\\r\"\n", r#","i","x\r"]"#),
-        // The mark, well inside the update, which has long started.
+    // An update that shows `ready` in the program's first write, and ends
+    // half a second later; and, for the mark, `started`, then an update
+    // that ends more than a second later, inside which the mark falls.
+    let first = "run sh -c \"printf '\\\\033[?2026hready'; sleep 0.5; printf ' done\\\\033[?2026l'; read x\"";
+    let later = "run sh -c \"echo started; sleep 0.1; printf '\\\\033[?2026hready'; sleep 1.5; printf ' done\\\\033[?2026l'; read x\"";
+    for (name, program, steps, after) in [
+        (
+            "wait",
+            first,
+            "wait ready\nsend \"x\\r\"\n",
+            r#","i","x\r"]"#,
+        ),
+        (
+            "quiet",
+            first,
+            "quiet 200\nsend \"x\\r\"\n",
+            r#","i","x\r"]"#,
+        ),
         (
             "mark",
+            later,
             "wait started\nsleep 800\nmark here\nsend \"x\\r\"\n",
             r#","m","here"]"#,
         ),

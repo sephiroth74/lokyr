@@ -39,6 +39,19 @@ pub enum ReadOutcome {
     TimedOut,
 }
 
+/// What a wait for both output and room found, as
+/// [`PtyReader::wait_either`] tells it. A PTY that has dropped makes both
+/// ready, for the read to tell the end and the write to fail.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Readiness {
+    /// The program wrote something, or its output ended: a read takes it
+    /// without waiting.
+    pub output: bool,
+    /// The program has room for what is typed: a write takes some of it
+    /// without waiting.
+    pub room: bool,
+}
+
 /// How a PTY's program ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Exit {
