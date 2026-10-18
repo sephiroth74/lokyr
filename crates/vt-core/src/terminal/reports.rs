@@ -3,10 +3,13 @@
 //!
 //! Replies carry only what the terminal makes of its own state, never text
 //! that a program chose, so that a program cannot type into another
-//! through them; the one exception, the title, is reported only when the
-//! configuration allows it.
+//! through them; the exceptions, the title and the checksums of the
+//! screen's rectangles, through which a program reads what others wrote,
+//! are reported only when the configuration allows them.
 
 use std::fmt::Write as _;
+
+use crate::page::{Content, Width};
 
 use super::osc::hex_byte;
 use super::terminfo::{self, Capability};
@@ -73,6 +76,97 @@ impl Terminal {
             }
             _ => {}
         }
+    }
+
+    /// DECRQCRA: the checksum of the rectangle from row `Pt` and column `Pl`
+    /// to row `Pb` and column `Pr`, all included, which count from the
+    /// margins' top left in origin mode and stay within them, the screen's
+    /// edges by default. Each cell counts its character, an empty one a
+    /// space and the second half of a wide one nothing, and the sum is
+    /// negated, as the VT520 does, then told after the request's id, `Pid`:
+    /// `DCS Pid ! ~ XXXX ST`. The page, `Pp`, is the screen's only one.
+    pub(super) fn report_checksum(&mut self, params: &Params) {
+        let (top, left, bottom, right) = if self.origin {
+            let margins = self.margins;
+            (margins.top, margins.left, margins.bottom, margins.right)
+        } else {
+            (0, 0, self.rows - 1, self.cols - 1)
+        };
+        let from = |value: u16, start: u16| start.saturating_add(value.max(1) - 1);
+        let to = |value: u16, start: u16, end: u16| {
+            if value == 0 {
+                end
+            } else {
+                start.saturating_add(value - 1).min(end)
+            }
+        };
+        let rect = (
+            from(params.value(2), top),
+            from(params.value(3), left),
+            to(params.value(4), top, bottom),
+            to(params.value(5), left, right),
+        );
+        let mut sum = 0_u16;
+        for y in rect.0..=rect.2 {
+            let (page, row) = self.screen().rows.screen_row(y);
+            let cells = page.cells(row);
+            for x in rect.1..=rect.3 {
+                let Some(cell) = cells.get(usize::from(x)) else {
+                    break;
+                };
+                let code = match (cell.width(), cell.content()) {
+                    (Width::SpacerTail | Width::SpacerHead, _) => 0,
+                    (_, Content::Char(c) | Content::Grapheme(c)) if c != '\0' => u32::from(c),
+                    _ => u32::from(' '),
+                };
+                // The sum keeps its low 16 bits, as the checksum does.
+                sum = sum.wrapping_add(code as u16);
+            }
+        }
+        let reply = format!("\x1bP{}!~{:04X}\x1b\\", params.value(0), sum.wrapping_neg());
+        self.reply(reply.as_bytes());
+    }
+
+    /// DECDSR, `CSI ? Ps n`: the reports of the DEC terminals, as a
+    /// terminal emulator tells them, with no printer, no locator, no macros
+    /// and one session. `checksum_id` is DECCKSR's request id.
+    pub(super) fn dec_device_status(&mut self, which: u16, checksum_id: u16) {
+        let reply = match which {
+            // DECXCPR: the cursor's place, as CPR tells it, without the
+            // page, which DA's VT220 does not have.
+            6 => {
+                let cursor = self.cursor();
+                let (row, column) = if self.origin {
+                    (
+                        cursor.y.saturating_sub(self.margins.top),
+                        cursor.x.saturating_sub(self.margins.left),
+                    )
+                } else {
+                    (cursor.y, cursor.x)
+                };
+                format!("\x1b[?{};{}R", row + 1, column + 1)
+            }
+            // No printer.
+            15 => "\x1b[?13n".to_owned(),
+            // The user-defined keys, which the terminal does not have, are
+            // locked.
+            25 => "\x1b[?21n".to_owned(),
+            // The keyboard: its language not known, as the VT220 tells it.
+            26 => "\x1b[?27;0n".to_owned(),
+            // No locator, and its type none.
+            53 | 55 => "\x1b[?50n".to_owned(),
+            56 => "\x1b[?57;0n".to_owned(),
+            // DECMSR: no space for macros.
+            62 => "\x1b[0*{".to_owned(),
+            // DECCKSR: the checksum of the macros, which there are none of.
+            63 => format!("\x1bP{checksum_id}!~0000\x1b\\"),
+            // Ready, without errors.
+            75 => "\x1b[?70n".to_owned(),
+            // Not made for several sessions.
+            85 => "\x1b[?83n".to_owned(),
+            _ => return,
+        };
+        self.reply(reply.as_bytes());
     }
 
     /// XTVERSION: the terminal's name and version.
@@ -197,6 +291,14 @@ impl Terminal {
             b"s" => Some(format!("{};{}s", margins.left + 1, margins.right + 1)),
             b" q" => Some(format!("{} q", self.cursor_style_value())),
             b"\"q" => Some(format!("{}\"q", u8::from(self.protected))),
+            // The conformance level, with 7-bit controls, which the
+            // terminal's replies use.
+            b"\"p" => Some(format!("{};1\"p", self.conformance)),
+            b"*x" => Some(format!("{}*x", self.attribute_extent)),
+            // No status line (DECSSDT) and the main display active
+            // (DECSASD), which the terminal has alone.
+            b"$~" => Some("0$~".to_owned()),
+            b"$}" => Some("0$}".to_owned()),
             _ => None,
         };
         let reply = match setting {

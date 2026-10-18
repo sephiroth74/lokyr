@@ -47,8 +47,10 @@ impl Terminal {
     ///
     /// With reverse wraparound and autowrap on, a move past the left margin
     /// goes on from the right margin of the row above, as long as that row
-    /// wraps into this one, as far as the top margin. A pending wrap takes
-    /// one of the moves, as in xterm.
+    /// wraps into this one, as far as the top margin. With the extended
+    /// reverse wraparound, it goes on whether the row above wraps or not,
+    /// and from the top margin to the bottom one. A pending wrap takes one
+    /// of the moves, as in xterm.
     pub(super) fn cursor_back(&mut self, n: u16) {
         let Cursor {
             mut x,
@@ -60,7 +62,8 @@ impl Terminal {
         } else {
             0
         };
-        if !(self.reverse_wrap && self.autowrap) {
+        let extended = self.reverse_wrap_extended;
+        if !((self.reverse_wrap || extended) && self.autowrap) {
             self.move_to(x.saturating_sub(n).max(left), y);
             return;
         }
@@ -69,17 +72,27 @@ impl Terminal {
             let step = count.min(x - left);
             x -= step;
             count -= step;
-            if count == 0 || y <= self.margins.top {
+            if count == 0 {
+                break;
+            }
+            if y == self.margins.top && extended {
+                // From the top margin to the bottom one.
+                (x, y) = (self.margins.right, self.margins.bottom);
+                count -= 1;
+                continue;
+            }
+            if y <= self.margins.top {
                 break;
             }
             // The row above wraps into this one only when this one is its
-            // continuation too: rows that edits moved can keep the flag.
+            // continuation too: rows that edits moved can keep the flag. The
+            // extended mode goes up whatever the rows are.
             let rows = &self.screen().rows;
             let (above, row_above) = rows.screen_row(y - 1);
             let (page, row) = rows.screen_row(y);
-            if !(above.row(row_above).has(RowFlag::SoftWrapped)
-                && page.row(row).has(RowFlag::Continuation))
-            {
+            let wraps = above.row(row_above).has(RowFlag::SoftWrapped)
+                && page.row(row).has(RowFlag::Continuation);
+            if !(wraps || extended) {
                 break;
             }
             (x, y) = (self.margins.right, y - 1);

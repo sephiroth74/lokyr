@@ -1,0 +1,256 @@
+403 of 528 applicable tests passed (76.3%); 39 known bugs of xterm and 0 skipped
+
+CBTTests: 1 failed
+  1 × esctypes.TestFailure: Test failed: expected '1' but got '5'
+    test_CBT_IgnoresRegion
+
+ChangeColorTests: 7 failed
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:1616/1414/0e0e' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIELuv
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:1a1a/1313/0f0f' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_TekHVC
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:6c6c/6767/6767' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIELab
+  4 × esctypes.TestFailure: Test failed: expected ';0;rgb:ffff/ffff/ffff' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIEXYZ
+    test_ChangeColor_CIEuvY
+    test_ChangeColor_CIExyY
+    test_ChangeColor_RGBI
+
+ChangeDynamicColorTests: 7 failed
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:1616/1414/0e0e' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIELuv
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:1a1a/1313/0f0f' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_TekHVC
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:6c6c/6767/6767' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIELab
+  4 × esctypes.TestFailure: Test failed: expected ';rgb:ffff/ffff/ffff' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIEXYZ
+    test_ChangeDynamicColor_CIEuvY
+    test_ChangeDynamicColor_CIExyY
+    test_ChangeDynamicColor_RGBI
+
+ChangeSpecialColorTests: 14 failed
+  12 × esctypes.InternalError: Timeout waiting to read. (in doChangeSpecialColorTest)
+    test_ChangeSpecialColor_CIELab
+    test_ChangeSpecialColor_CIELuv
+    test_ChangeSpecialColor_CIEXYZ
+    test_ChangeSpecialColor_CIEuvY
+    test_ChangeSpecialColor_CIExyY
+    test_ChangeSpecialColor_Hash12
+    test_ChangeSpecialColor_Hash3
+    test_ChangeSpecialColor_Hash6
+    test_ChangeSpecialColor_Hash9
+    test_ChangeSpecialColor_RGB
+    test_ChangeSpecialColor_RGBI
+    test_ChangeSpecialColor_TekHVC
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ChangeSpecialColor_Multiple)
+    test_ChangeSpecialColor_Multiple
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ChangeSpecialColor_Multiple2)
+    test_ChangeSpecialColor_Multiple2
+
+DA2Tests: 2 failed
+  2 × esctypes.TestFailure: Test failed: expected '64' but got '1'
+    test_DA2_0
+    test_DA2_NoParameter
+
+DATests: 2 failed
+  2 × esctypes.TestFailure: Test failed: expected '13' but got '2'
+    test_DA_0
+    test_DA_NoParameter
+
+DECBITests: 4 failed
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=1, y=1)' but got 'Point(x=2, y=1)'
+    test_DECBI_LeftOfMargin
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=4, y=6)' but got 'Point(x=5, y=6)'
+    test_DECBI_Basic
+  1 × uvwxy
+    test_DECBI_Scrolls
+  1 × x
+    test_DECBI_WholeScreenScrolls
+
+DECCRATests: 8 failed
+  1 × 
+    test_DECCRA_destinationPartiallyOffscreen
+  6 × YZ6789!@
+    test_DECCRA_defaultValuesInDest
+    test_DECCRA_defaultValuesInSource
+    test_DECCRA_ignoresMargins
+    test_DECCRA_nonOverlappingSourceAndDest
+    test_DECCRA_overlappingSourceAndDest
+    test_DECCRA_respectsOriginMode
+  1 × cX
+    test_DECCRA_overlyLargeSourceClippedToScreenSize
+
+DECDCTests: 6 failed
+  4 × ABCDEFG
+    test_DECDC_DefaultParam
+    test_DECDC_DeleteAll
+    test_DECDC_DeleteAllWithLeftRightMargins
+    test_DECDC_DeleteWithLeftRightMargins
+  1 × ZYXWVUT
+    test_DECDC_CursorWithinTopBottom
+  1 × zyxwvut
+    test_DECDC_ExplicitParam
+
+DECERATests: 5 failed
+  1 × 1
+    test_DECERA_defaultArgs
+  3 × YZ6789!@
+    test_DECERA_basic
+    test_DECERA_ignoresMargins
+    test_DECERA_respectsOriginMode
+  1 × cd
+    test_DECERA_overlyLargeSourceClippedToScreenSize
+
+DECFITests: 4 failed
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=6, y=6)' but got 'Point(x=5, y=6)'
+    test_DECFI_Basic
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=7, y=1)' but got 'Point(x=6, y=1)'
+    test_DECFI_RightOfMargin
+  1 × uvwxy
+    test_DECFI_Scrolls
+  1 × x
+    test_DECFI_WholeScreenScrolls
+
+DECFRATests: 5 failed
+  1 × 1
+    test_DECFRA_defaultArgs
+  3 × YZ6789!@
+    test_DECFRA_basic
+    test_DECFRA_ignoresMargins
+    test_DECFRA_respectsOriginMode
+  1 × cd
+    test_DECFRA_overlyLargeSourceClippedToScreenSize
+
+DECICTests: 6 failed
+  3 × ABCDEFG
+    test_DECIC_DefaultParam
+    test_DECIC_ScrollOffRightEdge
+    test_DECIC_ScrollOffRightMarginInScrollRegion
+  1 × ZYXWVUT..
+    test_DECIC_CursorWithinTopBottom
+  1 × xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    test_DECIC_ScrollEntirelyOffRightEdge
+  1 × zyxwvut
+    test_DECIC_ExplicitParam
+
+DECRQMTests: 8 failed
+  1 × esctypes.TestFailure: Test failed: expected '[12, 2]' but got '[12, 0]'
+    test_DECRQM_ANSI_SRM
+  1 × esctypes.TestFailure: Test failed: expected '[18, 2]' but got '[18, 0]'
+    test_DECRQM_DEC_DECPFF
+  1 × esctypes.TestFailure: Test failed: expected '[19, 2]' but got '[19, 0]'
+    test_DECRQM_DEC_DECPEX
+  1 × esctypes.TestFailure: Test failed: expected '[2, 2]' but got '[2, 0]'
+    test_DECRQM_ANSI_KAM
+  1 × esctypes.TestFailure: Test failed: expected '[3, 2]' but got '[3, 0]'
+    test_DECRQM_DEC_DECCOLM
+  1 × esctypes.TestFailure: Test failed: expected '[35, 2]' but got '[35, 0]'
+    test_DECRQM_DEC_DECHEBM
+  1 × esctypes.TestFailure: Test failed: expected '[42, 2]' but got '[42, 0]'
+    test_DECRQM_DEC_DECNRCM
+  1 × esctypes.TestFailure: Test failed: expected '[67, 2]' but got '[67, 0]'
+    test_DECRQM_DEC_DECBKM
+
+DECRQSSTests: 2 failed
+  1 × esctypes.TestFailure: Test failed: expected '1$r24*|' but got '0$r'
+    test_DECRQSS_DECSNLS
+  1 × esctypes.TestFailure: Test failed: expected '1$r27t' but got '0$r'
+    test_DECRQSS_DECSLPP
+
+DECSCLTests: 3 failed
+  1 × 1
+    test_DECSCL_Level4_SupportsDECSLRMDoesntSupportDECNCSM
+  1 × esctypes.TestFailure: Test failed: expected '8' but got '6'
+    test_DSCSCL_Level3_SupportsDECRQMDoesntSupportDECSLRM
+  1 × esctypes.TestFailure: Test failed: expected 'True' but got 'False'
+    test_DECSCL_Level2DoesntSupportDECRQM
+
+DECSEDTests: 1 failed
+  1 × esctypes.InternalError: Should have failed
+    test_DECSED_doesNotRespectISOProtect
+
+DECSELTests: 1 failed
+  1 × esctypes.InternalError: Should have failed
+    test_DECSEL_doesNotRespectISOProtect
+
+DECSERATests: 6 failed
+  1 × 1
+    test_DECSERA_defaultArgs
+  3 × YZ6789!@
+    test_DECSERA_basic
+    test_DECSERA_ignoresMargins
+    test_DECSERA_respectsOriginMode
+  1 × ab
+    test_DECSERA_doesNotRespectISOProtect
+  1 × cd
+    test_DECSERA_overlyLargeSourceClippedToScreenSize
+
+DECSETTests: 3 failed
+  2 × esctypes.TestFailure: Test failed: expected '132' but got '80'
+    test_DECSET_Allow80To132
+    test_DECSET_DECCOLM
+  1 × esctypes.TestFailure: Test failed: expected '9' but got '80'
+    test_DECSET_MoreFix
+
+ECHTests: 1 failed
+  1 × 
+    test_ECH_respectsISOProtection
+
+EDTests: 1 failed
+  1 × 
+    test_ED_respectsISOProtection
+
+ELTests: 1 failed
+  1 × 
+    test_EL_respectsISOProtection
+
+RISTests: 1 failed
+  1 × esctypes.TestFailure: Test failed: expected '132' but got '80'
+    test_RIS_ResetDECCOLM
+
+ResetSpecialColorTests: 5 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Multiple)
+    test_ResetSpecialColor_Multiple
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Multiple2)
+    test_ResetSpecialColor_Multiple2
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Single)
+    test_ResetSpecialColor_Single
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Single2)
+    test_ResetSpecialColor_Single2
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:0000/0000/0000' but got ';rgb:e5e5/e5e5/e5e5'
+    test_ResetSpecialColor_Dynamic
+
+XtermSaveTests: 2 failed
+  1 × esctypes.TestFailure: Test failed: expected '2' but got '80'
+    test_XtermSave_SaveSetState
+  1 × esctypes.TestFailure: Test failed: expected '80' but got '2'
+    test_XtermSave_SaveResetState
+
+XtermWinopsTests: 19 failed
+  9 × esctypes.InternalError: Timeout waiting to read. (in GetDisplaySize)
+    test_XtermWinops_Fullscreen
+    test_XtermWinops_MaximizeWindow_Horizontally
+    test_XtermWinops_MaximizeWindow_HorizontallyAndVertically
+    test_XtermWinops_MaximizeWindow_Vertically
+    test_XtermWinops_ResizeChars_BothParameters
+    test_XtermWinops_ResizeChars_DefaultHeight
+    test_XtermWinops_ResizeChars_DefaultWidth
+    test_XtermWinops_ResizeChars_ZeroHeight
+    test_XtermWinops_ResizeChars_ZeroWidth
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetIsIconified)
+    test_XtermWinops_IconifyDeiconfiy
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetScreenSizePixels)
+    test_XtermWinops_ResizePixels_BothParameters
+    test_XtermWinops_ResizePixels_OmittedHeight
+    test_XtermWinops_ResizePixels_OmittedWidth
+    test_XtermWinops_ResizePixels_ZeroHeight
+    test_XtermWinops_ResizePixels_ZeroWidth
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetWindowPosition)
+    test_XtermWinops_MoveToXY
+    test_XtermWinops_MoveToXY_Defaults
+  1 × esctypes.TestFailure: Test failed: expected 'Size(width=90, height=10)' but got 'Size(width=80, height=25)'
+    test_XtermWinops_DECSLPP
+  1 × esctypes.TestFailure: Test failed: expected 'b1792306861.744858' but got 'z'
+    test_XtermWinops_PushIconThenWindowThenPopBoth

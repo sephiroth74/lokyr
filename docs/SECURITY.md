@@ -21,6 +21,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 | Clipboard read (OSC 52 with `?`) | Off; can be enabled with confirmation | A remote program could read the clipboard |
 | Clipboard write (OSC 52) | On, up to 1 MiB | tmux, Neovim and similar tools need it over ssh |
 | Title report (CSI 21 t) | Off | The classic way to inject text into the shell's input |
+| Rectangle checksums (DECRQCRA) | Off; test suites such as esctest turn them on, as iTerm2 asks | A program could read, a cell at a time, what others showed on the screen |
 | Report replies | Well-formed data only, never program-controlled text | Prevents injection through replies |
 | Pasted text | Control characters stripped, ESC and the rest of C0, DEL and C1, except tab and line breaks, with or without bracketed paste | Stops a paste from ending bracketed paste from the inside (`\e[201~`), or from sending ESC to an editor |
 | Multi-line paste without bracketed paste | Asks for confirmation | Avoids running commands by accident |

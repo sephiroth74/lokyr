@@ -6,7 +6,9 @@
 //! `bolt-esctest DIR [ARG...]` runs `DIR/esctest.py` with `python3`, from a
 //! checkout that the repository does not keep, and passes it the ARGs, as
 //! `--include=REGEX`. The terminal is 80 by 25, the size that esctest asks
-//! for, and reports titles, as xterm does when it is allowed to.
+//! for, with cells of 8 by 16 pixels, and reports titles and the checksums
+//! of rectangles, through which esctest reads the screen, as xterm does
+//! when it is allowed to.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -54,6 +56,9 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         "python3".to_owned(),
         "esctest.py".to_owned(),
         "--expected-terminal=xterm".to_owned(),
+        // Reverse wraparound as xterm does it since 2023, its mode 45 for
+        // the rows that wrap and 1045 for the others.
+        "--xterm-reverse-wrap=383".to_owned(),
         "--no-print-logs".to_owned(),
         format!("--timeout={TIMEOUT}"),
         format!("--logfile={}", log.display()),
@@ -68,6 +73,7 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         ],
         terminal: Options {
             title_reports: true,
+            rectangle_checksums: true,
             ..Options::default()
         },
         dir: dir.to_owned(),
@@ -75,6 +81,8 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         rows: 25,
     };
     let mut harness = Harness::spawn(&options)?;
+    // Cells of a font, so that the sizes in pixels are told, as a window's.
+    harness.set_cell_size(8, 16)?;
     harness.exit(LIMIT)?;
     let text = fs::read_to_string(&log).with_context(|| format!("reading {}", log.display()))?;
     print!("{}", report(&parse(&text)));

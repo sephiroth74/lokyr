@@ -4525,3 +4525,126 @@ fn a_clipboard_answer_does_not_take_the_room_of_replies() {
         b"\x1b]52;c;aGk=\x07"
     );
 }
+
+#[test]
+fn extended_reverse_wraparound_goes_up_whatever_the_rows_and_round_the_margins() {
+    // Rows that do not wrap, and the top margin to the bottom one.
+    let mut term = Term::new(5, 4);
+    term.feed("\x1b[?1045h\x1b[3;1H\x08");
+    assert_eq!(term.cursor(), (4, 1, false));
+    term.feed("\x1b[2;3r\x1b[2;1H\x08");
+    assert_eq!(
+        term.cursor(),
+        (4, 2, false),
+        "from the top margin to the bottom one"
+    );
+    // A soft reset turns it off.
+    term.feed("\x1b[!p\x1b[3;1H\x08");
+    assert_eq!(term.cursor(), (0, 2, false));
+}
+
+#[test]
+fn rectangle_checksums_answer_only_when_the_options_allow_them() {
+    let mut term = Term::new(10, 4);
+    term.feed("ab\x1b[1;1;1;1;1;2*y");
+    assert_eq!(replies(&mut term), "", "off by default");
+    let options = Options {
+        rectangle_checksums: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 4, options);
+    // `a` and `b`, negated: 0x10000 - 0xC3.
+    term.feed("ab\x1b[7;1;1;1;1;2*y");
+    assert_eq!(replies(&mut term), "\x1bP7!~FF3D\x1b\\");
+    // An empty cell counts as a space.
+    term.feed("\x1b[1;1;1;3;1;3*y");
+    assert_eq!(replies(&mut term), "\x1bP1!~FFE0\x1b\\");
+    // In origin mode, from the margins' top left.
+    term.feed("\x1b[2;3r\x1b[?6h\x1b[3;1HQ\x1b[2;1;2;1;2;1*y");
+    assert_eq!(replies(&mut term), "\x1bP2!~FFAF\x1b\\", "Q is 0x51");
+}
+
+#[test]
+fn a_soft_reset_puts_back_the_modes_and_leaves_the_cursor_and_the_text() {
+    let mut term = Term::new(10, 5);
+    term.feed("hello\x1b[4h\x1b[?6h\x1b[?25l\x1b[?45h\x1b[?7l\x1b[?1h\x1b=\x1b[1m\x1b[1\"q");
+    term.feed("\x1b[2;4r\x1b[?69h\x1b[2;5s\x1b(0\x1b[2;3H\x1b7\x1b[4;6H");
+    let before = term.cursor();
+    term.feed("\x1b[!p");
+    let terminal = &term.terminal;
+    assert_eq!(term.cursor(), before, "the cursor stays");
+    assert!(!terminal.insert_mode() && !terminal.origin_mode() && !terminal.reverse_wrap());
+    assert!(terminal.cursor_visible() && terminal.autowrap());
+    assert!(!terminal.input_modes().cursor_keys_application);
+    assert!(!terminal.input_modes().keypad_application);
+    assert_eq!(term.screen()[0], "hello", "the text stays");
+    // The margins are the screen's, the style and the protection the
+    // defaults, as a new terminal's, and the saved cursor goes home.
+    let settings = "\x1bP$qr\x1b\\\x1bP$qs\x1b\\\x1bP$q\"q\x1b\\\x1bP$qm\x1b\\";
+    term.feed(settings);
+    let mut new = Term::new(10, 5);
+    new.feed(settings);
+    assert_eq!(replies(&mut term), replies(&mut new));
+    term.feed("\x1b8");
+    assert_eq!(term.cursor(), (0, 0, false));
+}
+
+#[test]
+fn decscl_keeps_its_level_and_resets_softly() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1bP$q\"p\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r62;1\"p\x1b\\");
+    term.feed("\x1b[4h\x1b[65;1\"p\x1bP$q\"p\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r65;1\"p\x1b\\");
+    assert!(!term.terminal.insert_mode(), "a soft reset");
+    // Another level does nothing.
+    term.feed("\x1b[70\"p\x1bP$q\"p\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r65;1\"p\x1b\\");
+}
+
+#[test]
+fn decrqss_tells_the_status_line_and_the_attribute_extent() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[2*x\x1bP$q*x\x1b\\\x1bP$q$~\x1b\\\x1bP$q$}\x1b\\");
+    assert_eq!(
+        replies(&mut term),
+        "\x1bP1$r2*x\x1b\\\x1bP1$r0$~\x1b\\\x1bP1$r0$}\x1b\\"
+    );
+    term.feed("\x1b[3*x\x1bP$q*x\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r2*x\x1b\\", "3 is no extent");
+}
+
+#[test]
+fn decrqm_tells_the_modes_kept_reset_and_the_new_ones() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[1$p\x1b[19$p\x1b[2$p\x1b[?60$p");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[1;4$y\x1b[19;4$y\x1b[2;0$y\x1b[?60;4$y",
+        "GATM, EBM and DECHCCM permanently reset; KAM unknown"
+    );
+    // DECNKM is the keypad's mode, and DECSCLM and 1045 are kept.
+    term.feed("\x1b[?66h\x1b[?4h\x1b[?1045h\x1b[?66$p\x1b[?4$p\x1b[?1045$p");
+    assert!(term.terminal.input_modes().keypad_application);
+    assert_eq!(replies(&mut term), "\x1b[?66;1$y\x1b[?4;1$y\x1b[?1045;1$y");
+    term.feed("\x1b>\x1b[?66$p");
+    assert_eq!(replies(&mut term), "\x1b[?66;2$y", "DECKPNM resets it");
+}
+
+#[test]
+fn the_dec_device_reports_tell_what_an_emulator_has() {
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[2;3H\x1b[?6n\x1b[?15n\x1b[?25n\x1b[?26n\x1b[?55n\x1b[?56n");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[?2;3R\x1b[?13n\x1b[?21n\x1b[?27;0n\x1b[?50n\x1b[?57;0n"
+    );
+    term.feed("\x1b[?62n\x1b[?63;9n\x1b[?75n\x1b[?85n\x1b[?99n");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[0*{\x1bP9!~0000\x1b\\\x1b[?70n\x1b[?83n"
+    );
+    // DECID answers as DA does.
+    term.feed("\x1bZ\x1b[c");
+    assert_eq!(replies(&mut term), "\x1b[?62;22c\x1b[?62;22c");
+}

@@ -35,6 +35,9 @@ use crate::page::{
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
 
+/// The reply to DA: a VT220 with ANSI colors.
+const DA1: &[u8] = b"\x1b[?62;22c";
+
 /// What a terminal is made with.
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -54,6 +57,11 @@ pub struct Options {
     /// Whether programs may ask to read the clipboard (OSC 52 with `?`),
     /// which the embedder still confirms: off by default.
     pub clipboard_reads: bool,
+    /// Whether programs may ask for the checksum of a rectangle of the
+    /// screen (DECRQCRA), through which a program can read the screen, cell
+    /// by cell, what others wrote there too, as test suites do: off by
+    /// default.
+    pub rectangle_checksums: bool,
     /// The schemes that links (OSC 8) may have, in any case: `http`,
     /// `https`, `mailto` and `file` by default.
     pub link_schemes: Vec<String>,
@@ -68,6 +76,7 @@ impl Default for Options {
             term: "xterm-256color".to_owned(),
             title_reports: false,
             clipboard_reads: false,
+            rectangle_checksums: false,
             link_schemes: ["http", "https", "mailto", "file"]
                 .map(str::to_owned)
                 .to_vec(),
@@ -278,10 +287,24 @@ pub struct Terminal {
     cursor_visible: bool,
     /// The cursor blinks (mode 12).
     cursor_blink: bool,
+    /// Smooth scrolling (DECSCLM, mode 4), which a program asks for and the
+    /// screen keeps for whoever draws it; it scrolls at once.
+    smooth_scroll: bool,
+    /// The conformance level that DECSCL set, 61 to 65: 62 at first, the
+    /// VT220 that DA tells of.
+    conformance: u16,
+    /// The extent of the attribute changes in rectangles that DECSACE set:
+    /// 0 or 1 the stream of characters, 2 the rectangle.
+    attribute_extent: u16,
     /// Reverse wraparound (mode 45): with autowrap, moving left past the
     /// left margin goes on at the end of the row above, when that row wraps
     /// into this one.
     reverse_wrap: bool,
+    /// Extended reverse wraparound (mode 1045), xterm's mode 45 as it was:
+    /// with autowrap, moving left past the left margin goes on at the end
+    /// of the row above, whether it wraps or not, and past the top margin
+    /// at the end of the bottom one.
+    reverse_wrap_extended: bool,
     /// Synchronized output (mode 2026): the screen should not be drawn
     /// until the program ends the update.
     synchronized_output: bool,
@@ -302,6 +325,8 @@ pub struct Terminal {
     title_reports: bool,
     /// Whether programs may ask to read the clipboard.
     clipboard_reads: bool,
+    /// Whether programs may ask for the checksum of a rectangle.
+    rectangle_checksums: bool,
     /// The schemes that links may have.
     link_schemes: Vec<String>,
     /// The link that the text printed next is part of (OSC 8).
@@ -380,7 +405,11 @@ impl Terminal {
             reverse_video: false,
             cursor_visible: true,
             cursor_blink: false,
+            smooth_scroll: false,
+            conformance: 62,
+            attribute_extent: 0,
             reverse_wrap: false,
+            reverse_wrap_extended: false,
             synchronized_output: false,
             synchronized_updates: 0,
             configured_widths: options.widths,
@@ -389,6 +418,7 @@ impl Terminal {
             term: options.term,
             title_reports: options.title_reports,
             clipboard_reads: options.clipboard_reads,
+            rectangle_checksums: options.rectangle_checksums,
             link_schemes: options.link_schemes,
             link: osc::Link::default(),
             zone: Semantic::Output,

@@ -35,9 +35,11 @@ impl Terminal {
             5 => self.reverse_video = on,
             6 => self.set_origin_mode(on),
             7 => self.autowrap = on,
+            4 => self.smooth_scroll = on,
             12 => self.cursor_blink = on,
             25 => self.cursor_visible = on,
             45 => self.reverse_wrap = on,
+            1045 => self.reverse_wrap_extended = on,
             // The alternate screen: 47 switches, 1047 also erases it on the
             // way out, and 1049 saves the cursor and erases it on the way
             // in, and brings the cursor back on the way out.
@@ -60,6 +62,8 @@ impl Terminal {
                 self.restore_cursor();
             }
             69 => self.set_left_right_margin_mode(on),
+            // The numeric keypad mode (DECNKM), as DECKPAM and DECKPNM.
+            66 => self.input.keypad_application = on,
             9 | 1000 | 1002 | 1003 => {
                 self.input.mouse_tracking = if on {
                     tracking(mode)
@@ -93,18 +97,26 @@ impl Terminal {
 
     /// DECRQM for the ANSI mode `mode`.
     pub(super) fn report_ansi_mode(&mut self, mode: u16) {
-        let state = match mode {
-            4 => Some(self.insert),
-            20 => Some(self.input.newline),
-            _ => None,
+        let value = match mode {
+            4 => value(Some(self.insert)),
+            20 => value(Some(self.input.newline)),
+            // The modes of ECMA-48 that xterm keeps reset for good: GATM,
+            // SRTM, VEM, HEM, PUM, FEAM, FETM, MATM, TTM, SATM, TSM and EBM.
+            1 | 5 | 7 | 10 | 11 | 13..=19 => PERMANENTLY_RESET,
+            _ => value(None),
         };
-        self.reply_mode("", mode, state);
+        self.reply_mode("", mode, value);
     }
 
     /// DECRQM for the DEC private mode `mode`.
     pub(super) fn report_private_mode(&mut self, mode: u16) {
-        let state = self.private_mode(mode);
-        self.reply_mode("?", mode, state);
+        let value = match mode {
+            // Horizontal cursor coupling (DECHCCM), which xterm keeps reset
+            // for good.
+            60 => PERMANENTLY_RESET,
+            _ => value(self.private_mode(mode)),
+        };
+        self.reply_mode("?", mode, value);
     }
 
     /// Whether the DEC private mode `mode` is set, if the terminal knows it.
@@ -112,15 +124,18 @@ impl Terminal {
         let input = self.input;
         Some(match mode {
             1 => input.cursor_keys_application,
+            4 => self.smooth_scroll,
             5 => self.reverse_video,
             6 => self.origin,
             7 => self.autowrap,
             12 => self.cursor_blink,
             25 => self.cursor_visible,
             45 => self.reverse_wrap,
+            1045 => self.reverse_wrap_extended,
             47 | 1047 | 1049 => self.alternate_active,
             1048 => self.screen().saved.is_some(),
             69 => self.left_right_margins,
+            66 => input.keypad_application,
             9 | 1000 | 1002 | 1003 => input.mouse_tracking == tracking(mode),
             1006 | 1016 => input.mouse_encoding == encoding(mode),
             1004 => input.focus_events,
@@ -133,15 +148,9 @@ impl Terminal {
         })
     }
 
-    /// Queues the reply to DECRQM: `CSI` `marker` `mode` `;` the state `$y`,
-    /// where the state is 0 for a mode the terminal does not know, 1 for
-    /// set and 2 for reset.
-    fn reply_mode(&mut self, marker: &str, mode: u16, state: Option<bool>) {
-        let value = match state {
-            None => 0,
-            Some(true) => 1,
-            Some(false) => 2,
-        };
+    /// Queues the reply to DECRQM: `CSI` `marker` `mode` `;` the state's
+    /// `value` `$y`.
+    fn reply_mode(&mut self, marker: &str, mode: u16, value: u8) {
         write!(self.replies, "\x1b[{marker}{mode};{value}$y").expect("writing to a Vec");
     }
 
@@ -180,5 +189,18 @@ fn encoding(mode: u16) -> MouseEncoding {
     match mode {
         1006 => MouseEncoding::Sgr,
         _ => MouseEncoding::SgrPixels,
+    }
+}
+
+/// What DECRQM tells of a mode that is permanently reset.
+const PERMANENTLY_RESET: u8 = 4;
+
+/// What DECRQM tells of a mode that is set, `Some(true)`, reset,
+/// `Some(false)`, or that the terminal does not know, `None`: 1, 2 and 0.
+fn value(state: Option<bool>) -> u8 {
+    match state {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
     }
 }
