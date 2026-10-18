@@ -9,6 +9,10 @@ alias t := test
 # bump it in a dedicated commit.
 fuzz_toolchain := "nightly-2026-10-12"
 
+# The commit of esctest2 (https://github.com/ThomasDickey/esctest2) that
+# `just esctest` runs: bump it in a dedicated commit.
+esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
+
 # Platform-independent crates, which must keep building for Linux.
 portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay"
 
@@ -73,6 +77,22 @@ ucd-check:
 # Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf).
 record:
     cargo run -q -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
+
+# Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, as `--include=CUPTests`.
+esctest *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=target/esctest2
+    if [ "$(cat "$dir/.commit" 2>/dev/null)" != "{{ esctest_commit }}" ]; then
+        clone=$(mktemp -d)
+        trap 'rm -rf "$clone"' EXIT
+        git init -q --template= "$clone"
+        git -C "$clone" fetch -q --depth 1 https://github.com/ThomasDickey/esctest2 {{ esctest_commit }}
+        rm -rf "$dir" && mkdir -p "$dir"
+        git -C "$clone" archive FETCH_HEAD | tar -x -C "$dir"
+        echo {{ esctest_commit }} > "$dir/.commit"
+    fi
+    cargo run -q --release -p bolt-replay --bin bolt-esctest -- "$dir/esctest" {{ args }}
 
 # Run the benchmarks (not implemented yet).
 bench:

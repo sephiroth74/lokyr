@@ -1,0 +1,640 @@
+163 of 526 applicable tests passed (31.0%); 41 known bugs of xterm and 0 skipped
+
+APCTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_APC_Basic
+
+BSTests: 8 failed
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_BS_CursorStartsInDoWrapPosition
+    test_BS_ReverseWrapStartingInDoWrapPosition
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=10, y=2)' but got 'Point(x=1, y=3)'
+    test_BS_ReversewrapFromLeftEdgeToRightMargin
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=10, y=2)' but got 'Point(x=5, y=3)'
+    test_BS_ReverseWrapWithLeftRight
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=5, y=3)' but got 'Point(x=1, y=4)'
+    test_BS_AfterNoWrappedInlines
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=80, y=2)' but got 'Point(x=1, y=3)'
+    test_BS_WrapsInWraparoundMode
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=80, y=5)' but got 'Point(x=1, y=2)'
+    test_BS_ReverseWrapGoesToBottom
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=9, y=3)' but got 'Point(x=1, y=6)'
+    test_BS_AfterOneWrappedInline
+
+CBTTests: 1 failed
+  1 × esctypes.TestFailure: Test failed: expected '1' but got '5'
+    test_CBT_IgnoresRegion
+
+CHATests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_CHA_RespectsOriginMode
+
+CPLTests: 1 failed
+  1 × esctypes.TestFailure: Test failed: expected '1' but got '2'
+    test_CPL_StopsAtTopLine
+
+CRTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_CR_MovesToLeftMarginWhenLeftOfLeftMarginInOriginMode
+
+CUBTests: 2 failed
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=5, y=3)' but got 'Point(x=1, y=5)'
+    test_CUB_AfterNoWrappedInlines
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=9, y=3)' but got 'Point(x=1, y=2)'
+    test_CUB_AfterOneWrappedInline
+
+CUDTests: 2 failed
+  1 × esctypes.TestFailure: Test failed: expected '25' but got '4'
+    test_CUD_StopsAtBottomLine
+  1 × esctypes.TestFailure: Test failed: expected '5' but got '4'
+    test_CUD_ExplicitParam
+
+CUPTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_CUP_RespectsOriginMode
+
+ChangeColorTests: 7 failed
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:1616/1414/0e0e' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIELuv
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:1a1a/1313/0f0f' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_TekHVC
+  1 × esctypes.TestFailure: Test failed: expected ';0;rgb:6c6c/6767/6767' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIELab
+  4 × esctypes.TestFailure: Test failed: expected ';0;rgb:ffff/ffff/ffff' but got ';0;rgb:0000/0000/0000'
+    test_ChangeColor_CIEXYZ
+    test_ChangeColor_CIEuvY
+    test_ChangeColor_CIExyY
+    test_ChangeColor_RGBI
+
+ChangeDynamicColorTests: 7 failed
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:1616/1414/0e0e' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIELuv
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:1a1a/1313/0f0f' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_TekHVC
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:6c6c/6767/6767' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIELab
+  4 × esctypes.TestFailure: Test failed: expected ';rgb:ffff/ffff/ffff' but got ';rgb:0000/0000/0000'
+    test_ChangeDynamicColor_CIEXYZ
+    test_ChangeDynamicColor_CIEuvY
+    test_ChangeDynamicColor_CIExyY
+    test_ChangeDynamicColor_RGBI
+
+ChangeSpecialColorTests: 14 failed
+  12 × esctypes.InternalError: Timeout waiting to read. (in doChangeSpecialColorTest)
+    test_ChangeSpecialColor_CIELab
+    test_ChangeSpecialColor_CIELuv
+    test_ChangeSpecialColor_CIEXYZ
+    test_ChangeSpecialColor_CIEuvY
+    test_ChangeSpecialColor_CIExyY
+    test_ChangeSpecialColor_Hash12
+    test_ChangeSpecialColor_Hash3
+    test_ChangeSpecialColor_Hash6
+    test_ChangeSpecialColor_Hash9
+    test_ChangeSpecialColor_RGB
+    test_ChangeSpecialColor_RGBI
+    test_ChangeSpecialColor_TekHVC
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ChangeSpecialColor_Multiple)
+    test_ChangeSpecialColor_Multiple
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ChangeSpecialColor_Multiple2)
+    test_ChangeSpecialColor_Multiple2
+
+DA2Tests: 2 failed
+  2 × esctypes.TestFailure: Test failed: expected '64' but got '1'
+    test_DA2_0
+    test_DA2_NoParameter
+
+DATests: 2 failed
+  2 × esctypes.TestFailure: Test failed: expected '13' but got '2'
+    test_DA_0
+    test_DA_NoParameter
+
+DCHTests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DCH_DefaultParam
+    test_DCH_DeleteAllWithMargins
+    test_DCH_DoesNothingOutsideLeftRightMargin
+    test_DCH_ExplicitParam
+    test_DCH_RespectsMargins
+    test_DCH_WorksOutsideTopBottomMargin
+
+DCSTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DCS_Unrecognized
+
+DECALNTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECALN_FillsScreen
+
+DECBITests: 4 failed
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECBI_Scrolls
+    test_DECBI_WholeScreenScrolls
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=1, y=1)' but got 'Point(x=2, y=1)'
+    test_DECBI_LeftOfMargin
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=4, y=6)' but got 'Point(x=5, y=6)'
+    test_DECBI_Basic
+
+DECCRATests: 9 failed
+  9 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECCRA_defaultValuesInDest
+    test_DECCRA_defaultValuesInSource
+    test_DECCRA_destinationPartiallyOffscreen
+    test_DECCRA_ignoresMargins
+    test_DECCRA_invalidSourceRectDoesNothing
+    test_DECCRA_nonOverlappingSourceAndDest
+    test_DECCRA_overlappingSourceAndDest
+    test_DECCRA_overlyLargeSourceClippedToScreenSize
+    test_DECCRA_respectsOriginMode
+
+DECDCTests: 7 failed
+  7 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECDC_CursorWithinTopBottom
+    test_DECDC_DefaultParam
+    test_DECDC_DeleteAll
+    test_DECDC_DeleteAllWithLeftRightMargins
+    test_DECDC_DeleteWithLeftRightMargins
+    test_DECDC_ExplicitParam
+    test_DECDC_IsNoOpWhenCursorBeginsOutsideScrollRegion
+
+DECDSRTests: 10 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in doLocatorStatusTest)
+    test_DECDSR_DSRDECLocatorStatus
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DECCKSR)
+    test_DECDSR_DECCKSR
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DECMSR)
+    test_DECDSR_DECMSR
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DECXCPR)
+    test_DECDSR_DECXCPR
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DSRDataIntegrity)
+    test_DECDSR_DSRDataIntegrity
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DSRKeyboard)
+    test_DECDSR_DSRKeyboard
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DSRMultipleSessionStatus)
+    test_DECDSR_DSRMultipleSessionStatus
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DSRPrinterPort)
+    test_DECDSR_DSRPrinterPort
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_DSRUDKLocked)
+    test_DECDSR_DSRUDKLocked
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECDSR_LocatorType)
+    test_DECDSR_LocatorType
+
+DECERATests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECERA_basic
+    test_DECERA_defaultArgs
+    test_DECERA_ignoresMargins
+    test_DECERA_invalidRectDoesNothing
+    test_DECERA_overlyLargeSourceClippedToScreenSize
+    test_DECERA_respectsOriginMode
+
+DECFITests: 4 failed
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECFI_Scrolls
+    test_DECFI_WholeScreenScrolls
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=6, y=6)' but got 'Point(x=5, y=6)'
+    test_DECFI_Basic
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=7, y=1)' but got 'Point(x=6, y=1)'
+    test_DECFI_RightOfMargin
+
+DECFRATests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECFRA_basic
+    test_DECFRA_defaultArgs
+    test_DECFRA_ignoresMargins
+    test_DECFRA_invalidRectDoesNothing
+    test_DECFRA_overlyLargeSourceClippedToScreenSize
+    test_DECFRA_respectsOriginMode
+
+DECICTests: 7 failed
+  7 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECIC_CursorWithinTopBottom
+    test_DECIC_DefaultParam
+    test_DECIC_ExplicitParam
+    test_DECIC_IsNoOpWhenCursorBeginsOutsideScrollRegion
+    test_DECIC_ScrollEntirelyOffRightEdge
+    test_DECIC_ScrollOffRightEdge
+    test_DECIC_ScrollOffRightMarginInScrollRegion
+
+DECIDTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_DECID_Basic)
+    test_DECID_Basic
+
+DECRCTests: 4 failed
+  4 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SaveRestoreCursor_InsertNotAffected
+    test_SaveRestoreCursor_Protection
+    test_SaveRestoreCursor_Reset
+    test_SaveRestoreCursor_ResetsOriginMode
+
+DECRQMTests: 23 failed
+  1 × esctypes.TestFailure: Test failed: expected '[1, 4]' but got '[1, 0]'
+    test_DECRQM_ANSI_GATM
+  1 × esctypes.TestFailure: Test failed: expected '[10, 4]' but got '[10, 0]'
+    test_DECRQM_ANSI_HEM
+  1 × esctypes.TestFailure: Test failed: expected '[11, 4]' but got '[11, 0]'
+    test_DECRQM_ANSI_PUM
+  1 × esctypes.TestFailure: Test failed: expected '[12, 2]' but got '[12, 0]'
+    test_DECRQM_ANSI_SRM
+  1 × esctypes.TestFailure: Test failed: expected '[13, 4]' but got '[13, 0]'
+    test_DECRQM_ANSI_FEAM
+  1 × esctypes.TestFailure: Test failed: expected '[14, 4]' but got '[14, 0]'
+    test_DECRQM_ANSI_FETM
+  1 × esctypes.TestFailure: Test failed: expected '[15, 4]' but got '[15, 0]'
+    test_DECRQM_ANSI_MATM
+  1 × esctypes.TestFailure: Test failed: expected '[16, 4]' but got '[16, 0]'
+    test_DECRQM_ANSI_TTM
+  1 × esctypes.TestFailure: Test failed: expected '[17, 4]' but got '[17, 0]'
+    test_DECRQM_ANSI_SATM
+  1 × esctypes.TestFailure: Test failed: expected '[18, 2]' but got '[18, 0]'
+    test_DECRQM_DEC_DECPFF
+  1 × esctypes.TestFailure: Test failed: expected '[18, 4]' but got '[18, 0]'
+    test_DECRQM_ANSI_TSM
+  1 × esctypes.TestFailure: Test failed: expected '[19, 2]' but got '[19, 0]'
+    test_DECRQM_DEC_DECPEX
+  1 × esctypes.TestFailure: Test failed: expected '[19, 4]' but got '[19, 0]'
+    test_DECRQM_ANSI_EBM
+  1 × esctypes.TestFailure: Test failed: expected '[2, 2]' but got '[2, 0]'
+    test_DECRQM_ANSI_KAM
+  1 × esctypes.TestFailure: Test failed: expected '[3, 2]' but got '[3, 0]'
+    test_DECRQM_DEC_DECCOLM
+  1 × esctypes.TestFailure: Test failed: expected '[35, 2]' but got '[35, 0]'
+    test_DECRQM_DEC_DECHEBM
+  1 × esctypes.TestFailure: Test failed: expected '[4, 2]' but got '[4, 0]'
+    test_DECRQM_DEC_DECSCLM
+  1 × esctypes.TestFailure: Test failed: expected '[42, 2]' but got '[42, 0]'
+    test_DECRQM_DEC_DECNRCM
+  1 × esctypes.TestFailure: Test failed: expected '[5, 4]' but got '[5, 0]'
+    test_DECRQM_ANSI_SRTM
+  1 × esctypes.TestFailure: Test failed: expected '[60, 4]' but got '[60, 0]'
+    test_DECRQM_DEC_DECHCCM
+  1 × esctypes.TestFailure: Test failed: expected '[66, 2]' but got '[66, 0]'
+    test_DECRQM_DEC_DECNKM
+  1 × esctypes.TestFailure: Test failed: expected '[67, 2]' but got '[67, 0]'
+    test_DECRQM_DEC_DECBKM
+  1 × esctypes.TestFailure: Test failed: expected '[7, 4]' but got '[7, 0]'
+    test_DECRQM_ANSI_VEM
+
+DECRQSSTests: 6 failed
+  1 × esctypes.TestFailure: Test failed: expected '1$r0$}' but got '0$r'
+    test_DECRQSS_DECSASD
+  1 × esctypes.TestFailure: Test failed: expected '1$r0$~' but got '0$r'
+    test_DECRQSS_DECSSDT
+  1 × esctypes.TestFailure: Test failed: expected '1$r0*x' but got '0$r'
+    test_DECRQSS_DECSACE
+  1 × esctypes.TestFailure: Test failed: expected '1$r24*|' but got '0$r'
+    test_DECRQSS_DECSNLS
+  1 × esctypes.TestFailure: Test failed: expected '1$r27t' but got '0$r'
+    test_DECRQSS_DECSLPP
+  1 × esctypes.TestFailure: Test failed: expected '1$r65;1"p' but got '0$r'
+    test_DECRQSS_DECSCL
+
+DECSCLTests: 4 failed
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSCL_Level4_SupportsDECSLRMDoesntSupportDECNCSM
+    test_DECSCL_Level5_SupportsDECNCSM
+  1 × esctypes.TestFailure: Test failed: expected '8' but got '6'
+    test_DSCSCL_Level3_SupportsDECRQMDoesntSupportDECSLRM
+  1 × esctypes.TestFailure: Test failed: expected 'True' but got 'False'
+    test_DECSCL_Level2DoesntSupportDECRQM
+
+DECSEDTests: 17 failed
+  17 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSED_0
+    test_DECSED_0_Protection
+    test_DECSED_0_WithScrollRegion
+    test_DECSED_0_WithScrollRegion_Protection
+    test_DECSED_1
+    test_DECSED_1_Protection
+    test_DECSED_1_WithScrollRegion
+    test_DECSED_1_WithScrollRegion_Protection
+    test_DECSED_2
+    test_DECSED_2_Protection
+    test_DECSED_2_WithScrollRegion
+    test_DECSED_2_WithScrollRegion_Protection
+    test_DECSED_3
+    test_DECSED_3_Protection
+    test_DECSED_DECSCA_2
+    test_DECSED_Default
+    test_DECSED_Default_Protection
+
+DECSELTests: 10 failed
+  10 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSEL_0
+    test_DECSEL_0_Protection
+    test_DECSEL_1
+    test_DECSEL_1_Protection
+    test_DECSEL_2
+    test_DECSEL_2_Protection
+    test_DECSEL_Default
+    test_DECSEL_Default_Protection
+    test_DECSEL_IgnoresScrollRegion
+    test_DECSEL_IgnoresScrollRegion_Protection
+
+DECSERATests: 7 failed
+  7 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSERA_basic
+    test_DECSERA_defaultArgs
+    test_DECSERA_doesNotRespectISOProtect
+    test_DECSERA_ignoresMargins
+    test_DECSERA_invalidRectDoesNothing
+    test_DECSERA_overlyLargeSourceClippedToScreenSize
+    test_DECSERA_respectsOriginMode
+
+DECSETTests: 15 failed
+  10 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSET_ALTBUF
+    test_DECSET_DECAWM
+    test_DECSET_DECAWM_OffRespectsLeftRightMargin
+    test_DECSET_DECAWM_OnRespectsLeftRightMargin
+    test_DECSET_DECLRMM
+    test_DECSET_DECOM
+    test_DECSET_DECOM_DECRQCRA
+    test_DECSET_DECOM_SoftReset
+    test_DECSET_OPT_ALTBUF
+    test_DECSET_OPT_ALTBUF_CURSOR
+  2 × esctypes.TestFailure: Test failed: expected '132' but got '80'
+    test_DECSET_Allow80To132
+    test_DECSET_DECCOLM
+  1 × esctypes.TestFailure: Test failed: expected '6' but got '3'
+    test_DECSET_DECLRMM_ModeResetByDECSTR
+  1 × esctypes.TestFailure: Test failed: expected '80' but got '1'
+    test_DECSET_ReverseWraparound_BS
+  1 × esctypes.TestFailure: Test failed: expected '9' but got '80'
+    test_DECSET_MoreFix
+
+DECSETTiteInhibitTests: 6 failed
+  4 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SaveRestoreCursor_InsertNotAffected
+    test_SaveRestoreCursor_Protection
+    test_SaveRestoreCursor_Reset
+    test_SaveRestoreCursor_ResetsOriginMode
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=5, y=6)' but got 'Point(x=5, y=3)'
+    test_SaveRestoreCursor_Basic
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=6, y=7)' but got 'Point(x=6, y=3)'
+    test_SaveRestoreCursor_AltVsMain
+
+DECSTBMTests: 8 failed
+  8 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSTBM_BottomOfZeroIsBottomOfScreen
+    test_DECSTBM_CursorBelowRegionAtBottomTriesToScroll
+    test_DECSTBM_DefaultRestores
+    test_DECSTBM_MaxSizeOfRegionIsPageSize
+    test_DECSTBM_NewlineBelowRegion
+    test_DECSTBM_ScrollsOnNewline
+    test_DECSTBM_TopBelowBottom
+    test_DECSTBM_TopOfZeroIsTopOfScreen
+
+DECSTRTests: 8 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DECSTR_DECOM
+    test_DECSTR_DECRLM
+    test_DECSTR_DECSASD
+    test_DECSTR_DECSCA
+    test_DECSTR_IRM
+  1 × esctypes.TestFailure: Test failed: expected '5' but got '4'
+    test_DECSTR_STBM
+  1 × esctypes.TestFailure: Test failed: expected '7' but got '6'
+    test_DECSTR_DECLRMM
+  1 × esctypes.TestFailure: Test failed: expected 'Point(x=1, y=1)' but got 'Point(x=5, y=6)'
+    test_DECSTR_DECSC
+
+DLTests: 10 failed
+  10 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_DL_ClearOutLeftRightAndTopBottomScrollRegion
+    test_DL_DefaultParam
+    test_DL_DeleteMoreThanVisible
+    test_DL_ExplicitParam
+    test_DL_InLeftRightAndTopBottomScrollRegion
+    test_DL_InLeftRightScrollRegion
+    test_DL_InScrollRegion
+    test_DL_OutsideLeftRightAndTopBottomScrollRegion
+    test_DL_OutsideLeftRightScrollRegion
+    test_DL_OutsideScrollRegion
+
+ECHTests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_ECH_DefaultParam
+    test_ECH_ExplicitParam
+    test_ECH_IgnoresScrollRegion
+    test_ECH_OutsideScrollRegion
+    test_ECH_doesNotRespectDECPRotection
+    test_ECH_respectsISOProtection
+
+EDTests: 10 failed
+  10 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_ED_0
+    test_ED_0_WithScrollRegion
+    test_ED_1
+    test_ED_1_WithScrollRegion
+    test_ED_2
+    test_ED_2_WithScrollRegion
+    test_ED_3
+    test_ED_Default
+    test_ED_doesNotRespectDECProtection
+    test_ED_respectsISOProtection
+
+ELTests: 7 failed
+  7 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_EL_0
+    test_EL_1
+    test_EL_2
+    test_EL_Default
+    test_EL_IgnoresScrollRegion
+    test_EL_doesNotRespectDECProtection
+    test_EL_respectsISOProtection
+
+FFTests: 5 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_FF_MovesDoesNotScrollOutsideLeftRight
+    test_FF_Scrolls
+    test_FF_ScrollsInTopBottomRegionStartingAbove
+    test_FF_ScrollsInTopBottomRegionStartingWithin
+    test_FF_StopsAtBottomLineWhenBegunBelowScrollRegion
+
+HPRTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_HPR_IgnoresOriginMode
+
+HVPTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_HVP_RespectsOriginMode
+
+ICHTests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_ICH_DefaultParam
+    test_ICH_ExplicitParam
+    test_ICH_IsNoOpWhenCursorBeginsOutsideScrollRegion
+    test_ICH_ScrollEntirelyOffRightEdge
+    test_ICH_ScrollOffRightEdge
+    test_ICH_ScrollOffRightMarginInScrollRegion
+
+ILTests: 6 failed
+  6 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_IL_AboveScrollRegion
+    test_IL_DefaultParam
+    test_IL_ExplicitParam
+    test_IL_RespectsScrollRegion
+    test_IL_RespectsScrollRegion_Over
+    test_IL_ScrollsOffBottom
+
+INDTests: 5 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_IND_MovesDoesNotScrollOutsideLeftRight
+    test_IND_Scrolls
+    test_IND_ScrollsInTopBottomRegionStartingAbove
+    test_IND_ScrollsInTopBottomRegionStartingWithin
+    test_IND_StopsAtBottomLineWhenBegunBelowScrollRegion
+
+LFTests: 5 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_LF_MovesDoesNotScrollOutsideLeftRight
+    test_LF_Scrolls
+    test_LF_ScrollsInTopBottomRegionStartingAbove
+    test_LF_ScrollsInTopBottomRegionStartingWithin
+    test_LF_StopsAtBottomLineWhenBegunBelowScrollRegion
+
+NELTests: 5 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_NEL_MovesDoesNotScrollOutsideLeftRight
+    test_NEL_Scrolls
+    test_NEL_ScrollsInTopBottomRegionStartingAbove
+    test_NEL_ScrollsInTopBottomRegionStartingWithin
+    test_NEL_StopsAtBottomLineWhenBegunBelowScrollRegion
+
+PMTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_PM_Basic
+
+REPTests: 4 failed
+  4 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_REP_DefaultParam
+    test_REP_ExplicitParam
+    test_REP_RespectsLeftRightMargins
+    test_REP_RespectsTopBottomMargins
+
+RISTests: 4 failed
+  3 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_RIS_ClearsScreen
+    test_RIS_ExitAltScreen
+    test_RIS_ResetDECOM
+  1 × esctypes.TestFailure: Test failed: expected '132' but got '80'
+    test_RIS_ResetDECCOLM
+
+RITests: 5 failed
+  4 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_RI_MovesDoesNotScrollOutsideLeftRight
+    test_RI_ScrollsInTopBottomRegionStartingBelow
+    test_RI_ScrollsInTopBottomRegionStartingWithin
+    test_RI_StopsAtTopLineWhenBegunAboveScrollRegion
+  1 × esctypes.TestFailure: Test failed: expected '1' but got '2'
+    test_RI_Scrolls
+
+RMTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_RM_IRM
+
+ResetSpecialColorTests: 5 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Multiple)
+    test_ResetSpecialColor_Multiple
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Multiple2)
+    test_ResetSpecialColor_Multiple2
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Single)
+    test_ResetSpecialColor_Single
+  1 × esctypes.InternalError: Timeout waiting to read. (in test_ResetSpecialColor_Single2)
+    test_ResetSpecialColor_Single2
+  1 × esctypes.TestFailure: Test failed: expected ';rgb:0000/0000/0000' but got ';rgb:e5e5/e5e5/e5e5'
+    test_ResetSpecialColor_Dynamic
+
+SCORCTests: 4 failed
+  4 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SaveRestoreCursor_InsertNotAffected
+    test_SaveRestoreCursor_Protection
+    test_SaveRestoreCursor_Reset
+    test_SaveRestoreCursor_ResetsOriginMode
+
+SDTests: 9 failed
+  9 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SD_BigScrollLeftRightAndTopBottomScrollRegion
+    test_SD_CanClearScreen
+    test_SD_DefaultParam
+    test_SD_ExplicitParam
+    test_SD_LeftRightAndTopBottomScrollRegion
+    test_SD_OutsideLeftRightScrollRegion
+    test_SD_OutsideTopBottomScrollRegion
+    test_SD_RespectsLeftRightScrollRegion
+    test_SD_RespectsTopBottomScrollRegion
+
+SMTests: 3 failed
+  3 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SM_IRM
+    test_SM_IRM_DoesNotWrapUnlessCursorAtMargin
+    test_SM_IRM_TruncatesAtRightMargin
+
+SOSTests: 1 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SOS_Basic
+
+SUTests: 9 failed
+  9 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_SU_BigScrollLeftRightAndTopBottomScrollRegion
+    test_SU_CanClearScreen
+    test_SU_DefaultParam
+    test_SU_ExplicitParam
+    test_SU_LeftRightAndTopBottomScrollRegion
+    test_SU_OutsideLeftRightScrollRegion
+    test_SU_OutsideTopBottomScrollRegion
+    test_SU_RespectsLeftRightScrollRegion
+    test_SU_RespectsTopBottomScrollRegion
+
+VPATests: 1 failed
+  1 × esctypes.TestFailure: Test failed: expected '25' but got '6'
+    test_VPA_StopsAtBottomEdge
+
+VPRTests: 3 failed
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_VPR_IgnoresOriginMode
+  1 × esctypes.TestFailure: Test failed: expected '7' but got '6'
+    test_VPR_DefaultParams
+  1 × esctypes.TestFailure: Test failed: expected '8' but got '6'
+    test_VPR_DoesNotChangeColumn
+
+VTTests: 5 failed
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)
+    test_VT_MovesDoesNotScrollOutsideLeftRight
+    test_VT_Scrolls
+    test_VT_ScrollsInTopBottomRegionStartingAbove
+    test_VT_ScrollsInTopBottomRegionStartingWithin
+    test_VT_StopsAtBottomLineWhenBegunBelowScrollRegion
+
+XtermSaveTests: 2 failed
+  1 × esctypes.TestFailure: Test failed: expected '2' but got '80'
+    test_XtermSave_SaveSetState
+  1 × esctypes.TestFailure: Test failed: expected '80' but got '2'
+    test_XtermSave_SaveResetState
+
+XtermWinopsTests: 19 failed
+  9 × esctypes.InternalError: Timeout waiting to read. (in GetDisplaySize)
+    test_XtermWinops_Fullscreen
+    test_XtermWinops_MaximizeWindow_Horizontally
+    test_XtermWinops_MaximizeWindow_HorizontallyAndVertically
+    test_XtermWinops_MaximizeWindow_Vertically
+    test_XtermWinops_ResizeChars_BothParameters
+    test_XtermWinops_ResizeChars_DefaultHeight
+    test_XtermWinops_ResizeChars_DefaultWidth
+    test_XtermWinops_ResizeChars_ZeroHeight
+    test_XtermWinops_ResizeChars_ZeroWidth
+  1 × esctypes.InternalError: Timeout waiting to read. (in GetIsIconified)
+    test_XtermWinops_IconifyDeiconfiy
+  5 × esctypes.InternalError: Timeout waiting to read. (in GetScreenSizePixels)
+    test_XtermWinops_ResizePixels_BothParameters
+    test_XtermWinops_ResizePixels_OmittedHeight
+    test_XtermWinops_ResizePixels_OmittedWidth
+    test_XtermWinops_ResizePixels_ZeroHeight
+    test_XtermWinops_ResizePixels_ZeroWidth
+  2 × esctypes.InternalError: Timeout waiting to read. (in GetWindowPosition)
+    test_XtermWinops_MoveToXY
+    test_XtermWinops_MoveToXY_Defaults
+  1 × esctypes.TestFailure: Test failed: expected 'Size(width=90, height=10)' but got 'Size(width=80, height=25)'
+    test_XtermWinops_DECSLPP
+  1 × esctypes.TestFailure: Test failed: expected 'b1792305561.286505' but got 'z'
+    test_XtermWinops_PushIconThenWindowThenPopBoth
