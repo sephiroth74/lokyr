@@ -282,10 +282,38 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "long-link",
             r"printf '\\033]8;;'; head -c 70000 /dev/zero | tr '\\000' x; printf '%%7Az-someone-zz\\033\\\\link\\n'; sleep 0.3",
         ),
-        // Across a soft wrap, as the cursor's moves put it together.
+        // Across a soft wrap, as the cursor's moves put it together, then
+        // erased, so that only the check after each read sees it.
         (
             "wrapped",
-            r"printf '\\033[2;2Hne-zz\\033[1;14Hzz-someo'; sleep 0.3",
+            r"printf '\\033[2;2Hne-zz\\033[1;14Hzz-someo'; sleep 0.3; printf '\\033[1;1H\\033[2K\\033[2;1H\\033[2K'; sleep 0.3",
+        ),
+        // In base64 in kitty's graphics, as a path, in OSC 1337's file, after
+        // a space in OSC 52, and split by a line break.
+        (
+            "kitty",
+            r"printf '\\033_Gt=f;%s\\033\\\\' $(printf /home/zz-someone-zz/a.png | base64); sleep 0.3",
+        ),
+        (
+            "iterm-file",
+            r"printf '\\033]1337;File=name=%s:\\007' $(printf zz-someone-zz | base64); sleep 0.3",
+        ),
+        (
+            "clipboard-space",
+            r"printf '\\033]52;c;%s %s\\007' $(printf abc | base64) $(printf zz-someone-zz | base64); sleep 0.3",
+        ),
+        (
+            "base64-wrapped",
+            r"printf 'enotc29t\\nZW9uZS16eg==\\n'; sleep 0.3; printf '\\033[2J'; sleep 0.3",
+        ),
+        // Broken by a line break in a DCS string, and by DEL in a PM one.
+        (
+            "dcs-line",
+            r"printf '\\033Ppzz-some\\none-zz\\033\\\\ok\\n'; sleep 0.3",
+        ),
+        (
+            "pm-delete",
+            r"printf '\\033^zz-some\\177one-zz\\033\\\\ok\\n'; sleep 0.3",
         ),
         // The same, with the alternate screen on at the end, so that the
         // primary screen's rows, inactive, show it.
@@ -307,21 +335,36 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
 
 /// A new directory of the user's own, named for the test, for a `TMPDIR`
 /// that does not depend on the machine's.
-fn own_temp(name: &str) -> PathBuf {
+/// It goes as it drops, however the test ends, read-only folders in it too.
+struct OwnTemp(PathBuf);
+
+impl Drop for OwnTemp {
+    fn drop(&mut self) {
+        let _ = Command::new("chmod")
+            .arg("-R")
+            .arg("u+rwx")
+            .arg(&self.0)
+            .status();
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn own_temp(name: &str) -> OwnTemp {
     let dir = std::env::temp_dir().join(format!("bolt-replay-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    dir.canonicalize().unwrap()
+    OwnTemp(dir.canonicalize().unwrap())
 }
 
 #[test]
 fn the_temporary_directory_and_the_users_folders_above_it_are_private() {
-    let base = own_temp("temp");
+    let temp = own_temp("temp");
+    let base = &temp.0;
     let inner = base.join("inner");
     std::fs::create_dir(&inner).unwrap();
     // The temporary directory, and the folder above it, which is the
     // user's too.
-    for (name, up, shown) in [("temp", "../..", &inner), ("above", "../../..", &base)] {
+    for (name, up, shown) in [("temp", "../..", &inner), ("above", "../../..", base)] {
         let (output, cast) = record(
             name,
             &format!("run sh -c \"cd {up}; pwd; sleep 0.3\"\nexit\n"),
@@ -334,7 +377,17 @@ fn the_temporary_directory_and_the_users_folders_above_it_are_private() {
         );
         assert_eq!(cast, None, "{name}");
     }
-    std::fs::remove_dir_all(&base).unwrap();
+    // The folder's name alone, which is long, as macOS's per-user folder's
+    // is.
+    let (output, cast) = record(
+        "folder-name",
+        "run sh -c \"cd ../../..; basename $(pwd); sleep 0.3\"\nexit\n",
+        &[("TMPDIR", inner.to_str().unwrap())],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let name = base.file_name().unwrap().to_str().unwrap();
+    assert!(stderr.contains(&format!("showed `{name}`")), "{stderr}");
+    assert_eq!(cast, None);
 }
 
 #[test]
@@ -358,13 +411,12 @@ fn a_home_that_the_program_made_read_only_goes_too() {
     let (output, cast) = record(
         "ro",
         "run sh -c \"mkdir -p d/e; touch d/e/f; chmod 555 d/e d\"\nexit\n",
-        &[("TMPDIR", temp.to_str().unwrap())],
+        &[("TMPDIR", temp.0.to_str().unwrap())],
     );
-    let left: Vec<_> = std::fs::read_dir(&temp)
+    let left: Vec<_> = std::fs::read_dir(&temp.0)
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
-    std::fs::remove_dir_all(&temp).unwrap();
     assert!(
         output.status.success(),
         "{}",
@@ -372,6 +424,21 @@ fn a_home_that_the_program_made_read_only_goes_too() {
     );
     assert!(cast.is_some());
     assert!(left.is_empty(), "the home stays: {left:?}");
+}
+
+#[test]
+fn a_space_at_a_soft_wrap_stays_in_the_check_after_each_read() {
+    // `zz some`, its space in the last column of a row that wraps, then
+    // erased.
+    let program = r"printf '\\033[2;2Home\\033[1;18Hzz s'; sleep 0.3; printf '\\033[1;1H\\033[2K\\033[2;1H\\033[2K'; sleep 0.3";
+    let (output, cast) = record(
+        "space",
+        &format!("size 20 3\nrun sh -c \"{program}\"\nexit\n"),
+        &[("USER", "zz some")],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("showed `zz some`"), "{stderr}");
+    assert_eq!(cast, None);
 }
 
 #[test]

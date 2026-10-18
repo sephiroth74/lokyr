@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 pub use bolt_pty::Exit;
 use bolt_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
-use bolt_vt_core::page::RowFlag;
+use bolt_vt_core::page::{Content, PageList, RowFlag};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{self, Options, Terminal};
 
@@ -397,25 +397,10 @@ impl Harness {
             .join("\n")
     }
 
-    /// The screen's lines, a line each, a row that soft-wraps into the next
-    /// joined to it.
+    /// The screen's lines, a line each, as [`lines`] reads them.
     fn lines(&self) -> String {
         let list = self.terminal.screen_rows();
-        let flag = |y, flag| {
-            let (page, row) = list.screen_row(y);
-            page.row(row).has(flag)
-        };
-        let rows = self.terminal.rows();
-        let mut text = String::new();
-        for y in 0..rows {
-            text.push_str(&self.terminal.row_text(y));
-            let goes_on =
-                y + 1 < rows && flag(y, RowFlag::SoftWrapped) && flag(y + 1, RowFlag::Continuation);
-            if !goes_on {
-                text.push('\n');
-            }
-        }
-        text
+        lines(list, list.scrollback_rows()).join("\n")
     }
 
     /// Everything that the program wrote.
@@ -572,6 +557,34 @@ impl Harness {
         }
         Ok(())
     }
+}
+
+/// The text of each line of `list` from the row at index `from`, its
+/// clusters whole, the spaces that a program wrote kept, the empty cells
+/// left out, and the rows that soft-wrap into the next joined to it.
+pub fn lines(list: &PageList, from: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut rows = list.rows_from(from).peekable();
+    while let Some(row) = rows.next() {
+        for (x, cell) in row.cells().enumerate() {
+            if let Content::Char(c) | Content::Grapheme(c) = cell.content()
+                && c != '\0'
+            {
+                line.push(c);
+                // A row has fewer than 2^16 columns.
+                line.extend(row.grapheme(x as u16));
+            }
+        }
+        let goes_on = row.metadata().has(RowFlag::SoftWrapped)
+            && rows
+                .peek()
+                .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
+        if !goes_on {
+            lines.push(std::mem::take(&mut line));
+        }
+    }
+    lines
 }
 
 /// The size of `terminal`, for its PTY: in cells, and in pixels once a

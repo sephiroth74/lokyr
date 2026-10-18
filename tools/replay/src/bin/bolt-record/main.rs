@@ -18,8 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
-use bolt_replay::harness::{Event, Harness, HarnessOptions};
-use bolt_vt_core::page::{Content, PageList, RowFlag};
+use bolt_replay::harness::{Event, Harness, HarnessOptions, lines};
 use bolt_vt_core::parser::{Handler, Params, Parser};
 use bolt_vt_core::terminal::Options;
 
@@ -251,10 +250,16 @@ fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
 
 /// The texts that a recording holds, which a name must show in none of:
 /// - the bytes that the program wrote, as they are, without their C0
-///   controls but for the line breaks, as DCS, PM and SOS strings keep
-///   them, and with their percent-encoding undone too, so that the
-///   recording holds no name whole, in a string that the terminal drops,
-///   or one that passes its limit;
+///   controls and DEL but for the line breaks, and with their
+///   percent-encoding undone too, so that the recording holds no name
+///   whole, in a string that the terminal drops, or one that passes its
+///   limit;
+/// - the text of each DCS, PM, SOS and APC string, without its controls,
+///   line breaks and DEL included, which the parser keeps or drops;
+/// - what each run of base64 in the output stands for, from each place
+///   that its groups can start, and the same without the output's controls,
+///   which split a run: OSC 52 carries the clipboard so, kitty's graphics,
+///   OSC 1337's files and OSC 99 their paths;
 /// - the bytes typed into the program, all of them, as two writes can
 ///   split a name typed;
 /// - the text that the VT core's parser prints from the output, without its
@@ -262,8 +267,7 @@ fn check_all(harness: &Harness, private: &[String]) -> Result<()> {
 ///   that a name that an escape breaks shows;
 /// - the payload of each OSC, DCS and APC string, as it is and with its
 ///   percent-encoding undone, as links and the working directory have it,
-///   which notifications are too, and what an OSC 52 string writes to the
-///   clipboard, decoded from its base64;
+///   which notifications are too;
 /// - the titles and the working directory, as the terminal keeps them;
 /// - every line of both screens, the scrollback's too, its soft-wrapped
 ///   rows joined, so that a name that the cursor's moves put together, or
@@ -282,6 +286,11 @@ fn texts(harness: &Harness) -> Vec<String> {
         })
         .collect::<Vec<_>>()
         .concat();
+    let joined: Vec<u8> = output
+        .iter()
+        .copied()
+        .filter(|&byte| byte >= 0x20 && byte != 0x7F)
+        .collect();
     let mut texts = vec![
         lossy(&output),
         lossy(&without_controls(&output)),
@@ -289,12 +298,13 @@ fn texts(harness: &Harness) -> Vec<String> {
         lossy(&input),
         plain.text,
     ];
+    texts.extend(control_strings(&output).iter().map(|text| lossy(text)));
+    for bytes in [&output, &joined] {
+        texts.extend(base64_runs(bytes).iter().map(|data| lossy(data)));
+    }
     for payload in &plain.strings {
         texts.push(lossy(payload));
         texts.push(lossy(&percent_decoded(payload)));
-        if let Some(data) = clipboard_data(payload) {
-            texts.push(lossy(&data));
-        }
     }
     let terminal = harness.terminal();
     texts.push(terminal.title().to_owned());
@@ -303,31 +313,61 @@ fn texts(harness: &Harness) -> Vec<String> {
         texts.push(format!("{}{}", dir.host, dir.path));
     }
     for list in [terminal.screen_rows(), terminal.inactive_screen_rows()] {
-        texts.extend(lines(list));
+        texts.extend(lines(list, 0));
     }
     texts
 }
 
-/// `bytes` without their C0 controls, but for the line breaks.
+/// `bytes` without their C0 controls and DEL, but for the line breaks.
 fn without_controls(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
         .copied()
-        .filter(|&byte| byte >= 0x20 || byte == b'\n')
+        .filter(|&byte| (byte >= 0x20 && byte != 0x7F) || byte == b'\n')
         .collect()
 }
 
-/// What the OSC 52 string with `payload` writes to the clipboard, decoded,
-/// if it is one: `52`, the clipboards, then the data in base64.
-fn clipboard_data(payload: &[u8]) -> Option<Vec<u8>> {
-    let rest = payload.strip_prefix(b"52;")?;
-    let at = rest.iter().position(|&byte| byte == b';')?;
-    Some(base64_decoded(&rest[at + 1..]))
+/// The text of each DCS, SOS, PM and APC string in `bytes`, without its C0
+/// controls and DEL: from `ESC P`, `ESC X`, `ESC ^` or `ESC _` to the ESC
+/// that ends it, or the CAN or SUB that cancels it, or the end.
+fn control_strings(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let mut strings = Vec::new();
+    let mut at = 0;
+    while let Some(start) = bytes[at..]
+        .windows(2)
+        .position(|pair| pair[0] == 0x1B && b"PX^_".contains(&pair[1]))
+    {
+        let mut string = Vec::new();
+        at += start + 2;
+        while let Some(&byte) = bytes.get(at) {
+            if matches!(byte, 0x1B | 0x18 | 0x1A) {
+                break;
+            }
+            if byte >= 0x20 && byte != 0x7F {
+                string.push(byte);
+            }
+            at += 1;
+        }
+        strings.push(string);
+    }
+    strings
+}
+
+/// What each run of base64 in `bytes`, of 8 characters or more, stands
+/// for, from each of the four places that its groups can start, so that a
+/// name in base64 shows wherever its run starts. Shorter runs, as most
+/// words are, are left out.
+fn base64_runs(bytes: &[u8]) -> Vec<Vec<u8>> {
+    let base64 = |byte: &u8| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
+    bytes
+        .split(|byte| !base64(byte))
+        .filter(|run| run.len() >= 8)
+        .flat_map(|run| (0..4).map(move |skip| base64_decoded(&run[skip..])))
+        .collect()
 }
 
 /// The bytes that `text` stands for in base64, up to the first byte that is
-/// not of it, its padding included: a string that passed its limit decodes
-/// as far as it came.
+/// not of it, its padding included.
 fn base64_decoded(text: &[u8]) -> Vec<u8> {
     let value = |byte: u8| match byte {
         b'A'..=b'Z' => Some(byte - b'A'),
@@ -426,33 +466,6 @@ fn percent_decoded(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The text of each line of `list`, its clusters whole, the rows that
-/// soft-wrap into the next joined to it.
-fn lines(list: &PageList) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    let mut rows = list.rows_from(0).peekable();
-    while let Some(row) = rows.next() {
-        for (x, cell) in row.cells().enumerate() {
-            if let Content::Char(c) | Content::Grapheme(c) = cell.content()
-                && c != '\0'
-            {
-                line.push(c);
-                // A row has fewer than 2^16 columns.
-                line.extend(row.grapheme(x as u16));
-            }
-        }
-        let goes_on = row.metadata().has(RowFlag::SoftWrapped)
-            && rows
-                .peek()
-                .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
-        if !goes_on {
-            lines.push(std::mem::take(&mut line));
-        }
-    }
-    lines
-}
-
 /// The names that a recording must not show: the user's, the user's full
 /// name, the host's and the computer's, the user's home, the temporary
 /// directory and the folders above it, when they are the user's own, and
@@ -498,13 +511,16 @@ fn private_names(home: &Path) -> Vec<String> {
     let mut paths = vec![home.to_owned()];
     // The temporary directory, and the folders above it, as long as they
     // are the user's own, as macOS's per-user folder is, which holds the
-    // user's caches too.
+    // user's caches too; a long name of one, as that folder's is, alone.
     for form in [temp.clone(), temp.canonicalize().unwrap_or(temp)] {
-        paths.extend(
-            form.ancestors()
-                .take_while(|dir| users_own(dir))
-                .map(Path::to_owned),
-        );
+        for folder in private_folders(&form, users_own) {
+            if let Some(name) = folder.file_name().and_then(|name| name.to_str())
+                && name.len() >= 12
+            {
+                names.push(name.to_owned());
+            }
+            paths.push(folder);
+        }
     }
     for path in paths {
         names.push(path.display().to_string().trim_end_matches('/').to_owned());
@@ -518,6 +534,32 @@ fn private_names(home: &Path) -> Vec<String> {
     names
 }
 
+/// The system's folders, which the folders of a temporary directory stop
+/// before, though root owns them: a temporary directory of root's would
+/// otherwise take them in.
+const SYSTEM_FOLDERS: [&str; 6] = [
+    "/",
+    "/private",
+    "/var",
+    "/private/var",
+    "/var/folders",
+    "/private/var/folders",
+];
+
+/// The folders of the temporary directory `temp`, from it up, as long as
+/// `own` says that each is the user's own, and before the system's.
+fn private_folders(temp: &Path, own: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
+    temp.ancestors()
+        .take_while(|dir| {
+            own(dir)
+                && !SYSTEM_FOLDERS
+                    .iter()
+                    .any(|system| Path::new(system) == *dir)
+        })
+        .map(Path::to_owned)
+        .collect()
+}
+
 /// Whether the directory at `path` is the user's own, rather than one that
 /// every user shares, as `/tmp` is, whose path tells nothing of the user.
 fn users_own(path: &Path) -> bool {
@@ -527,4 +569,55 @@ fn users_own(path: &Path) -> bool {
         let uid = unsafe { libc::getuid() };
         metadata.uid() == uid && metadata.permissions().mode() & 0o002 == 0
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_folders_of_a_temporary_directory_stop_before_the_systems() {
+        let temp = Path::new("/private/var/folders/zz/abcdefghijklmnop/T");
+        // As root, who owns every folder.
+        let folders: Vec<PathBuf> = private_folders(temp, |_| true);
+        assert_eq!(
+            folders,
+            [
+                "/private/var/folders/zz/abcdefghijklmnop/T",
+                "/private/var/folders/zz/abcdefghijklmnop",
+                "/private/var/folders/zz"
+            ]
+            .map(PathBuf::from)
+        );
+        // As a user, whose own folders end below.
+        let folders = private_folders(temp, |dir| dir.ends_with("T"));
+        assert_eq!(folders, [PathBuf::from(temp)]);
+    }
+
+    #[test]
+    fn base64_shows_from_wherever_its_run_starts() {
+        let named = |bytes: &[u8]| {
+            base64_runs(bytes)
+                .iter()
+                .any(|data| String::from_utf8_lossy(data).contains("zz-someone-zz"))
+        };
+        // `zz-someone-zz` in base64, after one to three characters that
+        // shift its groups, and after a space.
+        for before in ["", "a", "ab", "abc", "YWJj "] {
+            assert!(
+                named(format!("x;{before}enotc29tZW9uZS16eg==").as_bytes()),
+                "{before:?}"
+            );
+        }
+        assert!(!named(b"x;enotc29t"), "a part");
+    }
+
+    #[test]
+    fn control_strings_lose_their_controls() {
+        let strings = control_strings(b"a\x1bPpzz-some\none-zz\x1b\\b\x1b^x\x7fy\x18z\x1b_end");
+        assert_eq!(
+            strings,
+            [b"pzz-someone-zz".to_vec(), b"xy".to_vec(), b"end".to_vec()]
+        );
+    }
 }
