@@ -5018,6 +5018,118 @@ fn ris_tells_of_the_size_only_when_it_changes_the_width() {
 }
 
 #[test]
+fn cbt_stays_within_the_margins_in_origin_mode() {
+    let mut term = Term::new(40, 4);
+    term.feed("\x1b[?69h\x1b[5;30s\x1b[?6h\x1b[1;3H\x1b[2Z");
+    assert_eq!(term.cursor(), (4, 0, false));
+    term.feed("\x1b[6n");
+    assert_eq!(replies(&mut term), "\x1b[1;1R");
+}
+
+#[test]
+fn title_modes_without_parameters_reset_both() {
+    let mut term = Term::with(
+        10,
+        1,
+        Options {
+            title_reports: true,
+            ..Options::default()
+        },
+    );
+    term.feed("\x1b[>t\x1b]2;hi\x07");
+    assert_eq!(term.terminal.title(), "hi", "not mode 0");
+    term.feed("\x1b[>0;1t\x1b[>T\x1b]2;yo\x07\x1b[21t");
+    assert_eq!(term.terminal.title(), "yo");
+    assert_eq!(replies(&mut term), "\x1b]lyo\x1b\\");
+    // An empty parameter is passed over.
+    term.feed("\x1b[>;1t\x1b]2;ab\x07\x1b[21t");
+    assert_eq!(replies(&mut term), "\x1b]l6162\x1b\\");
+}
+
+#[test]
+fn decstr_resets_the_special_colors_with_the_palette() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]5;0;#ffffff\x07");
+    term.terminal.take_events();
+    term.feed("\x1b[!p");
+    assert_eq!(term.terminal.colors(), &Colors::default());
+    assert_eq!(term.terminal.take_events(), [Event::ColorsChanged]);
+}
+
+#[test]
+fn decrqss_of_decsca_tells_decs_protection_alone() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1bV\x1bP$q\"q\x1b\\\x1b[1\"q\x1bP$q\"q\x1b\\");
+    assert_eq!(replies(&mut term), "\x1bP1$r0\"q\x1b\\\x1bP1$r1\"q\x1b\\");
+}
+
+#[test]
+fn ed_2_under_iso_protection_keeps_the_scrollback_while_nothing_is_protected() {
+    let mut term = Term::new(10, 2);
+    term.feed("ab\x1bV\x1bW\x1b[2J");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 1);
+}
+
+#[test]
+fn spacer_heads_do_not_move_into_a_row() {
+    // `中` does not fit after `abcd`, and leaves a spacer head at the end.
+    let mut term = Term::new(5, 3);
+    term.feed("abcd\u{4e2d}");
+    assert_eq!(term.cell(4, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[1;5;1;5;1;3;2$v");
+    assert_ne!(term.cell(1, 2).width(), Width::SpacerHead, "DECCRA");
+    term.feed("\x1b[1;1H\x1b[P");
+    assert!(
+        (0..5).all(|x| term.cell(x, 0).width() != Width::SpacerHead),
+        "DCH"
+    );
+}
+
+#[test]
+fn the_window_can_be_left_of_and_above_the_main_display() {
+    let mut term = windowed(10, 4);
+    term.terminal.set_window(Window {
+        x: -5,
+        y: -7,
+        ..Window::default()
+    });
+    term.feed("\x1b[13t");
+    assert_eq!(replies(&mut term), "\x1b[3;-5;-7t");
+}
+
+#[test]
+fn decrqm_tells_modes_41_and_67() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b[?41$p\x1b[?67$p\x1b[?41;67h\x1b[?41$p\x1b[?67$p");
+    assert_eq!(
+        replies(&mut term),
+        "\x1b[?41;2$y\x1b[?67;2$y\x1b[?41;1$y\x1b[?67;1$y"
+    );
+}
+
+#[test]
+fn decic_and_decdc_keep_wide_characters_and_links_whole_at_the_margins() {
+    let mut term = Term::new(6, 1);
+    // `中` across the left margin, at column 1, and a link within them.
+    term.feed("\u{4e2d}\x1b]8;;http://x\x1b\\bcd\x1b]8;;\x1b\\");
+    term.feed("\x1b[?69h\x1b[2;5s\x1b[1;2H\x1b['}");
+    assert_ne!(
+        term.cell(0, 0).width(),
+        Width::Wide,
+        "the wide one goes whole"
+    );
+    assert_ne!(term.cell(1, 0).width(), Width::SpacerTail);
+    assert_eq!(link_at(&term, 3, 0), link("", "http://x"));
+    term.feed("\x1b[2'~");
+    assert_eq!(
+        link_at(&term, 1, 0),
+        link("", "http://x"),
+        "back two columns"
+    );
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
 fn xtsave_and_xtrestore_save_and_bring_back_private_modes() {
     let mut term = Term::new(10, 2);
     term.feed("\x1b[?7;25;9999s\x1b[?7l\x1b[?25l\x1b[?1l");
@@ -5093,9 +5205,10 @@ fn the_window_reports_answer_only_when_the_window_operations_are_allowed() {
     term.terminal.set_cell_size(8, 16);
     term.terminal.set_display_size(800, 480);
     term.feed("\x1b[2t\x1b[3;5;6t\x1b[11t\x1b[13t\x1b[15t\x1b[19t\x1b[9;1t");
+    term.feed("\x1b[4;160;400t\x1b[10;1t");
     assert_eq!(replies(&mut term), "");
     assert_eq!(term.terminal.window(), Window::default());
-    assert_eq!(term.terminal.cols(), 10);
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (10, 4));
 }
 
 #[test]

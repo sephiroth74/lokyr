@@ -517,6 +517,11 @@ impl Page {
         if x + n < end && self.cells(y)[usize::from(x + n)].width() == Width::SpacerTail {
             self.set_cell(y, x + n, Cell::EMPTY);
         }
+        // A spacer head, which a wide character that did not fit at the end
+        // of the line leaves, stands for nothing once it moves from there.
+        if self.cells(y)[usize::from(end - 1)].width() == Width::SpacerHead {
+            self.set_cell(y, end - 1, Cell::EMPTY);
+        }
         self.clear_cells(y, x..x + n);
         for column in x + n..end {
             let (from, to) = (self.cell_index(y, column), self.cell_index(y, column - n));

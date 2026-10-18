@@ -851,8 +851,14 @@ impl PageList {
             if cells[usize::from(first)].width() == Width::SpacerTail {
                 buffer.set_cell(row, first, Cell::EMPTY);
             }
-            if buffer.cells(row)[usize::from(last)].width() == Width::Wide {
-                buffer.set_cell(row, last, Cell::EMPTY);
+            // A wide character whose second half is out of the rectangle,
+            // and a spacer head, which stands for nothing away from the end
+            // of its line.
+            for x in [last].into_iter().chain(columns.clone()) {
+                let width = buffer.cells(row)[usize::from(x)].width();
+                if (x == last && width == Width::Wide) || width == Width::SpacerHead {
+                    buffer.set_cell(row, x, Cell::EMPTY);
+                }
             }
         }
         for (row, to) in (0..height).zip(y..) {

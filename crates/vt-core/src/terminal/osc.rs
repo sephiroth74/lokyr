@@ -57,7 +57,8 @@ pub enum Event {
         data: Vec<u8>,
     },
     /// A program changed the terminal's size, which [`Terminal::cols`] and
-    /// [`Terminal::rows`] tell (DECCOLM, DECSLPP, DECSNLS and XTWINOPS 8 t):
+    /// [`Terminal::rows`] tell (DECCOLM, DECSLPP, DECSNLS, XTWINOPS 4 t, 8
+    /// t, 9 t and 10 t, and RIS from 132 columns):
     /// the embedder gives it to the window and the PTY, or gives the
     /// terminal back the window's.
     SizeChanged,

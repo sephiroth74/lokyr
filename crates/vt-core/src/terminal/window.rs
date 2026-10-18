@@ -15,10 +15,11 @@ use crate::parser::Params;
 /// to change.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Window {
-    /// The place of its top left on the display, in pixels: across.
-    pub x: u16,
-    /// Down.
-    pub y: u16,
+    /// The place of its top left on the display, in pixels: across, which
+    /// is negative on a display left of the main one.
+    pub x: i32,
+    /// Down, negative on a display above the main one.
+    pub y: i32,
     /// Whether it is iconified.
     pub iconified: bool,
     /// Whether it is maximized across the display.
@@ -62,7 +63,8 @@ impl Terminal {
             }
             // As xterm, an omitted place is 0.
             3 => {
-                (self.window.x, self.window.y) = (params.value(1), params.value(2));
+                let (x, y) = (params.value(1), params.value(2));
+                (self.window.x, self.window.y) = (i32::from(x), i32::from(y));
                 self.events.push(Event::WindowChanged);
             }
             4 => {

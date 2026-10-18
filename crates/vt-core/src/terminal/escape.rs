@@ -96,10 +96,11 @@ impl Terminal {
     /// and the keypad send their normal codes, and modifyOtherKeys goes
     /// off; the margins become the screen's edges, with left and right
     /// margin mode off; the character sets, the style and the protection of
-    /// printed text go back to their defaults, and the palette to the
-    /// theme's; and the cursor that DECSC saved goes, so that DECRC homes
-    /// the cursor with the defaults. The screens' text, the modes of the
-    /// mouse, bracketed paste, the dynamic colors and the title stay.
+    /// printed text go back to their defaults, and the palette and the
+    /// special colors to the theme's; and the cursor that DECSC saved goes,
+    /// so that DECRC homes the cursor with the defaults. The screens' text,
+    /// the modes of the mouse, bracketed paste, the dynamic colors and the
+    /// title stay.
     pub(super) fn soft_reset(&mut self) {
         self.cursor_visible = true;
         self.insert = false;
@@ -112,8 +113,12 @@ impl Terminal {
         self.input.cursor_keys_application = false;
         self.input.keypad_application = false;
         self.input.modify_other_keys = 0;
-        if self.colors.palette != self.default_colors.palette {
-            self.colors.palette = self.default_colors.palette;
+        // The palette and the special colors, which xterm's soft reset
+        // resets as OSC 104 does.
+        let colors = &self.default_colors;
+        if self.colors.palette != colors.palette || self.colors.special != colors.special {
+            self.colors.palette = colors.palette;
+            self.colors.special = colors.special;
             self.events.push(Event::ColorsChanged);
         }
         self.left_right_margins = false;

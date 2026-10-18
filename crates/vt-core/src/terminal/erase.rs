@@ -3,8 +3,9 @@
 //! An erased cell takes the pen's background color, as xterm's background
 //! color erase does, and nothing else. ED, EL and ECH erase every cell but
 //! those that SPA protected, in ISO's protection; the selective erases keep
-//! those that DECSCA protected, in DEC's, as xterm does. Erasing ends the
-//! cluster being printed, and leaves no wrap pending.
+//! those that DECSCA protected, in DEC's, and erase those that SPA did, as
+//! esctest asks, where xterm keeps them. Erasing ends the cluster being
+//! printed, and leaves no wrap pending.
 
 use std::ops::Range;
 
@@ -37,7 +38,9 @@ impl Terminal {
                 self.erase_in_row(cursor.y, 0..cursor.x + 1, keep);
             }
             2 => {
-                if !selective && !keep && !self.alternate_active {
+                // The screen goes to the scrollback but when ISO's
+                // protection keeps some of its cells there.
+                if !selective && !self.alternate_active && !(keep && self.screen_protects()) {
                     self.scroll_into_scrollback();
                 }
                 for y in 0..rows {
@@ -112,6 +115,15 @@ impl Terminal {
                 page.row_mut(row).set(RowFlag::Continuation, false);
             }
         }
+    }
+
+    /// Whether a cell of the screen is protected.
+    fn screen_protects(&self) -> bool {
+        let rows = &self.screen().rows;
+        (0..self.rows).any(|y| {
+            let (page, row) = rows.screen_row(y);
+            page.cells(row).iter().any(|cell| cell.is_protected())
+        })
     }
 
     /// Moves the rows of the screen, up to the last one that holds

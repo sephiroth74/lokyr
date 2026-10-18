@@ -218,10 +218,17 @@ impl Terminal {
     /// xterm's title modes, `CSI > Ps ; ... t` to set them and `CSI > Ps ;
     /// ... T` to reset them: 0 sets titles in hexadecimal, 1 reports them
     /// so; 2 and 3, which set and report them in UTF-8 rather than
-    /// Latin-1, change nothing, as titles are always UTF-8.
+    /// Latin-1, change nothing, as titles are always UTF-8. Without
+    /// parameters, either resets both, as xterm does; an empty parameter
+    /// is passed over.
     pub(super) fn set_title_modes(&mut self, params: &Params, on: bool) {
-        for mode in params.iter().map(|group| group[0]) {
-            match mode {
+        if !(0..params.len()).any(|index| params.has_value(index)) {
+            self.hex_titles = false;
+            self.hex_title_reports = false;
+            return;
+        }
+        for index in (0..params.len()).filter(|&index| params.has_value(index)) {
+            match params.value(index) {
                 0 => self.hex_titles = on,
                 1 => self.hex_title_reports = on,
                 _ => {}
@@ -323,7 +330,11 @@ impl Terminal {
             b"r" => Some(format!("{};{}r", margins.top + 1, margins.bottom + 1)),
             b"s" => Some(format!("{};{}s", margins.left + 1, margins.right + 1)),
             b" q" => Some(format!("{} q", self.cursor_style_value())),
-            b"\"q" => Some(format!("{}\"q", u8::from(self.protected))),
+            // DECSCA, which tells DEC's protection alone.
+            b"\"q" => Some(format!(
+                "{}\"q",
+                u8::from(self.protected && !self.iso_protection)
+            )),
             // The conformance level, with 7-bit controls, which the
             // terminal's replies use, past the VT100's, which has no others.
             b"\"p" if self.conformance == 61 => Some("61\"p".to_owned()),
