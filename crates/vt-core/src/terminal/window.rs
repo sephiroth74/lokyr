@@ -70,16 +70,22 @@ impl Terminal {
                     return;
                 };
                 let display = self.display_size;
-                let pixels = |index: usize, now: u16, display: Option<u16>| -> u16 {
-                    match (params.has_value(index), params.value(index)) {
-                        (false, _) => now,
-                        (true, 0) => display.unwrap_or(now),
+                // The cells that a side in pixels holds, the current ones
+                // where it is omitted.
+                let cells = |index: usize, now: u16, cell: u16, display: Option<u16>| -> u16 {
+                    let pixels = match (params.has_value(index), params.value(index)) {
+                        (false, _) => return now,
+                        (true, 0) => match display {
+                            Some(display) => display,
+                            None => return now,
+                        },
                         (true, value) => value,
-                    }
+                    };
+                    pixels / cell.max(1)
                 };
-                let rows = pixels(1, self.rows.saturating_mul(height), display.map(|d| d.1));
-                let cols = pixels(2, self.cols.saturating_mul(width), display.map(|d| d.0));
-                self.take_size(cols / width.max(1), rows / height.max(1));
+                let rows = cells(1, self.rows, height, display.map(|d| d.1));
+                let cols = cells(2, self.cols, width, display.map(|d| d.0));
+                self.take_size(cols, rows);
             }
             9 => self.maximize(params.value(1)),
             10 => self.fill_display(params.value(1)),

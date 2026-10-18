@@ -4902,8 +4902,23 @@ fn many_long_moves_round_narrow_margins_cost_little() {
 }
 
 #[test]
-fn deccolm_switches_to_132_columns_and_back_through_mode_40() {
+fn deccolm_switches_to_132_columns_and_back_through_mode_40_and_the_window_operations() {
     let mut term = Term::new(80, 4);
+    term.feed("\x1b[2;3Hxyz\x1b[?40h\x1b[?3h");
+    assert_eq!(
+        term.terminal.cols(),
+        80,
+        "not without the window's operations"
+    );
+    assert_eq!(term.screen()[1], "  xyz");
+    let mut term = Term::with(
+        80,
+        4,
+        Options {
+            window_ops: true,
+            ..Options::default()
+        },
+    );
     term.feed("\x1b[2;3Hxyz\x1b[?3h");
     assert_eq!(term.terminal.cols(), 80, "not without mode 40");
     assert_eq!(term.screen()[1], "  xyz");
@@ -4930,6 +4945,76 @@ fn deccolm_switches_to_132_columns_and_back_through_mode_40() {
     term.feed("\x1bc");
     assert_eq!(term.terminal.cols(), 80);
     assert!(term.terminal.take_events().contains(&Event::SizeChanged));
+}
+
+/// A terminal that allows the window's operations, with a scrollback of
+/// `limit` bytes.
+fn allowing_window_ops(cols: u16, rows: u16, limit: usize) -> Term {
+    Term::with(
+        cols,
+        rows,
+        Options {
+            window_ops: true,
+            scrollback: Scrollback {
+                limit,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    )
+}
+
+#[test]
+fn a_switch_to_132_columns_and_back_keeps_every_row_of_a_full_scrollback() {
+    let limit = 1 << 20;
+    let mut term = allowing_window_ops(80, 24, limit);
+    let line = format!("{}\r\n", "x".repeat(79));
+    term.feed(line.repeat(5000));
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    term.feed("\x1b[?40h\x1b[?3h");
+    assert!(term.terminal.screen_rows().scrollback().limit > limit);
+    term.feed("\x1b[?3l\x1b[?3h\x1b[?3l");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
+    // The embedder's width brings the configured limit back, and so does
+    // RIS from 132 columns.
+    term.feed("\x1b[?3h");
+    term.terminal.resize(132, 24);
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
+    let mut term = allowing_window_ops(80, 24, limit);
+    term.feed(line.repeat(5000));
+    term.feed("\x1b[?40h\x1b[?3h");
+    assert!(term.terminal.screen_rows().scrollback().limit > limit);
+    term.feed("\x1bc");
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
+}
+
+#[test]
+fn a_size_that_a_program_sets_caps_only_the_side_that_it_changes() {
+    let mut term = allowing_window_ops(1200, 4, 1 << 20);
+    term.feed("\x1b[30t");
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (1200, 30));
+    term.feed("\x1b[8;2000t");
+    assert_eq!(
+        (term.terminal.cols(), term.terminal.rows()),
+        (1200, ASKED_SIZE)
+    );
+    // XTWINOPS 4 t keeps an omitted side as the cells it is, however large
+    // the cells.
+    let mut term = allowing_window_ops(10, 1000, 1 << 20);
+    term.terminal.set_cell_size(8, 70);
+    term.feed("\x1b[4;;80t");
+    assert_eq!((term.terminal.cols(), term.terminal.rows()), (10, 1000));
+}
+
+#[test]
+fn ris_tells_of_the_size_only_when_it_changes_the_width() {
+    let mut term = allowing_window_ops(80, 4, 1 << 20);
+    term.feed("\x1b[?40h\x1b[?3h");
+    term.terminal.resize(80, 4);
+    term.terminal.take_events();
+    term.feed("\x1bc");
+    assert!(!term.terminal.take_events().contains(&Event::SizeChanged));
 }
 
 #[test]

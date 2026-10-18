@@ -312,6 +312,13 @@ impl PageList {
         &self.scrollback
     }
 
+    /// Sets the bytes that the list's pages may take, and drops the oldest
+    /// pages of the scrollback that pass them.
+    pub fn set_scrollback_limit(&mut self, limit: usize) {
+        self.scrollback.limit = limit;
+        self.enforce();
+    }
+
     /// The bytes that the pages take, in the list and in the pool.
     pub fn memory(&self) -> usize {
         self.memory

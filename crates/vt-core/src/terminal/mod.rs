@@ -33,7 +33,7 @@ pub use window::Window;
 use std::ops::Range;
 
 use crate::page::{
-    Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, Width,
+    Capacity, Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, Width,
 };
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
@@ -364,6 +364,10 @@ pub struct Terminal {
     link_schemes: Vec<String>,
     /// Whether programs may operate on the window.
     window_ops: bool,
+    /// The width that the embedder gave last, and the scrollback's limit as
+    /// it was configured, which the sizes that programs set start from.
+    given_cols: u16,
+    scrollback_limit: usize,
     /// The link that the text printed next is part of (OSC 8).
     link: osc::Link,
     /// The zone of the text printed next (OSC 133).
@@ -427,6 +431,7 @@ impl Terminal {
             limit: 0,
             budget: options.scrollback.budget.clone(),
         };
+        let scrollback_limit = options.scrollback.limit;
         Self {
             cols,
             rows,
@@ -472,6 +477,8 @@ impl Terminal {
             rectangle_checksums: options.rectangle_checksums,
             link_schemes: options.link_schemes,
             window_ops: options.window_ops,
+            given_cols: cols,
+            scrollback_limit,
             link: osc::Link::default(),
             zone: Semantic::Output,
             default_colors: Colors::default(),
@@ -588,6 +595,17 @@ impl Terminal {
     /// every eight columns past the old width, and the cluster being
     /// printed ends.
     pub fn resize(&mut self, cols: u16, rows: u16) {
+        self.resize_screens(cols, rows);
+        // The width that the sizes that programs set start from, and the
+        // scrollback's limit as it was configured.
+        self.given_cols = self.cols;
+        let limit = self.scrollback_limit;
+        self.primary.rows.set_scrollback_limit(limit);
+    }
+
+    /// Resizes the screens as [`Terminal::resize`] does, without taking the
+    /// size for the embedder's.
+    fn resize_screens(&mut self, cols: u16, rows: u16) {
         let (cols, rows) = (cols.max(2), rows.max(1));
         if (cols, rows) == (self.cols, self.rows) {
             return;
@@ -608,14 +626,45 @@ impl Terminal {
         self.margins = Margins::screen(cols, rows);
     }
 
-    /// Takes the size that a program asked for, `cols` by `rows`, at most
-    /// [`ASKED_SIZE`] each way, at once, so that the program's next query
-    /// reads it, and tells the embedder, which gives it to the window and
-    /// the PTY.
+    /// Takes the size that a program asked for, `cols` by `rows`, at once,
+    /// so that the program's next query reads it, and tells the embedder,
+    /// which gives it to the window and the PTY. A side that changes is
+    /// [`ASKED_SIZE`] at most. Past the width that the embedder gave, the
+    /// primary screen's scrollback may take the more pages that its wider
+    /// rows need, twice its limit at most, so that it keeps its rows, as
+    /// it does when the program goes back.
     fn take_size(&mut self, cols: u16, rows: u16) {
-        let (cols, rows) = (cols.min(ASKED_SIZE), rows.min(ASKED_SIZE));
+        let asked = |asked: u16, now: u16| {
+            if asked == now {
+                asked
+            } else {
+                asked.min(ASKED_SIZE)
+            }
+        };
+        let (cols, rows) = (asked(cols, self.cols), asked(rows, self.rows));
         let before = (self.cols, self.rows);
-        self.resize(cols, rows);
+        // The bytes that the list's rows take at a width past the
+        // embedder's, as many or fewer once rewrapped there.
+        let configured = self.scrollback_limit;
+        let limit = if cols > self.given_cols {
+            let capacity = Capacity::standard(cols.max(2));
+            let pages = self
+                .primary
+                .rows
+                .total_rows()
+                .div_ceil(usize::from(capacity.rows.max(1)));
+            pages
+                .saturating_mul(capacity.bytes())
+                .clamp(configured, configured.saturating_mul(2))
+        } else {
+            configured
+        };
+        // A limit that grows does so before the rows widen, and one that
+        // shrinks after they narrow.
+        let now = self.primary.rows.scrollback().limit;
+        self.primary.rows.set_scrollback_limit(now.max(limit));
+        self.resize_screens(cols, rows);
+        self.primary.rows.set_scrollback_limit(limit);
         if (self.cols, self.rows) != before {
             self.events.push(Event::SizeChanged);
         }

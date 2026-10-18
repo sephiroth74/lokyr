@@ -120,12 +120,13 @@ impl Terminal {
         }
     }
 
-    /// DECCOLM, mode 3: 132 columns, or 80, if mode 40 allows the switch,
-    /// as xterm does. The screen is erased, unless DECNCSM keeps it; the
-    /// margins go, as DECLRMM does with 132 columns, and the cursor goes
-    /// home.
+    /// DECCOLM, mode 3: 132 columns, or 80, if the configuration allows the
+    /// window's operations and mode 40 the switch, where xterm needs mode
+    /// 40 alone, which programs set themselves. The screen is erased,
+    /// unless DECNCSM keeps it; the margins go, as DECLRMM does with 132
+    /// columns, and the cursor goes home.
     fn set_column_mode(&mut self, on: bool) {
-        if !self.column_switch {
+        if !self.window_ops || !self.column_switch {
             return;
         }
         self.columns_132 = on;

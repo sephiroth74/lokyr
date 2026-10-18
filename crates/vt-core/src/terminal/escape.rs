@@ -1,7 +1,7 @@
 //! The escape sequences: `ESC`, intermediates, then a final byte.
 
 use super::{Charset, Charsets, Cursor, Event, Margins, Options, SavedCursor, Shift, Terminal};
-use crate::page::{Cell, Content, Style};
+use crate::page::{Cell, Content, Scrollback, Style};
 
 impl Terminal {
     /// Dispatches the escape sequence with `intermediates` and
@@ -151,7 +151,12 @@ impl Terminal {
     /// changed.
     fn full_reset(&mut self) {
         let options = Options {
-            scrollback: self.primary.rows.scrollback().clone(),
+            // The limit as it was configured, rather than as a program's
+            // width made it.
+            scrollback: Scrollback {
+                limit: self.scrollback_limit,
+                ..self.primary.rows.scrollback().clone()
+            },
             widths: self.configured_widths,
             normalization: self.normalization,
             term: std::mem::take(&mut self.term),
@@ -182,12 +187,10 @@ impl Terminal {
         }
         let colors = std::mem::take(&mut self.default_colors);
         // 132 columns that DECCOLM set go back to 80, as in xterm.
-        let cols = if self.columns_132 {
+        let cols = if self.columns_132 { 80 } else { self.cols };
+        if cols != self.cols {
             events.push(Event::SizeChanged);
-            80
-        } else {
-            self.cols
-        };
+        }
         *self = Self::new(cols, self.rows, options);
         (self.bells, self.replies, self.reply_bytes, self.cell_size) =
             (bells, replies, reply_bytes, cell_size);
