@@ -475,6 +475,33 @@ fn a_send_after_a_hang_up_says_so() {
 }
 
 #[test]
+fn a_mark_writes_every_reply_that_waits_and_so_does_an_empty_send() {
+    // DA's reply, which the read that shows `ready` queues, then the
+    // test's answer to the clipboard's read, behind it.
+    let script = r"stty raw -echo; printf '\033]52;c;?\007\033[cready'; sleep 30";
+    let mut options = options(20, 3, script);
+    options.terminal.clipboard_reads = true;
+    let mut harness = Harness::spawn(&options).unwrap();
+    harness.wait("ready", LIMIT).unwrap();
+    let request = harness
+        .take_terminal_events()
+        .into_iter()
+        .find_map(|event| match event {
+            TerminalEvent::ClipboardRead(request) => Some(request),
+            _ => None,
+        })
+        .expect("the read came with `ready`");
+    let (da, answer) = (&b"\x1b[?62;22c"[..], &b"\x1b]52;c;aGk=\x07"[..]);
+    harness.terminal_mut().reply_clipboard(request, b"hi");
+    harness.mark("answered").unwrap();
+    assert_eq!(inputs(&harness).concat(), [da, answer].concat());
+    harness.terminal_mut().reply_clipboard(request, b"hi");
+    harness.send(b"", LIMIT).unwrap();
+    assert_eq!(inputs(&harness).concat(), [da, answer, answer].concat());
+    harness.hang_up();
+}
+
+#[test]
 fn a_mark_and_a_resize_write_the_replies_that_the_test_made() {
     let script = r"stty raw -echo; echo armed; printf '\033]52;c;?\007\033]52;c;?\007'; sleep 30";
     let mut options = options(20, 3, script);

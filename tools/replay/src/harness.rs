@@ -223,7 +223,7 @@ impl Harness {
             bail!("the program ended before it took what was typed");
         }
         if bytes.is_empty() {
-            return Ok(());
+            return self.send_replies();
         }
         // The replies that the test made go before the keys.
         self.queue_replies();
@@ -483,7 +483,25 @@ impl Harness {
     /// a step that does not read leaves none waiting.
     fn send_replies(&mut self) -> Result<()> {
         self.queue_replies();
-        self.write_some(Instant::now())
+        // As many writes as the program takes now, each of the first entry
+        // that waits.
+        loop {
+            let before = (
+                self.pending.len(),
+                self.pending.front().map(|first| first.bytes.len()),
+            );
+            if before.0 == 0 {
+                return Ok(());
+            }
+            self.write_some(Instant::now())?;
+            let after = (
+                self.pending.len(),
+                self.pending.front().map(|first| first.bytes.len()),
+            );
+            if after == before {
+                return Ok(());
+            }
+        }
     }
 
     /// Queues the replies that the terminal has made, while they fit.

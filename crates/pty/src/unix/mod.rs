@@ -345,8 +345,10 @@ const DEFAULT_PATH: &str = "/bin:/usr/bin";
 /// `execvp` looks for it, those that are relative, the empty one included,
 /// in the child's `working_directory`, made absolute, as the child runs the
 /// program from there. It fails as `execvp` does: with `EACCES` if a file
-/// of that name, or a directory on the way, could not be executed or
-/// searched, and with `ENOENT` otherwise.
+/// of that name could not be executed, or, off macOS, a directory on the
+/// way could not be searched, which macOS's `execvp` passes over; off
+/// macOS, with the first error other than those that glibc's passes over,
+/// as a loop of links; and with `ENOENT` otherwise.
 fn find_program(
     program: &Path,
     path: Option<&OsStr>,
@@ -373,6 +375,23 @@ fn find_program(
                 // file that is there.
                 Err(error) if error.kind() == ErrorKind::PermissionDenied => {
                     denied |= cfg!(not(target_os = "macos"));
+                }
+                // glibc's `execvp` goes on past these errors alone, and
+                // stops at the others; macOS's passes over them all.
+                Err(error)
+                    if cfg!(not(target_os = "macos"))
+                        && !matches!(
+                            error.raw_os_error(),
+                            Some(
+                                libc::ENOENT
+                                    | libc::ESTALE
+                                    | libc::ENOTDIR
+                                    | libc::ENODEV
+                                    | libc::ETIMEDOUT
+                            )
+                        ) =>
+                {
+                    return Err(error);
                 }
                 Err(_) => {}
             }
@@ -739,6 +758,27 @@ mod tests {
     }
 
     #[test]
+    fn a_loop_of_links_stops_the_lookup_off_macos() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDir::new("loop");
+        for dir in ["a", "b"] {
+            std::fs::create_dir(temp.0.join(dir)).unwrap();
+        }
+        // A link to itself, which `stat` refuses with `ELOOP`, then the
+        // program in the next directory.
+        std::os::unix::fs::symlink("tool", temp.0.join("a/tool")).unwrap();
+        let tool = temp.0.join("b/tool");
+        std::fs::write(&tool, "").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let found = find_program(Path::new("tool"), Some(OsStr::new("a:b")), &temp.0);
+        if cfg!(target_os = "macos") {
+            assert_eq!(found.unwrap(), tool);
+        } else {
+            assert_eq!(found.unwrap_err().raw_os_error(), Some(libc::ELOOP));
+        }
+    }
+
+    #[test]
     fn a_relative_working_directory_is_where_relative_entries_are() {
         use std::os::unix::fs::PermissionsExt;
         let temp = TempDir::new("relative");
@@ -775,10 +815,14 @@ mod tests {
             matches!(&failed, Ok(Err(Error::WorkingDirectory { source, .. })) if source.kind() == ErrorKind::NotFound),
             "{failed:?}"
         );
-        let message = failed.unwrap().unwrap_err().to_string();
+        // The message names the directory, and the cause comes once, as
+        // the source.
+        let error = failed.unwrap().unwrap_err();
+        assert_eq!(error.to_string(), "cannot enter /no/such/directory");
+        let source = std::error::Error::source(&error).map(ToString::to_string);
         assert_eq!(
-            message,
-            "cannot enter /no/such/directory: No such file or directory (os error 2)"
+            source.as_deref(),
+            Some("No such file or directory (os error 2)")
         );
     }
 

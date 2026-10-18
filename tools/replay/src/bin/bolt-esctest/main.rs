@@ -75,13 +75,10 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         // the rows that wrap and 1045 for the others.
         "--xterm-reverse-wrap=383".to_owned(),
         "--no-print-logs".to_owned(),
-        // The window's operations, which the terminal allows, as xterm's
-        // `allowWindowOps` does.
-        "--options=xtermWinopsEnabled".to_owned(),
         format!("--timeout={TIMEOUT}"),
         format!("--logfile={}", log.display()),
     ];
-    program.extend(extra);
+    program.extend(arguments(extra)?);
     let options = HarnessOptions {
         program,
         env: vec![
@@ -103,6 +100,35 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
     let tests = suite(&options, &mut temp, &log)?;
     print!("{}", report(&tests));
     Ok(())
+}
+
+/// The ARGs for esctest, `extra`, with the options that it is told merged
+/// into one `--options`, after the window's operations, which the terminal
+/// allows, as xterm's `allowWindowOps` does: esctest keeps the last
+/// `--options` alone. `--logfile` is refused, as the runner reads the log
+/// that it names itself.
+fn arguments(extra: Vec<String>) -> Result<Vec<String>> {
+    let mut options = vec!["xtermWinopsEnabled".to_owned()];
+    let mut rest = Vec::new();
+    let mut extra = extra.into_iter().peekable();
+    while let Some(arg) = extra.next() {
+        if arg == "--logfile" || arg.starts_with("--logfile=") {
+            bail!("the runner names esctest's log itself, so --logfile cannot be given");
+        }
+        if let Some(value) = arg.strip_prefix("--options=") {
+            options.extend(value.split_whitespace().map(str::to_owned));
+        } else if arg == "--options" {
+            // Its values, up to the next argument that starts another.
+            while let Some(value) = extra.next_if(|next| !next.starts_with('-')) {
+                options.push(value);
+            }
+        } else {
+            rest.push(arg);
+        }
+    }
+    rest.push("--options".to_owned());
+    rest.extend(options);
+    Ok(rest)
 }
 
 /// Runs the suite as `options` tell, and reads the tests from its `log`,
@@ -599,5 +625,34 @@ mod tests {
         let mut temp = Temp::new().unwrap();
         let tests = fake(script, &mut temp).unwrap();
         assert_eq!(tests, [("A.test_a".to_owned(), Outcome::Passed)]);
+    }
+
+    #[test]
+    fn options_given_join_the_runners_and_a_log_is_refused() {
+        let args = |list: &[&str]| arguments(list.iter().map(|arg| (*arg).to_owned()).collect());
+        assert_eq!(
+            args(&["--include=CUP", "--options=disableWideChars"]).unwrap(),
+            [
+                "--include=CUP",
+                "--options",
+                "xtermWinopsEnabled",
+                "disableWideChars"
+            ]
+        );
+        assert_eq!(
+            args(&["--options", "a", "b", "--stop-on-failure"]).unwrap(),
+            [
+                "--stop-on-failure",
+                "--options",
+                "xtermWinopsEnabled",
+                "a",
+                "b"
+            ]
+        );
+        assert_eq!(args(&[]).unwrap(), ["--options", "xtermWinopsEnabled"]);
+        for log in [&["--logfile=x"][..], &["--logfile", "x"]] {
+            let error = args(log).unwrap_err().to_string();
+            assert!(error.contains("--logfile"), "{error}");
+        }
     }
 }

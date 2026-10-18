@@ -140,14 +140,16 @@ impl Options {
     }
 }
 
-/// Why a PTY's program could not start.
+/// Why a PTY's program could not start. Each message leaves out its cause,
+/// which [`std::error::Error::source`] gives, so that a chain of errors
+/// tells it once.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// No pseudo-terminal could be opened.
-    #[error("cannot open a pseudo-terminal: {0}")]
+    #[error("cannot open a pseudo-terminal")]
     Open(#[source] io::Error),
     /// The working directory could not be entered.
-    #[error("cannot enter {}: {source}", path.display())]
+    #[error("cannot enter {}", path.display())]
     WorkingDirectory {
         /// The directory, as it was asked for.
         path: PathBuf,
@@ -156,7 +158,7 @@ pub enum Error {
         source: io::Error,
     },
     /// The program could not start.
-    #[error("cannot start {program}: {source}")]
+    #[error("cannot start {program}")]
     Spawn {
         /// The program, as it was asked for.
         program: String,

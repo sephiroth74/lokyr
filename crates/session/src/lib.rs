@@ -63,7 +63,7 @@ pub enum Error {
     Pty(#[from] bolt_pty::Error),
     /// The session's threads, or their ends of the terminal, could not be
     /// made.
-    #[error("cannot start the session's threads: {0}")]
+    #[error("cannot start the session's threads")]
     Threads(#[source] io::Error),
 }
 
