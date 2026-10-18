@@ -10,6 +10,9 @@ impl Terminal {
         match (intermediates, final_byte) {
             ([], b'7') => self.save_cursor(),
             ([], b'8') => self.restore_cursor(),
+            // DECBI and DECFI.
+            ([], b'6') => self.back_index(),
+            ([], b'9') => self.forward_index(),
             // DECKPAM and DECKPNM.
             ([], b'=') => self.input.keypad_application = true,
             ([], b'>') => self.input.keypad_application = false,

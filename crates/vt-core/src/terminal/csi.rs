@@ -43,6 +43,9 @@ impl Terminal {
             ([b'?'], b'K') => self.erase_in_line(params.value(0), true),
             ([], b'X') => self.erase_characters(n(0)),
             ([], b'@') => self.insert_characters(n(0)),
+            // DECIC and DECDC.
+            ([b'\''], b'}') => self.insert_columns(n(0)),
+            ([b'\''], b'~') => self.delete_columns(n(0)),
             ([], b'P') => self.delete_characters(n(0)),
             ([], b'L') => self.insert_lines(n(0)),
             ([], b'M') => self.delete_lines(n(0)),

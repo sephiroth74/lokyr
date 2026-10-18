@@ -1,5 +1,5 @@
-//! Inserting and deleting: cells within the cursor's row, and rows within
-//! the scroll region, which scrolling moves as well.
+//! Inserting and deleting: cells within the cursor's row, columns and rows
+//! within the scroll region, which scrolling moves as well.
 //!
 //! What comes in is erased as the erases leave it, with the pen's
 //! background color. Each of these ends the cluster being printed.
@@ -13,14 +13,9 @@ impl Terminal {
     /// Outside the left and right margins, it does nothing.
     pub(super) fn insert_characters(&mut self, n: u16) {
         let Cursor { x, y, .. } = self.editing();
-        if !self.margins.has_column(x) {
-            return;
+        if self.margins.has_column(x) {
+            self.insert_cells(x, y, n);
         }
-        let (blank, end) = (self.blank(), self.margins.right + 1);
-        let rows = &mut self.screen_mut().rows;
-        rows.insert_blanks(y, x, n, end);
-        let (page, row) = rows.screen_row_mut(y);
-        page.erase(row, x..x.saturating_add(n).min(end), blank, false);
     }
 
     /// DCH: deletes `n` cells at the cursor; the cells after them move left,
@@ -28,9 +23,91 @@ impl Terminal {
     /// and right margins, it does nothing.
     pub(super) fn delete_characters(&mut self, n: u16) {
         let Cursor { x, y, .. } = self.editing();
-        if !self.margins.has_column(x) {
-            return;
+        if self.margins.has_column(x) {
+            self.delete_cells(x, y, n);
         }
+    }
+
+    /// DECIC: inserts `n` erased columns at the cursor's, in the rows of the
+    /// scroll region, as ICH inserts cells in each. Outside the scroll
+    /// region, it does nothing.
+    pub(super) fn insert_columns(&mut self, n: u16) {
+        if self.row_in_region().is_some() {
+            self.insert_columns_at(self.cursor().x, n);
+        }
+    }
+
+    /// DECDC: deletes `n` columns at the cursor's, in the rows of the scroll
+    /// region, as DCH deletes cells in each. Outside the scroll region, it
+    /// does nothing.
+    pub(super) fn delete_columns(&mut self, n: u16) {
+        if self.row_in_region().is_some() {
+            self.delete_columns_at(self.cursor().x, n);
+        }
+    }
+
+    /// DECBI: moves the cursor a column left. At the left margin, within the
+    /// top and bottom ones, the scroll region's columns move right instead,
+    /// as DECIC there, and the cursor stays; left of the margin, the cursor
+    /// moves as far as the screen's left edge, where DECBI is ignored.
+    pub(super) fn back_index(&mut self) {
+        let Cursor { x, y, .. } = self.editing();
+        let margins = self.margins;
+        if x == margins.left {
+            if (margins.top..=margins.bottom).contains(&y) {
+                self.insert_columns_at(x, 1);
+            }
+        } else if x > 0 {
+            self.screen_mut().cursor.x = x - 1;
+        }
+    }
+
+    /// DECFI: moves the cursor a column right. At the right margin, within
+    /// the top and bottom ones, the scroll region's columns move left
+    /// instead, as DECDC at the left margin, and the cursor stays; right of
+    /// the margin, the cursor moves as far as the screen's right edge, where
+    /// DECFI is ignored.
+    pub(super) fn forward_index(&mut self) {
+        let Cursor { x, y, .. } = self.editing();
+        let margins = self.margins;
+        if x == margins.right {
+            if (margins.top..=margins.bottom).contains(&y) {
+                self.delete_columns_at(margins.left, 1);
+            }
+        } else if x + 1 < self.cols {
+            self.screen_mut().cursor.x = x + 1;
+        }
+    }
+
+    /// Inserts `n` erased columns at column `x`, within the left and right
+    /// margins, in the rows of the scroll region.
+    fn insert_columns_at(&mut self, x: u16, n: u16) {
+        for y in self.margins.top..=self.margins.bottom {
+            self.insert_cells(x, y, n);
+        }
+    }
+
+    /// Deletes `n` columns at column `x`, within the left and right margins,
+    /// in the rows of the scroll region.
+    fn delete_columns_at(&mut self, x: u16, n: u16) {
+        for y in self.margins.top..=self.margins.bottom {
+            self.delete_cells(x, y, n);
+        }
+    }
+
+    /// Inserts `n` erased cells at column `x` of row `y`, within the left
+    /// and right margins.
+    fn insert_cells(&mut self, x: u16, y: u16, n: u16) {
+        let (blank, end) = (self.blank(), self.margins.right + 1);
+        let rows = &mut self.screen_mut().rows;
+        rows.insert_blanks(y, x, n, end);
+        let (page, row) = rows.screen_row_mut(y);
+        page.erase(row, x..x.saturating_add(n).min(end), blank, false);
+    }
+
+    /// Deletes `n` cells at column `x` of row `y`, within the left and
+    /// right margins.
+    fn delete_cells(&mut self, x: u16, y: u16, n: u16) {
         let (blank, end) = (self.blank(), self.margins.right + 1);
         let n = n.min(end - x);
         let rows = &mut self.screen_mut().rows;

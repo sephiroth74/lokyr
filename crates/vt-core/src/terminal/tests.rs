@@ -1596,6 +1596,62 @@ fn ich_and_dch_stay_between_the_margins() {
 }
 
 #[test]
+fn decic_and_decdc_insert_and_delete_columns_in_the_scroll_region() {
+    let mut term = lettered(6, 4);
+    // Rows 2 and 3, columns 2 to 5.
+    term.feed("\x1b[2;3r\x1b[?69h\x1b[2;5s\x1b[2;3H\x1b[2'}");
+    assert_eq!(term.screen(), ["abcdef", "AB  CF", "01  25", "zyxwvu"]);
+    assert_eq!(term.cursor(), (2, 1, false), "the cursor stays");
+    term.feed("\x1b[3'~");
+    assert_eq!(term.screen(), ["abcdef", "AB   F", "01   5", "zyxwvu"]);
+    // Above the region, right of it and left of it, nothing.
+    term.feed("\x1b[1;3H\x1b['}\x1b[2;6H\x1b['~\x1b[2;1H\x1b['}");
+    assert_eq!(term.screen(), ["abcdef", "AB   F", "01   5", "zyxwvu"]);
+}
+
+#[test]
+fn decbi_and_decfi_move_the_cursor_or_scroll_the_columns_at_the_margins() {
+    let mut term = lettered(6, 4);
+    term.feed("\x1b[2;3r\x1b[?69h\x1b[2;5s");
+    // Within the margins, a column left or right.
+    term.feed("\x1b[2;4H\x1b6");
+    assert_eq!(term.cursor(), (2, 1, false));
+    term.feed("\x1b9\x1b9");
+    assert_eq!(term.cursor(), (4, 1, false));
+    // At the right margin, the region's columns move left; at the left
+    // one, right; the cursor stays.
+    term.feed("\x1b9");
+    assert_eq!(term.screen(), ["abcdef", "ACDE F", "0234 5", "zyxwvu"]);
+    assert_eq!(term.cursor(), (4, 1, false));
+    term.feed("\x1b[2;2H\x1b6");
+    assert_eq!(term.screen(), ["abcdef", "A CDEF", "0 2345", "zyxwvu"]);
+    assert_eq!(term.cursor(), (1, 1, false));
+    // At a margin above the region, nothing; outside the margins, a
+    // column, but not past the screen's edges.
+    let screen = term.screen();
+    term.feed("\x1b[1;2H\x1b6\x1b[1;5H\x1b9");
+    assert_eq!(
+        (term.screen(), term.cursor()),
+        (screen.clone(), (4, 0, false))
+    );
+    term.feed("\x1b[2;6H\x1b9");
+    assert_eq!(term.cursor(), (5, 1, false));
+    term.feed("\x1b6\x1b[2;1H\x1b6");
+    assert_eq!(
+        (term.screen(), term.cursor()),
+        (screen.clone(), (0, 1, false))
+    );
+    term.feed("\x1b[3;5s\x1b[2;2H\x1b6");
+    assert_eq!((term.screen(), term.cursor()), (screen, (0, 1, false)));
+    // Without margins, the screen's edges are the margins, of every row.
+    let mut term = lettered(4, 2);
+    term.feed("\x1b[1;1H\x1b6");
+    assert_eq!(term.screen(), [" abc", " ABC"]);
+    term.feed("\x1b[2;4H\x1b9");
+    assert_eq!(term.screen(), ["abc", "ABC"]);
+}
+
+#[test]
 fn su_and_sd_scroll_the_cells_between_the_margins() {
     let mut term = lettered_region();
     term.feed("\x1b[S");
