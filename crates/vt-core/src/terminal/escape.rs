@@ -10,6 +10,12 @@ impl Terminal {
         match (intermediates, final_byte) {
             ([], b'7') => self.save_cursor(),
             ([], b'8') => self.restore_cursor(),
+            // SPA and EPA: ISO's protection of the text printed between.
+            ([], b'V') => {
+                self.protected = true;
+                self.iso_protection = true;
+            }
+            ([], b'W') => self.protected = false,
             // DECBI and DECFI.
             ([], b'6') => self.back_index(),
             ([], b'9') => self.forward_index(),
@@ -115,6 +121,7 @@ impl Terminal {
         self.charsets = Charsets::default();
         self.pen = Style::DEFAULT;
         self.protected = false;
+        self.iso_protection = false;
         self.screen_mut().saved = None;
     }
 

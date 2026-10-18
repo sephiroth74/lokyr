@@ -26,9 +26,13 @@ impl Terminal {
     }
 
     /// HT: to the next tab stop, or to the right margin from within the
-    /// margins and to the last column from right of them.
+    /// margins and to the last column from right of them. At a pending
+    /// wrap, with autowrap, mode 41 wraps first.
     pub(super) fn horizontal_tab(&mut self) {
         self.moved();
+        if self.tab_wraps && self.autowrap && self.cursor().pending_wrap {
+            self.wrap();
+        }
         let x = self.cursor().x;
         let last = if x <= self.margins.right {
             self.margins.right
@@ -38,9 +42,13 @@ impl Terminal {
         let next = (x + 1..last)
             .find(|&column| self.tab_stops[usize::from(column)])
             .unwrap_or(last);
-        let cursor = &mut self.screen_mut().cursor;
-        cursor.x = next.max(x);
-        cursor.pending_wrap = false;
+        // A tab that cannot move leaves a pending wrap pending, as xterm's
+        // does, so that the next character wraps.
+        if next > x {
+            let cursor = &mut self.screen_mut().cursor;
+            cursor.x = next;
+            cursor.pending_wrap = false;
+        }
     }
 
     /// LF: one row down, scrolling the scroll region up at its bottom

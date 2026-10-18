@@ -88,15 +88,17 @@ impl Terminal {
     }
 
     /// DECERA, `CSI Pt ; Pl ; Pb ; Pr $ z`, and DECSERA, `CSI Pt ; Pl ;
-    /// Pb ; Pr $ {` if `selective`: erases the rectangle, as ED erases, but
-    /// for the cells that DECSCA protected if `selective`.
+    /// Pb ; Pr $ {` if `selective`: erases the rectangle, every cell of it,
+    /// or, if `selective`, but for the cells that DECSCA protected, as
+    /// DECSED does.
     pub(super) fn erase_rectangle(&mut self, params: &Params, selective: bool) {
         let Some(area) = self.rectangle(params, 0) else {
             return;
         };
         self.moved();
+        let keep = selective && self.keeps_protected(true);
         for y in area.rows {
-            self.erase_in_row(y, area.columns.clone(), selective);
+            self.erase_in_row(y, area.columns.clone(), keep);
         }
     }
 

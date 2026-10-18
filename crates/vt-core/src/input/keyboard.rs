@@ -302,9 +302,10 @@ const ESC: u8 = 0x1B;
 /// `CSI 27 ; modifiers ; code ~`; at 2, as xterm's `input.c` has it, every
 /// key that types a character does with Control or Meta, and so do Return,
 /// Escape and Backspace with any modifier, Shift alone included, but for
-/// Backspace with Control alone, which sends BS; with Shift alone, so do
-/// space and the characters from `@` to DEL that the key types. The keypad,
-/// the cursor keys and the function keys keep their own sequences.
+/// Backspace with Control alone, which sends BS, or DEL with DECBKM; with
+/// Shift alone, so do space and the characters from `@` to DEL that the
+/// key types. The keypad, the cursor keys and the function keys keep their
+/// own sequences.
 ///
 /// With flags, keys go as the kitty keyboard protocol has them:
 /// <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.
@@ -376,17 +377,22 @@ pub(super) fn encode_legacy(
             }
         }
         Key::Tab => encode_c0(9, b"\t", modifiers, modes, modifiers.control, out),
-        // Control sends BS, as xterm's Backarrow key does, which
-        // `modifyOtherKeys` at 2 reports, as BS, only with another modifier.
+        // Control sends the other of DEL and BS, as xterm's Backarrow key
+        // does, which `modifyOtherKeys` at 2 reports, as that byte, only
+        // with another modifier; DECBKM swaps the two.
         Key::Backspace if modifiers.control => {
+            let byte = if modes.backspace_sends_bs { 0x7F } else { 0x08 };
             if modes.modify_other_keys == 2 && (modifiers.shift || modifiers.meta) {
-                modify_other_key(8, modifiers, out);
+                modify_other_key(u32::from(byte), modifiers, out);
             } else {
                 if modifiers.meta {
                     out.push(ESC);
                 }
-                out.push(0x08);
+                out.push(byte);
             }
+        }
+        Key::Backspace if modes.backspace_sends_bs => {
+            encode_c0(8, b"\x08", modifiers, modes, false, out);
         }
         Key::Backspace => encode_c0(127, b"\x7f", modifiers, modes, false, out),
         Key::Escape => encode_c0(27, b"\x1b", modifiers, modes, false, out),
@@ -769,6 +775,28 @@ mod tests {
         assert_eq!(named(Key::Backspace, ALT), "\x1b\x7f");
         assert_eq!(named(Key::Escape, NONE), "\x1b");
         assert_eq!(named(Key::Escape, ALT), "\x1b\x1b");
+    }
+
+    #[test]
+    fn decbkm_makes_backspace_send_bs_and_control_with_it_del() {
+        let backspace = InputModes {
+            backspace_sends_bs: true,
+            ..InputModes::default()
+        };
+        let other_keys = InputModes {
+            modify_other_keys: 2,
+            ..backspace
+        };
+        let send = |mods, modes| send(Key::Backspace, mods, "", "", modes);
+        assert_eq!(send(NONE, &backspace), "\x08");
+        assert_eq!(send(CONTROL, &backspace), "\x7f");
+        assert_eq!(send(ALT, &backspace), "\x1b\x08");
+        let control_shift = Mods {
+            shift: true,
+            ..CONTROL
+        };
+        assert_eq!(send(SHIFT, &other_keys), "\x1b[27;2;8~");
+        assert_eq!(send(control_shift, &other_keys), "\x1b[27;6;127~");
     }
 
     #[test]

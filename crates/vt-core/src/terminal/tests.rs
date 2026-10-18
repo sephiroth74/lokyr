@@ -338,6 +338,22 @@ fn tab_goes_to_the_next_stop_or_the_last_column() {
 }
 
 #[test]
+fn a_tab_at_a_pending_wrap_leaves_it_pending_or_wraps_first_with_mode_41() {
+    let mut term = Term::new(20, 3);
+    term.feed(format!("{}\t", "x".repeat(20)));
+    assert_eq!(term.cursor(), (19, 0, true));
+    term.feed("1");
+    assert_eq!(term.screen()[1], "1", "the next character wraps");
+    term.feed(format!("\x1b[?41h\x1b[2;1H{}\t", "x".repeat(20)));
+    assert_eq!(term.cursor(), (8, 2, false));
+    term.feed("\x1b[?41$p");
+    assert_eq!(replies(&mut term), "\x1b[?41;1$y");
+    // Without autowrap, mode 41 does not wrap.
+    term.feed(format!("\x1b[?7l\x1b[3;1H{}\t", "x".repeat(20)));
+    assert_eq!(term.cursor(), (19, 2, true));
+}
+
+#[test]
 fn line_feeds_go_down_and_scroll_at_the_bottom() {
     for control in [b'\n', 0x0B, 0x0C] {
         let mut term = Term::new(4, 2);
@@ -1133,6 +1149,34 @@ fn the_selective_erases_keep_protected_cells() {
 }
 
 #[test]
+fn iso_protection_keeps_cells_from_ed_el_and_ech_but_not_the_selective_erases() {
+    let mut term = Term::new(6, 2);
+    // SPA and EPA protect the b, and the B below.
+    term.feed("a\x1bVb\x1bWc\r\nA\x1bVB\x1bWC\x1b[1;1H");
+    assert!(term.cell(1, 0).is_protected() && !term.cell(2, 0).is_protected());
+    term.feed("\x1b[K\x1b[2;1H\x1b[3X");
+    assert_eq!(term.screen(), [" b", " B"]);
+    term.feed("\x1b[2J");
+    assert_eq!(term.screen(), [" b", " B"], "ED 2 keeps them on the screen");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    // The selective erases, DECSERA among them, keep DEC's protection
+    // alone.
+    term.feed("\x1b[2;1H\x1b[?K\x1b[1;1;1;6${");
+    assert_eq!(term.screen(), ["", ""]);
+    // DECSCA makes the protection DEC's: ED erases what it protects, and
+    // DECSED keeps it. The cells hold one mark, and the kind of protection
+    // is the terminal's, the last that was set, as in xterm.
+    term.feed("\x1b[1;1H\x1b[1\"qx\x1b[0\"q\x1bVy\x1bW\x1b[1\"qz\x1b[0\"q");
+    term.feed("\x1b[?J");
+    assert_eq!(term.screen(), ["xyz", ""]);
+    term.feed("\x1b[2J");
+    assert_eq!(term.screen(), ["", ""]);
+    // A soft reset ends ISO's protection.
+    term.feed("\x1b[1;1H\x1bVq\x1b[!pw\x1b[1;1H\x1b[K");
+    assert_eq!(term.screen(), ["", ""]);
+}
+
+#[test]
 fn decsc_saves_the_protection() {
     let mut term = Term::new(4, 1);
     term.feed("\x1b[1\"q\x1b7\x1b[0\"q\x1b8a\x1b[3\"qb");
@@ -1678,7 +1722,9 @@ fn tabs_stop_at_the_margins() {
         "from right of them"
     );
     assert_eq!(moved(&mut term, 2, 0, "\x1b[3I"), (5, 0, false));
-    assert_eq!(moved(&mut term, 5, 0, "\x1b[Z"), (2, 0, false));
+    // CBT goes past the left margin, as in xterm.
+    assert_eq!(moved(&mut term, 5, 0, "\x1b[Z"), (0, 0, false));
+    assert_eq!(moved(&mut term, 12, 0, "\x1b[2Z"), (0, 0, false));
     assert_eq!(
         moved(&mut term, 1, 0, "\x1b[Z"),
         (0, 0, false),
@@ -2462,6 +2508,23 @@ fn the_title_stack_saves_and_brings_back_the_titles_asked_for() {
     term.feed("\x1b[23;0t");
     assert_eq!(term.terminal.title(), "shell");
     assert_eq!(term.terminal.take_events(), [Event::TitleChanged]);
+}
+
+#[test]
+fn a_title_pushed_alone_takes_the_other_from_the_entry_below() {
+    let mut term = Term::new(10, 1);
+    term.feed("\x1b]2;win\x07\x1b]1;icon\x07\x1b[22;1t\x1b]2;win2\x07\x1b[22;2t");
+    term.feed("\x1b]0;x\x07\x1b[23;0t");
+    assert_eq!(
+        (term.terminal.title(), term.terminal.icon_title()),
+        ("win2", "icon")
+    );
+    // An empty stack has nothing to give.
+    term.feed("\x1b[23;0t\x1b]0;y\x07\x1b[22;2t\x1b]0;z\x07\x1b[23;0t");
+    assert_eq!(
+        (term.terminal.title(), term.terminal.icon_title()),
+        ("y", "z")
+    );
 }
 
 #[test]

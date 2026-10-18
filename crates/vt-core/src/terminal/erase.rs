@@ -1,8 +1,9 @@
 //! Erasing: ED, EL and ECH, and the selective erases DECSED and DECSEL.
 //!
 //! An erased cell takes the pen's background color, as xterm's background
-//! color erase does, and nothing else. ED, EL and ECH erase every cell; the
-//! selective erases keep the cells that DECSCA protected. Erasing ends the
+//! color erase does, and nothing else. ED, EL and ECH erase every cell but
+//! those that SPA protected, in ISO's protection; the selective erases keep
+//! those that DECSCA protected, in DEC's, as xterm does. Erasing ends the
 //! cluster being printed, and leaves no wrap pending.
 
 use std::ops::Range;
@@ -21,25 +22,26 @@ impl Terminal {
     pub(super) fn erase_in_display(&mut self, which: u16, selective: bool) {
         let cursor = self.erasing();
         let (rows, cols) = (self.rows, self.cols);
+        let keep = self.keeps_protected(selective);
         match which {
             0 => {
-                self.erase_in_row(cursor.y, cursor.x..cols, selective);
+                self.erase_in_row(cursor.y, cursor.x..cols, keep);
                 for y in cursor.y + 1..rows {
-                    self.erase_in_row(y, 0..cols, selective);
+                    self.erase_in_row(y, 0..cols, keep);
                 }
             }
             1 => {
                 for y in 0..cursor.y {
-                    self.erase_in_row(y, 0..cols, selective);
+                    self.erase_in_row(y, 0..cols, keep);
                 }
-                self.erase_in_row(cursor.y, 0..cursor.x + 1, selective);
+                self.erase_in_row(cursor.y, 0..cursor.x + 1, keep);
             }
             2 => {
-                if !selective && !self.alternate_active {
+                if !selective && !keep && !self.alternate_active {
                     self.scroll_into_scrollback();
                 }
                 for y in 0..rows {
-                    self.erase_in_row(y, 0..cols, selective);
+                    self.erase_in_row(y, 0..cols, keep);
                 }
             }
             3 if !selective => self.screen_mut().rows.clear_scrollback(),
@@ -58,7 +60,8 @@ impl Terminal {
             _ => return,
         };
         let cursor = self.erasing();
-        self.erase_in_row(cursor.y, columns, selective);
+        let keep = self.keeps_protected(selective);
+        self.erase_in_row(cursor.y, columns, keep);
     }
 
     /// ECH: erases `n` cells from the cursor, as far as the end of its row.
@@ -66,7 +69,14 @@ impl Terminal {
         let x = self.cursor().x;
         let end = x.saturating_add(n).min(self.cols);
         let cursor = self.erasing();
-        self.erase_in_row(cursor.y, x..end, false);
+        let keep = self.keeps_protected(false);
+        self.erase_in_row(cursor.y, x..end, keep);
+    }
+
+    /// Whether an erase keeps the protected cells: ED, EL and ECH in ISO's
+    /// protection, and the `selective` ones in DEC's.
+    pub(super) fn keeps_protected(&self, selective: bool) -> bool {
+        selective != self.iso_protection
     }
 
     /// The cell that erasing leaves: empty, with the pen's background color.
@@ -86,15 +96,16 @@ impl Terminal {
         self.cursor()
     }
 
-    /// Erases `columns` of row `y`. An erase that reaches the end of the
-    /// row ends its wrap: the row no longer goes on into the next.
-    pub(super) fn erase_in_row(&mut self, y: u16, columns: Range<u16>, selective: bool) {
+    /// Erases `columns` of row `y`, but for the protected cells if `keep`.
+    /// An erase of them all that reaches the end of the row ends its wrap:
+    /// the row no longer goes on into the next.
+    pub(super) fn erase_in_row(&mut self, y: u16, columns: Range<u16>, keep: bool) {
         let blank = self.blank();
         let reaches_end = columns.end == self.cols;
         let rows = &mut self.screen_mut().rows;
         let (page, row) = rows.screen_row_mut(y);
-        page.erase(row, columns, blank, selective);
-        if reaches_end && !selective {
+        page.erase(row, columns, blank, keep);
+        if reaches_end && !keep {
             page.row_mut(row).set(RowFlag::SoftWrapped, false);
             if y + 1 < rows.rows() {
                 let (page, row) = rows.screen_row_mut(y + 1);

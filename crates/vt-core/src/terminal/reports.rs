@@ -200,15 +200,26 @@ impl Terminal {
 
     /// CSI 22 t: pushes both titles with 0, the icon's with 1 and the
     /// window's with 2, as xterm does, dropping the oldest entry when the
-    /// stack is full.
+    /// stack is full. An entry of one title takes the other from the entry
+    /// below it, as xterm's does, so that a pop of both after two pushes of
+    /// one each brings back both.
     fn push_title(&mut self, which: u16) {
         if self.title_stack.len() == TITLE_STACK {
             self.title_stack.remove(0);
         }
         let (title, icon) = titles(which);
+        let (below_title, below_icon) = self.title_stack.last().cloned().unwrap_or_default();
         self.title_stack.push((
-            title.then(|| self.title.clone()),
-            icon.then(|| self.icon_title.clone()),
+            if title {
+                Some(self.title.clone())
+            } else {
+                below_title
+            },
+            if icon {
+                Some(self.icon_title.clone())
+            } else {
+                below_icon
+            },
         ));
     }
 

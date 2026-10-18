@@ -390,7 +390,7 @@ impl Terminal {
     /// end of its line, and marks the rows as one line when they make one.
     /// The cluster printed last ends: a new one is about to start, and
     /// scrolling may have moved the row it was in.
-    fn wrap(&mut self) {
+    pub(super) fn wrap(&mut self) {
         self.cluster = None;
         let Cursor { x, y, .. } = self.cursor();
         // Only a wrap from the last column of the screen to the first one

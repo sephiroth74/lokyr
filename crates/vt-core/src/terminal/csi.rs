@@ -108,12 +108,12 @@ impl Terminal {
             ([b'<'], b'u') => self.pop_keyboard_flags(n(0)),
             ([b'='], b'u') => self.set_keyboard_flags(params.value(0), n(1)),
             ([b'?'], b'u') => self.report_keyboard_flags(),
-            // DECSCA: 1 protects the text printed next, 0 and 2 do not.
-            ([b'"'], b'q') => match params.value(0) {
-                1 => self.protected = true,
-                0 | 2 => self.protected = false,
-                _ => {}
-            },
+            // DECSCA: 1 protects the text printed next, 0 and 2 do not;
+            // either way, the protection is DEC's.
+            ([b'"'], b'q') if matches!(params.value(0), 0..=2) => {
+                self.protected = params.value(0) == 1;
+                self.iso_protection = false;
+            }
             _ => {}
         }
     }

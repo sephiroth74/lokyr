@@ -168,6 +168,9 @@ pub struct InputModes {
     pub meta_sends_escape: bool,
     /// Pastes come between `CSI 200 ~` and `CSI 201 ~` (mode 2004).
     pub bracketed_paste: bool,
+    /// Backspace sends BS, and Control with it DEL, rather than the other
+    /// way round (DECBKM, mode 67).
+    pub backspace_sends_bs: bool,
     /// xterm's `modifyOtherKeys`, which `CSI > 4 ; n m` sets: 0, keys as
     /// usual; 1, the keys whose usual sequence would lose a modifier as
     /// `CSI 27 ; modifiers ; code ~`; 2, every modified key so.
@@ -260,12 +263,19 @@ pub struct Terminal {
     scratch: (Vec<char>, Vec<char>),
     /// The style that printed text takes.
     pen: Style,
-    /// Whether printed text is protected from the selective erases
-    /// (DECSCA).
+    /// Whether printed text is protected from the erases (DECSCA, or SPA
+    /// and EPA).
     protected: bool,
+    /// Whether the protection is ISO's, which SPA set, and which ED, EL and
+    /// ECH respect, rather than DEC's, which DECSCA set, and which the
+    /// selective erases respect.
+    iso_protection: bool,
     /// Autowrap (DECAWM): printing past the right margin goes on to the
     /// next row.
     autowrap: bool,
+    /// xterm's fix for a bug of curses (mode 41): a tab at a pending wrap
+    /// wraps first.
+    tab_wraps: bool,
     /// Insert mode (IRM): printing pushes the cells after it to the right.
     insert: bool,
     /// Whether each column is a tab stop.
@@ -394,7 +404,9 @@ impl Terminal {
             scratch: (Vec::new(), Vec::new()),
             pen: Style::DEFAULT,
             protected: false,
+            iso_protection: false,
             autowrap: true,
+            tab_wraps: false,
             insert: false,
             tab_stops: (0..cols).map(|x| x > 0 && x.is_multiple_of(8)).collect(),
             margins: Margins::screen(cols, rows),

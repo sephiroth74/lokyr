@@ -33,6 +33,7 @@ impl Terminal {
             5 => self.reverse_video = on,
             6 => self.set_origin_mode(on),
             7 => self.autowrap = on,
+            41 => self.tab_wraps = on,
             4 => self.smooth_scroll = on,
             12 => self.cursor_blink = on,
             25 => self.cursor_visible = on,
@@ -62,6 +63,7 @@ impl Terminal {
             69 => self.set_left_right_margin_mode(on),
             // The numeric keypad mode (DECNKM), as DECKPAM and DECKPNM.
             66 => self.input.keypad_application = on,
+            67 => self.input.backspace_sends_bs = on,
             9 | 1000 | 1002 | 1003 => {
                 self.input.mouse_tracking = if on {
                     tracking(mode)
@@ -126,6 +128,7 @@ impl Terminal {
             5 => self.reverse_video,
             6 => self.origin,
             7 => self.autowrap,
+            41 => self.tab_wraps,
             12 => self.cursor_blink,
             25 => self.cursor_visible,
             45 => self.reverse_wrap,
@@ -134,6 +137,7 @@ impl Terminal {
             1048 => self.screen().saved.is_some(),
             69 => self.left_right_margins,
             66 => input.keypad_application,
+            67 => input.backspace_sends_bs,
             9 | 1000 | 1002 | 1003 => input.mouse_tracking == tracking(mode),
             1006 | 1016 => input.mouse_encoding == encoding(mode),
             1004 => input.focus_events,

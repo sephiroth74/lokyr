@@ -211,23 +211,18 @@ impl Terminal {
         }
     }
 
-    /// CBT: back `n` tab stops, or, when none is left, to the left margin
-    /// from within the margins and to the first column from left of them.
+    /// CBT: back `n` tab stops, or, when none is left, to the first
+    /// column; as in xterm, the left margin does not stop it.
     pub(super) fn tab_back(&mut self, n: u16) {
         let Cursor { mut x, y, .. } = self.cursor();
-        let first = if x >= self.margins.left {
-            self.margins.left
-        } else {
-            0
-        };
         for _ in 0..n {
-            if x <= first {
+            if x == 0 {
                 break;
             }
-            x = (first..x)
+            x = (0..x)
                 .rev()
                 .find(|&column| self.tab_stops[usize::from(column)])
-                .unwrap_or(first);
+                .unwrap_or(0);
         }
         self.move_to(x, y);
     }
