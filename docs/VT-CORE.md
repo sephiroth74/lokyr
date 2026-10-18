@@ -59,6 +59,7 @@ It knows nothing about windows, GPUs or plugins, so it can be tested headless an
   - ANSI and DEC private modes, tab stops;
   - vertical and horizontal scroll regions (DECSTBM, DECSLRM with DECLRMM). Without DECLRMM, `CSI s` is SCOSC, and `CSI u` without parameters SCORC.
   - The four margins make a rectangle that LF, IND, NEL and RI scroll, at the bottom and top margins, when the cursor is between the left and right ones; below the region, the last row stops LF. IL, DL, ICH, DCH, SU and SD work within the rectangle, and only a region of the whole screen sends rows into the scrollback. HT stops at the right margin and CBT at the left one, from within them. Wide characters across the edges of what moves are emptied whole.
+  - **Rectangles**: DECCRA copies one, with its cells' attributes and links, as through a buffer, so that the copy can overlap its source; DECERA erases one, as ED does, DECSERA the cells of one that DECSCA does not protect, and DECFRA fills one with a character of ASCII or Latin-1, in the pen's style. A rectangle counts from the screen's top left, or from the margins' in origin mode, and stays within the screen or the margins; a wide character that its edges split is emptied whole, and the cursor does not move. The page parameters name the screen's only page.
 - **Character sets**: G0–G3, each designated ASCII, DEC Special Graphics or British; the locking shifts SO, SI, LS2 and LS3, and the single shifts SS2 and SS3. A designation of a set the terminal does not know leaves the slot as it was. Only printable ASCII changes meaning: DEC Special Graphics draws lines and boxes from `_` to `~`, as the VT100 did, and its line characters are ambiguous-width.
 - **Style and colors**: current style (SGR), 256-color palette, special colors, dynamic colors (OSC 4/5/10/11/12), title stack.
   - The colors start as xterm's until the embedder gives the theme's; OSC 4, 5, 10, 11 and 12 change them, the resets (104, 105, 110 to 112) and RIS bring back the theme's, and `?` asks for one, which gets `rgb:rrrr/gggg/bbbb` back, ended as the query was. Colors are read as X11 writes them, `rgb:` with one to four digits a component and `#` with three to twelve; names of colors are not known.
@@ -311,7 +312,7 @@ The "Phase" column shows the [roadmap](ROADMAP.md) phase in which support lands.
 | C0 controls | BEL, BS, HT, LF, VT, FF, CR, SO, SI | F1 |
 | ESC | DECSC/DECRC (ESC 7/8), IND, NEL, HTS, RI, RIS, DECKPAM/DECKPNM, G0–G3 charset designation, LS2/LS3, SS2/SS3, DECALN | F1 |
 | Cursor | CUU, CUD, CUF, CUB, CNL, CPL, CHA, CUP, HVP, VPA, VPR, HPA, HPR, CHT, CBT, DECSCUSR | F1 |
-| Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, SCOSC/SCORC, DECSCA, TBC | F1 |
+| Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, SCOSC/SCORC, DECSCA, TBC; the VT420's rectangles, DECCRA, DECERA, DECFRA, DECSERA | F1 |
 | Resets and levels | RIS, DECSTR (soft reset), DECSCL (conformance level, kept for DECRQSS) | F1 |
 | SGR | 0–9, 21–29, 30–37, 90–97, 38;5 and 38;2 (also with `:`), 39, 40–47, 100–107, 48, 49, 4:0–4:5 (underline styles), 53/55 (overline), 58/59 (underline color) | F1 |
 | ANSI modes | IRM (4), LNM (20); GATM, SRTM, VEM, HEM, PUM, FEAM, FETM, MATM, TTM, SATM, TSM and EBM reported as permanently reset | F1 |

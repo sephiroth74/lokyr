@@ -805,6 +805,69 @@ impl PageList {
         }
     }
 
+    /// Copies the cells of `columns` in the screen's rows `rows` so that
+    /// the first goes to column `x` of row `y`, with their styles,
+    /// graphemes and links, as through a buffer, so that the two
+    /// rectangles can overlap; the copy must fit in the screen. What the
+    /// cells there held is dropped, and the rows' metadata stays. A wide
+    /// character that the edges of the rectangle split is emptied whole: a
+    /// half of one that the copy would take, and those that it would
+    /// overwrite a half of.
+    pub fn copy_rectangle(&mut self, rows: Range<u16>, columns: Range<u16>, x: u16, y: u16) {
+        if rows.is_empty() || columns.is_empty() {
+            return;
+        }
+        let (height, width) = (rows.end - rows.start, columns.end - columns.start);
+        assert!(
+            y + height <= self.rows && x + width <= self.cols(),
+            "the copy fits in the screen"
+        );
+        let mut buffer = Page::new(Capacity {
+            rows: height,
+            ..Capacity::standard(self.cols())
+        });
+        for from in rows {
+            let row = buffer
+                .push_row()
+                .expect("a row for each of the rectangle's");
+            let (page, from_row) = self.screen_row(from);
+            let mut when_full = WhenFull::Fail;
+            while let Err(full) = buffer.copy_cells(row, page, from_row, columns.clone(), when_full)
+            {
+                match buffer.capacity().grown_for(full) {
+                    Some(capacity) => buffer = buffer.grown(capacity),
+                    None => when_full = WhenFull::Drop,
+                }
+            }
+            let cells = buffer.cells(row);
+            let (first, last) = (columns.start, columns.end - 1);
+            if cells[usize::from(first)].width() == Width::SpacerTail {
+                buffer.set_cell(row, first, Cell::EMPTY);
+            }
+            if buffer.cells(row)[usize::from(last)].width() == Width::Wide {
+                buffer.set_cell(row, last, Cell::EMPTY);
+            }
+        }
+        for (row, to) in (0..height).zip(y..) {
+            let (page, to_row) = self.screen_row_mut(to);
+            page.clear_crossing(to_row, x..x + width);
+            for (from_x, to_x) in columns.clone().zip(x..) {
+                let mut when_full = WhenFull::Fail;
+                loop {
+                    let (page, to_row) = self.screen_row_mut(to);
+                    match page.copy_cell(to_row, to_x, &buffer, row, from_x, when_full) {
+                        Ok(()) => break,
+                        Err(full) => {
+                            if self.grow_page(to, full).is_err() {
+                                when_full = WhenFull::Drop;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Gives the list rows of `cols` cells and a screen of `rows` rows,
     /// without rewrapping lines, and returns where the cell at `cursor`, a
     /// column and a row of the screen, goes.
@@ -1899,6 +1962,74 @@ mod tests {
         assert_eq!(page.styles().get(page.cells(row)[1].style()), &red);
         let (page, _) = list.screen_row(11);
         assert_eq!(page.styles().len(), 0, "the first page let go of red");
+    }
+
+    #[test]
+    fn a_rectangle_copies_across_pages_as_through_a_buffer() {
+        let mut list = straddling();
+        let red = Style {
+            fg: Color::Palette(1),
+            ..Style::DEFAULT
+        };
+        for y in 10..14 {
+            let (page, row) = list.screen_row_mut(y);
+            for x in 0..6 {
+                page.set_cell(row, x, numbered(u32::from(y) * 10 + u32::from(x)));
+            }
+        }
+        styled(&mut list, 11, 'r', &red);
+        let (page, row) = list.screen_row_mut(11);
+        page.push_codepoint(row, 1, '\u{301}').unwrap();
+        // Rows 10 and 11, columns 0 to 2, down a row and right a column, so
+        // that the copy overlaps its source and crosses into the second page.
+        list.copy_rectangle(10..12, 0..3, 1, 11);
+        let cells = |list: &PageList, y| {
+            let (page, row) = list.screen_row(y);
+            page.cells(row)[..6].to_vec()
+        };
+        assert_eq!(
+            cells(&list, 11)[1..4],
+            [numbered(100), numbered(101), numbered(102)]
+        );
+        assert_eq!(cells(&list, 11)[0], numbered(110), "left of the copy");
+        assert_eq!(cells(&list, 12)[1], numbered(110), "the source as it was");
+        assert_eq!(cells(&list, 12)[3], numbered(112));
+        assert_eq!(cells(&list, 12)[4], numbered(124), "right of the copy");
+        let (page, row) = list.screen_row(12);
+        assert_eq!(page.styles().get(page.cells(row)[2].style()), &red);
+        assert_eq!(page.grapheme(row, 2), ['\u{301}']);
+        let (page, _) = list.screen_row(11);
+        assert_eq!(page.styles().len(), 0, "row 11's red was overwritten");
+    }
+
+    #[test]
+    fn a_rectangle_leaves_no_half_of_a_wide_character() {
+        let mut list = PageList::new(10, 4, pages(10, 4));
+        let wide = Cell::EMPTY
+            .with_content(Content::Char('\u{4e2d}'))
+            .with_width(Width::Wide);
+        let tail = Cell::EMPTY.with_width(Width::SpacerTail);
+        for y in 0..2 {
+            let (page, row) = list.screen_row_mut(y);
+            for x in [0, 3, 6] {
+                page.set_cell(row, x, wide);
+                page.set_cell(row, x + 1, tail);
+            }
+            page.set_cell(row, 2, numbered(2));
+        }
+        // From the second half of one to the first half of another, onto
+        // columns 4 to 6 of a row where the copy's edges split two.
+        list.copy_rectangle(0..1, 1..4, 4, 1);
+        let (page, row) = list.screen_row(1);
+        let cells = page.cells(row);
+        assert_eq!(cells[3], Cell::EMPTY, "the first half left of the copy");
+        assert_eq!(cells[4], Cell::EMPTY, "the copied second half");
+        assert_eq!(cells[5], numbered(2));
+        assert_eq!(cells[6], Cell::EMPTY, "the copied first half");
+        assert_eq!(cells[7], Cell::EMPTY, "the second half right of it");
+        assert_eq!(cells[0], wide, "outside the copy");
+        let (page, row) = list.screen_row(0);
+        assert_eq!(page.cells(row)[3], wide, "the source stays");
     }
 
     #[test]

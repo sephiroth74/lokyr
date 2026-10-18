@@ -4831,3 +4831,131 @@ fn rectangle_checksums_clamp_count_attributes_and_skip_halves() {
     empty.feed("\x1b[*y");
     assert_eq!(replies(&mut empty), "\x1bP0!~FFC0\x1b\\", "two spaces");
 }
+
+/// A screen of `cols` by `rows` whose rows are `abcd…`, `ABCD…`, `0123…`,
+/// as much of each as fits.
+fn lettered(cols: u16, rows: u16) -> Term {
+    let mut term = Term::new(cols, rows);
+    let lines = [
+        "abcdefghijklmnopqrstuvwxyz",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "0123456789!@#$%^&*()",
+        "zyxwvutsrqponmlkjihgfedcba",
+        "ZYXWVUTSRQPONMLKJIHGFEDCBA",
+    ];
+    for (y, line) in (1..=rows).zip(lines) {
+        term.feed(format!("\x1b[{y}H{}", &line[..usize::from(cols)]));
+    }
+    term
+}
+
+#[test]
+fn deccra_copies_a_rectangle_as_through_a_buffer() {
+    let mut term = lettered(6, 4);
+    term.feed("\x1b[2;3H");
+    // Rows 1 and 2, columns 1 to 3, onto rows 2 and 3 from column 2, which
+    // overlaps them.
+    term.feed("\x1b[1;1;2;3;1;2;2;1$v");
+    assert_eq!(term.screen(), ["abcdef", "AabcEF", "0ABC45", "zyxwvu"]);
+    assert_eq!(term.cursor(), (2, 1, false), "the cursor stays");
+    // Up and left of the source; the defaults, the screen's edges for the
+    // source and the top left for the target.
+    let mut term = lettered(6, 4);
+    term.feed("\x1b[3;3;;;;1;1$v");
+    assert_eq!(term.screen(), ["2345ef", "xwvuEF", "012345", "zyxwvu"]);
+    // A target past the screen takes what fits; one wholly past it, and an
+    // inverted source, nothing.
+    let mut term = lettered(6, 4);
+    term.feed("\x1b[1;1;2;3;1;4;5$v");
+    assert_eq!(term.screen(), ["abcdef", "ABCDEF", "012345", "zyxwab"]);
+    term.feed("\x1b[1;1;2;3;1;5;1$v\x1b[1;1;2;3;1;1;7$v\x1b[2;1;1;3;1;3;1$v");
+    assert_eq!(term.screen(), ["abcdef", "ABCDEF", "012345", "zyxwab"]);
+}
+
+#[test]
+fn deccra_counts_from_the_margins_in_origin_mode_and_keeps_within_them() {
+    let mut term = lettered(6, 5);
+    term.feed("\x1b[2;4r\x1b[?69h\x1b[2;5s\x1b[?6h");
+    // From the margins' top left, and cut at their bottom right.
+    term.feed("\x1b[1;1;2;2;1;3;4$v");
+    assert_eq!(
+        term.screen(),
+        ["abcdef", "ABCDEF", "012345", "zyxwBu", "ZYXWVU"]
+    );
+}
+
+#[test]
+fn deccra_copies_the_attributes_and_the_links() {
+    let mut term = lettered(6, 3);
+    term.feed("\x1b[1;1H\x1b[1;31m\x1b]8;;http://x\x1b\\ab\x1b]8;;\x1b\\\x1b[me\u{301}");
+    term.feed("\x1b[1;1;1;3;1;3;4$v");
+    assert_eq!(term.screen()[2], "012abe\u{301}");
+    let bold_red = term.cell(0, 0).style();
+    assert_ne!(bold_red, StyleId::DEFAULT);
+    assert_eq!(term.cell(3, 2).style(), bold_red, "one page, one table");
+    assert_eq!(link_at(&term, 4, 2), link("", "http://x"));
+    assert_eq!(link_at(&term, 5, 2), None);
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn deccra_grows_the_buffer_and_the_target_page_for_the_links() {
+    let mut term = Term::new(80, 24);
+    // The screen's first 12 rows end a page, the other 12 start the next.
+    let page_rows = usize::from(Capacity::standard(80).rows);
+    term.feed(format!("\x1b[24H{}", "\n".repeat(page_rows + 12 - 24)));
+    let rows = term.terminal.screen_rows();
+    assert_ne!(rows.screen_row_id(11).0, rows.screen_row_id(12).0);
+    let uri = |n: usize| format!("http://{n}/{}", "a".repeat(1000));
+    term.feed("\x1b[12H");
+    for n in 0..80 {
+        term.feed(format!("\x1b]8;;{}\x07x", uri(n)));
+    }
+    term.feed("\x1b]8;;\x07\x1b[12;1;12;80;1;13;1$v");
+    for n in 0..80_u16 {
+        assert_eq!(link_at(&term, n, 12), link("", &uri(usize::from(n))), "{n}");
+    }
+    assert_tables_counted(&term.terminal.primary);
+}
+
+#[test]
+fn decera_and_decsera_erase_a_rectangle_but_for_the_protected_cells_of_decsera() {
+    let mut term = lettered(6, 3);
+    term.feed("\x1b[2;2H\x1b[1\"qXY\x1b[0\"q\x1b[44m");
+    term.feed("\x1b[1;2;2;4${");
+    assert_eq!(term.screen(), ["a   ef", "AXY EF", "012345"]);
+    assert_eq!(
+        term.cell(1, 0).content(),
+        Content::BgPalette(4),
+        "the pen's background"
+    );
+    term.feed("\x1b[2;1;3;3$z");
+    assert_eq!(term.screen(), ["a   ef", "    EF", "   345"]);
+    assert_eq!(term.cursor(), (3, 1, false));
+    // The defaults, the whole screen, and an inverted rectangle.
+    term.feed("\x1b[2;2;1;1$z");
+    assert_eq!(term.screen(), ["a   ef", "    EF", "   345"]);
+    term.feed("\x1b[$z");
+    assert_eq!(term.screen(), ["", "", ""]);
+}
+
+#[test]
+fn decfra_fills_a_rectangle_with_a_character_in_the_pens_style() {
+    let mut term = lettered(6, 3);
+    term.feed("\x1b[3;6H\x1b[1m");
+    term.feed("\x1b[37;1;2;2;3$x");
+    assert_eq!(term.screen(), ["a%%def", "A%%DEF", "012345"]);
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert!(page.styles().get(page.cells(row)[1].style()).bold);
+    assert_eq!(term.cursor(), (5, 2, false));
+    // Latin-1, past the screen, cut; codes that are not graphic, nothing.
+    term.feed("\x1b[233;3;5;9;9$x");
+    assert_eq!(term.screen(), ["a%%def", "A%%DEF", "0123éé"]);
+    for code in [10, 127, 128, 159, 256, 9731] {
+        term.feed(format!("\x1b[{code};1;1;1;1$x"));
+    }
+    assert_eq!(term.screen(), ["a%%def", "A%%DEF", "0123éé"]);
+    // A wide character that the rectangle splits goes whole.
+    term.feed("\x1b[1;1H中\x1b[37;1;2;1;2$x");
+    assert_eq!(term.screen()[0], " %%def");
+}

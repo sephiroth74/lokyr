@@ -15,6 +15,7 @@ mod keyboard;
 mod modes;
 mod osc;
 mod print;
+mod rectangles;
 mod reports;
 mod sgr;
 mod snapshot;

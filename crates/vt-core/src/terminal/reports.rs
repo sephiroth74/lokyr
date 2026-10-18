@@ -10,6 +10,7 @@
 use std::fmt::Write as _;
 
 use super::osc::hex_byte;
+use super::rectangles::Area;
 use super::terminfo::{self, Capability};
 use super::{CursorShape, Event, Terminal};
 use crate::page::{Color, Content, Style, Underline, Width};
@@ -94,35 +95,16 @@ impl Terminal {
         if self.reply_bytes + len > REPLY_BYTES {
             return;
         }
-        let (top, left, bottom, right) = if self.origin {
-            let margins = self.margins;
-            (margins.top, margins.left, margins.bottom, margins.right)
-        } else {
-            (0, 0, self.rows - 1, self.cols - 1)
-        };
-        let from =
-            |value: u16, start: u16, end: u16| start.saturating_add(value.max(1) - 1).min(end);
-        let to = |value: u16, start: u16, end: u16| {
-            if value == 0 {
-                end
-            } else {
-                start.saturating_add(value - 1).min(end)
-            }
-        };
-        let rect = (
-            from(params.value(2), top, bottom),
-            from(params.value(3), left, right),
-            to(params.value(4), top, bottom),
-            to(params.value(5), left, right),
-        );
         let mut sum = 0_u16;
-        for y in rect.0..=rect.2 {
+        // An empty rectangle, or one inverted, counts nothing.
+        let Area { rows, columns } = self.rectangle(params, 2).unwrap_or(Area {
+            rows: 0..0,
+            columns: 0..0,
+        });
+        for y in rows {
             let (page, row) = self.screen().rows.screen_row(y);
-            let cells = page.cells(row);
-            for x in rect.1..=rect.3 {
-                let Some(cell) = cells.get(usize::from(x)) else {
-                    break;
-                };
+            let cells = &page.cells(row)[usize::from(columns.start)..usize::from(columns.end)];
+            for cell in cells {
                 let code = match (cell.width(), cell.content()) {
                     (Width::SpacerTail | Width::SpacerHead, _) => continue,
                     (_, Content::Char(c) | Content::Grapheme(c)) if c != '\0' => u32::from(c),

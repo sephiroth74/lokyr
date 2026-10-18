@@ -482,7 +482,7 @@ impl Terminal {
     /// `write` runs. A full table makes the page grow first, and a page
     /// that cannot grow writes in the default style. The page is looked up
     /// once, unless it grows.
-    fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
+    pub(super) fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
         let pen = self.pen;
         let rows = &mut self.screen_mut().rows;
         let (mut page, mut row) = rows.screen_row_mut(y);

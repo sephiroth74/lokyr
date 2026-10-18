@@ -63,6 +63,11 @@ impl Terminal {
             ([b'"'], b'p') => self.set_conformance_level(params.value(0)),
             ([b'*'], b'x') if params.value(0) <= 2 => self.attribute_extent = params.value(0),
             ([b'*'], b'y') if self.rectangle_checksums => self.report_checksum(params),
+            // DECCRA, DECERA, DECSERA and DECFRA.
+            ([b'$'], b'v') => self.copy_rectangle(params),
+            ([b'$'], b'z') => self.erase_rectangle(params, false),
+            ([b'$'], b'{') => self.erase_rectangle(params, true),
+            ([b'$'], b'x') => self.fill_rectangle(params),
             ([], b'm') => self.select_graphic_rendition(params),
             // XTMODKEYS for modifyOtherKeys, its reset (XTMODKEYS without a
             // value, or without parameters, which resets every resource and
