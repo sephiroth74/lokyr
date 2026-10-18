@@ -1,6 +1,6 @@
 # esctest, after the first compatibility fixes (F1-45)
 
-Measured on 2026-10-18 with `just esctest`, after F1-45, against [the first run](esctest-F1-44.md). The full report is in [esctest-F1-45/report.txt](esctest-F1-45/report.txt).
+Measured on 2026-10-18 with `just esctest`, after F1-45, against [the first run](esctest-F1-44.md). The full report is in [esctest-F1-45/report.txt](esctest-F1-45/report.txt). The runner of then cut a failure's traceback at its first blank line, which a checksum's message holds, so that the report names the checksums' failures by a line of the screen that the message prints, such as `YZ6789!@`; the runner now names them by the exception, `ChecksumException`.
 
 ## What changed in the method
 
@@ -23,13 +23,15 @@ Measured on 2026-10-18 with `just esctest`, after F1-45, against [the first run]
 
 | Cause | Tests |
 |---|---|
-| XTWINOPS: the display's size and the window's place and state, which only the embedder knows, and the resizes | 19 |
+| XTWINOPS: the display's size and the window's place and state, which only the embedder knows, and the resizes, DECSLPP's among them | 18 |
+| The title stack: once the icon's title and the window's are pushed apart, a pop of both brings back the window's alone, which is Bolt's own failure | 1 |
 | OSC 5 and 105, the special colors | 19 |
 | Colors in X11's other spaces: CIEXYZ, CIEuvY, CIExyY, CIELab, CIELuv, TekHVC and RGBI | 14 |
 | The rectangle operations of the VT420: DECCRA, DECERA, DECFRA, DECSERA | 24 |
 | Columns and indexes of the VT420: DECIC, DECDC, DECBI, DECFI | 20 |
-| DECRQM of modes that change what the terminal does: KAM, CRM, SRM, the printer's modes, DECHEBM, DECNRCM, DECBKM | 8 |
-| ISO protection (SPA and EPA), which ED, EL, ECH, DECSED and DECSEL respect | 5 |
+| DECRQM of modes that change what the terminal does: KAM, SRM, DECCOLM, the printer's modes, DECHEBM, DECNRCM, DECBKM | 8 |
+| ISO protection (SPA and EPA), which ED, EL and ECH respect | 3 |
+| Known bugs of xterm that Bolt does not share: DECSED and DECSEL, which leave ISO protection alone, as the tests ask and xterm does not; esctest fails them with "Should have failed" | 2 |
 | DECCOLM, 132 columns, and xterm's save of it | 5 |
 | DA and DA2, which tell a VT220, as Ghostty does, where esctest's level 5 asks for a VT520 | 4 |
 | DECSCL's levels, which change what the terminal does | 3 |

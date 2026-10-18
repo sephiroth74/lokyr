@@ -9,14 +9,22 @@
 //! for, with cells of 8 by 16 pixels, and reports titles and the checksums
 //! of rectangles, through which esctest reads the screen, as xterm does
 //! when it is allowed to.
+//!
+//! The suite must run to its end: esctest exits with status 0, and its
+//! log ends with the closing line, whose counts must be those of the tests
+//! read. Otherwise the runner says why, prints the screen and keeps the
+//! log.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use bolt_pty::Exit;
 use bolt_replay::harness::{Harness, HarnessOptions};
 use bolt_vt_core::terminal::Options;
 
@@ -50,8 +58,8 @@ fn main() -> ExitCode {
 /// Runs the suite in `dir` with `extra` arguments, and prints what it
 /// found.
 fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
-    let temp = Temp::new()?;
-    let log = temp.0.join("esctest.log");
+    let mut temp = Temp::new()?;
+    let log = temp.dir.join("esctest.log");
     let mut program = vec![
         "python3".to_owned(),
         "esctest.py".to_owned(),
@@ -69,7 +77,7 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         env: vec![
             ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
             ("LANG".to_owned(), "en_US.UTF-8".to_owned()),
-            ("HOME".to_owned(), temp.0.display().to_string()),
+            ("HOME".to_owned(), temp.dir.display().to_string()),
         ],
         terminal: Options {
             title_reports: true,
@@ -80,31 +88,69 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         cols: 80,
         rows: 25,
     };
-    let mut harness = Harness::spawn(&options)?;
-    // Cells of a font, so that the sizes in pixels are told, as a window's.
-    harness.set_cell_size(8, 16)?;
-    harness.exit(LIMIT)?;
-    let text = fs::read_to_string(&log).with_context(|| format!("reading {}", log.display()))?;
-    print!("{}", report(&parse(&text)));
+    let tests = suite(&options, &mut temp, &log)?;
+    print!("{}", report(&tests));
     Ok(())
 }
 
-/// A directory of the temporary one, for esctest's log, removed as it
-/// drops.
-struct Temp(PathBuf);
+/// Runs the suite as `options` tell, and reads the tests from its `log`,
+/// in `temp`. If the suite did not run to its end, the error says why,
+/// with the screen, and `temp` is kept, for the log to be looked at.
+fn suite(options: &HarnessOptions, temp: &mut Temp, log: &Path) -> Result<Vec<(String, Outcome)>> {
+    let mut harness = Harness::spawn(options)?;
+    // Cells of a font, so that the sizes in pixels are told, as a window's.
+    harness.set_cell_size(8, 16)?;
+    ended(&mut harness, log).map_err(|error| {
+        temp.kept = true;
+        anyhow!(
+            "{error:#}\n\nThe screen:\n{}\n\nThe log is kept in {}",
+            harness.screen(),
+            log.display()
+        )
+    })
+}
+
+/// The tests that the log tells of, once the suite ends with status 0
+/// and a log whose closing line counts them.
+fn ended(harness: &mut Harness, log: &Path) -> Result<Vec<(String, Outcome)>> {
+    harness.exit(LIMIT)?;
+    match harness.exit_status(LIMIT)? {
+        Exit::Code(0) => {}
+        Exit::Code(code) => bail!("esctest exited with status {code}"),
+        Exit::Signal(signal) => bail!("esctest was ended by signal {signal}"),
+    }
+    let text = fs::read_to_string(log)
+        .with_context(|| format!("esctest left no log to read at {}", log.display()))?;
+    let log = parse(&text);
+    check(&log)?;
+    Ok(log.tests)
+}
+
+/// A directory of the temporary one, for esctest's log and home, removed
+/// as it drops unless it is kept.
+struct Temp {
+    dir: PathBuf,
+    kept: bool,
+}
 
 impl Temp {
     fn new() -> Result<Self> {
-        let dir = std::env::temp_dir().join(format!("bolt-esctest-{}", std::process::id()));
+        // A number for each, as tests make several at once.
+        static MADE: AtomicUsize = AtomicUsize::new(0);
+        let made = MADE.fetch_add(1, Ordering::Relaxed);
+        let name = format!("bolt-esctest-{}-{made}", std::process::id());
+        let dir = std::env::temp_dir().join(name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-        Ok(Self(dir))
+        Ok(Self { dir, kept: false })
     }
 }
 
 impl Drop for Temp {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        if !self.kept {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
     }
 }
 
@@ -116,37 +162,120 @@ enum Outcome {
     KnownBug,
     /// It needs a higher VT level than the one asked for.
     Skipped,
-    /// It failed, with the last line of its traceback, and, for a reply that
-    /// did not come, the function of esctest's that waited for it.
+    /// It failed, with the line of the exception that its traceback ends
+    /// with, and, for a reply that did not come, the function of esctest's
+    /// that waited for it.
     Failed(String),
 }
 
-/// Each test that the log tells of, in order, with its outcome.
-fn parse(log: &str) -> Vec<(String, Outcome)> {
-    let mut tests = Vec::new();
-    let mut current: Option<String> = None;
-    // The failing test, the last line of its traceback, and the function of
-    // its innermost frame outside the reading of replies.
-    let mut failing: Option<(String, String, String)> = None;
-    for line in log.lines() {
-        if let Some((name, reason, function)) = &mut failing {
-            // A failure's traceback goes on to the blank line after it.
-            if line.is_empty() {
-                tests.push((name.clone(), failed(reason, function)));
-                failing = None;
-            } else if let Some(frame) = line.trim().strip_prefix("File \"") {
-                if !frame.contains("escio.py\"")
+/// What esctest's log tells.
+#[derive(Debug, PartialEq, Eq)]
+struct Log {
+    /// Each test, in order, with its outcome.
+    tests: Vec<(String, Outcome)>,
+    /// The counts of the closing line, if the suite got to it.
+    totals: Option<Totals>,
+}
+
+/// The counts of esctest's closing line, which counts the tests skipped
+/// with the known bugs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Totals {
+    passed: usize,
+    known: usize,
+    failed: usize,
+}
+
+impl fmt::Display for Totals {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} passed, {} known bugs or skipped and {} failed",
+            self.passed, self.known, self.failed
+        )
+    }
+}
+
+/// A failing test's traceback, read a line at a time.
+struct Failure {
+    name: String,
+    /// The line of the exception, once the frames are read.
+    reason: String,
+    /// The function of the innermost frame outside the reading of replies.
+    function: String,
+    /// Whether the lines read are a traceback's frames.
+    frames: bool,
+}
+
+impl Failure {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            reason: String::new(),
+            function: String::new(),
+            frames: false,
+        }
+    }
+
+    /// Reads a line of the traceback. Its frames are indented, and the
+    /// exception's line follows them, then the rest of the message, which
+    /// can hold blank lines; a chain of exceptions prints a traceback for
+    /// each, the one raised last at the end.
+    fn read(&mut self, line: &str) {
+        if line == "Traceback (most recent call last):" {
+            self.reason.clear();
+            self.function.clear();
+            self.frames = true;
+        } else if self.frames {
+            if line.starts_with(char::is_whitespace) {
+                if let Some(frame) = line.trim_start().strip_prefix("File \"")
+                    && !frame.contains("escio.py\"")
                     && let Some((_, called)) = frame.rsplit_once(", in ")
                 {
-                    called.clone_into(function);
+                    called.clone_into(&mut self.function);
                 }
-            } else {
-                line.trim().clone_into(reason);
+            } else if !line.is_empty() {
+                line.trim_end().clone_into(&mut self.reason);
+                self.frames = false;
             }
-            continue;
         }
-        if let Some(name) = line.strip_prefix("Run test: ") {
+    }
+
+    /// The test, failed for the exception's line, which names the function
+    /// when a reply did not come, so that the replies missing show.
+    fn outcome(self) -> (String, Outcome) {
+        let reason =
+            if self.reason.ends_with("Timeout waiting to read.") && !self.function.is_empty() {
+                format!("{} (in {})", self.reason, self.function)
+            } else {
+                self.reason
+            };
+        (self.name, Outcome::Failed(reason))
+    }
+}
+
+/// The tests that the log tells of, and its closing line's counts.
+fn parse(log: &str) -> Log {
+    let mut tests = Vec::new();
+    let mut totals = None;
+    let mut current: Option<String> = None;
+    let mut failing: Option<Failure> = None;
+    for line in log.lines() {
+        let next = line.strip_prefix("Run test: ");
+        let closing = closing_line(line);
+        // A failure's traceback goes on to the next test, or to the end.
+        if let Some(failure) = &mut failing {
+            if next.is_none() && closing.is_none() {
+                failure.read(line);
+                continue;
+            }
+            tests.extend(failing.take().map(Failure::outcome));
+        }
+        if let Some(name) = next {
             current = Some(name.to_owned());
+        } else if closing.is_some() {
+            totals = closing;
+            current = None;
         } else if let Some(name) = current.take() {
             if line == "Passed." {
                 tests.push((name, Outcome::Passed));
@@ -155,26 +284,52 @@ fn parse(log: &str) -> Vec<(String, Outcome)> {
             } else if line.starts_with("Skipped because") {
                 tests.push((name, Outcome::Skipped));
             } else if line.starts_with("*** TEST ") && line.ends_with(" FAILED:") {
-                failing = Some((name, String::new(), String::new()));
+                failing = Some(Failure::new(name));
             } else {
                 current = Some(name);
             }
         }
     }
-    if let Some((name, reason, function)) = failing {
-        tests.push((name, failed(&reason, &function)));
-    }
-    tests
+    tests.extend(failing.map(Failure::outcome));
+    Log { tests, totals }
 }
 
-/// A failure for `reason`, which names `function` when a reply did not
-/// come, so that the replies missing show.
-fn failed(reason: &str, function: &str) -> Outcome {
-    if reason.ends_with("Timeout waiting to read.") && !function.is_empty() {
-        Outcome::Failed(format!("{reason} (in {function})"))
-    } else {
-        Outcome::Failed(reason.to_owned())
-    }
+/// The counts of esctest's closing line, as `*** 5 tests passed, 1 known
+/// bug, 2 TESTS FAILED ***`, or `0 tests failed` when none did.
+fn closing_line(line: &str) -> Option<Totals> {
+    let counts = line.strip_prefix("*** ")?.strip_suffix(" ***")?;
+    let mut parts = counts.split(", ");
+    let mut count = |one: &str, many: &str| -> Option<usize> {
+        let (number, what) = parts.next()?.split_once(' ')?;
+        let what = what.to_ascii_lowercase();
+        (what == one || what == many).then(|| number.parse().ok())?
+    };
+    let totals = Totals {
+        passed: count("test passed", "tests passed")?,
+        known: count("known bug", "known bugs")?,
+        failed: count("test failed", "tests failed")?,
+    };
+    parts.next().is_none().then_some(totals)
+}
+
+/// Checks that the log ends with the suite's closing line, and that the
+/// tests read agree with its counts.
+fn check(log: &Log) -> Result<()> {
+    let Some(totals) = log.totals else {
+        bail!("esctest's log ends before its closing line, as a run cut short");
+    };
+    let count =
+        |outcome: fn(&Outcome) -> bool| log.tests.iter().filter(|(_, o)| outcome(o)).count();
+    let read = Totals {
+        passed: count(|outcome| *outcome == Outcome::Passed),
+        known: count(|outcome| matches!(outcome, Outcome::KnownBug | Outcome::Skipped)),
+        failed: count(|outcome| matches!(outcome, Outcome::Failed(_))),
+    };
+    ensure!(
+        read == totals,
+        "esctest counted {totals}, and the runner read {read} in its log"
+    );
+    Ok(())
 }
 
 /// The pass rate, over the tests that passed or failed, and the failures,
@@ -230,12 +385,13 @@ mod tests {
                    Run test: CUPTests.test_b\n*** TEST CUPTests.test_b FAILED:\n\
                    Traceback (most recent call last):\n  File \"/e/escutil.py\", line 313, in GetChecksumOfRect\n\
                    \x20   params = escio.ReadDCS()\n  File \"/e/escio.py\", line 243, in read\n\
-                   esctypes.InternalError: Timeout waiting to read.\n\n\
+                   esctypes.InternalError: Timeout waiting to read.\n\n\n\
                    Run test: DSRTests.test_c\nFails as expected: bug\n\n\
-                   Run test: DSRTests.test_d\nSkipped because terminal lacks requisite capability: VT 5\n\n";
-        let tests = parse(log);
+                   Run test: DSRTests.test_d\nSkipped because terminal lacks requisite capability: VT 5\n\n\
+                   *** 1 test passed, 2 known bugs, 1 TEST FAILED ***\nFailing tests:\nCUPTests.test_b\n";
+        let log = parse(log);
         assert_eq!(
-            tests,
+            log.tests,
             [
                 ("CUPTests.test_a".to_owned(), Outcome::Passed),
                 (
@@ -249,7 +405,8 @@ mod tests {
                 ("DSRTests.test_d".to_owned(), Outcome::Skipped),
             ]
         );
-        let report = report(&tests);
+        check(&log).unwrap();
+        let report = report(&log.tests);
         assert!(
             report.starts_with(
                 "1 of 2 applicable tests passed (50.0%); 1 known bugs of xterm and 1 skipped\n"
@@ -257,5 +414,127 @@ mod tests {
             "{report}"
         );
         assert!(report.contains("CUPTests: 1 failed\n  1 × esctypes.InternalError: Timeout waiting to read. (in GetChecksumOfRect)\n    test_b\n"), "{report}");
+    }
+
+    #[test]
+    fn a_failures_reason_is_its_exceptions_line_past_the_blank_lines_of_its_message() {
+        // A checksum's message holds a blank line, and a chain of
+        // exceptions ends with the one raised last.
+        let log = "Run test: EDTests.test_a\n*** TEST EDTests.test_a FAILED:\n\
+                   Traceback (most recent call last):\n  File \"/e/tests/ed.py\", line 9, in test_a\n\
+                   \x20   AssertScreenCharsInRectEqual(rect, [\"ab\"])\n\
+                   esctypes.ChecksumException: Checksum failed at the following locations:\n\
+                   Point(x=2, y=1)\nActual:\naX\n\nExpected:\nab\n\n\n\
+                   Run test: EDTests.test_b\nPassed.\n\n\
+                   Run test: DATests.test_c\n*** TEST DATests.test_c FAILED:\n\
+                   Traceback (most recent call last):\n  File \"/e/escio.py\", line 243, in read\n\
+                   \x20   raise esctypes.InternalError(\"Timeout waiting to read.\")\n\
+                   esctypes.InternalError: Timeout waiting to read.\n\n\
+                   During handling of the above exception, another exception occurred:\n\n\
+                   Traceback (most recent call last):\n  File \"/e/tests/da.py\", line 20, in test_c\n\
+                   \x20   AssertEQ(params, [1])\n\
+                   esctypes.TestFailure: Test failed: expected '[1]' but got '[]'\n\n\n\
+                   *** 1 test passed, 0 known bugs, 2 TESTS FAILED ***\n";
+        let log = parse(log);
+        let checksum = "esctypes.ChecksumException: Checksum failed at the following locations:";
+        assert_eq!(
+            log.tests,
+            [
+                (
+                    "EDTests.test_a".to_owned(),
+                    Outcome::Failed(checksum.to_owned())
+                ),
+                ("EDTests.test_b".to_owned(), Outcome::Passed),
+                (
+                    "DATests.test_c".to_owned(),
+                    Outcome::Failed(
+                        "esctypes.TestFailure: Test failed: expected '[1]' but got '[]'".to_owned()
+                    )
+                ),
+            ]
+        );
+        check(&log).unwrap();
+    }
+
+    #[test]
+    fn the_closing_line_counts_the_tests() {
+        let totals = |passed, known, failed| Totals {
+            passed,
+            known,
+            failed,
+        };
+        let line = "*** 403 tests passed, 39 known bugs, 125 TESTS FAILED ***";
+        assert_eq!(closing_line(line), Some(totals(403, 39, 125)));
+        let line = "*** 1 test passed, 1 known bug, 0 tests failed ***";
+        assert_eq!(closing_line(line), Some(totals(1, 1, 0)));
+        let line = "*** 1 test passed, 0 known bugs, 1 TEST FAILED ***";
+        assert_eq!(closing_line(line), Some(totals(1, 0, 1)));
+        assert_eq!(closing_line("*** TEST CUPTests.test_a FAILED:"), None);
+        assert_eq!(closing_line("*** 1 test passed ***"), None);
+        // A log cut short, or one whose tests the runner misread.
+        let passed = "Run test: A.test_a\nPassed.\n\n";
+        let error = check(&parse(passed)).unwrap_err().to_string();
+        assert!(error.contains("before its closing line"), "{error}");
+        let log = format!("{passed}*** 2 tests passed, 0 known bugs, 0 tests failed ***\n");
+        let error = check(&parse(&log)).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "esctest counted 2 passed, 0 known bugs or skipped and 0 failed, \
+             and the runner read 1 passed, 0 known bugs or skipped and 0 failed in its log"
+        );
+    }
+
+    /// Runs `script` as the suite, with the log's path as `$1`.
+    fn fake(script: &str, temp: &mut Temp) -> Result<Vec<(String, Outcome)>> {
+        let log = temp.dir.join("esctest.log");
+        let options = HarnessOptions {
+            program: vec![
+                "/bin/sh".to_owned(),
+                "-c".to_owned(),
+                script.to_owned(),
+                "sh".to_owned(),
+                log.display().to_string(),
+            ],
+            env: vec![("PATH".to_owned(), "/usr/bin:/bin".to_owned())],
+            terminal: Options::default(),
+            dir: temp.dir.clone(),
+            cols: 40,
+            rows: 5,
+        };
+        suite(&options, temp, &log)
+    }
+
+    #[test]
+    fn a_run_that_does_not_end_well_says_so_and_keeps_its_log() {
+        let closing = "*** 1 test passed, 0 known bugs, 0 tests failed ***";
+        let passed = format!("printf 'Run test: A.test_a\\nPassed.\\n\\n{closing}\\n' > \"$1\"");
+        for (script, says) in [
+            (
+                format!("echo shown; {passed}; exit 3"),
+                "esctest exited with status 3",
+            ),
+            ("echo shown; kill -TERM $$".to_owned(), "ended by signal 15"),
+            ("echo shown".to_owned(), "esctest left no log to read"),
+            (
+                "echo shown; printf 'Run test: A.test_a\\nPassed.\\n' > \"$1\"".to_owned(),
+                "before its closing line",
+            ),
+        ] {
+            let mut temp = Temp::new().unwrap();
+            let message = format!("{:#}", fake(&script, &mut temp).unwrap_err());
+            assert!(message.contains(says), "{message}");
+            assert!(message.contains("The screen:\nshown"), "{message}");
+            assert!(message.contains("The log is kept in"), "{message}");
+            let dir = temp.dir.clone();
+            drop(temp);
+            assert!(dir.exists(), "{message}");
+            fs::remove_dir_all(dir).unwrap();
+        }
+        let mut temp = Temp::new().unwrap();
+        let tests = fake(&passed, &mut temp).unwrap();
+        assert_eq!(tests, [("A.test_a".to_owned(), Outcome::Passed)]);
+        let dir = temp.dir.clone();
+        drop(temp);
+        assert!(!dir.exists());
     }
 }

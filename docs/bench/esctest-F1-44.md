@@ -9,7 +9,7 @@ To repeat the measurement, run `just esctest`. It downloads esctest2 at the pinn
 - **esctest2** at commit `2798f12149a19c3295e9b4853ab2da4b2eff1b2b`, run by macOS's `python3` with `--expected-terminal=xterm`, so that xterm's known bugs are told apart.
 - **The terminal** is 80 by 25, the size that esctest asks for at each test's start, with the default options, but for title reports, which xterm allows when it is told to. It does not answer clipboard reads, as no one confirms them.
 - **Timeout**: esctest waits half a second for each byte of a reply, rather than its default of a second, since a headless terminal replies at once or never.
-- **The pass rate** counts the tests that passed among those that passed or failed. Known bugs of xterm are left out, as esctest leaves them out for xterm. The whole run takes two and a half minutes.
+- **The pass rate** counts the tests that passed among those that passed or failed. Known bugs of xterm are left out, as esctest leaves them out for xterm; but a test of one of them that passes fails, with "Should have failed", and counts as a failure, though the terminal does what the test asks. The whole run takes two and a half minutes.
 
 ## Result
 

@@ -78,7 +78,8 @@ ucd-check:
 record:
     cargo run -q -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
 
-# Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, as `--include=CUPTests`.
+# Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, each whole, as `--include='CUP|CUB'`.
+[positional-arguments]
 esctest *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -92,7 +93,7 @@ esctest *args:
         git -C "$clone" archive FETCH_HEAD | tar -x -C "$dir"
         echo {{ esctest_commit }} > "$dir/.commit"
     fi
-    cargo run -q --release -p bolt-replay --bin bolt-esctest -- "$dir/esctest" {{ args }}
+    cargo run -q --release -p bolt-replay --bin bolt-esctest -- "$dir/esctest" "$@"
 
 # Run the benchmarks (not implemented yet).
 bench:
