@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
-use bolt_replay::harness::{Event, Harness, HarnessOptions, lines};
+use bolt_replay::harness::{Event, Harness, HarnessOptions, line_of, lines};
 use bolt_vt_core::parser::{Handler, Limits, Params, Parser, StringEnd};
 use bolt_vt_core::terminal::{Options, Terminal};
 
@@ -238,9 +238,8 @@ fn run(script: &Script, path: &Path, home: &Path) -> Result<Cast> {
 }
 
 /// Fails if the recording, whole, shows one of `private`, in any of the
-/// texts that [`texts`] reads it as, or on the screen before a control or
-/// an escape sequence of the output, which [`Watch`] replays on a terminal
-/// as the script's.
+/// texts that [`texts`] reads it as, or on the screen at any moment of the
+/// output, which [`Watch`] replays on a terminal as the script's.
 fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<()> {
     let texts = texts(harness);
     for name in private {
@@ -260,6 +259,7 @@ fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<(
         ),
         private,
         shown: None,
+        printing: false,
     };
     Parser::new().advance(&mut watch, &harness.output());
     if let Some(name) = watch.shown {
@@ -268,16 +268,24 @@ fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<(
     Ok(())
 }
 
-/// A terminal that the output replays on, which looks at its screen before
-/// each control and escape sequence, as they are what take text away from
-/// the screen: an erase, a scroll, a switch of screens, or a move of the
-/// cursor that the text after overwrites with. A name that a read draws
-/// and takes away, which no read ends with, shows there.
+/// A terminal that the output replays on, which looks at the screen at
+/// every moment that a name could show in and go at the next: the whole
+/// screen before each control and escape sequence, which can take text
+/// away, by an erase, a scroll, a switch of screens, or a move of the
+/// cursor that the text after overwrites, and before each run of printed
+/// text, which can break what a control put together; and the cursor's
+/// line after each printed character, which can complete a name that the
+/// next character overwrites, or pushes aside in insert mode, or that the
+/// next row's text breaks as a pending wrap goes on. A name that a read
+/// draws and takes away, which no read ends with, shows there.
 struct Watch<'a> {
     terminal: Terminal,
     private: &'a [String],
     /// The first name that showed.
     shown: Option<String>,
+    /// Whether text is being printed, since the last control, escape
+    /// sequence or string: the screen was looked at as it started.
+    printing: bool,
 }
 
 impl Watch<'_> {
@@ -294,34 +302,72 @@ impl Watch<'_> {
             .find(|name| lines.iter().any(|line| line.contains(name.as_str())))
             .cloned();
     }
+
+    /// Looks at the screen before a control or an escape sequence, which
+    /// ends a run of printed text.
+    fn before_control(&mut self) {
+        self.look();
+        self.printing = false;
+    }
+
+    /// Looks at the screen as a run of printed text starts.
+    fn start_printing(&mut self) {
+        if !self.printing {
+            self.look();
+            self.printing = true;
+        }
+    }
+
+    /// Notes the first name that the cursor's line shows now, if none
+    /// showed yet.
+    fn look_at_the_cursor(&mut self) {
+        if self.shown.is_some() {
+            return;
+        }
+        let list = self.terminal.screen_rows();
+        let index = list.scrollback_rows() + usize::from(self.terminal.cursor().y);
+        let line = line_of(list, index);
+        self.shown = self
+            .private
+            .iter()
+            .find(|name| line.contains(name.as_str()))
+            .cloned();
+    }
 }
 
 impl Handler for Watch<'_> {
     fn print(&mut self, c: char) {
+        self.start_printing();
         self.terminal.print(c);
+        self.look_at_the_cursor();
     }
 
     fn print_ascii(&mut self, text: &[u8]) {
-        self.terminal.print_ascii(text);
+        self.start_printing();
+        for byte in text.chunks(1) {
+            self.terminal.print_ascii(byte);
+            self.look_at_the_cursor();
+        }
     }
 
     fn execute(&mut self, byte: u8) {
-        self.look();
+        self.before_control();
         self.terminal.execute(byte);
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], final_byte: u8) {
-        self.look();
+        self.before_control();
         self.terminal.esc_dispatch(intermediates, final_byte);
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
-        self.look();
+        self.before_control();
         self.terminal
             .csi_dispatch(params, intermediates, final_byte);
     }
 
     fn osc_start(&mut self) {
+        self.printing = false;
         self.terminal.osc_start();
     }
 
@@ -334,6 +380,7 @@ impl Handler for Watch<'_> {
     }
 
     fn dcs_start(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        self.printing = false;
         self.terminal.dcs_start(params, intermediates, final_byte);
     }
 
@@ -346,6 +393,7 @@ impl Handler for Watch<'_> {
     }
 
     fn apc_start(&mut self) {
+        self.printing = false;
         self.terminal.apc_start();
     }
 

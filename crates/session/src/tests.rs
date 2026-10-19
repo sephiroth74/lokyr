@@ -646,3 +646,16 @@ fn a_clipboard_answer_reaches_a_program_that_waits_for_it_in_silence() {
         shows(terminal, "got:E]52;c;aGk=B")
     });
 }
+
+#[test]
+fn errors_leave_their_causes_to_their_sources() {
+    let error = Error::Threads(io::Error::other("no threads"));
+    assert_eq!(error.to_string(), "cannot start the session's threads");
+    let source = std::error::Error::source(&error).map(ToString::to_string);
+    assert_eq!(source.as_deref(), Some("no threads"));
+    // The PTY's error, as the PTY tells it.
+    let error = Error::from(bolt_pty::Error::Open(io::Error::other("no terminals")));
+    assert_eq!(error.to_string(), "cannot open a pseudo-terminal");
+    let source = std::error::Error::source(&error).map(ToString::to_string);
+    assert_eq!(source.as_deref(), Some("no terminals"));
+}

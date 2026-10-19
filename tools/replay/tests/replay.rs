@@ -69,6 +69,15 @@ fn resizes_are_left_out_with_a_warning() {
 }
 
 #[test]
+fn a_recording_made_with_the_windows_operations_replays_with_them() {
+    // DECCOLM switches to 132 columns, as it did when it was recorded, so
+    // that the text takes one row of them rather than two of 10.
+    let path = data("window-ops.cast");
+    let output = replay(&[path.to_str().unwrap()], None);
+    assert_eq!(stdout(&output), "0123456789abcdef\n\n");
+}
+
+#[test]
 fn bench_times_the_replay() {
     let path = data("session.cast");
     let output = replay(&["--runs", "3", path.to_str().unwrap()], None);
@@ -348,6 +357,22 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
         (
             "moved-reset",
             r"printf '\\033[8Gone-zz\\rzz-some\\033c'; sleep 0.3",
+        ),
+        // Put together by a control and broken by the text right after it,
+        // or put together and broken within a run of text: written over,
+        // pushed aside in insert mode, or broken as a pending wrap goes on.
+        (
+            "deleted-then-printed",
+            r"printf 'zz-some  one-zz\\033[1;8H\\033[2PX'; sleep 0.3",
+        ),
+        (
+            "printed-over",
+            r"printf 'zz-soXeone-zz\\033[1;6HmY'; sleep 0.3",
+        ),
+        ("inserted", r"printf '\\033[4hone-zz\\rzz-someX'; sleep 0.3"),
+        (
+            "wrapped-over",
+            r"printf 'xxxxxxxxxxxxxxxxxxxxone-zz\\033[1;14Hzz-someY'; sleep 0.3",
         ),
         // In base64 split between the chunks of a transfer: kitty's
         // graphics, and iTerm2's file in parts.

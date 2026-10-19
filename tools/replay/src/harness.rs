@@ -6,6 +6,7 @@
 
 use std::collections::VecDeque;
 use std::io::ErrorKind;
+use std::iter::Peekable;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -13,7 +14,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 pub use bolt_pty::Exit;
 use bolt_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
-use bolt_vt_core::page::{Content, PageList, RowFlag, Width};
+use bolt_vt_core::page::{Content, ListRow, PageList, RowFlag, Width};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{self, Options, Terminal};
 
@@ -622,8 +623,35 @@ impl Harness {
 /// its end; the rows that soft-wrap into the next are joined to it.
 pub fn lines(list: &PageList, from: usize) -> Vec<String> {
     let mut lines = Vec::new();
-    let mut line = String::new();
     let mut rows = list.rows_from(from).peekable();
+    while rows.peek().is_some() {
+        lines.push(next_line(&mut rows));
+    }
+    lines
+}
+
+/// The text of the line that the row at index `index` of `list` is part
+/// of, as [`lines`] reads it: from the row that the line starts in.
+pub fn line_of(list: &PageList, index: usize) -> String {
+    let mut start = index;
+    let mut rows = list.rows_before(index + 1).peekable();
+    while let Some(row) = rows.next() {
+        let joined = row.metadata().has(RowFlag::Continuation)
+            && rows
+                .peek()
+                .is_some_and(|before| before.metadata().has(RowFlag::SoftWrapped));
+        if !joined {
+            break;
+        }
+        start -= 1;
+    }
+    next_line(&mut list.rows_from(start).peekable())
+}
+
+/// The text of the line that the next of `rows` starts, which takes the
+/// rows that it soft-wraps into.
+fn next_line<'a>(rows: &mut Peekable<impl Iterator<Item = ListRow<'a>>>) -> String {
+    let mut line = String::new();
     while let Some(row) = rows.next() {
         for (x, cell) in row.cells().enumerate() {
             match (cell.width(), cell.content()) {
@@ -644,11 +672,11 @@ pub fn lines(list: &PageList, from: usize) -> Vec<String> {
                 .peek()
                 .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
         if !goes_on {
-            line.truncate(line.trim_end_matches(' ').len());
-            lines.push(std::mem::take(&mut line));
+            break;
         }
     }
-    lines
+    line.truncate(line.trim_end_matches(' ').len());
+    line
 }
 
 /// The size of `terminal`, for its PTY: in cells, and in pixels once a
@@ -680,6 +708,11 @@ mod tests {
             lines(terminal.screen_rows(), 0),
             ["ab      cd", "\u{65e5}\u{672c}x", "0123456789wrap   z"]
         );
+        // The line of a row, from either of the rows that it takes.
+        for index in [2, 3] {
+            assert_eq!(line_of(terminal.screen_rows(), index), "0123456789wrap   z");
+        }
+        assert_eq!(line_of(terminal.screen_rows(), 1), "\u{65e5}\u{672c}x");
     }
 
     #[test]

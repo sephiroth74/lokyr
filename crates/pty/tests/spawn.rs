@@ -140,10 +140,21 @@ fn signals_ignored_here_have_their_default_action_in_the_program() {
 fn a_program_that_cannot_start_is_an_error() {
     let options = Options::new(Program::command("/nonexistent/program", ["x"]), "xterm");
     let error = spawn(&options).unwrap_err();
-    assert!(
-        error.to_string().contains("/nonexistent/program"),
-        "{error}"
-    );
+    // The message leaves the cause to the source, so that a chain of errors
+    // tells it once.
+    assert_eq!(error.to_string(), "cannot start /nonexistent/program");
+    let source = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<std::io::Error>())
+        .map(std::io::Error::kind);
+    assert_eq!(source, Some(std::io::ErrorKind::NotFound), "{error:?}");
+}
+
+#[test]
+fn a_pseudo_terminal_that_cannot_open_leaves_the_cause_to_the_source() {
+    let error = bolt_pty::Error::Open(std::io::Error::other("no terminals"));
+    assert_eq!(error.to_string(), "cannot open a pseudo-terminal");
+    let source = std::error::Error::source(&error).map(ToString::to_string);
+    assert_eq!(source.as_deref(), Some("no terminals"));
 }
 
 #[test]

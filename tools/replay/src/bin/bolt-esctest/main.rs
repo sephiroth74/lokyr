@@ -76,9 +76,8 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
         "--xterm-reverse-wrap=383".to_owned(),
         "--no-print-logs".to_owned(),
         format!("--timeout={TIMEOUT}"),
-        format!("--logfile={}", log.display()),
     ];
-    program.extend(arguments(extra)?);
+    program.extend(arguments(extra, &log)?);
     let options = HarnessOptions {
         program,
         env: vec![
@@ -106,28 +105,36 @@ fn run(dir: &Path, extra: Vec<String>) -> Result<()> {
 /// into one `--options`, after the window's operations, which the terminal
 /// allows, as xterm's `allowWindowOps` does: esctest keeps the last
 /// `--options` alone. `--logfile` is refused, as the runner reads the log
-/// that it names itself.
-fn arguments(extra: Vec<String>) -> Result<Vec<String>> {
+/// that it names itself, `log`, which comes last, as argparse keeps the
+/// last of an option. Either is known by the abbreviations that argparse
+/// takes for it too: any prefix past `--`, as no other option of esctest
+/// starts with its letter.
+fn arguments(extra: Vec<String>, log: &Path) -> Result<Vec<String>> {
+    let names = |arg: &str, option: &str| {
+        let key = arg.split_once('=').map_or(arg, |(key, _)| key);
+        key.len() > 2 && option.starts_with(key)
+    };
     let mut options = vec!["xtermWinopsEnabled".to_owned()];
     let mut rest = Vec::new();
     let mut extra = extra.into_iter().peekable();
     while let Some(arg) = extra.next() {
-        if arg == "--logfile" || arg.starts_with("--logfile=") {
-            bail!("the runner names esctest's log itself, so --logfile cannot be given");
+        if names(&arg, "--logfile") {
+            bail!("the runner names esctest's log itself, so {arg} cannot be given");
         }
-        if let Some(value) = arg.strip_prefix("--options=") {
+        if !names(&arg, "--options") {
+            rest.push(arg);
+        } else if let Some((_, value)) = arg.split_once('=') {
             options.extend(value.split_whitespace().map(str::to_owned));
-        } else if arg == "--options" {
+        } else {
             // Its values, up to the next argument that starts another.
             while let Some(value) = extra.next_if(|next| !next.starts_with('-')) {
                 options.push(value);
             }
-        } else {
-            rest.push(arg);
         }
     }
     rest.push("--options".to_owned());
     rest.extend(options);
+    rest.push(format!("--logfile={}", log.display()));
     Ok(rest)
 }
 
@@ -629,14 +636,18 @@ mod tests {
 
     #[test]
     fn options_given_join_the_runners_and_a_log_is_refused() {
-        let args = |list: &[&str]| arguments(list.iter().map(|arg| (*arg).to_owned()).collect());
+        let args = |list: &[&str]| {
+            let list = list.iter().map(|arg| (*arg).to_owned()).collect();
+            arguments(list, Path::new("/l"))
+        };
         assert_eq!(
             args(&["--include=CUP", "--options=disableWideChars"]).unwrap(),
             [
                 "--include=CUP",
                 "--options",
                 "xtermWinopsEnabled",
-                "disableWideChars"
+                "disableWideChars",
+                "--logfile=/l"
             ]
         );
         assert_eq!(
@@ -646,13 +657,34 @@ mod tests {
                 "--options",
                 "xtermWinopsEnabled",
                 "a",
-                "b"
+                "b",
+                "--logfile=/l"
             ]
         );
-        assert_eq!(args(&[]).unwrap(), ["--options", "xtermWinopsEnabled"]);
-        for log in [&["--logfile=x"][..], &["--logfile", "x"]] {
+        assert_eq!(
+            args(&[]).unwrap(),
+            ["--options", "xtermWinopsEnabled", "--logfile=/l"]
+        );
+        // As argparse abbreviates them.
+        assert_eq!(
+            args(&["--opt", "a", "--o=b", "--force"]).unwrap(),
+            [
+                "--force",
+                "--options",
+                "xtermWinopsEnabled",
+                "a",
+                "b",
+                "--logfile=/l"
+            ]
+        );
+        for log in [
+            &["--logfile=x"][..],
+            &["--logfile", "x"],
+            &["--log=x"],
+            &["--l"],
+        ] {
             let error = args(log).unwrap_err().to_string();
-            assert!(error.contains("--logfile"), "{error}");
+            assert!(error.contains(log[0]), "{error}");
         }
     }
 }
