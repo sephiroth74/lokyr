@@ -18,8 +18,9 @@ esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 # commit.
 vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 
-# Platform-independent crates, which must keep building for Linux.
-portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay"
+# Platform-independent crates, and the tools of the terminal's tests and
+# tasks, which must keep building, and passing their tests, on Linux.
+portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
 
 # List available commands.
 _default:

@@ -43,7 +43,9 @@ jobs:
 
   linux:
     # Checks that give the same result on every platform, plus the tests of
-    # the platform-independent crates.
+    # the platform-independent crates and of the tools: the VT core, the PTY
+    # and the session, search, the replay and recording tools, the
+    # differential tests, and the tasks', as terminfo's, with Ubuntu's tic.
     name: linux
     runs-on: ubuntu-latest
     timeout-minutes: 30
