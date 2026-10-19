@@ -213,6 +213,7 @@ name = "bolt-search"
 version = "0.1.0"
 dependencies = [
  "bolt-vt-core",
+ "criterion",
  "memchr",
  "proptest",
  "regex-automata",

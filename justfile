@@ -122,9 +122,9 @@ vttest:
         echo {{ vttest_commit }} > "$dir/.commit"
     fi
 
-# Measure throughput: the VT core's criterion benchmarks, then both cores, the VT core and alacritty_terminal, over vtebench's scenarios and a file of 1 GiB, which `cat` would print; on an idle machine.
+# Measure throughput: the criterion benchmarks of the VT core and of search, then both cores, the VT core and alacritty_terminal, over vtebench's scenarios and a file of 1 GiB, which `cat` would print; on an idle machine.
 bench: vtebench
-    cargo bench --locked -p bolt-vt-core
+    cargo bench --locked -p bolt-vt-core -p bolt-search
     cargo build --locked --release -p bolt-differential --bin bolt-throughput -p bolt-replay --bin bolt-replay
     [ -f target/cat-1g.txt ] || target/release/bolt-throughput --write-cat target/cat-1g.txt
     target/release/bolt-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
