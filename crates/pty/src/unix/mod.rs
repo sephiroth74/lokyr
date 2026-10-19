@@ -78,6 +78,7 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     command.arg0(arg0.as_deref().unwrap_or(program.as_os_str()));
     command.env_clear().envs(env);
     let dir_fd = dir.as_raw_fd();
+    let descriptors = descriptor_limit();
     for stdio in 0..3 {
         let slave = Stdio::from(slave.try_clone().map_err(spawn_error)?);
         match stdio {
@@ -92,7 +93,9 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     unsafe {
         command.pre_exec(move || {
             enter(dir_fd)?;
-            lead_session()
+            lead_session()?;
+            close_inherited(descriptors);
+            Ok(())
         });
     }
     let (closed, closing) = closing::closing().map_err(Error::Open)?;
@@ -445,6 +448,60 @@ fn enter(fd: std::os::fd::RawFd) -> std::io::Result<()> {
         return Err(IoError::last_os_error());
     }
     Ok(())
+}
+
+/// The descriptors that a process can have open, as its soft limit says,
+/// 65 536 at most, read in the parent, as `getrlimit` is not
+/// async-signal-safe.
+fn descriptor_limit() -> libc::c_int {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `getrlimit` writes the limits into `limit`.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) } == -1 {
+        return 1024;
+    }
+    libc::c_int::try_from(limit.rlim_cur.min(1 << 16)).unwrap_or(1 << 16)
+}
+
+/// Marks every descriptor from 3 on closed on exec, in the child between
+/// fork and exec, so that the program inherits none that this process did
+/// without the mark, as one that a launcher or a CI runner leaves open:
+/// the program has the terminal alone. Marked rather than closed, so that
+/// `std`'s pipe, which tells the parent that exec failed, works until the
+/// exec. Linux marks them in one call; elsewhere, or on a kernel without
+/// it, each descriptor below `limit` is marked in turn.
+///
+/// It runs between fork and exec, so it calls only async-signal-safe
+/// functions: `fcntl`, and Linux's `close_range` system call.
+fn close_inherited(limit: libc::c_int) {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: `close_range` with `CLOSE_RANGE_CLOEXEC` only marks the
+        // process's descriptors from 3 on.
+        let marked = unsafe {
+            libc::syscall(
+                libc::SYS_close_range,
+                3,
+                libc::c_uint::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            )
+        };
+        if marked == 0 {
+            return;
+        }
+    }
+    for fd in 3..limit {
+        // SAFETY: `fcntl` reads and sets the flags of one descriptor, and
+        // fails without effect for one that is not open.
+        unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFD);
+            if flags != -1 && flags & libc::FD_CLOEXEC == 0 {
+                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+        }
+    }
 }
 
 /// Makes the child the leader of a session, with the terminal on its

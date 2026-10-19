@@ -110,7 +110,15 @@ fn the_program_starts_at_home_with_only_the_terminal_open() {
     // Every descriptor that the program could have, past the standard ones,
     // as the tests running at once can open many.
     let script = r#"pwd; for fd in $(seq 3 1023); do [ -e /dev/fd/$fd ] && echo "open $fd"; done; echo done"#;
+    // A descriptor that this process has without the mark that closes it on
+    // exec, as one that a CI runner or a launcher leaves open.
+    // SAFETY: `fcntl` duplicates standard input to a descriptor from 500
+    // on, which the test closes below.
+    let inherited = unsafe { libc::fcntl(0, libc::F_DUPFD, 500) };
+    assert!(inherited >= 500, "{}", std::io::Error::last_os_error());
     let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
+    // SAFETY: the test opened it above, and nothing else uses it.
+    unsafe { libc::close(inherited) };
     let mut text = String::new();
     pty.reader().unwrap().read_to_string(&mut text).unwrap();
     let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
