@@ -2,7 +2,7 @@
 
 ## `UTF-8-test.txt`
 
-Markus Kuhn's UTF-8 decoder capability and stress test, in its 2015-08-28 version, unchanged. The tests of the UTF-8 decoder read it.
+Markus Kuhn's UTF-8 decoder capability and stress test, in its 2015-08-28 version, unchanged. The tests of the UTF-8 decoder read it, the fuzz seeds take its lines that are not plain ASCII, and the differential tests in `tools/differential` feed it to the VT core and to `alacritty_terminal` a line at a time.
 
 - **Source**: <https://www.cl.cam.ac.uk/~mgk25/ucs/examples/UTF-8-test.txt>
 - **Author**: Markus Kuhn
@@ -20,3 +20,10 @@ The conformance test of grapheme cluster boundaries, from the Unicode Character 
 - **License**: the [Unicode License v3](https://www.unicode.org/license.txt); see the [terms of use](https://www.unicode.org/terms_of_use.html). The file keeps its copyright notice.
 
 `just ucd-check` checks that the copy matches the pinned version.
+
+## `parser-corpus.rs`
+
+The byte sequences that the parser's tests compare against `vte`'s parser, which the differential tests feed to the VT core and to `alacritty_terminal` too. It is Rust, a constant that both include, so that they read the same sequences.
+
+- **Author**: the Bolt contributors
+- **License**: MIT, as the rest of the repository
