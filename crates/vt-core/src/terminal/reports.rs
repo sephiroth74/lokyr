@@ -220,9 +220,9 @@ impl Terminal {
     /// so; 2 and 3, which set and report them in UTF-8 rather than
     /// Latin-1, change nothing, as titles are always UTF-8. Without
     /// parameters, either resets both, as xterm does; an empty parameter
-    /// is passed over.
+    /// is passed over, so that `CSI > ; t` changes nothing.
     pub(super) fn set_title_modes(&mut self, params: &Params, on: bool) {
-        if !(0..params.len()).any(|index| params.has_value(index)) {
+        if params.len() <= 1 && !params.has_value(0) {
             self.hex_titles = false;
             self.hex_title_reports = false;
             return;

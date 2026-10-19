@@ -4976,10 +4976,10 @@ fn a_switch_to_132_columns_and_back_keeps_every_row_of_a_full_scrollback() {
     term.feed("\x1b[?3l\x1b[?3h\x1b[?3l");
     assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
     assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
-    // The embedder's width brings the configured limit back, and so does
-    // RIS from 132 columns.
+    // Another width from the embedder brings the configured limit back,
+    // and so does RIS from 132 columns.
     term.feed("\x1b[?3h");
-    term.terminal.resize(132, 24);
+    term.terminal.resize(100, 24);
     assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
     let mut term = allowing_window_ops(80, 24, limit);
     term.feed(line.repeat(5000));
@@ -4987,6 +4987,168 @@ fn a_switch_to_132_columns_and_back_keeps_every_row_of_a_full_scrollback() {
     assert!(term.terminal.screen_rows().scrollback().limit > limit);
     term.feed("\x1bc");
     assert_eq!(term.terminal.screen_rows().scrollback().limit, limit);
+}
+
+#[test]
+fn the_embedder_giving_a_programs_size_keeps_the_rows_that_it_kept() {
+    let limit = 1 << 20;
+    let mut term = allowing_window_ops(80, 24, limit);
+    let line = format!("{}\r\n", "x".repeat(79));
+    term.feed(line.repeat(5000));
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    term.feed("\x1b[?40h\x1b[?3h");
+    let grown = term.terminal.screen_rows().scrollback().limit;
+    // What `Session::resize` does when told of the size.
+    term.terminal.resize(132, 24);
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, grown);
+    term.feed("\x1b[?3l");
+    term.terminal.resize(80, 24);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
+}
+
+#[test]
+fn every_way_of_setting_the_size_keeps_the_rows_of_a_full_scrollback() {
+    let limit = 1 << 20;
+    let line = format!("{}\r\n", "x".repeat(79));
+    // In pixels and in cells, maximized and on the whole display, which is
+    // 132 by 24 cells.
+    for (wide, back) in [
+        ("\x1b[4;;1056t", "\x1b[4;;640t"),
+        ("\x1b[8;;132t", "\x1b[8;;80t"),
+        ("\x1b[9;1t", "\x1b[9;0t"),
+        ("\x1b[10;1t", "\x1b[10;0t"),
+    ] {
+        let mut term = allowing_window_ops(80, 24, limit);
+        term.terminal.set_cell_size(8, 16);
+        term.terminal.set_display_size(1056, 384);
+        term.feed(line.repeat(5000));
+        let rows = term.terminal.screen_rows().scrollback_rows();
+        term.feed(wide);
+        assert_eq!(term.terminal.cols(), 132, "{wide:?}");
+        assert!(
+            term.terminal.screen_rows().scrollback().limit > limit,
+            "{wide:?}"
+        );
+        term.feed(back);
+        assert_eq!(term.terminal.cols(), 80, "{back:?}");
+        let screen = term.terminal.screen_rows();
+        assert_eq!(screen.scrollback_rows(), rows, "{wide:?}");
+        assert_eq!(screen.scrollback().limit, limit, "{wide:?}");
+    }
+}
+
+#[test]
+fn a_switch_to_132_columns_keeps_a_scrollback_of_styled_or_linked_text() {
+    let limit = 3 << 20;
+    // Lines of eight colors each, as lolcat writes them, whose pages grow
+    // their tables of styles, and lines of a link each, as `ls
+    // --hyperlink` writes them, whose pages grow those of links.
+    let styled: String = (0..8000u32)
+        .map(|line| {
+            let runs: String = (0..8u32)
+                .map(|run| {
+                    let color = line * 8 + run;
+                    let (r, g, b) = (color % 256, color / 256 % 256, color / 65536);
+                    format!("\x1b[38;2;{r};{g};{b}m{}", "x".repeat(9))
+                })
+                .collect();
+            format!("{runs}\x1b[m\r\n")
+        })
+        .collect();
+    let linked: String = (0..8000u32)
+        .map(|line| {
+            let text = "x".repeat(79);
+            format!("\x1b]8;;file:///{line}\x07{text}\x1b]8;;\x07\r\n")
+        })
+        .collect();
+    for (kind, text) in [("styled", styled), ("linked", linked)] {
+        let mut term = allowing_window_ops(80, 24, limit);
+        term.feed(&text);
+        let rows = term.terminal.screen_rows().scrollback_rows();
+        term.feed("\x1b[?40h\x1b[?3h\x1b[?3l");
+        assert_eq!(
+            term.terminal.screen_rows().scrollback_rows(),
+            rows,
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn a_width_that_narrows_past_the_embedders_keeps_the_rows_that_rewrap() {
+    let limit = 1 << 20;
+    let mut term = allowing_window_ops(80, 24, limit);
+    term.feed("\x1b[8;;200t");
+    let line = format!("{}\r\n", "x".repeat(199));
+    term.feed(line.repeat(2000));
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    // At 198 columns, each line takes two rows, of nearly twice the cells.
+    term.feed("\x1b[8;;198t\x1b[8;;200t");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
+}
+
+#[test]
+fn ris_keeps_the_embedders_width() {
+    let limit = 1 << 20;
+    let mut term = allowing_window_ops(80, 24, limit);
+    term.feed("\x1b[8;;200t\x1bc\x1b[8;;80t");
+    let line = format!("{}\r\n", "x".repeat(79));
+    term.feed(line.repeat(5000));
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    // 200 columns are still past the embedder's width.
+    term.feed("\x1b[8;;200t\x1b[8;;80t");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
+}
+
+#[test]
+fn the_scrollbacks_limit_that_the_embedder_sets_lasts() {
+    let (limit, smaller) = (1 << 20, 1 << 19);
+    let mut term = allowing_window_ops(80, 24, limit);
+    let line = format!("{}\r\n", "x".repeat(79));
+    term.feed(line.repeat(5000));
+    // The primary screen's, from the alternate screen too.
+    term.feed("\x1b[?1049h");
+    term.terminal.set_scrollback_limit(smaller);
+    term.feed("\x1b[?1049l");
+    let screen = term.terminal.screen_rows();
+    assert_eq!(screen.scrollback().limit, smaller);
+    assert!(screen.memory() <= smaller);
+    // A resize, and a program's width and back, keep it.
+    term.terminal.resize(100, 24);
+    term.feed("\x1b[8;;132t\x1b[8;;100t");
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, smaller);
+    // Past the embedder's width, the scrollback keeps the rows that it has.
+    term.feed(line.repeat(5000));
+    term.feed("\x1b[8;;200t");
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    term.terminal.set_scrollback_limit(smaller);
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
+    assert!(term.terminal.screen_rows().scrollback().limit > smaller);
+}
+
+#[test]
+fn a_switch_to_132_columns_stays_within_a_shared_budget() {
+    // Room for the two terminals' pages, and one more.
+    let budget = std::sync::Arc::new(crate::page::Budget::new(7 << 19));
+    let options = || Options {
+        window_ops: true,
+        scrollback: Scrollback {
+            limit: 1 << 20,
+            budget: Some(budget.clone()),
+        },
+        ..Options::default()
+    };
+    let (mut a, mut b) = (Term::with(80, 24, options()), Term::with(80, 24, options()));
+    let line = format!("{}\r\n", "x".repeat(79));
+    a.feed(line.repeat(5000));
+    b.feed(line.repeat(5000));
+    let rows = b.terminal.screen_rows().scrollback_rows();
+    a.feed("\x1b[?40h\x1b[?3h");
+    assert!(budget.used() <= budget.limit());
+    // The other pane's rows stay.
+    assert_eq!(b.terminal.screen_rows().scrollback_rows(), rows);
+    a.feed("\x1b[?3l");
+    assert!(budget.used() <= budget.limit());
 }
 
 #[test]
@@ -5024,6 +5186,13 @@ fn cbt_stays_within_the_margins_in_origin_mode() {
     assert_eq!(term.cursor(), (4, 0, false));
     term.feed("\x1b[6n");
     assert_eq!(replies(&mut term), "\x1b[1;1R");
+    // From outside the margins, where DECRC can leave the cursor, the left
+    // margin does not stop it.
+    let mut term = Term::new(40, 4);
+    term.feed("\x1b[?69h\x1b[5;40s\x1b[?6h\x1b[1;32H\x1b7\x1b[5;30s\x1b8");
+    assert_eq!(term.cursor(), (35, 0, false));
+    term.feed("\x1b[5Z");
+    assert_eq!(term.cursor(), (0, 0, false));
 }
 
 #[test]
@@ -5044,6 +5213,9 @@ fn title_modes_without_parameters_reset_both() {
     // An empty parameter is passed over.
     term.feed("\x1b[>;1t\x1b]2;ab\x07\x1b[21t");
     assert_eq!(replies(&mut term), "\x1b]l6162\x1b\\");
+    // And so are empty parameters alone.
+    term.feed("\x1b[>;T\x1b]2;cd\x07\x1b[21t");
+    assert_eq!(replies(&mut term), "\x1b]l6364\x1b\\");
 }
 
 #[test]
