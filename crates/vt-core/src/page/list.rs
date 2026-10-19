@@ -211,9 +211,9 @@ struct Node {
 ///
 /// The pages stay within the [`Scrollback`] limits. When a new page would
 /// pass them, the oldest page leaves the list first: it is emptied and kept
-/// in a pool, from which the new page then comes. A page that grew past the
-/// standard size is freed instead. The screen never leaves, even when its
-/// pages alone pass the limits.
+/// in a pool, from which the new page then comes, with its tables as large
+/// as they grew. The screen never leaves, even when its pages alone pass
+/// the limits.
 ///
 /// Once the pool and the slab have reached their size, scrolling allocates
 /// nothing.
@@ -230,7 +230,8 @@ pub struct PageList {
     tail: u32,
     /// How many pages are in the list.
     pages: usize,
-    /// Empty pages of the standard capacity, to use again.
+    /// Empty pages of the standard rows and width, to use again, with their
+    /// tables as they grew.
     pool: Vec<Page>,
     /// The capacity of a standard page of the list's width.
     capacity: Capacity,
@@ -1370,12 +1371,12 @@ impl PageList {
         }
     }
 
-    /// Unlinks the newest page, an empty one, which goes to the pool if it
-    /// has the standard capacity, and is freed otherwise.
+    /// Unlinks the newest page, an empty one, which goes to the pool, as
+    /// [`PageList::recycle`] has it.
     fn unlink_tail(&mut self) {
         let index = self.tail;
         let node = &mut self.nodes[index as usize];
-        let mut page = node.page.take().expect("a linked node has a page");
+        let page = node.page.take().expect("a linked node has a page");
         node.generation = node.generation.wrapping_add(1);
         node.pins.clear();
         let prev = node.prev;
@@ -1387,7 +1388,17 @@ impl PageList {
         }
         self.free.push(index);
         self.pages -= 1;
-        if page.capacity() == self.capacity {
+        self.recycle(page);
+    }
+
+    /// Empties `page`, which left the list, and keeps it in the pool if it
+    /// has the rows and the width of a standard page, its tables as they
+    /// grew, so that text that grows them, as combining marks and links
+    /// do, allocates nothing once the pool has such pages; frees it
+    /// otherwise.
+    fn recycle(&mut self, mut page: Page) {
+        let capacity = page.capacity();
+        if (capacity.cols, capacity.rows) == (self.capacity.cols, self.capacity.rows) {
             page.reset();
             self.pool.push(page);
         } else {
@@ -1633,8 +1644,8 @@ impl PageList {
                 >= usize::from(self.rows)
     }
 
-    /// Unlinks the oldest page, and keeps it in the pool if it has the
-    /// standard capacity; frees it otherwise.
+    /// Unlinks the oldest page, and keeps it in the pool, as
+    /// [`PageList::recycle`] does.
     fn evict_head(&mut self) {
         let index = self.head;
         let node = &mut self.nodes[index as usize];
@@ -1654,14 +1665,9 @@ impl PageList {
         self.free.push(index);
         self.pages -= 1;
         match (page, cold) {
-            (Some(mut page), _) => {
+            (Some(page), _) => {
                 self.total_rows -= usize::from(page.len());
-                if page.capacity() == self.capacity {
-                    page.reset();
-                    self.pool.push(page);
-                } else {
-                    self.give(page.memory());
-                }
+                self.recycle(page);
             }
             // A cold page has no cells to hand out again.
             (None, Some(cold)) => {
@@ -2110,7 +2116,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grown_page_keeps_its_rows_and_id_and_leaves_the_pool_out() {
+    fn a_grown_page_keeps_its_rows_and_id_and_comes_back_from_the_pool() {
         let mut list = PageList::new(80, 24, pages(80, 2));
         scroll(&mut list, 0, 10);
         let (id, _) = list.screen_row_id(23);
@@ -2118,11 +2124,17 @@ mod tests {
         assert_eq!(list.page(id).map(|page| page.capacity().styles), Some(512));
         let (page, row) = list.screen_row(23);
         assert_eq!(page.cells(row)[0], numbered(9));
-        // When it leaves the list, a grown page is not pooled.
+        // When it leaves the list, a grown page goes to the pool, and comes
+        // back, empty, with its tables as they grew.
         let page_rows = usize::from(Capacity::standard(80).rows);
         scroll(&mut list, 10, (2 * page_rows) as u32);
         assert!(list.page(id).is_none());
-        assert_eq!(list.pool_len(), 0);
+        let styles: Vec<u16> = list
+            .iter_rows()
+            .map(|(page, _)| page.capacity().styles)
+            .collect();
+        assert!(styles.contains(&512), "{styles:?}");
+        assert_eq!(list.memory(), counted(&list));
     }
 
     #[test]
