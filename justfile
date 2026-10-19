@@ -18,6 +18,11 @@ esctest_commit := "2798f12149a19c3295e9b4853ab2da4b2eff1b2b"
 # commit.
 vttest_commit := "0229d7171a8574a2bf406c6ce14549f65d810e51"
 
+# The commit of vtebench (https://github.com/alacritty/vtebench) whose
+# scenarios `just bench` measures, rebuilt from its scripts, with its data
+# files: bump it in a dedicated commit.
+vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
+
 # Platform-independent crates, and the tools of the terminal's tests and
 # tasks, which must keep building, and passing their tests, on Linux.
 portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
@@ -117,9 +122,28 @@ vttest:
         echo {{ vttest_commit }} > "$dir/.commit"
     fi
 
-# Run the benchmarks (not implemented yet).
-bench:
-    @echo "bench: not implemented yet" >&2 && exit 1
+# Measure throughput: the VT core's criterion benchmarks, then both cores, the VT core and alacritty_terminal, over vtebench's scenarios and a file of 1 GiB, which `cat` would print; on an idle machine.
+bench: vtebench
+    cargo bench --locked -p bolt-vt-core
+    cargo build --locked --release -p bolt-differential --bin bolt-throughput -p bolt-replay --bin bolt-replay
+    [ -f target/cat-1g.txt ] || target/release/bolt-throughput --write-cat target/cat-1g.txt
+    target/release/bolt-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
+    target/release/bolt-replay --bench --cols 120 --rows 40 target/cat-1g.txt
+
+# Fetch vtebench's scenarios from the pinned commit into target/vtebench (downloads it): their scripts, which nothing runs, and their data files.
+vtebench:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir=target/vtebench
+    if [ "$(cat "$dir/.commit" 2>/dev/null)" != "{{ vtebench_commit }}" ]; then
+        clone=$(mktemp -d "${TMPDIR:-/tmp}/vtebench.XXXXXX")
+        trap 'rm -rf "$clone"' EXIT
+        git init -q --template= "$clone"
+        git -C "$clone" fetch -q --depth 1 https://github.com/alacritty/vtebench {{ vtebench_commit }}
+        rm -rf "$dir" && mkdir -p "$dir"
+        git -C "$clone" archive FETCH_HEAD benchmarks | tar -x -C "$dir"
+        echo {{ vtebench_commit }} > "$dir/.commit"
+    fi
 
 # Fuzz a target for `seconds`, seeded from the parser's tests (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600": fuzz-seeds

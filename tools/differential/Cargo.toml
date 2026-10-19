@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 alacritty_terminal.workspace = true
+anyhow.workspace = true
 bolt-vt-core.workspace = true
 
 [dev-dependencies]
