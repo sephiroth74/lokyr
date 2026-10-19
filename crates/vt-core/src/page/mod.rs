@@ -842,6 +842,16 @@ impl Page {
         page
     }
 
+    /// Whether the rows that the page holds take more styles, clusters,
+    /// links or linked cells than a page of `standard` capacity has room
+    /// for: whether they need its tables as they grew.
+    pub(crate) fn outgrew(&self, standard: Capacity) -> bool {
+        self.styles.len() > usize::from(standard.styles)
+            || self.graphemes.len() > usize::from(standard.graphemes)
+            || self.hyperlinks.len() > usize::from(standard.hyperlinks)
+            || self.hyperlinks.linked_cells() > usize::from(standard.linked_cells)
+    }
+
     /// The bytes that the page takes, header included.
     pub fn memory(&self) -> usize {
         size_of::<Self>()

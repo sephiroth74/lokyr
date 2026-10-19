@@ -106,6 +106,11 @@ impl HyperlinkTable {
             .count()
     }
 
+    /// How many cells are part of a link.
+    pub(crate) fn linked_cells(&self) -> usize {
+        self.cells.len()
+    }
+
     /// Whether the table holds no link.
     pub fn is_empty(&self) -> bool {
         self.len() == 0

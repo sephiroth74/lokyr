@@ -5148,10 +5148,36 @@ fn a_switch_to_132_columns_stays_within_a_shared_budget() {
     let rows = b.terminal.screen_rows().scrollback_rows();
     a.feed("\x1b[?40h\x1b[?3h");
     assert!(budget.used() <= budget.limit());
-    // The other pane's rows stay.
+    // The pane that grows takes the room that the budget has, and the other
+    // pane's rows stay.
+    let page = Capacity::standard(132).bytes();
+    assert!(
+        budget.used() + page > budget.limit(),
+        "{} of {}",
+        budget.used(),
+        budget.limit()
+    );
     assert_eq!(b.terminal.screen_rows().scrollback_rows(), rows);
     a.feed("\x1b[?3l");
     assert!(budget.used() <= budget.limit());
+}
+
+#[test]
+fn the_limits_setter_keeps_a_programs_width_through_a_compacted_scrollback() {
+    let limit = 1 << 20;
+    let mut term = allowing_window_ops(80, 24, limit);
+    let line = format!("{}\r\n", "x".repeat(79));
+    term.feed(line.repeat(5000));
+    let rows = term.terminal.screen_rows().scrollback_rows();
+    term.feed("\x1b[?40h\x1b[?3h");
+    let grown = term.terminal.screen_rows().scrollback().limit;
+    // Compacting makes the pages smaller; the same limit, set again, keeps
+    // what the program's width grew, and the rows on the way back.
+    assert!(term.terminal.compact_scrollback() > 0);
+    term.terminal.set_scrollback_limit(limit);
+    assert_eq!(term.terminal.screen_rows().scrollback().limit, grown);
+    term.feed("\x1b[?3l");
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), rows);
 }
 
 #[test]
@@ -5188,10 +5214,18 @@ fn the_scroll_region_is_told() {
     assert_eq!(term.terminal.scroll_region(), (0, 5));
     term.feed("\x1b[2;4r");
     assert_eq!(term.terminal.scroll_region(), (1, 3));
-    // And the tab stops, every 8 columns but the first.
-    let stops: Vec<u16> = (0..10).filter(|&x| term.terminal.tab_stop(x)).collect();
-    assert_eq!(stops, [8]);
+}
+
+#[test]
+fn the_tab_stops_are_told() {
+    // Every 8 columns but the first, and none past the screen.
+    let mut term = Term::new(20, 1);
+    let stops =
+        |term: &Term| -> Vec<u16> { (0..20).filter(|&x| term.terminal.tab_stop(x)).collect() };
+    assert_eq!(stops(&term), [8, 16]);
     assert!(!term.terminal.tab_stop(100));
+    term.feed("\x1b[9G\x1b[g\x1b[3G\x1bH");
+    assert_eq!(stops(&term), [2, 16]);
 }
 
 #[test]
@@ -5267,6 +5301,13 @@ fn a_wide_character_written_over_at_the_start_of_a_row_takes_its_spacer_head() {
         term.feed(format!("\r{over}"));
         assert_eq!(term.cell(3, 0).width(), Width::Narrow, "{over:?} at {at}");
     }
+    // Within left and right margins, the head at the right margin goes when
+    // the wide character at the left margin goes.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;3Habcde\u{4e2d}");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[2;3Hy");
+    assert_eq!(term.cell(7, 0).width(), Width::Narrow);
     // Text written elsewhere, or inserted, leaves it.
     for over in ["\x1b[3Gy", "\x1b[4hy"] {
         let mut term = Term::new(4, 2);

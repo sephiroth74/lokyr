@@ -210,9 +210,11 @@ struct Node {
 /// are the scrollback. Scrolling adds an empty row at the bottom.
 ///
 /// The pages stay within the [`Scrollback`] limits. When a new page would
-/// pass them, the oldest page leaves the list first: it is emptied and kept
-/// in a pool, from which the new page then comes, with its tables as large
-/// as they grew. The screen never leaves, even when its pages alone pass
+/// pass them, the oldest page leaves the list first: it is kept in a pool,
+/// from which the new page then comes, emptied, with its tables as large as
+/// they grew while its rows needed them. A page whose rows no longer needed
+/// its larger tables is freed instead, and so are a cold page and a page of
+/// another width. The screen never leaves, even when its pages alone pass
 /// the limits.
 ///
 /// Once the pool and the slab have reached their size, scrolling allocates
@@ -230,8 +232,9 @@ pub struct PageList {
     tail: u32,
     /// How many pages are in the list.
     pages: usize,
-    /// Empty pages of the standard rows and width, to use again, with their
-    /// tables as they grew.
+    /// Pages that left the list, to use again, emptied as they come out:
+    /// of the standard capacity, or of its rows and width with tables that
+    /// grew for rows that needed them.
     pool: Vec<Page>,
     /// The capacity of a standard page of the list's width.
     capacity: Capacity,
@@ -1391,15 +1394,18 @@ impl PageList {
         self.recycle(page);
     }
 
-    /// Empties `page`, which left the list, and keeps it in the pool if it
-    /// has the rows and the width of a standard page, its tables as they
-    /// grew, so that text that grows them, as combining marks and links
-    /// do, allocates nothing once the pool has such pages; frees it
-    /// otherwise.
-    fn recycle(&mut self, mut page: Page) {
+    /// Keeps `page`, which left the list, in the pool if it has the
+    /// standard capacity, or the rows and the width of a standard page with
+    /// tables that grew for rows that needed them, so that text that grows
+    /// them, as combining marks and links do, allocates nothing once the
+    /// pool has such pages; frees it otherwise, so that the pages that a
+    /// burst of such text grew go as the rows after it take them. A page
+    /// is emptied as it comes out of the pool, so that one that the limits
+    /// free there is not.
+    fn recycle(&mut self, page: Page) {
         let capacity = page.capacity();
-        if (capacity.cols, capacity.rows) == (self.capacity.cols, self.capacity.rows) {
-            page.reset();
+        let shape = (capacity.cols, capacity.rows) == (self.capacity.cols, self.capacity.rows);
+        if shape && (capacity == self.capacity || page.outgrew(self.capacity)) {
             self.pool.push(page);
         } else {
             self.give(page.memory());
@@ -1586,7 +1592,8 @@ impl PageList {
     /// the pool first, which then hands it out again.
     fn new_page(&mut self) -> Page {
         loop {
-            if let Some(page) = self.pool.pop() {
+            if let Some(mut page) = self.pool.pop() {
+                page.reset();
                 return page;
             }
             let bytes = self.capacity.bytes();
@@ -2116,7 +2123,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grown_page_keeps_its_rows_and_id_and_comes_back_from_the_pool() {
+    fn a_grown_page_keeps_its_rows_and_id_and_goes_when_no_row_needs_it() {
         let mut list = PageList::new(80, 24, pages(80, 2));
         scroll(&mut list, 0, 10);
         let (id, _) = list.screen_row_id(23);
@@ -2124,16 +2131,15 @@ mod tests {
         assert_eq!(list.page(id).map(|page| page.capacity().styles), Some(512));
         let (page, row) = list.screen_row(23);
         assert_eq!(page.cells(row)[0], numbered(9));
-        // When it leaves the list, a grown page goes to the pool, and comes
-        // back, empty, with its tables as they grew.
+        // Its rows hold no style, so that it leaves the pool out when it
+        // leaves the list, and the pages that come after it are standard.
         let page_rows = usize::from(Capacity::standard(80).rows);
         scroll(&mut list, 10, (2 * page_rows) as u32);
         assert!(list.page(id).is_none());
-        let styles: Vec<u16> = list
-            .iter_rows()
-            .map(|(page, _)| page.capacity().styles)
-            .collect();
-        assert!(styles.contains(&512), "{styles:?}");
+        assert!(
+            list.iter_rows()
+                .all(|(page, _)| page.capacity() == Capacity::standard(80))
+        );
         assert_eq!(list.memory(), counted(&list));
     }
 

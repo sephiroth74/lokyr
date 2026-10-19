@@ -419,18 +419,26 @@ impl Terminal {
         page.row_mut(row).set(flag, true);
     }
 
-    /// Empties the spacer head at the end of the row above `y` when writing
-    /// `width` cells from column `x` goes over a wide character at the
-    /// start of row `y`, which the head was left for, as
-    /// `alacritty_terminal` does. A head in the scrollback stays.
+    /// Empties the spacer head at the end of the line on the row above `y`,
+    /// at the right margin or the screen's edge, when writing `width` cells
+    /// from column `x` goes over a wide character at the start of the line
+    /// on row `y`, which the head was left for, as `alacritty_terminal`
+    /// does. A head in the scrollback stays, where `alacritty_terminal`
+    /// clears it: the scrollback's rows are not written to, as their pages
+    /// can be kept cold.
     fn clear_spacer_head(&mut self, x: u16, y: u16, width: u16) {
-        if x > 1 || y == 0 {
+        let start = if (self.margins.left..=self.margins.right).contains(&x) {
+            self.margins.left
+        } else {
+            0
+        };
+        if x > start + 1 || y == 0 {
             return;
         }
-        let last = self.cols - 1;
+        let last = self.line_end(x) - 1;
         let rows = &mut self.screen_mut().rows;
         let (page, row) = rows.screen_row_mut(y);
-        let cells = &page.cells(row)[usize::from(x)..usize::from((x + width).min(2))];
+        let cells = &page.cells(row)[usize::from(x)..usize::from((x + width).min(start + 2))];
         if !cells
             .iter()
             .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))

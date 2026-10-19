@@ -144,14 +144,14 @@ impl Terminal {
 
     /// RIS: puts the terminal back as it was made, with its screens and
     /// scrollback empty, no title and the theme's colors. It keeps its
-    /// configuration: the size, but 132 columns that DECCOLM set, which go
-    /// back to 80, and the width that the embedder gave, which the sizes
-    /// that programs set are measured against, the scrollback limits, the
-    /// widths it was made with, the normalization, the `TERM`, the title
-    /// and clipboard reports, the link schemes, the window's operations,
-    /// the cell size and the theme. It
-    /// keeps the working directory too, which describes the shell rather
-    /// than the terminal, and what it knows of the window and the display.
+    /// configuration: the size, though 132 columns that DECCOLM set go back
+    /// to 80; the width that the embedder gave, which the sizes that
+    /// programs set are measured against; the scrollback limits, the widths
+    /// it was made with, the normalization, the `TERM`, the title and
+    /// clipboard reports, the link schemes, the window's operations, the
+    /// cell size and the theme. It keeps the working directory too, which
+    /// describes the shell rather than the terminal, and what it knows of
+    /// the window and the display.
     /// The bells that rang and the synchronized updates stay counted, and
     /// the replies and events not yet taken stay queued, with events for
     /// the titles, the tab color, the colors and the size that RIS

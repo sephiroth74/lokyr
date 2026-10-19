@@ -46,7 +46,6 @@ impl<V: Copy + Default> CellMap<V> {
         self.ids.capacity()
     }
 
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.len
     }

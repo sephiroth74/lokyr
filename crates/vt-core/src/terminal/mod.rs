@@ -616,9 +616,15 @@ impl Terminal {
     /// them. Past the width that the embedder gave, a program's, the
     /// scrollback keeps the rows that it has, within twice the limit.
     pub fn set_scrollback_limit(&mut self, limit: usize) {
+        let (before, now) = (self.scrollback_limit, self.primary.rows.scrollback().limit);
         self.scrollback_limit = limit;
-        let limit = self.primary_limit();
-        self.primary.rows.set_scrollback_limit(limit);
+        let mut measured = self.primary_limit();
+        // A limit that does not shrink keeps what a program's width grew,
+        // which pages that compacting made smaller would measure less.
+        if self.cols > self.given_cols && limit >= before {
+            measured = measured.max(now).min(limit.saturating_mul(2));
+        }
+        self.primary.rows.set_scrollback_limit(measured);
     }
 
     /// The primary screen's limit at its width: the configured one, or past

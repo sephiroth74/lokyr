@@ -5,7 +5,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
 
-use bolt_vt_core::page::{Capacity, Cell, Content, Page, PageList, Rgb, Scrollback};
+use bolt_vt_core::page::{Capacity, Cell, Content, Page, PageList, Rgb, Scrollback, TableFull};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
 use bolt_vt_core::unicode::Normalization;
@@ -229,7 +229,54 @@ fn a_page_takes_about_8_bytes_a_cell_and_what_it_counts() {
         let header = size(size_of::<Page>());
         assert_eq!(held + header, size(page.memory()), "{cols} columns");
         assert_eq!(page.memory(), capacity.bytes(), "{cols} columns");
+        // A page whose tables grew too.
+        let grown = capacity.grown_for(TableFull::Styles).unwrap();
+        let before = live();
+        let page = Page::new(grown);
+        assert_eq!(
+            live() - before + header,
+            size(page.memory()),
+            "{cols} columns"
+        );
+        assert_eq!(page.memory(), grown.bytes(), "{cols} columns");
     }
+}
+
+#[test]
+fn a_burst_of_styled_text_leaves_the_scrollback_its_rows_once_plain_text_follows() {
+    // A style a cell, as image viewers and gradients print, which grows the
+    // pages' tables of styles as far as they go.
+    let burst: String = (0..4_000u32)
+        .map(|line| {
+            let cells: String = (0..79u32)
+                .map(|x| {
+                    let n = line * 79 + x;
+                    format!(
+                        "\x1b[38;2;{};{};{}mx",
+                        n % 256,
+                        n / 256 % 256,
+                        n / 65536 % 256
+                    )
+                })
+                .collect();
+            format!("{cells}\x1b[m\r\n")
+        })
+        .collect();
+    let plain = format!("{}\r\n", "x".repeat(79)).repeat(100_000);
+    let rows = |text: &[&str]| {
+        let mut terminal = Terminal::new(80, 24, Options::default());
+        let mut parser = Parser::new();
+        for part in text {
+            parser.advance(&mut terminal, part.as_bytes());
+        }
+        terminal.screen_rows().scrollback_rows()
+    };
+    let fresh = rows(&[&plain]);
+    let after = rows(&[&burst, &plain]);
+    assert!(
+        after + 2 * usize::from(Capacity::standard(80).rows) >= fresh,
+        "{after} rows against {fresh}"
+    );
 }
 
 #[test]

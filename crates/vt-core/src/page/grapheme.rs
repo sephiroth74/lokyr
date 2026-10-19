@@ -40,7 +40,6 @@ impl GraphemeTable {
         self.spans.capacity()
     }
 
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.spans.len()
     }
