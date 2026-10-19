@@ -17,7 +17,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 const COLS: u16 = 120;
 
 /// A terminal of 120 by 40 that `lines` of text went through, varied lines
-/// of 40 to 80 characters, the scrollback compacted as an idle terminal's
+/// of 41 to 93 characters, the scrollback compacted as an idle terminal's
 /// is, a hundred thousand lines at a time, so that a million lines fit in
 /// some hundreds of MiB.
 fn scrollback(lines: usize) -> Terminal {

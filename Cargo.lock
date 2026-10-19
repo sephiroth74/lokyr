@@ -206,6 +206,7 @@ dependencies = [
  "insta",
  "libc",
  "serde_json",
+ "unicode-normalization",
 ]
 
 [[package]]

@@ -87,7 +87,7 @@ ucd-check:
 
 # Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf, and builds vttest).
 record: vttest
-    cargo run -q -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
+    cargo run -q --release -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
 
 # Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, each whole, as `--include='CUP|CUB'`.
 [positional-arguments]

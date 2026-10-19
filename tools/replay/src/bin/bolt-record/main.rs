@@ -18,9 +18,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
-use bolt_replay::harness::{Event, Harness, HarnessOptions, line_of, lines};
+use bolt_replay::harness::{
+    Event, Harness, HarnessOptions, line_around, lines, reach, screen_lines,
+};
 use bolt_vt_core::parser::{Handler, Limits, Params, Parser, StringEnd};
-use bolt_vt_core::terminal::{Options, Terminal};
+use bolt_vt_core::terminal::{Cursor, Options, Terminal};
+use unicode_normalization::UnicodeNormalization;
 
 use cast::Cast;
 use script::{Script, Step};
@@ -248,6 +251,11 @@ fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<(
         }
     }
     let mut watch = Watch {
+        longest: private
+            .iter()
+            .map(|name| name.chars().count())
+            .max()
+            .unwrap_or(0),
         terminal: Terminal::new(
             script.cols,
             script.rows,
@@ -276,11 +284,19 @@ fn check_all(harness: &Harness, private: &[String], script: &Script) -> Result<(
 /// text, which can break what a control put together; and the cursor's
 /// line after each printed character, which can complete a name that the
 /// next character overwrites, or pushes aside in insert mode, or that the
-/// next row's text breaks as a pending wrap goes on. A name that a read
-/// draws and takes away, which no read ends with, shows there.
+/// next row's text breaks as a pending wrap goes on, or the whole screen
+/// when the character wraps within left and right margins, as its scroll
+/// moves part of each row. The screen's first line is read from the row
+/// that it starts in, so that a name that goes on from the scrollback
+/// shows, and the cursor's line within the rows that a name can reach from
+/// the cursor's, so that a long line costs no more a character than a
+/// short one. A name that a read draws and takes away, which no read ends
+/// with, shows there.
 struct Watch<'a> {
     terminal: Terminal,
     private: &'a [String],
+    /// The characters of the longest name.
+    longest: usize,
     /// The first name that showed.
     shown: Option<String>,
     /// Whether text is being printed, since the last control, escape
@@ -294,8 +310,8 @@ impl Watch<'_> {
         if self.shown.is_some() {
             return;
         }
-        let list = self.terminal.screen_rows();
-        let lines = lines(list, list.scrollback_rows());
+        let around = reach(self.longest, self.terminal.cols());
+        let lines = screen_lines(self.terminal.screen_rows(), around);
         self.shown = self
             .private
             .iter()
@@ -318,6 +334,19 @@ impl Watch<'_> {
         }
     }
 
+    /// Looks at what printing a character changed, with the cursor
+    /// `before` it: the cursor's line, or the whole screen if the character
+    /// wrapped within left and right margins.
+    fn after_printing(&mut self, before: Cursor) {
+        let after = self.terminal.cursor();
+        let wrapped = before.pending_wrap || after.x < before.x || after.y != before.y;
+        if wrapped && self.terminal.left_right_margin_mode() {
+            self.look();
+        } else {
+            self.look_at_the_cursor();
+        }
+    }
+
     /// Notes the first name that the cursor's line shows now, if none
     /// showed yet.
     fn look_at_the_cursor(&mut self) {
@@ -326,7 +355,7 @@ impl Watch<'_> {
         }
         let list = self.terminal.screen_rows();
         let index = list.scrollback_rows() + usize::from(self.terminal.cursor().y);
-        let line = line_of(list, index);
+        let line = line_around(list, index, reach(self.longest, self.terminal.cols()));
         self.shown = self
             .private
             .iter()
@@ -338,15 +367,17 @@ impl Watch<'_> {
 impl Handler for Watch<'_> {
     fn print(&mut self, c: char) {
         self.start_printing();
+        let before = self.terminal.cursor();
         self.terminal.print(c);
-        self.look_at_the_cursor();
+        self.after_printing(before);
     }
 
     fn print_ascii(&mut self, text: &[u8]) {
         self.start_printing();
         for byte in text.chunks(1) {
+            let before = self.terminal.cursor();
             self.terminal.print_ascii(byte);
-            self.look_at_the_cursor();
+            self.after_printing(before);
         }
     }
 
@@ -764,6 +795,13 @@ fn private_names(home: &Path) -> Vec<String> {
             names.push(resolved.display().to_string());
         }
     }
+    // Each in both of Unicode's canonical forms, composed and decomposed,
+    // as a name can be stored in one and printed in the other.
+    let forms: Vec<String> = names
+        .iter()
+        .flat_map(|name| [name.nfc().collect(), name.nfd().collect()])
+        .collect();
+    names.extend(forms);
     names.retain(|name| name.chars().count() >= 3);
     names.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
     names.dedup();
@@ -809,7 +847,45 @@ fn users_own(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
+
+    /// A watch over a terminal of `cols` by `rows`, for `private`.
+    fn watch(cols: u16, rows: u16, private: &[String]) -> Watch<'_> {
+        Watch {
+            longest: private
+                .iter()
+                .map(|name| name.chars().count())
+                .max()
+                .unwrap_or(0),
+            terminal: Terminal::new(cols, rows, Options::default()),
+            private,
+            shown: None,
+            printing: false,
+        }
+    }
+
+    #[test]
+    fn a_long_line_costs_the_watch_no_more_than_short_ones() {
+        // Names that the text never shows, one as long as a home's folder.
+        let private = ["zz-someone-zz", "/Users/zz-someone-zz/Library/Caches"].map(String::from);
+        let time = |text: &[u8]| {
+            let mut watch = watch(80, 24, &private);
+            let start = Instant::now();
+            Parser::new().advance(&mut watch, text);
+            assert_eq!(watch.shown, None);
+            start.elapsed()
+        };
+        // 100 KB on lines of a row, and on one line of 1 250 rows, which
+        // would take minutes if each character read its whole line.
+        let short = time(&format!("{}\r\n", "x".repeat(79)).repeat(1250).into_bytes());
+        let long = time(&b"x".repeat(100_000));
+        assert!(
+            long < short * 4 + Duration::from_millis(100),
+            "{long:?} against {short:?}"
+        );
+    }
 
     #[test]
     fn the_folders_of_a_temporary_directory_stop_before_the_systems() {

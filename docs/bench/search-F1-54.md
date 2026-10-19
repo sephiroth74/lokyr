@@ -4,7 +4,7 @@ Measured on 2026-10-19 with `cargo bench -p bolt-search`, which `just bench` run
 
 ## Method
 
-- **The scrollback**: a terminal of 120 by 40, with a limit of 4 GiB, through which varied lines of 40 to 80 characters went, numbered, with words among them; compacted, as an idle terminal's is, every 100 000 lines, so that the search reads cold pages as they are kept.
+- **The scrollback**: a terminal of 120 by 40, with a limit of 4 GiB, through which varied lines of 41 to 93 characters went, numbered, with words among them; compacted, as an idle terminal's is, every 100 000 lines, so that the search reads cold pages as they are kept.
 - **A search that finds nothing**, for `needle` and for the regex `line \d+ needle`, backward from the screen's last row, so that every row is read: over 100 000 and 1 000 000 lines, and over one logical line of 1 000 000 cells, soft-wrapped over 8 334 rows, which each search builds again.
 - **`find_all`** of `fox`, on every line, over 100 000 lines, the first 1 000 matches pinned and the others counted.
 

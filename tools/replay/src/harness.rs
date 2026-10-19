@@ -428,10 +428,12 @@ impl Harness {
             .join("\n")
     }
 
-    /// The screen's lines, a line each, as [`lines`] reads them.
+    /// The screen's lines, a line each, as [`screen_lines`] reads them for
+    /// the longest of the forbidden texts.
     fn lines(&self) -> String {
-        let list = self.terminal.screen_rows();
-        lines(list, list.scrollback_rows()).join("\n")
+        let longest = self.forbidden.iter().map(|text| text.chars().count()).max();
+        let around = reach(longest.unwrap_or(0), self.terminal.cols());
+        screen_lines(self.terminal.screen_rows(), around).join("\n")
     }
 
     /// Everything that the program wrote.
@@ -633,9 +635,27 @@ pub fn lines(list: &PageList, from: usize) -> Vec<String> {
 /// The text of the line that the row at index `index` of `list` is part
 /// of, as [`lines`] reads it: from the row that the line starts in.
 pub fn line_of(list: &PageList, index: usize) -> String {
+    line_around(list, index, usize::MAX)
+}
+
+/// The text of the rows of the line that the row at index `index` of
+/// `list` is part of, `around` of them at most on either side of it, read
+/// as [`lines`] reads the line: all that a text which takes a cell of that
+/// row, and [`reach`]es `around` rows, can show in.
+pub fn line_around(list: &PageList, index: usize, around: usize) -> String {
+    let start = line_start(list, index, around);
+    let rows = (index - start).saturating_add(around).saturating_add(1);
+    next_line(&mut list.rows_from(start).take(rows).peekable())
+}
+
+/// The index of the row that the line of the row at index `index` of
+/// `list` starts in, `limit` rows before it at most.
+pub fn line_start(list: &PageList, index: usize, limit: usize) -> usize {
     let mut start = index;
     let mut rows = list.rows_before(index + 1).peekable();
-    while let Some(row) = rows.next() {
+    while index - start < limit
+        && let Some(row) = rows.next()
+    {
         let joined = row.metadata().has(RowFlag::Continuation)
             && rows
                 .peek()
@@ -645,7 +665,23 @@ pub fn line_of(list: &PageList, index: usize) -> String {
         }
         start -= 1;
     }
-    next_line(&mut list.rows_from(start).peekable())
+    start
+}
+
+/// How many rows on either side of a row a text of `chars` characters,
+/// which takes a cell of that row, can reach on a screen of `cols` columns:
+/// two cells a character, as a wide one takes, and the cell that a wide
+/// one leaves at a row's end.
+pub fn reach(chars: usize, cols: u16) -> usize {
+    (2 * chars + 1).div_ceil(usize::from(cols.max(1)))
+}
+
+/// The text of the screen of `list` as [`lines`] reads it, its first line
+/// from the row that it starts in, `around` rows above the screen at most,
+/// so that a text that goes on from the scrollback into the screen shows.
+pub fn screen_lines(list: &PageList, around: usize) -> Vec<String> {
+    let first = list.scrollback_rows();
+    lines(list, line_start(list, first, around))
 }
 
 /// The text of the line that the next of `rows` starts, which takes the

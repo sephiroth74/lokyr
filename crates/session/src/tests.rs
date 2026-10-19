@@ -260,8 +260,9 @@ fn a_write_that_blocks_does_not_keep_an_update_from_ending() {
     wait_for(&session, "the update", |terminal| {
         terminal.synchronized_updates() == 1
     });
-    // More than the terminal's input holds.
-    session.write(vec![b'x'; 64 * 1024]);
+    // More than the terminal's input holds: macOS's holds a few KiB,
+    // Linux's some 640 KiB.
+    session.write(vec![b'x'; 2 << 20]);
     wait_for(&session, "the deadline", |terminal| {
         !terminal.synchronized_output()
     });

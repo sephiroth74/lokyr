@@ -8,6 +8,10 @@ use bolt_vt_core::terminal::{Event as TerminalEvent, Options};
 
 const LIMIT: Duration = Duration::from_secs(10);
 
+/// More than a PTY's input holds for a program that does not read it:
+/// macOS's holds a few KiB, Linux's some 640 KiB.
+const MORE_THAN_A_PTY_HOLDS: usize = 2 << 20;
+
 /// The options of a harness of `cols` by `rows` that runs `script` with
 /// `sh`.
 fn options(cols: u16, rows: u16, script: &str) -> HarnessOptions {
@@ -262,11 +266,14 @@ fn a_send_that_times_out_takes_back_what_it_did_not_write() {
             .sum::<usize>()
     };
     let error = harness
-        .send(&[b'x'; 70_000], Duration::from_millis(200))
+        .send(
+            &vec![b'x'; MORE_THAN_A_PTY_HOLDS],
+            Duration::from_millis(200),
+        )
         .unwrap_err();
     assert!(error.to_string().contains("did not take"), "{error:#}");
     let before = typed(&harness);
-    assert!(before < 70_000, "{before} bytes typed");
+    assert!(before < MORE_THAN_A_PTY_HOLDS, "{before} bytes typed");
     harness.sleep(Duration::from_secs(2)).unwrap();
     assert_eq!(typed(&harness), before, "nothing more typed");
     harness.hang_up();
@@ -369,7 +376,9 @@ fn a_send_that_fails_on_an_error_takes_back_its_keys() {
     );
     harness.wait("armed", LIMIT).unwrap();
     harness.forbid(vec!["secret".to_owned()]);
-    let error = harness.send(&[b'x'; 70_000], LIMIT).unwrap_err();
+    let error = harness
+        .send(&vec![b'x'; MORE_THAN_A_PTY_HOLDS], LIMIT)
+        .unwrap_err();
     assert!(error.to_string().contains("showed `secret`"), "{error:#}");
     harness.forbid(Vec::new());
     let before = typed(&harness);

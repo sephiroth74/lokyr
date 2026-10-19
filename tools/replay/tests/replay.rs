@@ -374,6 +374,18 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
             "wrapped-over",
             r"printf 'xxxxxxxxxxxxxxxxxxxxone-zz\\033[1;14Hzz-someY'; sleep 0.3",
         ),
+        // Put together across the scrollback's last row and the screen's
+        // first, by a control, then erased.
+        (
+            "across-the-scrollback",
+            r"printf 'xxxxxxxxxxxxxxxzz-soXmeone-zz\\n\\n\\033[1;1H\\033[P\\033[2K'; sleep 0.3",
+        ),
+        // Put together on a row that is not the cursor's, by a wrap that
+        // scrolls within left and right margins, and broken by the next.
+        (
+            "margins-scrolled",
+            r"printf '\\033[?69h\\033[6;20szz-soYYYYYYYYYYYYYYY\\033[2;1HAAAAAmeone-zzZZZZZ\\033[3;20HPQRRRRRRRRRRRRRRS'; sleep 0.3",
+        ),
         // In base64 split between the chunks of a transfer: kitty's
         // graphics, and iTerm2's file in parts.
         (
@@ -394,6 +406,20 @@ fn a_name_that_two_reads_split_or_an_escape_breaks_is_caught() {
         );
         assert_eq!(cast, None, "{name}");
     }
+}
+
+#[test]
+fn a_name_printed_in_another_canonical_form_is_caught() {
+    // `é` composed in the name, decomposed as the program prints it.
+    let program = r"printf 'zz-jose\\314\\201-zz\\n'; sleep 0.3";
+    let (output, cast) = record(
+        "decomposed",
+        &format!("run sh -c \"{program}\"\nexit\n"),
+        &[("USER", "zz-jos\u{e9}-zz")],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("showed `zz-jose\u{301}-zz`"), "{stderr}");
+    assert_eq!(cast, None);
 }
 
 #[test]
@@ -635,12 +661,13 @@ fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(cast.is_some());
-    // A program that never reads.
+    // A program that never reads, and keys that no PTY holds whole: macOS's
+    // holds a few KiB, Linux's some 640 KiB.
     let (output, cast) = record(
         "deaf",
         &format!(
             "run sh -c \"stty raw -echo; echo armed; sleep 30\"\nwait armed\nsend \"{}\" 500\n",
-            "x".repeat(70_000)
+            "x".repeat(2 << 20)
         ),
         &[],
     );
