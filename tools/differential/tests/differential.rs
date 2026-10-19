@@ -71,6 +71,19 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "\x1b[2;79H\u{4e2d}\x1b[4h\x1b[1;80Hab".as_bytes().to_vec(),
         ),
         ("shift", b"\x0e\x1b8\x1b(0m".to_vec()),
+        (
+            "saved-origin",
+            b"\x1b[2;5r\x1b7\x1b[?6h\x1b8\x1b[HX".to_vec(),
+        ),
+        (
+            "alternate-shift",
+            b"\x1b)0\x1b[?1049h\x0e\x1b[?1049lq".to_vec(),
+        ),
+        ("cha-in-origin", b"\x1b[2;5r\x1b[?6h\x1b[5GX".to_vec()),
+        (
+            "wide-repeat",
+            "\x1b[78G\u{4e2d}\x1b[1G[\x1b[4h\x1b[2b".as_bytes().to_vec(),
+        ),
     ]
 }
 
@@ -113,6 +126,10 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-no-wrap-wide", NoWrapWide, "row 0, column 78: \"中\" against \" \"", 0x5295db36c915ae0e),
     ("case-wide-insert-wrap", WideEdit, "row 1, column 79: \" \" against \"中\"", 0xa6f67a1eb14b3262),
     ("case-shift", Shift, "row 0, column 0: \"└\" against \"m\"", 0x5d79a90666309afc),
+    ("case-saved-origin", SavedOrigin, "row 0, column 0: \"X\" against \" \"", 0xbcdd974501f4f032),
+    ("case-alternate-shift", Shift, "row 0, column 0: \"q\" against \"─\"", 0x4c60d4c23b8884c2),
+    ("case-cha-in-origin", OriginMoves, "row 1, column 4: \"X\" against \" \"", 0x6009f262a6b721ca),
+    ("case-wide-repeat", WideEdit, "row 0, column 1: \"[\" against \" \"", 0x0109ad620516917f),
     // vttest: the screens after a switch to 132 columns or back.
     ("vttest:64-67", Deccolm, "row 0, column 0: \"*\" against \"T\"", 0x4eb3eb42cd76c133),
     ("vttest:84", Deccolm, "row 0, column 6: \"*\" against \" \"", 0x77dddcea318ef500),
@@ -121,12 +138,13 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     // cursor goes up 24 rows in.
     ("vttest:96-97", OriginMoves, "row 0, column 0: \" \" against \"S\"", 0x7bd0f3c3002c3003),
     ("vttest:104-105", OriginMoves, "row 0, column 0: \" \" against \"J\"", 0x4a5d6634efd49f04),
-    // The national sets, through G0 and G1, the shifts and the single shifts.
+    // The national sets, through G0 and G1 and the locking shifts, and the
+    // single shifts, SS2 and SS3, which `alacritty_terminal` does not do.
     ("vttest:129-132", British, "row 7, column 12: \"£\" against \"#\"", 0x5a6d93d078e88f8f),
     ("vttest:135-136", British, "row 7, column 12: \"£\" against \"#\"", 0xf8afc658e9b985f5),
     ("vttest:139-142", British, "row 7, column 7: \"£\" against \"#\"", 0xfac562b1edf0772f),
-    ("vttest:146-150", British, "row 7, column 10: \"£\" against \"#\"", 0xf9cddfc82bac2723),
-    ("vttest:152-157", British, "row 7, column 10: \"£\" against \"#\"", 0xaa31cfa96eeb9dd3),
+    ("vttest:146-150", Unsupported, "row 7, column 10: \"£\" against \"#\"", 0xf9cddfc82bac2723),
+    ("vttest:152-157", Unsupported, "row 7, column 10: \"£\" against \"#\"", 0xaa31cfa96eeb9dd3),
     // DCH of 130 cells, and the staircase of DCH at the last column, which
     // stays until the screen is cleared.
     ("vttest:305-306", Dch, "row 0, column 0: \"B\" against \" \"", 0xfed95cf218b11a0b),
@@ -338,5 +356,28 @@ fn each_case_parts_the_screens_for_its_cause_when_fed_a_byte_at_a_time() {
             Ok(cause),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn each_stretch_of_the_recordings_starts_for_its_cause() {
+    for &(name, cause, ..) in EXPLAINED {
+        let Some((recording, points)) = name.split_once(':') else {
+            continue;
+        };
+        if recording == "kuhn" {
+            continue;
+        }
+        let start: usize = points.split('-').next().unwrap().parse().unwrap();
+        let bytes = std::fs::read(recordings().join(format!("{recording}.cast"))).unwrap();
+        let chunks = Recording::parse(&bytes).unwrap().chunks;
+        let size = Recording::parse(&bytes).unwrap().size.unwrap();
+        let found = bolt_differential::explore_after(
+            size.0,
+            size.1,
+            &chunks[..start].concat(),
+            &chunks[start],
+        );
+        assert_eq!(found, Ok(Some(cause)), "{name}");
     }
 }

@@ -38,7 +38,8 @@ const MIN_BYTES: usize = 1024 * 1024;
 /// How many samples a run of a scenario times.
 const SAMPLES: usize = 8;
 
-/// A scenario of vtebench: the output of its setup and of its benchmark.
+/// A scenario of vtebench: the output of its setup, as a PTY hands it
+/// over, and of its benchmark, as the script prints it.
 struct Scenario {
     name: &'static str,
     setup: Vec<u8>,
@@ -103,21 +104,23 @@ fn run() -> Result<()> {
     );
     if let Some(dir) = vtebench {
         for scenario in scenarios(&dir)? {
-            let samples = samples(&scenario);
+            let samples = samples(&scenario.payload);
             let bytes = SAMPLES * samples.len();
-            let bolt = median(runs, || {
-                time_scenario(&mut BoltCore::new(), &scenario, &samples)
-            });
-            let alacritty = median(runs, || {
-                time_scenario(&mut AlacrittyCore::new(), &scenario, &samples)
-            });
+            let (bolt, alacritty) = medians(
+                runs,
+                || time_scenario(&mut BoltCore::new(), &scenario, &samples),
+                || time_scenario(&mut AlacrittyCore::new(), &scenario, &samples),
+            );
             row(&mut table, scenario.name, bytes, bolt, alacritty);
         }
     }
     for file in files {
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
-        let bolt = median(runs, || time_bytes(&mut BoltCore::new(), &bytes));
-        let alacritty = median(runs, || time_bytes(&mut AlacrittyCore::new(), &bytes));
+        let (bolt, alacritty) = medians(
+            runs,
+            || time_bytes(&mut BoltCore::new(), &bytes),
+            || time_bytes(&mut AlacrittyCore::new(), &bytes),
+        );
         let name = file.file_name().map_or_else(
             || file.display().to_string(),
             |name| name.to_string_lossy().into_owned(),
@@ -182,28 +185,49 @@ fn time_bytes(core: &mut impl Core, bytes: &[u8]) -> (usize, Duration) {
     (bytes.len(), start.elapsed())
 }
 
-/// Runs [`SAMPLES`] samples of `scenario` on `core`, each a reset and the
-/// setup, untimed, then `samples`, timed, and returns the time of those.
+/// Runs a sample of `scenario` on `core` as a warm-up, as vtebench does,
+/// then [`SAMPLES`] samples, each a reset and the setup, untimed, then
+/// `samples`, timed, and returns the time of those.
 fn time_scenario(core: &mut impl Core, scenario: &Scenario, samples: &[u8]) -> (usize, Duration) {
     let mut total = Duration::ZERO;
-    for _ in 0..SAMPLES {
+    for sample in 0..=SAMPLES {
         core.feed(b"\x1bc");
         for read in scenario.setup.chunks(READ) {
             core.feed(read);
         }
-        total += time_bytes(core, samples).1;
+        let time = time_bytes(core, samples).1;
+        if sample > 0 {
+            total += time;
+        }
     }
     (SAMPLES * samples.len(), total)
 }
 
-/// The median throughput of `runs` runs, in MiB/s.
-fn median(runs: u32, mut run: impl FnMut() -> (usize, Duration)) -> f64 {
-    let mut rates: Vec<f64> = (0..runs)
-        .map(|_| {
-            let (bytes, time) = run();
-            bytes as f64 / time.as_secs_f64() / (1024.0 * 1024.0)
-        })
-        .collect();
+/// The median throughput of `runs` runs of each core, in MiB/s, their runs
+/// taken in turn, the first core's first and then the second's, so that a
+/// machine that grows faster or slower favours neither.
+fn medians(
+    runs: u32,
+    mut first: impl FnMut() -> (usize, Duration),
+    mut second: impl FnMut() -> (usize, Duration),
+) -> (f64, f64) {
+    let rate =
+        |(bytes, time): (usize, Duration)| bytes as f64 / time.as_secs_f64() / (1024.0 * 1024.0);
+    let (mut firsts, mut seconds) = (Vec::new(), Vec::new());
+    for run in 0..runs {
+        if run % 2 == 0 {
+            firsts.push(rate(first()));
+            seconds.push(rate(second()));
+        } else {
+            seconds.push(rate(second()));
+            firsts.push(rate(first()));
+        }
+    }
+    (median(firsts), median(seconds))
+}
+
+/// The median of `rates`.
+fn median(mut rates: Vec<f64>) -> f64 {
     rates.sort_by(f64::total_cmp);
     rates[rates.len() / 2]
 }
@@ -217,11 +241,12 @@ fn row(table: &mut String, name: &str, bytes: usize, bolt: f64, alacritty: f64) 
     );
 }
 
-/// The payload of a sample: the scenario's, repeated to [`MIN_BYTES`] at
-/// least, as vtebench repeats it.
-fn samples(scenario: &Scenario) -> Vec<u8> {
-    let count = (MIN_BYTES - 1) / scenario.payload.len() + 1;
-    scenario.payload.repeat(count)
+/// The payload of a sample, as a PTY hands it over: `payload`, as the
+/// script prints it, repeated to [`MIN_BYTES`] at least, as vtebench
+/// repeats it before the PTY adds the carriage returns.
+fn samples(payload: &[u8]) -> Vec<u8> {
+    let count = (MIN_BYTES - 1) / payload.len() + 1;
+    onlcr(&payload.repeat(count))
 }
 
 /// `text` as a PTY hands it over: each line feed after a carriage return.
@@ -318,7 +343,6 @@ fn scenarios(dir: &Path) -> Result<Vec<Scenario>> {
         .into_iter()
         .map(|scenario| Scenario {
             setup: onlcr(&scenario.setup),
-            payload: onlcr(&scenario.payload),
             ..scenario
         })
         .collect())
@@ -441,4 +465,38 @@ fn collect_sources(dir: &Path, sources: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pty_puts_a_carriage_return_before_each_line_feed() {
+        assert_eq!(onlcr(b"a\nb\r\n"), b"a\r\nb\r\r\n");
+    }
+
+    #[test]
+    fn a_sample_repeats_the_payload_to_a_mebibyte_before_the_carriage_returns() {
+        // Two bytes a line, repeated to 1 MiB, which the carriage returns
+        // then make 1.5 MiB.
+        let sample = samples(b"y\n");
+        assert_eq!(sample.len(), 3 * MIN_BYTES / 2);
+        assert!(sample.starts_with(b"y\r\ny\r\n"));
+    }
+
+    #[test]
+    fn the_scenarios_print_as_their_scripts_print_at_120_by_40() {
+        let escapes = |text: &[u8]| text.iter().filter(|&&byte| byte == 0x1B).count();
+        // A letter a screen: the cursor home, then every cell.
+        assert_eq!(light_cells().len(), 26 * (3 + COLS * ROWS));
+        assert_eq!(escapes(&dense_cells()), 26 * (1 + COLS * ROWS));
+        // A move for every cell along the edges of twenty rectangles, a
+        // letter at a time, as the script's loops count them.
+        let motion = cursor_motion();
+        assert_eq!(escapes(&motion), 26 * 4800);
+        assert!(motion.starts_with(b"\x1b[1;1HA\x1b[1;2HA"));
+        // Full rows, a line each.
+        assert_eq!(scrolling_fullscreen().len(), 26 * (COLS + 1));
+    }
 }

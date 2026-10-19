@@ -5,7 +5,7 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::MAX_PARAMS;
 use bolt_vt_core::terminal::{Charset, Shift};
 
-use crate::{Before, Step};
+use crate::{Before, Screen, Step};
 
 /// A way in which the two cores differ on purpose, each for its reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +70,8 @@ pub enum Cause {
     NoWrapWide,
     /// The shift that DECRC brings back.
     Shift,
+    /// The origin mode that DECRC brings back.
+    SavedOrigin,
 }
 
 impl Cause {
@@ -106,9 +108,10 @@ impl Cause {
                  changing the width"
             }
             Self::OriginMoves => {
-                "CUU and CUD in origin mode move within the scroll region in the VT core, as in \
-                 xterm; alacritty_terminal adds the top margin to the cursor's row a second time, \
-                 as it moves to the row that it reached as if that were relative to the margin"
+                "CUU, CUD, CHA and their kin in origin mode move within the scroll region in the \
+                 VT core, as in xterm; alacritty_terminal adds the top margin to the cursor's row a \
+                 second time, as it moves to the row that it reached, or keeps, as if that were \
+                 relative to the margin"
             }
             Self::Dch => {
                 "DCH of more cells than are right of the cursor deletes those in the VT core, as \
@@ -128,7 +131,9 @@ impl Cause {
                 "DECALN puts the cursor home in the VT core, as DEC STD 070 and xterm do; alacritty_terminal leaves it where it was"
             }
             Self::Tab => {
-                "HT with a wrap pending leaves the cursor at the last column in the VT core, as xterm does without its mode 41; alacritty_terminal wraps to the next row first, as that mode does"
+                "HT with a wrap pending leaves the cursor at the last column in the VT core, as \
+                 xterm does without its mode 41; alacritty_terminal wraps to the first column of the \
+                 next row, and stops there"
             }
             Self::Unsupported => {
                 "the VT core does as xterm and DEC's terminals do, and alacritty_terminal does \
@@ -145,7 +150,10 @@ impl Cause {
                 "IL and DL put the cursor at the left margin in the VT core, as DEC's terminals and xterm do; alacritty_terminal leaves it where it was"
             }
             Self::EditWrap => {
-                "ICH, DCH, ECH, EL and ED leave no wrap pending in the VT core, as xterm's do; alacritty_terminal keeps it, so that the next character wraps"
+                "ICH, DCH, ECH, EL, ED, and IL and DL outside the scroll region, leave no wrap \
+                 pending in the VT core, as xterm's edits do; \
+                 alacritty_terminal keeps it, so that the next character wraps, and its EL 0 with \
+                 a wrap pending erases nothing"
             }
             Self::Region => {
                 "DECSTBM with its top margin at the last row or past it does nothing in the VT \
@@ -204,10 +212,17 @@ impl Cause {
                 "a wide character at the last column without autowrap goes one column back in the VT core, as in xterm; alacritty_terminal drops it"
             }
             Self::Shift => {
-                "DECRC brings back the shift of the character sets that DECSC saved, SO's or \
-                 SI's, in the VT core, as in xterm and on DEC's terminals; alacritty_terminal \
-                 keeps the shift that is on, as its saved cursor does not hold it: the comparison \
-                 ends when DECRC changes the shift"
+                "DECRC, and the end of the alternate screen that mode 1049 makes, bring back the \
+                 shift of the character sets that DECSC saved, SO's or SI's, in the VT core, as in \
+                 xterm and on DEC's terminals; alacritty_terminal keeps the shift that is on, as \
+                 its saved cursor does not hold it: the comparison ends when the restore changes \
+                 the shift"
+            }
+            Self::SavedOrigin => {
+                "DECRC, and the end of the alternate screen that mode 1049 makes, bring back the \
+                 origin mode that DECSC saved in the VT core, as in xterm and on DEC's terminals; \
+                 alacritty_terminal keeps the mode that is on: the comparison ends when the \
+                 restore changes it"
             }
         }
     }
@@ -219,15 +234,84 @@ impl Cause {
 /// save alone, left and right margins, and grapheme clustering.
 const MODES: [u16; 8] = [41, 45, 47, 69, 1045, 1047, 1048, 2027];
 
-/// The known cause that `step` has, with the VT core's state `before` it
-/// and the shift of its character sets after it, at which the comparison
-/// ends whether the screens differ yet or not, as its effect can show later
-/// only: [`Cause::Unsupported`], a sequence that vte may ignore for its
-/// values, the British set, LNM, SCORC with parameters, DECRC that changes
-/// the shift, DECCOLM, which resets the scroll region in
-/// `alacritty_terminal`, DECALN, which resets it in the VT core, and a
-/// region that only `alacritty_terminal` sets.
-pub(crate) fn ending(step: &Step, before: &Before, shift: Shift) -> Option<Cause> {
+/// What the comparison saw at a step.
+pub(crate) struct Seen<'a> {
+    /// What the byte made the VT core do.
+    pub(crate) step: &'a Step,
+    /// The byte.
+    pub(crate) byte: u8,
+    /// The VT core's state before the step, and after it.
+    pub(crate) before: &'a Before,
+    pub(crate) after: &'a Before,
+    /// The VT core's screen and `alacritty_terminal`'s, if they differ.
+    pub(crate) screens: Option<(&'a Screen, &'a Screen)>,
+    /// Whether the character that the step printed, if any, is wide.
+    pub(crate) wide: bool,
+}
+
+/// A cursor as [`Screen::cursor`] has it.
+type At = (usize, usize, bool);
+
+impl Seen<'_> {
+    /// Whether the screens are the same.
+    fn same(&self) -> bool {
+        self.screens.is_none()
+    }
+
+    /// Whether the screens' cells are the same, their cursors aside.
+    fn cells_same(&self) -> bool {
+        self.screens
+            .is_none_or(|(bolt, alacritty)| bolt.rows == alacritty.rows)
+    }
+
+    /// Whether the screens' rows are the same but for the rows in `rows`.
+    fn rows_same_but(&self, rows: &[usize]) -> bool {
+        self.screens.is_none_or(|(bolt, alacritty)| {
+            bolt.rows.len() == alacritty.rows.len()
+                && (0..bolt.rows.len())
+                    .filter(|y| !rows.contains(y))
+                    .all(|y| bolt.rows[y] == alacritty.rows[y])
+        })
+    }
+
+    /// The VT core's cursor and `alacritty_terminal`'s, the one before the
+    /// step for both if the screens are the same.
+    fn cursors(&self) -> (At, At) {
+        self.screens.map_or(
+            (self.before.cursor, self.before.cursor),
+            |(bolt, alacritty)| (bolt.cursor, alacritty.cursor),
+        )
+    }
+
+    /// Whether the cursors are the same, or differ as an edit makes them
+    /// when the wrap was pending: in that alone, which the VT core ended
+    /// and `alacritty_terminal` kept.
+    fn cursors_same_but_the_wrap(&self) -> bool {
+        let (bolt, alacritty) = self.cursors();
+        bolt == alacritty || (self.before.cursor.2 && self.wrap_kept())
+    }
+
+    /// Whether the cursors differ in their pending wrap alone, which the VT
+    /// core ended and `alacritty_terminal` kept.
+    fn wrap_kept(&self) -> bool {
+        let (bolt, alacritty) = self.cursors();
+        (bolt.0, bolt.1) == (alacritty.0, alacritty.1) && !bolt.2 && alacritty.2
+    }
+}
+
+/// The known cause that a step has, at which the comparison ends whether
+/// the screens differ yet or not, as its effect can show later only, when
+/// the screens show of it at the step what it makes them show, if any:
+/// [`Cause::Unsupported`], a sequence that vte may ignore for its values,
+/// and DECCOLM, which can show anything; the British set and LNM, which
+/// show nothing; SCORC with parameters, and a region that only
+/// `alacritty_terminal` sets, which move its cursor alone; DECALN, which
+/// moves the VT core's alone; and a restore of the cursor that changes the
+/// VT core's shift of the character sets or its origin mode, which shows
+/// nothing.
+pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
+    let (step, before, after) = (seen.step, seen.before, seen.after);
+    // DECRC, SCORC, and the alternate screen's end that 1049 makes.
     let restores = match step {
         Step::Esc {
             intermediates,
@@ -236,18 +320,24 @@ pub(crate) fn ending(step: &Step, before: &Before, shift: Shift) -> Option<Cause
         Step::Csi {
             params,
             intermediates,
-            final_byte: b'u',
+            final_byte,
             ..
-        } => {
-            intermediates.is_empty()
-                && params.len() <= 1
-                && params.first().is_none_or(|&value| value == 0)
-        }
+        } => match (intermediates.as_slice(), final_byte) {
+            (b"", b'u') => params.len() <= 1 && params.first().is_none_or(|&value| value == 0),
+            (b"?", b'l') => params.contains(&1049),
+            _ => false,
+        },
         _ => false,
     };
-    if restores && shift != before.shift {
-        return Some(Cause::Shift);
+    if restores && seen.same() {
+        if after.shift != before.shift {
+            return Some(Cause::Shift);
+        }
+        if after.origin != before.origin {
+            return Some(Cause::SavedOrigin);
+        }
     }
+    let (bolt, alacritty) = seen.cursors();
     match step {
         Step::Csi { values, .. } if *values >= MAX_PARAMS => Some(Cause::Params),
         Step::Csi {
@@ -262,15 +352,21 @@ pub(crate) fn ending(step: &Step, before: &Before, shift: Shift) -> Option<Cause
                 if params
                     .get(1)
                     .is_some_and(|&bottom| usize::from(bottom) > before.rows)
-                    && usize::from(params.first().copied().unwrap_or(0)) >= before.rows =>
+                    && usize::from(params.first().copied().unwrap_or(0)) >= before.rows
+                    && seen.cells_same()
+                    && bolt == before.cursor =>
             {
                 Some(Cause::Region)
             }
             (b"?", b'h' | b'l') if params.contains(&3) => Some(Cause::Deccolm),
-            (b"", b'h') if params.contains(&20) => Some(Cause::Lnm),
+            (b"", b'h') if params.contains(&20) && seen.same() => Some(Cause::Lnm),
             // Not the VT core's SCORC, which has one parameter at most, and 0,
             // and restores the character sets too in `alacritty_terminal`.
-            (b"", b'u') if params.len() > 1 || params.first().is_some_and(|&value| value > 0) => {
+            (b"", b'u')
+                if (params.len() > 1 || params.first().is_some_and(|&value| value > 0))
+                    && seen.cells_same()
+                    && bolt == before.cursor =>
+            {
                 Some(Cause::Scorc)
             }
             (b"?", b'h' | b'l') if params.iter().any(|mode| MODES.contains(mode)) => {
@@ -286,16 +382,22 @@ pub(crate) fn ending(step: &Step, before: &Before, shift: Shift) -> Option<Cause
             | (b"!", b'p') => Some(Cause::Unsupported),
             _ => None,
         },
+        // DECALN, which fills both screens and puts the VT core's cursor
+        // home.
         Step::Esc {
             intermediates,
             final_byte: b'8',
-        } if intermediates == b"#" => Some(Cause::Decaln),
+        } if intermediates == b"#" && seen.cells_same() && alacritty == before.cursor => {
+            Some(Cause::Decaln)
+        }
         // The British set, which `alacritty_terminal` does not designate,
         // so that the set before stays.
         Step::Esc {
             intermediates,
             final_byte: b'A',
-        } if matches!(intermediates.as_slice(), b"(" | b")" | b"*" | b"+") => Some(Cause::British),
+        } if matches!(intermediates.as_slice(), b"(" | b")" | b"*" | b"+") && seen.same() => {
+            Some(Cause::British)
+        }
         // SPA and EPA, DECBI and DECFI, SS2 and SS3, LS2 and LS3.
         Step::Esc {
             intermediates,
@@ -305,89 +407,249 @@ pub(crate) fn ending(step: &Step, before: &Before, shift: Shift) -> Option<Cause
     }
 }
 
-/// The known cause that `step` shows, the step that `byte` made, at which
-/// the screens part, with the VT core's state `before` it.
-pub(crate) fn cause(step: &Step, byte: u8, before: &Before) -> Option<Cause> {
-    let first = |params: &[u16]| params.first().copied().unwrap_or(0).max(1);
-    match step {
+/// The known cause of the difference between the screens at a step that
+/// they part at, recognized from what the step made the VT core do, its
+/// state before it, and the difference's shape, as each cause makes it.
+pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
+    let (bolt_screen, alacritty_screen) = seen.screens?;
+    let before = seen.before;
+    let (x, y, pending) = before.cursor;
+    let (bolt, alacritty) = (bolt_screen.cursor, alacritty_screen.cursor);
+    let place = |at: At| (at.0, at.1);
+    let first = |params: &[u16]| usize::from(params.first().copied().unwrap_or(0).max(1));
+    let (top, bottom) = before.region;
+    match seen.step {
         Step::Csi {
             params,
             intermediates,
             final_byte,
             ..
         } => match (intermediates.as_slice(), final_byte) {
-            (b"?", b'l') if params.contains(&6) => Some(Cause::Decom),
-            // CUU, CUD, CNL, CPL and VPR.
-            (b"", b'A' | b'B' | b'E' | b'F' | b'e') if before.origin => Some(Cause::OriginMoves),
-            (b"", b'P') if usize::from(first(params)) > before.cols - before.cursor.0 => {
+            (b"?", b'l')
+                if params.contains(&6)
+                    && seen.cells_same()
+                    && bolt == (0, 0, false)
+                    && place(alacritty) == (x, y) =>
+            {
+                Some(Cause::Decom)
+            }
+            // CUU, CUD, CNL, CPL, VPR, CHA and HPA in origin mode, below a
+            // top margin, where the rows part and the columns do not.
+            (b"", b'A' | b'B' | b'E' | b'F' | b'e' | b'G' | b'`')
+                if before.origin
+                    && top > 0
+                    && seen.cells_same()
+                    && bolt.0 == alacritty.0
+                    && bolt.1 != alacritty.1 =>
+            {
+                Some(Cause::OriginMoves)
+            }
+            // CUU and CPL from the top margin or below it, past it.
+            (b"", b'A' | b'F')
+                if !before.origin
+                    && top > 0
+                    && y >= top
+                    && y < top + first(params)
+                    && seen.cells_same()
+                    && bolt.0 == alacritty.0
+                    && bolt.1 == top
+                    && alacritty.1 < top =>
+            {
+                Some(Cause::Margins)
+            }
+            // CUD, CNL and VPR from the bottom margin or above it, past it.
+            (b"", b'B' | b'E' | b'e')
+                if !before.origin
+                    && bottom + 1 < before.rows
+                    && y <= bottom
+                    && y + first(params) > bottom
+                    && seen.cells_same()
+                    && bolt.0 == alacritty.0
+                    && bolt.1 == bottom
+                    && alacritty.1 > bottom =>
+            {
+                Some(Cause::Margins)
+            }
+            (b"", b'P')
+                if first(params) > before.cols - x
+                    && seen.rows_same_but(&[y])
+                    && seen.cursors_same_but_the_wrap() =>
+            {
                 Some(Cause::Dch)
             }
-            (b"", b'L' | b'M') if before.cursor.0 > 0 || before.cursor.2 => Some(Cause::Lines),
-            // ICH, DCH, ECH, EL and ED.
-            (b"", b'@' | b'P' | b'X' | b'K' | b'J') if before.cursor.2 => Some(Cause::EditWrap),
-            (b"", b'T') if params.len() > 1 => Some(Cause::Highlight),
-            (b"", b'J') if params.first() == Some(&1) && before.cursor.1 == 1 => Some(Cause::Ed1),
-            // CUU and CPL from the top margin or below it, CUD, CNL and VPR
-            // from the bottom one or above it, past the margin.
-            (b"", b'A' | b'F')
-                if before.cursor.1 >= before.region.0
-                    && before.cursor.1 < before.region.0 + usize::from(first(params)) =>
+            (b"", b'P')
+                if before.widths.last() == Some(&Width::SpacerHead)
+                    && seen.rows_same_but(&[y])
+                    && seen.cursors_same_but_the_wrap() =>
             {
-                Some(Cause::Margins)
+                Some(Cause::MovedHead)
             }
-            (b"", b'B' | b'E' | b'e')
-                if before.cursor.1 <= before.region.1
-                    && before.cursor.1 + usize::from(first(params)) > before.region.1 =>
+            (b"", b'L' | b'M')
+                if (x > 0 || pending)
+                    && seen.cells_same()
+                    && bolt == (0, y, false)
+                    && alacritty == before.cursor =>
             {
-                Some(Cause::Margins)
+                Some(Cause::Lines)
+            }
+            // ED 1 from the second row, which `alacritty_terminal` leaves the
+            // first, and the second when it splits a wide character there.
+            (b"", b'J')
+                if params.first() == Some(&1)
+                    && y == 1
+                    && seen.rows_same_but(if splits(params, b'J', before) {
+                        &[0, 1]
+                    } else {
+                        &[0]
+                    })
+                    && seen.cursors_same_but_the_wrap()
+                    && bolt_screen.rows[0].is_empty() =>
+            {
+                Some(Cause::Ed1)
             }
             // EL, ED, ECH, DCH and ICH whose cells start or end between the
             // halves of a wide character.
-            (b"", b'K' | b'J' | b'X' | b'P' | b'@') if splits(params, *final_byte, before) => {
+            (b"", b'K' | b'J' | b'X' | b'P' | b'@')
+                if splits(params, *final_byte, before)
+                    && seen.rows_same_but(&[y])
+                    && seen.cursors_same_but_the_wrap() =>
+            {
                 Some(Cause::WideEdit)
             }
-            (b"", b'Z') if before.cursor.2 => Some(Cause::Cbt),
-            (b"", b'P') if before.widths.last() == Some(&Width::SpacerHead) => {
-                Some(Cause::MovedHead)
+            // EL 0 with a wrap pending, which erases nothing in
+            // `alacritty_terminal`: the last cell differs, and the wrap.
+            (b"", b'K')
+                if pending
+                    && params.first().is_none_or(|&mode| mode == 0)
+                    && seen.rows_same_but(&[y])
+                    && seen.wrap_kept()
+                    && but_last(&alacritty_screen.rows[y], before.cols) == bolt_screen.rows[y] =>
+            {
+                Some(Cause::EditWrap)
             }
+            // ICH, DCH, ECH, EL and ED, and IL and DL outside the scroll
+            // region, which move nothing there.
+            (b"", b'@' | b'P' | b'X' | b'K' | b'J' | b'L' | b'M')
+                if pending && seen.cells_same() && seen.wrap_kept() =>
+            {
+                Some(Cause::EditWrap)
+            }
+            (b"", b'Z') if pending && seen.cells_same() && seen.wrap_kept() => Some(Cause::Cbt),
             // CBT of more tab stops than come before the cursor, past the first
-            // column, which is no tab stop in the VT core.
+            // column, which is no tab stop in the VT core, and no longer one in
+            // `alacritty_terminal`.
             (b"", b'Z')
-                if usize::from(first(params))
-                    > before.tab_stops[1..before.cursor.0.max(1)]
-                        .iter()
-                        .filter(|&&stop| stop)
-                        .count() =>
+                if !before.first_stop
+                    && first(params)
+                        > before.tab_stops[1..x.max(1)]
+                            .iter()
+                            .filter(|&&stop| stop)
+                            .count()
+                    && seen.cells_same()
+                    && bolt.0 == 0
+                    && alacritty.0 > 0
+                    && bolt.1 == alacritty.1 =>
             {
                 Some(Cause::CbtFirst)
             }
-            (b"", b'b') if before.del => Some(Cause::Del),
-            (b"", b'b') if before.reset => Some(Cause::RepReset),
+            // REP in insert mode, whose characters push a wide character of
+            // the cursor's row, or of the next where they wrap, past the row's
+            // end, on the rows that they go in, two cells a character at most,
+            // and those that a scroll at the bottom moves them to.
+            (b"", b'b')
+                if before.insert
+                    && (before.widths[x..].contains(&Width::SpacerTail)
+                        || before.below.contains(&Width::SpacerTail))
+                    && seen.rows_same_but(&around(y, 2 * first(params) / before.cols + 1)) =>
+            {
+                Some(Cause::WideEdit)
+            }
+            // SD, which `alacritty_terminal` takes, and the cursor stays.
+            (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
+            // REP, which repeats a character in one core alone: the one that
+            // does nothing leaves its cursor.
+            (b"", b'b') if before.del && alacritty == before.cursor => Some(Cause::Del),
+            (b"", b'b') if before.reset && bolt == before.cursor => Some(Cause::RepReset),
             _ => None,
         },
         // LF, VT and FF, IND and RI.
-        Step::Execute(0x0A..=0x0C)
-        | Step::Esc {
+        Step::Execute(0x0A..=0x0C) if pending && seen.cells_same() && seen.wrap_kept() => {
+            Some(Cause::LineFeed)
+        }
+        Step::Esc {
+            intermediates,
             final_byte: b'D' | b'M',
-            ..
-        } if before.cursor.2 => Some(Cause::LineFeed),
-        Step::Print('\u{FFFD}') if (0x80..=0x9F).contains(&byte) => Some(Cause::C1),
-        Step::Print('\u{D7B0}'..='\u{D7FF}') => Some(Cause::Jamo),
-        Step::Print('\u{FE0F}') => Some(Cause::Emoji),
-        Step::Execute(0x09) if before.cursor.2 => Some(Cause::Tab),
-        Step::Print(_) if before.insert && inserts_at_a_tail(before) => Some(Cause::WideEdit),
-        // A wide character that does not fit at the last column, in insert
-        // mode.
+        } if intermediates.is_empty() && pending && seen.cells_same() && seen.wrap_kept() => {
+            Some(Cause::LineFeed)
+        }
+        // HT, which leaves the VT core's cursor as it was and takes
+        // `alacritty_terminal`'s to the next row's first column, scrolling at
+        // the bottom margin.
+        Step::Execute(0x09)
+            if pending
+                && bolt == before.cursor
+                && alacritty.0 == 0
+                && (seen.cells_same() || y == bottom) =>
+        {
+            Some(Cause::Tab)
+        }
+        // The characters whose widths differ, on the rows that they print on.
+        Step::Print('\u{FFFD}')
+            if (0x80..=0x9F).contains(&seen.byte) && seen.rows_same_but(&[y, bolt.1]) =>
+        {
+            Some(Cause::C1)
+        }
+        Step::Print('\u{D7C7}'..='\u{D7CA}' | '\u{D7FC}'..='\u{D7FF}')
+            if seen.rows_same_but(&[y, bolt.1]) =>
+        {
+            Some(Cause::Jamo)
+        }
+        Step::Print('\u{FE0F}') if seen.rows_same_but(&[y, bolt.1]) => Some(Cause::Emoji),
+        // Text inserted at the second half of a wide character, or that
+        // pushes one past the row's end, on the row that it goes in.
         Step::Print(_)
-            if before.insert && !before.cursor.2 && before.cursor.0 + 1 == before.cols =>
+            if before.insert && inserts_at_a_tail(before) && seen.rows_same_but(&around(y, 1)) =>
+        {
+            Some(Cause::WideEdit)
+        }
+        // A wide character that does not fit at the last column, in insert
+        // mode, and without autowrap.
+        Step::Print(_)
+            if seen.wide
+                && before.insert
+                && !pending
+                && x + 1 == before.cols
+                && seen.rows_same_but(&[y.saturating_sub(1), y, y + 1]) =>
         {
             Some(Cause::InsertWrap)
         }
-        Step::Print(_) if !before.autowrap && before.cursor.0 + 1 == before.cols => {
+        Step::Print(_)
+            if seen.wide
+                && !before.autowrap
+                && x + 1 == before.cols
+                && seen.rows_same_but(&[y]) =>
+        {
             Some(Cause::NoWrapWide)
         }
         _ => None,
     }
+}
+
+/// The rows from `reach` above row `y` to `reach` below it: those that
+/// text from row `y` goes on in, and those that a scroll at the bottom
+/// moves them to.
+fn around(y: usize, reach: usize) -> Vec<usize> {
+    (y.saturating_sub(reach)..=y + reach).collect()
+}
+
+/// `row`'s cells but its cell at column `cols - 1`, without the empty ones
+/// at the end, as [`Screen`] keeps a row.
+fn but_last(row: &[String], cols: usize) -> Vec<String> {
+    let mut cells = row[..row.len().min(cols - 1)].to_vec();
+    while cells.last().is_some_and(|cell| cell == " ") {
+        cells.pop();
+    }
+    cells
 }
 
 /// Whether the edit `final_byte` with `params` would split a wide

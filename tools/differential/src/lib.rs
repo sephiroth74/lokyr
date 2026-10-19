@@ -22,7 +22,7 @@ mod cause;
 mod explore;
 
 pub use cause::Cause;
-pub use explore::{Before, Divergence, Step, explore, fuzz_input};
+pub use explore::{Before, Divergence, Step, explore, explore_after, fuzz_input};
 
 use alacritty_terminal::event::VoidListener;
 use alacritty_terminal::grid::Dimensions;
@@ -349,6 +349,11 @@ mod tests {
             assert_eq!(fuzz_input(osc).last(), Some(&b'^'), "{osc:?}");
         }
         // Not after CAN, nor as the final byte of another escape sequence.
+        assert_eq!(
+            fuzz_input(b"\x1b\x80]").last(),
+            Some(&b'^'),
+            "after a byte past ASCII"
+        );
         for other in [&b"\x1b\x18]"[..], b"\x1b(]", b"]"] {
             assert_eq!(fuzz_input(other).last(), Some(&b']'), "{other:?}");
         }

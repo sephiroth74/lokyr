@@ -7,7 +7,7 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::{Handler, Params, StringEnd};
 use bolt_vt_core::terminal::{Charset, Shift, Terminal};
 
-use crate::cause::{self, Cause};
+use crate::cause::{self, Cause, Seen};
 use crate::{Difference, Pair};
 
 /// What a byte made the VT core do, as its parser dispatched it.
@@ -75,10 +75,77 @@ pub struct Before {
     /// Whether RIS came since the last character printed, which vte's
     /// parser keeps for REP.
     pub reset: bool,
+    /// Whether `alacritty_terminal` still has its tab stop at the first
+    /// column, which the VT core has not, and which TBC clears.
+    pub first_stop: bool,
+}
+
+/// What the comparison keeps track of besides the VT core's state: what
+/// came since the last character printed, `alacritty_terminal`'s tab stop
+/// at the first column, and whether an escape sequence or a string is
+/// under way, in which DEL is no character for vte either.
+#[derive(Clone, Copy, Debug)]
+struct Track {
+    del: bool,
+    reset: bool,
+    first_stop: bool,
+    sequence: bool,
+}
+
+impl Default for Track {
+    fn default() -> Self {
+        Self {
+            del: false,
+            reset: false,
+            first_stop: true,
+            sequence: false,
+        }
+    }
+}
+
+impl Track {
+    /// Notes what `byte` made the VT core do, `step`, with the cursor
+    /// `before` it.
+    fn note(&mut self, byte: u8, step: &Step, before: &Before) {
+        if byte == 0x7F && !self.sequence {
+            self.del = true;
+        }
+        match step {
+            Step::Print(_) => (self.del, self.reset) = (false, false),
+            Step::Esc {
+                intermediates,
+                final_byte: b'c',
+            } if intermediates.is_empty() => (self.reset, self.first_stop) = (true, true),
+            // HTS at the first column.
+            Step::Esc {
+                intermediates,
+                final_byte: b'H',
+            } if intermediates.is_empty() && before.cursor.0 == 0 => self.first_stop = true,
+            // TBC of every stop, or of the one at the first column.
+            Step::Csi {
+                params,
+                intermediates,
+                final_byte: b'g',
+                ..
+            } if intermediates.is_empty() => match params.first().copied().unwrap_or(0) {
+                3 => self.first_stop = false,
+                0 if before.cursor.0 == 0 => self.first_stop = false,
+                _ => {}
+            },
+            _ => {}
+        }
+        match (byte, step) {
+            (0x1B, _) => self.sequence = true,
+            (0x18 | 0x1A, _) | (_, Step::Esc { .. } | Step::Csi { .. } | Step::String) => {
+                self.sequence = false;
+            }
+            _ => {}
+        }
+    }
 }
 
 impl Before {
-    fn of(terminal: &Terminal, (del, reset): (bool, bool)) -> Self {
+    fn of(terminal: &Terminal, track: Track) -> Self {
         let cursor = terminal.cursor();
         Self {
             cursor: (
@@ -104,8 +171,9 @@ impl Before {
                 Vec::new()
             },
             tab_stops: (0..terminal.cols()).map(|x| terminal.tab_stop(x)).collect(),
-            del,
-            reset,
+            del: track.del,
+            reset: track.reset,
+            first_stop: track.first_stop,
         }
     }
 }
@@ -149,14 +217,15 @@ impl fmt::Display for Divergence {
 /// no cell and vte's parser of colors overflows on some.
 pub fn fuzz_input(data: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len() * 3);
-    // Whether an escape sequence started, which C0 controls and DEL do not
-    // end, but CAN and SUB.
+    // Whether an escape sequence started, which C0 controls, DEL and the
+    // bytes from 0x80, which both parsers pass over there, do not end, but
+    // CAN and SUB.
     let mut escape = false;
     for &byte in data {
         let after_escape = escape;
         match byte {
             0x1B => escape = true,
-            0x18 | 0x1A | 0x20..=0x7E | 0x80.. => escape = false,
+            0x18 | 0x1A | 0x20..=0x7E => escape = false,
             _ => {}
         }
         match byte {
@@ -175,38 +244,57 @@ pub fn fuzz_input(data: &[u8]) -> Vec<u8> {
 /// later, after which they are compared no more, as they then say nothing;
 /// the divergence, if they first part for none.
 pub fn explore(cols: u16, rows: u16, bytes: &[u8]) -> Result<Option<Cause>, Box<Divergence>> {
+    explore_after(cols, rows, &[], bytes)
+}
+
+/// Feeds `prefix` to a pair of `cols` by `rows`, without comparing the
+/// screens, then `bytes` as [`explore`] does, the bytes counted from the
+/// first of `bytes`: to find the cause of a stretch of a recording, from
+/// the chunk that it starts at.
+pub fn explore_after(
+    cols: u16,
+    rows: u16,
+    prefix: &[u8],
+    bytes: &[u8],
+) -> Result<Option<Cause>, Box<Divergence>> {
     let mut pair = Pair::new(cols, rows);
-    // Whether DEL and RIS came since the last character printed.
-    let (mut del, mut reset) = (false, false);
-    for (at, &byte) in (1..).zip(bytes) {
-        let before = Before::of(pair.terminal(), (del, reset));
+    let mut track = Track::default();
+    let mut before = Before::of(pair.terminal(), track);
+    for &byte in prefix {
         let step = pair.step(byte);
-        match &step {
-            Step::Print(_) => (del, reset) = (false, false),
-            Step::Esc {
-                intermediates,
-                final_byte: b'c',
-            } if intermediates.is_empty() => reset = true,
-            _ if byte == 0x7F => del = true,
-            _ => {}
-        }
-        let shift = pair.terminal().charsets().shift();
-        if let Some(cause) = cause::ending(&step, &before, shift) {
+        track.note(byte, &step, &before);
+        before = Before::of(pair.terminal(), track);
+    }
+    for (at, &byte) in (1..).zip(bytes) {
+        let step = pair.step(byte);
+        track.note(byte, &step, &before);
+        let after = Before::of(pair.terminal(), track);
+        let screens = (!pair.same()).then(|| (pair.bolt(), pair.alacritty()));
+        let wide = match step {
+            Step::Print(c) => pair.terminal().widths().char_width(c) == 2,
+            _ => false,
+        };
+        let seen = Seen {
+            step: &step,
+            byte,
+            before: &before,
+            after: &after,
+            screens: screens.as_ref().map(|(bolt, alacritty)| (bolt, alacritty)),
+            wide,
+        };
+        if let Some(cause) = cause::ending(&seen).or_else(|| cause::cause(&seen)) {
             return Ok(Some(cause));
         }
-        if pair.same() {
-            continue;
+        if screens.is_some() {
+            let difference = pair.difference().expect("the screens differ");
+            return Err(Box::new(Divergence {
+                at,
+                step,
+                before,
+                difference,
+            }));
         }
-        if let Some(cause) = cause::cause(&step, byte, &before) {
-            return Ok(Some(cause));
-        }
-        let difference = pair.difference().expect("the screens differ");
-        return Err(Box::new(Divergence {
-            at,
-            step,
-            before,
-            difference,
-        }));
+        before = after;
     }
     Ok(None)
 }

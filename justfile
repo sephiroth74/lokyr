@@ -126,7 +126,8 @@ vttest:
 bench: vtebench
     cargo bench --locked -p bolt-vt-core -p bolt-search
     cargo build --locked --release -p bolt-differential --bin bolt-throughput -p bolt-replay --bin bolt-replay
-    [ -f target/cat-1g.txt ] || target/release/bolt-throughput --write-cat target/cat-1g.txt
+    # The file of 1 GiB, written again when a source is newer.
+    if [ ! -f target/cat-1g.txt ] || [ -n "$(find crates tools -name '*.rs' -newer target/cat-1g.txt -print -quit)" ]; then target/release/bolt-throughput --write-cat target/cat-1g.txt; fi
     target/release/bolt-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
     target/release/bolt-replay --bench --cols 120 --rows 40 target/cat-1g.txt
 
@@ -158,11 +159,23 @@ fuzz-all seconds="86400": fuzz-seeds
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal
     mkdir -p fuzz/logs
     cd fuzz
+    pids=()
     for target in parser terminal differential; do
         mkdir -p corpus/$target
-        (cargo +{{ fuzz_toolchain }} fuzz run $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} >logs/$target.log 2>&1; echo "$target: exit $?") &
+        (
+            cargo +{{ fuzz_toolchain }} fuzz run $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} >logs/$target.log 2>&1
+            code=$?
+            echo "$target: exit $code"
+            exit $code
+        ) &
+        pids+=($!)
     done
-    wait
+    # The run fails if any target does, as a crash stops it.
+    failed=0
+    for pid in "${pids[@]}"; do
+        wait "$pid" || failed=1
+    done
+    exit $failed
 
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
