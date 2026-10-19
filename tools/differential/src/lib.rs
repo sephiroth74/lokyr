@@ -10,8 +10,19 @@
 //! out. The screens' rows are counted, and the cursor's column, row and
 //! pending wrap compared. Attributes, colors and the scrollback are left
 //! out, as the two cores keep them in ways of their own.
+//!
+//! [`explore`] feeds an input a byte at a time and compares the screens
+//! after each, as the differential fuzz target does: the first point where
+//! they part must have one of the known [`Cause`]s, after which they are
+//! compared no more.
 
 #![forbid(unsafe_code)]
+
+mod cause;
+mod explore;
+
+pub use cause::Cause;
+pub use explore::{Before, Divergence, Step, explore, fuzz_input};
 
 use alacritty_terminal::event::VoidListener;
 use alacritty_terminal::grid::Dimensions;
@@ -116,38 +127,20 @@ impl Pair {
         self.processor.advance(&mut self.alacritty, bytes);
     }
 
+    /// The VT core's terminal, for the state that the screens do not show.
+    pub fn terminal(&self) -> &Terminal {
+        &self.bolt
+    }
+
     /// The VT core's screen.
     pub fn bolt(&self) -> Screen {
         let terminal = &self.bolt;
-        let screen = terminal.screen_rows();
         let rows = (0..terminal.rows())
-            .map(|y| {
-                let (page, row) = screen.screen_row(y);
-                let cells = (0..)
-                    .zip(page.cells(row))
-                    .map(|(x, cell)| match (cell.width(), cell.content()) {
-                        (Width::SpacerTail, _) => TAIL.to_owned(),
-                        (Width::SpacerHead, _) => HEAD.to_owned(),
-                        (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
-                            " ".to_owned()
-                        }
-                        (_, Content::Char(c)) => c.to_string(),
-                        (_, Content::Grapheme(c)) => std::iter::once(c)
-                            .chain(page.grapheme(row, x).iter().copied())
-                            .collect(),
-                    })
-                    .collect();
-                trimmed(cells)
-            })
+            .map(|y| trimmed(bolt_cells(terminal, y).map(Cell::text).collect()))
             .collect();
-        let cursor = terminal.cursor();
         Screen {
             rows,
-            cursor: (
-                usize::from(cursor.x),
-                usize::from(cursor.y),
-                cursor.pending_wrap,
-            ),
+            cursor: bolt_cursor(terminal),
         }
     }
 
@@ -155,46 +148,20 @@ impl Pair {
     /// synchronized update under way ends first, as the processor holds its
     /// bytes back until then, and the VT core has them.
     pub fn alacritty(&mut self) -> Screen {
-        if self.processor.sync_timeout().pending_timeout() {
-            self.processor.stop_sync(&mut self.alacritty);
-        }
+        self.end_sync();
         let grid = self.alacritty.grid();
         let rows = (0..grid.screen_lines())
             .map(|y| {
-                // A screen has fewer rows than an i32 holds.
-                let row = &grid[Line(y as i32)];
-                let cells = (0..grid.columns())
-                    .map(|x| {
-                        let cell = &row[Column(x)];
-                        if cell.flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
-                            return HEAD.to_owned();
-                        }
-                        if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                            return TAIL.to_owned();
-                        }
-                        // An empty cell, or the one where a tab started,
-                        // which keeps the tab for copies and shows a space.
-                        let c = if matches!(cell.c, '\0' | '\t') {
-                            ' '
-                        } else {
-                            cell.c
-                        };
-                        std::iter::once(c)
-                            .chain(cell.zerowidth().into_iter().flatten().copied())
-                            .collect()
-                    })
-                    .collect();
-                trimmed(cells)
+                trimmed(
+                    alacritty_cells(&self.alacritty, y)
+                        .map(Cell::text)
+                        .collect(),
+                )
             })
             .collect();
-        let cursor = &grid.cursor;
         Screen {
             rows,
-            cursor: (
-                cursor.point.column.0,
-                cursor.point.line.0.max(0) as usize,
-                cursor.input_needs_wrap,
-            ),
+            cursor: alacritty_cursor(&self.alacritty),
         }
     }
 
@@ -203,6 +170,110 @@ impl Pair {
         let alacritty = self.alacritty();
         self.bolt().first_difference(&alacritty)
     }
+
+    /// Whether the two screens are the same, as [`Pair::difference`] finds
+    /// them, without reading them into text: for a check after every byte.
+    pub fn same(&mut self) -> bool {
+        self.end_sync();
+        let (bolt, alacritty) = (&self.bolt, &self.alacritty);
+        let rows = usize::from(bolt.rows());
+        rows == alacritty.grid().screen_lines()
+            && bolt_cursor(bolt) == alacritty_cursor(alacritty)
+            && (0..bolt.rows()).all(|y| {
+                // A screen has fewer rows than an i32 holds.
+                bolt_cells(bolt, y).eq(alacritty_cells(alacritty, usize::from(y)))
+            })
+    }
+
+    /// Ends `alacritty_terminal`'s synchronized update, if one is under way,
+    /// so that its screen has the bytes that the processor held back.
+    fn end_sync(&mut self) {
+        if self.processor.sync_timeout().pending_timeout() {
+            self.processor.stop_sync(&mut self.alacritty);
+        }
+    }
+}
+
+/// A cell as the screens are compared by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cell<'a> {
+    /// The second half of a wide character.
+    Tail,
+    /// The last cell of a row, left for a wide character.
+    Head,
+    /// A character, a space for an empty cell, with the zero-width ones
+    /// that the cell holds.
+    Text(char, &'a [char]),
+}
+
+impl Cell<'_> {
+    fn text(self) -> String {
+        match self {
+            Self::Tail => TAIL.to_owned(),
+            Self::Head => HEAD.to_owned(),
+            Self::Text(c, rest) => std::iter::once(c).chain(rest.iter().copied()).collect(),
+        }
+    }
+}
+
+/// The cells of row `y` of the VT core's screen.
+fn bolt_cells(terminal: &Terminal, y: u16) -> impl Iterator<Item = Cell<'_>> {
+    let (page, row) = terminal.screen_rows().screen_row(y);
+    (0..)
+        .zip(page.cells(row))
+        .map(move |(x, cell)| match (cell.width(), cell.content()) {
+            (Width::SpacerTail, _) => Cell::Tail,
+            (Width::SpacerHead, _) => Cell::Head,
+            (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
+                Cell::Text(' ', &[])
+            }
+            (_, Content::Char(c)) => Cell::Text(c, &[]),
+            (_, Content::Grapheme(c)) => Cell::Text(c, page.grapheme(row, x)),
+        })
+}
+
+/// The VT core's cursor, as [`Screen::cursor`] has it.
+fn bolt_cursor(terminal: &Terminal) -> (usize, usize, bool) {
+    let cursor = terminal.cursor();
+    (
+        usize::from(cursor.x),
+        usize::from(cursor.y),
+        cursor.pending_wrap,
+    )
+}
+
+/// The cells of row `y` of `alacritty_terminal`'s screen.
+fn alacritty_cells(term: &Term<VoidListener>, y: usize) -> impl Iterator<Item = Cell<'_>> {
+    let grid = term.grid();
+    // A screen has fewer rows than an i32 holds.
+    let row = &grid[Line(y as i32)];
+    (0..grid.columns()).map(move |x| {
+        let cell = &row[Column(x)];
+        if cell.flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+            Cell::Head
+        } else if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            Cell::Tail
+        } else {
+            // An empty cell, or the one where a tab started, which keeps
+            // the tab for copies and shows a space.
+            let c = if matches!(cell.c, '\0' | '\t') {
+                ' '
+            } else {
+                cell.c
+            };
+            Cell::Text(c, cell.zerowidth().unwrap_or_default())
+        }
+    })
+}
+
+/// `alacritty_terminal`'s cursor, as [`Screen::cursor`] has it.
+fn alacritty_cursor(term: &Term<VoidListener>) -> (usize, usize, bool) {
+    let cursor = &term.grid().cursor;
+    (
+        cursor.point.column.0,
+        cursor.point.line.0.max(0) as usize,
+        cursor.input_needs_wrap,
+    )
 }
 
 /// Cell `x` of `row`, empty past its end.
@@ -267,6 +338,20 @@ mod tests {
         assert_eq!(pair.bolt().rows[0], ["a", "b", "c", HEAD]);
         assert_eq!(pair.bolt().rows[1], ["\u{4E2D}", TAIL]);
         assert_eq!(pair.difference(), None);
+    }
+
+    #[test]
+    fn the_fuzz_input_has_characters_for_bytes_past_ascii_and_no_osc() {
+        assert_eq!(fuzz_input(b"a\x80\x81"), "a\u{4e2d}\u{e9}".as_bytes());
+        // OSC, after controls and DEL too, which an escape sequence passes
+        // over.
+        for osc in [&b"\x1b]"[..], b"\x1b\x01]", b"\x1b\x7f]"] {
+            assert_eq!(fuzz_input(osc).last(), Some(&b'^'), "{osc:?}");
+        }
+        // Not after CAN, nor as the final byte of another escape sequence.
+        for other in [&b"\x1b\x18]"[..], b"\x1b(]", b"]"] {
+            assert_eq!(fuzz_input(other).last(), Some(&b']'), "{other:?}");
+        }
     }
 
     #[test]

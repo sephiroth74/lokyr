@@ -11,8 +11,10 @@ publish = false
 
 [dependencies]
 alacritty_terminal.workspace = true
-bolt-replay.workspace = true
 bolt-vt-core.workspace = true
+
+[dev-dependencies]
+bolt-replay.workspace = true
 
 [lints]
 workspace = true

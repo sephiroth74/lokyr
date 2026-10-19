@@ -128,6 +128,8 @@ impl Terminal {
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
+        } else {
+            self.clear_spacer_head(x, y, width);
         }
         self.with_pen(y, |page, row, style| {
             if !insert {
@@ -167,6 +169,8 @@ impl Terminal {
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
+        } else {
+            self.clear_spacer_head(x, y, width);
         }
         self.with_pen(y, |page, row, style| {
             if !insert {
@@ -413,6 +417,30 @@ impl Terminal {
     fn row_flag(&mut self, y: u16, flag: RowFlag) {
         let (page, row) = self.screen_mut().rows.screen_row_mut(y);
         page.row_mut(row).set(flag, true);
+    }
+
+    /// Empties the spacer head at the end of the row above `y` when writing
+    /// `width` cells from column `x` goes over a wide character at the
+    /// start of row `y`, which the head was left for, as
+    /// `alacritty_terminal` does. A head in the scrollback stays.
+    fn clear_spacer_head(&mut self, x: u16, y: u16, width: u16) {
+        if x > 1 || y == 0 {
+            return;
+        }
+        let last = self.cols - 1;
+        let rows = &mut self.screen_mut().rows;
+        let (page, row) = rows.screen_row_mut(y);
+        let cells = &page.cells(row)[usize::from(x)..usize::from((x + width).min(2))];
+        if !cells
+            .iter()
+            .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
+        {
+            return;
+        }
+        let (page, row) = rows.screen_row_mut(y - 1);
+        if page.cells(row)[usize::from(last)].width() == Width::SpacerHead {
+            page.set_cell(row, last, Cell::EMPTY);
+        }
     }
 
     /// Empties the halves of wide characters that writing `width` cells at

@@ -12,10 +12,25 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 bolt-vt-core = { path = "../crates/vt-core" }
+bolt-differential = { path = "../tools/differential" }
 
 [[bin]]
 name = "parser"
 path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "terminal"
+path = "fuzz_targets/terminal.rs"
 test = false
 doc = false
 bench = false

@@ -748,6 +748,17 @@ impl Terminal {
         self.origin
     }
 
+    /// The top and bottom margins (DECSTBM), the rows from 0 that the
+    /// screen scrolls between, both included.
+    pub fn scroll_region(&self) -> (u16, u16) {
+        (self.margins.top, self.margins.bottom)
+    }
+
+    /// Whether column `x`, from 0, has a tab stop.
+    pub fn tab_stop(&self, x: u16) -> bool {
+        self.tab_stops.get(usize::from(x)).copied().unwrap_or(false)
+    }
+
     /// Turns origin mode (DECOM) on or off, which puts the cursor at the
     /// top left of the margins, or of the screen.
     pub fn set_origin_mode(&mut self, on: bool) {

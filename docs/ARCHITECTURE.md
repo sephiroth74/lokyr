@@ -131,7 +131,7 @@ bolt/
 ├── registry/              registry-server (v1) + index specification
 ├── templates/             templates for `crossbow new` (Luau)
 ├── tools/                 replay/ (`bolt-replay`, `bolt-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
-├── fuzz/                  cargo-fuzz: parser, .itermcolors, manifest, archives
+├── fuzz/                  cargo-fuzz: parser, terminal, differential (against `alacritty_terminal`); later .itermcolors, manifest, archives
 └── docs/                  this documentation (later an mdBook)
 ```
 

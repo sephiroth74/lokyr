@@ -2862,6 +2862,9 @@ fn color_specs_follow_x11() {
         "#ff80",
         "#",
         "rgb://",
+        // Three bytes, one of them a character of two.
+        "#f\u{e9}",
+        "#\u{e9}\u{e9}\u{e9}",
     ] {
         assert_eq!(color(bad), None, "{bad}");
     }
@@ -5180,6 +5183,18 @@ fn ris_tells_of_the_size_only_when_it_changes_the_width() {
 }
 
 #[test]
+fn the_scroll_region_is_told() {
+    let mut term = Term::new(10, 6);
+    assert_eq!(term.terminal.scroll_region(), (0, 5));
+    term.feed("\x1b[2;4r");
+    assert_eq!(term.terminal.scroll_region(), (1, 3));
+    // And the tab stops, every 8 columns but the first.
+    let stops: Vec<u16> = (0..10).filter(|&x| term.terminal.tab_stop(x)).collect();
+    assert_eq!(stops, [8]);
+    assert!(!term.terminal.tab_stop(100));
+}
+
+#[test]
 fn cbt_stays_within_the_margins_in_origin_mode() {
     let mut term = Term::new(40, 4);
     term.feed("\x1b[?69h\x1b[5;30s\x1b[?6h\x1b[1;3H\x1b[2Z");
@@ -5240,6 +5255,25 @@ fn ed_2_under_iso_protection_keeps_the_scrollback_while_nothing_is_protected() {
     let mut term = Term::new(10, 2);
     term.feed("ab\x1bV\x1bW\x1b[2J");
     assert_eq!(term.terminal.screen_rows().scrollback_rows(), 1);
+}
+
+#[test]
+fn a_wide_character_written_over_at_the_start_of_a_row_takes_its_spacer_head() {
+    // The second wide character goes to the next row, and leaves a head.
+    for (over, at) in [("y", 0), ("yz", 0), ("\u{65e5}", 0), ("\x1b[2Gy", 1)] {
+        let mut term = Term::new(4, 2);
+        term.feed("abc\u{4e2d}");
+        assert_eq!(term.cell(3, 0).width(), Width::SpacerHead);
+        term.feed(format!("\r{over}"));
+        assert_eq!(term.cell(3, 0).width(), Width::Narrow, "{over:?} at {at}");
+    }
+    // Text written elsewhere, or inserted, leaves it.
+    for over in ["\x1b[3Gy", "\x1b[4hy"] {
+        let mut term = Term::new(4, 2);
+        term.feed("abc\u{4e2d}");
+        term.feed(format!("\r{over}"));
+        assert_eq!(term.cell(3, 0).width(), Width::SpacerHead, "{over:?}");
+    }
 }
 
 #[test]

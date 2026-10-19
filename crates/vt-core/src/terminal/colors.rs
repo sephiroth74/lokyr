@@ -246,7 +246,13 @@ pub(super) fn parse_color(spec: &[u8]) -> Option<Rgb> {
         return Some(Rgb::new(scaled(r)?, scaled(g)?, scaled(b)?));
     }
     let digits = spec.strip_prefix('#')?;
-    if digits.is_empty() || digits.len() > 12 || !digits.len().is_multiple_of(3) {
+    // Hexadecimal before it is cut, so that the cuts fall between bytes
+    // that are characters.
+    if digits.is_empty()
+        || digits.len() > 12
+        || !digits.len().is_multiple_of(3)
+        || !digits.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
         return None;
     }
     let width = digits.len() / 3;

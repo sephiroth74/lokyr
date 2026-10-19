@@ -120,11 +120,24 @@ vttest:
 bench:
     @echo "bench: not implemented yet" >&2 && exit 1
 
-# Fuzz a target for `seconds`, seeded from the tests (needs `cargo install cargo-fuzz --locked`).
+# Fuzz a target for `seconds`, seeded from the parser's tests (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600": fuzz-seeds
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal
     mkdir -p fuzz/corpus/{{ target }}
-    cargo +{{ fuzz_toolchain }} fuzz run {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/{{ target }} -- -max_total_time={{ seconds }}
+    cargo +{{ fuzz_toolchain }} fuzz run {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/parser -- -max_total_time={{ seconds }}
+
+# Fuzz every target at once for `seconds`, a day by default, each on a core of its own; the logs go to fuzz/logs.
+fuzz-all seconds="86400": fuzz-seeds
+    #!/usr/bin/env bash
+    set -u
+    rustup toolchain install {{ fuzz_toolchain }} --profile minimal
+    mkdir -p fuzz/logs
+    cd fuzz
+    for target in parser terminal differential; do
+        mkdir -p corpus/$target
+        (cargo +{{ fuzz_toolchain }} fuzz run $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} >logs/$target.log 2>&1; echo "$target: exit $?") &
+    done
+    wait
 
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
