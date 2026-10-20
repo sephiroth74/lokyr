@@ -1149,6 +1149,17 @@ impl PageList {
                 }
                 let mut col = 0;
                 while col < len {
+                    let narrow = cells[usize::from(col)..usize::from(len)]
+                        .iter()
+                        .take_while(|cell| cell.width() == Width::Narrow)
+                        .count();
+                    if narrow > 0 {
+                        // The row holds fewer cells than a u16 counts.
+                        let (at, n) = self.place_run(&mut writer, &page, row, col, narrow as u16);
+                        self.repin_run(&mut pins, row, col..col + n, at);
+                        col += n;
+                        continue;
+                    }
                     let wide = cells[usize::from(col)].width() == Width::Wide;
                     let at = self.place(&mut writer, &page, row, col);
                     self.repin(&mut pins, row, col, at);
@@ -1255,6 +1266,63 @@ impl PageList {
             self.move_pin(pin, at);
         }
         at
+    }
+
+    /// Writes the `n` narrow cells from column `col` of row `row` of
+    /// `source`, as many of them as the row being written has room for,
+    /// where the line being written has got to, as [`PageList::place`]
+    /// writes one cell. Returns where the first went, its node, row and
+    /// column, and how many went.
+    fn place_run(
+        &mut self,
+        writer: &mut Writer,
+        source: &Page,
+        row: u16,
+        col: u16,
+        n: u16,
+    ) -> ((u32, u16, u16), u16) {
+        if writer.x >= writer.cols {
+            self.next_row(writer);
+        }
+        let (x, n) = (writer.x, n.min(writer.cols - writer.x));
+        let tail = self.tail;
+        let to = self.page_at(tail).len() - 1;
+        let mut when_full = WhenFull::Fail;
+        while let Err(full) = self
+            .page_at_mut(tail)
+            .copy_run(to, x, source, row, col, n, when_full)
+        {
+            if self.grow_node(tail, full).is_err() {
+                when_full = WhenFull::Drop;
+            }
+        }
+        writer.x += n;
+        writer.last = Some((tail, to, x + n - 1));
+        let at = (tail, to, x);
+        for pin in std::mem::take(&mut writer.carried) {
+            self.move_pin(pin, at);
+        }
+        (at, n)
+    }
+
+    /// Moves the pins of the cells of `columns` in row `row` of the page
+    /// being rewritten after their first, which went to `at`, as
+    /// [`PageList::repin`] moves those of one cell.
+    fn repin_run(
+        &mut self,
+        pins: &mut std::iter::Peekable<std::vec::IntoIter<u32>>,
+        row: u16,
+        columns: Range<u16>,
+        at: (u32, u16, u16),
+    ) {
+        while let Some(place) = pins
+            .peek()
+            .and_then(|&pin| self.pins.place_of(pin))
+            .filter(|place| place.row == row && columns.contains(&place.col))
+        {
+            let pin = pins.next().expect("the pin just looked at");
+            self.move_pin(pin, (at.0, at.1, at.2 + (place.col - columns.start)));
+        }
     }
 
     /// Copies a cell of `source` into column `x` of the last row, growing
@@ -2576,6 +2644,35 @@ mod tests {
         );
         list.resize(6, 1, (0, 0), Grow::FromScrollback);
         assert_pins_listed(&list);
+    }
+
+    #[test]
+    fn the_pins_of_a_spacer_head_go_with_a_narrow_character_after_it() {
+        // A spacer head whose wide character an edit replaced with a narrow
+        // one, which the line's next row starts with.
+        let mut list = PageList::new(4, 3, pages(4, 4));
+        let (page, row) = list.screen_row_mut(0);
+        for (x, c) in (0..).zip("abc".chars()) {
+            page.set_cell(row, x, Cell::EMPTY.with_content(Content::Char(c)));
+        }
+        page.set_cell(
+            row,
+            3,
+            Cell::EMPTY.with_width(crate::page::Width::SpacerHead),
+        );
+        page.row_mut(row)
+            .set(crate::page::RowFlag::SoftWrapped, true);
+        let (page, row) = list.screen_row_mut(1);
+        page.set_cell(row, 0, Cell::EMPTY.with_content(Content::Char('d')));
+        page.row_mut(row)
+            .set(crate::page::RowFlag::Continuation, true);
+        let pin = pin_at(&mut list, 3, 0);
+        list.reflow(6, 3, (0, 2));
+        assert_pins_listed(&list);
+        assert_eq!(
+            pinned(&list, pin).map(Cell::content),
+            Some(Content::Char('d'))
+        );
     }
 
     #[test]

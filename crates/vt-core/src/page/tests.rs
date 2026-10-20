@@ -543,6 +543,105 @@ fn a_row_copies_into_another_page_with_its_tables() {
 }
 
 #[test]
+fn a_run_copies_as_its_cells_do_one_by_one() {
+    // A row of styles, a cluster and a link, then stretches of one style,
+    // and a row of plain cells.
+    let mut source = page_with_rows(2);
+    sample_row(&mut source, 0);
+    for (x, style) in [
+        (4, bold(1)),
+        (5, bold(1)),
+        (6, Style::DEFAULT),
+        (7, bold(3)),
+    ] {
+        print(&mut source, 0, x, 'q', &style).unwrap();
+    }
+    for x in 0..5 {
+        print(&mut source, 1, x, 'p', &Style::DEFAULT).unwrap();
+    }
+    for (row, columns) in [(0, 0..8), (0, 2..7), (1, 0..5)] {
+        // Over cells that hold a style and a link of their own, which the
+        // copy drops, or over plain cells.
+        for over_styles in [true, false] {
+            let target = || {
+                let mut target = page_with_rows(1);
+                if over_styles {
+                    print(&mut target, 0, 3, 'z', &bold(2)).unwrap();
+                    print_link(&mut target, 0, "zz", link("", "http://z")).unwrap();
+                } else {
+                    print(&mut target, 0, 3, 'z', &Style::DEFAULT).unwrap();
+                }
+                target
+            };
+            let mut by_cell = target();
+            for x in columns.clone() {
+                by_cell
+                    .copy_cell(0, x + 1, &source, row, x, WhenFull::Fail)
+                    .unwrap();
+            }
+            let mut by_run = target();
+            let n = columns.end - columns.start;
+            by_run
+                .copy_run(
+                    0,
+                    columns.start + 1,
+                    &source,
+                    row,
+                    columns.start,
+                    n,
+                    WhenFull::Fail,
+                )
+                .unwrap();
+            let case = format!("row {row}, columns {columns:?}, over styles: {over_styles}");
+            for x in 0..by_cell.cols() {
+                let (run, cell) = (
+                    by_run.cells(0)[usize::from(x)],
+                    by_cell.cells(0)[usize::from(x)],
+                );
+                assert_eq!(
+                    run.with_style(StyleId::DEFAULT),
+                    cell.with_style(StyleId::DEFAULT),
+                    "{case}, column {x}"
+                );
+                assert_eq!(
+                    by_run.styles().get(run.style()),
+                    by_cell.styles().get(cell.style()),
+                    "{case}, column {x}"
+                );
+                assert_eq!(
+                    by_run.grapheme(0, x),
+                    by_cell.grapheme(0, x),
+                    "{case}, column {x}"
+                );
+                let target = |page: &Page| {
+                    page.hyperlink(0, x)
+                        .map(|link| page.hyperlinks().get(link).uri.to_vec())
+                };
+                assert_eq!(target(&by_run), target(&by_cell), "{case}, column {x}");
+            }
+            assert_eq!(by_run.row(0), by_cell.row(0), "{case}");
+            assert_eq!(by_run.styles().len(), by_cell.styles().len(), "{case}");
+            assert_eq!(
+                by_run.hyperlinks().len(),
+                by_cell.hyperlinks().len(),
+                "{case}"
+            );
+            for cell in by_run.cells(0) {
+                let theirs = by_cell.cells(0).iter().find(|other| {
+                    by_cell.styles().get(other.style()) == by_run.styles().get(cell.style())
+                });
+                let theirs = theirs.expect("the style is in both").style();
+                assert_eq!(
+                    by_run.styles().references(cell.style()),
+                    by_cell.styles().references(theirs),
+                    "{case}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn a_copy_into_a_full_table_leaves_the_row_empty() {
     let mut source = page_with_rows(1);
     for x in 0..3 {

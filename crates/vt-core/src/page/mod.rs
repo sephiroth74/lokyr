@@ -1041,6 +1041,119 @@ impl Page {
         Ok(())
     }
 
+    /// Copies the `n` cells from column `from_x` of row `from` of `source`
+    /// into the cells from column `x` of row `to`, as [`Page::copy_cell`]
+    /// copies each, for a stretch of cells that a wide character does not
+    /// cross: a row whose cells hold nothing in the tables is copied as a
+    /// block, and the cells that share a style find it once. `when_full`
+    /// says what a full table does, as for [`Page::copy_cell`]; with
+    /// [`WhenFull::Fail`], the cells may be left partly copied, for the
+    /// caller to copy again once the page has grown.
+    #[allow(clippy::too_many_arguments)]
+    pub fn copy_run(
+        &mut self,
+        to: u16,
+        x: u16,
+        source: &Page,
+        from: u16,
+        from_x: u16,
+        n: u16,
+        when_full: WhenFull,
+    ) -> Result<(), TableFull> {
+        let metadata = source.row(from);
+        let cells = &source.cells(from)[usize::from(from_x)..usize::from(from_x + n)];
+        assert!(x + n <= self.cols(), "the cells pass the end of row {to}");
+        let plain = |row: Row| {
+            !row.has(RowFlag::Styles)
+                && !row.has(RowFlag::Graphemes)
+                && !row.has(RowFlag::Hyperlinks)
+        };
+        if plain(metadata) && plain(self.row(to)) {
+            // Cells that hold nothing in the tables are copied as they are,
+            // over cells that hold nothing either.
+            let block = self.block(to);
+            let start = block * usize::from(self.cols()) + usize::from(x);
+            self.cells[start..start + usize::from(n)].copy_from_slice(cells);
+            if let Some(last) = cells.iter().rposition(|&cell| cell != Cell::EMPTY) {
+                // The run fits in the row, whose width is a u16.
+                self.extend(to, x + last as u16 + 1);
+            }
+            self.row_mut(to).set(RowFlag::Dirty, true);
+            return Ok(());
+        }
+        let mut offset = 0;
+        while offset < n {
+            let cell = cells[usize::from(offset)];
+            let entries = |cell: &Cell| {
+                matches!(cell.content(), Content::Grapheme(_)) || cell.has_hyperlink()
+            };
+            if entries(&cell) {
+                self.copy_cell(to, x + offset, source, from, from_x + offset, when_full)?;
+                offset += 1;
+                continue;
+            }
+            // The cells that share the style, with nothing else in the
+            // tables, take it at once. The run holds fewer cells than a
+            // u16 counts.
+            let same = cells[usize::from(offset)..]
+                .iter()
+                .take_while(|other| other.style() == cell.style() && !entries(other))
+                .count() as u16;
+            let ours = match self.styles.acquire(source.styles().get(cell.style())) {
+                Ok(ours) => ours,
+                Err(full) if when_full == WhenFull::Fail => return Err(full),
+                Err(_) => StyleId::DEFAULT,
+            };
+            self.write_cells_as(
+                to,
+                x + offset,
+                &cells[usize::from(offset)..][..usize::from(same)],
+                ours,
+            );
+            self.styles.release(ours);
+            offset += same;
+        }
+        Ok(())
+    }
+
+    /// Puts `cells`, which hold nothing in the tables, in the cells from
+    /// column `x` of row `y`, each with the style `style`, which must be in
+    /// the page's table, in place of what those held.
+    fn write_cells_as(&mut self, y: u16, x: u16, cells: &[Cell], style: StyleId) {
+        let block = self.block(y);
+        let start = block * usize::from(self.cols()) + usize::from(x);
+        let range = start..start + cells.len();
+        // Retain first, in case the old cells hold the last reference. The
+        // row has fewer cells than a u32 counts.
+        self.styles.retain_many(style, cells.len() as u32);
+        let metadata = self.row(y);
+        if metadata.has(RowFlag::Styles)
+            || metadata.has(RowFlag::Graphemes)
+            || metadata.has(RowFlag::Hyperlinks)
+        {
+            for index in range.clone() {
+                let old = self.cells[index];
+                self.release(index, old);
+            }
+        }
+        for (target, &cell) in self.cells[range].iter_mut().zip(cells) {
+            *target = cell.with_style(style);
+        }
+        if let Some(last) = cells
+            .iter()
+            .rposition(|&cell| cell.with_style(style) != Cell::EMPTY)
+        {
+            // The cells fit in the row, whose width is a u16.
+            let end = x + last as u16 + 1;
+            self.extents[block] = self.extents[block].max(end);
+        }
+        let row = self.row_mut(y);
+        row.set(RowFlag::Dirty, true);
+        if style != StyleId::DEFAULT {
+            row.set(RowFlag::Styles, true);
+        }
+    }
+
     /// Copies the cell at column `from_x` of row `from` of `source` into
     /// column `x` of row `to`, with its style, grapheme and link in this
     /// page's tables, in place of what the cell held. `when_full` says what
