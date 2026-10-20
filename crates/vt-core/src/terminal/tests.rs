@@ -4782,6 +4782,9 @@ fn a_soft_reset_puts_back_the_modes_and_leaves_the_cursor_and_the_text() {
     assert!(!terminal.input_modes().cursor_keys_application);
     assert!(!terminal.input_modes().keypad_application);
     assert_eq!(term.screen()[0], "hello", "the text stays");
+    // Text printed now takes the default style, which bold was not.
+    term.feed("x");
+    assert_eq!(term.cell(5, 3).style(), StyleId::DEFAULT);
     // The margins are the screen's, the style and the protection the
     // defaults, as a new terminal's, and the saved cursor goes home.
     let settings = "\x1bP$qr\x1b\\\x1bP$qs\x1b\\\x1bP$q\"q\x1b\\\x1bP$qm\x1b\\";

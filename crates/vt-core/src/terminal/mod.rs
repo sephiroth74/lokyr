@@ -276,6 +276,9 @@ pub struct Terminal {
     scratch: (Vec<char>, Vec<char>),
     /// The style that printed text takes.
     pen: Style,
+    /// Whether the pen is the default style, which printed text then takes
+    /// without the page's table: [`Terminal::pen_changed`] keeps it.
+    pen_default: bool,
     /// The id that the pen's style last had in a page, which the next page
     /// written to is likely to give it too.
     pen_id: StyleId,
@@ -445,6 +448,7 @@ impl Terminal {
             normalization: options.normalization,
             scratch: (Vec::new(), Vec::new()),
             pen: Style::DEFAULT,
+            pen_default: true,
             pen_id: StyleId::DEFAULT,
             protected: false,
             iso_protection: false,
@@ -585,6 +589,12 @@ impl Terminal {
     /// Sets the style that printed text takes.
     pub fn set_pen(&mut self, style: Style) {
         self.pen = style;
+        self.pen_changed();
+    }
+
+    /// Notes whether the pen, which has just changed, is the default style.
+    fn pen_changed(&mut self) {
+        self.pen_default = self.pen == Style::DEFAULT;
     }
 
     /// Gives the terminal `cols` columns and `rows` rows, at least two

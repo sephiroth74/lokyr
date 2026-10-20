@@ -506,11 +506,64 @@ impl Page {
     /// as [`Page::set_cell`] would put them one by one. The template's
     /// style must be in the page's table, and the text must fit in the row.
     pub fn write_ascii(&mut self, y: u16, x: u16, text: &[u8], template: Cell) {
+        let block = self.block(y);
+        self.write_ascii_in(y, block, x, text, template);
+    }
+
+    /// Puts `text` in the cells from column `x` of row `y` as
+    /// [`Page::write_ascii`] does, after emptying the halves of wide
+    /// characters that it would leave, as [`Page::clear_halves`] does, with
+    /// the row's block found once. With `line_start`, the first column of
+    /// the line, it also tells whether the text went over a wide character,
+    /// or its second half, in the line's first two columns, for which the
+    /// row above may have left a spacer head: never when `x` is past them.
+    #[inline(always)]
+    pub fn overwrite_ascii(
+        &mut self,
+        y: u16,
+        x: u16,
+        text: &[u8],
+        template: Cell,
+        line_start: Option<u16>,
+    ) -> bool {
+        let block = self.block(y);
+        let cols = self.cols();
+        assert!(
+            usize::from(x) + text.len() <= usize::from(cols),
+            "the text passes the end of row {y}"
+        );
+        // The text fits in the row, whose width is a u16.
+        let last = x + text.len().max(1) as u16 - 1;
+        let base = block * usize::from(cols);
+        let row = &self.cells[base..base + usize::from(cols)];
+        let over_wide = line_start
+            .filter(|&start| x <= start + 1)
+            .is_some_and(|start| {
+                row[usize::from(x)..=usize::from(last.min(start + 1))]
+                    .iter()
+                    .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
+            });
+        let first_half = x > 0 && row[usize::from(x)].width() == Width::SpacerTail;
+        let second_half = last + 1 < cols && row[usize::from(last)].width() == Width::Wide;
+        if first_half {
+            self.set_cell(y, x - 1, Cell::EMPTY);
+        }
+        if second_half {
+            self.set_cell(y, last + 1, Cell::EMPTY);
+        }
+        self.write_ascii_in(y, block, x, text, template);
+        over_wide
+    }
+
+    /// The cells of [`Page::write_ascii`], for row `y`, whose block is
+    /// `block`.
+    #[inline(always)]
+    fn write_ascii_in(&mut self, y: u16, block: usize, x: u16, text: &[u8], template: Cell) {
         debug_assert!(
             text.iter().all(|byte| (0x20..=0x7E).contains(byte)),
             "the text is printable ASCII"
         );
-        let block = self.block(y);
+        debug_assert_eq!(block, self.block(y), "the block of row {y}");
         assert!(
             usize::from(x) + text.len() <= usize::from(self.cols()),
             "the text passes the end of row {y}"

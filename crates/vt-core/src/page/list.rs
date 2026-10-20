@@ -737,8 +737,10 @@ impl PageList {
     /// [`PageList::shift_rows_up`] does, but by scrolling the whole screen
     /// up `n` rows and moving the rows outside the range back to where they
     /// were: less work when those are fewer than the range's. The rows
-    /// dropped from the range's top are emptied, and lose their pins, then
-    /// go into the scrollback as the screen scrolls, so this is for a
+    /// that leave the range go into the scrollback, with their cells and
+    /// their pins, as the screen's top row does when the whole screen
+    /// scrolls; those of a range below rows that two pages hold are
+    /// dropped, as [`PageList::shift_rows_up`] drops them. So this is for a
     /// screen whose scrollback is not shown.
     ///
     /// `top` is at most `bottom`, which is a row of the screen.
@@ -752,12 +754,14 @@ impl PageList {
             return;
         }
         if top > 0 {
-            // The rows above the range move down over the rows that leave
-            // it, which the scroll then takes off the screen.
-            self.shift_rows_down(0, top + n - 1, n);
-        } else {
-            for y in 0..n {
-                self.clear_screen_row(y);
+            // The rows above the range trade places with the rows that
+            // leave it, which the scroll then takes off the screen.
+            match self.rows_in_one_page(0, top + n - 1) {
+                Some((node, rows)) => {
+                    self.page_at_mut(node).rotate_rows(rows.clone(), n, true);
+                    self.rotate_pins(node, rows, n, true);
+                }
+                None => self.shift_rows_down(0, top + n - 1, n),
             }
         }
         for _ in 0..n {
@@ -766,8 +770,18 @@ impl PageList {
         let last = self.rows - 1;
         if bottom < last {
             // The rows below the range move back down, over the rows that
-            // came in at the bottom, which go to the end of the range.
-            self.shift_rows_down_over_empty(bottom + 1 - n, last, n);
+            // came in at the bottom, which go to the end of the range: the
+            // last rows of the tail page, unless two pages hold them.
+            let span = last - bottom + n;
+            let (tail, len) = (self.tail, self.node_len(self.tail));
+            if len >= span {
+                let rows = len - span..len;
+                self.page_at_mut(tail)
+                    .rotate_empty_rows_down(rows.clone(), n);
+                self.rotate_pins(tail, rows, n, true);
+            } else {
+                self.shift_rows_down_over_empty(bottom + 1 - n, last, n);
+            }
         }
     }
 
@@ -3338,7 +3352,8 @@ mod tests {
 
         /// Scrolling the whole screen around a range of its rows leaves the
         /// screen, and the pins on it, as shifting the range does, wherever
-        /// the screen is in its pages.
+        /// the screen is in its pages. The rows that leave a range at the
+        /// screen's top go into the scrollback, with their pins.
         #[test]
         fn scrolling_around_rows_leaves_the_screen_as_shifting_them(
             past in 0_u32..48,
@@ -3357,14 +3372,25 @@ mod tests {
             };
             let (mut shifted, shifted_pins) = build();
             let (mut scrolled, scrolled_pins) = build();
+            // The rows that leave the range go into the scrollback, unless
+            // two pages hold the rows above it, which drops them.
+            let leave = top..top + n.min(bottom + 1 - top);
+            let dropped = top > 0 && scrolled.screen_row_id(0).0 != scrolled.screen_row_id(leave.end - 1).0;
             shifted.shift_rows_up(top, bottom, n);
             scrolled.scroll_rows_up(top, bottom, n);
             prop_assert_eq!(screen_numbers(&scrolled), screen_numbers(&shifted));
             let number = |list: &PageList, pin| {
                 list.pin_position(pin).map(|position| number_at(list, position))
             };
-            for (&shifted_pin, &scrolled_pin) in shifted_pins.iter().zip(&scrolled_pins) {
-                prop_assert_eq!(number(&scrolled, scrolled_pin), number(&shifted, shifted_pin));
+            for (y, (&shifted_pin, &scrolled_pin)) in (0..).zip(shifted_pins.iter().zip(&scrolled_pins)) {
+                if leave.contains(&y) && !dropped {
+                    let position = scrolled.pin_position(scrolled_pin).expect("a pin in the scrollback");
+                    let index = scrolled.row_index(position.page, position.row).expect("a row of the list");
+                    prop_assert!(index < scrolled.scrollback_rows(), "row {} is in the scrollback", y);
+                    prop_assert_eq!(number(&shifted, shifted_pin), None);
+                } else {
+                    prop_assert_eq!(number(&scrolled, scrolled_pin), number(&shifted, shifted_pin));
+                }
             }
             prop_assert_eq!(scrolled.memory(), counted(&scrolled));
             assert_pins_listed(&scrolled);

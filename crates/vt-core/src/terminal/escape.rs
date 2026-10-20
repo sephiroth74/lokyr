@@ -84,6 +84,7 @@ impl Terminal {
         let saved = self.screen().saved.unwrap_or_default();
         self.screen_mut().cursor = saved.cursor;
         self.pen = saved.pen;
+        self.pen_changed();
         self.charsets = saved.charsets;
         self.origin = saved.origin;
         self.protected = saved.protected;
@@ -125,6 +126,7 @@ impl Terminal {
         self.margins = Margins::screen(self.cols, self.rows);
         self.charsets = Charsets::default();
         self.pen = Style::DEFAULT;
+        self.pen_changed();
         self.protected = false;
         self.iso_protection = false;
         self.screen_mut().saved = None;

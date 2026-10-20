@@ -60,6 +60,7 @@ impl Terminal {
                 _ => {}
             }
         }
+        self.pen_changed();
     }
 }
 

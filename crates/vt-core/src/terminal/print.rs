@@ -81,10 +81,88 @@ impl Terminal {
             text = rest;
         }
         while !text.is_empty() {
-            let written = self.write_ascii(text);
+            let written = match self.write_ascii_plainly(text) {
+                Some(written) => written,
+                None => self.write_ascii(text),
+            };
             text = &text[written..];
         }
         self.last_printed = Some(char::from(last));
+    }
+
+    /// Writes the start of `text` as [`Terminal::write_ascii`] does, in the
+    /// commonest case: without a pending wrap or insert mode, and with room
+    /// for the pen's style in the page. It finds the screen, the cursor and
+    /// the row's page once, and returns `None`, having written nothing, in
+    /// the other cases.
+    fn write_ascii_plainly(&mut self, text: &[u8]) -> Option<usize> {
+        if self.insert {
+            return None;
+        }
+        debug_assert_eq!(self.pen_default, self.pen == Style::DEFAULT);
+        let (margins, cols, protected, zone) = (self.margins, self.cols, self.protected, self.zone);
+        let (pen, last, default) = (self.pen, self.pen_id, self.pen_default);
+        let screen = if self.alternate_active {
+            &mut self.alternate
+        } else {
+            &mut self.primary
+        };
+        let Cursor { x, y, pending_wrap } = screen.cursor;
+        if pending_wrap {
+            return None;
+        }
+        // The line's first column and its end, as `line_start` and
+        // `line_end` tell them.
+        let (start, end) = if x > margins.right {
+            (0, cols)
+        } else if x >= margins.left {
+            (margins.left, margins.right + 1)
+        } else {
+            (0, margins.right + 1)
+        };
+        let len = text.len().min(usize::from(end - x));
+        // The line has room for `len` cells, so it fits in a u16.
+        let width = len as u16;
+        let (page, row) = screen.rows.screen_row_mut(y);
+        let style = if default {
+            StyleId::DEFAULT
+        } else if page.styles().holds(last, &pen) {
+            page.styles_mut().retain(last);
+            last
+        } else {
+            // A full table makes the page grow, which the path of every
+            // case does.
+            page.styles_mut().acquire(&pen).ok()?
+        };
+        let template = Cell::EMPTY
+            .with_style(style)
+            .with_protected(protected)
+            .with_semantic(zone);
+        let head = (y > 0 && x <= start + 1).then_some(start);
+        let over_wide = page.overwrite_ascii(row, x, &text[..len], template, head);
+        page.styles_mut().release(style);
+        screen.cursor = if x + width >= end {
+            Cursor {
+                x: end - 1,
+                y,
+                pending_wrap: true,
+            }
+        } else {
+            Cursor {
+                x: x + width,
+                y,
+                pending_wrap: false,
+            }
+        };
+        self.pen_id = style;
+        self.cluster = Some(Cluster {
+            x: x + width - 1,
+            y,
+        });
+        if over_wide {
+            self.clear_spacer_head_above(x, y);
+        }
+        Some(len)
     }
 
     /// Prints `chars`, as [`Terminal::print_translated`] would print them
@@ -244,15 +322,16 @@ impl Terminal {
         let head_above = !insert && y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
-            if !insert {
-                over_wide = head_above && over_wide_start(page.cells(row), x, width, start);
-                page.clear_halves(row, x, width);
-            }
             let template = Cell::EMPTY
                 .with_style(style)
                 .with_protected(protected)
                 .with_semantic(zone);
-            page.write_ascii(row, x, text, template);
+            if insert {
+                page.write_ascii(row, x, text, template);
+            } else {
+                over_wide =
+                    page.overwrite_ascii(row, x, text, template, head_above.then_some(start));
+            }
         });
         if over_wide {
             self.clear_spacer_head_above(x, y);
@@ -643,10 +722,11 @@ impl Terminal {
     /// that cannot grow writes in the default style. The page is looked up
     /// once, unless it grows.
     pub(super) fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
-        let (pen, last) = (self.pen, self.pen_id);
+        debug_assert_eq!(self.pen_default, self.pen == Style::DEFAULT);
+        let (pen, last, default) = (self.pen, self.pen_id, self.pen_default);
         let rows = &mut self.screen_mut().rows;
         let (mut page, mut row) = rows.screen_row_mut(y);
-        let style = if pen == Style::DEFAULT {
+        let style = if default {
             StyleId::DEFAULT
         } else if page.styles().holds(last, &pen) {
             page.styles_mut().retain(last);

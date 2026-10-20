@@ -151,6 +151,11 @@ impl Parser {
                 let len = 1 + scan::printable_len(&bytes[i + 1..]);
                 handler.print_ascii(&bytes[i..i + len]);
                 i += len;
+            } else if transition.action == table::Action::Execute {
+                // C0 controls, as CR and LF, which every line has.
+                self.state = transition.next;
+                handler.execute(byte);
+                i += 1;
             } else if transition.action == table::Action::Utf8
                 && let len @ 1.. = print_utf8_run(handler, &bytes[i..])
             {
