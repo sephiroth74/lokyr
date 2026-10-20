@@ -532,11 +532,16 @@ impl Page {
     /// Empties the halves of wide characters that writing `width` cells
     /// from column `x` of row `y` would leave without their other half.
     pub fn clear_halves(&mut self, y: u16, x: u16, width: u16) {
-        if x > 0 && self.cells(y)[usize::from(x)].width() == Width::SpacerTail {
+        let last = x + width - 1;
+        let cells = self.cells(y);
+        let (first, after) = (
+            x > 0 && cells[usize::from(x)].width() == Width::SpacerTail,
+            last + 1 < self.cols() && cells[usize::from(last)].width() == Width::Wide,
+        );
+        if first {
             self.set_cell(y, x - 1, Cell::EMPTY);
         }
-        let last = x + width - 1;
-        if last + 1 < self.cols() && self.cells(y)[usize::from(last)].width() == Width::Wide {
+        if after {
             self.set_cell(y, last + 1, Cell::EMPTY);
         }
     }

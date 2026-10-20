@@ -173,13 +173,33 @@ impl Parser {
     /// and `:`. Returns how many bytes it took. At any other byte it stops,
     /// in the state that the table would be in, for the table to go on.
     fn csi_params<H: Handler>(&mut self, handler: &mut H, bytes: &[u8]) -> usize {
-        for (i, &byte) in bytes.iter().enumerate() {
+        // The entry state has no value yet. The one being parsed stays here,
+        // out of the parameters, until a separator or the end takes it.
+        let (mut value, mut written) = (0_u16, false);
+        let mut i = 0;
+        let taken = loop {
+            let Some(&byte) = bytes.get(i) else {
+                break bytes.len();
+            };
             match byte {
-                b'0'..=b'9' => self.params.push_digit(byte - b'0'),
-                b';' => self.params.end_param(),
-                b':' => self.params.end_sub_param(),
+                b'0'..=b'9' => {
+                    value = value
+                        .saturating_mul(10)
+                        .saturating_add(u16::from(byte - b'0'));
+                    written = true;
+                }
+                b';' | b':' => {
+                    self.params.set_current(value, written);
+                    if byte == b';' {
+                        self.params.end_param();
+                    } else {
+                        self.params.end_sub_param();
+                    }
+                    (value, written) = (0, false);
+                }
                 0x40..=0x7E => {
                     self.state = State::Ground;
+                    self.params.set_current(value, written);
                     self.params.end_param();
                     // Nothing is collected in the entry state, so the
                     // sequence has no intermediates, and is not ignored.
@@ -187,11 +207,15 @@ impl Parser {
                     handler.csi_dispatch(&self.params, &[], byte);
                     return i + 1;
                 }
-                _ => return i,
+                _ => break i,
             }
+            i += 1;
+        };
+        self.params.set_current(value, written);
+        if taken > 0 {
             self.state = State::CsiParam;
         }
-        bytes.len()
+        taken
     }
 
     /// How many bytes at the start of `bytes` have `transition` in the

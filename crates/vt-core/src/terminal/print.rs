@@ -1,7 +1,7 @@
 //! Printing: the path that every character of text takes into the grid.
 
 use super::{Cluster, Cursor, Terminal};
-use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, StyleId, Width};
+use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, Style, StyleId, Width};
 use crate::unicode::{GraphemeBreak, Mode, Normalization, properties};
 
 /// The most codepoints that a cluster keeps; those that would join it past
@@ -543,7 +543,9 @@ impl Terminal {
         let (pen, last) = (self.pen, self.pen_id);
         let rows = &mut self.screen_mut().rows;
         let (mut page, mut row) = rows.screen_row_mut(y);
-        let style = if page.styles().holds(last, &pen) {
+        let style = if pen == Style::DEFAULT {
+            StyleId::DEFAULT
+        } else if page.styles().holds(last, &pen) {
             page.styles_mut().retain(last);
             last
         } else {

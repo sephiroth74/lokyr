@@ -474,6 +474,30 @@ fn sequences_can_be_split_across_reads() {
     );
 }
 
+#[test]
+fn csi_parameters_parse_the_same_at_every_split() {
+    // Values split within their digits, sub-parameters, empty values, a
+    // value past a u16, a control within the sequence, and private markers
+    // before and after a value, which the table takes from wherever the
+    // parameters stop.
+    let inputs: [&[u8]; 8] = [
+        b"\x1b[12;345H",
+        b"\x1b[38:2::255:0m",
+        b"\x1b[;7;m",
+        b"\x1b[70000H",
+        b"\x1b[1\n2H",
+        b"\x1b[\r5A",
+        b"\x1b[3?h",
+        b"\x1b[?25h",
+    ];
+    for input in inputs {
+        let whole = parse(input);
+        for reads in every_split(input) {
+            assert_eq!(parse_in_reads(&reads), whole, "{reads:?}");
+        }
+    }
+}
+
 /// The private markers that can open a CSI or DCS sequence.
 const MARKERS: [u8; 4] = *b"?><=";
 

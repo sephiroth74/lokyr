@@ -114,8 +114,17 @@ impl Params {
         self.given = 0;
     }
 
+    /// Makes `value` the value being parsed, with digits if `written`: what
+    /// [`Params::push_digit`] would have made of the digits that a parser
+    /// took into `value` itself.
+    #[inline]
+    pub(crate) fn set_current(&mut self, value: u16, written: bool) {
+        (self.current, self.written) = (value, written);
+    }
+
     /// Appends a decimal digit to the value being parsed. A value too large
     /// for a `u16` stops at `u16::MAX`.
+    #[inline]
     pub(crate) fn push_digit(&mut self, digit: u8) {
         self.current = self
             .current
@@ -126,6 +135,7 @@ impl Params {
 
     /// Ends the value being parsed, and the parameter with it: `;`, or the
     /// end of the sequence.
+    #[inline]
     pub(crate) fn end_param(&mut self) {
         self.end_sub_param();
         // A group whose values were all dropped does not count.
@@ -139,6 +149,7 @@ impl Params {
 
     /// Ends the value being parsed, so that a sub-parameter of the same
     /// parameter follows: `:`.
+    #[inline]
     pub(crate) fn end_sub_param(&mut self) {
         if self.value_count < MAX_PARAMS {
             // Every complete group has a value, so `group_count` is at most
