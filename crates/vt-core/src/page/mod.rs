@@ -857,6 +857,7 @@ impl Page {
     /// Moves the rows of `rows` down `n` rows, as
     /// [`Page::rotate_rows_down`] does, when the last `n` are empty
     /// already, as the rows that a scroll brings in are.
+    #[inline]
     pub fn rotate_empty_rows_down(&mut self, rows: Range<u16>, n: u16) {
         debug_assert!(
             (rows.end - n..rows.end).all(|y| self.cells(y).iter().all(|&cell| cell == Cell::EMPTY)),
@@ -867,7 +868,24 @@ impl Page {
 
     /// Rotates the rows of `rows` by `n`, down if `down` and up if not,
     /// each with its block of cells and its metadata, and marks them dirty.
+    #[inline(always)]
     fn rotate_rows(&mut self, rows: Range<u16>, n: u16, down: bool) {
+        if rows.len() == 2 && n == 1 {
+            // Two rows trade places, either way: the last row below a
+            // region and the row that a scroll brings in.
+            let (a, b) = (usize::from(rows.start), usize::from(rows.start) + 1);
+            self.slots.swap(a, b);
+            self.rows.swap(a, b);
+            for row in [a, b] {
+                self.rows[row].set(RowFlag::Dirty, true);
+            }
+        } else {
+            self.rotate_more_rows(rows, n, down);
+        }
+    }
+
+    /// [`Page::rotate_rows`], for more than two rows, or by more than one.
+    fn rotate_more_rows(&mut self, rows: Range<u16>, n: u16, down: bool) {
         let range = usize::from(rows.start)..usize::from(rows.end);
         rotate(&mut self.slots[range.clone()], n, down);
         rotate(&mut self.rows[range.clone()], n, down);

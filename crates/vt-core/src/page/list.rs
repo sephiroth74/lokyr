@@ -805,6 +805,7 @@ impl PageList {
 
     /// Rotates the pins of the rows of `rows` of node `node` with them, as
     /// [`RowPins::rotate`] does, unless the node has none.
+    #[inline(always)]
     fn rotate_pins(&mut self, node: u32, rows: Range<u16>, n: u16, down: bool) {
         let pins = &mut self.nodes[node as usize].pins;
         if !pins.is_empty() {
@@ -1913,8 +1914,22 @@ impl PageList {
     }
 
     /// The node and the row in its page of row `y` of the screen.
+    #[inline(always)]
     fn locate(&self, y: u16) -> (u32, u16) {
         assert!(y < self.rows, "row {y} is past the screen");
+        // The tail page holds the whole screen, but for the rows after it
+        // reaches a new page.
+        if let Some(page) = &self.nodes[self.tail as usize].page
+            && page.len() >= self.rows
+        {
+            return (self.tail, page.len() - self.rows + y);
+        }
+        self.locate_back(y)
+    }
+
+    /// [`PageList::locate`], for a screen that the tail page does not hold
+    /// whole.
+    fn locate_back(&self, y: u16) -> (u32, u16) {
         let row = self.total_rows - usize::from(self.rows) + usize::from(y);
         // The screen is at the end of the list, so search from the tail.
         let mut index = self.tail;
