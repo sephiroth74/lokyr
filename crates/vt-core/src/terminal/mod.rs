@@ -394,6 +394,10 @@ pub struct Terminal {
     /// The window's title (OSC 2) and the icon's (OSC 1).
     title: String,
     icon_title: String,
+    /// The bytes of the window's title and the icon's as CSI 21 t and 20 t
+    /// report them, which [`Terminal::titles_changed`] keeps, so that a
+    /// report that the replies have no room for goes without being made.
+    reported_titles: (usize, usize),
     /// The titles that CSI 22 t pushed, the latest last.
     title_stack: Vec<(Option<String>, Option<String>)>,
     /// xterm's title modes 0 and 1: titles are set, and reported, in
@@ -497,6 +501,7 @@ impl Terminal {
             restored_size: None,
             title: String::new(),
             icon_title: String::new(),
+            reported_titles: (0, 0),
             title_stack: Vec::new(),
             hex_titles: false,
             hex_title_reports: false,

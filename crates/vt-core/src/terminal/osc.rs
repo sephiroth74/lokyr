@@ -242,6 +242,7 @@ impl Terminal {
         if window {
             self.title = title;
         }
+        self.titles_changed();
         self.events.push(Event::TitleChanged);
     }
 

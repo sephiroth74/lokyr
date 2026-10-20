@@ -2467,6 +2467,7 @@ fn xtwinops_reports_the_sizes_it_knows() {
 fn the_title_is_reported_only_when_the_configuration_allows_it() {
     let mut term = Term::new(10, 1);
     term.terminal.title = "shell\x1b]evil".to_owned();
+    term.terminal.titles_changed();
     term.feed("\x1b[21t\x1b[20t");
     assert_eq!(replies(&mut term), "");
     let options = Options {
@@ -2476,6 +2477,7 @@ fn the_title_is_reported_only_when_the_configuration_allows_it() {
     let mut term = Term::with(10, 1, options);
     term.terminal.title = "shell\x1b]evil\u{9B}".to_owned();
     term.terminal.icon_title = "icon".to_owned();
+    term.terminal.titles_changed();
     term.feed("\x1b[21t\x1b[20t");
     assert_eq!(
         replies(&mut term),
@@ -2485,11 +2487,46 @@ fn the_title_is_reported_only_when_the_configuration_allows_it() {
 }
 
 #[test]
+fn the_titles_reports_follow_every_change_of_the_titles() {
+    let options = Options {
+        title_reports: true,
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    // Set by OSC, pushed and changed, popped, reported in hexadecimal and
+    // plainly again.
+    let steps = [
+        (
+            "\x1b]2;abc\x07\x1b]1;ic\x07",
+            "\x1b]labc\x1b\\",
+            "\x1b]Lic\x1b\\",
+        ),
+        (
+            "\x1b[22;0t\x1b]0;longer title\x07",
+            "\x1b]llonger title\x1b\\",
+            "\x1b]Llonger title\x1b\\",
+        ),
+        ("\x1b[23;0t", "\x1b]labc\x1b\\", "\x1b]Lic\x1b\\"),
+        ("\x1b[>1t", "\x1b]l616263\x1b\\", "\x1b]L6963\x1b\\"),
+        ("\x1b[>t", "\x1b]labc\x1b\\", "\x1b]Lic\x1b\\"),
+    ];
+    for (change, window, icon) in steps {
+        term.feed(change).feed("\x1b[21t\x1b[20t");
+        assert_eq!(
+            replies(&mut term),
+            format!("{window}{icon}"),
+            "after {change:?}"
+        );
+    }
+}
+
+#[test]
 fn the_title_stack_pushes_and_pops() {
     let mut term = Term::new(10, 1);
     let set = |term: &mut Term, title: &str, icon: &str| {
         term.terminal.title = title.to_owned();
         term.terminal.icon_title = icon.to_owned();
+        term.terminal.titles_changed();
     };
     let titles = |term: &Term| {
         (
@@ -2677,6 +2714,7 @@ fn ris_keeps_what_the_embedder_configured() {
     let mut term = Term::with(10, 2, options);
     term.terminal.set_cell_size(8, 16);
     term.terminal.title = "old".to_owned();
+    term.terminal.titles_changed();
     term.feed("\x1b[22t\x1bc\x1b[16t\x1b[21t\x1bP+q544E\x1b\\\x1b[23t");
     let reply = replies(&mut term);
     assert!(reply.starts_with("\x1b[6;16;8t\x1b]l\x1b\\"), "{reply:?}");

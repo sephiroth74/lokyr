@@ -41,10 +41,15 @@ impl Terminal {
     /// Queues `bytes`, a reply to a program's query, unless the replies
     /// that wait would take more than [`REPLY_BYTES`].
     pub(super) fn reply(&mut self, bytes: &[u8]) {
-        if self.reply_bytes + bytes.len() <= REPLY_BYTES {
+        if self.has_room_for_reply(bytes.len()) {
             self.reply_bytes += bytes.len();
             self.replies.extend_from_slice(bytes);
         }
+    }
+
+    /// Whether the replies that wait have room for one of `len` bytes.
+    fn has_room_for_reply(&self, len: usize) -> bool {
+        self.reply_bytes + len <= REPLY_BYTES
     }
 
     /// Queues `bytes`, the embedder's answer to a request that the user
@@ -185,14 +190,8 @@ impl Terminal {
                 }
             }
             18 => self.reply(format!("\x1b[8;{rows};{cols}t").as_bytes()),
-            20 if self.title_reports => {
-                let title = self.reported_title(&self.icon_title);
-                self.reply(format!("\x1b]L{title}\x1b\\").as_bytes());
-            }
-            21 if self.title_reports => {
-                let title = self.reported_title(&self.title);
-                self.reply(format!("\x1b]l{title}\x1b\\").as_bytes());
-            }
+            20 if self.title_reports => self.report_title(false),
+            21 if self.title_reports => self.report_title(true),
             22 => self.push_title(params.value(1)),
             23 => self.pop_title(params.value(1)),
             // With the window's operations allowed: the resize in cells,
@@ -202,6 +201,33 @@ impl Terminal {
             _ if self.window_ops => self.window_operation(params),
             _ => {}
         }
+    }
+
+    /// CSI 21 t, the window's title, or 20 t, the icon's: a report as long
+    /// as the title, which a program can ask for many times in a row, so
+    /// that one that the replies have no room for is not made at all.
+    fn report_title(&mut self, window: bool) {
+        // OSC, `l` or `L`, the title, ST.
+        let (kind, title, len) = if window {
+            ('l', &self.title, self.reported_titles.0)
+        } else {
+            ('L', &self.icon_title, self.reported_titles.1)
+        };
+        if !self.has_room_for_reply(5 + len) {
+            return;
+        }
+        let title = self.reported_title(title);
+        debug_assert_eq!(title.len(), len, "the title's report as it was kept");
+        self.reply(format!("\x1b]{kind}{title}\x1b\\").as_bytes());
+    }
+
+    /// Keeps the bytes of the titles as their reports have them, after a
+    /// title or the title modes changed.
+    pub(super) fn titles_changed(&mut self) {
+        self.reported_titles = (
+            self.reported_title(&self.title).len(),
+            self.reported_title(&self.icon_title).len(),
+        );
     }
 
     /// `title` as CSI 20 t and 21 t report it: without its control
@@ -225,6 +251,7 @@ impl Terminal {
         if params.len() <= 1 && !params.has_value(0) {
             self.hex_titles = false;
             self.hex_title_reports = false;
+            self.titles_changed();
             return;
         }
         for index in (0..params.len()).filter(|&index| params.has_value(index)) {
@@ -234,6 +261,7 @@ impl Terminal {
                 _ => {}
             }
         }
+        self.titles_changed();
     }
 
     /// CSI 22 t: pushes both titles with 0, the icon's with 1 and the
@@ -278,6 +306,7 @@ impl Terminal {
             changed = true;
         }
         if changed {
+            self.titles_changed();
             self.events.push(Event::TitleChanged);
         }
     }
