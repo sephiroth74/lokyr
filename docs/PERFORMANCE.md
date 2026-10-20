@@ -23,7 +23,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `bolt-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
 | Scrollback | ≤ configured limit + 5%; ≈ 8 B per cell | memory tests in CI |
 | GPU memory (accounted separately) | 2 BGRA8 `framebufferOnly` drawables per window (≈ 31 MB each at 3456×2234), none per pane, released when the window is hidden | The GPU categories of `bolt-bench memory`; Instruments (Metal System Trace); DRM `fdinfo` on Linux |
-| Throughput | Within 10% of the faster of Ghostty and Alacritty | vtebench; `cat` of a 1 GB file, headless and on screen |
+| Throughput | Within 10% of the faster of Ghostty and Alacritty, but in vtebench's bottom region, with its lines of one character ([ADR 0015](adr/0015-vt-core-throughput-exception.md)) | vtebench; `cat` of a 1 GB file, headless and on screen |
 | CPU per frame | ≤ 2 ms p99 (4K, 4 panes) | `tracing` spans + signposts |
 | Luau plugin activation | ≤ 5 ms, compilation included | `tracing` spans |
 

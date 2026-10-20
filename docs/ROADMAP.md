@@ -54,7 +54,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - recorded sessions of vim, htop, tmux, less and fzf replay identically;
 - no unexplained divergence from `alacritty_terminal`;
 - 24 h of fuzzing without crashes;
-- throughput ≥ `alacritty_terminal`;
+- throughput ≥ `alacritty_terminal`, but in vtebench's bottom region, with its lines of one character, which keeps 0.6 of it at least ([ADR 0015](adr/0015-vt-core-throughput-exception.md));
 - the same tests also pass on Linux CI.
 
 ### F2 — macOS, single pane

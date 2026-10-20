@@ -35,7 +35,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 
 | Requirement | Solution | Where | Phase |
 |---|---|---|---|
-| Fast and light on memory | 8-byte cells in pages; one GPU surface per window; native backends; no frames when idle | [VT-CORE](VT-CORE.md#paged-grid), [PERFORMANCE](PERFORMANCE.md) | F1–F2 |
+| Fast and light on memory | 8-byte cells in pages; one GPU surface per window; native backends; no frames when idle | [VT-CORE](VT-CORE.md#paged-grid), [PERFORMANCE](PERFORMANCE.md), [ADR 0015](adr/0015-vt-core-throughput-exception.md) | F1–F2 |
 | Split panes | `splits` plugin; the layout tree lives in the kernel | [UI-AND-FEATURES](UI-AND-FEATURES.md#splits) | F3 |
 | Search the buffer | Kernel `search` service for the engine, `search` plugin for the UI | [UI-AND-FEATURES](UI-AND-FEATURES.md#search) | F3 |
 | Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy, gliding) | `[cursor]` options, drawn by `render-metal`; the animations run only while they are in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor) | F2–F3 |
@@ -68,6 +68,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
 | [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
 | [0014](adr/0014-names-bolt-and-crossbow.md) | Names: Bolt for the terminal, Crossbow for the package manager | Accepted |
+| [0015](adr/0015-vt-core-throughput-exception.md) | Throughput of the VT core: vtebench's bottom region, with its lines of one character, is an exception | Accepted |
 
 ## Glossary
 
