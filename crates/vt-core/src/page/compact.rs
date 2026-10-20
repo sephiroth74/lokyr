@@ -90,7 +90,7 @@ impl CompactPage {
 /// How many cells of row `y` of `page` a cold page keeps: those up to its
 /// last that is not empty.
 fn kept(page: &Page, y: u16) -> usize {
-    page.cells(y)
+    page.cells(y)[..usize::from(page.extent(y))]
         .iter()
         .rposition(|&cell| cell != Cell::EMPTY)
         .map_or(0, |x| x + 1)
@@ -159,16 +159,18 @@ mod tests {
         let capacity = Capacity::standard(120);
         assert!(!CompactPage::shrinks(&full_page(capacity, 0)), "full rows");
         // Where each row starts takes four bytes a row, and one more entry;
-        // a cell left out gives back eight. As many short rows as make up
-        // for that save nothing, so the page stays; one more saves bytes.
-        let rows = usize::from(capacity.rows);
-        assert_eq!((rows + 1) % 2, 0, "{rows} rows");
-        let even = rows.div_ceil(2) as u16;
-        assert!(!CompactPage::shrinks(&full_page(capacity, even)));
-        let page = full_page(capacity, even + 1);
+        // a cell left out gives back eight. The most short rows that do not
+        // make up for that save nothing, so the page stays; one more saves
+        // bytes.
+        let most = capacity.rows.div_ceil(2);
+        assert!(!CompactPage::shrinks(&full_page(capacity, most)));
+        let page = full_page(capacity, most + 1);
         assert!(CompactPage::shrinks(&page));
         let bytes = page.memory();
         let cold = CompactPage::new(page);
-        assert_eq!(cold.memory(), bytes - size_of::<Cell>());
+        // The cells left out, less where each row starts.
+        let saved = usize::from(most + 1) * size_of::<Cell>()
+            - (usize::from(capacity.rows) + 1) * size_of::<u32>();
+        assert_eq!(cold.memory(), bytes - saved);
     }
 }

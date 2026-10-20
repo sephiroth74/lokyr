@@ -103,7 +103,8 @@ impl Capacity {
     pub fn bytes(&self) -> usize {
         let rows = usize::from(self.rows);
         size_of::<Page>()
-            + rows * (size_of::<Row>() + size_of::<u16>())
+            // Each row's metadata and slot, and its block's extent.
+            + rows * (size_of::<Row>() + 2 * size_of::<u16>())
             + rows * usize::from(self.cols) * size_of::<Cell>()
             + StyleTable::memory_for(self.styles)
             + GraphemeTable::memory_for(self.graphemes)
@@ -166,6 +167,9 @@ pub struct Page {
     slots: Box<[u16]>,
     /// The cells, a block of a row's width after the other.
     cells: Box<[Cell]>,
+    /// For each block of cells, a column from which its cells are all
+    /// empty, so that emptying the block fills the cells before it only.
+    extents: Box<[u16]>,
     styles: StyleTable,
     graphemes: GraphemeTable,
     hyperlinks: HyperlinkTable,
@@ -181,6 +185,7 @@ impl Page {
             rows: vec![Row::default(); rows].into_boxed_slice(),
             slots: (0..capacity.rows).collect(),
             cells: vec![Cell::EMPTY; rows * usize::from(capacity.cols)].into_boxed_slice(),
+            extents: vec![0; rows].into_boxed_slice(),
             styles: StyleTable::new(capacity.styles),
             graphemes: GraphemeTable::new(capacity.graphemes),
             hyperlinks: HyperlinkTable::new(capacity.hyperlinks, capacity.linked_cells),
@@ -219,7 +224,11 @@ impl Page {
             return None;
         }
         self.len += 1;
-        Some(self.len - 1)
+        let y = self.len - 1;
+        // A reset leaves the cells as they were, and the row empties its
+        // own as it comes into use, while they are about to be written.
+        self.empty_block(y);
+        Some(y)
     }
 
     /// Stops using the last row in use, which drops what it held.
@@ -296,6 +305,7 @@ impl Page {
             Some(link) => {
                 self.hyperlinks.set_cell(Self::key(index), link)?;
                 self.cells[index] = cell.with_hyperlink(true);
+                self.extend(y, x + 1);
                 self.row_mut(y).set(RowFlag::Hyperlinks, true);
             }
             None => {
@@ -384,6 +394,9 @@ impl Page {
         self.styles.retain(cell.style());
         self.release(index, old);
         self.cells[index] = cell;
+        if cell != Cell::EMPTY {
+            self.extend(y, x + 1);
+        }
         let row = self.row_mut(y);
         row.set(RowFlag::Dirty, true);
         if cell.style() != StyleId::DEFAULT {
@@ -400,11 +413,15 @@ impl Page {
             text.iter().all(|byte| (0x20..=0x7E).contains(byte)),
             "the text is printable ASCII"
         );
-        let start = self.cell_index(y, x);
+        let block = self.block(y);
         assert!(
             usize::from(x) + text.len() <= usize::from(self.cols()),
             "the text passes the end of row {y}"
         );
+        let start = block * usize::from(self.cols()) + usize::from(x);
+        // The text fits in the row, whose width is a u16.
+        let end = x + text.len() as u16;
+        self.extents[block] = self.extents[block].max(end);
         debug_assert!(
             !template.has_hyperlink(),
             "a link is set with set_hyperlink"
@@ -429,6 +446,9 @@ impl Page {
     pub fn set_width(&mut self, y: u16, x: u16, width: Width) {
         let index = self.cell_index(y, x);
         self.cells[index] = self.cells[index].with_width(width);
+        if self.cells[index] != Cell::EMPTY {
+            self.extend(y, x + 1);
+        }
         self.row_mut(y).set(RowFlag::Dirty, true);
     }
 
@@ -536,6 +556,11 @@ impl Page {
     fn shift_right(&mut self, y: u16, x: u16, n: u16, end: u16) {
         let n = n.min(end - x);
         self.clear_cells(y, end - n..end);
+        // The cells that are not empty move right by n, within the end.
+        let extent = self.extents[self.block(y)];
+        if extent > x {
+            self.extend(y, (extent + n).min(end));
+        }
         for column in (x..end - n).rev() {
             let (from, to) = (self.cell_index(y, column), self.cell_index(y, column + n));
             self.move_cell(from, to);
@@ -572,7 +597,6 @@ impl Page {
     /// Empties every cell of row `y`, which drop their styles, their
     /// graphemes and their links, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
-        let range = self.cell_range(y);
         let metadata = self.row(y);
         if !metadata.has(RowFlag::Styles)
             && !metadata.has(RowFlag::Graphemes)
@@ -580,24 +604,23 @@ impl Page {
         {
             // The flags say that no cell holds anything in the tables.
             debug_assert!(
-                self.cells[range.clone()].iter().all(|cell| {
+                self.cells(y).iter().all(|cell| {
                     cell.style() == StyleId::DEFAULT
                         && !cell.has_hyperlink()
                         && !matches!(cell.content(), Content::Grapheme(_))
                 }),
                 "row {y} holds what its flags leave out"
             );
-            self.cells[range].fill(Cell::EMPTY);
-        } else if self.cells[range.clone()]
-            .iter()
-            .any(|&cell| cell != Cell::EMPTY)
-        {
-            // Rows that scrolling moves are mostly empty already: one
-            // compare over the row tells so.
-            for index in range {
+            self.empty_block(y);
+        } else {
+            let block = self.block(y);
+            let start = block * usize::from(self.cols());
+            self.debug_assert_extent(y);
+            for index in start..start + usize::from(self.extents[block]) {
                 let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
                 self.release(index, cell);
             }
+            self.extents[block] = 0;
         }
         let row = self.row_mut(y);
         *row = Row::default();
@@ -631,8 +654,8 @@ impl Page {
             self.clear_row(y);
         }
         let range = usize::from(rows.start)..usize::from(rows.end);
-        self.slots[range.clone()].rotate_left(usize::from(n));
-        self.rows[range.clone()].rotate_left(usize::from(n));
+        rotate(&mut self.slots[range.clone()], n, false);
+        rotate(&mut self.rows[range.clone()], n, false);
         for row in &mut self.rows[range] {
             row.set(RowFlag::Dirty, true);
         }
@@ -646,8 +669,8 @@ impl Page {
             self.clear_row(y);
         }
         let range = usize::from(rows.start)..usize::from(rows.end);
-        self.slots[range.clone()].rotate_right(usize::from(n));
-        self.rows[range.clone()].rotate_right(usize::from(n));
+        rotate(&mut self.slots[range.clone()], n, true);
+        rotate(&mut self.rows[range.clone()], n, true);
         for row in &mut self.rows[range] {
             row.set(RowFlag::Dirty, true);
         }
@@ -681,6 +704,12 @@ impl Page {
         }
         self.clear_cells(to, columns.clone());
         let (from_start, to_start) = (self.cell_range(from).start, self.cell_range(to).start);
+        // The cells that are not empty, before the source's extent, arrive
+        // in the same columns of `to`.
+        let extent = self.extents[self.block(from)].min(columns.end);
+        if extent > columns.start {
+            self.extend(to, extent);
+        }
         for x in columns {
             let x = usize::from(x);
             self.move_cell(from_start + x, to_start + x);
@@ -714,12 +743,27 @@ impl Page {
         when_full: WhenFull,
     ) -> Result<(), TableFull> {
         assert_eq!(source.cols(), self.cols(), "the pages have one width");
+        let mut metadata = source.row(from);
+        metadata.set(RowFlag::Dirty, true);
+        if !metadata.has(RowFlag::Styles)
+            && !metadata.has(RowFlag::Graphemes)
+            && !metadata.has(RowFlag::Hyperlinks)
+        {
+            // Cells that hold nothing in the tables are copied as they are.
+            self.clear_row(to);
+            let extent = source.extent(from);
+            let block = self.block(to);
+            let start = block * usize::from(self.cols());
+            self.cells[start..start + usize::from(extent)]
+                .copy_from_slice(&source.cells(from)[..usize::from(extent)]);
+            self.extents[block] = extent;
+            *self.row_mut(to) = metadata;
+            return Ok(());
+        }
         if let Err(full) = self.copy_cells(to, source, from, 0..self.cols(), when_full) {
             self.clear_row(to);
             return Err(full);
         }
-        let mut metadata = source.row(from);
-        metadata.set(RowFlag::Dirty, true);
         *self.row_mut(to) = metadata;
         Ok(())
     }
@@ -855,11 +899,9 @@ impl Page {
 
     /// Empties the page as it was new, with no row in use, without
     /// allocating: what the pool does before handing a page out again.
+    /// The cells stay as they were until [`Page::push_row`] puts their row
+    /// in use again, which empties them.
     pub fn reset(&mut self) {
-        for y in 0..self.len {
-            let range = self.cell_range(y);
-            self.cells[range].fill(Cell::EMPTY);
-        }
         self.rows[..usize::from(self.len)].fill(Row::default());
         self.styles.clear();
         self.graphemes.clear();
@@ -879,6 +921,7 @@ impl Page {
         page.rows[..rows].copy_from_slice(&self.rows[..rows]);
         page.slots[..self.slots.len()].copy_from_slice(&self.slots);
         page.cells[..self.cells.len()].copy_from_slice(&self.cells);
+        page.extents[..self.extents.len()].copy_from_slice(&self.extents);
         page.styles = self.styles.grown(capacity.styles);
         page.graphemes = self.graphemes.grown(capacity.graphemes);
         page.hyperlinks = self
@@ -907,6 +950,7 @@ impl Page {
             + size_of_val(&*self.rows)
             + size_of_val(&*self.slots)
             + size_of_val(&*self.cells)
+            + size_of_val(&*self.extents)
             + self.styles.memory()
             + self.graphemes.memory()
             + self.hyperlinks.memory()
@@ -966,19 +1010,104 @@ impl Page {
         usize::from(y)
     }
 
-    fn cell_range(&self, y: u16) -> std::ops::Range<usize> {
+    /// The block of cells of row `y`, which must be in use.
+    fn block(&self, y: u16) -> usize {
         // One check covers the row in use and the slot: the slots past the
         // rows in use are not read.
         let Some(&slot) = self.slots[..usize::from(self.len)].get(usize::from(y)) else {
             panic!("row {y} is not in use");
         };
-        let start = usize::from(slot) * usize::from(self.cols());
+        usize::from(slot)
+    }
+
+    fn cell_range(&self, y: u16) -> std::ops::Range<usize> {
+        let start = self.block(y) * usize::from(self.cols());
         start..start + usize::from(self.cols())
+    }
+
+    /// The column of row `y` from which its cells are all empty, or one
+    /// before which some may be empty too.
+    pub(crate) fn extent(&self, y: u16) -> u16 {
+        self.extents[self.block(y)]
+    }
+
+    /// Takes the extent of row `y` to column `end`, if it is short of it,
+    /// for a cell before `end` that is no longer empty.
+    fn extend(&mut self, y: u16, end: u16) {
+        let extent = &mut self.extents[self.block(y)];
+        *extent = (*extent).max(end);
+    }
+
+    /// Empties the cells of row `y` as they are, without dropping what
+    /// they hold in the tables: for cells that hold nothing there, or that
+    /// a reset left behind.
+    fn empty_block(&mut self, y: u16) {
+        self.debug_assert_extent(y);
+        let block = self.block(y);
+        let start = block * usize::from(self.cols());
+        self.cells[start..start + usize::from(self.extents[block])].fill(Cell::EMPTY);
+        self.extents[block] = 0;
+    }
+
+    /// Checks that the cells of row `y` past its extent are empty.
+    fn debug_assert_extent(&self, y: u16) {
+        let extent = usize::from(self.extent(y));
+        debug_assert!(
+            self.cells(y)[extent..]
+                .iter()
+                .all(|&cell| cell == Cell::EMPTY),
+            "row {y} has cells past its extent, {extent}"
+        );
     }
 
     fn cell_index(&self, y: u16, x: u16) -> usize {
         assert!(x < self.cols(), "column {x} is past the row");
         self.cell_range(y).start + usize::from(x)
+    }
+}
+
+/// Rotates `items` left by `n`, or right if `right`, as `rotate_left` and
+/// `rotate_right` do. By one, as a line feed scrolls, the items move in
+/// chunks of a fixed size, which stay in registers: the standard rotation
+/// copies overlapping memory, which takes longer than the few rows of a
+/// scroll region.
+fn rotate<T: Copy>(items: &mut [T], n: u16, right: bool) {
+    const CHUNK: usize = 8;
+    let len = items.len();
+    if n != 1 || len < 2 {
+        if right {
+            items.rotate_right(usize::from(n));
+        } else {
+            items.rotate_left(usize::from(n));
+        }
+        return;
+    }
+    if right {
+        let last = items[len - 1];
+        let mut end = len - 1;
+        while end >= CHUNK {
+            let chunk: [T; CHUNK] = items[end - CHUNK..end].try_into().expect("a chunk");
+            items[end - CHUNK + 1..=end].copy_from_slice(&chunk);
+            end -= CHUNK;
+        }
+        for i in (1..=end).rev() {
+            items[i] = items[i - 1];
+        }
+        items[0] = last;
+    } else {
+        let first = items[0];
+        let mut start = 0;
+        while start + CHUNK < len {
+            let chunk: [T; CHUNK] = items[start + 1..=start + CHUNK]
+                .try_into()
+                .expect("a chunk");
+            items[start..start + CHUNK].copy_from_slice(&chunk);
+            start += CHUNK;
+        }
+        for i in start..len - 1 {
+            items[i] = items[i + 1];
+        }
+        items[len - 1] = first;
     }
 }
 

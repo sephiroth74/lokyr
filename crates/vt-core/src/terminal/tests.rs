@@ -1383,6 +1383,46 @@ fn lf_scrolls_the_region_at_its_bottom_margin() {
 }
 
 #[test]
+fn the_alternate_screen_scrolls_a_region_as_the_primary_one_does() {
+    // The alternate screen scrolls the whole screen around a region that
+    // leaves fewer rows out than it holds: rows left out above it, below
+    // it, on both sides, or as many as it holds.
+    for (top, bottom) in [(1, 5), (2, 6), (2, 5), (1, 3), (3, 6), (1, 2)] {
+        let lines: String = (0..40).map(|n| format!("{n}\r\n")).collect();
+        // Line feeds at the bottom margin, SU by more rows than one and by
+        // more than the region holds, and rows erased in a color.
+        let script = format!(
+            "\x1b[{top};{bottom}r\x1b[{bottom};1H{lines}\x1b[3S\x1b[44m\n\n\x1b[2S\x1b[m{lines}\x1b[9S1"
+        );
+        let mut primary = Term::new(4, 6);
+        primary.feed("a\r\nb\r\nc\r\nd\r\ne\r\nf").feed(&script);
+        let mut alternate = Term::new(4, 6);
+        alternate
+            .feed("\x1b[?1049ha\r\nb\r\nc\r\nd\r\ne\r\nf")
+            .feed(&script);
+        assert_eq!(
+            alternate.screen(),
+            primary.screen(),
+            "rows {top} to {bottom}"
+        );
+        assert_eq!(
+            alternate.cursor(),
+            primary.cursor(),
+            "rows {top} to {bottom}"
+        );
+        for y in 0..6 {
+            for x in 0..4 {
+                assert_eq!(
+                    alternate.cell(x, y).content(),
+                    primary.cell(x, y).content(),
+                    "rows {top} to {bottom}, column {x} of row {y}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn lf_outside_the_region_moves_down_to_the_last_row() {
     let mut term = numbered_rows();
     term.feed("\x1b[2;3r\x1b[4;1H\n");

@@ -952,3 +952,36 @@ fn wide_characters_across_the_edges_of_a_range_are_emptied() {
         "one within the range stays"
     );
 }
+
+#[test]
+fn a_cell_that_only_its_width_fills_is_emptied_with_its_row() {
+    let mut page = Page::new(Capacity::standard(80));
+    page.push_row();
+    // A spacer, which is no longer an empty cell.
+    page.set_width(0, 5, Width::SpacerTail);
+    assert_ne!(page.cells(0)[5], Cell::EMPTY);
+    page.clear_row(0);
+    assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+}
+
+proptest::proptest! {
+    /// Rotating by one in chunks moves the items as the standard rotations
+    /// do, and so does rotating by more.
+    #[test]
+    fn rotations_move_items_as_the_standard_ones_do(
+        len in 0_usize..40,
+        n in 0_u16..4,
+        right: bool,
+    ) {
+        let n = n.min(len as u16);
+        let mut items: Vec<u16> = (0..len as u16).collect();
+        let mut expected = items.clone();
+        if right {
+            expected.rotate_right(usize::from(n));
+        } else {
+            expected.rotate_left(usize::from(n));
+        }
+        rotate(&mut items, n, right);
+        proptest::prop_assert_eq!(items, expected);
+    }
+}

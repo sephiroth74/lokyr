@@ -164,6 +164,15 @@ impl Terminal {
                 self.screen_mut().rows.scroll_up();
             }
             self.fill_new_rows(self.rows - n..self.rows);
+        } else if self.alternate_active
+            && self.margins.is_full_width(self.cols)
+            && self.rows - (bottom - top + 1) < bottom - top + 1
+        {
+            // The alternate screen shows no scrollback, so the whole screen
+            // may scroll, and the fewer rows outside the region move back.
+            let n = n.min(bottom - top + 1);
+            self.screen_mut().rows.scroll_rows_up(top, bottom, n);
+            self.fill_new_rows(bottom + 1 - n..bottom + 1);
         } else {
             self.shift_rows_up(top, bottom, n);
         }

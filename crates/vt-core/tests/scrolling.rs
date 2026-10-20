@@ -220,8 +220,9 @@ fn a_page_takes_about_8_bytes_a_cell_and_what_it_counts() {
         let cells = usize::from(capacity.rows) * usize::from(cols);
         let per_cell = capacity.bytes() as f64 / cells as f64;
         // A cell's 8 bytes, with its share of its row's and of the tables
-        // of styles, clusters and links.
-        assert!((8.0..8.6).contains(&per_cell), "{cols} columns: {per_cell}");
+        // of styles, clusters and links: five bytes a row, which weigh most
+        // on narrow rows.
+        assert!((8.0..8.7).contains(&per_cell), "{cols} columns: {per_cell}");
         let before = live();
         let page = Page::new(capacity);
         let held = live() - before;

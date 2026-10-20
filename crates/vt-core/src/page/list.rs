@@ -737,6 +737,44 @@ impl PageList {
         }
     }
 
+    /// Moves the rows from `top` to `bottom` of the screen `n` rows up, as
+    /// [`PageList::shift_rows_up`] does, but by scrolling the whole screen
+    /// up `n` rows and moving the rows outside the range back to where they
+    /// were: less work when those are fewer than the range's. The rows
+    /// dropped from the range's top are emptied, and lose their pins, then
+    /// go into the scrollback as the screen scrolls, so this is for a
+    /// screen whose scrollback is not shown.
+    ///
+    /// `top` is at most `bottom`, which is a row of the screen.
+    pub fn scroll_rows_up(&mut self, top: u16, bottom: u16, n: u16) {
+        debug_assert!(
+            top <= bottom && bottom < self.rows,
+            "rows {top} to {bottom}"
+        );
+        let n = n.min(bottom + 1 - top);
+        if n == 0 {
+            return;
+        }
+        if top > 0 {
+            // The rows above the range move down over the rows that leave
+            // it, which the scroll then takes off the screen.
+            self.shift_rows_down(0, top + n - 1, n);
+        } else {
+            for y in 0..n {
+                self.clear_screen_row(y);
+            }
+        }
+        for _ in 0..n {
+            self.scroll_up();
+        }
+        let last = self.rows - 1;
+        if bottom < last {
+            // The rows below the range move back down, over the rows that
+            // came in at the bottom, which go to the end of the range.
+            self.shift_rows_down(bottom + 1 - n, last, n);
+        }
+    }
+
     /// The node and its rows that hold the screen's rows from `top` to
     /// `bottom`, if one page holds them all, so that a scroll region moves
     /// them in one rotation of the page's rows.
@@ -3231,6 +3269,9 @@ mod tests {
         /// Shifts rows of the screen, from a row to a row, modulo its rows,
         /// up or down, as a scroll region does.
         Shift(u16, u16, u16, bool),
+        /// Moves rows of the screen up as [`Op::Shift`] does, by scrolling
+        /// the whole screen around them.
+        ScrollRows(u16, u16, u16),
         /// Makes the screen taller by that many rows at the same width,
         /// which takes them from the scrollback: cut, or rewrapped.
         Taller(u16, bool),
@@ -3257,11 +3298,51 @@ mod tests {
             1 => any::<usize>().prop_map(Op::Unpin),
             2 => (y(), y(), 1_u16..10, any::<bool>())
                 .prop_map(|(top, bottom, n, up)| Op::Shift(top, bottom, n, up)),
+            1 => (y(), y(), 1_u16..10)
+                .prop_map(|(top, bottom, n)| Op::ScrollRows(top, bottom, n)),
             2 => prop_oneof![Just(0_usize), 0_usize..200].prop_map(Op::Compact),
             1 => (1_u16..40, any::<bool>()).prop_map(|(n, reflow)| Op::Taller(n, reflow)),
             2 => (prop::sample::select(vec![3_u16, 6, 8, 2000]), 2_u16..10, 0_u8..3, any::<u16>(), any::<u16>())
                 .prop_map(|(cols, rows, how, x, y)| Op::Resize(cols, rows, how, x, y)),
         ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Scrolling the whole screen around a range of its rows leaves the
+        /// screen, and the pins on it, as shifting the range does, wherever
+        /// the screen is in its pages.
+        #[test]
+        fn scrolling_around_rows_leaves_the_screen_as_shifting_them(
+            past in 0_u32..48,
+            top in 0_u16..24,
+            bottom in 0_u16..24,
+            n in 1_u16..30,
+        ) {
+            let (top, bottom) = (top.min(bottom), top.max(bottom));
+            let build = || {
+                let mut list = PageList::new(80, 24, pages(80, 4));
+                // The screen ends from 36 rows before a page's end to 12
+                // after, so that the rows may straddle two pages.
+                scroll(&mut list, 0, u32::from(Capacity::standard(80).rows) - 36 + past);
+                let pins: Vec<PinId> = (0..24).map(|y| pin_at(&mut list, 0, y)).collect();
+                (list, pins)
+            };
+            let (mut shifted, shifted_pins) = build();
+            let (mut scrolled, scrolled_pins) = build();
+            shifted.shift_rows_up(top, bottom, n);
+            scrolled.scroll_rows_up(top, bottom, n);
+            prop_assert_eq!(screen_numbers(&scrolled), screen_numbers(&shifted));
+            let number = |list: &PageList, pin| {
+                list.pin_position(pin).map(|position| number_at(list, position))
+            };
+            for (&shifted_pin, &scrolled_pin) in shifted_pins.iter().zip(&scrolled_pins) {
+                prop_assert_eq!(number(&scrolled, scrolled_pin), number(&shifted, shifted_pin));
+            }
+            prop_assert_eq!(scrolled.memory(), counted(&scrolled));
+            assert_pins_listed(&scrolled);
+        }
     }
 
     /// The numbered columns of each row in the property.
@@ -3357,6 +3438,10 @@ mod tests {
                         } else {
                             list.shift_rows_down(top, bottom, n);
                         }
+                    }
+                    Op::ScrollRows(top, bottom, n) => {
+                        let (top, bottom) = (top % rows, bottom % rows);
+                        list.scroll_rows_up(top.min(bottom), top.max(bottom), n);
                     }
                     Op::Compact(keep) => {
                         list.compact(keep);
