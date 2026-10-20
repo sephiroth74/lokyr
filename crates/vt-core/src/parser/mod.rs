@@ -161,8 +161,37 @@ impl Parser {
                 self.state = transition.next;
                 self.perform(handler, transition.action, byte);
                 i += 1;
+                if self.state == State::CsiEntry {
+                    i += self.csi_params(handler, &bytes[i..]);
+                }
             }
         }
+    }
+
+    /// Parses the parameters of a CSI sequence at the start of `bytes`, and
+    /// its final byte, as the table would one byte at a time: digits, `;`
+    /// and `:`. Returns how many bytes it took. At any other byte it stops,
+    /// in the state that the table would be in, for the table to go on.
+    fn csi_params<H: Handler>(&mut self, handler: &mut H, bytes: &[u8]) -> usize {
+        for (i, &byte) in bytes.iter().enumerate() {
+            match byte {
+                b'0'..=b'9' => self.params.push_digit(byte - b'0'),
+                b';' => self.params.end_param(),
+                b':' => self.params.end_sub_param(),
+                0x40..=0x7E => {
+                    self.state = State::Ground;
+                    self.params.end_param();
+                    // Nothing is collected in the entry state, so the
+                    // sequence has no intermediates, and is not ignored.
+                    debug_assert!(!self.ignoring && self.intermediate_count == 0);
+                    handler.csi_dispatch(&self.params, &[], byte);
+                    return i + 1;
+                }
+                _ => return i,
+            }
+            self.state = State::CsiParam;
+        }
+        bytes.len()
     }
 
     /// How many bytes at the start of `bytes` have `transition` in the
