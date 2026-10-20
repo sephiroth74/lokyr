@@ -274,6 +274,22 @@ impl StyleTable {
         Ok(StyleId::new(id))
     }
 
+    /// Adds `n` references to the style with `id`, as when `n` cells take
+    /// it at once.
+    pub fn retain_many(&mut self, id: StyleId, n: u32) {
+        if id != StyleId::DEFAULT {
+            debug_assert!(self.is_live(id), "style {id:?} is not in the table");
+            self.refs[usize::from(id.get())] += n;
+        }
+    }
+
+    /// Whether `id` is in use for `style`: a check that costs less than
+    /// finding the style, for an id that it is likely to have.
+    pub fn holds(&self, id: StyleId, style: &Style) -> bool {
+        let id = usize::from(id.get());
+        self.refs.get(id).is_some_and(|&refs| refs > 0) && self.styles[id] == *style
+    }
+
     /// Adds a reference to the style with `id`, as when a cell is copied.
     pub fn retain(&mut self, id: StyleId) {
         if id != StyleId::DEFAULT {

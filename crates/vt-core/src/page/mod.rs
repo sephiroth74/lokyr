@@ -427,12 +427,23 @@ impl Page {
             "a link is set with set_hyperlink"
         );
         let style = template.style();
-        for (index, &byte) in (start..).zip(text) {
-            // Retain first, in case the old cell holds the last reference.
-            self.styles.retain(style);
-            let old = self.cells[index];
-            self.release(index, old);
-            self.cells[index] = template.with_content(Content::Char(char::from(byte)));
+        let range = start..start + text.len();
+        // Retain first, in case the old cells hold the last reference. The
+        // row has fewer cells than a u32 counts.
+        self.styles.retain_many(style, text.len() as u32);
+        let metadata = self.row(y);
+        // Old cells that hold nothing in the tables have nothing to drop.
+        if metadata.has(RowFlag::Styles)
+            || metadata.has(RowFlag::Graphemes)
+            || metadata.has(RowFlag::Hyperlinks)
+        {
+            for index in range.clone() {
+                let old = self.cells[index];
+                self.release(index, old);
+            }
+        }
+        for (cell, &byte) in self.cells[range].iter_mut().zip(text) {
+            *cell = template.with_content(Content::Char(char::from(byte)));
         }
         let row = self.row_mut(y);
         row.set(RowFlag::Dirty, true);
@@ -476,10 +487,32 @@ impl Page {
         if end < self.cols() && last.width() == Width::Wide && !keeps(last) {
             self.set_cell(y, end, blank);
         }
-        for x in start..end {
-            if !keeps(self.cells(y)[usize::from(x)]) {
-                self.set_cell(y, x, blank);
+        let block = self.block(y);
+        let base = block * usize::from(self.cols());
+        let extent = self.extents[block];
+        // The cells past the extent are empty, and an empty blank leaves
+        // them so; each was written all the same.
+        let stop = if blank == Cell::EMPTY {
+            end.min(extent).max(start)
+        } else {
+            end
+        };
+        let mut written = stop < end;
+        for index in base + usize::from(start)..base + usize::from(stop) {
+            let cell = self.cells[index];
+            if !keeps(cell) {
+                self.release(index, cell);
+                self.cells[index] = blank;
+                written = true;
             }
+        }
+        if blank != Cell::EMPTY {
+            self.extend(y, end);
+        } else if !selective && end >= extent {
+            self.extents[block] = extent.min(start);
+        }
+        if written {
+            self.row_mut(y).set(RowFlag::Dirty, true);
         }
     }
 

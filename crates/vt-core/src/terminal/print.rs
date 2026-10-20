@@ -540,22 +540,28 @@ impl Terminal {
     /// that cannot grow writes in the default style. The page is looked up
     /// once, unless it grows.
     pub(super) fn with_pen(&mut self, y: u16, write: impl FnOnce(&mut Page, u16, StyleId)) {
-        let pen = self.pen;
+        let (pen, last) = (self.pen, self.pen_id);
         let rows = &mut self.screen_mut().rows;
         let (mut page, mut row) = rows.screen_row_mut(y);
-        let style = loop {
-            match page.styles_mut().acquire(&pen) {
-                Ok(style) => break style,
-                Err(full) => {
-                    let grown = rows.grow_page(y, full);
-                    (page, row) = rows.screen_row_mut(y);
-                    if grown.is_err() {
-                        break StyleId::DEFAULT;
+        let style = if page.styles().holds(last, &pen) {
+            page.styles_mut().retain(last);
+            last
+        } else {
+            loop {
+                match page.styles_mut().acquire(&pen) {
+                    Ok(style) => break style,
+                    Err(full) => {
+                        let grown = rows.grow_page(y, full);
+                        (page, row) = rows.screen_row_mut(y);
+                        if grown.is_err() {
+                            break StyleId::DEFAULT;
+                        }
                     }
                 }
             }
         };
         write(page, row, style);
         page.styles_mut().release(style);
+        self.pen_id = style;
     }
 }

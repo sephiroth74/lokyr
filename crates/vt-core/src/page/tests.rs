@@ -954,6 +954,18 @@ fn wide_characters_across_the_edges_of_a_range_are_emptied() {
 }
 
 #[test]
+fn an_erase_past_the_text_marks_its_row_dirty_too() {
+    let mut page = Page::new(Capacity::standard(80));
+    page.push_row();
+    page.set_cell(0, 0, Cell::EMPTY.with_content(Content::Char('a')));
+    page.row_mut(0).set(RowFlag::Dirty, false);
+    // Past the row's extent, where every cell is empty already.
+    page.erase(0, 10..20, Cell::EMPTY, false);
+    assert!(page.row(0).has(RowFlag::Dirty));
+    assert_eq!(page.cells(0)[0].content(), Content::Char('a'));
+}
+
+#[test]
 fn a_cell_that_only_its_width_fills_is_emptied_with_its_row() {
     let mut page = Page::new(Capacity::standard(80));
     page.push_row();

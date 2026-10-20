@@ -33,7 +33,7 @@ pub use window::Window;
 use std::ops::Range;
 
 use crate::page::{
-    Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, Width,
+    Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, StyleId, Width,
 };
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
@@ -276,6 +276,9 @@ pub struct Terminal {
     scratch: (Vec<char>, Vec<char>),
     /// The style that printed text takes.
     pen: Style,
+    /// The id that the pen's style last had in a page, which the next page
+    /// written to is likely to give it too.
+    pen_id: StyleId,
     /// Whether printed text is protected from the erases (DECSCA, or SPA
     /// and EPA).
     protected: bool,
@@ -442,6 +445,7 @@ impl Terminal {
             normalization: options.normalization,
             scratch: (Vec::new(), Vec::new()),
             pen: Style::DEFAULT,
+            pen_id: StyleId::DEFAULT,
             protected: false,
             iso_protection: false,
             autowrap: true,
