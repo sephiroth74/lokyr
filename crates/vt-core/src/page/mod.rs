@@ -1189,10 +1189,20 @@ impl Page {
     /// they hold in the tables: for cells that hold nothing there, or that
     /// a reset left behind.
     fn empty_block(&mut self, y: u16) {
+        /// The cells that are emptied with stores of a fixed size, which
+        /// take less than a call to fill memory.
+        const FEW: usize = 16;
         self.debug_assert_extent(y);
         let block = self.block(y);
-        let start = block * usize::from(self.cols());
-        self.cells[start..start + usize::from(self.extents[block])].fill(Cell::EMPTY);
+        let cols = usize::from(self.cols());
+        let start = block * cols;
+        let extent = usize::from(self.extents[block]);
+        // The cells past the extent are empty already.
+        if extent <= FEW && FEW <= cols {
+            self.cells[start..start + FEW].copy_from_slice(&[Cell::EMPTY; FEW]);
+        } else {
+            self.cells[start..start + extent].fill(Cell::EMPTY);
+        }
         self.extents[block] = 0;
     }
 
