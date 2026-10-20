@@ -573,12 +573,27 @@ impl Page {
     /// graphemes and their links, and resets its metadata. The row is dirty.
     pub fn clear_row(&mut self, y: u16) {
         let range = self.cell_range(y);
-        // Rows that scrolling moves are mostly empty already: one compare
-        // over the row tells so.
-        if self.cells[range.clone()]
+        let metadata = self.row(y);
+        if !metadata.has(RowFlag::Styles)
+            && !metadata.has(RowFlag::Graphemes)
+            && !metadata.has(RowFlag::Hyperlinks)
+        {
+            // The flags say that no cell holds anything in the tables.
+            debug_assert!(
+                self.cells[range.clone()].iter().all(|cell| {
+                    cell.style() == StyleId::DEFAULT
+                        && !cell.has_hyperlink()
+                        && !matches!(cell.content(), Content::Grapheme(_))
+                }),
+                "row {y} holds what its flags leave out"
+            );
+            self.cells[range].fill(Cell::EMPTY);
+        } else if self.cells[range.clone()]
             .iter()
             .any(|&cell| cell != Cell::EMPTY)
         {
+            // Rows that scrolling moves are mostly empty already: one
+            // compare over the row tells so.
             for index in range {
                 let cell = std::mem::replace(&mut self.cells[index], Cell::EMPTY);
                 self.release(index, cell);
@@ -602,6 +617,40 @@ impl Page {
         }
         self.clear_row(to);
         self.move_row_into_empty(from, to);
+    }
+
+    /// Moves the rows of `rows` up `n` rows within the page, as a scroll
+    /// region does: the first `n` are emptied, as [`Page::clear_row`]
+    /// empties a row, and come in at the end, and the others move up, each
+    /// with its block of cells, its metadata and its entries in the tables,
+    /// so that no cell is copied. Every row of `rows` is marked dirty.
+    ///
+    /// `n` is at most the length of `rows`, whose rows are in use.
+    pub fn rotate_rows_up(&mut self, rows: Range<u16>, n: u16) {
+        for y in rows.start..rows.start + n {
+            self.clear_row(y);
+        }
+        let range = usize::from(rows.start)..usize::from(rows.end);
+        self.slots[range.clone()].rotate_left(usize::from(n));
+        self.rows[range.clone()].rotate_left(usize::from(n));
+        for row in &mut self.rows[range] {
+            row.set(RowFlag::Dirty, true);
+        }
+    }
+
+    /// Moves the rows of `rows` down `n` rows within the page, as
+    /// [`Page::rotate_rows_up`] moves them up: the last `n` are emptied and
+    /// come in at the start.
+    pub fn rotate_rows_down(&mut self, rows: Range<u16>, n: u16) {
+        for y in rows.end - n..rows.end {
+            self.clear_row(y);
+        }
+        let range = usize::from(rows.start)..usize::from(rows.end);
+        self.slots[range.clone()].rotate_right(usize::from(n));
+        self.rows[range.clone()].rotate_right(usize::from(n));
+        for row in &mut self.rows[range] {
+            row.set(RowFlag::Dirty, true);
+        }
     }
 
     /// Moves row `from` into row `to`, an empty row, as [`Page::move_row`]

@@ -1,6 +1,8 @@
 //! Pins: cells of a page list that the list keeps track of while their rows
 //! move, for selections, marks and search results.
 
+use std::ops::Range;
+
 use super::PageId;
 
 /// A cell of a [`PageList`](super::PageList): a column of a row of a page.
@@ -150,6 +152,17 @@ impl Pins {
         (prev, next)
     }
 
+    /// Gives each pin of the chain that starts at `first` row `row`.
+    fn move_chain(&mut self, first: u32, row: u16) {
+        let mut index = first;
+        while index != NO_PIN {
+            let slot = &mut self.slots[index as usize];
+            debug_assert_ne!(slot.place.node, FREE, "a node holds only pins in use");
+            slot.place.row = row;
+            index = slot.next;
+        }
+    }
+
     /// The pins of the chain that starts at `first`, in order.
     fn chain(&self, first: u32) -> impl Iterator<Item = u32> + '_ {
         std::iter::successors(Some(first), |&index| {
@@ -204,6 +217,32 @@ impl RowPins {
         self.rows -= 1;
         if self.rows == 0 {
             self.first = Vec::new();
+        }
+    }
+
+    /// Rotates the rows of `rows` left by `n`, as a scroll region moves
+    /// them up, or right by `n` if `down`, as it moves them down, and gives
+    /// each of their pins its new row in `pins`. The `n` rows that leave
+    /// the region at one edge, to come back in at the other, have no pins.
+    pub(super) fn rotate(&mut self, pins: &mut Pins, rows: Range<u16>, n: u16, down: bool) {
+        if self.rows == 0 {
+            return;
+        }
+        let end = usize::from(rows.end);
+        if self.first.len() < end {
+            self.first.resize(end, NO_PIN);
+        }
+        let range = usize::from(rows.start)..end;
+        if down {
+            self.first[range].rotate_right(usize::from(n));
+        } else {
+            self.first[range].rotate_left(usize::from(n));
+        }
+        for row in rows {
+            let first = self.first[usize::from(row)];
+            if first != NO_PIN {
+                pins.move_chain(first, row);
+            }
         }
     }
 

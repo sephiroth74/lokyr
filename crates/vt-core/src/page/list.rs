@@ -691,6 +691,16 @@ impl PageList {
             "rows {top} to {bottom}"
         );
         let n = n.min(bottom + 1 - top);
+        if let Some((node, rows)) = self.rows_in_one_page(top, bottom) {
+            for row in rows.start..rows.start + n {
+                self.lose_row_pins(node, row);
+            }
+            self.page_at_mut(node).rotate_rows_up(rows.clone(), n);
+            self.nodes[node as usize]
+                .pins
+                .rotate(&mut self.pins, rows, n, false);
+            return;
+        }
         for y in top..top + n {
             self.clear_screen_row(y);
         }
@@ -709,12 +719,31 @@ impl PageList {
             "rows {top} to {bottom}"
         );
         let n = n.min(bottom + 1 - top);
+        if let Some((node, rows)) = self.rows_in_one_page(top, bottom) {
+            for row in rows.end - n..rows.end {
+                self.lose_row_pins(node, row);
+            }
+            self.page_at_mut(node).rotate_rows_down(rows.clone(), n);
+            self.nodes[node as usize]
+                .pins
+                .rotate(&mut self.pins, rows, n, true);
+            return;
+        }
         for y in bottom + 1 - n..=bottom {
             self.clear_screen_row(y);
         }
         for y in (top..bottom + 1 - n).rev() {
             self.move_into_empty(y, y + n);
         }
+    }
+
+    /// The node and its rows that hold the screen's rows from `top` to
+    /// `bottom`, if one page holds them all, so that a scroll region moves
+    /// them in one rotation of the page's rows.
+    fn rows_in_one_page(&self, top: u16, bottom: u16) -> Option<(u32, Range<u16>)> {
+        let (node, first) = self.locate(top);
+        let last = first.checked_add(bottom - top)?;
+        (last < self.node_len(node)).then_some((node, first..last + 1))
     }
 
     /// Empties row `y` of the screen, and loses its pins.

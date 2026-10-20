@@ -4,6 +4,8 @@
 //! What comes in is erased as the erases leave it, with the pen's
 //! background color. Each of these ends the cluster being printed.
 
+use std::ops::Range;
+
 use super::{Cursor, Terminal};
 use crate::page::Cell;
 
@@ -161,13 +163,7 @@ impl Terminal {
             for _ in 0..n {
                 self.screen_mut().rows.scroll_up();
             }
-            // The rows that come in are new, so only a background color is
-            // left to give them.
-            if self.blank() != Cell::EMPTY {
-                for y in self.rows - n..self.rows {
-                    self.blank_row(y);
-                }
-            }
+            self.fill_new_rows(self.rows - n..self.rows);
         } else {
             self.shift_rows_up(top, bottom, n);
         }
@@ -194,13 +190,14 @@ impl Terminal {
         let n = n.min(bottom - top + 1);
         if self.margins.is_full_width(self.cols) {
             self.screen_mut().rows.shift_rows_down(top, bottom, n);
+            self.fill_new_rows(top..top + n);
         } else {
             for y in (top..bottom + 1 - n).rev() {
                 self.move_within_margins(y, y + n);
             }
-        }
-        for y in top..top + n {
-            self.blank_within_margins(y);
+            for y in top..top + n {
+                self.blank_within_margins(y);
+            }
         }
     }
 
@@ -211,13 +208,24 @@ impl Terminal {
         let n = n.min(bottom - top + 1);
         if self.margins.is_full_width(self.cols) {
             self.screen_mut().rows.shift_rows_up(top, bottom, n);
+            self.fill_new_rows(bottom + 1 - n..bottom + 1);
         } else {
             for y in top + n..=bottom {
                 self.move_within_margins(y, y - n);
             }
+            for y in bottom + 1 - n..=bottom {
+                self.blank_within_margins(y);
+            }
         }
-        for y in bottom + 1 - n..=bottom {
-            self.blank_within_margins(y);
+    }
+
+    /// Gives the rows of `rows`, which came in new and empty, the
+    /// background color of erased cells, if there is one.
+    fn fill_new_rows(&mut self, rows: Range<u16>) {
+        if self.blank() != Cell::EMPTY {
+            for y in rows {
+                self.blank_row(y);
+            }
         }
     }
 
