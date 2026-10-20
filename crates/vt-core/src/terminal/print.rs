@@ -11,6 +11,15 @@ use crate::unicode::{GraphemeBreak, Mode, Normalization, properties};
 /// keeps a cluster's work, normalization included, small.
 const MAX_CLUSTER: usize = 32;
 
+/// Whether writing `width` cells from column `x` of a row whose cells are
+/// `cells` goes over a wide character in the first two columns of the line
+/// from `start`, for which the row above may have left a spacer head.
+fn over_wide_start(cells: &[Cell], x: u16, width: u16, start: u16) -> bool {
+    cells[usize::from(x)..usize::from((x + width).min(start + 2))]
+        .iter()
+        .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
+}
+
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
     /// cells at the cursor. A codepoint of no width that starts a cluster
@@ -128,11 +137,14 @@ impl Terminal {
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
-        } else {
-            self.clear_spacer_head(x, y, width);
         }
+        // The row's page is found once, for the spacer head as well.
+        let start = self.line_start(x);
+        let head_above = !insert && y > 0 && x <= start + 1;
+        let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
             if !insert {
+                over_wide = head_above && over_wide_start(page.cells(row), x, width, start);
                 page.clear_halves(row, x, width);
             }
             let template = Cell::EMPTY
@@ -141,6 +153,9 @@ impl Terminal {
                 .with_semantic(zone);
             page.write_ascii(row, x, text, template);
         });
+        if over_wide {
+            self.clear_spacer_head_above(x, y);
+        }
     }
 
     /// Writes a new cluster, `c`, which takes `width` cells, at the cursor.
@@ -427,27 +442,33 @@ impl Terminal {
     /// clears it: the scrollback's rows are not written to, as their pages
     /// can be kept cold.
     fn clear_spacer_head(&mut self, x: u16, y: u16, width: u16) {
-        let start = if (self.margins.left..=self.margins.right).contains(&x) {
-            self.margins.left
-        } else {
-            0
-        };
+        let start = self.line_start(x);
         if x > start + 1 || y == 0 {
             return;
         }
-        let last = self.line_end(x) - 1;
-        let rows = &mut self.screen_mut().rows;
-        let (page, row) = rows.screen_row_mut(y);
-        let cells = &page.cells(row)[usize::from(x)..usize::from((x + width).min(start + 2))];
-        if !cells
-            .iter()
-            .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
-        {
-            return;
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+        if over_wide_start(page.cells(row), x, width, start) {
+            self.clear_spacer_head_above(x, y);
         }
-        let (page, row) = rows.screen_row_mut(y - 1);
+    }
+
+    /// Empties the spacer head at the end of the line on the row above `y`,
+    /// for [`Terminal::clear_spacer_head`], if there is one.
+    fn clear_spacer_head_above(&mut self, x: u16, y: u16) {
+        let last = self.line_end(x) - 1;
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);
         if page.cells(row)[usize::from(last)].width() == Width::SpacerHead {
             page.set_cell(row, last, Cell::EMPTY);
+        }
+    }
+
+    /// The first column of the line that column `x` is on: the left margin
+    /// from within the margins, the first column from left of them.
+    fn line_start(&self, x: u16) -> u16 {
+        if (self.margins.left..=self.margins.right).contains(&x) {
+            self.margins.left
+        } else {
+            0
         }
     }
 

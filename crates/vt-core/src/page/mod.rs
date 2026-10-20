@@ -653,12 +653,7 @@ impl Page {
         for y in rows.start..rows.start + n {
             self.clear_row(y);
         }
-        let range = usize::from(rows.start)..usize::from(rows.end);
-        rotate(&mut self.slots[range.clone()], n, false);
-        rotate(&mut self.rows[range.clone()], n, false);
-        for row in &mut self.rows[range] {
-            row.set(RowFlag::Dirty, true);
-        }
+        self.rotate_rows(rows, n, false);
     }
 
     /// Moves the rows of `rows` down `n` rows within the page, as
@@ -668,9 +663,26 @@ impl Page {
         for y in rows.end - n..rows.end {
             self.clear_row(y);
         }
+        self.rotate_rows(rows, n, true);
+    }
+
+    /// Moves the rows of `rows` down `n` rows, as
+    /// [`Page::rotate_rows_down`] does, when the last `n` are empty
+    /// already, as the rows that a scroll brings in are.
+    pub fn rotate_empty_rows_down(&mut self, rows: Range<u16>, n: u16) {
+        debug_assert!(
+            (rows.end - n..rows.end).all(|y| self.cells(y).iter().all(|&cell| cell == Cell::EMPTY)),
+            "the last {n} of rows {rows:?} are empty"
+        );
+        self.rotate_rows(rows, n, true);
+    }
+
+    /// Rotates the rows of `rows` by `n`, down if `down` and up if not,
+    /// each with its block of cells and its metadata, and marks them dirty.
+    fn rotate_rows(&mut self, rows: Range<u16>, n: u16, down: bool) {
         let range = usize::from(rows.start)..usize::from(rows.end);
-        rotate(&mut self.slots[range.clone()], n, true);
-        rotate(&mut self.rows[range.clone()], n, true);
+        rotate(&mut self.slots[range.clone()], n, down);
+        rotate(&mut self.rows[range.clone()], n, down);
         for row in &mut self.rows[range] {
             row.set(RowFlag::Dirty, true);
         }

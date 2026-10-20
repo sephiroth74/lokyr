@@ -696,9 +696,7 @@ impl PageList {
                 self.lose_row_pins(node, row);
             }
             self.page_at_mut(node).rotate_rows_up(rows.clone(), n);
-            self.nodes[node as usize]
-                .pins
-                .rotate(&mut self.pins, rows, n, false);
+            self.rotate_pins(node, rows, n, false);
             return;
         }
         for y in top..top + n {
@@ -724,9 +722,7 @@ impl PageList {
                 self.lose_row_pins(node, row);
             }
             self.page_at_mut(node).rotate_rows_down(rows.clone(), n);
-            self.nodes[node as usize]
-                .pins
-                .rotate(&mut self.pins, rows, n, true);
+            self.rotate_pins(node, rows, n, true);
             return;
         }
         for y in bottom + 1 - n..=bottom {
@@ -771,7 +767,34 @@ impl PageList {
         if bottom < last {
             // The rows below the range move back down, over the rows that
             // came in at the bottom, which go to the end of the range.
-            self.shift_rows_down(bottom + 1 - n, last, n);
+            self.shift_rows_down_over_empty(bottom + 1 - n, last, n);
+        }
+    }
+
+    /// Moves the rows from `top` to `bottom` of the screen `n` rows down,
+    /// as [`PageList::shift_rows_down`] does, when the last `n` are empty
+    /// and have no pins, as the rows that a scroll brings in are: they are
+    /// not emptied again.
+    fn shift_rows_down_over_empty(&mut self, top: u16, bottom: u16, n: u16) {
+        let Some((node, rows)) = self.rows_in_one_page(top, bottom) else {
+            self.shift_rows_down(top, bottom, n);
+            return;
+        };
+        debug_assert!(
+            (rows.end - n..rows.end).all(|row| !self.nodes[node as usize].pins.row_has_pins(row)),
+            "the rows that come in have no pins"
+        );
+        self.page_at_mut(node)
+            .rotate_empty_rows_down(rows.clone(), n);
+        self.rotate_pins(node, rows, n, true);
+    }
+
+    /// Rotates the pins of the rows of `rows` of node `node` with them, as
+    /// [`RowPins::rotate`] does, unless the node has none.
+    fn rotate_pins(&mut self, node: u32, rows: Range<u16>, n: u16, down: bool) {
+        let pins = &mut self.nodes[node as usize].pins;
+        if !pins.is_empty() {
+            pins.rotate(&mut self.pins, rows, n, down);
         }
     }
 
@@ -833,6 +856,9 @@ impl PageList {
 
     /// Loses the pins in row `row` of node `node`.
     fn lose_row_pins(&mut self, node: u32, row: u16) {
+        if self.nodes[node as usize].pins.is_empty() {
+            return;
+        }
         for pin in self.nodes[node as usize].pins.take_row(&self.pins, row) {
             self.pins.lose(pin);
         }

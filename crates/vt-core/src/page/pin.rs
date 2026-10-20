@@ -211,6 +211,18 @@ impl RowPins {
         }
     }
 
+    /// Whether no row has pins.
+    pub(super) fn is_empty(&self) -> bool {
+        self.rows == 0
+    }
+
+    /// Whether row `row` has pins.
+    pub(super) fn row_has_pins(&self, row: u16) -> bool {
+        self.first
+            .get(usize::from(row))
+            .is_some_and(|&first| first != NO_PIN)
+    }
+
     /// Counts a row that no longer has pins, and lets go of the rows'
     /// memory once none has.
     fn emptied(&mut self) {
