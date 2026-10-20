@@ -146,7 +146,7 @@ vtebench:
         echo {{ vtebench_commit }} > "$dir/.commit"
     fi
 
-# Count the instructions of vtebench's scenarios and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. Without `base`, or when `base` has none, the counts are taken alone.
+# Count the instructions of vtebench's scenarios and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. When `base` has no counts to take, the commit is counted twice, the second time against the first; without `base`, once.
 instructions base="": vtebench
     #!/usr/bin/env bash
     set -euo pipefail
@@ -172,10 +172,13 @@ instructions base="": vtebench
         git worktree add --quiet --detach "$tree" "$base"
         if [ -f "$tree/tools/differential/benches/instructions.rs" ]; then
             (cd "$tree" && count --save-baseline=base)
-            count --baseline=base --callgrind-limits='ir=3%'
-            exit
+        else
+            # The comparison runs all the same, and the counts must not move.
+            echo "$base has no instruction counts: the commit is counted twice, the second time against the first."
+            count --save-baseline=base
         fi
-        echo "$base has no instruction counts to compare with: they are taken alone."
+        count --baseline=base --callgrind-limits='ir=3%'
+        exit
     fi
     count
 
