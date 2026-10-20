@@ -507,6 +507,10 @@ impl Page {
     /// style must be in the page's table, and the text must fit in the row.
     pub fn write_ascii(&mut self, y: u16, x: u16, text: &[u8], template: Cell) {
         let block = self.block(y);
+        assert!(
+            usize::from(x) + text.len() <= usize::from(self.cols()),
+            "the text passes the end of row {y}"
+        );
         self.write_ascii_in(y, block, x, text, template);
     }
 
@@ -564,41 +568,50 @@ impl Page {
             "the text is printable ASCII"
         );
         debug_assert_eq!(block, self.block(y), "the block of row {y}");
-        assert!(
-            usize::from(x) + text.len() <= usize::from(self.cols()),
-            "the text passes the end of row {y}"
-        );
-        let start = block * usize::from(self.cols()) + usize::from(x);
-        // The text fits in the row, whose width is a u16.
-        let end = x + text.len() as u16;
-        self.extents[block] = self.extents[block].max(end);
         debug_assert!(
             !template.has_hyperlink(),
             "a link is set with set_hyperlink"
         );
-        let style = template.style();
+        let cols = usize::from(self.cols());
+        let start = block * cols + usize::from(x);
         let range = start..start + text.len();
+        debug_assert!(
+            usize::from(x) + text.len() <= cols,
+            "the text passes the end of row {y}"
+        );
+        // The row whose block `block` is, is in use.
+        let metadata = self.rows[usize::from(y)];
+        let style = template.style();
         // Retain first, in case the old cells hold the last reference. The
         // row has fewer cells than a u32 counts.
         self.styles.retain_many(style, text.len() as u32);
-        let metadata = self.row(y);
         // Old cells that hold nothing in the tables have nothing to drop.
         if metadata.has(RowFlag::Styles)
             || metadata.has(RowFlag::Graphemes)
             || metadata.has(RowFlag::Hyperlinks)
         {
-            for index in range.clone() {
-                let old = self.cells[index];
-                self.release(index, old);
-            }
+            self.release_cells(range.clone());
         }
-        for (cell, &byte) in self.cells[range].iter_mut().zip(text) {
+        let cells = &mut self.cells[range];
+        for (cell, &byte) in cells.iter_mut().zip(text) {
             *cell = template.with_content(Content::Char(char::from(byte)));
         }
-        let row = self.row_mut(y);
+        // The text fits in the row, whose width is a u16.
+        let end = x + text.len() as u16;
+        self.extents[block] = self.extents[block].max(end);
+        let row = &mut self.rows[usize::from(y)];
         row.set(RowFlag::Dirty, true);
         if style != StyleId::DEFAULT {
             row.set(RowFlag::Styles, true);
+        }
+    }
+
+    /// Drops what the cells at `range` hold in the tables, which they keep.
+    #[inline(never)]
+    fn release_cells(&mut self, range: std::ops::Range<usize>) {
+        for index in range {
+            let old = self.cells[index];
+            self.release(index, old);
         }
     }
 
