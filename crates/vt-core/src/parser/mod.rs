@@ -151,6 +151,10 @@ impl Parser {
                 let len = 1 + scan::printable_len(&bytes[i + 1..]);
                 handler.print_ascii(&bytes[i..i + len]);
                 i += len;
+            } else if transition.action == table::Action::Utf8
+                && let len @ 1.. = print_utf8_run(handler, &bytes[i..])
+            {
+                i += len;
             } else if let Some(payload) = payload_of(transition.action) {
                 let len = self.run_of(transition, &bytes[i..]);
                 self.put(handler, payload, &bytes[i..i + len]);
@@ -391,6 +395,36 @@ fn payload_of(action: table::Action) -> Option<Payload> {
         table::Action::ApcPut => Some(Payload::Apc),
         _ => None,
     }
+}
+
+/// How many characters [`print_utf8_run`] hands the handler at once.
+const CHARS: usize = 64;
+
+/// Prints the characters of the valid UTF-8 at the start of `bytes`, in the
+/// ground state, up to its first byte of ASCII, or the first that is invalid
+/// or starts a character that `bytes` does not hold whole, and returns how
+/// many bytes they take. The decoder takes the bytes from there, one at a
+/// time, as it takes a character split across reads. C1 controls are
+/// dropped, as [`print_decoded`] drops them.
+fn print_utf8_run<H: Handler>(handler: &mut H, bytes: &[u8]) -> usize {
+    let mut chars = ['\0'; CHARS];
+    let (mut len, mut taken) = (0, 0);
+    while let Some((c, size)) = utf8::decode_whole(&bytes[taken..]) {
+        taken += size;
+        if matches!(c, '\u{80}'..='\u{9F}') {
+            continue;
+        }
+        chars[len] = c;
+        len += 1;
+        if len == CHARS {
+            handler.print_chars(&chars);
+            len = 0;
+        }
+    }
+    if len > 0 {
+        handler.print_chars(&chars[..len]);
+    }
+    taken
 }
 
 /// Prints a character decoded from UTF-8, unless it is a C1 control, which

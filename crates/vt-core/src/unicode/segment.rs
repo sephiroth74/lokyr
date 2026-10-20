@@ -51,12 +51,18 @@ impl Segmenter {
     /// Whether the codepoint with `properties` starts a new grapheme
     /// cluster, as [`Segmenter::starts_cluster`] says, for a caller that
     /// has looked them up already.
+    #[inline]
     pub fn starts_cluster_with(&mut self, properties: Properties) -> bool {
         use GraphemeBreak::*;
 
         let class = properties.grapheme_break;
         let conjunct = properties.indic_conjunct_break;
         let pictographic = properties.extended_pictographic;
+        // Most text, as ASCII, joins only a prepended character, and leaves
+        // the state that ASCII leaves.
+        if class == Other && conjunct == IndicConjunctBreak::None && !pictographic {
+            return self.ascii_starts_cluster();
+        }
 
         let starts = match self.previous {
             // GB1: the start of the text.

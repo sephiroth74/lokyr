@@ -45,15 +45,8 @@ impl Utf8Decoder {
     /// Starts a character with `byte`, which is 0x80 or above. Returns
     /// U+FFFD if `byte` cannot start one.
     pub(crate) fn start(&mut self, byte: u8) -> Option<char> {
-        let (needed, lower, upper) = match byte {
-            0xC2..=0xDF => (1, 0x80, 0xBF),
-            0xE0 => (2, 0xA0, 0xBF),
-            0xE1..=0xEC | 0xEE..=0xEF => (2, 0x80, 0xBF),
-            0xED => (2, 0x80, 0x9F),
-            0xF0 => (3, 0x90, 0xBF),
-            0xF1..=0xF3 => (3, 0x80, 0xBF),
-            0xF4 => (3, 0x80, 0x8F),
-            _ => return Some(REPLACEMENT),
+        let Some((needed, lower, upper)) = lead(byte) else {
+            return Some(REPLACEMENT);
         };
         *self = Self {
             // The lead byte of a sequence of n bytes carries 7 - n bits.
@@ -81,6 +74,46 @@ impl Utf8Decoder {
         // The byte ranges let only scalar values through.
         Step::Done(char::from_u32(self.code).unwrap_or(REPLACEMENT))
     }
+}
+
+/// For a byte that starts a well-formed sequence, how many continuation
+/// bytes follow it, and the range of the first of them: the table of
+/// well-formed sequences of the Unicode Standard (chapter 3, table 3-7).
+/// The others are in `0x80..=0xBF`.
+fn lead(byte: u8) -> Option<(u8, u8, u8)> {
+    Some(match byte {
+        0xC2..=0xDF => (1, 0x80, 0xBF),
+        0xE0 => (2, 0xA0, 0xBF),
+        0xE1..=0xEC | 0xEE..=0xEF => (2, 0x80, 0xBF),
+        0xED => (2, 0x80, 0x9F),
+        0xF0 => (3, 0x90, 0xBF),
+        0xF1..=0xF3 => (3, 0x80, 0xBF),
+        0xF4 => (3, 0x80, 0x8F),
+        _ => return None,
+    })
+}
+
+/// The character that starts `bytes`, of more than one byte, and its
+/// length, if `bytes` holds it whole and well formed: what
+/// [`Utf8Decoder`] would decode from them, in one go.
+#[inline]
+pub(crate) fn decode_whole(bytes: &[u8]) -> Option<(char, usize)> {
+    let (&byte, rest) = bytes.split_first()?;
+    let (needed, lower, upper) = lead(byte)?;
+    let needed = usize::from(needed);
+    let continuation = rest.get(..needed)?;
+    if !(lower..=upper).contains(&continuation[0])
+        || continuation[1..].iter().any(|&byte| byte & 0xC0 != 0x80)
+    {
+        return None;
+    }
+    // The lead byte of a sequence of n bytes carries 7 - n bits.
+    let lead_bits = u32::from(byte & (0x7F >> (needed + 1)));
+    let code = continuation.iter().fold(lead_bits, |code, &byte| {
+        (code << 6) | u32::from(byte & 0x3F)
+    });
+    // The byte ranges let only scalar values through.
+    char::from_u32(code).map(|c| (c, needed + 1))
 }
 
 #[cfg(test)]
@@ -344,6 +377,32 @@ mod tests {
                 .find(|line| case_of(line) == Some(case))
                 .expect("every case is in the file");
             assert!(line.contains(&format!("\"{c}\"")), "{case}");
+        }
+    }
+
+    proptest::proptest! {
+        /// A whole character decodes as the decoder decodes it a byte at a
+        /// time, and bytes that the decoder would not finish a character
+        /// with, at their start, decode to nothing.
+        #[test]
+        fn whole_characters_decode_as_the_decoder_decodes_them(
+            bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..6),
+        ) {
+            let mut decoder = Utf8Decoder::default();
+            let mut expected = None;
+            if let Some(&first) = bytes.first().filter(|&&byte| byte >= 0x80)
+                && decoder.start(first).is_none()
+            {
+                for (i, &byte) in bytes.iter().enumerate().skip(1) {
+                    match decoder.resume(byte) {
+                        Step::Partial => continue,
+                        Step::Done(c) => expected = Some((c, i + 1)),
+                        Step::Invalid => {}
+                    }
+                    break;
+                }
+            }
+            proptest::prop_assert_eq!(decode_whole(&bytes), expected);
         }
     }
 }

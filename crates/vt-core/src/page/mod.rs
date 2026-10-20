@@ -404,6 +404,103 @@ impl Page {
         }
     }
 
+    /// Puts `cells` in the cells from column `x` of row `y`, as
+    /// [`Page::set_cell`] would put them one by one, but finding the row's
+    /// block once: a character and the spacer of its second half.
+    pub fn set_cells(&mut self, y: u16, x: u16, cells: &[Cell]) {
+        let block = self.block(y);
+        assert!(
+            usize::from(x) + cells.len() <= usize::from(self.cols()),
+            "the cells pass the end of row {y}"
+        );
+        let start = block * usize::from(self.cols()) + usize::from(x);
+        let mut styled = false;
+        let mut filled = None;
+        for (offset, &cell) in cells.iter().enumerate() {
+            debug_assert!(
+                !matches!(cell.content(), Content::Grapheme(_)),
+                "a grapheme is built with push_codepoint"
+            );
+            debug_assert!(!cell.has_hyperlink(), "a link is set with set_hyperlink");
+            let index = start + offset;
+            let old = self.cells[index];
+            // Retain first, in case the old cell holds the last reference.
+            self.styles.retain(cell.style());
+            self.release(index, old);
+            self.cells[index] = cell;
+            styled |= cell.style() != StyleId::DEFAULT;
+            if cell != Cell::EMPTY {
+                filled = Some(offset);
+            }
+        }
+        if let Some(offset) = filled {
+            // The cells fit in the row, whose width is a u16.
+            let end = x + offset as u16 + 1;
+            self.extents[block] = self.extents[block].max(end);
+        }
+        let row = self.row_mut(y);
+        row.set(RowFlag::Dirty, true);
+        if styled {
+            row.set(RowFlag::Styles, true);
+        }
+    }
+
+    /// Puts the characters of `chars`, each with its width, 1 or 2, in the
+    /// cells from column `x` of row `y`, one after the other: each as
+    /// `template` with the character in it, and a wide one followed by
+    /// `template` as its spacer, as [`Page::set_cells`] would put them. The
+    /// template's style must be in the page's table, and the cells must fit
+    /// in the row.
+    pub fn write_chars(&mut self, y: u16, x: u16, chars: &[(char, u8)], template: Cell) {
+        debug_assert!(
+            !template.has_hyperlink(),
+            "a link is set with set_hyperlink"
+        );
+        let block = self.block(y);
+        let cells: usize = chars.iter().map(|&(_, width)| usize::from(width)).sum();
+        assert!(
+            usize::from(x) + cells <= usize::from(self.cols()),
+            "the characters pass the end of row {y}"
+        );
+        let start = block * usize::from(self.cols()) + usize::from(x);
+        let range = start..start + cells;
+        let style = template.style();
+        // Retain first, in case the old cells hold the last reference. The
+        // row has fewer cells than a u32 counts.
+        self.styles.retain_many(style, cells as u32);
+        let metadata = self.row(y);
+        // Old cells that hold nothing in the tables have nothing to drop.
+        if metadata.has(RowFlag::Styles)
+            || metadata.has(RowFlag::Graphemes)
+            || metadata.has(RowFlag::Hyperlinks)
+        {
+            for index in range.clone() {
+                let old = self.cells[index];
+                self.release(index, old);
+            }
+        }
+        let mut index = start;
+        for &(c, width) in chars {
+            debug_assert!(matches!(width, 1 | 2), "{c:?} is {width} cells wide");
+            let cell = template.with_content(Content::Char(c));
+            if width == 2 {
+                self.cells[index] = cell.with_width(Width::Wide);
+                self.cells[index + 1] = template.with_width(Width::SpacerTail);
+            } else {
+                self.cells[index] = cell;
+            }
+            index += usize::from(width);
+        }
+        // The cells fit in the row, whose width is a u16.
+        let end = x + cells as u16;
+        self.extents[block] = self.extents[block].max(end);
+        let row = self.row_mut(y);
+        row.set(RowFlag::Dirty, true);
+        if style != StyleId::DEFAULT {
+            row.set(RowFlag::Styles, true);
+        }
+    }
+
     /// Puts the characters of `text`, printable ASCII, in the cells from
     /// column `x` of row `y`, each as `template` with the character in it,
     /// as [`Page::set_cell`] would put them one by one. The template's

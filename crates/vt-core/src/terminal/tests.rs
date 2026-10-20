@@ -4427,6 +4427,11 @@ const OTHER_TEXT: &[&str] = &[
     "\u{1F1EE}",
     "中",
     "\u{1F600}",
+    // Runs that the terminal writes in stretches, past the line's end.
+    "中文字符串",
+    "\u{E4}\u{F6}\u{FC}\u{DF}\u{E9}\u{E8}",
+    "\u{E9}\u{301}中\u{E0}",
+    "\u{1F600}\u{1F600}\u{2764}\u{FE0F}",
 ];
 
 fn read() -> impl Strategy<Value = Vec<u8>> {
@@ -4487,7 +4492,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 
     #[test]
-    fn runs_of_ascii_print_as_their_characters_do(
+    fn runs_of_text_print_as_their_characters_do(
         cols in 1_u16..=10,
         rows in 1_u16..=4,
         scrollback in any::<bool>(),

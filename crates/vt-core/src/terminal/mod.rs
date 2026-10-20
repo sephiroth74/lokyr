@@ -981,6 +981,10 @@ impl Handler for Terminal {
         self.print_ascii_run(text);
     }
 
+    fn print_chars(&mut self, chars: &[char]) {
+        self.print_char_run(chars);
+    }
+
     fn execute(&mut self, byte: u8) {
         self.control(byte);
     }

@@ -11,6 +11,9 @@ use crate::unicode::{GraphemeBreak, Mode, Normalization, properties};
 /// keeps a cluster's work, normalization included, small.
 const MAX_CLUSTER: usize = 32;
 
+/// The most characters that [`Terminal::print_char_run`] writes at once.
+const STRETCH: usize = 64;
+
 /// Whether writing `width` cells from column `x` of a row whose cells are
 /// `cells` goes over a wide character in the first two columns of the line
 /// from `start`, for which the row above may have left a spacer head.
@@ -82,6 +85,104 @@ impl Terminal {
             text = &text[written..];
         }
         self.last_printed = Some(char::from(last));
+    }
+
+    /// Prints `chars`, as [`Terminal::print_translated`] would print them
+    /// one by one, but each stretch of characters that start clusters of
+    /// their own, one or two cells wide, and fit in the line, at once, with
+    /// the row's page found once. The others take the path of each
+    /// character: those that join a cluster, or have no width, or do not
+    /// fit, or come with another character set, an open link, insert mode
+    /// or a normal form to put them in.
+    pub(super) fn print_char_run(&mut self, chars: &[char]) {
+        let plain = self.charsets.is_plain()
+            && !self.link.is_open()
+            && !self.insert
+            && self.normalization == Normalization::None;
+        if !plain {
+            for &c in chars {
+                self.print_translated(c);
+            }
+            return;
+        }
+        let mut stretch = [('\0', 0_u8); STRETCH];
+        let (mut len, mut cells) = (0, 0_u16);
+        let (mut x, mut end) = (0, 0);
+        for &c in chars {
+            let properties = properties(c);
+            let width = self.widths.char_width_with(c, properties);
+            let mut segmenter = self.segmenter;
+            let starts = match self.widths.mode {
+                Mode::Unicode => segmenter.starts_cluster_with(properties),
+                Mode::Legacy => width > 0,
+            };
+            if len == 0 {
+                let cursor = self.cursor();
+                (x, end) = (cursor.x, self.line_end(cursor.x));
+                if cursor.pending_wrap {
+                    // The path of each character wraps first.
+                    end = x;
+                }
+            }
+            let fits = x + cells + u16::from(width) <= end;
+            if !starts || !matches!(width, 1 | 2) || !fits || len == STRETCH {
+                self.write_stretch(x, &stretch[..len], cells, end);
+                (len, cells) = (0, 0);
+                self.print_translated(c);
+                continue;
+            }
+            self.segmenter = segmenter;
+            stretch[len] = (c, width);
+            len += 1;
+            cells += u16::from(width);
+            if x + cells == end {
+                self.write_stretch(x, &stretch[..len], cells, end);
+                (len, cells) = (0, 0);
+            }
+        }
+        self.write_stretch(x, &stretch[..len], cells, end);
+        if let Some(&last) = chars.last() {
+            self.last_printed = Some(last);
+        }
+    }
+
+    /// Writes `stretch`, characters that take `cells` cells, from column
+    /// `x` of the cursor's row, which is where the cursor is, in a line that
+    /// ends before column `end`, as [`Terminal::start_cluster`] would write
+    /// them one by one.
+    fn write_stretch(&mut self, x: u16, stretch: &[(char, u8)], cells: u16, end: u16) {
+        let Some(&(_, last_width)) = stretch.last() else {
+            return;
+        };
+        let y = self.cursor().y;
+        let (protected, zone) = (self.protected, self.zone);
+        let start = self.line_start(x);
+        let head_above = y > 0 && x <= start + 1;
+        let mut over_wide = false;
+        self.with_pen(y, |page, row, style| {
+            over_wide = head_above && over_wide_start(page.cells(row), x, cells, start);
+            page.clear_halves(row, x, cells);
+            let template = Cell::EMPTY
+                .with_style(style)
+                .with_protected(protected)
+                .with_semantic(zone);
+            page.write_chars(row, x, stretch, template);
+        });
+        if over_wide {
+            self.clear_spacer_head_above(x, y);
+        }
+        self.cluster = Some(Cluster {
+            x: x + cells - u16::from(last_width),
+            y,
+        });
+        let cursor = &mut self.screen_mut().cursor;
+        if x + cells >= end {
+            cursor.x = end - 1;
+            cursor.pending_wrap = true;
+        } else {
+            cursor.x = x + cells;
+            cursor.pending_wrap = false;
+        }
     }
 
     /// Adds `c` to the cluster that the last character printed started, or,
@@ -184,11 +285,14 @@ impl Terminal {
         let (insert, protected, zone) = (self.insert, self.protected, self.zone);
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
-        } else {
-            self.clear_spacer_head(x, y, width);
         }
+        // The row's page is found once, for the spacer head as well.
+        let start = self.line_start(x);
+        let head_above = !insert && y > 0 && x <= start + 1;
+        let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
             if !insert {
+                over_wide = head_above && over_wide_start(page.cells(row), x, width, start);
                 page.clear_halves(row, x, width);
             }
             let blank = Cell::EMPTY
@@ -197,17 +301,28 @@ impl Terminal {
                 .with_semantic(zone);
             let cell = blank.with_content(Content::Char(c));
             if width == 2 {
-                page.set_cell(row, x, cell.with_width(Width::Wide));
-                page.set_cell(row, x + 1, blank.with_width(Width::SpacerTail));
+                page.set_cells(
+                    row,
+                    x,
+                    &[
+                        cell.with_width(Width::Wide),
+                        blank.with_width(Width::SpacerTail),
+                    ],
+                );
             } else {
-                page.set_cell(row, x, cell);
+                page.set_cells(row, x, &[cell]);
             }
         });
+        if over_wide {
+            self.clear_spacer_head_above(x, y);
+        }
         if self.link.is_open() {
             self.link_cells(x, y, width);
         }
         self.cluster = Some(Cluster { x, y });
-        self.normalize(Cluster { x, y });
+        if self.normalization != Normalization::None {
+            self.normalize(Cluster { x, y });
+        }
 
         let cursor = &mut self.screen_mut().cursor;
         if x + width >= end {
@@ -435,25 +550,13 @@ impl Terminal {
     }
 
     /// Empties the spacer head at the end of the line on the row above `y`,
-    /// at the right margin or the screen's edge, when writing `width` cells
-    /// from column `x` goes over a wide character at the start of the line
-    /// on row `y`, which the head was left for, as `alacritty_terminal`
-    /// does. A head in the scrollback stays, where `alacritty_terminal`
-    /// clears it: the scrollback's rows are not written to, as their pages
-    /// can be kept cold.
-    fn clear_spacer_head(&mut self, x: u16, y: u16, width: u16) {
-        let start = self.line_start(x);
-        if x > start + 1 || y == 0 {
-            return;
-        }
-        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-        if over_wide_start(page.cells(row), x, width, start) {
-            self.clear_spacer_head_above(x, y);
-        }
-    }
-
-    /// Empties the spacer head at the end of the line on the row above `y`,
-    /// for [`Terminal::clear_spacer_head`], if there is one.
+    /// at the right margin or the screen's edge, if there is one: for a
+    /// write from column `x` that goes over a wide character at the start
+    /// of the line on row `y`, which the head was left for, as
+    /// [`over_wide_start`] tells, and as `alacritty_terminal` does. A head
+    /// in the scrollback stays, where `alacritty_terminal` clears it: the
+    /// scrollback's rows are not written to, as their pages can be kept
+    /// cold.
     fn clear_spacer_head_above(&mut self, x: u16, y: u16) {
         let last = self.line_end(x) - 1;
         let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);

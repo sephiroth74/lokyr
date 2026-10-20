@@ -41,6 +41,15 @@ pub trait Handler {
         }
     }
 
+    /// Prints a run of characters decoded from UTF-8, none of them ASCII or
+    /// a C1 control, which the parser found in a single read. By default,
+    /// prints them one by one.
+    fn print_chars(&mut self, chars: &[char]) {
+        for &c in chars {
+            self.print(c);
+        }
+    }
+
     /// Executes a C0 control character, such as LF or BS.
     fn execute(&mut self, byte: u8) {}
 
