@@ -103,12 +103,17 @@ fn a_start_during_an_update_does_not_put_its_deadline_off() {
         terminal.synchronized_output()
     });
     let start = Instant::now();
-    wait_for(&session, "the deadline", |terminal| {
-        !terminal.synchronized_output()
+    // The deadline ends the update, and the program's next start, at most
+    // 0.2 s later, is a new one: the screen shows between them for too
+    // short a time to be looked for, while the count of updates stays.
+    // Starts that counted as updates would make the second come at once,
+    // and starts that put the deadline off would keep it from coming.
+    wait_for(&session, "the second update", |terminal| {
+        terminal.synchronized_updates() == 2
     });
     let held = start.elapsed();
+    assert!(held >= Duration::from_millis(900), "ended after {held:?}");
     assert!(held < Duration::from_secs(3), "ended after {held:?}");
-    assert_eq!(session.lock().synchronized_updates(), 1, "one update");
 }
 
 #[test]
