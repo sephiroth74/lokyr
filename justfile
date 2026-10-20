@@ -156,8 +156,10 @@ instructions base="": vtebench
         cargo install --locked gungraun-runner --version "$version"
     fi
     # Both counts go to one place, for the second to compare with the first;
-    # both builds share the target directory and the checkout of vtebench.
-    export GUNGRAUN_HOME="$PWD/target/gungraun" CARGO_TARGET_DIR="$PWD/target" BOLT_VTEBENCH="$PWD/target/vtebench"
+    # both builds share the target directory, the repository's unless one is
+    # set, and the checkout of vtebench.
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+    export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" BOLT_VTEBENCH="$PWD/target/vtebench"
     count() { cargo bench --locked -p bolt-differential --bench instructions -- "$@"; }
     base="{{ base }}"
     if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
