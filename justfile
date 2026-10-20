@@ -146,6 +146,37 @@ vtebench:
         echo {{ vtebench_commit }} > "$dir/.commit"
     fi
 
+# Count the instructions of vtebench's scenarios and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. Without `base`, or when `base` has none, the counts are taken alone.
+instructions base="": vtebench
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The runner has the library's version, which Cargo.lock holds.
+    version=$(awk '/^name = "gungraun-runner"$/ { getline; gsub(/version = |"/, ""); print }' Cargo.lock)
+    if ! cargo install --list | grep -qx "gungraun-runner v$version:"; then
+        cargo install --locked gungraun-runner --version "$version"
+    fi
+    # Both counts go to one place, for the second to compare with the first;
+    # both builds share the target directory and the checkout of vtebench.
+    export GUNGRAUN_HOME="$PWD/target/gungraun" CARGO_TARGET_DIR="$PWD/target" BOLT_VTEBENCH="$PWD/target/vtebench"
+    count() { cargo bench --locked -p bolt-differential --bench instructions -- "$@"; }
+    base="{{ base }}"
+    if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+        echo "There is no commit $base: the counts are taken alone."
+        base=""
+    fi
+    if [ -n "$base" ]; then
+        tree=$(mktemp -d "${TMPDIR:-/tmp}/instructions.XXXXXX")
+        trap 'git worktree remove --force "$tree"' EXIT
+        git worktree add --quiet --detach "$tree" "$base"
+        if [ -f "$tree/tools/differential/benches/instructions.rs" ]; then
+            (cd "$tree" && count --save-baseline=base)
+            count --baseline=base --callgrind-limits='ir=3%'
+            exit
+        fi
+        echo "$base has no instruction counts to compare with: they are taken alone."
+    fi
+    count
+
 # Fuzz a target for `seconds`, seeded from the parser's tests (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600": fuzz-seeds
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal

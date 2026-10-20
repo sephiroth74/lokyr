@@ -15,11 +15,16 @@
 //! after each, as the differential fuzz target does: the first point where
 //! they part must have one of the known [`Cause`]s, after which they are
 //! compared no more.
+//!
+//! [`vtebench`] rebuilds vtebench's scenarios, which `bolt-throughput`
+//! times against `alacritty_terminal`'s, and whose instructions the
+//! `instructions` benchmark counts.
 
 #![forbid(unsafe_code)]
 
 mod cause;
 mod explore;
+pub mod vtebench;
 
 pub use cause::Cause;
 pub use explore::{Before, Divergence, Step, explore, explore_after, fuzz_input};

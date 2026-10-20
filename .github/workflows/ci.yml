@@ -63,3 +63,30 @@ jobs:
       - run: just check-deps
       - run: just deny
       - run: just test-portable
+
+  instructions:
+    # The instructions that the VT core takes for vtebench's scenarios and
+    # for text as `cat` prints it, which callgrind counts on Linux, against
+    # those of the commit that the push or the pull request starts from: a
+    # rise of more than 3% fails.
+    name: instructions
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The commit to compare with.
+          fetch-depth: 0
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: just@1.58.0
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install --yes valgrind
+      - name: Count the instructions against the base commit's
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: just instructions "$BASE"

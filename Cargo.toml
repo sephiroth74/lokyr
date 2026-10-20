@@ -23,6 +23,9 @@ alacritty_terminal = { version = "0.26.0", default-features = false }
 cargo_metadata = "0.23.1"
 # Benchmarks, without plots or rayon.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+# Instruction counts under callgrind, in the Linux job. Its runner,
+# gungraun-runner, must have the version that Cargo.lock holds.
+gungraun = "0.20.0"
 # Golden snapshots of the screen, from recorded sessions.
 insta = { version = "1.49.0", default-features = false }
 libc = "0.2.190"

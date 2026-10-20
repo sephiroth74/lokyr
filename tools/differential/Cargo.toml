@@ -16,6 +16,11 @@ bolt-vt-core.workspace = true
 
 [dev-dependencies]
 bolt-replay.workspace = true
+gungraun.workspace = true
+
+[[bench]]
+name = "instructions"
+harness = false
 
 [lints]
 workspace = true

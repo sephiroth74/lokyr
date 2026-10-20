@@ -76,7 +76,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Level | Tool | Where | Threshold |
 |---|---|---|---|
 | Micro: parser per scenario, cell writes, style dedup, reflow, search over 100k and 1M lines, shaping cache | `criterion` | locally and on the dedicated Mac | report |
-| Instruction counts for the same scenarios | `gungraun` (callgrind) | Linux CI (valgrind does not run on Apple Silicon) | +3% blocks |
+| Instruction counts of vtebench's scenarios and of text as `cat` prints it, against those of the commit that a push or a pull request starts from | `gungraun` (callgrind), `just instructions` | Linux CI (valgrind does not run on Apple Silicon) | +3% blocks |
 | End-to-end wall-clock times | `tools/bench` harness | dedicated Mac (self-hosted runner), nightly | +10% opens an issue |
 | Memory: opening and closing tabs, full scrollback | integration tests | macOS and Linux CI | the budgets above |
 | Binary size | `cargo bloat` | CI | a budget per release, with and without the Luau runtime |
