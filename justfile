@@ -58,9 +58,9 @@ lint: fmt-check clippy
 check-linux:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
 
-# Test the platform-independent crates on the host (used by the Linux CI job).
+# Test the platform-independent crates on the host (used by the Linux CI job), every suite even after one fails.
 test-portable:
-    cargo test --locked {{ portable }}
+    cargo test --locked --no-fail-fast {{ portable }}
 
 # Check advisories, licenses, banned crates and sources.
 deny:

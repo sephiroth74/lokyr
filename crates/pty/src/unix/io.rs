@@ -50,7 +50,8 @@ impl PtyReader {
             match wait(&self.master, &self.closed, libc::POLLIN, deadline)? {
                 Ready::Closed => return Ok(ReadOutcome::End),
                 Ready::TimedOut => return Ok(ReadOutcome::TimedOut),
-                Ready::Master => {}
+                // A program that has ended may have left output to read.
+                Ready::Master | Ready::HungUp => {}
             }
             // SAFETY: `read` writes at most `buf.len()` bytes into `buf`.
             let n =
@@ -137,6 +138,10 @@ impl PtyWriter {
             match wait(&self.master, &self.closed, libc::POLLOUT, deadline)? {
                 Ready::Closed => return Err(ErrorKind::BrokenPipe.into()),
                 Ready::TimedOut => return Ok(None),
+                // No process has the terminal open, so no one would read
+                // what is written. Linux's master would take it into its
+                // buffer all the same; macOS's fails with EIO, as this does.
+                Ready::HungUp => return Err(io::Error::from_raw_os_error(libc::EIO)),
                 Ready::Master => {}
             }
             // SAFETY: `write` reads at most `buf.len()` bytes from `buf`.
@@ -166,9 +171,11 @@ impl Write for PtyWriter {
 
 /// What a wait found ready.
 enum Ready {
-    /// The master, for the events asked for, or with an error or a hang-up
-    /// that the read or the write will tell.
+    /// The master, for the events asked for, or with an error that the
+    /// read or the write will tell.
     Master,
+    /// The master, hung up: no process has the terminal open any more.
+    HungUp,
     /// What the PTY's drop makes ready: the PTY has dropped.
     Closed,
     /// Neither, by the deadline.
@@ -187,6 +194,8 @@ fn wait(
     poll(&mut fds, deadline)?;
     Ok(if fds[1].revents != 0 {
         Ready::Closed
+    } else if fds[0].revents & libc::POLLHUP != 0 {
+        Ready::HungUp
     } else if fds[0].revents != 0 {
         Ready::Master
     } else {

@@ -212,6 +212,23 @@ fn the_exit_status_is_reported() {
 }
 
 #[test]
+fn a_write_to_a_program_that_has_ended_fails() {
+    let mut pty = spawn(&Options::new(sh("exit 0"), "xterm-256color")).unwrap();
+    let mut text = String::new();
+    pty.reader().unwrap().read_to_string(&mut text).unwrap();
+    assert_eq!(pty.wait().unwrap(), Exit::Code(0));
+    // No process has the terminal open: the bytes would go to no one, on
+    // Linux as on macOS.
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    let error = pty
+        .writer()
+        .unwrap()
+        .write_until(b"x", Some(deadline))
+        .unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(libc::EIO), "{error}");
+}
+
+#[test]
 fn a_program_still_running_has_no_status() {
     let mut pty = spawn(&Options::new(sh("echo ready; read line"), "xterm-256color")).unwrap();
     let mut output = Output::new(pty.reader().unwrap());
