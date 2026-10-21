@@ -222,12 +222,26 @@ impl Terminal {
     }
 
     /// Keeps the bytes of the titles as their reports have them, after a
-    /// title or the title modes changed.
+    /// title or the title modes changed, while title reports are on: they
+    /// cannot be turned on after the terminal is made.
     pub(super) fn titles_changed(&mut self) {
-        self.reported_titles = (
-            self.reported_title(&self.title).len(),
-            self.reported_title(&self.icon_title).len(),
-        );
+        if self.title_reports {
+            self.reported_titles = (
+                self.reported_len(&self.title),
+                self.reported_len(&self.icon_title),
+            );
+        }
+    }
+
+    /// The bytes of the report of `title`, as [`Terminal::reported_title`]
+    /// makes it, counted without making it.
+    fn reported_len(&self, title: &str) -> usize {
+        let len = title
+            .chars()
+            .filter(|c| !c.is_control())
+            .map(char::len_utf8)
+            .sum::<usize>();
+        if self.hex_title_reports { 2 * len } else { len }
     }
 
     /// `title` as CSI 20 t and 21 t report it: without its control

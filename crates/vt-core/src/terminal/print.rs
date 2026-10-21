@@ -15,12 +15,15 @@ const MAX_CLUSTER: usize = 32;
 const STRETCH: usize = 64;
 
 /// Whether writing `width` cells from column `x` of a row whose cells are
-/// `cells` goes over a wide character in the first two columns of the line
-/// from `start`, for which the row above may have left a spacer head.
+/// `cells` goes over a wide character at column `start`, where wraps land,
+/// or over its second half, for which the row above may have left a spacer
+/// head.
 fn over_wide_start(cells: &[Cell], x: u16, width: u16, start: u16) -> bool {
-    cells[usize::from(x)..usize::from((x + width).min(start + 2))]
-        .iter()
-        .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
+    x <= start + 1
+        && x + width > start
+        && cells[usize::from(x.max(start))..usize::from((x + width).min(start + 2))]
+            .iter()
+            .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
 }
 
 impl Terminal {
@@ -111,15 +114,14 @@ impl Terminal {
         if pending_wrap {
             return None;
         }
-        // The line's first column and its end, as `line_start` and
-        // `line_end` tell them.
-        let (start, end) = if x > margins.right {
-            (0, cols)
-        } else if x >= margins.left {
-            (margins.left, margins.right + 1)
+        // The line's end, as `line_end` tells it, and the column where its
+        // wraps land, which a spacer head above stands for.
+        let end = if x > margins.right {
+            cols
         } else {
-            (0, margins.right + 1)
+            margins.right + 1
         };
+        let start = margins.left;
         let len = text.len().min(usize::from(end - x));
         // The line has room for `len` cells, so it fits in a u16.
         let width = len as u16;
@@ -236,7 +238,7 @@ impl Terminal {
         };
         let y = self.cursor().y;
         let (protected, zone) = (self.protected, self.zone);
-        let start = self.line_start(x);
+        let start = self.margins.left;
         let head_above = y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
@@ -320,7 +322,7 @@ impl Terminal {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
         }
         // The row's page is found once, for the spacer head as well.
-        let start = self.line_start(x);
+        let start = self.margins.left;
         let head_above = !insert && y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
@@ -351,11 +353,13 @@ impl Terminal {
         // do, so it fits in the next row, or one column back.
         let Cursor { x, y, .. } = self.cursor();
         let end = self.line_end(x);
+        let mut placed_head = false;
         if width == 2 && x == end - 1 {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
                 self.wrap();
+                placed_head = true;
             } else {
                 self.screen_mut().cursor.x = x - 1;
             }
@@ -367,9 +371,10 @@ impl Terminal {
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
         }
-        // The row's page is found once, for the spacer head as well.
-        let start = self.line_start(x);
-        let head_above = !insert && y > 0 && x <= start + 1;
+        // The row's page is found once, for the spacer head as well, which
+        // stays when this character just left it.
+        let start = self.margins.left;
+        let head_above = !insert && !placed_head && y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
             if !insert {
@@ -632,9 +637,10 @@ impl Terminal {
 
     /// Empties the spacer head at the end of the line on the row above `y`,
     /// at the right margin or the screen's edge, if there is one: for a
-    /// write from column `x` that goes over a wide character at the start
-    /// of the line on row `y`, which the head was left for, as
+    /// write from column `x` that goes over a wide character at the left
+    /// margin of row `y`, where wraps land, which the head was left for, as
     /// [`over_wide_start`] tells, and as `alacritty_terminal` does. A head
+    /// that a wrap left under other margins stays. A head
     /// in the scrollback stays, where `alacritty_terminal` clears it: the
     /// scrollback's rows are not written to, as their pages can be kept
     /// cold.
@@ -643,16 +649,6 @@ impl Terminal {
         let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);
         if page.cells(row)[usize::from(last)].width() == Width::SpacerHead {
             page.set_cell(row, last, Cell::EMPTY);
-        }
-    }
-
-    /// The first column of the line that column `x` is on: the left margin
-    /// from within the margins, the first column from left of them.
-    fn line_start(&self, x: u16) -> u16 {
-        if (self.margins.left..=self.margins.right).contains(&x) {
-            self.margins.left
-        } else {
-            0
         }
     }
 

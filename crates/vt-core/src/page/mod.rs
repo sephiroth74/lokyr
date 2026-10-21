@@ -517,10 +517,10 @@ impl Page {
     /// Puts `text` in the cells from column `x` of row `y` as
     /// [`Page::write_ascii`] does, after emptying the halves of wide
     /// characters that it would leave, as [`Page::clear_halves`] does, with
-    /// the row's block found once. With `line_start`, the first column of
-    /// the line, it also tells whether the text went over a wide character,
-    /// or its second half, in the line's first two columns, for which the
-    /// row above may have left a spacer head: never when `x` is past them.
+    /// the row's block found once. With `wrap_start`, the column where the
+    /// line's wraps land, it also tells whether the text went over a wide
+    /// character there, or over its second half, for which the row above
+    /// may have left a spacer head: never when `x` is past them.
     #[inline(always)]
     pub fn overwrite_ascii(
         &mut self,
@@ -528,7 +528,7 @@ impl Page {
         x: u16,
         text: &[u8],
         template: Cell,
-        line_start: Option<u16>,
+        wrap_start: Option<u16>,
     ) -> bool {
         let block = self.block(y);
         let cols = self.cols();
@@ -540,10 +540,10 @@ impl Page {
         let last = x + text.len().max(1) as u16 - 1;
         let base = block * usize::from(cols);
         let row = &self.cells[base..base + usize::from(cols)];
-        let over_wide = line_start
-            .filter(|&start| x <= start + 1)
+        let over_wide = wrap_start
+            .filter(|&start| x <= start + 1 && last >= start)
             .is_some_and(|start| {
-                row[usize::from(x)..=usize::from(last.min(start + 1))]
+                row[usize::from(x.max(start))..=usize::from(last.min(start + 1))]
                     .iter()
                     .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
             });

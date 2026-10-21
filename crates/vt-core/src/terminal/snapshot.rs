@@ -83,7 +83,10 @@ impl Snapshot {
     }
 
     /// How many rows the last update moved the lines up by, as the screen
-    /// scrolled: the renderer can move what it drew of them too.
+    /// scrolled: the renderer can move what it drew of them too. On the
+    /// alternate screen, a scroll region that leaves fewer rows out than it
+    /// holds scrolls as the whole screen does, and counts so: the rows
+    /// outside it are marked changed, and drawn again.
     pub fn scrolled(&self) -> u16 {
         self.scrolled
     }

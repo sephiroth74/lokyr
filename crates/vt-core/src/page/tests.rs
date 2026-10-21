@@ -626,6 +626,11 @@ fn a_run_copies_as_its_cells_do_one_by_one() {
                 by_cell.hyperlinks().len(),
                 "{case}"
             );
+            assert_eq!(
+                by_run.hyperlinks().linked_cells(),
+                by_cell.hyperlinks().linked_cells(),
+                "{case}"
+            );
             for cell in by_run.cells(0) {
                 let theirs = by_cell.cells(0).iter().find(|other| {
                     by_cell.styles().get(other.style()) == by_run.styles().get(cell.style())
@@ -1073,6 +1078,24 @@ fn a_cell_that_only_its_width_fills_is_emptied_with_its_row() {
     assert_ne!(page.cells(0)[5], Cell::EMPTY);
     page.clear_row(0);
     assert!(page.cells(0).iter().all(|&cell| cell == Cell::EMPTY));
+}
+
+#[test]
+fn a_plain_row_of_more_cells_than_a_store_of_a_fixed_size_empties_whole() {
+    // Text up to the cells that a store of a fixed size empties, and past
+    // them.
+    for len in 15..=24 {
+        let mut page = Page::new(Capacity::standard(80));
+        page.push_row();
+        for x in 0..len {
+            page.set_cell(0, x, Cell::EMPTY.with_content(Content::Char('x')));
+        }
+        page.clear_row(0);
+        assert!(
+            page.cells(0).iter().all(|&cell| cell == Cell::EMPTY),
+            "{len} cells"
+        );
+    }
 }
 
 proptest::proptest! {

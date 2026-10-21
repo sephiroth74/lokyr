@@ -5,7 +5,7 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::MAX_PARAMS;
 use bolt_vt_core::terminal::{Charset, Shift};
 
-use crate::{Before, Screen, Step};
+use crate::{Before, HEAD, Screen, Step};
 
 /// A way in which the two cores differ on purpose, each for its reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +72,8 @@ pub enum Cause {
     Shift,
     /// The origin mode that DECRC brings back.
     SavedOrigin,
+    /// The spacer head of a wide character that wraps over another.
+    WrapHead,
 }
 
 impl Cause {
@@ -223,6 +225,12 @@ impl Cause {
                  origin mode that DECSC saved in the VT core, as in xterm and on DEC's terminals; \
                  alacritty_terminal keeps the mode that is on: the comparison ends when the \
                  restore changes it"
+            }
+            Self::WrapHead => {
+                "a wide character that does not fit at the last column, and wraps over a wide \
+                 character at the start of the next row, keeps the spacer head that it leaves in \
+                 the VT core, which stands for it; alacritty_terminal empties the head again as it \
+                 writes over the other wide character"
             }
         }
     }
@@ -634,6 +642,24 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 && seen.rows_same_but(&[y]) =>
         {
             Some(Cause::NoWrapWide)
+        }
+        // A wide character that wraps from the last column over a wide
+        // character at the start of the next row: the spacer head that it
+        // left, at the end of the cursor's row, alone differs.
+        Step::Print(_)
+            if seen.wide
+                && before.autowrap
+                && !before.insert
+                && !pending
+                && x + 1 == before.cols
+                && before.below.first() == Some(&Width::Wide)
+                && seen.rows_same_but(&[y])
+                && bolt == alacritty
+                && bolt_screen.rows[y].get(x).is_some_and(|cell| cell == HEAD)
+                && but_last(&bolt_screen.rows[y], before.cols)
+                    == but_last(&alacritty_screen.rows[y], before.cols) =>
+        {
+            Some(Cause::WrapHead)
         }
         _ => None,
     }

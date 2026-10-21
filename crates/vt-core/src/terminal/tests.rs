@@ -1390,33 +1390,35 @@ fn the_alternate_screen_scrolls_a_region_as_the_primary_one_does() {
     for (top, bottom) in [(1, 5), (2, 6), (2, 5), (1, 3), (3, 6), (1, 2)] {
         let lines: String = (0..40).map(|n| format!("{n}\r\n")).collect();
         // Line feeds at the bottom margin, SU by more rows than one and by
-        // more than the region holds, and rows erased in a color.
-        let script = format!(
-            "\x1b[{top};{bottom}r\x1b[{bottom};1H{lines}\x1b[3S\x1b[44m\n\n\x1b[2S\x1b[m{lines}\x1b[9S1"
-        );
+        // more than the region holds, and rows erased in a color, compared
+        // after each step, while the rows that it brings in are there.
+        let steps = [
+            format!("\x1b[{top};{bottom}r\x1b[{bottom};1H"),
+            lines.clone(),
+            "\x1b[3S".to_owned(),
+            "\x1b[44m\n\n".to_owned(),
+            "\x1b[2S".to_owned(),
+            format!("\x1b[m{lines}"),
+            "\x1b[9S1".to_owned(),
+        ];
         let mut primary = Term::new(4, 6);
-        primary.feed("a\r\nb\r\nc\r\nd\r\ne\r\nf").feed(&script);
+        primary.feed("a\r\nb\r\nc\r\nd\r\ne\r\nf");
         let mut alternate = Term::new(4, 6);
-        alternate
-            .feed("\x1b[?1049ha\r\nb\r\nc\r\nd\r\ne\r\nf")
-            .feed(&script);
-        assert_eq!(
-            alternate.screen(),
-            primary.screen(),
-            "rows {top} to {bottom}"
-        );
-        assert_eq!(
-            alternate.cursor(),
-            primary.cursor(),
-            "rows {top} to {bottom}"
-        );
-        for y in 0..6 {
-            for x in 0..4 {
-                assert_eq!(
-                    alternate.cell(x, y).content(),
-                    primary.cell(x, y).content(),
-                    "rows {top} to {bottom}, column {x} of row {y}"
-                );
+        alternate.feed("\x1b[?1049ha\r\nb\r\nc\r\nd\r\ne\r\nf");
+        for (step, text) in steps.iter().enumerate() {
+            primary.feed(text);
+            alternate.feed(text);
+            let at = format!("rows {top} to {bottom}, step {step}");
+            assert_eq!(alternate.screen(), primary.screen(), "{at}");
+            assert_eq!(alternate.cursor(), primary.cursor(), "{at}");
+            for y in 0..6 {
+                for x in 0..4 {
+                    assert_eq!(
+                        alternate.cell(x, y).content(),
+                        primary.cell(x, y).content(),
+                        "{at}, column {x} of row {y}"
+                    );
+                }
             }
         }
     }
@@ -5394,12 +5396,48 @@ fn a_wide_character_written_over_at_the_start_of_a_row_takes_its_spacer_head() {
     assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
     term.feed("\x1b[2;3Hy");
     assert_eq!(term.cell(7, 0).width(), Width::Narrow);
+    // From left of the margins too, through each path of printing, as the
+    // wrap left the character at the left margin.
+    for over in [
+        "abcd",
+        "\u{e9}\u{e9}\u{65e5}",
+        "\x1b]8;;x\x1b\\\u{e9}\u{e9}y",
+    ] {
+        let mut term = Term::new(10, 3);
+        term.feed("\x1b[?69h\x1b[3;8s\x1b[1;3Habcde\u{4e2d}");
+        term.feed(format!("\x1b[2;1H{over}"));
+        assert_eq!(term.cell(7, 0).width(), Width::Narrow, "{over:?}");
+    }
+    // A wide character left of the margins has no head at the right margin.
+    for over in ["y", "\u{e9}", "\x1b]8;;x\x1b\\\u{e9}"] {
+        let mut term = Term::new(10, 3);
+        term.feed("\x1b[?69h\x1b[3;8s\x1b[1;3Habcde\u{4e2d}\x1b[2;1H\u{65e5}");
+        term.feed(format!("\x1b[2;1H{over}"));
+        assert_eq!(term.cell(7, 0).width(), Width::SpacerHead, "{over:?}");
+        assert_eq!(term.cell(2, 1).width(), Width::Wide, "{over:?}");
+    }
     // Text written elsewhere, or inserted, leaves it.
     for over in ["\x1b[3Gy", "\x1b[4hy"] {
         let mut term = Term::new(4, 2);
         term.feed("abc\u{4e2d}");
         term.feed(format!("\r{over}"));
         assert_eq!(term.cell(3, 0).width(), Width::SpacerHead, "{over:?}");
+    }
+}
+
+#[test]
+fn a_wide_character_that_wraps_over_another_keeps_its_spacer_head() {
+    // `文` does not fit at the end of the first row, and goes over `中` at
+    // the start of the next, alone and through the path of each character.
+    for over in ["\u{6587}", "\x1b]8;;x\x1b\\\u{6587}"] {
+        let mut term = Term::new(4, 3);
+        term.feed(format!("\x1b[2;1H\u{4e2d}\x1b[1;4H{over}"));
+        assert_eq!(term.cell(3, 0).width(), Width::SpacerHead, "{over:?}");
+        assert_eq!(
+            term.cell(0, 1).content(),
+            Content::Char('\u{6587}'),
+            "{over:?}"
+        );
     }
 }
 
@@ -5823,6 +5861,22 @@ fn decfra_fills_a_rectangle_with_a_character_in_the_pens_style() {
     // A wide character that the rectangle splits goes whole.
     term.feed("\x1b[1;1H中\x1b[37;1;2;1;2$x");
     assert_eq!(term.screen()[0], " %%def");
+}
+
+#[test]
+fn a_run_of_more_characters_than_a_stretch_prints_as_they_do_one_by_one() {
+    use crate::parser::Handler as _;
+    // The parser passes 64 characters at most; an embedder can pass more.
+    let chars: Vec<char> = "\u{e9}\u{e9}\u{4e2d}".chars().cycle().take(150).collect();
+    // A row wide enough for more than 64 of them.
+    let mut by_run = Term::new(300, 2);
+    by_run.terminal.print_chars(&chars);
+    let mut by_char = Term::new(300, 2);
+    for &c in &chars {
+        by_char.terminal.print(c);
+    }
+    assert_eq!(by_run.screen(), by_char.screen());
+    assert_eq!(by_run.cursor(), by_char.cursor());
 }
 
 #[test]

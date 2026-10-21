@@ -234,8 +234,9 @@ impl RowPins {
 
     /// Rotates the rows of `rows` left by `n`, as a scroll region moves
     /// them up, or right by `n` if `down`, as it moves them down, and gives
-    /// each of their pins its new row in `pins`. The `n` rows that leave
-    /// the region at one edge, to come back in at the other, have no pins.
+    /// each of their pins its new row in `pins`. The `n` rows that leave at
+    /// one edge, to come back in at the other, keep the pins that they
+    /// have, as the other rows do.
     pub(super) fn rotate(&mut self, pins: &mut Pins, rows: Range<u16>, n: u16, down: bool) {
         if self.rows == 0 {
             return;

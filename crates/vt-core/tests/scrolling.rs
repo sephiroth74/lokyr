@@ -1,6 +1,7 @@
 //! Scrolling through the page list, and printing text that scrolls,
-//! allocate nothing once the pool of pages is warm, and the pages take the
-//! memory that they count, as an allocator that counts shows.
+//! allocate nothing once the pool of pages is warm, the pages take the
+//! memory that they count, and a title costs no allocation a byte, as an
+//! allocator that counts shows.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
@@ -259,6 +260,29 @@ fn printing_linked_text_allocates_nothing_once_the_pool_is_warm() {
     let text = linked(20, &|n| format!("file:///{n}{}", "a".repeat(190)));
     let mut terminal = small(Normalization::None);
     assert_eq!(allocations_printing(&mut terminal, &text), 0);
+}
+
+#[test]
+fn a_long_title_costs_no_allocation_a_byte() {
+    // The report of a title in hexadecimal took an allocation a byte, as
+    // the title changed, whether reports were on or off.
+    for title_reports in [false, true] {
+        let options = Options {
+            title_reports,
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(80, 24, options);
+        let mut parser = Parser::new();
+        parser.advance(&mut terminal, b"\x1b[>1t");
+        let title = format!("\x1b]2;{}\x07", "t".repeat(60_000));
+        let before = allocations();
+        parser.advance(&mut terminal, title.as_bytes());
+        let made = allocations() - before;
+        assert!(
+            made < 100,
+            "{made} allocations, with reports {title_reports}"
+        );
+    }
 }
 
 #[test]
