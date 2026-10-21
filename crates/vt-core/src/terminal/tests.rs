@@ -5824,3 +5824,44 @@ fn decfra_fills_a_rectangle_with_a_character_in_the_pens_style() {
     term.feed("\x1b[1;1H中\x1b[37;1;2;1;2$x");
     assert_eq!(term.screen()[0], " %%def");
 }
+
+#[test]
+fn the_widest_screen_prints_inserts_and_scrolls_at_its_last_columns() {
+    // Sums of columns there would pass `u16::MAX`, unless kept within it.
+    let mut term = Term::new(u16::MAX, 3);
+    // A wide character at the last column wraps, with its run.
+    term.feed("\x1b[65535G中");
+    assert_eq!(term.cell(u16::MAX - 1, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(0, 1).width(), Width::Wide);
+    assert_eq!(term.cursor(), (2, 1, false));
+    // ICH of more cells than the row's text, which moves the text past
+    // the extent that it had.
+    term.feed("\x1b[3;1H");
+    term.feed("x".repeat(40_000));
+    term.feed("\r\x1b[40000@");
+    let text = term.terminal.row_text(2);
+    assert_eq!(text.trim_start().len(), 25_535);
+    assert_eq!(text.len(), usize::from(u16::MAX));
+    term.feed("\x1b[2K");
+    assert_eq!(term.terminal.row_text(2), "");
+    // The other edits and scrolls, within margins at the right edge too.
+    term.feed("\x1b[?69h\x1b[30000;65535s\x1b[1;3r");
+    for edit in [
+        "\x1b[65535Gy\x1b[65535b",
+        "\x1b[65534G\x1b[65535@\x1b[65535P\x1b[65535X",
+        "\x1b[65535G中\x1b[65535G\x1b[4h中\x1b[4l",
+        "\x1b[2;65535H\x1b[65535S\x1b[65535T\x1b[65535L\x1b[65535M",
+        "\x1b[65535G\x1b[65535I\x1b[65535Z\x1b[65535C\x1b[65535D",
+        "\x1b[2;65535H\x1b[1K\x1b[0K\x1b[1J\x1b[0J",
+    ] {
+        term.feed(edit);
+        let (x, y, _) = term.cursor();
+        assert!(y < 3, "{edit:?}: row {y}");
+        assert!(x < u16::MAX, "{edit:?}: column {x}");
+    }
+    // A snapshot reads each cell of a row with a cluster.
+    term.feed("\x1b[r\x1b[?69l\x1b[2J\x1b[1;65535He\u{301}");
+    let mut snapshot = super::Snapshot::default();
+    assert_eq!(term.terminal.snapshot(&mut snapshot), 3);
+    assert_eq!(snapshot.line(0).grapheme(u16::MAX - 1), ['\u{301}']);
+}

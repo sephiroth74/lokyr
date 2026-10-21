@@ -44,6 +44,14 @@ impl GraphemeTable {
         self.spans.len()
     }
 
+    /// Whether a table with room for `capacity` cells would hold the
+    /// entries, their codepoints included, which can take more chunks of
+    /// the arena than there are entries.
+    pub(crate) fn fits(&self, capacity: u16) -> bool {
+        self.len() <= usize::from(capacity)
+            && self.codepoints.used_chunks() <= usize::from(capacity)
+    }
+
     /// The codepoints of `cell` after its first: none for a cell without
     /// an entry.
     pub(crate) fn get(&self, cell: u32) -> &[char] {

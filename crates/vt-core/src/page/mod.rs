@@ -760,7 +760,7 @@ impl Page {
         // The cells that are not empty move right by n, within the end.
         let extent = self.extents[self.block(y)];
         if extent > x {
-            self.extend(y, (extent + n).min(end));
+            self.extend(y, extent.saturating_add(n).min(end));
         }
         for column in (x..end - n).rev() {
             let (from, to) = (self.cell_index(y, column), self.cell_index(y, column + n));
@@ -1280,12 +1280,14 @@ impl Page {
 
     /// Whether the rows that the page holds take more styles, clusters,
     /// links or linked cells than a page of `standard` capacity has room
-    /// for: whether they need its tables as they grew.
+    /// for, or more of the room that clusters' codepoints and links' URIs
+    /// take: whether they need its tables as they grew.
     pub(crate) fn outgrew(&self, standard: Capacity) -> bool {
         self.styles.len() > usize::from(standard.styles)
-            || self.graphemes.len() > usize::from(standard.graphemes)
-            || self.hyperlinks.len() > usize::from(standard.hyperlinks)
-            || self.hyperlinks.linked_cells() > usize::from(standard.linked_cells)
+            || !self.graphemes.fits(standard.graphemes)
+            || !self
+                .hyperlinks
+                .fits(standard.hyperlinks, standard.linked_cells)
     }
 
     /// The bytes that the page takes, header included.

@@ -73,6 +73,15 @@ fn backward(
 }
 
 #[test]
+fn a_match_ends_at_the_last_column_of_the_widest_screen() {
+    let mut terminal = printed(u16::MAX, 2, "\x1b[65534Gab");
+    assert_eq!(
+        forward(&mut terminal, "ab", (0, 0)),
+        Some(((0, u16::MAX - 2), (0, u16::MAX - 1)))
+    );
+}
+
+#[test]
 fn matches_are_found_forward_and_backward() {
     let mut terminal = printed(20, 3, "one two one");
     assert_eq!(

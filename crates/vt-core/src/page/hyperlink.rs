@@ -111,6 +111,15 @@ impl HyperlinkTable {
         self.cells.len()
     }
 
+    /// Whether a table with room for `links` links and `cells` linked
+    /// cells would hold these, their ids and URIs included, which can take
+    /// more of the arena than the links' share.
+    pub(crate) fn fits(&self, links: u16, cells: u16) -> bool {
+        self.len() <= usize::from(links)
+            && self.linked_cells() <= usize::from(cells)
+            && self.bytes.used_chunks() <= usize::from(links.saturating_mul(CHUNKS_PER_LINK))
+    }
+
     /// Whether the table holds no link.
     pub fn is_empty(&self) -> bool {
         self.len() == 0

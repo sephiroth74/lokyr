@@ -44,7 +44,9 @@ pub fn with_attributes(terminal: &Terminal) -> String {
 fn runs(terminal: &Terminal, y: u16) -> Vec<String> {
     let (page, row) = terminal.screen_rows().screen_row(y);
     let mut runs: Vec<(u16, u16, String)> = Vec::new();
-    for (x, cell) in (0..).zip(page.cells(row)) {
+    // Up to `u16::MAX` inclusive: an open range would overflow after the
+    // last cell of a row that wide.
+    for (x, cell) in (0..=u16::MAX).zip(page.cells(row)) {
         let mut attributes = describe(page.styles().get(cell.style()));
         match cell.content() {
             Content::BgPalette(index) => attributes.push(format!("bg={index}")),
@@ -128,6 +130,12 @@ mod tests {
             parser.advance(&mut terminal, text.as_bytes());
         }
         terminal
+    }
+
+    #[test]
+    fn the_widest_screen_has_its_attributes_read() {
+        let terminal = terminal(u16::MAX, 1, &[(Style::DEFAULT, "\x1b[65535G\x1b[1mx")]);
+        assert!(with_attributes(&terminal).contains("bold"));
     }
 
     #[test]

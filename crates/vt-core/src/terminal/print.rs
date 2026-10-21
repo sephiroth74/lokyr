@@ -202,7 +202,9 @@ impl Terminal {
                     end = x;
                 }
             }
-            let fits = x + cells + u16::from(width) <= end;
+            // `x + cells` never passes `end`, and the sum with the width
+            // could pass `u16::MAX` at the last column of the widest screen.
+            let fits = u16::from(width) <= end - (x + cells);
             if !starts || !matches!(width, 1 | 2) || !fits || len == STRETCH {
                 self.write_stretch(x, &stretch[..len], cells, end);
                 (len, cells) = (0, 0);

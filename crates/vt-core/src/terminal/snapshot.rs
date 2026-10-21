@@ -176,7 +176,9 @@ impl Line {
         self.codepoints.clear();
         self.clusters.clear();
         if metadata.has(RowFlag::Graphemes) {
-            for (x, cell) in (0..).zip(&self.cells) {
+            // Up to `u16::MAX` inclusive: an open range would overflow after the
+            // last cell of a row that wide.
+            for (x, cell) in (0..=u16::MAX).zip(&self.cells) {
                 if let Content::Grapheme(_) = cell.content() {
                     let rest = page.grapheme(row, x);
                     // A row has fewer than 2^32 codepoints in its clusters.

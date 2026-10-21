@@ -51,7 +51,9 @@ impl Line {
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];
-        for (col, cell) in (0..).zip(row.cells()) {
+        // Up to `u16::MAX` inclusive: an open range would overflow after the
+        // last cell of a row that wide.
+        for (col, cell) in (0..=u16::MAX).zip(row.cells()) {
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }

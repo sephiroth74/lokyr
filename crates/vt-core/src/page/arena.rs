@@ -46,6 +46,14 @@ impl<T: Copy + Default, const CHUNK: usize> Arena<T, CHUNK> {
         size_of_val(&*self.items) + size_of_val(&*self.used)
     }
 
+    /// How many chunks are in use.
+    pub(crate) fn used_chunks(&self) -> usize {
+        self.used
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum()
+    }
+
     /// Room for `len` items, which hold their default value. `None` if no free
     /// run of chunks is long enough.
     pub(crate) fn alloc(&mut self, len: u16) -> Option<Span> {

@@ -175,13 +175,15 @@ fn small(normalization: Normalization) -> Terminal {
     )
 }
 
-/// How many times printing 20 000 rows of `line` allocates, once five
-/// pages of them warmed the pool.
-fn allocations_printing(terminal: &mut Terminal, line: &str) -> usize {
+/// How many times printing 20 000 rows of `text`, over and over,
+/// allocates, once five pages of them warmed the pool.
+fn allocations_printing(terminal: &mut Terminal, text: &str) -> usize {
     let mut parser = Parser::new();
     let page_rows = usize::from(Capacity::standard(80).rows);
-    parser.advance(terminal, line.repeat(5 * page_rows).as_bytes());
-    let lines = line.repeat(20_000);
+    let rows = text.matches('\n').count().max(1);
+    let warm = text.repeat((5 * page_rows).div_ceil(rows));
+    parser.advance(terminal, warm.as_bytes());
+    let lines = text.repeat(20_000_usize.div_ceil(rows));
     let before = allocations();
     parser.advance(terminal, lines.as_bytes());
     allocations() - before
@@ -200,6 +202,34 @@ fn printing_text_with_combining_marks_allocates_nothing_once_the_pool_is_warm() 
     let line = format!("{}a\u{316}\u{301}\u{302}\u{303}\r\n", "x".repeat(70));
     let mut terminal = small(Normalization::Nfc);
     assert_eq!(allocations_printing(&mut terminal, &line), 0);
+    // A cluster of six marks on one row in eight: fewer clusters than a
+    // page has room for, whose codepoints take more of its arena.
+    let plain = format!("{}\r\n", "x".repeat(79));
+    let text = format!(
+        "{}{}e\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}\r\n",
+        plain.repeat(7),
+        "x".repeat(70)
+    );
+    let mut terminal = small(Normalization::None);
+    assert_eq!(allocations_printing(&mut terminal, &text), 0);
+}
+
+#[test]
+fn printing_text_of_more_styles_than_a_page_has_allocates_nothing_once_the_pool_is_warm() {
+    // 300 colors, one a row, over and over, which grow the table of each
+    // page's styles.
+    let text: String = (0..300u32)
+        .map(|n| {
+            format!(
+                "\x1b[38;2;{};{};9m{}\x1b[m\r\n",
+                n % 256,
+                n / 256,
+                "x".repeat(79)
+            )
+        })
+        .collect();
+    let mut terminal = small(Normalization::None);
+    assert_eq!(allocations_printing(&mut terminal, &text), 0);
 }
 
 #[test]
@@ -211,6 +241,24 @@ fn printing_linked_text_allocates_nothing_once_the_pool_is_warm() {
     let mut terminal = small(Normalization::None);
     assert_eq!(allocations_printing(&mut terminal, line), 0);
     assert_eq!(terminal.row_text(22), "a.txt  b.txt");
+    // A link on one row in ten, of 40 targets: more links than a page has
+    // room for, and few linked cells.
+    let linked = |targets: u32, uri: &dyn Fn(u32) -> String| -> String {
+        (0..targets * 10)
+            .map(|n| match n % 10 {
+                0 => format!("\x1b]8;;{}\x1b\\a\x1b]8;;\x1b\\\r\n", uri(n / 10)),
+                _ => "x\r\n".to_owned(),
+            })
+            .collect()
+    };
+    let text = linked(40, &|n| format!("file:///{n}"));
+    let mut terminal = small(Normalization::None);
+    assert_eq!(allocations_printing(&mut terminal, &text), 0);
+    // Of 20 targets of 200 bytes: fewer links than a page has room for,
+    // whose targets take more of its arena.
+    let text = linked(20, &|n| format!("file:///{n}{}", "a".repeat(190)));
+    let mut terminal = small(Normalization::None);
+    assert_eq!(allocations_printing(&mut terminal, &text), 0);
 }
 
 #[test]

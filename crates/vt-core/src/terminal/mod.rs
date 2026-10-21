@@ -933,7 +933,9 @@ impl Terminal {
     pub fn row_text(&self, y: u16) -> String {
         let (page, row) = self.screen().rows.screen_row(y);
         let mut text = String::new();
-        for (x, cell) in (0..).zip(page.cells(row)) {
+        // Up to `u16::MAX` inclusive: an open range would overflow after the
+        // last cell of a row that wide.
+        for (x, cell) in (0..=u16::MAX).zip(page.cells(row)) {
             match (cell.width(), cell.content()) {
                 (Width::SpacerTail | Width::SpacerHead, _) => {}
                 (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
