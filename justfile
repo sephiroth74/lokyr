@@ -203,25 +203,33 @@ instructions base="": vtebench
     fi
     count --baseline=base --callgrind-limits='ir=3%'
 
-# Fuzz a target for `seconds`, seeded from the parser's tests (needs `cargo install cargo-fuzz --locked`).
-fuzz target="parser" seconds="600": fuzz-seeds
+# libFuzzer's flags for every run: with several workers, a timeout or a run out of memory stops
+# the run, as it does with one, where libFuzzer's fork mode would go on past it.
+fuzz_flags := "-ignore_timeouts=0 -ignore_ooms=0"
+
+# Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus: 4 workers fuzz as much in an hour as one in 4 (needs `cargo install cargo-fuzz --locked`).
+fuzz target="parser" seconds="600" workers="1": fuzz-seeds
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal
     mkdir -p fuzz/corpus/{{ target }}
-    cargo +{{ fuzz_toolchain }} fuzz run {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/parser -- -max_total_time={{ seconds }}
+    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }}
 
-# Fuzz every target at once for `seconds`, a day by default, each on a core of its own; the logs go to fuzz/logs.
-fuzz-all seconds="86400": fuzz-seeds
+# Fuzz every target at once for `seconds`, a day by default, each with `workers` processes that share its corpus, on 3 × `workers` cores; each run's logs go to fuzz/logs, one a target, named for the run's start.
+fuzz-all seconds="86400" workers="1": fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
     mkdir -p fuzz/logs && cd fuzz || exit
+    started=$(date +%Y%m%d-%H%M%S)
     pids=()
     for target in parser terminal differential; do
         mkdir -p corpus/$target
         (
-            cargo +{{ fuzz_toolchain }} fuzz run $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} >logs/$target.log 2>&1
+            log=logs/$target-$started.log
+            cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }} >"$log" 2>&1
             code=$?
-            echo "$target: exit $code"
+            # What the run took, which runs on the same code add up to: the first
+            # minutes of each go to the corpus, which the run reads before it fuzzes.
+            echo "$target: exit $code, {{ workers }} workers for {{ seconds }} s, log $log"
             exit $code
         ) &
         pids+=($!)
