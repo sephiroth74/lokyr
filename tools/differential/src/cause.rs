@@ -649,7 +649,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // nothing.
         Step::Print('\u{FFFD}')
             if (0x80..=0x9F).contains(&seen.byte)
-                && bolt == advanced(before, 1)
+                && bolt == advanced(before, 1, 1)
                 && alacritty == before.cursor
                 && seen.rows_same_but(&[y, bolt.1]) =>
         {
@@ -658,7 +658,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // The VT core takes no cell, and `alacritty_terminal` one.
         Step::Print('\u{D7C7}'..='\u{D7CA}' | '\u{D7FC}'..='\u{D7FF}')
             if bolt == before.cursor
-                && alacritty == advanced(before, 1)
+                && alacritty == advanced(before, 1, 1)
                 && seen.rows_same_but(&[y, alacritty.1]) =>
         {
             Some(Cause::Jamo)
@@ -666,7 +666,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // The VT core widens the cluster by a cell, and `alacritty_terminal`
         // takes none.
         Step::Print('\u{FE0F}')
-            if bolt == advanced(before, 1)
+            if bolt == advanced(before, 1, 1)
                 && alacritty == before.cursor
                 && seen.rows_same_but(&[y, bolt.1]) =>
         {
@@ -754,24 +754,37 @@ fn origin_rows(
     (bolt as usize, alacritty as usize)
 }
 
-/// Where printing `cells` cells of narrow characters takes the cursor from
+/// Where printing `n` characters `width` cells wide takes the cursor from
 /// where it was `before`, on a screen without left and right margins: a
-/// wrap past the bottom margin scrolls, and leaves the cursor there, and
-/// without autowrap the last column takes each character.
-fn advanced(before: &Before, cells: usize) -> At {
+/// wide character that does not fit at the last column leaves it for the
+/// next row, a wrap past the bottom margin scrolls and leaves the cursor
+/// there, and without autowrap the last column takes each character, a
+/// wide one from a column back.
+fn advanced(before: &Before, n: usize, width: usize) -> At {
     let (mut x, mut y, mut pending) = before.cursor;
-    let bottom = before.region.1;
-    for _ in 0..cells {
+    let (cols, bottom) = (before.cols, before.region.1);
+    let next_row = |y: usize| {
+        if y != bottom && y + 1 < before.rows {
+            y + 1
+        } else {
+            y
+        }
+    };
+    for _ in 0..n {
         if pending && before.autowrap {
-            (x, pending) = (0, false);
-            if y != bottom && y + 1 < before.rows {
-                y += 1;
+            (x, y, pending) = (0, next_row(y), false);
+        }
+        if width == 2 && x + 1 == cols {
+            if before.autowrap {
+                (x, y) = (0, next_row(y));
+            } else {
+                x -= 1;
             }
         }
-        if x + 1 == before.cols {
-            pending = true;
-        } else if !pending {
-            x += 1;
+        if x + width >= cols {
+            (x, pending) = (cols - 1, true);
+        } else {
+            x += width;
         }
     }
     (x, y, pending)
@@ -780,7 +793,7 @@ fn advanced(before: &Before, cells: usize) -> At {
 /// Whether `cursor` is where REP of `n` characters, narrow or wide, takes
 /// the cursor from where it was `before`.
 fn repeated(before: &Before, n: usize, cursor: At) -> bool {
-    cursor == advanced(before, n) || cursor == advanced(before, 2 * n)
+    cursor == advanced(before, n, 1) || cursor == advanced(before, n, 2)
 }
 
 /// Whether the cells of `row`, the cursor's, that REP wrote, up to `cursor`
@@ -891,7 +904,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 35] = [
+        let cases: [(&str, Cause, &[u8]); 36] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -935,6 +948,11 @@ mod tests {
                 b"\x1bP1<x\x1b\\t\x7f\x1b[b",
             ),
             ("del-after-ignored-csi", Del, b"\x1b[ 2xt\x7f\x1b[b"),
+            (
+                "del-wide-at-the-end",
+                Del,
+                "\u{4e2d}\x1b[80G\x7f\x1b[b".as_bytes(),
+            ),
             (
                 "insert-wrap",
                 InsertWrap,
