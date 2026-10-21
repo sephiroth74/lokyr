@@ -79,6 +79,7 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     command.env_clear().envs(env);
     let dir_fd = dir.as_raw_fd();
     let descriptors = descriptor_limit();
+    let mut listed = descriptor_list();
     for stdio in 0..3 {
         let slave = Stdio::from(slave.try_clone().map_err(spawn_error)?);
         match stdio {
@@ -94,7 +95,7 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         command.pre_exec(move || {
             enter(dir_fd)?;
             lead_session()?;
-            close_inherited(descriptors);
+            close_inherited(descriptors, &mut listed);
             Ok(())
         });
     }
@@ -465,17 +466,85 @@ fn descriptor_limit() -> libc::c_int {
     libc::c_int::try_from(limit.rlim_cur.min(1 << 16)).unwrap_or(1 << 16)
 }
 
+/// Room for the list of the descriptors that the child has open, which it
+/// asks for between fork and exec, where it cannot allocate: on macOS, for
+/// twice as many as this process has open now, and 64 more, as other
+/// threads can open some before the fork.
+#[cfg(target_os = "macos")]
+fn descriptor_list() -> Vec<libc::proc_fdinfo> {
+    // SAFETY: without a buffer, `proc_pidinfo` tells how many bytes the
+    // list of the process's open descriptors takes, and writes nothing.
+    let bytes = unsafe {
+        libc::proc_pidinfo(
+            libc::getpid(),
+            libc::PROC_PIDLISTFDS,
+            0,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    let open = usize::try_from(bytes).unwrap_or(0) / size_of::<libc::proc_fdinfo>();
+    let none = libc::proc_fdinfo {
+        proc_fd: 0,
+        proc_fdtype: 0,
+    };
+    vec![none; 2 * open + 64]
+}
+
+/// No list: Linux marks the descriptors in one call.
+#[cfg(not(target_os = "macos"))]
+fn descriptor_list() -> Vec<()> {
+    Vec::new()
+}
+
 /// Marks every descriptor from 3 on closed on exec, in the child between
 /// fork and exec, so that the program inherits none that this process did
 /// without the mark, as one that a launcher or a CI runner leaves open:
 /// the program has the terminal alone. Marked rather than closed, so that
 /// `std`'s pipe, which tells the parent that exec failed, works until the
-/// exec. Linux marks them in one call; elsewhere, or on a kernel without
-/// it, each descriptor below `limit` is marked in turn.
+/// exec. Linux marks them in one call, and macOS marks those that the
+/// system lists into `listed`, so that a spawn costs no more with a soft
+/// limit of millions; on a kernel without the call, or with more open than
+/// the list has room for, each descriptor below `limit` is marked in turn.
 ///
 /// It runs between fork and exec, so it calls only async-signal-safe
-/// functions: `fcntl`, and Linux's `close_range` system call.
-fn close_inherited(limit: libc::c_int) {
+/// functions: `fcntl`, `getpid`, Linux's `close_range` system call and
+/// macOS's `proc_pidinfo`, which only wraps a system call.
+fn close_inherited<T>(limit: libc::c_int, listed: &mut [T]) {
+    // Only macOS lists the descriptors.
+    #[cfg(not(target_os = "macos"))]
+    let _ = listed;
+    #[cfg(target_os = "macos")]
+    {
+        let room = libc::c_int::try_from(size_of_val(listed)).unwrap_or(libc::c_int::MAX);
+        // SAFETY: `proc_pidinfo` writes the list of the process's open
+        // descriptors into `listed`, as many as its bytes have room for,
+        // and returns how many bytes it wrote, or 0 if it failed.
+        let bytes = unsafe {
+            libc::proc_pidinfo(
+                libc::getpid(),
+                libc::PROC_PIDLISTFDS,
+                0,
+                listed.as_mut_ptr().cast(),
+                room,
+            )
+        };
+        // A full list may have left descriptors out.
+        if bytes > 0 && bytes < room {
+            let count = bytes as usize / size_of::<libc::proc_fdinfo>();
+            // SAFETY: the list holds `proc_fdinfo` entries, the first
+            // `count` of them written.
+            let infos = unsafe {
+                std::slice::from_raw_parts(listed.as_ptr().cast::<libc::proc_fdinfo>(), count)
+            };
+            for info in infos {
+                if info.proc_fd >= 3 {
+                    mark_closed_on_exec(info.proc_fd);
+                }
+            }
+            return;
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         // SAFETY: `close_range` with `CLOSE_RANGE_CLOEXEC` only marks the
@@ -493,13 +562,18 @@ fn close_inherited(limit: libc::c_int) {
         }
     }
     for fd in 3..limit {
-        // SAFETY: `fcntl` reads and sets the flags of one descriptor, and
-        // fails without effect for one that is not open.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFD);
-            if flags != -1 && flags & libc::FD_CLOEXEC == 0 {
-                libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
-            }
+        mark_closed_on_exec(fd);
+    }
+}
+
+/// Marks descriptor `fd` closed on exec, if it is open: async-signal-safe.
+fn mark_closed_on_exec(fd: libc::c_int) {
+    // SAFETY: `fcntl` reads and sets the flags of one descriptor, and fails
+    // without effect for one that is not open.
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        if flags != -1 && flags & libc::FD_CLOEXEC == 0 {
+            libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
         }
     }
 }

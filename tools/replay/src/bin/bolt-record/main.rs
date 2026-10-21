@@ -867,6 +867,16 @@ mod tests {
     }
 
     #[test]
+    fn a_name_across_three_rows_shows() {
+        // A path of 50 characters on rows of 20, which takes three.
+        let private = ["/Users/zz-someone-zz/Library/Caches/zz-elsewhere-z".to_owned()];
+        assert_eq!(private[0].chars().count(), 50);
+        let mut watch = watch(20, 6, &private);
+        Parser::new().advance(&mut watch, private[0].as_bytes());
+        assert!(watch.shown.is_some());
+    }
+
+    #[test]
     fn a_long_line_costs_the_watch_no_more_than_short_ones() {
         // Names that the text never shows, one as long as a home's folder.
         let private = ["zz-someone-zz", "/Users/zz-someone-zz/Library/Caches"].map(String::from);

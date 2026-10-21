@@ -105,20 +105,57 @@ fn the_program_gets_the_environment_and_the_size() {
     assert_eq!(lines[2], "30 100");
 }
 
+/// The soft limit of this process's descriptors.
+fn descriptor_limit() -> u64 {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `getrlimit` writes the limits into `limit`.
+    let read = unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) };
+    assert_eq!(read, 0, "{}", std::io::Error::last_os_error());
+    limit.rlim_cur
+}
+
+/// A copy of `file`'s descriptor at `at` or the lowest free one above it,
+/// without the mark that closes it on exec, as one that a CI runner or a
+/// launcher leaves open; closed when it drops.
+struct Inherited(libc::c_int);
+
+impl Inherited {
+    fn new(file: &std::fs::File, at: libc::c_int) -> Self {
+        use std::os::fd::AsRawFd;
+        // SAFETY: `fcntl` duplicates the file's descriptor, which stays
+        // open, and the copy has no mark.
+        let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD, at) };
+        assert!(fd >= at, "{}", std::io::Error::last_os_error());
+        Self(fd)
+    }
+}
+
+impl Drop for Inherited {
+    fn drop(&mut self) {
+        // SAFETY: the descriptor is this value's, and nothing else uses it.
+        unsafe { libc::close(self.0) };
+    }
+}
+
 #[test]
 fn the_program_starts_at_home_with_only_the_terminal_open() {
+    let limit = descriptor_limit();
+    let file = std::fs::File::open("/dev/null").unwrap();
+    // A descriptor below the soft limit, which is 256 in the shells that
+    // launchd starts, and one past 65 536 where the limit allows it.
+    let low = Inherited::new(&file, libc::c_int::try_from(limit.min(500) - 1).unwrap());
+    let high = (limit > 70_000).then(|| Inherited::new(&file, 70_000));
     // Every descriptor that the program could have, past the standard ones,
-    // as the tests running at once can open many.
-    let script = r#"pwd; for fd in $(seq 3 1023); do [ -e /dev/fd/$fd ] && echo "open $fd"; done; echo done"#;
-    // A descriptor that this process has without the mark that closes it on
-    // exec, as one that a CI runner or a launcher leaves open.
-    // SAFETY: `fcntl` duplicates standard input to a descriptor from 500
-    // on, which the test closes below.
-    let inherited = unsafe { libc::fcntl(0, libc::F_DUPFD, 500) };
-    assert!(inherited >= 500, "{}", std::io::Error::last_os_error());
-    let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
-    // SAFETY: the test opened it above, and nothing else uses it.
-    unsafe { libc::close(inherited) };
+    // as the tests running at once can open many, and the high one.
+    let high_fd = high.as_ref().map_or(70_000, |high| high.0);
+    let script = format!(
+        r#"pwd; for fd in $(seq 3 1023) {high_fd}; do [ -e /dev/fd/$fd ] && echo "open $fd"; done; echo done"#
+    );
+    let pty = spawn(&Options::new(sh(&script), "xterm-256color")).unwrap();
+    drop((low, high));
     let mut text = String::new();
     pty.reader().unwrap().read_to_string(&mut text).unwrap();
     let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());

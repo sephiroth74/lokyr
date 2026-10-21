@@ -98,11 +98,13 @@ fn a_start_during_an_update_does_not_put_its_deadline_off() {
     // A program that starts an update again and again, never ending it.
     let mut options = sh(r#"while :; do printf '\033[?2026h'; sleep 0.2; done"#);
     options.sync_timeout = Duration::from_secs(1);
+    // From before the program starts, so that the bound below holds however
+    // late the test sees the first update start.
+    let start = Instant::now();
     let session = Session::spawn(&options, || {}).unwrap();
     wait_for(&session, "the update", |terminal| {
         terminal.synchronized_output()
     });
-    let start = Instant::now();
     // The deadline ends the update, and the program's next start, at most
     // 0.2 s later, is a new one: the screen shows between them for too
     // short a time to be looked for, while the count of updates stays.
