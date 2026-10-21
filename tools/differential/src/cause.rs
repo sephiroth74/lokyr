@@ -946,13 +946,21 @@ fn splits(params: &[u16], final_byte: u8, before: &Before) -> bool {
 }
 
 /// Whether text inserted at the cursor goes in at the second half of a
-/// wide character, or pushes one past the row's end: on the cursor's row, or
-/// on the next when a wrap is pending.
+/// wide character, or pushes one past the row's end: on the cursor's row,
+/// or, when a wrap is pending, on the row that the wrap lands in: the next,
+/// or the cursor's own at the last row below the scroll region, which does
+/// not scroll; a wrap at the bottom margin lands in a new row.
 fn inserts_at_a_tail(before: &Before) -> bool {
-    let (row, x) = if before.cursor.2 {
-        (&before.below, 0)
+    let (x, y, pending) = before.cursor;
+    let bottom = before.region.1;
+    let (row, x) = if !pending {
+        (&before.widths, x)
+    } else if y > bottom && y + 1 == before.rows {
+        (&before.widths, 0)
+    } else if y == bottom {
+        return false;
     } else {
-        (&before.widths, before.cursor.0)
+        (&before.below, 0)
     };
     let tail = |x: usize| row.get(x) == Some(&Width::SpacerTail);
     tail(x) || tail(before.cols - 1) || tail(before.cols - 2)
@@ -987,7 +995,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 41] = [
+        let cases: [(&str, Cause, &[u8]); 42] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1087,6 +1095,11 @@ mod tests {
                 "repeat-over-wide",
                 WrapHead,
                 "\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[b".as_bytes(),
+            ),
+            (
+                "insert-at-the-last-row",
+                WideEdit,
+                "\x1b[1;2r\x1b[24;79H\u{4e2d}\x1b[4h\u{e9}".as_bytes(),
             ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];
