@@ -117,6 +117,14 @@ impl Parser {
         self.next_limits = Some(limits);
     }
 
+    /// Whether the parser is in the ground state, between escape
+    /// sequences and control strings, where bytes are text: an ignored
+    /// string, or an ignored control sequence, ends with no call to the
+    /// handler, which this tells.
+    pub fn in_ground(&self) -> bool {
+        self.state == State::Ground
+    }
+
     /// The limits for a control string that starts now.
     fn string_limits(&mut self) -> &Limits {
         if let Some(limits) = self.next_limits.take() {

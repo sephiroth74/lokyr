@@ -85,6 +85,11 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "\x1b[78G\u{4e2d}\x1b[1G[\x1b[4h\x1b[2b".as_bytes().to_vec(),
         ),
         (
+            "del-after-ignored-string",
+            b"\x1bP1<x\x1b\\t\x7f\x1b[b".to_vec(),
+        ),
+        ("del-after-ignored-csi", b"\x1b[ 2xt\x7f\x1b[b".to_vec()),
+        (
             "wide-repeat-below",
             "\x1b[3;71H\u{4e2d}\x1b[H[\x1b[4h\x1b[169b"
                 .as_bytes()
@@ -127,6 +132,8 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-lnm", Lnm, "cursor (0, 1, false) against (1, 1, false)", 0x0247b3315edec024),
     ("case-cbt-first", CbtFirst, "cursor (0, 0, false) against (1, 0, false)", 0x15b9c9b48a1f391a),
     ("case-del", Del, "row 0, column 1: \"t\" against \" \"", 0xf5ff7417417c11f2),
+    ("case-del-after-ignored-string", Del, "row 0, column 1: \"t\" against \" \"", 0xf5ff7417417c11f2),
+    ("case-del-after-ignored-csi", Del, "row 0, column 1: \"t\" against \" \"", 0xf5ff7417417c11f2),
     ("case-insert-wrap", InsertWrap, "row 1, column 2: \"x\" against \" \"", 0x9e9b52e4702fb9e6),
     ("case-rep-reset", RepReset, "cursor (0, 0, false) against (1, 0, false)", 0xdda5b7060e56b3fc),
     ("case-no-wrap-wide", NoWrapWide, "row 0, column 78: \"中\" against \" \"", 0x5295db36c915ae0e),

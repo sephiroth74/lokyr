@@ -85,15 +85,13 @@ pub struct Before {
 }
 
 /// What the comparison keeps track of besides the VT core's state: what
-/// came since the last character printed, `alacritty_terminal`'s tab stop
-/// at the first column, and whether an escape sequence or a string is
-/// under way, in which DEL is no character for vte either.
+/// came since the last character printed, and `alacritty_terminal`'s tab
+/// stop at the first column.
 #[derive(Clone, Copy, Debug)]
 struct Track {
     del: bool,
     reset: bool,
     first_stop: bool,
-    sequence: bool,
 }
 
 impl Default for Track {
@@ -102,16 +100,17 @@ impl Default for Track {
             del: false,
             reset: false,
             first_stop: true,
-            sequence: false,
         }
     }
 }
 
 impl Track {
     /// Notes what `byte` made the VT core do, `step`, with the cursor
-    /// `before` it.
-    fn note(&mut self, byte: u8, step: &Step, before: &Before) {
-        if byte == 0x7F && !self.sequence {
+    /// `before` it, and whether the parser was in the ground state before
+    /// it, where vte prints DEL as a character, and outside of which DEL is
+    /// none for vte either.
+    fn note(&mut self, byte: u8, ground: bool, step: &Step, before: &Before) {
+        if byte == 0x7F && ground {
             self.del = true;
         }
         match step {
@@ -136,13 +135,6 @@ impl Track {
                 0 if before.cursor.0 == 0 => self.first_stop = false,
                 _ => {}
             },
-            _ => {}
-        }
-        match (byte, step) {
-            (0x1B, _) => self.sequence = true,
-            (0x18 | 0x1A, _) | (_, Step::Esc { .. } | Step::Csi { .. } | Step::String) => {
-                self.sequence = false;
-            }
             _ => {}
         }
     }
@@ -272,13 +264,15 @@ pub fn explore_after(
     let mut track = Track::default();
     let mut before = Before::of(pair.terminal(), track);
     for &byte in prefix {
+        let ground = pair.parser.in_ground();
         let step = pair.step(byte);
-        track.note(byte, &step, &before);
+        track.note(byte, ground, &step, &before);
         before = Before::of(pair.terminal(), track);
     }
     for (at, &byte) in (1..).zip(bytes) {
+        let ground = pair.parser.in_ground();
         let step = pair.step(byte);
-        track.note(byte, &step, &before);
+        track.note(byte, ground, &step, &before);
         let after = Before::of(pair.terminal(), track);
         let screens = (!pair.same()).then(|| (pair.bolt(), pair.alacritty()));
         let wide = match step {
