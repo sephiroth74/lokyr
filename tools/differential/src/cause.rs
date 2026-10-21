@@ -703,16 +703,19 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         {
             Some(Cause::NoWrapWide)
         }
-        // A wide character that wraps from the last column over a wide
-        // character at the start of the next row: the spacer head that it
-        // left, at the end of the cursor's row, alone differs.
+        // A wide character that wraps from the last column over half of a
+        // wide character in the first two columns of the next row, where
+        // `alacritty_terminal` empties a spacer head above: the head that
+        // it left, at the end of the cursor's row, alone differs.
         Step::Print(_)
             if seen.wide
                 && before.autowrap
                 && !before.insert
                 && !pending
                 && x + 1 == before.cols
-                && before.below.first() == Some(&Width::Wide)
+                && before.below[..2.min(before.below.len())]
+                    .iter()
+                    .any(|width| matches!(width, Width::Wide | Width::SpacerTail))
                 && seen.rows_same_but(&[y])
                 && bolt == alacritty
                 && bolt_screen.rows[y].get(x).is_some_and(|cell| cell == HEAD)
@@ -916,7 +919,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 37] = [
+        let cases: [(&str, Cause, &[u8]); 38] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1000,6 +1003,11 @@ mod tests {
                 "wrap-over-wide",
                 WrapHead,
                 "\x1b[2;1H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes(),
+            ),
+            (
+                "wrap-over-a-tail",
+                WrapHead,
+                "\x1b[2;2H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes(),
             ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];

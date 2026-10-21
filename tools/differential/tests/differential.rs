@@ -102,6 +102,10 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "\x1b[2;1H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes().to_vec(),
         ),
         (
+            "wrap-over-a-tail",
+            "\x1b[2;2H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes().to_vec(),
+        ),
+        (
             "wide-repeat-below",
             "\x1b[3;71H\u{4e2d}\x1b[H[\x1b[4h\x1b[169b"
                 .as_bytes()
@@ -158,6 +162,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-cha-in-origin", OriginMoves, "row 1, column 4: \"X\" against \" \"", 0x6009f262a6b721ca),
     ("case-wide-repeat", WideEdit, "row 0, column 1: \"[\" against \" \"", 0x0109ad620516917f),
     ("case-wrap-over-wide", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0x56f0605c0088c51f),
+    ("case-wrap-over-a-tail", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0x56f0605c0088c51f),
     ("case-wide-repeat-below", WideEdit, "row 2, column 7: \"[\" against \" \"", 0x3102b1f60d99c22a),
     // vttest: the screens after a switch to 132 columns or back.
     ("vttest:64-67", Deccolm, "row 0, column 0: \"*\" against \"T\"", 0x4eb3eb42cd76c133),
