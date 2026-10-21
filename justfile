@@ -150,37 +150,58 @@ vtebench:
 instructions base="": vtebench
     #!/usr/bin/env bash
     set -euo pipefail
-    # The runner has the library's version, which Cargo.lock holds.
-    version=$(awk '/^name = "gungraun-runner"$/ { getline; gsub(/version = |"/, ""); print }' Cargo.lock)
-    if ! cargo install --list | grep -qx "gungraun-runner v$version:"; then
-        cargo install --locked gungraun-runner --version "$version"
+    # The version of gungraun's runner that the Cargo.lock of directory $1
+    # holds, as the runner runs only the library of its own version.
+    version() { awk '/^name = "gungraun-runner"$/ { getline; gsub(/version = |"/, ""); print }' "$1/Cargo.lock"; }
+    head=$(version .)
+    if ! cargo install --list | grep -qx "gungraun-runner v$head:"; then
+        cargo install --locked gungraun-runner --version "$head"
     fi
-    # Both counts go to one place, for the second to compare with the first;
-    # both builds share the target directory, the repository's unless one is
-    # set, and the checkout of vtebench.
+    # Both counts go to one place, for the second to compare with the first,
+    # and read the one checkout of vtebench, whose place gungraun, which
+    # clears the benchmark's environment, has to pass on.
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
-    export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" BOLT_VTEBENCH="$PWD/target/vtebench"
+    export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" BOLT_VTEBENCH="$PWD/target/vtebench" GUNGRAUN_ENVS=BOLT_VTEBENCH
     count() { cargo bench --locked -p bolt-differential --bench instructions -- "$@"; }
+    # A warning, which a GitHub job shows besides its log.
+    warn() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$1"; else echo "$1"; fi; }
     base="{{ base }}"
     if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-        echo "There is no commit $base: the counts are taken alone."
+        warn "There is no commit $base: the counts are taken alone, against nothing."
         base=""
     fi
-    if [ -n "$base" ]; then
-        tree=$(mktemp -d "${TMPDIR:-/tmp}/instructions.XXXXXX")
-        trap 'git worktree remove --force "$tree"' EXIT
-        git worktree add --quiet --detach "$tree" "$base"
-        if [ -f "$tree/tools/differential/benches/instructions.rs" ]; then
-            (cd "$tree" && count --save-baseline=base)
-        else
-            # The comparison runs all the same, and the counts must not move.
-            echo "$base has no instruction counts: the commit is counted twice, the second time against the first."
-            count --save-baseline=base
-        fi
-        count --baseline=base --callgrind-limits='ir=3%'
+    if [ -z "$base" ]; then
+        count
         exit
     fi
-    count
+    tree=$(mktemp -d "${TMPDIR:-/tmp}/instructions.XXXXXX")
+    trap 'rmdir "$tree"' EXIT
+    git worktree add --quiet --detach "$tree" "$base"
+    trap 'git worktree remove --force "$tree"' EXIT
+    if [ -f "$tree/tools/differential/benches/instructions.rs" ]; then
+        # The base builds apart: cargo tells whether a crate is fresh from
+        # its sources' mtimes, and would take the commit under test, checked
+        # out before the base, for built already. It builds with its own
+        # toolchain, and runs with the runner of its own gungraun.
+        runner="$PATH"
+        if [ "$(version "$tree")" != "$head" ]; then
+            root="$CARGO_TARGET_DIR/gungraun-runner-$(version "$tree")"
+            if [ ! -x "$root/bin/gungraun-runner" ]; then
+                cargo install --locked --root "$root" gungraun-runner --version "$(version "$tree")"
+            fi
+            runner="$root/bin:$PATH"
+        fi
+        (
+            cd "$tree"
+            export CARGO_TARGET_DIR="$CARGO_TARGET_DIR/instructions-base" PATH="$runner"
+            count --save-baseline=base
+        )
+    else
+        # The comparison runs all the same, and the counts must not move.
+        echo "$base has no instruction counts: the commit is counted twice, the second time against the first."
+        count --save-baseline=base
+    fi
+    count --baseline=base --callgrind-limits='ir=3%'
 
 # Fuzz a target for `seconds`, seeded from the parser's tests (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600": fuzz-seeds
@@ -192,9 +213,8 @@ fuzz target="parser" seconds="600": fuzz-seeds
 fuzz-all seconds="86400": fuzz-seeds
     #!/usr/bin/env bash
     set -u
-    rustup toolchain install {{ fuzz_toolchain }} --profile minimal
-    mkdir -p fuzz/logs
-    cd fuzz
+    rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
+    mkdir -p fuzz/logs && cd fuzz || exit
     pids=()
     for target in parser terminal differential; do
         mkdir -p corpus/$target

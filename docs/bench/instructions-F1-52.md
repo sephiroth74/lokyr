@@ -6,7 +6,7 @@ The instructions that the VT core takes for one sample of each of vtebench's sce
 
 - **The benchmark** is `instructions`, in `tools/differential/benches`, with gungraun 0.20.0 and Valgrind from Ubuntu. Its inputs are those of [the throughput report](throughput-F1-50.md): a terminal of 120 by 40 with its default options, fed in reads of 64 KiB. Each scenario's sample is its payload repeated to 1 MiB at least, then given CR LF as a PTY gives it. The reset and the setup are left out of the counts, as gungraun's `setup` leaves them out.
 - **The text for `cat`** comes from a generator that gives the same text each time: words of one to twelve letters, lines of up to fifteen words.
-- **The comparison**: `just instructions <base>` counts the commit that a push or a pull request starts from, in a worktree of it, and then the commit under test against it. A rise of more than 3% in any scenario fails the job. This first run had no base with the benchmark, so it counted the same commit twice: every count came out the same, to the instruction.
+- **The comparison**: `just instructions <base>` counts the commit that a push or a pull request starts from, in a worktree of it, and then the commit under test against it. A rise of more than 3% in any scenario fails the job. The base builds in a target directory of its own, with the toolchain that its `rust-toolchain.toml` names, and runs with the runner of its own gungraun: a commit that changes the toolchain is compared with the counts of another compiler. This first run had no base with the benchmark, so it counted the same commit twice: every count came out the same, to the instruction.
 
 ## Counts
 
