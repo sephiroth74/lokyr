@@ -610,14 +610,14 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && alacritty == before.cursor
                     && repeated(before, first(params), bolt)
                     && repeats_the_last(&bolt_screen.rows[y], before, first(params))
-                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+                    && printed_alone(seen, true, y, reach(params, before), before.region) =>
             {
                 Some(Cause::Del)
             }
             (b"", b'b')
                 if before.reset
                     && bolt == before.cursor
-                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+                    && printed_alone(seen, false, y, reach(params, before), before.region) =>
             {
                 Some(Cause::RepReset)
             }
@@ -825,6 +825,42 @@ fn repeats_the_last(row: &[String], before: &Before, n: usize) -> bool {
     })
 }
 
+/// Whether the screens are the same but for the rows that text from row
+/// `y`, which goes on `reach` rows below it, went in, in the screen of the
+/// core that printed it alone, the VT core if `by_bolt`: a scroll at the
+/// bottom margin moved the other rows of its region up by as many rows as
+/// the text passed it.
+fn printed_alone(
+    seen: &Seen<'_>,
+    by_bolt: bool,
+    y: usize,
+    reach: usize,
+    (top, bottom): (usize, usize),
+) -> bool {
+    let Some((bolt, alacritty)) = seen.screens else {
+        return true;
+    };
+    let (printed, other) = if by_bolt {
+        (bolt, alacritty)
+    } else {
+        (alacritty, bolt)
+    };
+    let rows = printed.rows.len();
+    if y > bottom || y + reach <= bottom {
+        let written: Vec<usize> = (y..=(y + reach).min(rows - 1)).collect();
+        return seen.rows_same_but(&written);
+    }
+    (0..=reach + 1).any(|scrolled| {
+        (0..rows).all(|row| {
+            if row < top || row > bottom {
+                printed.rows[row] == other.rows[row]
+            } else {
+                row + scrolled >= y || printed.rows[row] == other.rows[row + scrolled]
+            }
+        })
+    })
+}
+
 /// The rows that text from row `y` goes on in, `reach` rows below it, and,
 /// when it passes the bottom margin, those that its scroll moves them to.
 fn reached(y: usize, reach: usize, bottom: usize) -> Vec<usize> {
@@ -919,7 +955,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 38] = [
+        let cases: [(&str, Cause, &[u8]); 39] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -973,6 +1009,7 @@ mod tests {
                 Del,
                 "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes(),
             ),
+            ("del-at-the-bottom", Del, b"top\x1b[24;80Hu\x7f\x1b[b"),
             (
                 "insert-wrap",
                 InsertWrap,

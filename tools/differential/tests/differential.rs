@@ -97,6 +97,7 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "del-after-a-move",
             "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes().to_vec(),
         ),
+        ("del-at-the-bottom", b"top\x1b[24;80Hu\x7f\x1b[b".to_vec()),
         (
             "wrap-over-wide",
             "\x1b[2;1H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes().to_vec(),
@@ -152,6 +153,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-del-after-ignored-csi", Del, "row 0, column 1: \"t\" against \" \"", 0xf5ff7417417c11f2),
     ("case-del-wide-at-the-end", Del, "row 0, column 79: \"[head]\" against \" \"", 0x0b5306424d3d308b),
     ("case-del-after-a-move", Del, "row 0, column 4: \"中\" against \" \"", 0x2a9da19bd31e111c),
+    ("case-del-at-the-bottom", Del, "row 0, column 0: \" \" against \"t\"", 0x462aa3d33b1dc967),
     ("case-insert-wrap", InsertWrap, "row 1, column 2: \"x\" against \" \"", 0x9e9b52e4702fb9e6),
     ("case-rep-reset", RepReset, "cursor (0, 0, false) against (1, 0, false)", 0xdda5b7060e56b3fc),
     ("case-no-wrap-wide", NoWrapWide, "row 0, column 78: \"中\" against \" \"", 0x5295db36c915ae0e),
