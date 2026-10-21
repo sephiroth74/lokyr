@@ -67,6 +67,10 @@ pub struct Before {
     pub widths: Vec<Width>,
     /// The width of each cell of the row below the cursor's, if any.
     pub below: Vec<Width>,
+    /// Whether each row below the cursor's, the nearest first, holds a wide
+    /// character, which text inserted can push past the row's end: in insert
+    /// mode alone, as reading every row at each byte would cost.
+    pub wide_below: Vec<bool>,
     /// Whether each column has a tab stop.
     pub tab_stops: Vec<bool>,
     /// Whether DEL came since the last character printed, which vte prints
@@ -167,6 +171,13 @@ impl Before {
             widths: widths(terminal, cursor.y),
             below: if cursor.y + 1 < terminal.rows() {
                 widths(terminal, cursor.y + 1)
+            } else {
+                Vec::new()
+            },
+            wide_below: if terminal.insert_mode() {
+                (cursor.y + 1..terminal.rows())
+                    .map(|y| widths(terminal, y).contains(&Width::SpacerTail))
+                    .collect()
             } else {
                 Vec::new()
             },

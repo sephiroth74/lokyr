@@ -553,14 +553,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 Some(Cause::CbtFirst)
             }
             // REP in insert mode, whose characters push a wide character of
-            // the cursor's row, or of the next where they wrap, past the row's
-            // end, on the rows that they go in, two cells a character at most,
-            // and those that a scroll at the bottom moves them to.
+            // the cursor's row, or of a row below that they wrap to, past the
+            // row's end, on the rows that they go in, two cells a character
+            // at most, and those that a scroll at the bottom moves them to.
             (b"", b'b')
                 if before.insert
                     && (before.widths[x..].contains(&Width::SpacerTail)
-                        || before.below.contains(&Width::SpacerTail))
-                    && seen.rows_same_but(&around(y, 2 * first(params) / before.cols + 1)) =>
+                        || before
+                            .wide_below
+                            .iter()
+                            .take(reach(params, before))
+                            .any(|&wide| wide))
+                    && seen.rows_same_but(&around(y, reach(params, before))) =>
             {
                 Some(Cause::WideEdit)
             }
@@ -640,6 +644,12 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
 /// moves them to.
 fn around(y: usize, reach: usize) -> Vec<usize> {
     (y.saturating_sub(reach)..=y + reach).collect()
+}
+
+/// How many rows below the cursor's the characters that REP with `params`
+/// prints can reach, two cells a character at most.
+fn reach(params: &[u16], before: &Before) -> usize {
+    2 * usize::from(params.first().copied().unwrap_or(0).max(1)) / before.cols + 1
 }
 
 /// `row`'s cells but its cell at column `cols - 1`, without the empty ones
