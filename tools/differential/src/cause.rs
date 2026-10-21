@@ -609,7 +609,12 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 if before.del
                     && alacritty == before.cursor
                     && repeated(before, first(params), bolt)
-                    && repeats_the_last(&bolt_screen.rows[y], before, first(params))
+                    && repeats_the_last(
+                        &bolt_screen.rows[y],
+                        before,
+                        first(params),
+                        reach(params, before),
+                    )
                     && printed_alone(seen, true, y, reach(params, before), before.region) =>
             {
                 Some(Cause::Del)
@@ -806,14 +811,18 @@ fn repeated(before: &Before, n: usize, cursor: At) -> bool {
 
 /// Whether the cells of `row`, the cursor's, that REP of `n` characters
 /// wrote are the character that it repeats, narrow or wide, as far as the
-/// row shows them: from the cursor, when no wrap is pending, and when the
-/// character goes in no character set and takes cells.
-fn repeats_the_last(row: &[String], before: &Before, n: usize) -> bool {
-    let (x, _, pending) = before.cursor;
+/// row shows them: from the cursor, when no wrap is pending, the character
+/// goes in no character set and takes cells, and the text, which goes on
+/// `reach` rows below, cannot have scrolled the row away.
+fn repeats_the_last(row: &[String], before: &Before, n: usize, reach: usize) -> bool {
+    let (x, y, pending) = before.cursor;
     let Some((c, width @ 1..=2)) = before.last_printed else {
         return true;
     };
-    if pending || before.charsets.iter().any(|&set| set != Charset::Ascii) {
+    if pending
+        || y + reach > before.region.1
+        || before.charsets.iter().any(|&set| set != Charset::Ascii)
+    {
         return true;
     }
     let width = usize::from(width);
@@ -955,7 +964,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 39] = [
+        let cases: [(&str, Cause, &[u8]); 40] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1010,6 +1019,11 @@ mod tests {
                 "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes(),
             ),
             ("del-at-the-bottom", Del, b"top\x1b[24;80Hu\x7f\x1b[b"),
+            (
+                "del-past-the-screen",
+                Del,
+                "\u{4e2d}\x7f\x1b[3000b".as_bytes(),
+            ),
             (
                 "insert-wrap",
                 InsertWrap,
@@ -1101,8 +1115,11 @@ mod tests {
             let parted = parted(80, 24, &input).expect("the screens part");
             assert_eq!(explained(&parted, &parted.bolt), Some(expected), "{name}");
             for (bug, screen) in bugs(&parted) {
-                if expected == Highlight && bug == "a far row written" {
-                    // SD's rows, which `alacritty_terminal` scrolls, are any.
+                if bug == "a far row written"
+                    && (expected == Highlight || name == "del-past-the-screen")
+                {
+                    // SD's rows, which `alacritty_terminal` scrolls, and those
+                    // of a REP that writes the whole screen, are any.
                     continue;
                 }
                 assert_eq!(explained(&parted, &screen), None, "{name}, {bug}");
