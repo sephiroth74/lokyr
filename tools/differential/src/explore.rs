@@ -7,6 +7,8 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::{Handler, Params, StringEnd};
 use bolt_vt_core::terminal::{Charset, Shift, Terminal};
 
+#[cfg(test)]
+use crate::Screen;
 use crate::cause::{self, Cause, Seen};
 use crate::{Difference, Pair};
 
@@ -401,4 +403,49 @@ impl Handler for Probe<'_> {
         self.step = Step::String;
         self.terminal.apc_end(end);
     }
+}
+
+/// What the comparison saw at the byte where the screens first part.
+#[cfg(test)]
+pub(crate) struct Parted {
+    pub(crate) step: Step,
+    pub(crate) byte: u8,
+    pub(crate) before: Before,
+    pub(crate) after: Before,
+    pub(crate) bolt: Screen,
+    pub(crate) alacritty: Screen,
+    pub(crate) wide: bool,
+}
+
+/// Feeds `bytes` to a pair of `cols` by `rows` a byte at a time, as
+/// [`explore`] does, and tells what it saw at the first byte where the
+/// screens part, if they do.
+#[cfg(test)]
+pub(crate) fn parted(cols: u16, rows: u16, bytes: &[u8]) -> Option<Parted> {
+    let mut pair = Pair::new(cols, rows);
+    let mut track = Track::default();
+    let mut before = Before::of(pair.terminal(), track);
+    for &byte in bytes {
+        let ground = pair.parser.in_ground();
+        let step = pair.step(byte);
+        track.note(byte, ground, &step, &before);
+        let after = Before::of(pair.terminal(), track);
+        if !pair.same() {
+            let wide = match step {
+                Step::Print(c) => pair.terminal().widths().char_width(c) == 2,
+                _ => false,
+            };
+            return Some(Parted {
+                step,
+                byte,
+                before,
+                after,
+                bolt: pair.bolt(),
+                alacritty: pair.alacritty(),
+                wide,
+            });
+        }
+        before = after;
+    }
+    None
 }

@@ -5,7 +5,7 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::MAX_PARAMS;
 use bolt_vt_core::terminal::{Charset, Shift};
 
-use crate::{Before, HEAD, Screen, Step};
+use crate::{Before, HEAD, Screen, Step, TAIL};
 
 /// A way in which the two cores differ on purpose, each for its reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,11 +282,11 @@ impl Seen<'_> {
         })
     }
 
-    /// The VT core's cursor and `alacritty_terminal`'s, the one before the
-    /// step for both if the screens are the same.
+    /// The VT core's cursor and `alacritty_terminal`'s, the VT core's after
+    /// the step for both if the screens are the same.
     fn cursors(&self) -> (At, At) {
         self.screens.map_or(
-            (self.before.cursor, self.before.cursor),
+            (self.after.cursor, self.after.cursor),
             |(bolt, alacritty)| (bolt.cursor, alacritty.cursor),
         )
     }
@@ -395,7 +395,11 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
         Step::Esc {
             intermediates,
             final_byte: b'8',
-        } if intermediates == b"#" && seen.cells_same() && alacritty == before.cursor => {
+        } if intermediates == b"#"
+            && seen.cells_same()
+            && bolt == (0, 0, false)
+            && alacritty == before.cursor =>
+        {
             Some(Cause::Decaln)
         }
         // The British set, which `alacritty_terminal` does not designate,
@@ -442,13 +446,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 Some(Cause::Decom)
             }
             // CUU, CUD, CNL, CPL, VPR, CHA and HPA in origin mode, below a
-            // top margin, where the rows part and the columns do not.
+            // top margin, where the rows part as each core moves, and the
+            // columns do not.
             (b"", b'A' | b'B' | b'E' | b'F' | b'e' | b'G' | b'`')
                 if before.origin
                     && top > 0
                     && seen.cells_same()
                     && bolt.0 == alacritty.0
-                    && bolt.1 != alacritty.1 =>
+                    && !bolt.2
+                    && !alacritty.2
+                    && bolt.1 != alacritty.1
+                    && (bolt.1, alacritty.1)
+                        == origin_rows(*final_byte, first(params), y, before.region) =>
             {
                 Some(Cause::OriginMoves)
             }
@@ -460,6 +469,8 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && y < top + first(params)
                     && seen.cells_same()
                     && bolt.0 == alacritty.0
+                    && !bolt.2
+                    && !alacritty.2
                     && bolt.1 == top
                     && alacritty.1 < top =>
             {
@@ -473,15 +484,26 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && y + first(params) > bottom
                     && seen.cells_same()
                     && bolt.0 == alacritty.0
+                    && !bolt.2
+                    && !alacritty.2
                     && bolt.1 == bottom
                     && alacritty.1 > bottom =>
             {
                 Some(Cause::Margins)
             }
+            // DCH past the row's end, which empties the VT core's row from the
+            // cursor, and `alacritty_terminal`'s from as many cells back from
+            // the row's end, which keep what the VT core keeps.
             (b"", b'P')
                 if first(params) > before.cols - x
                     && seen.rows_same_but(&[y])
-                    && seen.cursors_same_but_the_wrap() =>
+                    && seen.cursors_same_but_the_wrap()
+                    && bolt_screen.rows[y].len() <= x
+                    && alacritty_screen.rows[y]
+                        == prefix(
+                            &bolt_screen.rows[y],
+                            before.cols - first(params).min(before.cols),
+                        ) =>
             {
                 Some(Cause::Dch)
             }
@@ -556,7 +578,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && seen.cells_same()
                     && bolt.0 == 0
                     && alacritty.0 > 0
-                    && bolt.1 == alacritty.1 =>
+                    && bolt.1 == alacritty.1
+                    && !bolt.2
+                    && alacritty.2 == pending =>
             {
                 Some(Cause::CbtFirst)
             }
@@ -572,7 +596,8 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                             .iter()
                             .take(reach(params, before))
                             .any(|&wide| wide))
-                    && seen.rows_same_but(&around(y, reach(params, before))) =>
+                    && bolt == alacritty
+                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
             {
                 Some(Cause::WideEdit)
             }
@@ -580,8 +605,22 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
             // REP, which repeats a character in one core alone: the one that
             // does nothing leaves its cursor.
-            (b"", b'b') if before.del && alacritty == before.cursor => Some(Cause::Del),
-            (b"", b'b') if before.reset && bolt == before.cursor => Some(Cause::RepReset),
+            (b"", b'b')
+                if before.del
+                    && alacritty == before.cursor
+                    && repeated(before, first(params), bolt)
+                    && repeats_the_last(&bolt_screen.rows[y], before, bolt)
+                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+            {
+                Some(Cause::Del)
+            }
+            (b"", b'b')
+                if before.reset
+                    && bolt == before.cursor
+                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+            {
+                Some(Cause::RepReset)
+            }
             _ => None,
         },
         // LF, VT and FF, IND and RI.
@@ -606,21 +645,40 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             Some(Cause::Tab)
         }
         // The characters whose widths differ, on the rows that they print on.
+        // The VT core prints U+FFFD, one cell, and `alacritty_terminal`
+        // nothing.
         Step::Print('\u{FFFD}')
-            if (0x80..=0x9F).contains(&seen.byte) && seen.rows_same_but(&[y, bolt.1]) =>
+            if (0x80..=0x9F).contains(&seen.byte)
+                && bolt == advanced(before, 1)
+                && alacritty == before.cursor
+                && seen.rows_same_but(&[y, bolt.1]) =>
         {
             Some(Cause::C1)
         }
+        // The VT core takes no cell, and `alacritty_terminal` one.
         Step::Print('\u{D7C7}'..='\u{D7CA}' | '\u{D7FC}'..='\u{D7FF}')
-            if seen.rows_same_but(&[y, bolt.1]) =>
+            if bolt == before.cursor
+                && alacritty == advanced(before, 1)
+                && seen.rows_same_but(&[y, alacritty.1]) =>
         {
             Some(Cause::Jamo)
         }
-        Step::Print('\u{FE0F}') if seen.rows_same_but(&[y, bolt.1]) => Some(Cause::Emoji),
+        // The VT core widens the cluster by a cell, and `alacritty_terminal`
+        // takes none.
+        Step::Print('\u{FE0F}')
+            if bolt == advanced(before, 1)
+                && alacritty == before.cursor
+                && seen.rows_same_but(&[y, bolt.1]) =>
+        {
+            Some(Cause::Emoji)
+        }
         // Text inserted at the second half of a wide character, or that
         // pushes one past the row's end, on the row that it goes in.
         Step::Print(_)
-            if before.insert && inserts_at_a_tail(before) && seen.rows_same_but(&around(y, 1)) =>
+            if before.insert
+                && inserts_at_a_tail(before)
+                && bolt == alacritty
+                && seen.rows_same_but(&around(y, 1)) =>
         {
             Some(Cause::WideEdit)
         }
@@ -631,6 +689,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 && before.insert
                 && !pending
                 && x + 1 == before.cols
+                && bolt == alacritty
                 && seen.rows_same_but(&[y.saturating_sub(1), y, y + 1]) =>
         {
             Some(Cause::InsertWrap)
@@ -639,6 +698,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             if seen.wide
                 && !before.autowrap
                 && x + 1 == before.cols
+                && bolt == alacritty
                 && seen.rows_same_but(&[y]) =>
         {
             Some(Cause::NoWrapWide)
@@ -670,6 +730,91 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
 /// moves them to.
 fn around(y: usize, reach: usize) -> Vec<usize> {
     (y.saturating_sub(reach)..=y + reach).collect()
+}
+
+/// The rows that a move with `final_byte` by `n`, or CHA and HPA, takes the
+/// cursor to from row `y` in origin mode, in the VT core and in
+/// `alacritty_terminal`, with the scroll region `region`: the VT core moves
+/// within the region; `alacritty_terminal` adds the region's top to the row
+/// that it reaches, as if that were relative to it, and stops at its bottom
+/// or at the first row.
+fn origin_rows(
+    final_byte: u8,
+    n: usize,
+    y: usize,
+    (top, bottom): (usize, usize),
+) -> (usize, usize) {
+    let target = match final_byte {
+        b'A' | b'F' => y as isize - n as isize,
+        b'B' | b'E' | b'e' => (y + n) as isize,
+        _ => y as isize,
+    };
+    let bolt = target.clamp(top as isize, bottom as isize);
+    let alacritty = (target + top as isize).clamp(0, bottom as isize);
+    (bolt as usize, alacritty as usize)
+}
+
+/// Where printing `cells` cells of narrow characters takes the cursor from
+/// where it was `before`, on a screen without left and right margins: a
+/// wrap past the bottom margin scrolls, and leaves the cursor there, and
+/// without autowrap the last column takes each character.
+fn advanced(before: &Before, cells: usize) -> At {
+    let (mut x, mut y, mut pending) = before.cursor;
+    let bottom = before.region.1;
+    for _ in 0..cells {
+        if pending && before.autowrap {
+            (x, pending) = (0, false);
+            if y != bottom && y + 1 < before.rows {
+                y += 1;
+            }
+        }
+        if x + 1 == before.cols {
+            pending = true;
+        } else if !pending {
+            x += 1;
+        }
+    }
+    (x, y, pending)
+}
+
+/// Whether `cursor` is where REP of `n` characters, narrow or wide, takes
+/// the cursor from where it was `before`.
+fn repeated(before: &Before, n: usize, cursor: At) -> bool {
+    cursor == advanced(before, n) || cursor == advanced(before, 2 * n)
+}
+
+/// Whether the cells of `row`, the cursor's, that REP wrote, up to `cursor`
+/// on that row, are the character before them, as far as the row shows
+/// it: a narrow character left of the cursor, with no wrap pending.
+fn repeats_the_last(row: &[String], before: &Before, cursor: At) -> bool {
+    let (x, y, pending) = before.cursor;
+    if pending || x == 0 || cursor.1 != y {
+        return true;
+    }
+    let cell = |column: usize| row.get(column).map_or(" ", String::as_str);
+    let last = cell(x - 1);
+    let end = if cursor.2 { cursor.0 + 1 } else { cursor.0 };
+    last == TAIL || (x..end).all(|column| cell(column) == last)
+}
+
+/// The rows that text from row `y` goes on in, `reach` rows below it, and,
+/// when it passes the bottom margin, those that its scroll moves them to.
+fn reached(y: usize, reach: usize, bottom: usize) -> Vec<usize> {
+    if y + reach <= bottom {
+        (y..=y + reach).collect()
+    } else {
+        around(y, reach)
+    }
+}
+
+/// `row`'s first `len` cells, without the empty ones at the end, as
+/// [`Screen`] keeps a row.
+fn prefix(row: &[String], len: usize) -> Vec<String> {
+    let mut cells = row[..row.len().min(len)].to_vec();
+    while cells.last().is_some_and(|cell| cell == " ") {
+        cells.pop();
+    }
+    cells
 }
 
 /// How many rows below the cursor's the characters that REP with `params`
@@ -720,4 +865,201 @@ fn inserts_at_a_tail(before: &Before) -> bool {
 /// The sets that G0 to G3 hold.
 pub(crate) fn sets(charsets: bolt_vt_core::terminal::Charsets) -> [Charset; 4] {
     [Shift::G0, Shift::G1, Shift::G2, Shift::G3].map(|slot| charsets.get(slot))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cause::*;
+    use super::*;
+    use crate::explore::{Parted, parted};
+
+    /// The cause that the rules give the screens that `parted` saw, with
+    /// the VT core's as `bolt`.
+    fn explained(parted: &Parted, bolt: &Screen) -> Option<Cause> {
+        let seen = Seen {
+            step: &parted.step,
+            byte: parted.byte,
+            before: &parted.before,
+            after: &parted.after,
+            screens: (*bolt != parted.alacritty).then_some((bolt, &parted.alacritty)),
+            wide: parted.wide,
+        };
+        ending(&seen).or_else(|| cause(&seen))
+    }
+
+    /// The inputs that show each cause that the screens show, at the byte
+    /// where they part, on a screen of 80 by 24.
+    fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
+        let line_feed = [&[b'a'; 80][..], b"\n"].concat();
+        let cases: [(&str, Cause, &[u8]); 35] = [
+            ("c1", C1, b"a\x80b"),
+            ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
+            ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
+            (
+                "origin-moves",
+                OriginMoves,
+                b"\x1b[5;20r\x1b[?6h\x1b[2;1H\x1b[BX",
+            ),
+            (
+                "origin-moves-up",
+                OriginMoves,
+                b"\x1b[3;10r\x1b[?6h\x1b[4;1H\x1b[2A",
+            ),
+            ("cha-in-origin", OriginMoves, b"\x1b[2;5r\x1b[?6h\x1b[5GX"),
+            ("dch", Dch, b"ABCDEF\x1b[1;2H\x1b[130P"),
+            ("line-feed", LineFeed, &line_feed),
+            ("decom", Decom, b"\x1b[5;10H\x1b[?6lX"),
+            ("decaln", Decaln, b"7\x1b#8"),
+            ("tab", Tab, b"\x1b[80GN\t"),
+            ("scorc", Scorc, b"x\x1b[2u"),
+            ("lines", Lines, b"M\x1b[M"),
+            ("edit-wrap", EditWrap, b"\x1b[80GN\x1b[P"),
+            ("region", Region, b"y\x1b[24;30r"),
+            ("highlight", Highlight, b"x\x1b[;T"),
+            ("ed1", Ed1, b"3\n\x1b[1J"),
+            ("margins", Margins, b"\x1b[5;20r\x1b[5H\x1b[AX"),
+            ("margins-down", Margins, b"\x1b[5;20r\x1b[20H\x1b[BX"),
+            ("wide-edit", WideEdit, b"\xe4\xb8\xad\x08\x1b[K"),
+            ("cbt", Cbt, b"\x1b[80GN\x1b[Z"),
+            ("wide-insert", WideEdit, b"\x1b[4h\xe4\xb8\xad\x08\xc3\xa9"),
+            (
+                "moved-head",
+                MovedHead,
+                "\x1b[79Gx\u{4e2d}\x1b[1;1H\x1b[P".as_bytes(),
+            ),
+            ("cbt-first", CbtFirst, b"\x1b[3gd\x1b[Z"),
+            ("del", Del, b"t\x7f\x1b[b"),
+            (
+                "del-after-ignored-string",
+                Del,
+                b"\x1bP1<x\x1b\\t\x7f\x1b[b",
+            ),
+            ("del-after-ignored-csi", Del, b"\x1b[ 2xt\x7f\x1b[b"),
+            (
+                "insert-wrap",
+                InsertWrap,
+                "\x1b[2;1Hxy\x1b[4h\x1b[1;80H\u{4e2d}".as_bytes(),
+            ),
+            ("rep-reset", RepReset, b" \x1bc\x1b[b"),
+            (
+                "no-wrap-wide",
+                NoWrapWide,
+                "\x1b[?7l\x1b[80G\u{4e2d}".as_bytes(),
+            ),
+            (
+                "wide-insert-wrap",
+                WideEdit,
+                "\x1b[2;79H\u{4e2d}\x1b[4h\x1b[1;80Hab".as_bytes(),
+            ),
+            (
+                "wide-repeat",
+                WideEdit,
+                "\x1b[78G\u{4e2d}\x1b[1G[\x1b[4h\x1b[2b".as_bytes(),
+            ),
+            (
+                "wide-repeat-below",
+                WideEdit,
+                "\x1b[3;71H\u{4e2d}\x1b[H[\x1b[4h\x1b[169b".as_bytes(),
+            ),
+            (
+                "wrap-over-wide",
+                WrapHead,
+                "\x1b[2;1H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes(),
+            ),
+            ("highlight-twice", Highlight, b"x\x1b[1;2T"),
+        ];
+        cases
+            .into_iter()
+            .map(|(name, cause, input)| (name, cause, input.to_vec()))
+            .collect()
+    }
+
+    /// Bugs that a VT core could have, as its screen at the byte where the
+    /// screens part shows them, each named: its cursor a column off or a
+    /// row off, its pending wrap the other way, and a row far from the
+    /// cursor written to.
+    fn bugs(parted: &Parted) -> Vec<(&'static str, Screen)> {
+        let (cols, rows) = (parted.before.cols, parted.before.rows);
+        let screen = &parted.bolt;
+        let (x, y, pending) = screen.cursor;
+        let mut bugs = Vec::new();
+        let mut moved = |name, cursor| {
+            bugs.push((
+                name,
+                Screen {
+                    cursor,
+                    ..screen.clone()
+                },
+            ));
+        };
+        moved(
+            "a column off",
+            (if x + 1 < cols { x + 1 } else { x - 1 }, y, pending),
+        );
+        moved(
+            "a row off",
+            (x, if y + 1 < rows { y + 1 } else { y - 1 }, pending),
+        );
+        moved("the wrap flipped", (x, y, !pending));
+        let far = if parted.before.cursor.1 < rows / 2 {
+            rows - 1
+        } else {
+            0
+        };
+        let mut written = screen.clone();
+        match written.rows[far].first_mut() {
+            Some(cell) => *cell = "#".to_owned(),
+            None => written.rows[far].push("#".to_owned()),
+        }
+        bugs.push(("a far row written", written));
+        bugs
+    }
+
+    #[test]
+    fn each_rule_explains_its_cause_and_none_of_the_bugs_that_look_like_it() {
+        for (name, expected, input) in cases() {
+            let parted = parted(80, 24, &input).expect("the screens part");
+            assert_eq!(explained(&parted, &parted.bolt), Some(expected), "{name}");
+            for (bug, screen) in bugs(&parted) {
+                if expected == Highlight && bug == "a far row written" {
+                    // SD's rows, which `alacritty_terminal` scrolls, are any.
+                    continue;
+                }
+                assert_eq!(explained(&parted, &screen), None, "{name}, {bug}");
+            }
+        }
+    }
+
+    #[test]
+    fn dch_and_del_explain_nothing_of_a_vt_core_that_keeps_or_repeats_the_wrong_cell() {
+        // DCH past the row's end that keeps the cell under the cursor.
+        let dch = parted(80, 24, b"ABCDEFGH\x1b[1;5H\x1b[77P").expect("the screens part");
+        assert_eq!(explained(&dch, &dch.bolt), Some(Dch));
+        let mut kept = dch.bolt.clone();
+        kept.rows[0].push("E".to_owned());
+        assert_eq!(explained(&dch, &kept), None);
+        // REP after DEL that repeats another character.
+        let del = parted(80, 24, b"t\x7f\x1b[b").expect("the screens part");
+        let mut other = del.bolt.clone();
+        other.rows[0][1] = "u".to_owned();
+        assert_eq!(explained(&del, &other), None);
+    }
+
+    #[test]
+    fn a_region_past_the_screen_that_moves_both_cursors_does_not_end_the_comparison() {
+        // The screens are the same, as both cursors went home: the step
+        // shows the VT core's, not the one before it.
+        let parted = parted(80, 24, b"y\x1b[24;30r").expect("the screens part");
+        let mut after = parted.after.clone();
+        after.cursor = (0, 0, false);
+        let seen = Seen {
+            step: &parted.step,
+            byte: parted.byte,
+            before: &parted.before,
+            after: &after,
+            screens: None,
+            wide: false,
+        };
+        assert_eq!(ending(&seen), None);
+    }
 }
