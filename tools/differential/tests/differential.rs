@@ -99,6 +99,10 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
         ),
         ("del-at-the-bottom", b"top\x1b[24;80Hu\x7f\x1b[b".to_vec()),
         (
+            "del-over-a-wide-start",
+            "\x1b[1;80H\u{4e2d}o\x1b[2;1H\x7f\x1b[b".as_bytes().to_vec(),
+        ),
+        (
             "del-past-the-screen",
             "\u{4e2d}\x7f\x1b[3000b".as_bytes().to_vec(),
         ),
@@ -170,6 +174,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-del-wide-at-the-end", Del, "row 0, column 79: \"[head]\" against \" \"", 0x0b5306424d3d308b),
     ("case-del-after-a-move", Del, "row 0, column 4: \"中\" against \" \"", 0x2a9da19bd31e111c),
     ("case-del-at-the-bottom", Del, "row 0, column 0: \" \" against \"t\"", 0x462aa3d33b1dc967),
+    ("case-del-over-a-wide-start", Del, "row 0, column 79: \" \" against \"[head]\"", 0x7c6617e08e176efe),
     ("case-del-past-the-screen", Del, "row 0, column 2: \"中\" against \" \"", 0xb99741f4c86f21a8),
     ("case-insert-wrap", InsertWrap, "row 1, column 2: \"x\" against \" \"", 0x9e9b52e4702fb9e6),
     ("case-rep-reset", RepReset, "cursor (0, 0, false) against (1, 0, false)", 0xdda5b7060e56b3fc),

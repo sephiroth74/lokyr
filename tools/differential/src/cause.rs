@@ -869,7 +869,16 @@ fn printed_alone(
     let rows = printed.rows.len();
     if y > bottom || y + reach <= bottom {
         let written: Vec<usize> = (y..=(y + reach).min(rows - 1)).collect();
-        return seen.rows_same_but(&written);
+        // Text from the first two columns writes over the wide character
+        // that a spacer head above stands for, which goes with it.
+        let x = seen.before.cursor.0;
+        let above = (y > 0 && x <= 1).then(|| y - 1);
+        let cols = seen.before.cols;
+        return (0..rows).all(|row| {
+            written.contains(&row)
+                || printed.rows[row] == other.rows[row]
+                || (Some(row) == above && head_emptied(&printed.rows[row], &other.rows[row], cols))
+        });
     }
     (0..=reach + 1).any(|scrolled| {
         (0..rows).all(|row| {
@@ -880,6 +889,15 @@ fn printed_alone(
             }
         })
     })
+}
+
+/// Whether `printed`, a row of the core that printed, is `other`, the same
+/// row of the other core, but for the spacer head at its end, which the
+/// printing emptied.
+fn head_emptied(printed: &[String], other: &[String], cols: usize) -> bool {
+    other.get(cols - 1).is_some_and(|cell| cell == HEAD)
+        && printed.get(cols - 1).is_none_or(|cell| cell != HEAD)
+        && but_last(printed, cols) == but_last(other, cols)
 }
 
 /// The rows that text from row `y` goes on in, `reach` rows below it, and,
@@ -995,7 +1013,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 42] = [
+        let cases: [(&str, Cause, &[u8]); 43] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1050,6 +1068,11 @@ mod tests {
                 "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes(),
             ),
             ("del-at-the-bottom", Del, b"top\x1b[24;80Hu\x7f\x1b[b"),
+            (
+                "del-over-a-wide-start",
+                Del,
+                "\x1b[1;80H\u{4e2d}o\x1b[2;1H\x7f\x1b[b".as_bytes(),
+            ),
             (
                 "del-past-the-screen",
                 Del,
