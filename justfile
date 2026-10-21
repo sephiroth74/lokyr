@@ -207,29 +207,28 @@ instructions base="": vtebench
 # the run, as it does with one, where libFuzzer's fork mode would go on past it.
 fuzz_flags := "-ignore_timeouts=0 -ignore_ooms=0"
 
-# Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus: 4 workers fuzz as much in an hour as one in 4 (needs `cargo install cargo-fuzz --locked`).
+# Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus: 4 workers fuzz as much in an hour as one in 4; the log goes to fuzz/logs too (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600" workers="1": fuzz-seeds
-    rustup toolchain install {{ fuzz_toolchain }} --profile minimal
-    mkdir -p fuzz/corpus/{{ target }}
-    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} fuzz/corpus/{{ target }} fuzz/seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }}
+    #!/usr/bin/env bash
+    set -u
+    rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
+    just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-$(date +%Y%m%d-%H%M%S).log"
 
 # Fuzz every target at once for `seconds`, a day by default, each with `workers` processes that share its corpus, on 3 × `workers` cores; each run's logs go to fuzz/logs, one a target, named for the run's start.
 fuzz-all seconds="86400" workers="1": fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
-    mkdir -p fuzz/logs && cd fuzz || exit
     started=$(date +%Y%m%d-%H%M%S)
     pids=()
     for target in parser terminal differential; do
-        mkdir -p corpus/$target
         (
             log=logs/$target-$started.log
-            cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} $target corpus/$target seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }} >"$log" 2>&1
+            just --justfile "{{ justfile() }}" _fuzz-run $target {{ seconds }} {{ workers }} "$log" >/dev/null
             code=$?
             # What the run took, which runs on the same code add up to: the first
             # minutes of each go to the corpus, which the run reads before it fuzzes.
-            echo "$target: exit $code, {{ workers }} workers for {{ seconds }} s, log $log"
+            echo "$target: exit $code, {{ workers }} workers for {{ seconds }} s, log fuzz/$log"
             exit $code
         ) &
         pids+=($!)
@@ -240,6 +239,23 @@ fuzz-all seconds="86400" workers="1": fuzz-seeds
         wait "$pid" || failed=1
     done
     exit $failed
+
+# Run one fuzz target, its output to the terminal and to `log`, under fuzz/, and fail as it does.
+_fuzz-run target seconds workers log:
+    #!/usr/bin/env bash
+    set -u
+    cd fuzz || exit
+    mkdir -p "corpus/{{ target }}" "$(dirname "{{ log }}")"
+    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }} 2>&1 | tee "{{ log }}"
+    code=${PIPESTATUS[0]}
+    # With several workers, libFuzzer exits with the status that stopped one, as waitpid
+    # gives it: a crash's 19712, which the shell takes modulo 256, as 0. Its log tells.
+    exiting=$(grep -oE '^INFO: exiting: [0-9]+' "{{ log }}" | tail -1 | grep -oE '[0-9]+$')
+    if [ "$code" -eq 0 ] && [ "${exiting:-0}" != 0 ]; then
+        echo "{{ target }} stopped: libFuzzer exited with $exiting" >&2
+        code=1
+    fi
+    exit $code
 
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
