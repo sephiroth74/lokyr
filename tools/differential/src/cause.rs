@@ -605,6 +605,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
             // REP, which repeats a character in one core alone: the one that
             // does nothing leaves its cursor.
+            // REP of a wide character whose copies wrap from the last column
+            // over half of a wide character at the start of a row below: the
+            // spacer heads that they left, at the rows' ends, alone differ.
+            (b"", b'b')
+                if before.last_printed.is_some_and(|(_, width)| width == 2)
+                    && before.autowrap
+                    && !before.insert
+                    && bolt == alacritty
+                    && heads_alone(bolt_screen, alacritty_screen, before.cols) =>
+            {
+                Some(Cause::WrapHead)
+            }
             (b"", b'b')
                 if before.del
                     && alacritty == before.cursor
@@ -880,6 +892,17 @@ fn reached(y: usize, reach: usize, bottom: usize) -> Vec<usize> {
     }
 }
 
+/// Whether the screens' rows differ in their last cells alone, where the VT
+/// core's has a spacer head and `alacritty_terminal`'s none.
+fn heads_alone(bolt: &Screen, alacritty: &Screen, cols: usize) -> bool {
+    bolt.rows.len() == alacritty.rows.len()
+        && bolt.rows.iter().zip(&alacritty.rows).all(|(ours, theirs)| {
+            ours == theirs
+                || (ours.get(cols - 1).is_some_and(|cell| cell == HEAD)
+                    && but_last(ours, cols) == but_last(theirs, cols))
+        })
+}
+
 /// `row`'s first `len` cells, without the empty ones at the end, as
 /// [`Screen`] keeps a row.
 fn prefix(row: &[String], len: usize) -> Vec<String> {
@@ -964,7 +987,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 40] = [
+        let cases: [(&str, Cause, &[u8]); 41] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1059,6 +1082,11 @@ mod tests {
                 "wrap-over-a-tail",
                 WrapHead,
                 "\x1b[2;2H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes(),
+            ),
+            (
+                "repeat-over-wide",
+                WrapHead,
+                "\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[b".as_bytes(),
             ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];
