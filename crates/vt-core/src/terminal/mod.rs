@@ -738,6 +738,12 @@ impl Terminal {
         self.autowrap = on;
     }
 
+    /// The last character given to print, before the character sets,
+    /// which REP repeats, if any.
+    pub fn last_printed(&self) -> Option<char> {
+        self.last_printed
+    }
+
     /// Whether insert mode (IRM) is on.
     pub fn insert_mode(&self) -> bool {
         self.insert

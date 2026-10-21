@@ -75,6 +75,8 @@ pub struct Before {
     pub wide_below: Vec<bool>,
     /// Whether each column has a tab stop.
     pub tab_stops: Vec<bool>,
+    /// The character that REP repeats, and its width, if any.
+    pub last_printed: Option<(char, u8)>,
     /// Whether DEL came since the last character printed, which vte prints
     /// as one.
     pub del: bool,
@@ -176,6 +178,9 @@ impl Before {
                 Vec::new()
             },
             tab_stops: (0..terminal.cols()).map(|x| terminal.tab_stop(x)).collect(),
+            last_printed: terminal
+                .last_printed()
+                .map(|c| (c, terminal.widths().char_width(c))),
             del: track.del,
             reset: track.reset,
             first_stop: track.first_stop,

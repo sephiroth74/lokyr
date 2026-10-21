@@ -609,7 +609,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 if before.del
                     && alacritty == before.cursor
                     && repeated(before, first(params), bolt)
-                    && repeats_the_last(&bolt_screen.rows[y], before, bolt)
+                    && repeats_the_last(&bolt_screen.rows[y], before, first(params))
                     && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
             {
                 Some(Cause::Del)
@@ -790,24 +790,36 @@ fn advanced(before: &Before, n: usize, width: usize) -> At {
     (x, y, pending)
 }
 
-/// Whether `cursor` is where REP of `n` characters, narrow or wide, takes
-/// the cursor from where it was `before`.
+/// Whether `cursor` is where the VT core's REP of `n` characters takes the
+/// cursor from where it was `before`: by the cells of the character that it
+/// repeats, or of either width when that is not known.
 fn repeated(before: &Before, n: usize, cursor: At) -> bool {
-    cursor == advanced(before, n, 1) || cursor == advanced(before, n, 2)
+    match before.last_printed {
+        Some((_, 0)) => cursor == before.cursor,
+        Some((_, width @ 1..=2)) => cursor == advanced(before, n, usize::from(width)),
+        _ => cursor == advanced(before, n, 1) || cursor == advanced(before, n, 2),
+    }
 }
 
-/// Whether the cells of `row`, the cursor's, that REP wrote, up to `cursor`
-/// on that row, are the character before them, as far as the row shows
-/// it: a narrow character left of the cursor, with no wrap pending.
-fn repeats_the_last(row: &[String], before: &Before, cursor: At) -> bool {
-    let (x, y, pending) = before.cursor;
-    if pending || x == 0 || cursor.1 != y {
+/// Whether the cells of `row`, the cursor's, that REP of `n` characters
+/// wrote are the character that it repeats, narrow or wide, as far as the
+/// row shows them: from the cursor, when no wrap is pending, and when the
+/// character goes in no character set and takes cells.
+fn repeats_the_last(row: &[String], before: &Before, n: usize) -> bool {
+    let (x, _, pending) = before.cursor;
+    let Some((c, width @ 1..=2)) = before.last_printed else {
+        return true;
+    };
+    if pending || before.charsets.iter().any(|&set| set != Charset::Ascii) {
         return true;
     }
+    let width = usize::from(width);
     let cell = |column: usize| row.get(column).map_or(" ", String::as_str);
-    let last = cell(x - 1);
-    let end = if cursor.2 { cursor.0 + 1 } else { cursor.0 };
-    last == TAIL || (x..end).all(|column| cell(column) == last)
+    let c = c.to_string();
+    (0..n.min((before.cols - x) / width)).all(|i| {
+        let column = x + i * width;
+        cell(column) == c && (width == 1 || cell(column + 1) == TAIL)
+    })
 }
 
 /// The rows that text from row `y` goes on in, `reach` rows below it, and,
@@ -904,7 +916,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 36] = [
+        let cases: [(&str, Cause, &[u8]); 37] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -952,6 +964,11 @@ mod tests {
                 "del-wide-at-the-end",
                 Del,
                 "\u{4e2d}\x1b[80G\x7f\x1b[b".as_bytes(),
+            ),
+            (
+                "del-after-a-move",
+                Del,
+                "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes(),
             ),
             (
                 "insert-wrap",
