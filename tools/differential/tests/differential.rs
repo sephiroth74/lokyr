@@ -33,6 +33,10 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
         ("dch", b"ABCDEF\x1b[1;2H\x1b[130P".to_vec()),
         ("line-feed", line_feed),
         ("decom", b"\x1b[5;10H\x1b[?6lX".to_vec()),
+        (
+            "decom-after-the-restore",
+            b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?1049;6l".to_vec(),
+        ),
         ("decaln", b"7\x1b#8".to_vec()),
         ("tab", b"\x1b[80GN\t".to_vec()),
         ("unsupported", b"x\x1b6".to_vec()),
@@ -180,6 +184,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-dch", Dch, "row 0, column 0: \"A\" against \" \"", 0x172453be47d33284),
     ("case-line-feed", LineFeed, "cursor (79, 1, false) against (79, 1, true)", 0x6c13d188f362634c),
     ("case-decom", Decom, "row 0, column 0: \"X\" against \" \"", 0x240256643c4545cf),
+    ("case-decom-after-the-restore", Decom, "cursor (0, 0, false) against (9, 4, false)", 0x2ab210ef8c369348),
     ("case-decaln", Decaln, "cursor (0, 0, false) against (1, 0, false)", 0x37fede7160f1291c),
     ("case-tab", Tab, "cursor (79, 0, true) against (0, 1, false)", 0x6eb63fd2180f4ee3),
     ("case-unsupported", Unsupported, "cursor (0, 0, false) against (1, 0, false)", 0xa4ee28bcf58572da),

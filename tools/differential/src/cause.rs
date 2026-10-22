@@ -432,11 +432,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             final_byte,
             ..
         } => match (intermediates.as_slice(), final_byte) {
+            // DECOM's reset, which `alacritty_terminal`'s cursor stays
+            // through: where it was, or where a reset of 1049 before it in
+            // the sequence brought back the saved cursor, in both cores.
             (b"?", b'l')
                 if params.contains(&6)
                     && seen.cells_same()
                     && bolt == (0, 0, false)
-                    && place(alacritty) == (x, y) =>
+                    && (place(alacritty) == (x, y)
+                        || params
+                            .iter()
+                            .position(|&mode| mode == 1049)
+                            .is_some_and(|at| params[at..].contains(&6))) =>
             {
                 Some(Cause::Decom)
             }
@@ -1001,7 +1008,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 39] = [
+        let cases: [(&str, Cause, &[u8]); 40] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1019,6 +1026,11 @@ mod tests {
             ("dch", Dch, b"ABCDEF\x1b[1;2H\x1b[130P"),
             ("line-feed", LineFeed, &line_feed),
             ("decom", Decom, b"\x1b[5;10H\x1b[?6lX"),
+            (
+                "decom-after-the-restore",
+                Decom,
+                b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?1049;6l",
+            ),
             ("decaln", Decaln, b"7\x1b#8"),
             ("tab", Tab, b"\x1b[80GN\t"),
             ("scorc", Scorc, b"x\x1b[2u"),
