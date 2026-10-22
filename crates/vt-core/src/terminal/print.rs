@@ -353,13 +353,17 @@ impl Terminal {
         // do, so it fits in the next row, or one column back.
         let Cursor { x, y, .. } = self.cursor();
         let end = self.line_end(x);
-        let mut placed_head = false;
+        // Whether the head that this character leaves is on the row above
+        // it: when the wrap takes it to another row, down or by scrolling,
+        // rather than back to the start of the same one, as at the last row
+        // below the scroll region.
+        let mut head_left_above = false;
         if width == 2 && x == end - 1 {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
+                head_left_above = self.index_moves_on();
                 self.wrap();
-                placed_head = true;
             } else {
                 self.screen_mut().cursor.x = x - 1;
             }
@@ -374,7 +378,7 @@ impl Terminal {
         // The row's page is found once, for the spacer head as well, which
         // stays when this character just left it.
         let start = self.margins.left;
-        let head_above = !insert && !placed_head && y > 0 && x <= start + 1;
+        let head_above = !insert && !head_left_above && y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
             if !insert {

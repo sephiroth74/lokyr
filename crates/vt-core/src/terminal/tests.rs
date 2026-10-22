@@ -5439,6 +5439,16 @@ fn a_wide_character_that_wraps_over_another_keeps_its_spacer_head() {
             "{over:?}"
         );
     }
+    // At the last row below the scroll region, the wrap goes back to the
+    // start of the same row: the head above is another character's, which
+    // the write goes over, and goes with it.
+    let mut term = Term::new(4, 4);
+    term.feed("\x1b[1;2r\x1b[3;4H\u{6587}");
+    assert_eq!(term.cell(3, 2).width(), Width::SpacerHead);
+    term.feed("\x1b[4;4H\u{4e2d}");
+    assert_eq!(term.cell(3, 2).width(), Width::Narrow);
+    assert_eq!(term.cell(3, 3).width(), Width::SpacerHead);
+    assert_eq!(term.cell(0, 3).content(), Content::Char('\u{4e2d}'));
 }
 
 #[test]
