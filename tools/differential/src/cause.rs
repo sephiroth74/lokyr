@@ -632,6 +632,22 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             {
                 Some(Cause::WrapHead)
             }
+            // REP of a wide character without autowrap, whose copies reach
+            // the last column: the VT core's last copy goes one column back,
+            // over half of the copy before it, and `alacritty_terminal`
+            // drops it. The row's last three cells alone differ.
+            (b"", b'b')
+                if before.last_printed.is_some_and(|(_, width)| width == 2)
+                    && !before.autowrap
+                    && !before.insert
+                    && 2 * first(params) > before.cols - x
+                    && bolt == alacritty
+                    && seen.rows_same_but(&[y])
+                    && prefix(&bolt_screen.rows[y], before.cols - 3)
+                        == prefix(&alacritty_screen.rows[y], before.cols - 3) =>
+            {
+                Some(Cause::NoWrapWide)
+            }
             (b"", b'b')
                 if before.reset
                     && bolt == before.cursor
@@ -982,7 +998,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 37] = [
+        let cases: [(&str, Cause, &[u8]); 38] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1075,6 +1091,11 @@ mod tests {
                 WideEdit,
                 "\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b".as_bytes(),
             ),
+            (
+                "repeat-no-wrap-wide",
+                NoWrapWide,
+                "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes(),
+            ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];
         cases
@@ -1147,6 +1168,16 @@ mod tests {
         let mut kept = dch.bolt.clone();
         kept.rows[0].push("E".to_owned());
         assert_eq!(explained(&dch, &kept), None);
+    }
+
+    #[test]
+    fn rep_without_autowrap_explains_nothing_of_a_vt_core_that_changes_the_row_before_its_end() {
+        let rep =
+            parted(80, 24, "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes()).expect("the screens part");
+        assert_eq!(explained(&rep, &rep.bolt), Some(NoWrapWide));
+        let mut changed = rep.bolt.clone();
+        changed.rows[0][0] = "#".to_owned();
+        assert_eq!(explained(&rep, &changed), None);
     }
 
     #[test]
