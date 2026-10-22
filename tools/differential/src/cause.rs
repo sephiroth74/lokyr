@@ -600,6 +600,20 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
             // REP, which repeats a character in one core alone: the one that
             // does nothing leaves its cursor.
+            // REP in insert mode of a wide character from the last column,
+            // whose first copy wraps as InsertWrap tells, inserted in the
+            // next row in the VT core and written over its first cells in
+            // `alacritty_terminal`; the copies after it insert in both.
+            (b"", b'b')
+                if before.insert
+                    && before.last_printed.is_some_and(|(_, width)| width == 2)
+                    && !pending
+                    && x + 1 == before.cols
+                    && bolt == alacritty
+                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+            {
+                Some(Cause::InsertWrap)
+            }
             // REP of a wide character whose copies wrap from the last column
             // over half of a wide character at the start of a row below: the
             // spacer heads that they left, at the rows' ends, alone differ.
@@ -949,7 +963,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 35] = [
+        let cases: [(&str, Cause, &[u8]); 36] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1021,6 +1035,11 @@ mod tests {
                 "wrap-over-a-tail",
                 WrapHead,
                 "\x1b[2;2H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes(),
+            ),
+            (
+                "repeat-insert-wrap",
+                InsertWrap,
+                "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;80H\x1b[4h\x1b[2b".as_bytes(),
             ),
             (
                 "repeat-over-wide",

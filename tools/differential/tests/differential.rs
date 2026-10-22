@@ -92,6 +92,12 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "\x1b[2;2H\u{4e2d}\x1b[1;80H\u{6587}".as_bytes().to_vec(),
         ),
         (
+            "repeat-insert-wrap",
+            "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;80H\x1b[4h\x1b[2b"
+                .as_bytes()
+                .to_vec(),
+        ),
+        (
             "repeat-over-wide",
             "\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[b"
                 .as_bytes()
@@ -186,6 +192,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-wide-repeat", WideEdit, "row 0, column 1: \"[\" against \" \"", 0x0109ad620516917f),
     ("case-wrap-over-wide", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0x56f0605c0088c51f),
     ("case-wrap-over-a-tail", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0x56f0605c0088c51f),
+    ("case-repeat-insert-wrap", InsertWrap, "row 1, column 4: \"x\" against \" \"", 0x3dc2722774760cda),
     ("case-repeat-over-wide", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0xbbc9d585bdff0f63),
     ("case-insert-at-the-last-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x24688a3499ae64f6),
     ("case-wide-repeat-below", WideEdit, "row 2, column 7: \"[\" against \" \"", 0x3102b1f60d99c22a),
