@@ -582,7 +582,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             // REP in insert mode, whose characters push a wide character of
             // the cursor's row, or of a row below that they wrap to, past the
             // row's end, on the rows that they go in, two cells a character
-            // at most, and those that a scroll at the bottom moves them to.
+            // at most, and those that a scroll at the bottom moves them to;
+            // or of the cursor's row from its start, which they wrap back to
+            // from the last row below the scroll region, a wide character
+            // that was there or one of their own.
             (b"", b'b')
                 if before.insert
                     && (before.widths[x..].contains(&Width::SpacerTail)
@@ -590,7 +593,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                             .wide_below
                             .iter()
                             .take(reach(params, before))
-                            .any(|&wide| wide))
+                            .any(|&wide| wide)
+                        || (repeats_over_its_row(params, before)
+                            && (before.widths.contains(&Width::SpacerTail)
+                                || before.last_printed.is_some_and(|(_, width)| width == 2))))
                     && bolt == alacritty
                     && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
             {
@@ -887,6 +893,19 @@ fn reach(params: &[u16], before: &Before) -> usize {
     2 * usize::from(params.first().copied().unwrap_or(0).max(1)) / before.cols + 1
 }
 
+/// Whether REP with `params` wraps back to the start of the cursor's row,
+/// as a wrap does from the last row below the scroll region, which scrolls
+/// nothing: its copies take more cells than the row has left, or the wrap
+/// is pending.
+fn repeats_over_its_row(params: &[u16], before: &Before) -> bool {
+    let (x, y, pending) = before.cursor;
+    let width = before
+        .last_printed
+        .map_or(1, |(_, width)| usize::from(width));
+    let n = usize::from(params.first().copied().unwrap_or(0).max(1));
+    y > before.region.1 && y + 1 == before.rows && (pending || n * width > before.cols - x)
+}
+
 /// `row`'s cells but its cell at column `cols - 1`, without the empty ones
 /// at the end, as [`Screen`] keeps a row.
 fn but_last(row: &[String], cols: usize) -> Vec<String> {
@@ -963,7 +982,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 36] = [
+        let cases: [(&str, Cause, &[u8]); 37] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1050,6 +1069,11 @@ mod tests {
                 "insert-at-the-last-row",
                 WideEdit,
                 "\x1b[1;2r\x1b[24;79H\u{4e2d}\x1b[4h\u{e9}".as_bytes(),
+            ),
+            (
+                "repeat-over-its-row",
+                WideEdit,
+                "\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b".as_bytes(),
             ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];

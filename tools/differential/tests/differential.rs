@@ -115,6 +115,12 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
                 .as_bytes()
                 .to_vec(),
         ),
+        (
+            "repeat-over-its-row",
+            "\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b"
+                .as_bytes()
+                .to_vec(),
+        ),
         // DEL, which the comparison holds back from `alacritty_terminal`: REP
         // after it repeats the same character in both, and the screens never
         // part.
@@ -196,6 +202,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-repeat-over-wide", WrapHead, "row 0, column 79: \"[head]\" against \" \"", 0xbbc9d585bdff0f63),
     ("case-insert-at-the-last-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x24688a3499ae64f6),
     ("case-wide-repeat-below", WideEdit, "row 2, column 7: \"[\" against \" \"", 0x3102b1f60d99c22a),
+    ("case-repeat-over-its-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x313398f00735dab8),
     // vttest: the screens after a switch to 132 columns or back.
     ("vttest:64-67", Deccolm, "row 0, column 0: \"*\" against \"T\"", 0x4eb3eb42cd76c133),
     ("vttest:84", Deccolm, "row 0, column 6: \"*\" against \" \"", 0x77dddcea318ef500),
