@@ -606,15 +606,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
             // REP, which repeats a character in one core alone: the one that
             // does nothing leaves its cursor.
-            // REP in insert mode of a wide character from the last column,
-            // whose first copy wraps as InsertWrap tells, inserted in the
-            // next row in the VT core and written over its first cells in
-            // `alacritty_terminal`; the copies after it insert in both.
+            // REP in insert mode of a wide character, one of whose copies
+            // lands at the last column, as the first does from it, or a later
+            // one when the cells left from the cursor are odd: that copy wraps
+            // as InsertWrap tells, inserted in the next row in the VT core and
+            // written over its first cells in `alacritty_terminal`; the copies
+            // after it insert in both.
             (b"", b'b')
                 if before.insert
                     && before.last_printed.is_some_and(|(_, width)| width == 2)
                     && !pending
-                    && x + 1 == before.cols
+                    && (before.cols - x) % 2 == 1
+                    && first(params) > (before.cols - 1 - x) / 2
                     && bolt == alacritty
                     && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
             {
@@ -998,7 +1001,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 38] = [
+        let cases: [(&str, Cause, &[u8]); 39] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1095,6 +1098,11 @@ mod tests {
                 "repeat-no-wrap-wide",
                 NoWrapWide,
                 "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes(),
+            ),
+            (
+                "repeat-insert-wrap-later",
+                InsertWrap,
+                "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;76H\x1b[4h\x1b[4b".as_bytes(),
             ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];
