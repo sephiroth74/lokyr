@@ -1,6 +1,7 @@
 //! Programs started in a PTY, as a shell sees them.
 
 use std::io::{Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -56,13 +57,16 @@ fn sh(script: &str) -> Program {
 
 #[test]
 fn a_shell_reads_its_terminal_and_term() {
-    let script = r#"tty; echo "$TERM"; echo controlling > /dev/tty; read line; echo "got $line""#;
+    // `[ -t 0 ]` rather than `tty`: macOS's `ttyname`, which `tty` calls,
+    // looks for the terminal's name by reading `/dev` an entry at a time,
+    // and at times misses one that is there. The name is checked below,
+    // through the device that it opens.
+    let script = r#"[ -t 0 ] && echo terminal; echo "$TERM"; echo controlling > /dev/tty; read line; echo "got $line""#;
     let pty = spawn(&Options::new(sh(script), "xterm-test")).unwrap();
     let mut output = Output::new(pty.reader().unwrap());
     let text = output.until("controlling\r\n").to_owned();
     let lines: Vec<&str> = text.split("\r\n").collect();
-    assert_eq!(lines[0], pty.tty_name().to_str().unwrap(), "the tty");
-    assert!(lines[0].starts_with("/dev/"));
+    assert_eq!(lines[0], "terminal", "the shell's input is a terminal");
     assert_eq!(lines[1], "xterm-test");
     // Writing to /dev/tty works only with a controlling terminal, which
     // is the PTY, since it came back here.
@@ -76,8 +80,21 @@ fn a_shell_reads_its_terminal_and_term() {
         Some(pid),
         "and its terminal's foreground"
     );
+    // The name is the terminal's: what is written to it comes out of the
+    // master.
+    assert!(pty.tty_name().starts_with("/dev/"));
+    let mut named = std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NOCTTY)
+        .open(pty.tty_name())
+        .unwrap();
+    named.write_all(b"through its name\n").unwrap();
+    drop(named);
+    // What is typed reaches the shell's input, which the terminal is.
     pty.writer().unwrap().write_all(b"typed\n").unwrap();
-    assert!(output.rest().contains("got typed\r\n"));
+    let rest = output.rest();
+    assert!(rest.contains("through its name\r\n"), "{rest:?}");
+    assert!(rest.contains("got typed\r\n"), "{rest:?}");
 }
 
 #[test]
