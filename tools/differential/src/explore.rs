@@ -10,7 +10,7 @@ use bolt_vt_core::terminal::{Charset, Shift, Terminal};
 #[cfg(test)]
 use crate::Screen;
 use crate::cause::{self, Cause, Seen};
-use crate::{Difference, Pair};
+use crate::{DEL, Difference, Pair};
 
 /// What a byte made the VT core do, as its parser dispatched it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,9 +77,6 @@ pub struct Before {
     pub tab_stops: Vec<bool>,
     /// The character that REP repeats, and its width, if any.
     pub last_printed: Option<(char, u8)>,
-    /// Whether DEL came since the last character printed, which vte prints
-    /// as one.
-    pub del: bool,
     /// Whether RIS came since the last character printed, which vte's
     /// parser keeps for REP.
     pub reset: bool,
@@ -93,7 +90,6 @@ pub struct Before {
 /// stop at the first column.
 #[derive(Clone, Copy, Debug)]
 struct Track {
-    del: bool,
     reset: bool,
     first_stop: bool,
 }
@@ -101,7 +97,6 @@ struct Track {
 impl Default for Track {
     fn default() -> Self {
         Self {
-            del: false,
             reset: false,
             first_stop: true,
         }
@@ -109,16 +104,10 @@ impl Default for Track {
 }
 
 impl Track {
-    /// Notes what `byte` made the VT core do, `step`, with the cursor
-    /// `before` it, and whether the parser was in the ground state before
-    /// it, where vte prints DEL as a character, and outside of which DEL is
-    /// none for vte either.
-    fn note(&mut self, byte: u8, ground: bool, step: &Step, before: &Before) {
-        if byte == 0x7F && ground {
-            self.del = true;
-        }
+    /// Notes what the VT core did, `step`, with the cursor `before` it.
+    fn note(&mut self, step: &Step, before: &Before) {
         match step {
-            Step::Print(_) => (self.del, self.reset) = (false, false),
+            Step::Print(_) => self.reset = false,
             Step::Esc {
                 intermediates,
                 final_byte: b'c',
@@ -181,7 +170,6 @@ impl Before {
             last_printed: terminal
                 .last_printed()
                 .map(|c| (c, terminal.widths().char_width(c))),
-            del: track.del,
             reset: track.reset,
             first_stop: track.first_stop,
         }
@@ -271,15 +259,13 @@ pub fn explore_after(
     let mut track = Track::default();
     let mut before = Before::of(pair.terminal(), track);
     for &byte in prefix {
-        let ground = pair.parser.in_ground();
         let step = pair.step(byte);
-        track.note(byte, ground, &step, &before);
+        track.note(&step, &before);
         before = Before::of(pair.terminal(), track);
     }
     for (at, &byte) in (1..).zip(bytes) {
-        let ground = pair.parser.in_ground();
         let step = pair.step(byte);
-        track.note(byte, ground, &step, &before);
+        track.note(&step, &before);
         let after = Before::of(pair.terminal(), track);
         let screens = (!pair.same()).then(|| (pair.bolt(), pair.alacritty()));
         let wide = match step {
@@ -318,8 +304,11 @@ impl Pair {
             terminal: &mut self.bolt,
             step: Step::Nothing,
         };
+        let ground = self.parser.in_ground();
         self.parser.advance(&mut probe, &[byte]);
-        self.processor.advance(&mut self.alacritty, &[byte]);
+        if !(byte == DEL && ground) {
+            self.processor.advance(&mut self.alacritty, &[byte]);
+        }
         probe.step
     }
 }
@@ -431,9 +420,8 @@ pub(crate) fn parted(cols: u16, rows: u16, bytes: &[u8]) -> Option<Parted> {
     let mut track = Track::default();
     let mut before = Before::of(pair.terminal(), track);
     for &byte in bytes {
-        let ground = pair.parser.in_ground();
         let step = pair.step(byte);
-        track.note(byte, ground, &step, &before);
+        track.note(&step, &before);
         let after = Before::of(pair.terminal(), track);
         if !pair.same() {
             let wide = match step {

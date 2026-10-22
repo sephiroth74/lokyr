@@ -106,7 +106,15 @@ impl Screen {
     }
 }
 
-/// The VT core and `alacritty_terminal`, of one size, fed the same bytes.
+/// DEL, which vte's parser prints as a character outside escape sequences
+/// and strings, while DEC's and the VT core's take it for nothing:
+/// `alacritty_terminal` shows nothing of it, but its REP then repeats it,
+/// rather than the character before. [`Pair`] holds it back from
+/// `alacritty_terminal`, so that REP repeats the same character in both.
+pub(crate) const DEL: u8 = 0x7F;
+
+/// The VT core and `alacritty_terminal`, of one size, fed the same bytes,
+/// but for the DEL that vte prints, which only the VT core has.
 pub struct Pair {
     parser: Parser,
     bolt: Terminal,
@@ -126,10 +134,23 @@ impl Pair {
         }
     }
 
-    /// Feeds `bytes` to both.
+    /// Feeds `bytes` to both, each DEL that the parser meets outside
+    /// escape sequences and strings to the VT core alone.
     pub fn feed(&mut self, bytes: &[u8]) {
-        self.parser.advance(&mut self.bolt, bytes);
-        self.processor.advance(&mut self.alacritty, bytes);
+        let mut rest = bytes;
+        while let Some(at) = rest.iter().position(|&byte| byte == DEL) {
+            let (before, after) = rest.split_at(at);
+            self.parser.advance(&mut self.bolt, before);
+            self.processor.advance(&mut self.alacritty, before);
+            let ground = self.parser.in_ground();
+            self.parser.advance(&mut self.bolt, &[DEL]);
+            if !ground {
+                self.processor.advance(&mut self.alacritty, &[DEL]);
+            }
+            rest = &after[1..];
+        }
+        self.parser.advance(&mut self.bolt, rest);
+        self.processor.advance(&mut self.alacritty, rest);
     }
 
     /// The VT core's terminal, for the state that the screens do not show.

@@ -5,7 +5,7 @@ use bolt_vt_core::page::Width;
 use bolt_vt_core::parser::MAX_PARAMS;
 use bolt_vt_core::terminal::{Charset, Shift};
 
-use crate::{Before, HEAD, Screen, Step, TAIL};
+use crate::{Before, HEAD, Screen, Step};
 
 /// A way in which the two cores differ on purpose, each for its reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,8 +60,6 @@ pub enum Cause {
     Lnm,
     /// CBT with no tab stop before the cursor.
     CbtFirst,
-    /// REP after DEL.
-    Del,
     /// A wide character that wraps in insert mode.
     InsertWrap,
     /// REP after RIS.
@@ -197,9 +195,6 @@ impl Cause {
                 "with no tab stop left before the cursor, CBT goes to the first column in the VT \
                  core, as in xterm; alacritty_terminal has a tab stop at the first column, which TBC \
                  clears, and without it stays at the last tab stop that it reached"
-            }
-            Self::Del => {
-                "DEL is nothing in the VT core's parser, as in DEC's, so that REP after it repeats the character before; vte prints DEL, which alacritty_terminal does not show, and REP repeats it"
             }
             Self::InsertWrap => {
                 "a wide character that does not fit at the last column in insert mode goes to the \
@@ -618,23 +613,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 Some(Cause::WrapHead)
             }
             (b"", b'b')
-                if before.del
-                    && alacritty == before.cursor
-                    && repeated(before, first(params), bolt)
-                    && repeats_the_last(
-                        &bolt_screen.rows[y],
-                        before,
-                        first(params),
-                        reach(params, before),
-                    )
-                    && printed_alone(seen, true, y, reach(params, before), before.region) =>
-            {
-                Some(Cause::Del)
-            }
-            (b"", b'b')
                 if before.reset
                     && bolt == before.cursor
-                    && printed_alone(seen, false, y, reach(params, before), before.region) =>
+                    && printed_alone(seen, y, reach(params, before), before.region) =>
             {
                 Some(Cause::RepReset)
             }
@@ -810,61 +791,14 @@ fn advanced(before: &Before, n: usize, width: usize) -> At {
     (x, y, pending)
 }
 
-/// Whether `cursor` is where the VT core's REP of `n` characters takes the
-/// cursor from where it was `before`: by the cells of the character that it
-/// repeats, or of either width when that is not known.
-fn repeated(before: &Before, n: usize, cursor: At) -> bool {
-    match before.last_printed {
-        Some((_, 0)) => cursor == before.cursor,
-        Some((_, width @ 1..=2)) => cursor == advanced(before, n, usize::from(width)),
-        _ => cursor == advanced(before, n, 1) || cursor == advanced(before, n, 2),
-    }
-}
-
-/// Whether the cells of `row`, the cursor's, that REP of `n` characters
-/// wrote are the character that it repeats, narrow or wide, as far as the
-/// row shows them: from the cursor, when no wrap is pending, the character
-/// goes in no character set and takes cells, and the text, which goes on
-/// `reach` rows below, cannot have scrolled the row away.
-fn repeats_the_last(row: &[String], before: &Before, n: usize, reach: usize) -> bool {
-    let (x, y, pending) = before.cursor;
-    let Some((c, width @ 1..=2)) = before.last_printed else {
-        return true;
-    };
-    if pending
-        || y + reach > before.region.1
-        || before.charsets.iter().any(|&set| set != Charset::Ascii)
-    {
-        return true;
-    }
-    let width = usize::from(width);
-    let cell = |column: usize| row.get(column).map_or(" ", String::as_str);
-    let c = c.to_string();
-    (0..n.min((before.cols - x) / width)).all(|i| {
-        let column = x + i * width;
-        cell(column) == c && (width == 1 || cell(column + 1) == TAIL)
-    })
-}
-
 /// Whether the screens are the same but for the rows that text from row
-/// `y`, which goes on `reach` rows below it, went in, in the screen of the
-/// core that printed it alone, the VT core if `by_bolt`: a scroll at the
+/// `y`, which goes on `reach` rows below it, went in, in
+/// `alacritty_terminal`'s screen, which printed it alone: a scroll at the
 /// bottom margin moved the other rows of its region up by as many rows as
 /// the text passed it.
-fn printed_alone(
-    seen: &Seen<'_>,
-    by_bolt: bool,
-    y: usize,
-    reach: usize,
-    (top, bottom): (usize, usize),
-) -> bool {
-    let Some((bolt, alacritty)) = seen.screens else {
+fn printed_alone(seen: &Seen<'_>, y: usize, reach: usize, (top, bottom): (usize, usize)) -> bool {
+    let Some((other, printed)) = seen.screens else {
         return true;
-    };
-    let (printed, other) = if by_bolt {
-        (bolt, alacritty)
-    } else {
-        (alacritty, bolt)
     };
     let rows = printed.rows.len();
     if y > bottom || y + reach <= bottom {
@@ -883,7 +817,9 @@ fn printed_alone(
     (0..=reach + 1).any(|scrolled| {
         (0..rows).all(|row| {
             if row < top || row > bottom {
-                printed.rows[row] == other.rows[row]
+                // Above the region, text from the cursor's row on goes into
+                // the rows down to it, which do not scroll.
+                (row >= y && row < top) || printed.rows[row] == other.rows[row]
             } else {
                 row + scrolled >= y || printed.rows[row] == other.rows[row + scrolled]
             }
@@ -1013,7 +949,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 43] = [
+        let cases: [(&str, Cause, &[u8]); 35] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1050,34 +986,6 @@ mod tests {
                 "\x1b[79Gx\u{4e2d}\x1b[1;1H\x1b[P".as_bytes(),
             ),
             ("cbt-first", CbtFirst, b"\x1b[3gd\x1b[Z"),
-            ("del", Del, b"t\x7f\x1b[b"),
-            (
-                "del-after-ignored-string",
-                Del,
-                b"\x1bP1<x\x1b\\t\x7f\x1b[b",
-            ),
-            ("del-after-ignored-csi", Del, b"\x1b[ 2xt\x7f\x1b[b"),
-            (
-                "del-wide-at-the-end",
-                Del,
-                "\u{4e2d}\x1b[80G\x7f\x1b[b".as_bytes(),
-            ),
-            (
-                "del-after-a-move",
-                Del,
-                "\u{4e2d}\x1b[5G\x7f\x1b[b".as_bytes(),
-            ),
-            ("del-at-the-bottom", Del, b"top\x1b[24;80Hu\x7f\x1b[b"),
-            (
-                "del-over-a-wide-start",
-                Del,
-                "\x1b[1;80H\u{4e2d}o\x1b[2;1H\x7f\x1b[b".as_bytes(),
-            ),
-            (
-                "del-past-the-screen",
-                Del,
-                "\u{4e2d}\x7f\x1b[3000b".as_bytes(),
-            ),
             (
                 "insert-wrap",
                 InsertWrap,
@@ -1179,11 +1087,8 @@ mod tests {
             let parted = parted(80, 24, &input).expect("the screens part");
             assert_eq!(explained(&parted, &parted.bolt), Some(expected), "{name}");
             for (bug, screen) in bugs(&parted) {
-                if bug == "a far row written"
-                    && (expected == Highlight || name == "del-past-the-screen")
-                {
-                    // SD's rows, which `alacritty_terminal` scrolls, and those
-                    // of a REP that writes the whole screen, are any.
+                if expected == Highlight && bug == "a far row written" {
+                    // SD's rows, which `alacritty_terminal` scrolls, are any.
                     continue;
                 }
                 assert_eq!(explained(&parted, &screen), None, "{name}, {bug}");
@@ -1192,18 +1097,13 @@ mod tests {
     }
 
     #[test]
-    fn dch_and_del_explain_nothing_of_a_vt_core_that_keeps_or_repeats_the_wrong_cell() {
+    fn dch_explains_nothing_of_a_vt_core_that_keeps_the_cell_under_the_cursor() {
         // DCH past the row's end that keeps the cell under the cursor.
         let dch = parted(80, 24, b"ABCDEFGH\x1b[1;5H\x1b[77P").expect("the screens part");
         assert_eq!(explained(&dch, &dch.bolt), Some(Dch));
         let mut kept = dch.bolt.clone();
         kept.rows[0].push("E".to_owned());
         assert_eq!(explained(&dch, &kept), None);
-        // REP after DEL that repeats another character.
-        let del = parted(80, 24, b"t\x7f\x1b[b").expect("the screens part");
-        let mut other = del.bolt.clone();
-        other.rows[0][1] = "u".to_owned();
-        assert_eq!(explained(&del, &other), None);
     }
 
     #[test]
