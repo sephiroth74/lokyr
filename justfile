@@ -212,7 +212,14 @@ fuzz target="parser" seconds="600" workers="1": fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
-    just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-$(date +%Y%m%d-%H%M%S).log"
+    just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }}"
+
+# Fuzz a target as `fuzz` does, but go on past each crash for the whole of `seconds`, saving every input that crashes, so that one run finds what several would; it lists them and fails if it saved any. A timeout or a run out of memory still stops it.
+fuzz-collect target="differential" seconds="3600" workers="6": fuzz-seeds
+    #!/usr/bin/env bash
+    set -u
+    rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
+    just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-collect-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }} -ignore_crashes=1"
 
 # Fuzz every target at once for `seconds`, a day by default, each with `workers` processes that share its corpus, on 3 × `workers` cores; each run's logs go to fuzz/logs, one a target, named for the run's start.
 fuzz-all seconds="86400" workers="1": fuzz-seeds
@@ -224,7 +231,7 @@ fuzz-all seconds="86400" workers="1": fuzz-seeds
     for target in parser terminal differential; do
         (
             log=logs/$target-$started.log
-            just --justfile "{{ justfile() }}" _fuzz-run $target {{ seconds }} {{ workers }} "$log" >/dev/null
+            just --justfile "{{ justfile() }}" _fuzz-run $target {{ seconds }} {{ workers }} "$log" "{{ fuzz_flags }}" >/dev/null
             code=$?
             # What the run took, which runs on the same code add up to: the first
             # minutes of each go to the corpus, which the run reads before it fuzzes.
@@ -240,19 +247,26 @@ fuzz-all seconds="86400" workers="1": fuzz-seeds
     done
     exit $failed
 
-# Run one fuzz target, its output to the terminal and to `log`, under fuzz/, and fail as it does.
-_fuzz-run target seconds workers log:
+# Run one fuzz target with libFuzzer's `flags`, its output to the terminal and to `log`, under fuzz/, and fail as it does, or if it saved an input that crashed.
+_fuzz-run target seconds workers log flags:
     #!/usr/bin/env bash
     set -u
     cd fuzz || exit
     mkdir -p "corpus/{{ target }}" "$(dirname "{{ log }}")"
-    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} {{ fuzz_flags }} 2>&1 | tee "{{ log }}"
+    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} {{ flags }} 2>&1 | tee "{{ log }}"
     code=${PIPESTATUS[0]}
     # With several workers, libFuzzer exits with the status that stopped one, as waitpid
     # gives it: a crash's 19712, which the shell takes modulo 256, as 0. Its log tells.
     exiting=$(grep -oE '^INFO: exiting: [0-9]+' "{{ log }}" | tail -1 | grep -oE '[0-9]+$')
     if [ "$code" -eq 0 ] && [ "${exiting:-0}" != 0 ]; then
         echo "{{ target }} stopped: libFuzzer exited with $exiting" >&2
+        code=1
+    fi
+    # A run that goes on past crashes ends with 0, and its log names what it saved.
+    saved=$(grep -oE 'Test unit written to .*' "{{ log }}" | sed 's/^Test unit written to //' | sort -u)
+    if [ "$code" -eq 0 ] && [ -n "$saved" ]; then
+        echo "{{ target }}: $(echo "$saved" | wc -l | tr -d ' ') inputs saved:" >&2
+        echo "$saved" | sed 's/^/  /' >&2
         code=1
     fi
     exit $code
