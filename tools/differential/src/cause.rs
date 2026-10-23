@@ -459,17 +459,18 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             ..
         } => match (intermediates.as_slice(), final_byte) {
             // DECOM's reset, which `alacritty_terminal`'s cursor stays
-            // through: where it was, or where a reset of 1049 before it in
-            // the sequence brought back the saved cursor, in both cores.
+            // through: where it was, or, after a reset of 1049 before it in
+            // the sequence, where 1049 saved it on the primary screen.
             (b"?", b'l')
                 if params.contains(&6)
                     && seen.cells_same()
                     && bolt == (0, 0, false)
                     && (place(alacritty) == (x, y)
-                        || params
+                        || (params
                             .iter()
                             .position(|&mode| mode == 1049)
-                            .is_some_and(|at| params[at..].contains(&6))) =>
+                            .is_some_and(|at| params[at..].contains(&6))
+                            && before.restored == Some(place(alacritty)))) =>
             {
                 Some(Cause::Decom)
             }
@@ -629,18 +630,23 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             // SD, which `alacritty_terminal` takes, and the cursor stays.
             (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
             // REP in insert mode of a wide character, one of whose copies
-            // lands at the last column, as the first does from it, or a later
-            // one when the cells left from the cursor are odd: that copy wraps
-            // as InsertWrap tells, inserted in the next row in the VT core and
-            // written over its first cells in `alacritty_terminal`; the copies
-            // after it insert in both.
+            // lands at the last column alone: the first from it, or a later
+            // one when the cells left from the cursor are odd, or, when they
+            // are even and the rows' cells odd, one on a row after the
+            // cursor's. That copy wraps as InsertWrap tells, inserted in the
+            // next row in the VT core and written over its first cells in
+            // `alacritty_terminal`; the copies after it insert in both.
             (b"", b'b')
                 if before.insert
                     && before.autowrap
                     && before.last_printed.is_some_and(|(_, width)| width == 2)
                     && !pending
-                    && (before.cols - x) % 2 == 1
-                    && first(params) > (before.cols - 1 - x) / 2
+                    && if (before.cols - x) % 2 == 1 {
+                        first(params) > (before.cols - 1 - x) / 2
+                    } else {
+                        before.cols % 2 == 1
+                            && first(params) > (before.cols - x) / 2 + (before.cols - 1) / 2
+                    }
                     && bolt == alacritty
                     && before.last_printed.is_some_and(|(c, _)| {
                         inserted_on_wrapping(seen, &copies(params, before, None), c)
@@ -674,20 +680,20 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && 2 * first(params) > before.cols - x
                     && bolt == alacritty
                     && seen.rows_same_but(&[y])
-                    && same_but_the_end(bolt_screen, alacritty_screen, y, before.cols) =>
+                    && before.last_printed.is_some_and(|(c, _)| {
+                        same_but_the_end(bolt_screen, alacritty_screen, y, before.cols, c)
+                    }) =>
             {
                 Some(Cause::NoWrapWide)
             }
-            // REP, which repeats a character in one core alone: the one that
-            // does nothing leaves its cursor.
+            // REP after RIS, which repeats the character that the VT core
+            // forgot in `alacritty_terminal` alone: the VT core leaves its
+            // cursor.
             (b"", b'b')
-                if before.reset
-                    && bolt == before.cursor
-                    && printed_alone(
-                        seen,
-                        &copies(params, before, Some(2)),
-                        reach(params, before),
-                    ) =>
+                if bolt == before.cursor
+                    && before.reset.is_some_and(|width| {
+                        printed_alone(seen, &copies(params, before, Some(usize::from(width))))
+                    }) =>
             {
                 Some(Cause::RepReset)
             }
@@ -751,7 +757,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             Some(Cause::WideEdit)
         }
         // A wide character that does not fit at the last column, in insert
-        // mode, and without autowrap.
+        // mode.
         Step::Print(c)
             if seen.wide
                 && before.insert
@@ -763,13 +769,15 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         {
             Some(Cause::InsertWrap)
         }
-        Step::Print(_)
+        // A wide character that does not fit at the last column, without
+        // autowrap.
+        Step::Print(c)
             if seen.wide
                 && !before.autowrap
                 && x + 1 == before.cols
                 && bolt == alacritty
                 && seen.rows_same_but(&[y])
-                && same_but_the_end(bolt_screen, alacritty_screen, y, before.cols) =>
+                && same_but_the_end(bolt_screen, alacritty_screen, y, before.cols, *c) =>
         {
             Some(Cause::NoWrapWide)
         }
@@ -859,8 +867,8 @@ fn advanced(before: &Before, n: usize, width: usize) -> At {
 /// Whether the screens are the same but for the rows that `copies` went
 /// in, in `alacritty_terminal`'s screen, which printed them alone: a
 /// scroll at the bottom margin moved the other rows of its region up, by
-/// as many rows as the copies, `reach` rows at most, passed it.
-fn printed_alone(seen: &Seen<'_>, copies: &Copies, reach: usize) -> bool {
+/// as many rows as the copies scrolled it.
+fn printed_alone(seen: &Seen<'_>, copies: &Copies) -> bool {
     let Some((other, printed)) = seen.screens else {
         return true;
     };
@@ -871,16 +879,15 @@ fn printed_alone(seen: &Seen<'_>, copies: &Copies, reach: usize) -> bool {
         return (0..rows)
             .all(|row| copies.rows.contains(&row) || printed.rows[row] == other.rows[row]);
     }
-    (0..=reach + 1).any(|scrolled| {
-        (0..rows).all(|row| {
-            if row < top || row > bottom {
-                // Above the region, text from the cursor's row on goes into
-                // the rows down to it, which do not scroll.
-                (row >= y && row < top) || printed.rows[row] == other.rows[row]
-            } else {
-                row + scrolled >= y || printed.rows[row] == other.rows[row + scrolled]
-            }
-        })
+    let scrolled = copies.scroll_count;
+    (0..rows).all(|row| {
+        if row < top || row > bottom {
+            // Above the region, text from the cursor's row on goes into the
+            // rows down to it, which do not scroll.
+            (row >= y && row < top) || printed.rows[row] == other.rows[row]
+        } else {
+            row + scrolled >= y || printed.rows[row] == other.rows[row + scrolled]
+        }
     })
 }
 
@@ -889,19 +896,21 @@ fn printed_alone(seen: &Seen<'_>, copies: &Copies, reach: usize) -> bool {
 /// printing emptied.
 fn head_emptied(printed: &[String], other: &[String], cols: usize) -> bool {
     other.get(cols - 1).is_some_and(|cell| cell == HEAD)
-        && printed.get(cols - 1).is_none_or(|cell| cell != HEAD)
+        && printed.get(cols - 1).is_none_or(|cell| cell == " ")
         && but_last(printed, cols) == but_last(other, cols)
 }
 
 /// Whether the screens differ as `copies` of `c` inserted in insert mode
 /// make them differ where they meet wide characters. In each row that they
 /// write, `alacritty_terminal` empties the cell left of where they start,
-/// which the VT core keeps as it was, and copies of its own, next to the half of a wide character that it
-/// writes over, where the VT core keeps them; and keeps half of a wide
-/// character that the VT core empties: one that they split where they
-/// start, its second half pushed past them, and one that they push off the
-/// row's end. Above each row whose start they write in, the VT core keeps
-/// the spacer head that `alacritty_terminal` empties.
+/// which the VT core keeps as it was, and copies of its own, next to the
+/// half of a wide character that it writes over, where the VT core keeps
+/// them; and keeps half of a wide character that the VT core empties: one
+/// that they split where they start, its second half pushed past them, and
+/// one that they push off the row's end. At the end of a row that a wide
+/// copy wraps from, and above each row whose start they write in, the VT
+/// core keeps the spacer head that `alacritty_terminal` empties as it
+/// writes over the start of the row below.
 fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
     let Some((bolt, alacritty)) = seen.screens else {
         return true;
@@ -934,6 +943,10 @@ fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
                     || (ours == " "
                         && wide(theirs)
                         && (col + 1 == from || col == from + cells || col + 1 == cols))
+                    || (col + 1 == cols
+                        && ours == HEAD
+                        && theirs == " "
+                        && copies.wraps_from.contains(&row))
             });
         }
         copies.starts.contains(&(row + 1))
@@ -942,21 +955,18 @@ fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
 }
 
 /// Whether the screens' rows differ in their last cells alone, in rows
-/// that `copies` of `c` wrote and wrapped from: the VT core's has a spacer
-/// head there and `alacritty_terminal`'s an empty cell, and the next row
-/// starts with a copy in both.
+/// that `copies` of `c` wrapped from at the last column: the VT core's has
+/// a spacer head there and `alacritty_terminal`'s an empty cell, and the
+/// next row starts with a copy in both.
 fn heads_left(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
     let Some((bolt, alacritty)) = seen.screens else {
         return true;
     };
-    let (cols, (top, bottom)) = (seen.before.cols, seen.before.region);
+    let cols = seen.before.cols;
     let copy = c.to_string();
-    let wrote = |row: usize| {
-        copies.rows.contains(&row) || (copies.scrolls && (top..=bottom).contains(&row))
-    };
     (0..bolt.rows.len()).all(|row| {
         bolt.rows[row] == alacritty.rows[row]
-            || (wrote(row)
+            || (copies.wraps_from.contains(&row)
                 && bolt.rows[row]
                     .get(cols - 1)
                     .is_some_and(|cell| cell == HEAD)
@@ -977,10 +987,16 @@ fn heads_left(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
 /// cells. Both start with the copies, of which `alacritty_terminal` may have
 /// emptied one, and past them the VT core's cells are `alacritty_terminal`'s
 /// two cells right, but for a wide character that the insert split at the
-/// row's end. The first row, which
-/// they wrapped from, differs in its last cell alone. When the region
-/// scrolls, its rows differ, and so does a row that they wrap back to the
-/// start of, the screen's last below the region.
+/// row's end. The first row, which they wrapped from, differs in its last
+/// cell, and in the cell left of the first copy when that copy went over
+/// the second half of a wide character, whose first half the VT core
+/// empties. A row that a later copy wraps from in turn, on a screen of an
+/// odd number of columns, ends with the spacer head that the VT core
+/// leaves, which `alacritty_terminal` may empty. When the region scrolls,
+/// its rows differ, and so does a row that they wrap back to the start of,
+/// the screen's last below the region, and the row above it in its last
+/// cell, a spacer head that `alacritty_terminal` empties as it writes over
+/// the wide character at that start.
 fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
     let Some((bolt, alacritty)) = seen.screens else {
         return true;
@@ -990,17 +1006,41 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
     if seen.before.cursor.1 == seen.before.region.1 {
         return false;
     }
-    if copies.scrolls || copies.again {
-        return seen.rows_same_but(&copies.changed(seen.before.region));
-    }
     let cols = seen.before.cols;
+    if copies.scrolls || copies.again {
+        let changed = copies.changed(seen.before.region);
+        return (0..bolt.rows.len()).all(|row| {
+            changed.contains(&row)
+                || bolt.rows[row] == alacritty.rows[row]
+                || (copies.starts.contains(&(row + 1))
+                    && head_emptied(&alacritty.rows[row], &bolt.rows[row], cols))
+        });
+    }
     let copy = c.to_string();
     (0..bolt.rows.len()).all(|row| {
         if bolt.rows[row] == alacritty.rows[row] {
             return true;
         }
         match copies.stretches.iter().position(|stretch| stretch.0 == row) {
-            Some(0) => but_last(&bolt.rows[row], cols) == but_last(&alacritty.rows[row], cols),
+            Some(0) => {
+                // The first copy, written over the second half of a wide
+                // character, empties its first half in the VT core, which
+                // `alacritty_terminal` keeps as it was.
+                let from = copies.stretches[0].1;
+                let mut ours = bolt.rows[row].clone();
+                if seen.before.widths.get(from) == Some(&Width::SpacerTail)
+                    && let (Some(left), Some(theirs)) = (
+                        from.checked_sub(1).and_then(|left| ours.get_mut(left)),
+                        from.checked_sub(1)
+                            .and_then(|left| alacritty.rows[row].get(left)),
+                    )
+                    && left == " "
+                    && seen.before.left.as_ref() == Some(theirs)
+                {
+                    left.clone_from(theirs);
+                }
+                head_emptied(&alacritty.rows[row], &ours, cols)
+            }
             Some(index) => {
                 let cells = copies.stretches[index].2;
                 let (ours, theirs) = (
@@ -1013,6 +1053,8 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
                     ours[col] == theirs[col]
                         || (theirs[col] == " " && (ours[col] == copy || ours[col] == TAIL))
                 }) && two_cells_right(&ours, &theirs, cells)
+                    && (!copies.wraps_from.contains(&row)
+                        || (ours[cols - 1] == HEAD && [HEAD, " "].contains(&theirs[cols - 1])))
             }
             None => false,
         }
@@ -1048,11 +1090,20 @@ fn two_cells_right(ours: &[&str], theirs: &[&str], from: usize) -> bool {
 }
 
 /// Whether row `y` of the screens is the same in both but for its last
-/// three cells, which a wide character at the last column without autowrap
-/// takes in the VT core.
-fn same_but_the_end(bolt: &Screen, alacritty: &Screen, y: usize, cols: usize) -> bool {
+/// three cells, where a wide character `c` at the last column without
+/// autowrap goes one column back in the VT core: its last two cells hold
+/// it, and the one before is as `alacritty_terminal`'s, or empty where the
+/// character went over half of another.
+fn same_but_the_end(bolt: &Screen, alacritty: &Screen, y: usize, cols: usize, c: char) -> bool {
     let start = cols.saturating_sub(3);
+    let (ours, theirs) = (
+        padded(&bolt.rows[y], cols),
+        padded(&alacritty.rows[y], cols),
+    );
     prefix(&bolt.rows[y], start) == prefix(&alacritty.rows[y], start)
+        && ours[cols - 2] == c.to_string()
+        && ours[cols - 1] == TAIL
+        && (cols < 3 || ours[start] == theirs[start] || ours[start] == " ")
 }
 
 /// `row`'s first `len` cells, without the empty ones at the end, as
@@ -1063,12 +1114,6 @@ fn prefix(row: &[String], len: usize) -> Vec<String> {
         cells.pop();
     }
     cells
-}
-
-/// How many rows below the cursor's the characters that REP with `params`
-/// prints can reach, two cells a character at most.
-fn reach(params: &[u16], before: &Before) -> usize {
-    2 * usize::from(params.first().copied().unwrap_or(0).max(1)) / before.cols + 1
 }
 
 /// `row`'s cells but its cell at column `cols - 1`, without the empty ones
@@ -1137,6 +1182,11 @@ struct Copies {
     /// them, the region's scrolls taken: the row, the column that they
     /// start from, and the cells that they take.
     stretches: Vec<(usize, usize, usize)>,
+    /// The rows that a wide copy wraps from at their last column, leaving
+    /// a spacer head there, as the screen shows them after the copies.
+    wraps_from: Vec<usize>,
+    /// How many times they scroll the region.
+    scroll_count: usize,
 }
 
 impl Copies {
@@ -1175,6 +1225,8 @@ fn copies(params: &[u16], before: &Before, width: Option<usize>) -> Copies {
             Vec::new()
         },
         stretches: Vec::new(),
+        wraps_from: Vec::new(),
+        scroll_count: 0,
     };
     if width == 0 || !before.autowrap {
         copies.rows = vec![y];
@@ -1186,8 +1238,12 @@ fn copies(params: &[u16], before: &Before, width: Option<usize>) -> Copies {
     let mut written = Vec::new();
     let mut open = (!pending).then_some((y, x, 0, 0));
     let mut scrolls = 0;
+    let mut heads = Vec::new();
     for _ in 0..first_count(params) {
         if pending || (width == 2 && x + 1 == before.cols) {
+            if !pending {
+                heads.push((y, scrolls));
+            }
             written.extend(open.take());
             if y == bottom {
                 // The copies after it go into a new row.
@@ -1218,15 +1274,24 @@ fn copies(params: &[u16], before: &Before, width: Option<usize>) -> Copies {
         }
     }
     written.extend(open);
-    for (row, from, cells, before_it) in written {
-        // A row of the region goes up a row at each scroll after it.
-        let row = if (top..=bottom).contains(&row) {
-            match row.checked_sub(scrolls - before_it) {
-                Some(row) if row >= top => row,
-                _ => continue,
-            }
+    // A row of the region goes up a row at each scroll after it, and out of
+    // the screen past the region's top.
+    let shown = |row: usize, before_it: usize| {
+        if (top..=bottom).contains(&row) {
+            row.checked_sub(scrolls - before_it)
+                .filter(|&row| row >= top)
         } else {
-            row
+            Some(row)
+        }
+    };
+    copies.wraps_from = heads
+        .into_iter()
+        .filter_map(|(row, before_it)| shown(row, before_it))
+        .collect();
+    copies.scroll_count = scrolls;
+    for (row, from, cells, before_it) in written {
+        let Some(row) = shown(row, before_it) else {
+            continue;
         };
         match copies.stretches.iter_mut().find(|stretch| stretch.0 == row) {
             Some(stretch) => *stretch = (row, stretch.1.min(from), stretch.2 + cells),
@@ -1313,7 +1378,23 @@ mod tests {
             "\x1b[2;1Hx{}\x1b[1;80H\x1b[4h\u{4e2d}",
             "\u{4e2d}".repeat(39)
         );
-        let cases: [(&str, Cause, &[u8]); 48] = [
+        // REP in insert mode from the second half of a wide character, on a
+        // row that ends with a spacer head, below one that wraps into it.
+        let from_a_tail = |count: usize| {
+            format!(
+                "\x1b[2;2H{}\u{4e2d}\x1b[H{}\u{4e2d}\x1b[4h\x08\x1b[{count}b",
+                "a".repeat(78),
+                "b".repeat(79)
+            )
+        };
+        let (insert_wrap_from_a_tail, repeat_from_a_tail) = (from_a_tail(40), from_a_tail(80));
+        // A wide character that wraps in insert mode from the last row,
+        // below the region, back to its start, under a spacer head.
+        let wrap_back = format!(
+            "\x1b[1;2r\x1b[23;1H{}\u{4e2d}\x1b[24;80H\x1b[4h\u{4e2d}",
+            "a".repeat(79)
+        );
+        let cases: [(&str, Cause, &[u8]); 53] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1371,6 +1452,7 @@ mod tests {
                 split_at_the_end.as_bytes(),
             ),
             ("rep-reset", RepReset, b" \x1bc\x1b[b"),
+            ("rep-reset-twice", RepReset, b" \x1bc\x1bc\x1b[b"),
             (
                 "no-wrap-wide",
                 NoWrapWide,
@@ -1461,6 +1543,22 @@ mod tests {
                 InsertWrap,
                 "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;76H\x1b[4h\x1b[4b".as_bytes(),
             ),
+            (
+                "insert-wrap-from-a-tail",
+                InsertWrap,
+                insert_wrap_from_a_tail.as_bytes(),
+            ),
+            (
+                "repeat-from-a-tail",
+                WideEdit,
+                repeat_from_a_tail.as_bytes(),
+            ),
+            ("insert-wrap-back", InsertWrap, wrap_back.as_bytes()),
+            (
+                "repeat-a-graphic",
+                WideEdit,
+                "\x1b[1;78H\u{4e2d}\x1b[1;1H\x1b(0q\x1b[4h\x1b[2b".as_bytes(),
+            ),
             ("highlight-twice", Highlight, b"x\x1b[1;2T"),
         ];
         cases
@@ -1542,12 +1640,15 @@ mod tests {
         // Each input, from the review, and the rows that a VT core's bug
         // writes: a REP that does not wrap, above a row that holds a wide
         // character; one with a wrap pending, after a wide character at the
-        // end of the row; and one at the last row below the region, whose
-        // wraps stay on that row.
-        let inputs: [(&str, &[usize]); 3] = [
+        // end of the row; one at the last row below the region, whose wraps
+        // stay on that row; and one that RIS made the VT core forget its
+        // character for, whose copies scroll the region a row in
+        // `alacritty_terminal`: the rows that come to its top and below.
+        let inputs: [(&str, &[usize]); 4] = [
             ("\x1b[2;5H\u{4e2d}\x1b[Ha\x1b[4h\x1b[b", &[0, 1, 2]),
             ("\x1b[1;79H\u{4e2d}\x1b[4h\x1b[3b", &[0, 1, 2]),
             ("\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b", &[21, 22]),
+            ("x\x1bc\x1b[2;5r\x1b[5;1H\x1b[100b", &[2, 3]),
         ];
         for (input, rows) in inputs {
             let step = stepped(80, 24, input.as_bytes()).expect("the screens part no sooner");
@@ -1589,6 +1690,25 @@ mod tests {
         );
         let emptied = with_cell(&with_cell(&pushed.bolt, 10, 0, " "), 11, 0, " ");
         assert_eq!(explained(&pushed, &emptied), None);
+        // A spacer head at the end of a row that the copies do not wrap
+        // from: theirs, or one below whose start they do not write.
+        for y in [0, 5] {
+            assert_eq!(
+                explained(&pushed, &with_cell(&pushed.bolt, 79, y, HEAD)),
+                None,
+                "row {y}"
+            );
+        }
+        // Copies that scroll a region below the screen's top past it: a
+        // copy in a row above the region, which the rows that they wrote
+        // first scroll out of the screen beyond, is no part of them.
+        let past = stepped(
+            20,
+            6,
+            "\x1b[3;6r\x1b[6;19H\u{6587}\x1b[6;1Ha\x1b[4h\x1b[99b".as_bytes(),
+        )
+        .expect("no parting");
+        assert_eq!(explained(&past, &with_cell(&past.bolt, 1, 1, "a")), None);
         // Copies that wrap in insert mode over a row with a wide character:
         // InsertWrap's, whose shape a cell off in the next row is no part
         // of.
@@ -1639,6 +1759,50 @@ mod tests {
                 "{count}"
             );
         }
+        // On a row of an odd number of cells, below the cursor's, which
+        // copies fill to its end, a copy lands at the last column alone and
+        // wraps in insert mode: a cell written at that column of the row is
+        // no part of InsertWrap; nor is a row written above the last, below
+        // the region, which copies wrap back to the start of.
+        for (input, x, y) in [
+            (
+                "\x1b[5;1Hxy\x1b[1;1H\u{4e2d}\x1b[3;16H\x1b[4h\x1b[12b",
+                18,
+                3,
+            ),
+            ("\x1b[1;2r\x1b[6;1H\u{4e2d}\x1b[6;16H\x1b[4h\x1b[39b", 0, 4),
+        ] {
+            let later = parted(19, 6, input.as_bytes()).expect("the screens part");
+            assert_eq!(
+                explained(&later, &later.bolt),
+                Some(InsertWrap),
+                "{input:?}"
+            );
+            assert_eq!(
+                explained(&later, &with_cell(&later.bolt, x, y, "#")),
+                None,
+                "{input:?}"
+            );
+        }
+        // The row that a later copy wraps from, whose spacer head
+        // `alacritty_terminal` keeps or empties: a cell written there in its
+        // screen is no part of InsertWrap.
+        let mut later = parted(
+            19,
+            6,
+            "\x1b[5;1Hxy\x1b[1;1H\u{4e2d}\x1b[3;16H\x1b[4h\x1b[12b".as_bytes(),
+        )
+        .expect("the screens part");
+        later.alacritty = with_cell(&later.alacritty, 18, 3, "#");
+        assert_eq!(explained(&later, &later.bolt), None);
+        // Fewer copies, which reach no row's last column alone: a spacer
+        // head at the end of their row is no part of InsertWrap.
+        let short =
+            stepped(19, 6, "\x1b[3;14H\x1b[4h\u{4e2d}\x1b[b".as_bytes()).expect("no parting");
+        assert_eq!(
+            explained(&short, &with_cell(&short.bolt, 18, 2, HEAD)),
+            None
+        );
         // A wrap in insert mode from the bottom margin, which scrolls, and
         // whose copy goes into a new row in both: a row written is no part
         // of InsertWrap, for a printed character and for REP.
@@ -1726,6 +1890,128 @@ mod tests {
         let mut changed = printed.bolt.clone();
         changed.rows[0][0] = "#".to_owned();
         assert_eq!(explained(&printed, &changed), None);
+    }
+
+    #[test]
+    fn the_edges_of_the_shapes_take_their_cells_alone() {
+        // The row that a wide character in insert mode wraps from: a cell
+        // other than the head that the VT core leaves, printed and
+        // repeated.
+        for input in [
+            "\x1b[2;1Hxy\x1b[4h\x1b[1;80H\u{4e2d}",
+            "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;78H\x1b[4h\x1b[2b",
+        ] {
+            let wrap = parted(80, 24, input.as_bytes()).expect("the screens part");
+            assert_eq!(explained(&wrap, &wrap.bolt), Some(InsertWrap), "{input:?}");
+            assert_eq!(
+                explained(&wrap, &with_cell(&wrap.bolt, 79, 0, "#")),
+                None,
+                "{input:?}"
+            );
+        }
+        // A wide character at the last column without autowrap: a cell
+        // other than its halves where it goes, or than the empty one left
+        // of them.
+        let back =
+            parted(80, 24, "\x1b[?7lab\x1b[80G\u{4e2d}".as_bytes()).expect("the screens part");
+        for x in 77..80 {
+            assert_eq!(
+                explained(&back, &with_cell(&back.bolt, x, 0, "#")),
+                None,
+                "column {x}"
+            );
+        }
+        // A head that the VT core keeps above a row that copies insert at
+        // the start of, over a cell that `alacritty_terminal` keeps.
+        let kept = stepped(
+            80,
+            24,
+            "\x1b[1;80Hx\x1b[2;3H\u{4e2d}\x1b[2;1Ha\x1b[4h\x1b[b".as_bytes(),
+        )
+        .expect("no parting");
+        assert_eq!(explained(&kept, &with_cell(&kept.bolt, 79, 0, HEAD)), None);
+        // A head left on a row that the copies wrote and did not wrap from.
+        let wrap = parted(
+            80,
+            24,
+            "\x1b[3;1H\u{4e2d}\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[2b".as_bytes(),
+        )
+        .expect("the screens part");
+        assert_eq!(explained(&wrap, &wrap.bolt), Some(WrapHead));
+        assert_eq!(explained(&wrap, &with_cell(&wrap.bolt, 79, 1, HEAD)), None);
+        // The cell left of where copies that wrap in insert mode start: a
+        // narrow one emptied, and the first half of a wide character that
+        // they went over, which `alacritty_terminal` did not keep as it was.
+        let narrow = format!(
+            "\x1b[2;1Hz{}\u{4e2d}\x1b[2;2H\x1b[4h\x1b[40b",
+            "a".repeat(78)
+        );
+        let narrow = parted(80, 24, narrow.as_bytes()).expect("the screens part");
+        assert_eq!(explained(&narrow, &narrow.bolt), Some(InsertWrap));
+        assert_eq!(
+            explained(&narrow, &with_cell(&narrow.bolt, 0, 1, " ")),
+            None
+        );
+        let from_a_tail = format!(
+            "\x1b[2;2H{}\u{4e2d}\x1b[H{}\u{4e2d}\x1b[4h\x08\x1b[40b",
+            "a".repeat(78),
+            "b".repeat(79)
+        );
+        let mut split = parted(80, 24, from_a_tail.as_bytes()).expect("the screens part");
+        assert_eq!(explained(&split, &split.bolt), Some(InsertWrap));
+        assert_eq!(explained(&split, &with_cell(&split.bolt, 0, 1, "#")), None);
+        split.alacritty = with_cell(&split.alacritty, 0, 1, "\u{6587}");
+        assert_eq!(explained(&split, &split.bolt), None);
+        // A wide character that wraps in insert mode back to the start of
+        // the last row, below the region: a head left at the end of a row
+        // other than the one above it.
+        let wrap_back = format!(
+            "\x1b[1;2r\x1b[23;1H{}\u{4e2d}\x1b[24;80H\x1b[4h\u{4e2d}",
+            "a".repeat(79)
+        );
+        let back = parted(80, 24, wrap_back.as_bytes()).expect("the screens part");
+        assert_eq!(explained(&back, &back.bolt), Some(InsertWrap));
+        assert_eq!(explained(&back, &with_cell(&back.bolt, 79, 21, HEAD)), None);
+    }
+
+    #[test]
+    fn restores_explain_the_cursors_that_their_modes_make() {
+        let moved = |step: &Parted, cursor| Screen {
+            cursor,
+            ..step.bolt.clone()
+        };
+        // A restore outside origin mode, which caps nothing in either core:
+        // a VT core that caps it is no part of RestoredBelow.
+        let restore = stepped(80, 24, b"\x1b[20;1H\x1b7\x1b[5;10r\x1b8").expect("no parting");
+        assert_eq!(explained(&restore, &moved(&restore, (0, 9, false))), None);
+        // DECOM's reset before 1049's, whose restore both cores make last:
+        // a VT core that skips it, and stays home, is no part of Decom.
+        let reset =
+            stepped(80, 24, b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?6;1049l").expect("no parting");
+        assert_eq!(explained(&reset, &moved(&reset, (0, 0, false))), None);
+        // DECOM's reset after 1049's: an `alacritty_terminal` cursor neither
+        // where it was nor where 1049 saved it is no part of Decom.
+        let mut reset = parted(80, 24, b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?1049;6l")
+            .expect("the screens part");
+        assert_eq!(explained(&reset, &reset.bolt), Some(Decom));
+        reset.alacritty.cursor = (5, 5, false);
+        assert_eq!(explained(&reset, &reset.bolt), None);
+        // The same on the primary screen, where 1049's reset brings back
+        // nothing: an `alacritty_terminal` cursor where DECSC saved it is
+        // no part of Decom.
+        let mut reset =
+            parted(80, 24, b"\x1b[5;10H\x1b7\x1b[2;3H\x1b[?1049;6l").expect("the screens part");
+        assert_eq!(explained(&reset, &reset.bolt), Some(Decom));
+        reset.alacritty.cursor = (9, 4, false);
+        assert_eq!(explained(&reset, &reset.bolt), None);
+    }
+
+    #[test]
+    fn stepped_sees_nothing_past_a_parting() {
+        // DECOM's reset parts the cursors; a character after it is past
+        // the step where the screens part.
+        assert!(stepped(80, 24, b"\x1b[2;3H\x1b[?6l").is_some());
+        assert!(stepped(80, 24, b"\x1b[2;3H\x1b[?6lx").is_none());
     }
 
     #[test]

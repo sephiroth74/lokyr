@@ -79,14 +79,21 @@ pub struct Before {
     pub left: Option<String>,
     /// Whether each column has a tab stop.
     pub tab_stops: Vec<bool>,
-    /// The character that REP repeats, and its width, if any.
+    /// The character that REP prints, and its width, if any: the last
+    /// character printed, as the character sets translate it at each copy
+    /// in both cores.
     pub last_printed: Option<(char, u8)>,
-    /// Whether RIS came since the last character printed, which vte's
-    /// parser keeps for REP.
-    pub reset: bool,
+    /// The width of the character that RIS made the VT core forget, if RIS
+    /// came since the last character printed: vte's parser keeps it for
+    /// REP.
+    pub reset: Option<u8>,
     /// Whether `alacritty_terminal` still has its tab stop at the first
     /// column, which the VT core has not, and which TBC clears.
     pub first_stop: bool,
+    /// The column and row that leaving the alternate screen with 1049
+    /// brings the cursor back to, while it is active: where 1049 saved it
+    /// on the primary screen, in both cores.
+    pub restored: Option<(usize, usize)>,
 }
 
 /// What the comparison keeps track of besides the VT core's state: what
@@ -94,28 +101,34 @@ pub struct Before {
 /// stop at the first column.
 #[derive(Clone, Copy, Debug)]
 struct Track {
-    reset: bool,
+    reset: Option<u8>,
     first_stop: bool,
 }
 
 impl Default for Track {
     fn default() -> Self {
         Self {
-            reset: false,
+            reset: None,
             first_stop: true,
         }
     }
 }
 
 impl Track {
-    /// Notes what the VT core did, `step`, with the cursor `before` it.
+    /// Notes what the VT core did, `step`, from the state `before` it.
     fn note(&mut self, step: &Step, before: &Before) {
         match step {
-            Step::Print(_) => self.reset = false,
+            Step::Print(_) => self.reset = None,
+            // RIS, after which vte's parser still repeats the character that
+            // the VT core forgets, or the one that an earlier RIS made it
+            // forget.
             Step::Esc {
                 intermediates,
                 final_byte: b'c',
-            } if intermediates.is_empty() => (self.reset, self.first_stop) = (true, true),
+            } if intermediates.is_empty() => {
+                self.reset = before.last_printed.map(|(_, width)| width).or(self.reset);
+                self.first_stop = true;
+            }
             // HTS at the first column.
             Step::Esc {
                 intermediates,
@@ -173,11 +186,16 @@ impl Before {
             left: (terminal.insert_mode() && cursor.x > 0 && !cursor.pending_wrap)
                 .then(|| bolt_cell_text(terminal, cursor.x - 1, cursor.y)),
             tab_stops: (0..terminal.cols()).map(|x| terminal.tab_stop(x)).collect(),
-            last_printed: terminal
-                .last_printed()
-                .map(|c| (c, terminal.widths().char_width(c))),
+            last_printed: terminal.last_printed().map(|c| {
+                let c = terminal.charsets().translate(c);
+                (c, terminal.widths().char_width(c))
+            }),
             reset: track.reset,
             first_stop: track.first_stop,
+            restored: terminal
+                .primary_saved_cursor()
+                .filter(|_| terminal.is_alternate_screen())
+                .map(|saved| (usize::from(saved.x), usize::from(saved.y))),
         }
     }
 }
@@ -442,7 +460,11 @@ fn seen_at(cols: u16, rows: u16, bytes: &[u8], last: bool) -> Option<Parted> {
         let step = pair.step(byte);
         track.note(&step, &before);
         let after = Before::of(pair.terminal(), track);
-        if !pair.same() || (last && index + 1 == bytes.len()) {
+        let parts = !pair.same();
+        if parts && last && index + 1 < bytes.len() {
+            return None;
+        }
+        if parts || (last && index + 1 == bytes.len()) {
             let wide = match step {
                 Step::Print(c) => pair.terminal().widths().char_width(c) == 2,
                 _ => false,

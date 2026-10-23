@@ -563,6 +563,12 @@ impl Terminal {
         self.alternate_active
     }
 
+    /// The cursor that DECSC saved on the primary screen, if any, which
+    /// leaving the alternate screen with 1049 brings back.
+    pub fn primary_saved_cursor(&self) -> Option<Cursor> {
+        self.primary.saved.map(|saved| saved.cursor)
+    }
+
     /// Makes the alternate screen, or the primary one, the active one. Each
     /// keeps its rows and its cursor.
     pub fn set_alternate_screen(&mut self, alternate: bool) {

@@ -24,6 +24,16 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
         "\x1b[2;1Hx{}\x1b[1;80H\x1b[4h\u{4e2d}",
         "\u{4e2d}".repeat(39)
     );
+    // REP in insert mode from the second half of a wide character, on a row
+    // that ends with a spacer head, below one that wraps into it.
+    let from_a_tail = |count: usize| {
+        format!(
+            "\x1b[2;2H{}\u{4e2d}\x1b[H{}\u{4e2d}\x1b[4h\x08\x1b[{count}b",
+            "a".repeat(78),
+            "b".repeat(79)
+        )
+        .into_bytes()
+    };
     vec![
         ("c1", b"a\x80b".to_vec()),
         ("jamo", "a\u{D7FF}b".as_bytes().to_vec()),
@@ -183,6 +193,25 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
                 .as_bytes()
                 .to_vec(),
         ),
+        ("insert-wrap-from-a-tail", from_a_tail(40)),
+        ("repeat-from-a-tail", from_a_tail(80)),
+        // A wide character that wraps in insert mode from the last row,
+        // below the region, back to its start, under a spacer head.
+        (
+            "insert-wrap-back",
+            format!(
+                "\x1b[1;2r\x1b[23;1H{}\u{4e2d}\x1b[24;80H\x1b[4h\u{4e2d}",
+                "a".repeat(79)
+            )
+            .into_bytes(),
+        ),
+        // REP of a character that the set in use translates.
+        (
+            "repeat-a-graphic",
+            "\x1b[1;78H\u{4e2d}\x1b[1;1H\x1b(0q\x1b[4h\x1b[2b"
+                .as_bytes()
+                .to_vec(),
+        ),
         // DEL, which the comparison holds back from `alacritty_terminal`: REP
         // after it repeats the same character in both, and the screens never
         // part.
@@ -280,6 +309,10 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-repeat-no-wrap-wide", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0x193d0c9ebaec53c7),
     ("case-repeat-no-wrap-wide-insert", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0xe605cf6bb2d6c515),
     ("case-repeat-insert-wrap-later", InsertWrap, "row 1, column 4: \"x\" against \" \"", 0xe3075037962971da),
+    ("case-insert-wrap-from-a-tail", InsertWrap, "row 1, column 0: \" \" against \"中\"", 0xead04a75134fc5fb),
+    ("case-repeat-from-a-tail", WideEdit, "row 1, column 0: \" \" against \"中\"", 0xe5b66ee6fedf7d8c),
+    ("case-insert-wrap-back", InsertWrap, "row 22, column 79: \"[head]\" against \" \"", 0x11d586be9334b32e),
+    ("case-repeat-a-graphic", WideEdit, "row 0, column 1: \"─\" against \" \"", 0xfee2cad11b252bb6),
     // vttest: the screens after a switch to 132 columns or back.
     ("vttest:64-67", Deccolm, "row 0, column 0: \"*\" against \"T\"", 0x4eb3eb42cd76c133),
     ("vttest:84", Deccolm, "row 0, column 6: \"*\" against \" \"", 0x77dddcea318ef500),
