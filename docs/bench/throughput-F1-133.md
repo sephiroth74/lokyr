@@ -1,6 +1,6 @@
 # Throughput on the code of the review fixes (F1-133)
 
-Measured on 2026-10-23 at 19:22, with `bolt-throughput` alone, on the code of ac9a8f3, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, with no fuzzing or build running. Rust 1.99.0, release builds. [F1-51's figures](throughput-F1-51.md) were measured on 108cf40, before F1-120 and F1-134 changed how printing treats spacer heads, and F1-129 how a page list starts.
+Measured on 2026-10-23 at 19:22, with `bolt-throughput` alone, on the code of ac9a8f3, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, with no fuzzing or build running. Rust 1.99.0, release builds. [F1-51's figures](throughput-F1-51.md) were measured on 108cf40, before seven tasks changed the VT core: F1-120, F1-130 and F1-134 how printing treats spacer heads, F1-121 DECRC in origin mode, F1-126 the loops over a row's cells, F1-128 an accessor of the saved cursor, and F1-129 how a page list starts and how `row_text` reads a head.
 
 ## Method
 
