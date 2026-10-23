@@ -221,21 +221,21 @@ _valgrind:
 fuzz_flags := "-ignore_timeouts=0 -ignore_ooms=0"
 
 # Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus, until a crash stops it; it lists the inputs saved, which go into a directory of its own in fuzz/artifacts/TARGET, named for its log, and fails on a crash, a timeout or a run out of memory, of a job too. More than one worker runs libFuzzer's fork mode, whose jobs restart, so that a worker runs fewer inputs than a process alone. The log goes to fuzz/logs too (needs `cargo install cargo-fuzz --locked`).
-fuzz target="parser" seconds="600" workers="1": (_workers "fuzz" workers "1") fuzz-seeds
+fuzz target="parser" seconds="600" workers="1": (_counts "fuzz" seconds workers "1") fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
     just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }}"
 
-# Fuzz a target as `fuzz` does, but go on past each crash, timeout or run out of memory for the whole of `seconds`, saving every input that makes one, so that one run finds what several would; it lists them and fails if it saved any. It needs two workers at least, as libFuzzer goes on past a crash only in its fork mode.
-fuzz-collect target="differential" seconds="3600" workers="6": (_workers "fuzz-collect" workers "2") fuzz-seeds
+# Fuzz a target as `fuzz` does, but go on past each crash, timeout or run out of memory for the whole of `seconds`, saving every input that makes one, so that one run finds what several would; it lists them and fails if it saved any, or if a job crashed, timed out or ran out of memory without saving one, as when the system kills it. It needs two workers at least, as libFuzzer goes on past a crash only in its fork mode.
+fuzz-collect target="differential" seconds="3600" workers="6": (_counts "fuzz-collect" seconds workers "2") fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
     just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-collect-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }} -ignore_crashes=1"
 
 # Fuzz every target at once for `seconds`, a day by default, each with `workers` processes that share its corpus, on 3 × `workers` cores; each run's logs go to fuzz/logs, one a target, named for the run's start.
-fuzz-all seconds="86400" workers="1": (_workers "fuzz-all" workers "1") fuzz-seeds
+fuzz-all seconds="86400" workers="1": (_counts "fuzz-all" seconds workers "1") fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
@@ -263,11 +263,18 @@ fuzz-all seconds="86400" workers="1": (_workers "fuzz-all" workers "1") fuzz-see
     done
     exit $failed
 
-# Stop `recipe` when `workers` is not a count of processes, or is below `least`, before anything builds.
-_workers recipe workers least:
+# Stop `recipe` before anything builds when `seconds` is not a count from 1 to what libFuzzer reads, an int's 2147483647, or `workers` from `least` to what cargo-fuzz takes, 65535; or when several workers would run libFuzzer's fork mode from a path with a space, which its jobs' command lines split.
+_counts recipe seconds workers least:
     #!/usr/bin/env bash
-    if ! [[ "{{ workers }}" =~ ^[1-9][0-9]*$ ]]; then
-        echo "{{ recipe }}: the workers, '{{ workers }}', are not a count of processes." >&2
+    # Whether $1 is a whole number from 1 to $2, as long as it at most, which keeps
+    # bash's integers from overflowing.
+    count() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && [ "${#1}" -le "${#2}" ] && [ "$1" -le "$2" ]; }
+    if ! count "{{ seconds }}" 2147483647; then
+        echo "{{ recipe }}: the seconds, '{{ seconds }}', are not a count from 1 to 2147483647, as libFuzzer reads them." >&2
+        exit 2
+    fi
+    if ! count "{{ workers }}" 65535; then
+        echo "{{ recipe }}: the workers, '{{ workers }}', are not a count of processes from 1 to 65535, as cargo-fuzz takes them." >&2
         exit 2
     fi
     # fuzz-collect's, as cargo-fuzz runs libFuzzer's fork mode for more than one.
@@ -275,44 +282,73 @@ _workers recipe workers least:
         echo "{{ recipe }} needs {{ least }} workers at least: with one, cargo-fuzz runs libFuzzer without its fork mode, which alone goes on past a crash." >&2
         exit 2
     fi
+    if [ "{{ workers }}" -gt 1 ] && [[ "{{ justfile_directory() }}" == *" "* ]]; then
+        echo "{{ recipe }}: libFuzzer's fork mode, which more than one worker runs, joins its jobs' arguments with spaces, and the path of this checkout has one." >&2
+        exit 2
+    fi
 
-# Run one fuzz target with libFuzzer's `flags`, its output to the terminal and to `log`, under fuzz/, and fail as it does, if one of its jobs crashed, timed out or ran out of memory, or if it saved an input that did, which it lists. The run saves its inputs into a directory of its own, named for its log, in fuzz/artifacts/TARGET, and its log ends with the time that it ran, without the build.
+# Run one fuzz target with libFuzzer's `flags`, its output to the terminal and to `log`, under fuzz/, and fail as it does, if one of its jobs crashed, timed out or ran out of memory, or if it saved an input that did, which it lists, with how to reproduce and minimize one. The run saves its inputs into a directory of its own, named for its log, in fuzz/artifacts/TARGET, and its log ends with the time that it ran, without the build, and what the recipe found. An interruption ends the run as a time limit would, and fails it.
 _fuzz-run target seconds workers log flags:
     #!/usr/bin/env bash
     set -u
     cd fuzz || exit
-    mkdir -p "corpus/{{ target }}" "artifacts/{{ target }}" "$(dirname "{{ log }}")"
-    # The inputs that the run saves go here alone, so that another run of the target
-    # at once keeps its own.
-    saves="artifacts/{{ target }}/$(basename "{{ log }}" .log)"
-    if ! mkdir "$saves"; then
-        echo "{{ target }}: another run saves into fuzz/$saves." >&2
+    log="{{ log }}"
+    if ! mkdir -p "corpus/{{ target }}" "artifacts/{{ target }}" "$(dirname "$log")"; then
+        echo "{{ target }}: the run's directories cannot be made under fuzz/." >&2
         exit 1
     fi
-    cargo +{{ fuzz_toolchain }} fuzz build {{ target }} 2>&1 | tee "{{ log }}"
+    # The inputs that the run saves go here alone, so that another run of the target
+    # at once keeps its own.
+    saves="artifacts/{{ target }}/$(basename "$log" .log)"
+    if [ -e "$saves" ]; then
+        echo "{{ target }}: fuzz/$saves is there already, another run's." >&2
+        exit 1
+    fi
+    if ! mkdir "$saves"; then
+        echo "{{ target }}: fuzz/$saves cannot be made." >&2
+        exit 1
+    fi
+    # What the recipe finds goes to the log too, which is all that fuzz-all keeps.
+    say() { echo "$1" | tee -a "$log" >&2; }
+    # An interruption ends the run, whose end the recipe still writes, and the log's
+    # writer outlives it, to take the run's last lines.
+    interrupted=""
+    trap 'interrupted=1' INT TERM HUP
+    keep() { (trap '' INT TERM HUP && exec tee "$@"); }
+    cargo +{{ fuzz_toolchain }} fuzz build {{ target }} 2>&1 | keep "$log"
     code=${PIPESTATUS[0]}
-    if [ "$code" -ne 0 ]; then
+    if [ -n "$interrupted" ] || [ "$code" -ne 0 ]; then
         rmdir "$saves"
+        if [ -n "$interrupted" ]; then
+            say "{{ target }}: interrupted while it built."
+            [ "$code" -ne 0 ] || code=130
+        fi
         exit $code
     fi
     start=$SECONDS
     # libFuzzer takes the last `-artifact_prefix`, after cargo-fuzz's.
-    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} "-artifact_prefix=$PWD/$saves/" {{ flags }} 2>&1 | tee -a "{{ log }}"
+    cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} "-artifact_prefix=$PWD/$saves/" {{ flags }} 2>&1 | keep -a "$log"
     code=${PIPESTATUS[0]}
-    echo "{{ target }}: ran for $((SECONDS - start)) s" | tee -a "{{ log }}"
+    echo "{{ target }}: ran for $((SECONDS - start)) s" | tee -a "$log"
+    if [ -n "$interrupted" ]; then
+        say "{{ target }}: interrupted."
+        [ "$code" -ne 0 ] || code=130
+    fi
     # On macOS, with several workers, libFuzzer exits with the status of the job that
     # ended it as waitpid gives it, a crash's 19712, which the shell takes modulo 256,
     # as 0; its log tells. On Linux it exits with the job's code.
-    exiting=$(grep -oE '^INFO: exiting: [0-9]+' "{{ log }}" | tail -1 | grep -oE '[0-9]+$')
+    exiting=$(grep -oE '^INFO: exiting: [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+$')
     if [ "$code" -eq 0 ] && [ "${exiting:-0}" != 0 ]; then
-        echo "{{ target }}: libFuzzer exited with $exiting" >&2
+        say "{{ target }}: libFuzzer exited with $exiting"
         code=1
     fi
     # The fork mode counts the jobs that crashed, timed out or ran out of memory, those
-    # that the system killed too, which save no input.
-    counted=$(grep -oE 'oom/timeout/crash: [0-9]+/[0-9]+/[0-9]+' "{{ log }}" | tail -1 | grep -oE '[0-9/]+$')
+    # that the system killed too, which save no input. It prints the counter before it
+    # counts the last job that it merges, which its exit code tells; the jobs that the
+    # time limit leaves running are told by neither.
+    counted=$(grep -oE 'oom/timeout/crash: [0-9]+/[0-9]+/[0-9]+' "$log" | tail -1 | grep -oE '[0-9/]+$')
     if [ -n "$counted" ] && [ "$counted" != 0/0/0 ]; then
-        echo "{{ target }}: jobs ran out of memory, timed out or crashed: $counted" >&2
+        say "{{ target }}: jobs ran out of memory, timed out or crashed: $counted"
         code=1
     fi
     inputs() { if [ "$1" -eq 1 ]; then echo "1 input"; else echo "$1 inputs"; fi; }
@@ -322,14 +358,18 @@ _fuzz-run target seconds workers log flags:
     failed=$(echo "$saved" | grep -E '/(crash|timeout|oom|leak)-' || true)
     slow=$(echo "$saved" | grep -E '/slow-unit-' || true)
     if [ -n "$failed" ]; then
-        echo "{{ target }}: $(inputs "$(echo "$failed" | wc -l | tr -d " ")") saved that crashed, timed out or ran out of memory:" >&2
-        echo "$failed" | sed 's|^|  fuzz/|' >&2
+        say "{{ target }}: $(inputs "$(echo "$failed" | wc -l | tr -d " ")") saved that crashed, timed out or ran out of memory:"
+        echo "$failed" | sed 's|^|  fuzz/|' | tee -a "$log" >&2
+        # As cargo-fuzz would say, which looks for them in fuzz/artifacts/TARGET alone.
+        first=$(echo "$failed" | head -1)
+        say "Reproduce one with: cargo +{{ fuzz_toolchain }} fuzz run {{ target }} fuzz/$first"
+        say "Minimize it with: cargo +{{ fuzz_toolchain }} fuzz tmin {{ target }} fuzz/$first"
         code=1
     fi
     # Slow inputs, which the run reports, fail nothing.
     if [ -n "$slow" ]; then
-        echo "{{ target }}: $(inputs "$(echo "$slow" | wc -l | tr -d " ")") saved that ran slowly, which fail nothing:" >&2
-        echo "$slow" | sed 's|^|  fuzz/|' >&2
+        say "{{ target }}: $(inputs "$(echo "$slow" | wc -l | tr -d " ")") saved that ran slowly, which fail nothing:"
+        echo "$slow" | sed 's|^|  fuzz/|' | tee -a "$log" >&2
     fi
     # A run that saved nothing leaves no directory behind.
     rmdir "$saves" 2>/dev/null
