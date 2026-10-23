@@ -153,6 +153,10 @@ instructions base="": vtebench
     # The version of gungraun's runner that the Cargo.lock of directory $1
     # holds, as the runner runs only the library of its own version.
     version() { awk '/^name = "gungraun-runner"$/ { getline; gsub(/version = |"/, ""); print }' "$1/Cargo.lock"; }
+    if ! command -v valgrind >/dev/null; then
+        echo "instructions: Valgrind is not installed, and callgrind counts the instructions; it runs on Linux." >&2
+        exit 1
+    fi
     head=$(version .)
     if ! cargo install --list | grep -qx "gungraun-runner v$head:"; then
         cargo install --locked gungraun-runner --version "$head"
@@ -160,7 +164,10 @@ instructions base="": vtebench
     # Both counts go to one place, for the second to compare with the first,
     # and read the one checkout of vtebench, whose place gungraun, which
     # clears the benchmark's environment, has to pass on.
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+    # An absolute path, as the base runs from its worktree.
+    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+    case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR="$PWD/$CARGO_TARGET_DIR" ;; esac
+    export CARGO_TARGET_DIR
     export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" BOLT_VTEBENCH="$PWD/target/vtebench" GUNGRAUN_ENVS=BOLT_VTEBENCH
     count() { cargo bench --locked -p bolt-differential --bench instructions -- "$@"; }
     # A warning, which a GitHub job shows besides its log.
@@ -203,21 +210,27 @@ instructions base="": vtebench
     fi
     count --baseline=base --callgrind-limits='ir=3%'
 
-# libFuzzer's flags for every run: with several workers, a timeout or a run out of memory stops
-# the run, as it does with one, where libFuzzer's fork mode would go on past it.
+# libFuzzer's flags for every run. With several workers on Linux, libFuzzer's fork mode would go
+# on past a timeout or a run out of memory, which these make stop the run, as a crash does and as
+# they do with one worker. On macOS the fork mode takes both for crashes already, as it reads
+# its jobs' waitpid status.
 fuzz_flags := "-ignore_timeouts=0 -ignore_ooms=0"
 
-# Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus: 4 workers fuzz as much in an hour as one in 4; the log goes to fuzz/logs too (needs `cargo install cargo-fuzz --locked`).
+# Fuzz a target for `seconds`, seeded from the parser's tests, with `workers` processes that share its corpus, until a crash stops it; it lists the inputs saved, and fails on a crash, a timeout or a run out of memory. More than one worker runs libFuzzer's fork mode, whose jobs restart, so that a worker runs fewer inputs than a process alone. The log goes to fuzz/logs too (needs `cargo install cargo-fuzz --locked`).
 fuzz target="parser" seconds="600" workers="1": fuzz-seeds
     #!/usr/bin/env bash
     set -u
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
     just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }}"
 
-# Fuzz a target as `fuzz` does, but go on past each crash for the whole of `seconds`, saving every input that crashes, so that one run finds what several would; it lists them and fails if it saved any. A timeout or a run out of memory still stops it.
+# Fuzz a target as `fuzz` does, but go on past each crash, timeout or run out of memory for the whole of `seconds`, saving every input that makes one, so that one run finds what several would; it lists them and fails if it saved any. It needs two workers at least, as libFuzzer goes on past a crash only in its fork mode.
 fuzz-collect target="differential" seconds="3600" workers="6": fuzz-seeds
     #!/usr/bin/env bash
     set -u
+    if [ "{{ workers }}" -lt 2 ]; then
+        echo "fuzz-collect needs two workers at least: with one, cargo-fuzz runs libFuzzer without its fork mode, which alone goes on past a crash." >&2
+        exit 2
+    fi
     rustup toolchain install {{ fuzz_toolchain }} --profile minimal || exit
     just --justfile "{{ justfile() }}" _fuzz-run {{ target }} {{ seconds }} {{ workers }} "logs/{{ target }}-collect-$(date +%Y%m%d-%H%M%S).log" "{{ fuzz_flags }} -ignore_crashes=1"
 
@@ -231,11 +244,12 @@ fuzz-all seconds="86400" workers="1": fuzz-seeds
     for target in parser terminal differential; do
         (
             log=logs/$target-$started.log
+            start=$SECONDS
             just --justfile "{{ justfile() }}" _fuzz-run $target {{ seconds }} {{ workers }} "$log" "{{ fuzz_flags }}" >/dev/null
             code=$?
-            # What the run took, which runs on the same code add up to: the first
-            # minutes of each go to the corpus, which the run reads before it fuzzes.
-            echo "$target: exit $code, {{ workers }} workers for {{ seconds }} s, log fuzz/$log"
+            # What the run took, which runs on the same code add up to: a crash stops
+            # it early, and its first minutes go to the corpus, read before it fuzzes.
+            echo "$target: exit $code, {{ workers }} workers for $((SECONDS - start)) s, log fuzz/$log"
             exit $code
         ) &
         pids+=($!)
@@ -247,27 +261,39 @@ fuzz-all seconds="86400" workers="1": fuzz-seeds
     done
     exit $failed
 
-# Run one fuzz target with libFuzzer's `flags`, its output to the terminal and to `log`, under fuzz/, and fail as it does, or if it saved an input that crashed.
+# Run one fuzz target with libFuzzer's `flags`, its output to the terminal and to `log`, under fuzz/, and fail as it does, or if it saved an input that crashed, timed out or ran out of memory, which it lists.
 _fuzz-run target seconds workers log flags:
     #!/usr/bin/env bash
     set -u
     cd fuzz || exit
-    mkdir -p "corpus/{{ target }}" "$(dirname "{{ log }}")"
+    mkdir -p "corpus/{{ target }}" "artifacts/{{ target }}" "$(dirname "{{ log }}")"
+    # The inputs that the run saves are the artifacts newer than this.
+    started=$(mktemp "${TMPDIR:-/tmp}/fuzz-started.XXXXXX") || exit
+    trap 'rm -f "$started"' EXIT
     cargo +{{ fuzz_toolchain }} fuzz run --jobs {{ workers }} {{ target }} "corpus/{{ target }}" seeds/parser -- -max_total_time={{ seconds }} {{ flags }} 2>&1 | tee "{{ log }}"
     code=${PIPESTATUS[0]}
-    # With several workers, libFuzzer exits with the status that stopped one, as waitpid
-    # gives it: a crash's 19712, which the shell takes modulo 256, as 0. Its log tells.
+    # On macOS, with several workers, libFuzzer exits with the status of the job that
+    # ended it as waitpid gives it, a crash's 19712, which the shell takes modulo 256,
+    # as 0; its log tells. On Linux it exits with the job's code.
     exiting=$(grep -oE '^INFO: exiting: [0-9]+' "{{ log }}" | tail -1 | grep -oE '[0-9]+$')
     if [ "$code" -eq 0 ] && [ "${exiting:-0}" != 0 ]; then
-        echo "{{ target }} stopped: libFuzzer exited with $exiting" >&2
+        echo "{{ target }}: libFuzzer exited with $exiting" >&2
         code=1
     fi
-    # A run that goes on past crashes ends with 0, and its log names what it saved.
-    saved=$(grep -oE 'Test unit written to .*' "{{ log }}" | sed 's/^Test unit written to //' | sort -u)
-    if [ "$code" -eq 0 ] && [ -n "$saved" ]; then
-        echo "{{ target }}: $(echo "$saved" | wc -l | tr -d ' ') inputs saved:" >&2
-        echo "$saved" | sed 's/^/  /' >&2
+    # The inputs saved, which a run that goes on past crashes ends with 0 after, and
+    # whose names its log may not hold, as the fork mode keeps only a job's errors.
+    saved=$(find "artifacts/{{ target }}" -type f -newer "$started" | sort)
+    failed=$(echo "$saved" | grep -E '/(crash|timeout|oom|leak)-' || true)
+    slow=$(echo "$saved" | grep -E '/slow-unit-' || true)
+    if [ -n "$failed" ]; then
+        echo "{{ target }}: $(echo "$failed" | wc -l | tr -d ' ') inputs saved that crashed, timed out or ran out of memory:" >&2
+        echo "$failed" | sed 's/^/  /' >&2
         code=1
+    fi
+    # Slow inputs, which the run reports, fail nothing.
+    if [ -n "$slow" ]; then
+        echo "{{ target }}: $(echo "$slow" | wc -l | tr -d ' ') slow inputs saved, which fail nothing:" >&2
+        echo "$slow" | sed 's/^/  /' >&2
     fi
     exit $code
 
