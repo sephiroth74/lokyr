@@ -764,6 +764,11 @@ mod tests {
         let output = "\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;7Ha\x1b[1;9Hb";
         Parser::new().advance(&mut terminal, output.as_bytes());
         assert_eq!(line_of(terminal.screen_rows(), 0), "      a b");
+        // At the row's end, a head has no text: the line goes on with the
+        // character that did not fit.
+        let mut terminal = Terminal::new(5, 3, Options::default());
+        Parser::new().advance(&mut terminal, "abcd\u{4e2d}".as_bytes());
+        assert_eq!(line_of(terminal.screen_rows(), 0), "abcd\u{4e2d}");
     }
 
     #[test]

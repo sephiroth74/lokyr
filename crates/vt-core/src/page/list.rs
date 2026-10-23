@@ -261,8 +261,10 @@ pub struct PageList {
 
 impl PageList {
     /// A list of `cols` columns, whose screen has `rows` empty rows, with
-    /// pages within `scrollback`.
+    /// pages within `scrollback`. It has one column and one row at least,
+    /// as [`PageList::resize`] gives it, so that each row has a last cell.
     pub fn new(cols: u16, rows: u16, scrollback: Scrollback) -> Self {
+        let (cols, rows) = (cols.max(1), rows.max(1));
         let capacity = Capacity::standard(cols);
         let mut list = Self {
             nodes: Vec::new(),
@@ -2027,6 +2029,12 @@ mod tests {
             assert_eq!(row, y);
             assert!(page.cells(row).iter().all(|cell| cell.is_empty()));
         }
+    }
+
+    #[test]
+    fn a_new_list_has_a_column_and_a_row_at_least() {
+        let list = PageList::new(0, 0, pages(1, 4));
+        assert_eq!((list.cols(), list.rows(), list.total_rows()), (1, 1, 1));
     }
 
     #[test]

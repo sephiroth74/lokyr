@@ -3,7 +3,7 @@
 use std::sync::atomic::AtomicBool;
 
 use bolt_search::{Case, Direction, Match, Query};
-use bolt_vt_core::page::{Content, Position};
+use bolt_vt_core::page::{Content, PageList, Position, Scrollback};
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Options, Terminal};
 use proptest::prelude::*;
@@ -378,6 +378,14 @@ fn a_cell_past_the_last_column_finds_nothing() {
             "{direction:?}"
         );
     }
+}
+
+#[test]
+fn a_list_asked_for_no_columns_is_searched() {
+    let mut list = PageList::new(0, 2, Scrollback::default());
+    let literal = Query::literal("x", Case::Sensitive).unwrap();
+    let found = bolt_search::find_all(&mut list, &literal, 0..2, 10, &AtomicBool::new(false));
+    assert_eq!(found.map(|matches| matches.count), Ok(0));
 }
 
 #[test]

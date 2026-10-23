@@ -18,8 +18,9 @@ struct Line {
 }
 
 /// The logical lines of `list`, from their cells: empty ones read as
-/// spaces, the halves that show nothing are left out, and the spaces that
-/// end a line go.
+/// spaces, the second halves of wide characters and the spacer heads at a
+/// row's end are left out, a spacer head inside a row reads as a space,
+/// and the spaces that end a line go.
 fn lines(list: &PageList) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut line = Line {
@@ -30,12 +31,14 @@ fn lines(list: &PageList) -> Vec<Line> {
         let (id, row) = list.row_at(index).unwrap();
         let page = list.page(id).unwrap();
         for (col, cell) in (0..).zip(page.cells(row)) {
-            if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
+            let head = cell.width() == Width::SpacerHead;
+            if cell.width() == Width::SpacerTail || (head && col + 1 == list.cols()) {
                 continue;
             }
             line.cells
                 .push((line.text.len(), Position { page: id, row, col }));
             match cell.content() {
+                _ if head => line.text.push(' '),
                 Content::Char(c) if c != '\0' => line.text.push(c),
                 Content::Grapheme(c) => {
                     line.text.push(c);
@@ -184,6 +187,32 @@ fn found(
     (stepped, back, all)
 }
 
+#[test]
+fn a_spacer_head_reads_as_a_space_inside_a_row_alone() {
+    // A wrap within left and right margins leaves a head at the right
+    // margin, between `a` and `b`; at the row's end, after `cd`, the head
+    // that a full-width wrap leaves has no text.
+    let mut terminal = Terminal::new(10, 4, Options::default());
+    let output =
+        "\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;7Ha\x1b[1;9Hb\x1b[?69l\x1b[3;8Hcd\u{4e2d}\r\n";
+    Parser::new().advance(&mut terminal, output.as_bytes());
+    for needle in ["a b", "cd\u{4e2d}"] {
+        let expected: Cells = lines(terminal.screen_rows())
+            .iter()
+            .flat_map(|line| expected(line, needle, false, false))
+            .collect();
+        assert_eq!(expected.len(), 1, "{needle}");
+        let query = Query::literal(needle, Case::Sensitive).unwrap();
+        let rows = 0..terminal.screen_rows().total_rows();
+        let (stepped, back, all) = found(&mut terminal, &query, rows);
+        assert_eq!(
+            (&stepped, &back, &all),
+            (&expected, &expected, &expected),
+            "{needle}"
+        );
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
@@ -203,6 +232,7 @@ proptest! {
         row_count in 0_usize..40,
         crossing in any::<bool>(),
         cold in any::<bool>(),
+        margins in prop::option::of((0_u16..12, 0_u16..12)),
     ) {
         // Empty lines up to the first page's last row, and there the needle
         // in the last column, so that it goes on in the next page.
@@ -217,9 +247,26 @@ proptest! {
             text.push_str(&needle);
             text.push_str("\r\n");
         }
+        // At times, the lines go within left and right margins, the right
+        // one left of the last column, so that a wide character that does
+        // not fit at it leaves a spacer head inside the row; the cursor
+        // stays in its row, at the left margin.
+        if let Some((left, width)) = margins {
+            let left = left % (cols - 2);
+            let right = left + 1 + width % (cols - 2 - left);
+            text.push_str(&format!(
+                "\x1b7\x1b[?69h\x1b[{};{}s\x1b8\x1b[{}G",
+                left + 1,
+                right + 1,
+                left + 1
+            ));
+        }
         for line in &lines_in {
             text.push_str(line);
             text.push_str("\r\n");
+        }
+        if margins.is_some() {
+            text.push_str("\x1b[?69l");
         }
         let mut terminal = Terminal::new(cols, 4, Options::default());
         Parser::new().advance(&mut terminal, text.as_bytes());

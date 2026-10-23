@@ -46,10 +46,10 @@ impl Line {
     /// the halves of wide characters that show nothing, as their second
     /// halves and the heads that wrapping leaves at the row's end, have no
     /// text. A head inside the row, which a wrap within left and right
-    /// margins leaves, reads as a space, so that the text keeps its columns. The cells of
-    /// a line that would start past 4 GiB of text, which only a scrollback
-    /// that large can hold, are left out: the rest of the line is not
-    /// searched.
+    /// margins leaves, reads as a space, so that the text keeps its
+    /// columns. The cells of a line that would start past 4 GiB of text,
+    /// which only a scrollback that large can hold, are left out: the rest
+    /// of the line is not searched.
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];

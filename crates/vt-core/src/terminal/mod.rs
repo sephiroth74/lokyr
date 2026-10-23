@@ -942,19 +942,18 @@ impl Terminal {
 
     /// The text of row `y` of the active screen: a character per cell, a
     /// space for an empty one, with the trailing spaces taken off. A spacer
-    /// head inside the row, which a wrap within left and right margins
-    /// leaves, reads as a space, so that the text keeps its columns.
+    /// head reads as a space, so that the text keeps its columns where a
+    /// wrap within left and right margins leaves one inside the row; one at
+    /// the row's end goes with the trailing spaces.
     pub fn row_text(&self, y: u16) -> String {
         let (page, row) = self.screen().rows.screen_row(y);
-        let cells = page.cells(row);
         let mut text = String::new();
-        for (x, cell) in cells.iter().enumerate() {
-            let inside = x + 1 < cells.len();
+        for (x, cell) in page.cells(row).iter().enumerate() {
             // A row has `u16::MAX` cells at most.
             let x = x as u16;
             match (cell.width(), cell.content()) {
-                (Width::SpacerHead, _) if inside => text.push(' '),
-                (Width::SpacerTail | Width::SpacerHead, _) => {}
+                (Width::SpacerHead, _) => text.push(' '),
+                (Width::SpacerTail, _) => {}
                 (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
                     text.push(' ');
                 }
