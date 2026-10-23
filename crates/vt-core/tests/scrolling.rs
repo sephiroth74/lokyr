@@ -282,6 +282,7 @@ fn a_long_title_costs_no_allocation_a_byte() {
             made < 100,
             "{made} allocations, with reports {title_reports}"
         );
+        assert_eq!(terminal.title().len(), 60_000, "the title was set");
     }
 }
 

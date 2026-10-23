@@ -44,20 +44,25 @@ impl Line {
 
     /// Adds the text of `row`, the line's next. Empty cells read as spaces;
     /// the halves of wide characters that show nothing, as their second
-    /// halves and the heads that wrapping leaves, have no text. The cells of
+    /// halves and the heads that wrapping leaves at the row's end, have no
+    /// text. A head inside the row, which a wrap within left and right
+    /// margins leaves, reads as a space, so that the text keeps its columns. The cells of
     /// a line that would start past 4 GiB of text, which only a scrollback
     /// that large can hold, are left out: the rest of the line is not
     /// searched.
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];
+        let last = row.cols() - 1;
         for (col, cell) in row.cells().enumerate() {
             // A row has `u16::MAX` cells at most. Counted with the cells
             // rather than with an inclusive range, which does not optimize
             // as well in this loop, the search's hottest.
             let col = col as u16;
-            if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
-                continue;
+            match cell.width() {
+                Width::SpacerTail => continue,
+                Width::SpacerHead if col == last => continue,
+                _ => {}
             }
             let Ok(start) = u32::try_from(self.text.len()) else {
                 return;

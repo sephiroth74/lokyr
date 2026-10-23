@@ -136,6 +136,22 @@ fn a_match_crosses_rows_that_wrap_into_each_other() {
 }
 
 #[test]
+fn a_match_does_not_cross_a_spacer_head_inside_a_row() {
+    // A wrap within left and right margins leaves a head at the right
+    // margin, inside the row, which reads as a space.
+    let mut terminal = printed(
+        10,
+        3,
+        "\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;7Ha\x1b[1;9Hb",
+    );
+    assert_eq!(forward(&mut terminal, "ab", (0, 0)), None);
+    assert_eq!(
+        forward(&mut terminal, "a b", (0, 0)),
+        Some(((0, 6), (0, 8)))
+    );
+}
+
+#[test]
 fn wide_characters_and_clusters_are_found_whole() {
     let mut terminal = printed(10, 3, "a中文b");
     // The last cell is the first half of the second wide character.

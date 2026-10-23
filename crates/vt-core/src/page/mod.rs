@@ -519,8 +519,9 @@ impl Page {
     /// characters that it would leave, as [`Page::clear_halves`] does, with
     /// the row's block found once. With `wrap_start`, the column where the
     /// line's wraps land, it also tells whether the text went over a wide
-    /// character there, or over its second half, for which the row above
-    /// may have left a spacer head: never when `x` is past them.
+    /// character in the two columns from there: one at `wrap_start`, or its
+    /// second half, for which the row above may have left a spacer head, or
+    /// one that starts a column after it. Never when `x` is past them.
     #[inline(always)]
     pub fn overwrite_ascii(
         &mut self,

@@ -5452,6 +5452,78 @@ fn a_wide_character_that_wraps_over_another_keeps_its_spacer_head() {
 }
 
 #[test]
+fn spacer_heads_at_the_margins_go_with_their_characters() {
+    // From right of the right margin, a wide character leaves its head at
+    // the screen's edge: the head at the right margin is another
+    // character's, which the wrap goes over, and goes with it.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(2, 1).content(), Content::Char('\u{4e2d}'));
+    term.feed("\x1b[1;10H\u{6587}");
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(2, 1).content(), Content::Char('\u{6587}'));
+    assert_ne!(term.cell(7, 0).width(), Width::SpacerHead);
+    // From the right margin, over the character that wrapped there, the
+    // head is the new character's, and stays.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;8H\u{6587}");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(2, 1).content(), Content::Char('\u{6587}'));
+    // At the bottom margin, from right of the right margin, the wrap stays
+    // on its row, over the character that the head above leads.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[1;3r\x1b[3;8s\x1b[2;8H\u{4e2d}");
+    assert_eq!(term.cell(7, 1).width(), Width::SpacerHead);
+    assert_eq!(term.cell(2, 2).content(), Content::Char('\u{4e2d}'));
+    term.feed("\x1b[3;10H\u{6587}");
+    assert_eq!(term.cell(9, 2).width(), Width::SpacerHead);
+    assert_eq!(term.cell(2, 2).content(), Content::Char('\u{6587}'));
+    assert_ne!(term.cell(7, 1).width(), Width::SpacerHead);
+}
+
+#[test]
+fn a_head_or_a_widening_that_empties_a_wrapped_character_empties_its_head() {
+    // On a line of two columns, the head that a wide character leaves goes
+    // over the character that wrapped there.
+    let mut term = Term::new(2, 3);
+    term.feed("\x1b[1;2H\u{4e2d}");
+    assert_eq!(term.cell(1, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[2;2H\u{6587}");
+    assert_eq!(term.cell(1, 1).width(), Width::SpacerHead);
+    assert_eq!(term.cell(0, 2).content(), Content::Char('\u{6587}'));
+    assert_ne!(term.cell(1, 0).width(), Width::SpacerHead);
+    // So within margins two columns apart.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[3;4s\x1b[1;4H\u{4e2d}");
+    assert_eq!(term.cell(3, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[2;4H\u{6587}");
+    assert_ne!(term.cell(3, 0).width(), Width::SpacerHead);
+    // A cluster just left of the left margin that widens over it.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[2;2H\u{2764}\u{fe0f}");
+    assert_eq!(term.cell(1, 1).width(), Width::Wide);
+    assert_ne!(term.cell(7, 0).width(), Width::SpacerHead);
+}
+
+#[test]
+fn a_spacer_head_inside_a_row_reads_as_a_space() {
+    // A wrap within left and right margins leaves a head at the right
+    // margin, inside the row: the text after it keeps its column.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;7Ha\x1b[1;9Hb");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_eq!(term.terminal.row_text(0), "      a b");
+    // At the row's end, a head has no text.
+    let mut term = Term::new(5, 3);
+    term.feed("abcd\u{4e2d}");
+    assert_eq!(term.cell(4, 0).width(), Width::SpacerHead);
+    assert_eq!(term.terminal.row_text(0), "abcd");
+}
+
+#[test]
 fn spacer_heads_do_not_move_into_a_row() {
     // `中` does not fit after `abcd`, and leaves a spacer head at the end.
     let mut term = Term::new(5, 3);

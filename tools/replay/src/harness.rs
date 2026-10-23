@@ -689,8 +689,13 @@ pub fn screen_lines(list: &PageList, around: usize) -> Vec<String> {
 fn next_line<'a>(rows: &mut Peekable<impl Iterator<Item = ListRow<'a>>>) -> String {
     let mut line = String::new();
     while let Some(row) = rows.next() {
+        let last = usize::from(row.cols()) - 1;
         for (x, cell) in row.cells().enumerate() {
             match (cell.width(), cell.content()) {
+                // A head inside the row, which a wrap within left and right
+                // margins leaves, reads as a space, so that the line keeps
+                // its columns; at the row's end it has no text.
+                (Width::SpacerHead, _) if x < last => line.push(' '),
                 (Width::SpacerTail | Width::SpacerHead, _) => {}
                 (_, Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_)) => {
                     line.push(' ');
@@ -749,6 +754,16 @@ mod tests {
             assert_eq!(line_of(terminal.screen_rows(), index), "0123456789wrap   z");
         }
         assert_eq!(line_of(terminal.screen_rows(), 1), "\u{65e5}\u{672c}x");
+    }
+
+    #[test]
+    fn a_spacer_head_inside_a_row_reads_as_a_space() {
+        let mut terminal = Terminal::new(10, 3, Options::default());
+        // A wrap within left and right margins leaves a head at the right
+        // margin, inside the row.
+        let output = "\x1b[?69h\x1b[3;8s\x1b[1;8H\u{4e2d}\x1b[1;7Ha\x1b[1;9Hb";
+        Parser::new().advance(&mut terminal, output.as_bytes());
+        assert_eq!(line_of(terminal.screen_rows(), 0), "      a b");
     }
 
     #[test]

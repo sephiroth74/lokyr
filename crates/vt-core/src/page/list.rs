@@ -169,6 +169,11 @@ impl<'a> ListRow<'a> {
         self.page.row(self.row)
     }
 
+    /// How many cells the row has.
+    pub fn cols(self) -> u16 {
+        self.page.cols()
+    }
+
     /// The row's cells, one for each column.
     pub fn cells(self) -> impl Iterator<Item = Cell> + 'a {
         let empty = usize::from(self.page.cols()) - self.cells.len();
