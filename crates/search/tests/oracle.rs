@@ -187,6 +187,40 @@ fn found(
     (stepped, back, all)
 }
 
+/// Needles that cross each spacer head inside a row of `list`, read from
+/// its cells: the characters left and right of it, with the space that the
+/// head reads as between them.
+fn across_heads(list: &PageList) -> Vec<String> {
+    let mut needles = Vec::new();
+    for index in 0..list.total_rows() {
+        let (id, row) = list.row_at(index).unwrap();
+        let cells = list.page(id).unwrap().cells(row);
+        let text = |col: usize| match (cells[col].width(), cells[col].content()) {
+            (Width::Narrow | Width::Wide, Content::Char(c)) if c != '\0' => Some(c),
+            _ => None,
+        };
+        for col in 1..cells.len().saturating_sub(1) {
+            if cells[col].width() != Width::SpacerHead {
+                continue;
+            }
+            // The character left of it, a wide one's first half past its
+            // second.
+            let left = if cells[col - 1].width() == Width::SpacerTail {
+                col.checked_sub(2).and_then(text)
+            } else {
+                text(col - 1)
+            };
+            if let (Some(left), Some(right)) = (left, text(col + 1)) {
+                let needle = format!("{left} {right}");
+                if !needles.contains(&needle) {
+                    needles.push(needle);
+                }
+            }
+        }
+    }
+    needles
+}
+
 #[test]
 fn a_spacer_head_reads_as_a_space_inside_a_row_alone() {
     // A wrap within left and right margins leaves a head at the right
@@ -219,8 +253,10 @@ proptest! {
     /// A literal finds what the oracle finds, whole words or not, either
     /// case, with wide characters and clusters, stepping either way, or in
     /// one pass over a range of rows, its matches' first and last cells
-    /// alike, with lines that cross from one page into the next, and the
-    /// lines' pages gone cold.
+    /// alike, with lines that cross from one page into the next, the lines'
+    /// pages gone cold, and lines within left and right margins, where wide
+    /// characters leave spacer heads inside rows, which needles of their
+    /// own cross.
     #[test]
     fn a_literal_finds_what_the_oracle_finds(
         lines_in in prop::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
@@ -232,7 +268,7 @@ proptest! {
         row_count in 0_usize..40,
         crossing in any::<bool>(),
         cold in any::<bool>(),
-        margins in prop::option::of((0_u16..12, 0_u16..12)),
+        margins in prop::option::of((0_u16..12, 0_u16..12, "[ab_.]")),
     ) {
         // Empty lines up to the first page's last row, and there the needle
         // in the last column, so that it goes on in the next page.
@@ -249,13 +285,22 @@ proptest! {
         }
         // At times, the lines go within left and right margins, the right
         // one left of the last column, so that a wide character that does
-        // not fit at it leaves a spacer head inside the row; the cursor
-        // stays in its row, at the left margin.
-        if let Some((left, width)) = margins {
+        // not fit at it leaves a spacer head inside the row, with text right
+        // of it beyond the margin. A line feed at the bottom would scroll
+        // the margins' columns alone, into no scrollback: the lines start
+        // at the top of a tall screen, the rows before in the scrollback.
+        let screen: u16 = if margins.is_some() { 64 } else { 4 };
+        if let Some((left, width, beyond)) = &margins {
             let left = left % (cols - 2);
             let right = left + 1 + width % (cols - 2 - left);
+            text.push_str(&"\r\n".repeat(usize::from(screen)));
+            // The last row stays empty, where the search backward starts.
+            for row in 1..screen {
+                let beyond = beyond.repeat(usize::from(cols - right - 1));
+                text.push_str(&format!("\x1b[{row};{}H{beyond}", right + 2));
+            }
             text.push_str(&format!(
-                "\x1b7\x1b[?69h\x1b[{};{}s\x1b8\x1b[{}G",
+                "\x1b[?69h\x1b[{};{}s\x1b[{}G",
                 left + 1,
                 right + 1,
                 left + 1
@@ -268,20 +313,25 @@ proptest! {
         if margins.is_some() {
             text.push_str("\x1b[?69l");
         }
-        let mut terminal = Terminal::new(cols, 4, Options::default());
+        let mut terminal = Terminal::new(cols, screen, Options::default());
         Parser::new().advance(&mut terminal, text.as_bytes());
-        // The row of the last line, which a page of rows after it, and some,
-        // sends to a page that goes cold.
+        // The row of the last line, which a page of rows after it, the three
+        // screens that compacting keeps, and some, send to a page that goes
+        // cold.
         let last_line = terminal.screen_rows().scrollback_rows() + usize::from(terminal.cursor().y) - 1;
         if cold {
-            let rows = usize::from(Capacity::standard(cols).rows) + 16;
+            let rows = usize::from(Capacity::standard(cols).rows) + 3 * usize::from(screen) + 16;
             Parser::new().advance(&mut terminal, "\r\n".repeat(rows).as_bytes());
         }
         let list = terminal.screen_rows();
-        let expected: Cells = lines(list)
-            .iter()
-            .flat_map(|line| expected(line, &needle, insensitive, whole_word))
-            .collect();
+        let read = lines(list);
+        let crossings = across_heads(list);
+        let oracle = |needle: &str| -> Cells {
+            read.iter()
+                .flat_map(|line| expected(line, needle, insensitive, whole_word))
+                .collect()
+        };
+        let expected = oracle(&needle);
         let rows = filler + first_row..filler + first_row + row_count;
         let in_rows: Cells = expected
             .iter()
@@ -301,5 +351,16 @@ proptest! {
         prop_assert_eq!(&back, &expected);
         prop_assert_eq!(&all, &in_rows);
         prop_assert_eq!(terminal.screen_rows().pins(), 0);
+        // Needles that cross the heads inside rows, which tell how a head
+        // reads: as a space, or as nothing.
+        let every = 0..terminal.screen_rows().total_rows();
+        for across in &crossings {
+            let wanted = oracle(across);
+            let query = Query::literal(across, case).unwrap().whole_word(whole_word);
+            let (stepped, back, all) = found(&mut terminal, &query, every.clone());
+            prop_assert_eq!(&stepped, &wanted, "{:?}", across);
+            prop_assert_eq!(&back, &wanted, "{:?}", across);
+            prop_assert_eq!(&all, &wanted, "{:?}", across);
+        }
     }
 }
