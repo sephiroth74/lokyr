@@ -953,23 +953,37 @@ mod tests {
     }
 
     /// Installs `filter` in this process, which `close_inherited` then runs
-    /// under: async-signal-safe, as it makes two system calls.
+    /// under, and tells why it could not: async-signal-safe, as it makes two
+    /// system calls and builds the error from `errno`.
     #[cfg(target_os = "linux")]
-    fn install(filter: &[libc::sock_filter; 4]) {
+    fn install(filter: &[libc::sock_filter; 4]) -> std::io::Result<()> {
         let program = libc::sock_fprog {
             len: 4,
             filter: filter.as_ptr().cast_mut(),
         };
+        let zero: libc::c_ulong = 0;
         // SAFETY: the process gives up gaining privileges, as an unprivileged
         // filter asks, and installs one that reads the system call's number
-        // alone; `program` and `filter` live through the calls.
-        unsafe {
-            libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+        // alone; `program` and `filter` live through the calls, whose variadic
+        // arguments the kernel reads as `unsigned long`.
+        let installed = unsafe {
             libc::prctl(
-                libc::PR_SET_SECCOMP,
-                libc::SECCOMP_MODE_FILTER,
-                &raw const program,
-            );
+                libc::PR_SET_NO_NEW_PRIVS,
+                1 as libc::c_ulong,
+                zero,
+                zero,
+                zero,
+            ) == 0
+                && libc::prctl(
+                    libc::PR_SET_SECCOMP,
+                    libc::SECCOMP_MODE_FILTER as libc::c_ulong,
+                    &raw const program,
+                ) == 0
+        };
+        if installed {
+            Ok(())
+        } else {
+            Err(IoError::last_os_error())
         }
     }
 
@@ -977,9 +991,20 @@ mod tests {
     #[test]
     fn a_close_range_that_fails_in_the_child_marks_each_descriptor() {
         let filter = without_close_range();
+        // Where no filter can be installed, as under qemu's user mode or a
+        // kernel without seccomp's filters, the test does not apply.
+        let mut probe = Command::new("/bin/true");
+        // SAFETY: `install` makes two system calls between fork and exec.
+        unsafe {
+            probe.pre_exec(move || install(&filter));
+        }
+        if let Err(error) = probe.status() {
+            eprintln!("no seccomp filter can be installed here: {error}");
+            return;
+        }
         // Under the filter, the call marks nothing.
         assert!(kept_after(move || {
-            install(&filter);
+            let _ = install(&filter);
             // SAFETY: as in `close_inherited`.
             unsafe {
                 libc::syscall(
@@ -993,7 +1018,7 @@ mod tests {
         // And `close_inherited` marks each descriptor in turn.
         let limit = descriptor_limit();
         assert!(!kept_after(move || {
-            install(&filter);
+            let _ = install(&filter);
             close_inherited(limit, &mut []);
         }));
     }

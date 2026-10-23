@@ -187,34 +187,63 @@ fn found(
     (stepped, back, all)
 }
 
-/// Needles that cross each spacer head inside a row of `list`, read from
-/// its cells: the characters left and right of it, with the space that the
-/// head reads as between them.
+/// Needles that cross each spacer head of `list`, read from its cells
+/// rather than through the oracle's lines: across one inside a row, the
+/// texts of the cells left and right of it with the space that the head
+/// reads as between them; across one at the end of a row that wraps into
+/// the next, the text of the cell left of it and of the next row's first,
+/// as the head reads as nothing there.
 fn across_heads(list: &PageList) -> Vec<String> {
     let mut needles = Vec::new();
+    let cols = usize::from(list.cols());
+    // The text of the cell at `col` of the row at `index`, if it shows a
+    // character or a cluster; the first half of a wide character for its
+    // second.
+    let text = |index: usize, col: usize| -> Option<String> {
+        let (id, row) = list.row_at(index)?;
+        let page = list.page(id)?;
+        let cells = page.cells(row);
+        let col = match cells.get(col)?.width() {
+            Width::SpacerTail => col.checked_sub(1)?,
+            _ => col,
+        };
+        let col16 = u16::try_from(col).ok()?;
+        match (cells[col].width(), cells[col].content()) {
+            (Width::Narrow | Width::Wide, Content::Char(c)) if c != '\0' => Some(c.to_string()),
+            (Width::Narrow | Width::Wide, Content::Grapheme(c)) => Some(
+                std::iter::once(c)
+                    .chain(page.grapheme(row, col16).iter().copied())
+                    .collect(),
+            ),
+            _ => None,
+        }
+    };
+    let flag = |index: usize, flag: RowFlag| {
+        list.row_at(index)
+            .is_some_and(|(id, row)| list.page(id).unwrap().row(row).has(flag))
+    };
     for index in 0..list.total_rows() {
         let (id, row) = list.row_at(index).unwrap();
         let cells = list.page(id).unwrap().cells(row);
-        let text = |col: usize| match (cells[col].width(), cells[col].content()) {
-            (Width::Narrow | Width::Wide, Content::Char(c)) if c != '\0' => Some(c),
-            _ => None,
-        };
-        for col in 1..cells.len().saturating_sub(1) {
-            if cells[col].width() != Width::SpacerHead {
+        for (col, cell) in cells.iter().enumerate().skip(1) {
+            if cell.width() != Width::SpacerHead {
                 continue;
             }
-            // The character left of it, a wide one's first half past its
-            // second.
-            let left = if cells[col - 1].width() == Width::SpacerTail {
-                col.checked_sub(2).and_then(text)
+            let needle = if col + 1 < cols {
+                text(index, col - 1)
+                    .zip(text(index, col + 1))
+                    .map(|(left, right)| format!("{left} {right}"))
+            } else if flag(index, RowFlag::SoftWrapped) && flag(index + 1, RowFlag::Continuation) {
+                text(index, col - 1)
+                    .zip(text(index + 1, 0))
+                    .map(|(left, right)| format!("{left}{right}"))
             } else {
-                text(col - 1)
+                None
             };
-            if let (Some(left), Some(right)) = (left, text(col + 1)) {
-                let needle = format!("{left} {right}");
-                if !needles.contains(&needle) {
-                    needles.push(needle);
-                }
+            if let Some(needle) = needle
+                && !needles.contains(&needle)
+            {
+                needles.push(needle);
             }
         }
     }
@@ -362,5 +391,6 @@ proptest! {
             prop_assert_eq!(&back, &wanted, "{:?}", across);
             prop_assert_eq!(&all, &wanted, "{:?}", across);
         }
+        prop_assert_eq!(terminal.screen_rows().pins(), 0);
     }
 }
