@@ -5471,6 +5471,19 @@ fn decrc_in_origin_mode_goes_no_lower_than_the_bottom_margin() {
     );
     // Outside origin mode it stays where it was.
     assert_eq!(restored("\x1b[20;1H\x1b7\x1b[5;10r\x1b8"), (0, 19));
+    // So does leaving the alternate screen with 1049, which brings back
+    // the cursor that it saved.
+    assert_eq!(
+        restored("\x1b[?6h\x1b[20;1H\x1b[?1049h\x1b[5;10r\x1b[?1049l"),
+        (0, 9)
+    );
+    // A pending wrap comes back through the cap, as xterm sets it after
+    // the move: saved at the last column of row 19, the cursor comes back
+    // at the bottom margin with its wrap pending.
+    let mut term = Term::new(80, 24);
+    term.feed("\x1b[?6h\x1b[20;80Hx\x1b7\x1b[5;10r\x1b8");
+    let cursor = term.terminal.cursor();
+    assert_eq!((cursor.x, cursor.y, cursor.pending_wrap), (79, 9, true));
 }
 
 #[test]
@@ -5502,6 +5515,23 @@ fn spacer_heads_at_the_margins_go_with_their_characters() {
     assert_eq!(term.cell(9, 2).width(), Width::SpacerHead);
     assert_eq!(term.cell(2, 2).content(), Content::Char('\u{6587}'));
     assert_ne!(term.cell(7, 1).width(), Width::SpacerHead);
+    // The head at the screen's edge goes when its character, at the left
+    // margin, is written over, by text or by another wide character.
+    for over in ["ab", "\u{6587}"] {
+        let mut term = Term::new(10, 3);
+        term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}");
+        assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+        assert_eq!(term.cell(0, 1).content(), Content::Char('\u{4e2d}'));
+        term.feed(format!("\x1b[2;1H{over}"));
+        assert_ne!(term.cell(9, 0).width(), Width::SpacerHead, "{over}");
+    }
+    // From right of the right margin again, over the character that
+    // wrapped there, the head at the edge is the new character's, and
+    // stays.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}\x1b[1;10H\u{6587}");
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(0, 1).content(), Content::Char('\u{6587}'));
 }
 
 #[test]
@@ -5824,6 +5854,11 @@ fn rectangle_checksums_clamp_count_attributes_and_skip_halves() {
         "\x1bP4!~0000\x1b\\\x1bP5!~B1D3\x1b\\",
         "0x4E2D negated"
     );
+    // A spacer head counts as the empty cell that xterm leaves where a
+    // wide character does not fit: a space.
+    term.feed("\x1b[3;10H\u{4e2d}\x1b[7;1;3;10;3;10*y");
+    assert_eq!(term.cell(9, 2).width(), Width::SpacerHead);
+    assert_eq!(replies(&mut term), "\x1bP7!~FFE0\x1b\\");
     // An inverted rectangle counts nothing; no parameters, the screen.
     term.feed("\x1b[6;1;3;1;2;5*y");
     assert_eq!(replies(&mut term), "\x1bP6!~0000\x1b\\");

@@ -163,7 +163,7 @@ impl Terminal {
             y,
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y);
+            self.clear_spacer_head_above(x, y, true);
         }
         Some(len)
     }
@@ -252,7 +252,7 @@ impl Terminal {
             page.write_chars(row, x, stretch, template);
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y);
+            self.clear_spacer_head_above(x, y, true);
         }
         self.cluster = Some(Cluster {
             x: x + cells - u16::from(last_width),
@@ -339,7 +339,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y);
+            self.clear_spacer_head_above(x, y, true);
         }
     }
 
@@ -361,11 +361,16 @@ impl Terminal {
         // scrolling, rather than back to the start of the same one, as at
         // the last row below the scroll region.
         let mut head_left_above = false;
+        // Whether it leaves it at the screen's edge of the row above, which
+        // the check then passes over, looking at the right margin alone.
+        let mut head_at_the_edge_above = false;
         if width == 2 && x == end - 1 {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
-                head_left_above = x <= self.margins.right && self.index_moves_on();
+                let moves_on = self.index_moves_on();
+                head_left_above = x <= self.margins.right && moves_on;
+                head_at_the_edge_above = x > self.margins.right && moves_on;
                 self.wrap();
             } else {
                 self.screen_mut().cursor.x = x - 1;
@@ -407,7 +412,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y);
+            self.clear_spacer_head_above(x, y, !head_at_the_edge_above);
         }
         if self.link.is_open() {
             self.link_cells(x, y, width);
@@ -621,9 +626,10 @@ impl Terminal {
         self.cluster = None;
         let Cursor { x, y, .. } = self.cursor();
         // Only a wrap from the last column of the screen to the first one
-        // of another row makes the two rows one line, for reflow. Below the
-        // scroll region, or right of the right margin, the text goes on in
-        // the same row.
+        // of another row makes the two rows one line, for reflow. Where the
+        // index does not move, at the screen's last row below the scroll
+        // region or at the bottom margin right of the right margin, the
+        // text goes on in the same row.
         let joins_rows = x == self.cols - 1 && self.margins.left == 0 && self.index_moves_on();
         // Marked before the index, which may scroll the row away.
         if joins_rows {
@@ -643,17 +649,23 @@ impl Terminal {
     }
 
     /// Empties the spacer head at the end of the line on the row above `y`,
-    /// at the right margin or the screen's edge, if there is one: for a
+    /// at the right margin, or else, with `edge`, at the screen's edge, where
+    /// a wrap from right of the margins leaves one, if there is one: for a
     /// write from column `x` that goes over a wide character at the left
     /// margin of row `y`, where wraps land, which the head was left for, as
     /// [`over_wide_start`] tells, and as `alacritty_terminal` does. A head
     /// that a wrap left under other margins stays. A head in the scrollback
     /// stays, where `alacritty_terminal` clears it: the scrollback's rows
     /// are not written to, as their pages can be kept cold.
-    fn clear_spacer_head_above(&mut self, x: u16, y: u16) {
-        let last = self.line_end(x) - 1;
+    fn clear_spacer_head_above(&mut self, x: u16, y: u16, edge: bool) {
+        let ends = [self.line_end(x) - 1, self.cols - 1];
+        let ends = if edge { &ends[..] } else { &ends[..1] };
         let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);
-        if page.cells(row)[usize::from(last)].width() == Width::SpacerHead {
+        let head = ends
+            .iter()
+            .copied()
+            .find(|&last| page.cells(row)[usize::from(last)].width() == Width::SpacerHead);
+        if let Some(last) = head {
             page.set_cell(row, last, Cell::EMPTY);
         }
     }
@@ -669,7 +681,7 @@ impl Terminal {
         let over_wide = y > 0 && over_wide_start(page.cells(row), x, width, start);
         page.clear_halves(row, x, width);
         if over_wide {
-            self.clear_spacer_head_above(x, y);
+            self.clear_spacer_head_above(x, y, true);
         }
     }
 

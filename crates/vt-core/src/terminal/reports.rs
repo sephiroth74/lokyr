@@ -86,13 +86,16 @@ impl Terminal {
     /// to row `Pb` and column `Pr`, all included, which count from the
     /// margins' top left in origin mode and stay within them, the screen's
     /// edges by default. Each cell counts its character, an empty one a
-    /// space and the second half of a wide one nothing; not its attributes,
-    /// which DEC's terminals add, as xterm leaves them out with its
-    /// `checksumExtension` set to, and as test suites such as esctest read
-    /// the screen's characters through it. The sum is negated, as DEC's
-    /// terminals do, then told after the request's id, `Pid`:
-    /// `DCS Pid ! ~ XXXX ST`. The page, `Pp`, is the screen's only one. A
-    /// request whose reply could not be queued is not counted.
+    /// space and the second half of a wide one nothing; a spacer head, the
+    /// cell that a wide character does not fit in, which xterm leaves as it
+    /// was, counts as an empty one. Not its attributes, which DEC's
+    /// terminals add: as xterm counts with its `checksumExtension` set to
+    /// leave them out and to count every cell, blank or never written, and
+    /// as test suites such as esctest read the screen's characters through
+    /// it. The sum is negated, as DEC's terminals do, then told after the
+    /// request's id, `Pid`: `DCS Pid ! ~ XXXX ST`. The page, `Pp`, is the
+    /// screen's only one. A request whose reply could not be queued is not
+    /// counted.
     pub(super) fn report_checksum(&mut self, params: &Params) {
         let id = params.value(0);
         // `DCS`, the id, `! ~`, four digits and `ST`.
@@ -111,7 +114,8 @@ impl Terminal {
             let cells = &page.cells(row)[usize::from(columns.start)..usize::from(columns.end)];
             for cell in cells {
                 let code = match (cell.width(), cell.content()) {
-                    (Width::SpacerTail | Width::SpacerHead, _) => continue,
+                    (Width::SpacerTail, _) => continue,
+                    (Width::SpacerHead, _) => u32::from(' '),
                     (_, Content::Char(c) | Content::Grapheme(c)) if c != '\0' => u32::from(c),
                     _ => u32::from(' '),
                 };
