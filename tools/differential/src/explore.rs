@@ -73,10 +73,11 @@ pub struct Before {
     /// character, which text inserted can push past the row's end: in insert
     /// mode alone, as reading every row at each byte would cost.
     pub wide_below: Vec<bool>,
-    /// The text of the first two cells of each row below the cursor's, the
-    /// nearest first, in insert mode alone: those that a wrap of text
-    /// inserted pushes right, and that `alacritty_terminal` writes over.
-    pub starts_below: Vec<[String; 2]>,
+    /// The text of the first two cells of the cursor's row and of each row
+    /// below it, in that order, in insert mode alone: those that a wrap of
+    /// text inserted pushes right, and that `alacritty_terminal` writes
+    /// over.
+    pub starts: Vec<[String; 2]>,
     /// Whether each row ends with a spacer head, in insert mode alone: the
     /// VT core keeps one above a row whose start text inserted goes over,
     /// where `alacritty_terminal` empties it.
@@ -203,8 +204,8 @@ impl Before {
             } else {
                 Vec::new()
             },
-            starts_below: if terminal.insert_mode() {
-                (cursor.y + 1..terminal.rows())
+            starts: if terminal.insert_mode() {
+                (cursor.y..terminal.rows())
                     .map(|y| [0, 1].map(|x| bolt_cell_text(terminal, x, y)))
                     .collect()
             } else {
