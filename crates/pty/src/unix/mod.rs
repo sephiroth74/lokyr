@@ -51,9 +51,10 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         source,
     };
     let working_directory = options.working_directory.as_ref().unwrap_or(&account.home);
-    // The working directory and the program, opened and looked for here
-    // rather than by the child, so that either fails at once with an error
-    // of its own.
+    // The working directory, opened here rather than by the child, so that
+    // it fails at once with an error of its own; and the program, looked for
+    // here, so that the child's exec gets the path found and walks no `PATH`
+    // between fork and exec.
     let dir = open_directory(working_directory).map_err(|source| Error::WorkingDirectory {
         path: working_directory.clone(),
         source,
@@ -97,6 +98,11 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
     // closed on exec, so that a spawn on another thread in between gives
     // its child the pipe; that child marks it with its other descriptors,
     // and the pipe closes at its exec, rather than when its program ends.
+    // That holds for the spawns of this crate alone: the child of a
+    // `std::process::Command` elsewhere in the app marks nothing, and holds
+    // the pipe until its program ends, which this spawn waits for, as it
+    // would have with a lock. The app's other spawns go through this crate,
+    // or have their children mark their descriptors as it does.
     let child = command.spawn().map_err(spawn_error)?;
     // The child has its copies of the terminal's side; the parent keeps
     // none, so that the master reads the end when the program goes.
@@ -516,7 +522,7 @@ fn descriptor_list() -> Vec<Listed> {
 /// macOS's `proc_pidinfo`, which only wraps a system call.
 fn close_inherited(limit: libc::c_int, listed: &mut [Listed]) {
     #[cfg(target_os = "macos")]
-    let marked = {
+    {
         let room = libc::c_int::try_from(size_of_val(listed)).unwrap_or(libc::c_int::MAX);
         // SAFETY: `proc_pidinfo` writes the list of the process's open
         // descriptors into `listed`, `proc_fdinfo` entries, as many as its
@@ -531,14 +537,16 @@ fn close_inherited(limit: libc::c_int, listed: &mut [Listed]) {
                 room,
             )
         };
-        mark_listed(bytes, listed, mark_closed_on_exec)
-    };
+        if !mark_listed(bytes, listed, mark_closed_on_exec) {
+            mark_each(limit, mark_closed_on_exec);
+        }
+    }
     #[cfg(target_os = "linux")]
-    let marked = {
+    {
         let _ = listed;
         // SAFETY: `close_range` with `CLOSE_RANGE_CLOEXEC` only marks the
         // process's descriptors from 3 on.
-        let marked = unsafe {
+        let result = unsafe {
             libc::syscall(
                 libc::SYS_close_range,
                 3,
@@ -546,15 +554,22 @@ fn close_inherited(limit: libc::c_int, listed: &mut [Listed]) {
                 libc::CLOSE_RANGE_CLOEXEC,
             )
         };
-        marked == 0
-    };
+        mark_unless_ranged(result, limit, mark_closed_on_exec);
+    }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    let marked = {
+    {
         let _ = listed;
-        false
-    };
-    if !marked {
         mark_each(limit, mark_closed_on_exec);
+    }
+}
+
+/// Marks, with `mark`, each descriptor from 3 to `limit` in turn, unless
+/// `result`, what Linux's `close_range` returned, tells that it marked them
+/// all: on a kernel without the call, which fails with `ENOSYS`.
+#[cfg(any(target_os = "linux", test))]
+fn mark_unless_ranged(result: libc::c_long, limit: libc::c_int, mark: impl FnMut(libc::c_int)) {
+    if result != 0 {
+        mark_each(limit, mark);
     }
 }
 
@@ -836,7 +851,7 @@ mod tests {
 
     /// Whether `sh` kept a descriptor without the mark, at 100 or above,
     /// after `marking` ran in the child between fork and exec.
-    fn kept_after(marking: impl Fn() + Send + Sync + 'static) -> bool {
+    fn kept_after(mut marking: impl FnMut() + Send + Sync + 'static) -> bool {
         let file = std::fs::File::open("/dev/null").unwrap();
         // SAFETY: `fcntl` duplicates the file's descriptor, which stays
         // open, and the copy has no mark.
@@ -874,6 +889,27 @@ mod tests {
         // With no room for a list, macOS marks each descriptor in turn, and
         // Linux all of them in one call.
         assert!(!kept_after(move || close_inherited(limit, &mut [])));
+    }
+
+    #[test]
+    fn a_whole_list_marks_the_descriptors_alone() {
+        // With a limit of 3, none is marked in turn: on macOS the list that
+        // the system writes into the room made here marks the descriptor,
+        // and on Linux the one call.
+        let mut listed = descriptor_list();
+        assert!(!kept_after(move || close_inherited(3, &mut listed)));
+    }
+
+    #[test]
+    fn a_close_range_that_fails_marks_each_descriptor_in_turn() {
+        let marked = |result| {
+            let mut fds = Vec::new();
+            mark_unless_ranged(result, 6, |fd| fds.push(fd));
+            fds
+        };
+        assert_eq!(marked(0), Vec::<libc::c_int>::new());
+        // As on a kernel without the call.
+        assert_eq!(marked(-1), [3, 4, 5]);
     }
 
     #[test]
@@ -1005,6 +1041,27 @@ mod tests {
         let found = find_program(Path::new("tool"), Some(OsStr::new("bin")), &relative).unwrap();
         assert!(found.is_absolute(), "{}", found.display());
         assert_eq!(found.canonicalize().unwrap(), tool.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn the_child_execs_the_path_that_the_parent_found() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+        // A script tells, as `$0`, the path that its exec was given: through
+        // a relative entry of `PATH`, which `execvp` would pass on as it is,
+        // the one that the parent found, made absolute.
+        let temp = TempDir::new("exec");
+        let tool = temp.0.join("bin/tool");
+        std::fs::create_dir_all(tool.parent().unwrap()).unwrap();
+        std::fs::write(&tool, "#!/bin/sh\necho \"exec $0\"\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut options = Options::new(Program::command("tool", [""; 0]), "xterm-256color");
+        options.working_directory = Some(temp.0.clone());
+        options.env.push(("PATH".into(), "bin".into()));
+        let pty = spawn(&options).unwrap();
+        let mut text = String::new();
+        pty.reader().unwrap().read_to_string(&mut text).unwrap();
+        assert_eq!(text, format!("exec {}\r\n", tool.display()));
     }
 
     #[test]
