@@ -514,8 +514,10 @@ fn descriptor_list() -> Vec<Listed> {
 /// `std`'s pipe, which tells the parent that exec failed, works until the
 /// exec. Linux marks them in one call, and macOS marks those that the
 /// system lists into `listed`, so that a spawn costs no more with a soft
-/// limit of millions; on a kernel without the call, or with more open than
-/// the list has room for, each descriptor below `limit` is marked in turn.
+/// limit of millions; where the call fails, as on a kernel without it or
+/// without `CLOSE_RANGE_CLOEXEC`, before 5.11, or under a filter that
+/// denies it, or with more open than the list has room for, each
+/// descriptor below `limit` is marked in turn.
 ///
 /// It runs between fork and exec, so it calls only async-signal-safe
 /// functions: `fcntl`, `getpid`, Linux's `close_range` system call and
@@ -565,7 +567,8 @@ fn close_inherited(limit: libc::c_int, listed: &mut [Listed]) {
 
 /// Marks, with `mark`, each descriptor from 3 to `limit` in turn, unless
 /// `result`, what Linux's `close_range` returned, tells that it marked them
-/// all: on a kernel without the call, which fails with `ENOSYS`.
+/// all: where it fails, with `ENOSYS` on a kernel without it, `EINVAL` on
+/// one without `CLOSE_RANGE_CLOEXEC`, or what a filter that denies it says.
 #[cfg(any(target_os = "linux", test))]
 fn mark_unless_ranged(result: libc::c_long, limit: libc::c_int, mark: impl FnMut(libc::c_int)) {
     if result != 0 {
@@ -893,11 +896,106 @@ mod tests {
 
     #[test]
     fn a_whole_list_marks_the_descriptors_alone() {
+        // On Linux, the one call marks them, where it works: it fails on a
+        // kernel without it or without `CLOSE_RANGE_CLOEXEC`, before 5.11,
+        // or under a filter, where each descriptor is marked in turn.
+        #[cfg(target_os = "linux")]
+        {
+            let file = std::fs::File::open("/dev/null").unwrap();
+            let fd = libc::c_uint::try_from(file.as_raw_fd()).unwrap();
+            // SAFETY: `close_range` marks this test's descriptor alone.
+            let works =
+                unsafe { libc::syscall(libc::SYS_close_range, fd, fd, libc::CLOSE_RANGE_CLOEXEC) }
+                    == 0;
+            if !works {
+                eprintln!("close_range cannot mark descriptors here");
+                return;
+            }
+        }
+        // Without the mark, the program has the descriptor.
+        assert!(kept_after(|| {}));
         // With a limit of 3, none is marked in turn: on macOS the list that
         // the system writes into the room made here marks the descriptor,
         // and on Linux the one call.
         let mut listed = descriptor_list();
         assert!(!kept_after(move || close_inherited(3, &mut listed)));
+    }
+
+    /// A seccomp filter that makes `close_range` fail with `ENOSYS`, as on
+    /// a kernel without it, and lets every other system call through.
+    #[cfg(target_os = "linux")]
+    fn without_close_range() -> [libc::sock_filter; 4] {
+        let statement = |code, k| libc::sock_filter {
+            code,
+            jt: 0,
+            jf: 0,
+            k,
+        };
+        let number = u32::try_from(libc::SYS_close_range).unwrap();
+        [
+            // The system call's number, the first field of `seccomp_data`.
+            statement((libc::BPF_LD | libc::BPF_W | libc::BPF_ABS) as u16, 0),
+            libc::sock_filter {
+                code: (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16,
+                jt: 0,
+                jf: 1,
+                k: number,
+            },
+            statement(
+                (libc::BPF_RET | libc::BPF_K) as u16,
+                libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32,
+            ),
+            statement(
+                (libc::BPF_RET | libc::BPF_K) as u16,
+                libc::SECCOMP_RET_ALLOW,
+            ),
+        ]
+    }
+
+    /// Installs `filter` in this process, which `close_inherited` then runs
+    /// under: async-signal-safe, as it makes two system calls.
+    #[cfg(target_os = "linux")]
+    fn install(filter: &[libc::sock_filter; 4]) {
+        let program = libc::sock_fprog {
+            len: 4,
+            filter: filter.as_ptr().cast_mut(),
+        };
+        // SAFETY: the process gives up gaining privileges, as an unprivileged
+        // filter asks, and installs one that reads the system call's number
+        // alone; `program` and `filter` live through the calls.
+        unsafe {
+            libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+            libc::prctl(
+                libc::PR_SET_SECCOMP,
+                libc::SECCOMP_MODE_FILTER,
+                &raw const program,
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_close_range_that_fails_in_the_child_marks_each_descriptor() {
+        let filter = without_close_range();
+        // Under the filter, the call marks nothing.
+        assert!(kept_after(move || {
+            install(&filter);
+            // SAFETY: as in `close_inherited`.
+            unsafe {
+                libc::syscall(
+                    libc::SYS_close_range,
+                    3,
+                    libc::c_uint::MAX,
+                    libc::CLOSE_RANGE_CLOEXEC,
+                );
+            }
+        }));
+        // And `close_inherited` marks each descriptor in turn.
+        let limit = descriptor_limit();
+        assert!(!kept_after(move || {
+            install(&filter);
+            close_inherited(limit, &mut []);
+        }));
     }
 
     #[test]
@@ -908,7 +1006,7 @@ mod tests {
             fds
         };
         assert_eq!(marked(0), Vec::<libc::c_int>::new());
-        // As on a kernel without the call.
+        // As where the call fails.
         assert_eq!(marked(-1), [3, 4, 5]);
     }
 
@@ -1061,7 +1159,10 @@ mod tests {
         let pty = spawn(&options).unwrap();
         let mut text = String::new();
         pty.reader().unwrap().read_to_string(&mut text).unwrap();
-        assert_eq!(text, format!("exec {}\r\n", tool.display()));
+        // The path as the lookup makes it, from the working directory made
+        // absolute, which `TMPDIR` may not be.
+        let found = std::path::absolute(&temp.0).unwrap().join("bin/tool");
+        assert_eq!(text, format!("exec {}\r\n", found.display()));
     }
 
     #[test]
