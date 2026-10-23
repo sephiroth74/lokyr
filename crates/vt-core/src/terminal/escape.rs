@@ -78,11 +78,19 @@ impl Terminal {
 
     /// DECRC: brings back what DECSC saved for the active screen, or, with
     /// nothing saved, puts the cursor at the top left with the default pen
-    /// and character sets, and origin mode off.
+    /// and character sets, and origin mode off. In origin mode the cursor
+    /// goes no lower than the scroll region's bottom margin, nor past the
+    /// right margin, as xterm sets it; above the region, or left of the
+    /// left margin, it stays, as there.
     pub(super) fn restore_cursor(&mut self) {
         self.moved();
         let saved = self.screen().saved.unwrap_or_default();
-        self.screen_mut().cursor = saved.cursor;
+        let mut cursor = saved.cursor;
+        if saved.origin {
+            cursor.y = cursor.y.min(self.margins.bottom);
+            cursor.x = cursor.x.min(self.margins.right);
+        }
+        self.screen_mut().cursor = cursor;
         self.pen = saved.pen;
         self.pen_changed();
         self.charsets = saved.charsets;

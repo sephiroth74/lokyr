@@ -72,6 +72,8 @@ pub enum Cause {
     SavedOrigin,
     /// The spacer head of a wide character that wraps over another.
     WrapHead,
+    /// The cursor that DECRC brings back below the scroll region.
+    RestoredBelow,
 }
 
 impl Cause {
@@ -221,6 +223,12 @@ impl Cause {
                  alacritty_terminal keeps the mode that is on: the comparison ends when the \
                  restore changes it"
             }
+            Self::RestoredBelow => {
+                "DECRC, and the end of the alternate screen that mode 1049 makes, put the cursor \
+                 that DECSC saved below the scroll region at its bottom margin in the VT core, \
+                 when they bring origin mode back on, as xterm does; alacritty_terminal puts it \
+                 back where it was saved, which its next move takes to the margin"
+            }
             Self::WrapHead => {
                 "a wide character that does not fit at the last column, and wraps over a wide \
                  character at the start of the next row, keeps the spacer head that it leaves in \
@@ -314,25 +322,7 @@ impl Seen<'_> {
 /// nothing.
 pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
     let (step, before, after) = (seen.step, seen.before, seen.after);
-    // DECRC, SCORC, and the alternate screen's end that 1049 makes.
-    let restores = match step {
-        Step::Esc {
-            intermediates,
-            final_byte: b'8',
-        } => intermediates.is_empty(),
-        Step::Csi {
-            params,
-            intermediates,
-            final_byte,
-            ..
-        } => match (intermediates.as_slice(), final_byte) {
-            (b"", b'u') => params.len() <= 1 && params.first().is_none_or(|&value| value == 0),
-            (b"?", b'l') => params.contains(&1049),
-            _ => false,
-        },
-        _ => false,
-    };
-    if restores && seen.same() {
+    if restores(step) && seen.same() {
         if after.shift != before.shift {
             return Some(Cause::Shift);
         }
@@ -414,6 +404,28 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
     }
 }
 
+/// Whether `step` brings back the cursor that DECSC saved: DECRC, SCORC,
+/// and the alternate screen's end that 1049 makes.
+fn restores(step: &Step) -> bool {
+    match step {
+        Step::Esc {
+            intermediates,
+            final_byte: b'8',
+        } => intermediates.is_empty(),
+        Step::Csi {
+            params,
+            intermediates,
+            final_byte,
+            ..
+        } => match (intermediates.as_slice(), final_byte) {
+            (b"", b'u') => params.len() <= 1 && params.first().is_none_or(|&value| value == 0),
+            (b"?", b'l') => params.contains(&1049),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// The known cause of the difference between the screens at a step that
 /// they part at, recognized from what the step made the VT core do, its
 /// state before it, and the difference's shape, as each cause makes it.
@@ -426,6 +438,19 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
     let first = |params: &[u16]| usize::from(params.first().copied().unwrap_or(0).max(1));
     let (top, bottom) = before.region;
     match seen.step {
+        // A restore that brings origin mode back on, which puts the VT
+        // core's cursor at the bottom margin, and `alacritty_terminal`'s
+        // back where it was saved, below it, in the same column.
+        step if restores(step)
+            && seen.after.origin
+            && seen.cells_same()
+            && bolt.0 == alacritty.0
+            && bolt.2 == alacritty.2
+            && bolt.1 == bottom
+            && alacritty.1 > bottom =>
+        {
+            Some(Cause::RestoredBelow)
+        }
         Step::Csi {
             params,
             intermediates,
@@ -1008,7 +1033,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 40] = [
+        let cases: [(&str, Cause, &[u8]); 41] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1030,6 +1055,11 @@ mod tests {
                 "decom-after-the-restore",
                 Decom,
                 b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?1049;6l",
+            ),
+            (
+                "restored-below",
+                RestoredBelow,
+                b"\x1b[?6h\x1b[20;1H\x1b7\x1b[5;10r\x1b8",
             ),
             ("decaln", Decaln, b"7\x1b#8"),
             ("tab", Tab, b"\x1b[80GN\t"),

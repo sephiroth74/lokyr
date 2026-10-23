@@ -5323,11 +5323,11 @@ fn cbt_stays_within_the_margins_in_origin_mode() {
     assert_eq!(term.cursor(), (4, 0, false));
     term.feed("\x1b[6n");
     assert_eq!(replies(&mut term), "\x1b[1;1R");
-    // From outside the margins, where DECRC can leave the cursor, the left
-    // margin does not stop it.
+    // From left of the left margin, where DECRC can leave the cursor in
+    // origin mode, the margin does not hold it.
     let mut term = Term::new(40, 4);
-    term.feed("\x1b[?69h\x1b[5;40s\x1b[?6h\x1b[1;32H\x1b7\x1b[5;30s\x1b8");
-    assert_eq!(term.cursor(), (35, 0, false));
+    term.feed("\x1b[?69h\x1b[?6h\x1b[1;3H\x1b7\x1b[5;30s\x1b8");
+    assert_eq!(term.cursor(), (2, 0, false));
     term.feed("\x1b[5Z");
     assert_eq!(term.cursor(), (0, 0, false));
 }
@@ -5449,6 +5449,28 @@ fn a_wide_character_that_wraps_over_another_keeps_its_spacer_head() {
     assert_eq!(term.cell(3, 2).width(), Width::Narrow);
     assert_eq!(term.cell(3, 3).width(), Width::SpacerHead);
     assert_eq!(term.cell(0, 3).content(), Content::Char('\u{4e2d}'));
+}
+
+#[test]
+fn decrc_in_origin_mode_goes_no_lower_than_the_bottom_margin() {
+    let restored = |bytes: &str| {
+        let mut term = Term::new(80, 24);
+        term.feed(bytes);
+        let cursor = term.terminal.cursor();
+        (cursor.x, cursor.y)
+    };
+    // Saved at row 19 in origin mode, and restored with a region of rows 4
+    // to 9: xterm sets it at the bottom margin.
+    assert_eq!(restored("\x1b[?6h\x1b[20;1H\x1b7\x1b[5;10r\x1b8"), (0, 9));
+    // Above the region it stays, as there.
+    assert_eq!(restored("\x1b[?6h\x1b[3;1H\x1b7\x1b[5;10r\x1b8"), (0, 2));
+    // Past the right margin, it goes to it.
+    assert_eq!(
+        restored("\x1b[?6h\x1b[1;70H\x1b7\x1b[?69h\x1b[5;20s\x1b8"),
+        (19, 0)
+    );
+    // Outside origin mode it stays where it was.
+    assert_eq!(restored("\x1b[20;1H\x1b7\x1b[5;10r\x1b8"), (0, 19));
 }
 
 #[test]
