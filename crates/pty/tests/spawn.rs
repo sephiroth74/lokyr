@@ -134,6 +134,32 @@ fn descriptor_limit() -> u64 {
     limit.rlim_cur
 }
 
+/// The cap that macOS puts on a process's descriptors, whatever its limit,
+/// or 0 if it cannot be read; none elsewhere.
+fn descriptor_cap() -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        let mut cap: libc::c_int = 0;
+        let mut size = size_of::<libc::c_int>();
+        // SAFETY: `sysctlbyname` writes an `int` into `cap`, as `size` says.
+        let read = unsafe {
+            libc::sysctlbyname(
+                c"kern.maxfilesperproc".as_ptr(),
+                (&raw mut cap).cast(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if read != 0 {
+            return 0;
+        }
+        u64::try_from(cap).unwrap_or(0)
+    }
+    #[cfg(not(target_os = "macos"))]
+    u64::MAX
+}
+
 /// A copy of `file`'s descriptor at `at` or the lowest free one above it,
 /// without the mark that closes it on exec, as one that a CI runner or a
 /// launcher leaves open; closed when it drops.
@@ -162,9 +188,10 @@ fn the_program_starts_at_home_with_only_the_terminal_open() {
     let limit = descriptor_limit();
     let file = std::fs::File::open("/dev/null").unwrap();
     // A descriptor below the soft limit, which is 256 in the shells that
-    // launchd starts, and one past 65 536 where the limit allows it.
+    // launchd starts, and one past 65 536 where the limit and the system's
+    // cap for a process allow it.
     let low = Inherited::new(&file, libc::c_int::try_from(limit.min(500) - 1).unwrap());
-    let high = (limit > 70_000).then(|| Inherited::new(&file, 70_000));
+    let high = (limit.min(descriptor_cap()) > 70_000).then(|| Inherited::new(&file, 70_000));
     // Every descriptor that the program could have, past the standard ones,
     // as the tests running at once can open many, and the high one.
     let high_fd = high.as_ref().map_or(70_000, |high| high.0);

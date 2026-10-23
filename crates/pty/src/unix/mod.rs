@@ -12,18 +12,11 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 pub use io::{PtyReader, PtyWriter};
 
 use crate::{Error, Exit, Options, Program, Size};
-
-/// Held while this crate spawns: on macOS, `std` opens the pipe through
-/// which a spawn learns that its child failed to exec, then marks it closed
-/// on exec, and a spawn on another thread in between would give its child
-/// that pipe, which would keep this spawn waiting until the other child
-/// exits.
-static SPAWNING: Mutex<()> = Mutex::new(());
 
 /// A pseudo-terminal, with the program that runs in it.
 ///
@@ -58,10 +51,9 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         source,
     };
     let working_directory = options.working_directory.as_ref().unwrap_or(&account.home);
-    // The working directory and the program, opened and looked for here,
-    // before the spawns' lock, rather than by the child under it: a mount
-    // that does not answer holds this spawn alone. The exec itself, which
-    // reads the program, stays under the lock.
+    // The working directory and the program, opened and looked for here
+    // rather than by the child, so that either fails at once with an error
+    // of its own.
     let dir = open_directory(working_directory).map_err(|source| Error::WorkingDirectory {
         path: working_directory.clone(),
         source,
@@ -100,10 +92,12 @@ pub fn spawn(options: &Options) -> Result<Pty, Error> {
         });
     }
     let (closed, closing) = closing::closing().map_err(Error::Open)?;
-    let child = {
-        let _spawning = SPAWNING.lock().unwrap_or_else(PoisonError::into_inner);
-        command.spawn().map_err(spawn_error)?
-    };
+    // No lock keeps spawns apart. On macOS, `std` opens the pipe through
+    // which a spawn learns that its child failed to exec, then marks it
+    // closed on exec, so that a spawn on another thread in between gives
+    // its child the pipe; that child marks it with its other descriptors,
+    // and the pipe closes at its exec, rather than when its program ends.
+    let child = command.spawn().map_err(spawn_error)?;
     // The child has its copies of the terminal's side; the parent keeps
     // none, so that the master reads the end when the program goes.
     drop(command);
@@ -466,14 +460,24 @@ fn descriptor_limit() -> libc::c_int {
     libc::c_int::try_from(limit.rlim_cur.min(1 << 16)).unwrap_or(1 << 16)
 }
 
-/// Room for the list of the descriptors that the child has open, which it
-/// asks for between fork and exec, where it cannot allocate: on macOS, for
-/// twice as many as this process has open now, and 64 more, as other
-/// threads can open some before the fork.
+/// An entry of the list of the descriptors that the child has open: macOS
+/// lists them, and Linux marks them in one call, with no list.
 #[cfg(target_os = "macos")]
-fn descriptor_list() -> Vec<libc::proc_fdinfo> {
+type Listed = libc::proc_fdinfo;
+#[cfg(not(target_os = "macos"))]
+type Listed = ();
+
+/// Room for the list of the descriptors that the child has open, which it
+/// asks for between fork and exec, where it cannot allocate. Without a
+/// buffer, macOS tells the room for every slot of the process's table of
+/// descriptors and 20 more, so for the open ones, which take a slot each;
+/// the table grows with the highest descriptor opened, and does not shrink.
+/// 64 more, as other threads can open some before the fork, and a list
+/// that fills up falls back on marking each descriptor in turn.
+#[cfg(target_os = "macos")]
+fn descriptor_list() -> Vec<Listed> {
     // SAFETY: without a buffer, `proc_pidinfo` tells how many bytes the
-    // list of the process's open descriptors takes, and writes nothing.
+    // list of the process's open descriptors may take, and writes nothing.
     let bytes = unsafe {
         libc::proc_pidinfo(
             libc::getpid(),
@@ -483,17 +487,17 @@ fn descriptor_list() -> Vec<libc::proc_fdinfo> {
             0,
         )
     };
-    let open = usize::try_from(bytes).unwrap_or(0) / size_of::<libc::proc_fdinfo>();
+    let slots = usize::try_from(bytes).unwrap_or(0) / size_of::<Listed>();
     let none = libc::proc_fdinfo {
         proc_fd: 0,
         proc_fdtype: 0,
     };
-    vec![none; 2 * open + 64]
+    vec![none; slots + 64]
 }
 
 /// No list: Linux marks the descriptors in one call.
 #[cfg(not(target_os = "macos"))]
-fn descriptor_list() -> Vec<()> {
+fn descriptor_list() -> Vec<Listed> {
     Vec::new()
 }
 
@@ -510,16 +514,14 @@ fn descriptor_list() -> Vec<()> {
 /// It runs between fork and exec, so it calls only async-signal-safe
 /// functions: `fcntl`, `getpid`, Linux's `close_range` system call and
 /// macOS's `proc_pidinfo`, which only wraps a system call.
-fn close_inherited<T>(limit: libc::c_int, listed: &mut [T]) {
-    // Only macOS lists the descriptors.
-    #[cfg(not(target_os = "macos"))]
-    let _ = listed;
+fn close_inherited(limit: libc::c_int, listed: &mut [Listed]) {
     #[cfg(target_os = "macos")]
-    {
+    let marked = {
         let room = libc::c_int::try_from(size_of_val(listed)).unwrap_or(libc::c_int::MAX);
         // SAFETY: `proc_pidinfo` writes the list of the process's open
-        // descriptors into `listed`, as many as its bytes have room for,
-        // and returns how many bytes it wrote, or 0 if it failed.
+        // descriptors into `listed`, `proc_fdinfo` entries, as many as its
+        // bytes have room for, and returns how many bytes it wrote, or 0
+        // if it failed.
         let bytes = unsafe {
             libc::proc_pidinfo(
                 libc::getpid(),
@@ -529,24 +531,11 @@ fn close_inherited<T>(limit: libc::c_int, listed: &mut [T]) {
                 room,
             )
         };
-        // A full list may have left descriptors out.
-        if bytes > 0 && bytes < room {
-            let count = bytes as usize / size_of::<libc::proc_fdinfo>();
-            // SAFETY: the list holds `proc_fdinfo` entries, the first
-            // `count` of them written.
-            let infos = unsafe {
-                std::slice::from_raw_parts(listed.as_ptr().cast::<libc::proc_fdinfo>(), count)
-            };
-            for info in infos {
-                if info.proc_fd >= 3 {
-                    mark_closed_on_exec(info.proc_fd);
-                }
-            }
-            return;
-        }
-    }
+        mark_listed(bytes, listed, mark_closed_on_exec)
+    };
     #[cfg(target_os = "linux")]
-    {
+    let marked = {
+        let _ = listed;
         // SAFETY: `close_range` with `CLOSE_RANGE_CLOEXEC` only marks the
         // process's descriptors from 3 on.
         let marked = unsafe {
@@ -557,12 +546,43 @@ fn close_inherited<T>(limit: libc::c_int, listed: &mut [T]) {
                 libc::CLOSE_RANGE_CLOEXEC,
             )
         };
-        if marked == 0 {
-            return;
+        marked == 0
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let marked = {
+        let _ = listed;
+        false
+    };
+    if !marked {
+        mark_each(limit, mark_closed_on_exec);
+    }
+}
+
+/// Marks, with `mark`, the descriptors from 3 on that the first `bytes`
+/// bytes of `listed` hold, which `proc_pidinfo` wrote, and tells whether
+/// the list was whole: some written, and room left, as a full list may
+/// have left descriptors out.
+#[cfg(target_os = "macos")]
+fn mark_listed(bytes: libc::c_int, listed: &[Listed], mut mark: impl FnMut(libc::c_int)) -> bool {
+    let room = size_of_val(listed);
+    let Ok(written) = usize::try_from(bytes) else {
+        return false;
+    };
+    if written == 0 || written >= room {
+        return false;
+    }
+    for info in &listed[..written / size_of::<Listed>()] {
+        if info.proc_fd >= 3 {
+            mark(info.proc_fd);
         }
     }
+    true
+}
+
+/// Marks, with `mark`, each descriptor from 3 to `limit`, open or not.
+fn mark_each(limit: libc::c_int, mut mark: impl FnMut(libc::c_int)) {
     for fd in 3..limit {
-        mark_closed_on_exec(fd);
+        mark(fd);
     }
 }
 
@@ -791,22 +811,80 @@ fn environment(
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn a_program_that_is_not_there_fails_without_the_spawns_lock() {
-        let held = SPAWNING.lock().unwrap();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let spawning = std::thread::spawn(move || {
-            let options = Options::new(
-                Program::command("bolt-no-such-program", [""; 0]),
-                "xterm-256color",
-            );
-            sender.send(spawn(&options).map(drop)).unwrap();
-        });
-        let failed = receiver.recv_timeout(std::time::Duration::from_secs(5));
-        drop(held);
-        spawning.join().unwrap();
+    fn a_list_is_trusted_only_when_written_with_room_left() {
+        let entry = |fd| libc::proc_fdinfo {
+            proc_fd: fd,
+            proc_fdtype: 0,
+        };
+        let listed = [entry(0), entry(1), entry(2), entry(7), entry(9), entry(0)];
+        let size = libc::c_int::try_from(size_of::<Listed>()).unwrap();
+        let marked = |bytes| {
+            let mut fds = Vec::new();
+            let whole = mark_listed(bytes, &listed, |fd| fds.push(fd));
+            (whole, fds)
+        };
+        // Five entries of six: whole, and the standard descriptors left.
+        assert_eq!(marked(5 * size), (true, vec![7, 9]));
+        // A full list may have left descriptors out, and a call that
+        // failed wrote nothing.
+        assert_eq!(marked(6 * size), (false, vec![]));
+        assert_eq!(marked(0), (false, vec![]));
+        assert_eq!(marked(-1), (false, vec![]));
+    }
+
+    /// Whether `sh` kept a descriptor without the mark, at 100 or above,
+    /// after `marking` ran in the child between fork and exec.
+    fn kept_after(marking: impl Fn() + Send + Sync + 'static) -> bool {
+        let file = std::fs::File::open("/dev/null").unwrap();
+        // SAFETY: `fcntl` duplicates the file's descriptor, which stays
+        // open, and the copy has no mark.
+        let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD, 100) };
+        assert!(fd >= 100, "{}", IoError::last_os_error());
+        let mut command = Command::new("/bin/sh");
+        command.args([
+            "-c",
+            &format!("[ -e /dev/fd/{fd} ] && echo kept || echo closed"),
+        ]);
+        // SAFETY: the tests' `marking` calls only async-signal-safe
+        // functions, and does not allocate.
+        unsafe {
+            command.pre_exec(move || {
+                marking();
+                Ok(())
+            });
+        }
+        let output = command.output().unwrap();
+        // SAFETY: the descriptor is this test's, and nothing else uses it.
+        unsafe { libc::close(fd) };
+        match String::from_utf8_lossy(&output.stdout).trim() {
+            "kept" => true,
+            "closed" => false,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_descriptor_that_no_list_holds_is_marked_in_turn() {
+        let limit = descriptor_limit();
+        // Without the mark, the program has it.
+        assert!(kept_after(|| {}));
+        assert!(!kept_after(move || mark_each(limit, mark_closed_on_exec)));
+        // With no room for a list, macOS marks each descriptor in turn, and
+        // Linux all of them in one call.
+        assert!(!kept_after(move || close_inherited(limit, &mut [])));
+    }
+
+    #[test]
+    fn a_program_that_is_not_there_fails_as_not_found() {
+        let options = Options::new(
+            Program::command("bolt-no-such-program", [""; 0]),
+            "xterm-256color",
+        );
+        let failed = spawn(&options).map(drop);
         assert!(
-            matches!(&failed, Ok(Err(Error::Spawn { source, .. })) if source.kind() == ErrorKind::NotFound),
+            matches!(&failed, Err(Error::Spawn { source, .. }) if source.kind() == ErrorKind::NotFound),
             "{failed:?}"
         );
     }
@@ -930,25 +1008,17 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_that_cannot_be_opened_fails_without_the_spawns_lock() {
-        let held = SPAWNING.lock().unwrap();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let spawning = std::thread::spawn(move || {
-            let mut options =
-                Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
-            options.working_directory = Some("/no/such/directory".into());
-            sender.send(spawn(&options).map(drop)).unwrap();
-        });
-        let failed = receiver.recv_timeout(std::time::Duration::from_secs(5));
-        drop(held);
-        spawning.join().unwrap();
+    fn a_directory_that_cannot_be_opened_fails_with_its_name() {
+        let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
+        options.working_directory = Some("/no/such/directory".into());
+        let failed = spawn(&options).map(drop);
         assert!(
-            matches!(&failed, Ok(Err(Error::WorkingDirectory { source, .. })) if source.kind() == ErrorKind::NotFound),
+            matches!(&failed, Err(Error::WorkingDirectory { source, .. }) if source.kind() == ErrorKind::NotFound),
             "{failed:?}"
         );
         // The message names the directory, and the cause comes once, as
         // the source.
-        let error = failed.unwrap().unwrap_err();
+        let error = failed.unwrap_err();
         assert_eq!(error.to_string(), "cannot enter /no/such/directory");
         let source = std::error::Error::source(&error).map(ToString::to_string);
         assert_eq!(
