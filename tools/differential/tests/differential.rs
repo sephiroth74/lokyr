@@ -20,6 +20,10 @@ const KUHN: &[u8] = include_bytes!("../../../crates/vt-core/testdata/UTF-8-test.
 /// Inputs that show each cause on its own.
 fn cases() -> Vec<(&'static str, Vec<u8>)> {
     let line_feed = [&[b'a'; 80][..], b"\n"].concat();
+    let split_at_the_end = format!(
+        "\x1b[2;1Hx{}\x1b[1;80H\x1b[4h\u{4e2d}",
+        "\u{4e2d}".repeat(39)
+    );
     vec![
         ("c1", b"a\x80b".to_vec()),
         ("jamo", "a\u{D7FF}b".as_bytes().to_vec()),
@@ -68,6 +72,7 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "insert-wrap",
             "\x1b[2;1Hxy\x1b[4h\x1b[1;80H\u{4e2d}".as_bytes().to_vec(),
         ),
+        ("insert-wrap-splits-the-end", split_at_the_end.into_bytes()),
         ("rep-reset", b" \x1bc\x1b[b".to_vec()),
         (
             "no-wrap-wide",
@@ -138,6 +143,20 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
         (
             "repeat-no-wrap-wide",
             "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes().to_vec(),
+        ),
+        (
+            "repeat-no-wrap-wide-insert",
+            "\x1b[H\u{4e2d}\x1b[1;78H\x1b[?7l\x1b[4h\x1b[2b"
+                .as_bytes()
+                .to_vec(),
+        ),
+        (
+            "rep-reset-at-the-bottom",
+            b"x\x1bc\x1b[24;1H\x1b[100b".to_vec(),
+        ),
+        (
+            "rep-reset-in-a-region",
+            b"x\x1bc\x1b[2;5r\x1b[5;1H\x1b[100b".to_vec(),
         ),
         (
             "repeat-insert-wrap-later",
@@ -218,7 +237,10 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-lnm", Lnm, "cursor (0, 1, false) against (1, 1, false)", 0x0247b3315edec024),
     ("case-cbt-first", CbtFirst, "cursor (0, 0, false) against (1, 0, false)", 0x15b9c9b48a1f391a),
     ("case-insert-wrap", InsertWrap, "row 1, column 2: \"x\" against \" \"", 0x9e9b52e4702fb9e6),
+    ("case-insert-wrap-splits-the-end", InsertWrap, "row 0, column 79: \"[head]\" against \" \"", 0xb5e5ea6ef7780285),
     ("case-rep-reset", RepReset, "cursor (0, 0, false) against (1, 0, false)", 0xdda5b7060e56b3fc),
+    ("case-rep-reset-at-the-bottom", RepReset, "row 22, column 0: \" \" against \"x\"", 0x4f213842b75bbe7d),
+    ("case-rep-reset-in-a-region", RepReset, "row 3, column 0: \" \" against \"x\"", 0x4c914742fd71ecff),
     ("case-no-wrap-wide", NoWrapWide, "row 0, column 78: \"中\" against \" \"", 0x5295db36c915ae0e),
     ("case-wide-insert-wrap", WideEdit, "row 1, column 79: \" \" against \"中\"", 0xa6f67a1eb14b3262),
     ("case-shift", Shift, "row 0, column 0: \"└\" against \"m\"", 0x5d79a90666309afc),
@@ -235,6 +257,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-repeat-over-its-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x313398f00735dab8),
     ("case-repeat-under-a-head", WideEdit, "row 22, column 79: \"[head]\" against \" \"", 0xb2db1d38db2a73f5),
     ("case-repeat-no-wrap-wide", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0x193d0c9ebaec53c7),
+    ("case-repeat-no-wrap-wide-insert", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0xe605cf6bb2d6c515),
     ("case-repeat-insert-wrap-later", InsertWrap, "row 1, column 4: \"x\" against \" \"", 0xe3075037962971da),
     // vttest: the screens after a switch to 132 columns or back.
     ("vttest:64-67", Deccolm, "row 0, column 0: \"*\" against \"T\"", 0x4eb3eb42cd76c133),
