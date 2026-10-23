@@ -69,6 +69,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
 | [0014](adr/0014-names-bolt-and-crossbow.md) | Names: Bolt for the terminal, Crossbow for the package manager | Accepted |
 | [0015](adr/0015-vt-core-throughput-exception.md) | Throughput of the VT core: vtebench's bottom region, with its lines of one character, is an exception | Accepted |
+| [0016](adr/0016-new-names.md) | New names: Alsvid for the terminal and Arvak for the package manager, or Draupnir | Proposed; would supersede 0014 |
 
 ## Glossary
 
