@@ -26,7 +26,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
 | [ROADMAP.md](ROADMAP.md) | Phases, exit criteria, first code files, open questions |
 | [tasks/](tasks/README.md) | Each phase broken into tasks of one day or less, one file per phase |
-| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Bolt's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, of [search](bench/search-F1-54.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
+| [bench/](bench/baseline-F0.md) | Measurements: of existing terminals, starting with the F0 baseline, of Bolt's compatibility, starting with [esctest](bench/esctest-F1-44.md), [then](bench/esctest-F1-45.md) and [then](bench/esctest-F1-46.md), and of the VT core's [throughput](bench/throughput-F1-50.md) against `alacritty_terminal`'s, [then](bench/throughput-F1-51.md), of [search](bench/search-F1-54.md), and of the [instructions](bench/instructions-F1-52.md) that CI counts |
 | [adr/](adr/) | Architecture decision records, one per file |
 
 ## Requirements → solution
