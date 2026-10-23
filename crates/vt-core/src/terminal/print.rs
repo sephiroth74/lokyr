@@ -163,7 +163,7 @@ impl Terminal {
             y,
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, true);
+            self.clear_spacer_head_above(x, y, None);
         }
         Some(len)
     }
@@ -252,7 +252,7 @@ impl Terminal {
             page.write_chars(row, x, stretch, template);
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, true);
+            self.clear_spacer_head_above(x, y, None);
         }
         self.cluster = Some(Cluster {
             x: x + cells - u16::from(last_width),
@@ -339,7 +339,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, true);
+            self.clear_spacer_head_above(x, y, None);
         }
     }
 
@@ -354,23 +354,16 @@ impl Terminal {
         // do, so it fits in the next row, or one column back.
         let Cursor { x, y, .. } = self.cursor();
         let end = self.line_end(x);
-        // Whether the head that this character leaves is the one that the
-        // check of the row above it would find: when it leaves it at the
-        // right margin, rather than at the screen's edge from right of the
-        // margins, and the wrap takes it to another row, down or by
-        // scrolling, rather than back to the start of the same one, as at
-        // the last row below the scroll region.
-        let mut head_left_above = false;
-        // Whether it leaves it at the screen's edge of the row above, which
-        // the check then passes over, looking at the right margin alone.
-        let mut head_at_the_edge_above = false;
+        // The column of the head that this character leaves in the row above
+        // it, which the check of that row passes over: when the wrap takes
+        // it to another row, down or by scrolling, rather than back to the
+        // start of the same one, as at the last row below the scroll region.
+        let mut own_head = None;
         if width == 2 && x == end - 1 {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
-                let moves_on = self.index_moves_on();
-                head_left_above = x <= self.margins.right && moves_on;
-                head_at_the_edge_above = x > self.margins.right && moves_on;
+                own_head = self.index_moves_on().then_some(x);
                 self.wrap();
             } else {
                 self.screen_mut().cursor.x = x - 1;
@@ -383,10 +376,9 @@ impl Terminal {
         if insert {
             self.screen_mut().rows.insert_blanks(y, x, width, end);
         }
-        // The row's page is found once, for the spacer head as well, which
-        // stays when this character just left it.
+        // The row's page is found once, for the spacer heads above as well.
         let start = self.margins.left;
-        let head_above = !insert && !head_left_above && y > 0 && x <= start + 1;
+        let head_above = !insert && y > 0 && x <= start + 1;
         let mut over_wide = false;
         self.with_pen(y, |page, row, style| {
             if !insert {
@@ -412,7 +404,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, !head_at_the_edge_above);
+            self.clear_spacer_head_above(x, y, own_head);
         }
         if self.link.is_open() {
             self.link_cells(x, y, width);
@@ -648,25 +640,30 @@ impl Terminal {
         page.row_mut(row).set(flag, true);
     }
 
-    /// Empties the spacer head at the end of the line on the row above `y`,
-    /// at the right margin, or else, with `edge`, at the screen's edge, where
-    /// a wrap from right of the margins leaves one, if there is one: for a
-    /// write from column `x` that goes over a wide character at the left
-    /// margin of row `y`, where wraps land, which the head was left for, as
-    /// [`over_wide_start`] tells, and as `alacritty_terminal` does. A head
-    /// that a wrap left under other margins stays. A head in the scrollback
-    /// stays, where `alacritty_terminal` clears it: the scrollback's rows
-    /// are not written to, as their pages can be kept cold.
-    fn clear_spacer_head_above(&mut self, x: u16, y: u16, edge: bool) {
-        let ends = [self.line_end(x) - 1, self.cols - 1];
-        let ends = if edge { &ends[..] } else { &ends[..1] };
+    /// Empties the spacer heads at the end of the line on the row above `y`
+    /// that the wrap there left for a wide character at the left margin of
+    /// row `y`, where wraps land: for a write from column `x` that goes over
+    /// one, as [`over_wide_start`] tells, and as `alacritty_terminal` does.
+    /// The head at the right margin, and the one at the screen's edge when
+    /// the row above wraps into row `y` and there is no left margin, as only
+    /// a wrap from the last column to the first marks the rows; but not the
+    /// one at `own`, which the character written has just left. A head that
+    /// a wrap left under other margins stays. A head in the scrollback stays,
+    /// where `alacritty_terminal` clears it: the scrollback's rows are not
+    /// written to, as their pages can be kept cold.
+    fn clear_spacer_head_above(&mut self, x: u16, y: u16, own: Option<u16>) {
+        let (margin, edge) = (self.line_end(x) - 1, self.cols - 1);
+        let first_column = self.margins.left == 0;
         let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);
-        let head = ends
-            .iter()
-            .copied()
-            .find(|&last| page.cells(row)[usize::from(last)].width() == Width::SpacerHead);
-        if let Some(last) = head {
-            page.set_cell(row, last, Cell::EMPTY);
+        let wraps = first_column && page.row(row).has(RowFlag::SoftWrapped);
+        for last in [margin, edge] {
+            let looked_at = last == margin || wraps;
+            if looked_at
+                && own != Some(last)
+                && page.cells(row)[usize::from(last)].width() == Width::SpacerHead
+            {
+                page.set_cell(row, last, Cell::EMPTY);
+            }
         }
     }
 
@@ -681,7 +678,7 @@ impl Terminal {
         let over_wide = y > 0 && over_wide_start(page.cells(row), x, width, start);
         page.clear_halves(row, x, width);
         if over_wide {
-            self.clear_spacer_head_above(x, y, true);
+            self.clear_spacer_head_above(x, y, None);
         }
     }
 

@@ -5471,8 +5471,8 @@ fn decrc_in_origin_mode_goes_no_lower_than_the_bottom_margin() {
     );
     // Outside origin mode it stays where it was.
     assert_eq!(restored("\x1b[20;1H\x1b7\x1b[5;10r\x1b8"), (0, 19));
-    // So does leaving the alternate screen with 1049, which brings back
-    // the cursor that it saved.
+    // Leaving the alternate screen with 1049 brings back the cursor that
+    // it saved in origin mode at the bottom margin too.
     assert_eq!(
         restored("\x1b[?6h\x1b[20;1H\x1b[?1049h\x1b[5;10r\x1b[?1049l"),
         (0, 9)
@@ -5532,6 +5532,64 @@ fn spacer_heads_at_the_margins_go_with_their_characters() {
     term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}\x1b[1;10H\u{6587}");
     assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
     assert_eq!(term.cell(0, 1).content(), Content::Char('\u{6587}'));
+}
+
+#[test]
+fn a_head_at_the_screens_edge_goes_with_its_character_alone() {
+    // A wrap from the last column leaves its head for the character at the
+    // first column: a write at a left margin set since, over another wide
+    // character, leaves it, as the character that it stands for stays.
+    for (input, write) in [
+        (
+            "abcdefghi\u{4e2d}\x1b[2;4H\u{6587}\x1b[?69h\x1b[4;8s",
+            "\x1b[2;4Hx",
+        ),
+        (
+            "\x1b[1;10H\u{4e2d}\x1b[?69h\x1b[3;8s\x1b[2;3H\u{6587}",
+            "\x1b[2;3Ha",
+        ),
+    ] {
+        let mut term = Term::new(10, 4);
+        term.feed(input);
+        assert_eq!(term.cell(9, 0).width(), Width::SpacerHead, "{input:?}");
+        term.feed(write);
+        assert_eq!(term.cell(9, 0).width(), Width::SpacerHead, "{input:?}");
+        assert_eq!(term.cell(0, 1).content(), Content::Char('\u{4e2d}'));
+    }
+    // A head that a wrap from right of the margins left at the edge for a
+    // character at a left margin, which does not mark the rows: a write at
+    // the first column once the margin goes, over another wide character,
+    // leaves it.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[3;8s\x1b[1;10H\u{4e2d}\x1b[1;8s\x1b[2;1H\u{6587}");
+    assert_eq!(term.cell(2, 1).content(), Content::Char('\u{4e2d}'));
+    term.feed("\x1b[2;1Ha");
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    // A wide character that wraps from the right margin over the one that
+    // wrapped from the edge: the head at the edge goes, and the new one at
+    // the margin stays.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{6587}");
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[1;8H\u{4e2d}");
+    assert_eq!(term.cell(0, 1).content(), Content::Char('\u{4e2d}'));
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_ne!(term.cell(9, 0).width(), Width::SpacerHead);
+    // Every head that the row above ends with goes: one at the margin that
+    // an erase left, and the one at the edge of the character written over.
+    let mut term = Term::new(10, 3);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;8H\u{4e2d}\x1b[2;1H\x1b[2K\x1b[1;10H\u{6587}");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    term.feed("\x1b[2;1Hab");
+    assert_ne!(term.cell(7, 0).width(), Width::SpacerHead);
+    assert_ne!(term.cell(9, 0).width(), Width::SpacerHead);
+    // A scroll within the margins moves the character that wrapped from
+    // the edge, and not its head, outside them, which stays.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[2;10H\u{6587}\x1b[S");
+    assert_eq!(term.cell(0, 1).content(), Content::Char('\u{6587}'));
+    assert_eq!(term.cell(9, 1).width(), Width::SpacerHead);
 }
 
 #[test]
