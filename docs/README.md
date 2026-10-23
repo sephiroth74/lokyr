@@ -9,7 +9,7 @@ Bolt is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011
 - **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
 - **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Crossbow**. Crossbow is a separate program from the app, the same way cargo is separate from rustc.
 
-**Status**: F1, the headless terminal core. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid, the input encoders, the PTY and the session so far. This folder holds the architecture, the decisions and the roadmap.
+**Status**: F1, the headless terminal core, nearly done. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid with its scrollback and reflow, the terminal state, Unicode, the input encoders, the PTY, the session and the search, and the tools that check them: the recorded sessions and their replay, the headless harness with esctest and vttest, the differential tests against `alacritty_terminal`, fuzzing, the benchmarks and the Linux job. Its exit review remains. This folder holds the architecture, the decisions and the roadmap.
 
 ## Documents
 

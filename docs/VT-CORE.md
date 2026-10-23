@@ -146,7 +146,7 @@ The metadata fits in one byte.
 
 ### Page
 
-- **Layout**: a fixed memory budget, 512 KiB to start with (to be tuned). For a given width, it sets how many rows fit next to the tables: 778 at 80 columns, 312 at 200. The page holds a header, the row metadata, the cells in blocks of a row's width, the block that each row uses, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table. By default the tables have room for 256 styles, 128 graphemes, 32 link targets and 512 linked cells, about 23 KiB.
+- **Layout**: a fixed memory budget, 512 KiB to start with (to be tuned). For a given width, it sets how many rows fit next to the tables: 776 at 80 columns, 311 at 200. The page holds a header, the row metadata, the cells in blocks of a row's width, the block that each row uses, each block's extent, two bytes for the column from which its cells are all empty, so that emptying it fills the cells before it alone, a style table (deduplicated and reference-counted), a grapheme table and a hyperlink table. By default the tables have room for 256 styles, 128 graphemes, 32 link targets and 512 linked cells, about 23 KiB.
 - **Allocation**: each part is allocated once, when the page is created, and never grows. They are separate allocations rather than one block, which in safe Rust would mean packing every table into words; the pool keeps the guarantee that matters, no allocation while output scrolls.
 - **Style table**: its capacity is set with the page's. Equal styles share an id, every cell holds a reference to its style, and the last reference frees the id. The default style, id 0, is not counted, so unstyled text costs nothing. A lookup hashes the style packed in 128 bits, so even a style change on every character stays cheap.
 - **Grapheme table**: the codepoints after the first, for the cells whose cluster has several, in a fixed arena of 4-codepoint chunks and keyed by cell. A cell becomes a grapheme when a codepoint is added to it; overwriting or clearing it frees the entry.
@@ -192,7 +192,7 @@ The metadata fits in one byte.
   - When the text from the screen's first row to the cursor takes more rows, the empty rows below the cursor take them first, so that the text stays on screen, as iTerm2 keeps it; rows that the scrollback gains move nothing on screen. No text is dropped: when the rows below the cursor push its row into the scrollback, the cursor stays in the screen's first row. A screen with too few rows gets empty ones at the bottom.
   - The old pages leave the limits before the new ones come, as for a cut.
 - **Alternate screen**: resized without reflow, as xterm does.
-- **Cost and correctness**: cost is linear in the scrollback size, about 1 µs per row of 120 columns. A property test checks that shrinking and then widening again, through other sizes on the way, loses no content, wherever the cursor is and whatever edits moved the rows: every line keeps its cells, with their styles, graphemes and links.
+- **Cost and correctness**: cost is linear in the scrollback size, about 0.3 µs per row of 120 columns ([throughput-F1-133.md](bench/throughput-F1-133.md#reflow)). A property test checks that shrinking and then widening again, through other sizes on the way, loses no content, wherever the cursor is and whatever edits moved the rows: every line keeps its cells, with their styles, graphemes and links.
 
 ## Unicode
 
