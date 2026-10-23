@@ -77,6 +77,10 @@ pub struct Before {
     /// nearest first, in insert mode alone: those that a wrap of text
     /// inserted pushes right, and that `alacritty_terminal` writes over.
     pub starts_below: Vec<[String; 2]>,
+    /// Whether each row ends with a spacer head, in insert mode alone: the
+    /// VT core keeps one above a row whose start text inserted goes over,
+    /// where `alacritty_terminal` empties it.
+    pub ends_with_head: Vec<bool>,
     /// The text of the cell left of the cursor, in insert mode alone and
     /// with no wrap pending, which `alacritty_terminal` may empty as it
     /// inserts.
@@ -183,6 +187,18 @@ impl Before {
             wide_below: if terminal.insert_mode() {
                 (cursor.y + 1..terminal.rows())
                     .map(|y| widths(terminal, y).contains(&Width::SpacerTail))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            ends_with_head: if terminal.insert_mode() {
+                (0..terminal.rows())
+                    .map(|y| {
+                        let (page, row) = terminal.screen_rows().screen_row(y);
+                        page.cells(row)
+                            .last()
+                            .is_some_and(|cell| cell.width() == Width::SpacerHead)
+                    })
                     .collect()
             } else {
                 Vec::new()
