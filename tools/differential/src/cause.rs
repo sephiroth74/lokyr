@@ -738,13 +738,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             Some(Cause::Emoji)
         }
         // Text inserted at the second half of a wide character, or that
-        // pushes one past the row's end, on the row that it goes in.
-        Step::Print(_)
-            if before.insert
-                && inserts_at_a_tail(before)
-                && bolt == alacritty
-                && seen.rows_same_but(&[row_written(before)]) =>
-        {
+        // pushes one past the row's end, on the row that it goes in; or at
+        // the start of a row, under the spacer head above it.
+        Step::Print(_) if before.insert && bolt == alacritty && printed_in_insert_mode(seen) => {
             Some(Cause::WideEdit)
         }
         // A wide character that does not fit at the last column, in insert
@@ -1197,6 +1193,32 @@ fn pushes_a_wide_character(params: &[u16], before: &Before) -> bool {
                 || before.last_printed.is_some_and(|(_, width)| width == 2)))
 }
 
+/// Whether the screens differ as a character printed in insert mode makes
+/// them, when it lands on the second half of a wide character or pushes one
+/// past the row's end: on the row that it goes in, and, when it goes in at
+/// the row's first two columns, in the spacer head above that row, which
+/// the VT core keeps. `alacritty_terminal` shifts the row by turning its
+/// cells, so that the wide character's half at the end comes to the cursor,
+/// and writing over it there empties the head. A wrap at the bottom margin,
+/// which scrolls, is not taken.
+fn printed_in_insert_mode(seen: &Seen<'_>) -> bool {
+    let before = seen.before;
+    let (x, y, pending) = before.cursor;
+    if pending && y == before.region.1 {
+        return false;
+    }
+    let row = row_written(before);
+    let tail = inserts_at_a_tail(before);
+    let at_start = (pending || x <= 1) && row > 0;
+    let copies = Copies {
+        rows: vec![row],
+        scrolls: false,
+        again: false,
+        starts: if at_start { vec![row] } else { Vec::new() },
+    };
+    tail && heads_kept_but(seen, &copies)
+}
+
 /// The row that a character printed in insert mode goes in: the cursor's,
 /// or with a wrap pending the next, but the screen's last below the
 /// region, where the wrap stays.
@@ -1242,7 +1264,7 @@ mod tests {
             "\x1b[2;1Hx{}\x1b[1;80H\x1b[4h\u{4e2d}",
             "\u{4e2d}".repeat(39)
         );
-        let cases: [(&str, Cause, &[u8]); 46] = [
+        let cases: [(&str, Cause, &[u8]); 47] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1354,6 +1376,11 @@ mod tests {
                 "repeat-under-a-head",
                 WideEdit,
                 "\x1b[1;2r\x1b[23;80H\u{4e2d}\x1b[4h\x1b[40b".as_bytes(),
+            ),
+            (
+                "insert-under-a-head",
+                WideEdit,
+                "\x1b[1;80H\u{4e2d}\x1b[2;79H\u{6587}\x1b[2;1H\x1b[4ha".as_bytes(),
             ),
             (
                 "repeat-no-wrap-wide",
