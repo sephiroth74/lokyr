@@ -10,7 +10,7 @@ use bolt_vt_core::terminal::{Charset, Shift, Terminal};
 #[cfg(test)]
 use crate::Screen;
 use crate::cause::{self, Cause, Seen};
-use crate::{DEL, Difference, Pair};
+use crate::{DEL, Difference, NUL, Pair};
 
 /// What a byte made the VT core do, as its parser dispatched it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -306,9 +306,8 @@ impl Pair {
         };
         let ground = self.parser.in_ground();
         self.parser.advance(&mut probe, &[byte]);
-        if !(byte == DEL && ground) {
-            self.processor.advance(&mut self.alacritty, &[byte]);
-        }
+        let theirs = if byte == DEL && ground { NUL } else { byte };
+        self.processor.advance(&mut self.alacritty, &[theirs]);
         probe.step
     }
 }
@@ -416,14 +415,28 @@ pub(crate) struct Parted {
 /// screens part, if they do.
 #[cfg(test)]
 pub(crate) fn parted(cols: u16, rows: u16, bytes: &[u8]) -> Option<Parted> {
+    seen_at(cols, rows, bytes, false)
+}
+
+/// What the comparison saw at the last byte of `bytes`, whether the
+/// screens part there or not, if they did not part before it.
+#[cfg(test)]
+pub(crate) fn stepped(cols: u16, rows: u16, bytes: &[u8]) -> Option<Parted> {
+    seen_at(cols, rows, bytes, true)
+}
+
+/// What the comparison saw at the first byte where the screens part, or
+/// with `last` at the last byte, if they did not part before it.
+#[cfg(test)]
+fn seen_at(cols: u16, rows: u16, bytes: &[u8], last: bool) -> Option<Parted> {
     let mut pair = Pair::new(cols, rows);
     let mut track = Track::default();
     let mut before = Before::of(pair.terminal(), track);
-    for &byte in bytes {
+    for (index, &byte) in bytes.iter().enumerate() {
         let step = pair.step(byte);
         track.note(&step, &before);
         let after = Before::of(pair.terminal(), track);
-        if !pair.same() {
+        if !pair.same() || (last && index + 1 == bytes.len()) {
             let wide = match step {
                 Step::Print(c) => pair.terminal().widths().char_width(c) == 2,
                 _ => false,

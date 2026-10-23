@@ -130,6 +130,12 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
                 .to_vec(),
         ),
         (
+            "repeat-under-a-head",
+            "\x1b[1;2r\x1b[23;80H\u{4e2d}\x1b[4h\x1b[40b"
+                .as_bytes()
+                .to_vec(),
+        ),
+        (
             "repeat-no-wrap-wide",
             "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes().to_vec(),
         ),
@@ -169,6 +175,10 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
             "del-past-the-screen",
             "\u{4e2d}\x7f\x1b[3000b".as_bytes().to_vec(),
         ),
+        // DEL within a character whose bytes did not all come, which ends
+        // it in the VT core, and in `alacritty_terminal` the NUL that the
+        // comparison gives it instead.
+        ("del-within-a-character", b"\xe4\xb8\x7f\xad".to_vec()),
     ]
 }
 
@@ -223,6 +233,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-insert-at-the-last-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x24688a3499ae64f6),
     ("case-wide-repeat-below", WideEdit, "row 2, column 7: \"[\" against \" \"", 0x3102b1f60d99c22a),
     ("case-repeat-over-its-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x313398f00735dab8),
+    ("case-repeat-under-a-head", WideEdit, "row 22, column 79: \"[head]\" against \" \"", 0xb2db1d38db2a73f5),
     ("case-repeat-no-wrap-wide", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0x193d0c9ebaec53c7),
     ("case-repeat-insert-wrap-later", InsertWrap, "row 1, column 4: \"x\" against \" \"", 0xe3075037962971da),
     // vttest: the screens after a switch to 132 columns or back.

@@ -174,7 +174,7 @@ impl Cause {
                 "CUU, CUD and their kin stop at the scroll region's margin that they move toward when they start at it or before it in the VT core, as in xterm; alacritty_terminal goes on to the screen's edge"
             }
             Self::WideEdit => {
-                "An edit that would split a wide character, text inserted among them too, empties it whole in the VT core, as in xterm; alacritty_terminal empties or moves the cells that the edit takes alone, which leaves half of the character"
+                "An edit that would split a wide character, text inserted among them too, empties it whole in the VT core, as in xterm; alacritty_terminal empties or moves the cells that the edit takes alone, which leaves half of the character. Text inserted at the start of a row moves the wide character there in the VT core, which keeps the spacer head above it; alacritty_terminal empties the head"
             }
             Self::Cbt => {
                 "CBT leaves no wrap pending in the VT core, as every move does in xterm; alacritty_terminal moves the cursor back and keeps the wrap pending"
@@ -611,26 +611,15 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             {
                 Some(Cause::CbtFirst)
             }
-            // REP in insert mode, whose characters push a wide character of
-            // the cursor's row, or of a row below that they wrap to, past the
-            // row's end, on the rows that they go in, two cells a character
-            // at most, and those that a scroll at the bottom moves them to;
-            // or of the cursor's row from its start, which they wrap back to
-            // from the last row below the scroll region, a wide character
-            // that was there or one of their own.
+            // REP in insert mode, whose characters push a wide character past
+            // the end of a row that they go in, on the rows that they change,
+            // and in the spacer heads above the rows that they insert at the
+            // start of.
             (b"", b'b')
                 if before.insert
-                    && (before.widths[x..].contains(&Width::SpacerTail)
-                        || before
-                            .wide_below
-                            .iter()
-                            .take(reach(params, before))
-                            .any(|&wide| wide)
-                        || (repeats_over_its_row(params, before)
-                            && (before.widths.contains(&Width::SpacerTail)
-                                || before.last_printed.is_some_and(|(_, width)| width == 2))))
+                    && pushes_a_wide_character(params, before)
                     && bolt == alacritty
-                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+                    && heads_kept_but(seen, &copies(params, before, None)) =>
             {
                 Some(Cause::WideEdit)
             }
@@ -651,7 +640,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && (before.cols - x) % 2 == 1
                     && first(params) > (before.cols - 1 - x) / 2
                     && bolt == alacritty
-                    && seen.rows_same_but(&reached(y, reach(params, before), bottom)) =>
+                    && seen.rows_same_but(&copies(params, before, None).changed(before.region)) =>
             {
                 Some(Cause::InsertWrap)
             }
@@ -686,7 +675,11 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'b')
                 if before.reset
                     && bolt == before.cursor
-                    && printed_alone(seen, y, reach(params, before), before.region) =>
+                    && printed_alone(
+                        seen,
+                        &copies(params, before, Some(2)),
+                        reach(params, before),
+                    ) =>
             {
                 Some(Cause::RepReset)
             }
@@ -747,7 +740,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             if before.insert
                 && inserts_at_a_tail(before)
                 && bolt == alacritty
-                && seen.rows_same_but(&around(y, 1)) =>
+                && seen.rows_same_but(&[row_written(before)]) =>
         {
             Some(Cause::WideEdit)
         }
@@ -795,13 +788,6 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         }
         _ => None,
     }
-}
-
-/// The rows from `reach` above row `y` to `reach` below it: those that
-/// text from row `y` goes on in, and those that a scroll at the bottom
-/// moves them to.
-fn around(y: usize, reach: usize) -> Vec<usize> {
-    (y.saturating_sub(reach)..=y + reach).collect()
 }
 
 /// The rows that a move with `final_byte` by `n`, or CHA and HPA, takes the
@@ -862,18 +848,19 @@ fn advanced(before: &Before, n: usize, width: usize) -> At {
     (x, y, pending)
 }
 
-/// Whether the screens are the same but for the rows that text from row
-/// `y`, which goes on `reach` rows below it, went in, in
-/// `alacritty_terminal`'s screen, which printed it alone: a scroll at the
-/// bottom margin moved the other rows of its region up by as many rows as
-/// the text passed it.
-fn printed_alone(seen: &Seen<'_>, y: usize, reach: usize, (top, bottom): (usize, usize)) -> bool {
+/// Whether the screens are the same but for the rows that `copies` went
+/// in, in `alacritty_terminal`'s screen, which printed them alone: a
+/// scroll at the bottom margin moved the other rows of its region up, by
+/// as many rows as the copies, `reach` rows at most, passed it.
+fn printed_alone(seen: &Seen<'_>, copies: &Copies, reach: usize) -> bool {
     let Some((other, printed)) = seen.screens else {
         return true;
     };
     let rows = printed.rows.len();
-    if y > bottom || y + reach <= bottom {
-        let written: Vec<usize> = (y..=(y + reach).min(rows - 1)).collect();
+    let (top, bottom) = seen.before.region;
+    let y = seen.before.cursor.1;
+    if !copies.scrolls {
+        let written = &copies.rows;
         // Text from the first two columns writes over the wide character
         // that a spacer head above stands for, which goes with it.
         let x = seen.before.cursor.0;
@@ -907,14 +894,22 @@ fn head_emptied(printed: &[String], other: &[String], cols: usize) -> bool {
         && but_last(printed, cols) == but_last(other, cols)
 }
 
-/// The rows that text from row `y` goes on in, `reach` rows below it, and,
-/// when it passes the bottom margin, those that its scroll moves them to.
-fn reached(y: usize, reach: usize, bottom: usize) -> Vec<usize> {
-    if y + reach <= bottom {
-        (y..=y + reach).collect()
-    } else {
-        around(y, reach)
-    }
+/// Whether the screens are the same but for the rows that `copies` change,
+/// and for the last cell of the row above each that they insert at the
+/// start of: a spacer head that the VT core keeps, as text inserted there
+/// moves the wide character that it stands for rather than writing over it,
+/// and that `alacritty_terminal` empties.
+fn heads_kept_but(seen: &Seen<'_>, copies: &Copies) -> bool {
+    let Some((bolt, alacritty)) = seen.screens else {
+        return true;
+    };
+    let changed = copies.changed(seen.before.region);
+    (0..bolt.rows.len()).all(|row| {
+        changed.contains(&row)
+            || bolt.rows[row] == alacritty.rows[row]
+            || (copies.starts.contains(&(row + 1))
+                && head_emptied(&alacritty.rows[row], &bolt.rows[row], seen.before.cols))
+    })
 }
 
 /// Whether the screens' rows differ in their last cells alone, where the VT
@@ -942,19 +937,6 @@ fn prefix(row: &[String], len: usize) -> Vec<String> {
 /// prints can reach, two cells a character at most.
 fn reach(params: &[u16], before: &Before) -> usize {
     2 * usize::from(params.first().copied().unwrap_or(0).max(1)) / before.cols + 1
-}
-
-/// Whether REP with `params` wraps back to the start of the cursor's row,
-/// as a wrap does from the last row below the scroll region, which scrolls
-/// nothing: its copies take more cells than the row has left, or the wrap
-/// is pending.
-fn repeats_over_its_row(params: &[u16], before: &Before) -> bool {
-    let (x, y, pending) = before.cursor;
-    let width = before
-        .last_printed
-        .map_or(1, |(_, width)| usize::from(width));
-    let n = usize::from(params.first().copied().unwrap_or(0).max(1));
-    y > before.region.1 && y + 1 == before.rows && (pending || n * width > before.cols - x)
 }
 
 /// `row`'s cells but its cell at column `cols - 1`, without the empty ones
@@ -1004,6 +986,134 @@ fn inserts_at_a_tail(before: &Before) -> bool {
     tail(x) || tail(before.cols - 1) || tail(before.cols - 2)
 }
 
+/// Where REP's copies go on the screen that `before` holds.
+struct Copies {
+    /// The rows that they write as the rows were before them, the cursor's
+    /// first unless a wrap was pending, with no row twice.
+    rows: Vec<usize>,
+    /// Whether a wrap at the bottom margin scrolls the region, which
+    /// brings in new rows for the copies after it.
+    scrolls: bool,
+    /// Whether they wrap back to the start of their last row, the screen's
+    /// last below the region, where a wrap stays.
+    again: bool,
+    /// The rows whose first two columns they write in, as they were: the
+    /// cursor's, from there, and those that a wrap takes them to the start
+    /// of.
+    starts: Vec<usize>,
+}
+
+impl Copies {
+    /// The rows that the copies change: those that they write, and the
+    /// region's, `region`, when they scroll it.
+    fn changed(&self, (top, bottom): (usize, usize)) -> Vec<usize> {
+        let mut rows = self.rows.clone();
+        if self.scrolls {
+            rows.extend(top..=bottom);
+        }
+        rows
+    }
+}
+
+/// Follows REP with `params` as the cores print its copies, of `width`
+/// cells each, or of the width of the character before it: a pending wrap,
+/// or a wide character at the last column, wraps first, to the next row,
+/// or scrolls the region at its bottom margin, or stays on the screen's
+/// last row below the region, at its start. Without autowrap, or for a
+/// character of no width, the copies stay on the cursor's row.
+fn copies(params: &[u16], before: &Before, width: Option<usize>) -> Copies {
+    let (mut x, mut y, mut pending) = before.cursor;
+    let bottom = before.region.1;
+    let width = width.unwrap_or_else(|| {
+        before
+            .last_printed
+            .map_or(0, |(_, width)| usize::from(width))
+    });
+    let mut copies = Copies {
+        rows: if pending { Vec::new() } else { vec![y] },
+        scrolls: false,
+        again: false,
+        starts: if !pending && x <= 1 {
+            vec![y]
+        } else {
+            Vec::new()
+        },
+    };
+    if width == 0 || !before.autowrap {
+        copies.rows = vec![y];
+        return copies;
+    }
+    for _ in 0..first_count(params) {
+        if pending || (width == 2 && x + 1 == before.cols) {
+            if y == bottom {
+                // The copies after it go into a new row.
+                copies.scrolls = true;
+            } else {
+                if y + 1 == before.rows {
+                    copies.again = true;
+                } else {
+                    y += 1;
+                }
+                if !copies.rows.contains(&y) {
+                    copies.rows.push(y);
+                }
+                if !copies.starts.contains(&y) {
+                    copies.starts.push(y);
+                }
+            }
+            // From then on the copies change no other row.
+            if copies.scrolls || copies.again {
+                break;
+            }
+            (x, pending) = (0, false);
+        }
+        x += width;
+        if x >= before.cols {
+            (x, pending) = (before.cols - 1, true);
+        }
+    }
+    copies
+}
+
+/// REP's count, 1 for none or 0.
+fn first_count(params: &[u16]) -> usize {
+    usize::from(params.first().copied().unwrap_or(0).max(1))
+}
+
+/// Whether REP with `params`, in insert mode, pushes a wide character past
+/// the end of a row that its copies go in: from the cursor, on the
+/// cursor's row when no wrap is pending; in a row below that they wrap to;
+/// or in the screen's last row below the region, which they wrap back to
+/// the start of, a wide character that was there or one of their own.
+fn pushes_a_wide_character(params: &[u16], before: &Before) -> bool {
+    let (x, y, pending) = before.cursor;
+    let copies = copies(params, before, None);
+    let holds_wide = |row: usize| {
+        if row == y {
+            before.widths.contains(&Width::SpacerTail)
+        } else {
+            before.wide_below.get(row - y - 1) == Some(&true)
+        }
+    };
+    (!pending && before.widths[x..].contains(&Width::SpacerTail))
+        || copies.rows.iter().any(|&row| row > y && holds_wide(row))
+        || (copies.again
+            && (copies.rows.last().is_some_and(|&row| holds_wide(row))
+                || before.last_printed.is_some_and(|(_, width)| width == 2)))
+}
+
+/// The row that a character printed in insert mode goes in: the cursor's,
+/// or with a wrap pending the next, but the screen's last below the
+/// region, where the wrap stays.
+fn row_written(before: &Before) -> usize {
+    let (_, y, pending) = before.cursor;
+    if !pending || (y > before.region.1 && y + 1 == before.rows) {
+        y
+    } else {
+        y + 1
+    }
+}
+
 /// The sets that G0 to G3 hold.
 pub(crate) fn sets(charsets: bolt_vt_core::terminal::Charsets) -> [Charset; 4] {
     [Shift::G0, Shift::G1, Shift::G2, Shift::G3].map(|slot| charsets.get(slot))
@@ -1013,7 +1123,7 @@ pub(crate) fn sets(charsets: bolt_vt_core::terminal::Charsets) -> [Charset; 4] {
 mod tests {
     use super::Cause::*;
     use super::*;
-    use crate::explore::{Parted, parted};
+    use crate::explore::{Parted, parted, stepped};
 
     /// The cause that the rules give the screens that `parted` saw, with
     /// the VT core's as `bolt`.
@@ -1033,7 +1143,7 @@ mod tests {
     /// where they part, on a screen of 80 by 24.
     fn cases() -> Vec<(&'static str, Cause, Vec<u8>)> {
         let line_feed = [&[b'a'; 80][..], b"\n"].concat();
-        let cases: [(&str, Cause, &[u8]); 41] = [
+        let cases: [(&str, Cause, &[u8]); 42] = [
             ("c1", C1, b"a\x80b"),
             ("jamo", Jamo, "a\u{D7FF}b".as_bytes()),
             ("emoji", Emoji, "x\u{2600}\u{FE0F}y\r\n".as_bytes()),
@@ -1137,6 +1247,11 @@ mod tests {
                 "\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b".as_bytes(),
             ),
             (
+                "repeat-under-a-head",
+                WideEdit,
+                "\x1b[1;2r\x1b[23;80H\u{4e2d}\x1b[4h\x1b[40b".as_bytes(),
+            ),
+            (
                 "repeat-no-wrap-wide",
                 NoWrapWide,
                 "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes(),
@@ -1156,8 +1271,9 @@ mod tests {
 
     /// Bugs that a VT core could have, as its screen at the byte where the
     /// screens part shows them, each named: its cursor a column off or a
-    /// row off, its pending wrap the other way, and a row far from the
-    /// cursor written to.
+    /// row off, its pending wrap the other way, a row far from the cursor
+    /// written to, and the row after the cursor's, or the one before it at
+    /// the last row.
     fn bugs(parted: &Parted) -> Vec<(&'static str, Screen)> {
         let (cols, rows) = (parted.before.cols, parted.before.rows);
         let screen = &parted.bolt;
@@ -1186,12 +1302,17 @@ mod tests {
         } else {
             0
         };
-        let mut written = screen.clone();
-        match written.rows[far].first_mut() {
-            Some(cell) => *cell = "#".to_owned(),
-            None => written.rows[far].push("#".to_owned()),
-        }
-        bugs.push(("a far row written", written));
+        let written = |row: usize| {
+            let mut written = screen.clone();
+            match written.rows[row].first_mut() {
+                Some(cell) => *cell = "#".to_owned(),
+                None => written.rows[row].push("#".to_owned()),
+            }
+            written
+        };
+        bugs.push(("a far row written", written(far)));
+        let near = if y + 1 < rows { y + 1 } else { y - 1 };
+        bugs.push(("a near row written", written(near)));
         bugs
     }
 
@@ -1201,11 +1322,36 @@ mod tests {
             let parted = parted(80, 24, &input).expect("the screens part");
             assert_eq!(explained(&parted, &parted.bolt), Some(expected), "{name}");
             for (bug, screen) in bugs(&parted) {
-                if expected == Highlight && bug == "a far row written" {
+                if expected == Highlight && bug.ends_with("row written") {
                     // SD's rows, which `alacritty_terminal` scrolls, are any.
                     continue;
                 }
                 assert_eq!(explained(&parted, &screen), None, "{name}, {bug}");
+            }
+        }
+    }
+
+    #[test]
+    fn rep_explains_nothing_on_the_rows_that_its_copies_do_not_reach() {
+        // Each input, from the review, and the rows that a VT core's bug
+        // writes: a REP that does not wrap, above a row that holds a wide
+        // character; one with a wrap pending, after a wide character at the
+        // end of the row; and one at the last row below the region, whose
+        // wraps stay on that row.
+        let inputs: [(&str, &[usize]); 3] = [
+            ("\x1b[2;5H\u{4e2d}\x1b[Ha\x1b[4h\x1b[b", &[0, 1, 2]),
+            ("\x1b[1;79H\u{4e2d}\x1b[4h\x1b[3b", &[0, 1, 2]),
+            ("\x1b[1;2r\x1b[24;2H\u{4e2d}\x1b[4h\x1b[40b", &[21, 22]),
+        ];
+        for (input, rows) in inputs {
+            let step = stepped(80, 24, input.as_bytes()).expect("the screens part no sooner");
+            for &row in rows {
+                let mut bug = step.bolt.clone();
+                match bug.rows[row].get_mut(5) {
+                    Some(cell) => *cell = "#".to_owned(),
+                    None => bug.rows[row].push("#".to_owned()),
+                }
+                assert_eq!(explained(&step, &bug), None, "{input:?}, row {row}");
             }
         }
     }

@@ -109,12 +109,18 @@ impl Screen {
 /// DEL, which vte's parser prints as a character outside escape sequences
 /// and strings, while DEC's and the VT core's take it for nothing:
 /// `alacritty_terminal` shows nothing of it, but its REP then repeats it,
-/// rather than the character before. [`Pair`] holds it back from
-/// `alacritty_terminal`, so that REP repeats the same character in both.
+/// rather than the character before. [`Pair`] gives `alacritty_terminal`
+/// [`NUL`] in its place, so that REP repeats the same character in both.
 pub(crate) const DEL: u8 = 0x7F;
 
+/// What `alacritty_terminal` gets for DEL outside escape sequences and
+/// strings: a control that does nothing, and that ends a character whose
+/// bytes did not all come, as DEL does in the VT core.
+pub(crate) const NUL: u8 = 0x00;
+
 /// The VT core and `alacritty_terminal`, of one size, fed the same bytes,
-/// but for the DEL that vte prints, which only the VT core has.
+/// but for the DEL that vte prints, for which `alacritty_terminal` gets
+/// NUL.
 pub struct Pair {
     parser: Parser,
     bolt: Terminal,
@@ -134,8 +140,9 @@ impl Pair {
         }
     }
 
-    /// Feeds `bytes` to both, each DEL that the parser meets outside
-    /// escape sequences and strings to the VT core alone.
+    /// Feeds `bytes` to both, but each DEL that the parser meets outside
+    /// escape sequences and strings, for which `alacritty_terminal` gets
+    /// NUL.
     pub fn feed(&mut self, bytes: &[u8]) {
         let mut rest = bytes;
         while let Some(at) = rest.iter().position(|&byte| byte == DEL) {
@@ -144,9 +151,8 @@ impl Pair {
             self.processor.advance(&mut self.alacritty, before);
             let ground = self.parser.in_ground();
             self.parser.advance(&mut self.bolt, &[DEL]);
-            if !ground {
-                self.processor.advance(&mut self.alacritty, &[DEL]);
-            }
+            let theirs = if ground { NUL } else { DEL };
+            self.processor.advance(&mut self.alacritty, &[theirs]);
             rest = &after[1..];
         }
         self.parser.advance(&mut self.bolt, rest);
