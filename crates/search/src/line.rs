@@ -51,9 +51,11 @@ impl Line {
     fn push_row(&mut self, row: ListRow<'_>) {
         self.rows.push((row.page(), row.row(), self.starts.len()));
         let mut utf8 = [0; 4];
-        // Up to `u16::MAX` inclusive: an open range would overflow after the
-        // last cell of a row that wide.
-        for (col, cell) in (0..=u16::MAX).zip(row.cells()) {
+        for (col, cell) in row.cells().enumerate() {
+            // A row has `u16::MAX` cells at most. Counted with the cells
+            // rather than with an inclusive range, which does not optimize
+            // as well in this loop, the search's hottest.
+            let col = col as u16;
             if matches!(cell.width(), Width::SpacerTail | Width::SpacerHead) {
                 continue;
             }

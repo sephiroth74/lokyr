@@ -44,9 +44,9 @@ pub fn with_attributes(terminal: &Terminal) -> String {
 fn runs(terminal: &Terminal, y: u16) -> Vec<String> {
     let (page, row) = terminal.screen_rows().screen_row(y);
     let mut runs: Vec<(u16, u16, String)> = Vec::new();
-    // Up to `u16::MAX` inclusive: an open range would overflow after the
-    // last cell of a row that wide.
-    for (x, cell) in (0..=u16::MAX).zip(page.cells(row)) {
+    for (x, cell) in page.cells(row).iter().enumerate() {
+        // A row has `u16::MAX` cells at most.
+        let x = x as u16;
         let mut attributes = describe(page.styles().get(cell.style()));
         match cell.content() {
             Content::BgPalette(index) => attributes.push(format!("bg={index}")),
