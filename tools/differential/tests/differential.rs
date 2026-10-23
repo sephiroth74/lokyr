@@ -135,6 +135,12 @@ fn cases() -> Vec<(&'static str, Vec<u8>)> {
                 .to_vec(),
         ),
         (
+            "repeat-pushes-and-scrolls",
+            "\x1b[24;79H\u{6587}\x1b[24;1Ha\x1b[4h\x1b[99b"
+                .as_bytes()
+                .to_vec(),
+        ),
+        (
             "insert-under-a-head",
             "\x1b[1;80H\u{4e2d}\x1b[2;79H\u{6587}\x1b[2;1H\x1b[4ha"
                 .as_bytes()
@@ -268,6 +274,7 @@ const EXPLAINED: &[(&str, Cause, &str, u64)] = &[
     ("case-insert-at-the-last-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x24688a3499ae64f6),
     ("case-wide-repeat-below", WideEdit, "row 2, column 7: \"[\" against \" \"", 0x3102b1f60d99c22a),
     ("case-repeat-over-its-row", WideEdit, "row 23, column 79: \" \" against \"中\"", 0x313398f00735dab8),
+    ("case-repeat-pushes-and-scrolls", WideEdit, "row 22, column 0: \"a\" against \" \"", 0xc550403e5b5c7c6c),
     ("case-insert-under-a-head", WideEdit, "row 0, column 79: \"[head]\" against \" \"", 0x47c979d2ef29404c),
     ("case-repeat-under-a-head", WideEdit, "row 22, column 79: \"[head]\" against \" \"", 0xb2db1d38db2a73f5),
     ("case-repeat-no-wrap-wide", NoWrapWide, "row 0, column 77: \" \" against \"中\"", 0x193d0c9ebaec53c7),

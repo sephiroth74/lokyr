@@ -248,6 +248,14 @@ impl Cell<'_> {
     }
 }
 
+/// The text of the cell at column `x` of row `y` of the VT core's screen,
+/// as the screens are compared by.
+pub(crate) fn bolt_cell_text(terminal: &Terminal, x: u16, y: u16) -> String {
+    bolt_cells(terminal, y)
+        .nth(usize::from(x))
+        .map_or_else(|| " ".to_owned(), Cell::text)
+}
+
 /// The cells of row `y` of the VT core's screen.
 fn bolt_cells(terminal: &Terminal, y: u16) -> impl Iterator<Item = Cell<'_>> {
     let (page, row) = terminal.screen_rows().screen_row(y);

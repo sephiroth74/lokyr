@@ -10,7 +10,7 @@ use bolt_vt_core::terminal::{Charset, Shift, Terminal};
 #[cfg(test)]
 use crate::Screen;
 use crate::cause::{self, Cause, Seen};
-use crate::{DEL, Difference, NUL, Pair};
+use crate::{DEL, Difference, NUL, Pair, bolt_cell_text};
 
 /// What a byte made the VT core do, as its parser dispatched it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +73,10 @@ pub struct Before {
     /// character, which text inserted can push past the row's end: in insert
     /// mode alone, as reading every row at each byte would cost.
     pub wide_below: Vec<bool>,
+    /// The text of the cell left of the cursor, in insert mode alone and
+    /// with no wrap pending, which `alacritty_terminal` may empty as it
+    /// inserts.
+    pub left: Option<String>,
     /// Whether each column has a tab stop.
     pub tab_stops: Vec<bool>,
     /// The character that REP repeats, and its width, if any.
@@ -166,6 +170,8 @@ impl Before {
             } else {
                 Vec::new()
             },
+            left: (terminal.insert_mode() && cursor.x > 0 && !cursor.pending_wrap)
+                .then(|| bolt_cell_text(terminal, cursor.x - 1, cursor.y)),
             tab_stops: (0..terminal.cols()).map(|x| terminal.tab_stop(x)).collect(),
             last_printed: terminal
                 .last_printed()
