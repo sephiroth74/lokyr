@@ -363,6 +363,12 @@ impl Terminal {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
+                // A head at the last column whose wrap does not join the rows
+                // stands for text that goes on elsewhere: the row's soft
+                // wrap, which an earlier wrap marked, ends.
+                if x == self.cols - 1 && !self.wrap_joins_rows() {
+                    self.end_soft_wrap(y);
+                }
                 own_head = self.index_moves_on().then_some(x);
                 self.wrap();
             } else {
@@ -616,21 +622,11 @@ impl Terminal {
     /// scrolling may have moved the row it was in.
     pub(super) fn wrap(&mut self) {
         self.cluster = None;
-        let Cursor { x, y, .. } = self.cursor();
-        // Only a wrap from the last column of the screen to the first one
-        // of another row makes the two rows one line, for reflow. Where the
-        // index does not move, at the screen's last row below the scroll
-        // region or at the bottom margin right of the right margin, the
-        // text goes on in the same row.
-        let last_column = x == self.cols - 1;
-        let joins_rows = last_column && self.margins.left == 0 && self.index_moves_on();
-        // Marked before the index, which may scroll the row away. One from
-        // the last column that does not join the rows leaves that column
-        // to text that goes on elsewhere, and ends the row's soft wrap.
+        let y = self.cursor().y;
+        let joins_rows = self.wrap_joins_rows();
+        // Marked before the index, which may scroll the row away.
         if joins_rows {
             self.row_flag(y, RowFlag::SoftWrapped);
-        } else if last_column {
-            self.end_soft_wrap(y);
         }
         self.index();
         self.screen_mut().cursor.x = self.margins.left;
@@ -638,6 +634,15 @@ impl Terminal {
             let y = self.cursor().y;
             self.row_flag(y, RowFlag::Continuation);
         }
+    }
+
+    /// Whether a wrap from the cursor makes its row and the next one line,
+    /// for reflow: only one from the last column of the screen to the first
+    /// one of another row. Where the index does not move, at the screen's
+    /// last row below the scroll region or at the bottom margin right of
+    /// the right margin, the text goes on in the same row.
+    fn wrap_joins_rows(&self) -> bool {
+        self.cursor().x == self.cols - 1 && self.margins.left == 0 && self.index_moves_on()
     }
 
     fn row_flag(&mut self, y: u16, flag: RowFlag) {
@@ -659,12 +664,13 @@ impl Terminal {
 
     /// Empties the spacer heads at the end of the line on the row above `y`
     /// that the wrap there left for a wide character at the left margin of
-    /// row `y`, where wraps land: for a write at the left margin that goes
-    /// over one, as [`over_wide_start`] tells, and as `alacritty_terminal`
-    /// does. The head at the right margin, and the one at the screen's edge
-    /// when the row above soft-wraps into row `y` and there is no left
-    /// margin, as only a wrap from the last column to the first marks the
-    /// rows, and one from there that does not join them ends the mark; but
+    /// row `y`, where wraps land: for a write that goes over one in the two
+    /// columns from the left margin, as [`over_wide_start`] tells, and as
+    /// `alacritty_terminal` does. The head at the right margin, and the one
+    /// at the screen's edge when the row above soft-wraps into row `y` and
+    /// there is no left margin, as only a wrap from the last column to the
+    /// first marks the rows, and a head that a wrap from there leaves
+    /// without joining them ends the mark; but
     /// not the one at `own`, which the character written has just left. A
     /// head that a wrap left at another right margin stays. A head in the
     /// scrollback stays, where `alacritty_terminal` clears it: the

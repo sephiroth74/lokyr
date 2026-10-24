@@ -5628,6 +5628,19 @@ fn a_head_at_the_screens_edge_follows_the_last_wrap_from_there() {
     let mut term = Term::new(10, 4);
     term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}\x1b[4;8s\x1b[1;10H\u{6587}");
     assert_eq!(term.cell(3, 1).content(), Content::Char('\u{6587}'));
+    // A wrap that leaves no head keeps the marks: one that DECRC brings
+    // back, from a character that still goes on into the next row, and a
+    // narrow character's.
+    for (input, last) in [
+        ("\x1b[1;10Hj\x1b7k\x1b[?69h\x1b[4;8s\x1b8Z", 'Z'),
+        ("\x1b[1;10Hab\x1b[?69h\x1b[4;8s\x1b[1;10Hcd", 'd'),
+    ] {
+        let mut term = Term::new(10, 4);
+        term.feed(input);
+        assert_eq!(term.cell(3, 1).content(), Content::Char(last), "{input:?}");
+        assert!(term.row(0).has(RowFlag::SoftWrapped), "{input:?}");
+        assert!(term.row(1).has(RowFlag::Continuation), "{input:?}");
+    }
     // A run of text whose wrap from the right margin goes over the
     // character that wrapped from the edge empties that one's head.
     let mut term = Term::new(10, 4);
