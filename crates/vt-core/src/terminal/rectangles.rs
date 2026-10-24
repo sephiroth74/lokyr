@@ -120,12 +120,17 @@ impl Terminal {
         self.moved();
         let width = area.columns.end - area.columns.start;
         let x = area.columns.start;
+        let text = if byte.is_ascii() {
+            vec![byte; usize::from(width)]
+        } else {
+            Vec::new()
+        };
         for y in area.rows {
             self.with_pen(y, |page, row, style| {
                 page.clear_halves(row, x, width);
                 let template = Cell::EMPTY.with_style(style);
                 if byte.is_ascii() {
-                    page.write_ascii(row, x, &vec![byte; usize::from(width)], template);
+                    page.write_ascii(row, x, &text, template);
                 } else {
                     let cell = template.with_content(Content::Char(char::from(byte)));
                     for x in area.columns.clone() {

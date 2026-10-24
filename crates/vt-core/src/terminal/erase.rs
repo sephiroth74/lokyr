@@ -10,7 +10,7 @@
 use std::ops::Range;
 
 use super::{Cursor, Terminal};
-use crate::page::{Cell, Color, Content, RowFlag};
+use crate::page::{Cell, Color, Content};
 
 impl Terminal {
     /// ED, or DECSED if `selective`: 0 erases from the cursor to the end of
@@ -105,15 +105,10 @@ impl Terminal {
     pub(super) fn erase_in_row(&mut self, y: u16, columns: Range<u16>, keep: bool) {
         let blank = self.blank();
         let reaches_end = columns.end == self.cols;
-        let rows = &mut self.screen_mut().rows;
-        let (page, row) = rows.screen_row_mut(y);
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
         page.erase(row, columns, blank, keep);
         if reaches_end && !keep {
-            page.row_mut(row).set(RowFlag::SoftWrapped, false);
-            if y + 1 < rows.rows() {
-                let (page, row) = rows.screen_row_mut(y + 1);
-                page.row_mut(row).set(RowFlag::Continuation, false);
-            }
+            self.end_soft_wrap(y);
         }
     }
 

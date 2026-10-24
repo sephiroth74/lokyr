@@ -163,7 +163,7 @@ impl Terminal {
             y,
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, None);
+            self.clear_spacer_head_above(y, None);
         }
         Some(len)
     }
@@ -252,7 +252,7 @@ impl Terminal {
             page.write_chars(row, x, stretch, template);
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, None);
+            self.clear_spacer_head_above(y, None);
         }
         self.cluster = Some(Cluster {
             x: x + cells - u16::from(last_width),
@@ -339,7 +339,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, None);
+            self.clear_spacer_head_above(y, None);
         }
     }
 
@@ -404,7 +404,7 @@ impl Terminal {
             }
         });
         if over_wide {
-            self.clear_spacer_head_above(x, y, own_head);
+            self.clear_spacer_head_above(y, own_head);
         }
         if self.link.is_open() {
             self.link_cells(x, y, width);
@@ -622,10 +622,15 @@ impl Terminal {
         // index does not move, at the screen's last row below the scroll
         // region or at the bottom margin right of the right margin, the
         // text goes on in the same row.
-        let joins_rows = x == self.cols - 1 && self.margins.left == 0 && self.index_moves_on();
-        // Marked before the index, which may scroll the row away.
+        let last_column = x == self.cols - 1;
+        let joins_rows = last_column && self.margins.left == 0 && self.index_moves_on();
+        // Marked before the index, which may scroll the row away. One from
+        // the last column that does not join the rows leaves that column
+        // to text that goes on elsewhere, and ends the row's soft wrap.
         if joins_rows {
             self.row_flag(y, RowFlag::SoftWrapped);
+        } else if last_column {
+            self.end_soft_wrap(y);
         }
         self.index();
         self.screen_mut().cursor.x = self.margins.left;
@@ -640,22 +645,41 @@ impl Terminal {
         page.row_mut(row).set(flag, true);
     }
 
+    /// Ends row `y`'s soft wrap: it no longer goes on into the next row,
+    /// which is no longer its continuation.
+    pub(super) fn end_soft_wrap(&mut self, y: u16) {
+        let rows = &mut self.screen_mut().rows;
+        let (page, row) = rows.screen_row_mut(y);
+        page.row_mut(row).set(RowFlag::SoftWrapped, false);
+        if y + 1 < rows.rows() {
+            let (page, row) = rows.screen_row_mut(y + 1);
+            page.row_mut(row).set(RowFlag::Continuation, false);
+        }
+    }
+
     /// Empties the spacer heads at the end of the line on the row above `y`
     /// that the wrap there left for a wide character at the left margin of
-    /// row `y`, where wraps land: for a write from column `x` that goes over
-    /// one, as [`over_wide_start`] tells, and as `alacritty_terminal` does.
-    /// The head at the right margin, and the one at the screen's edge when
-    /// the row above wraps into row `y` and there is no left margin, as only
-    /// a wrap from the last column to the first marks the rows; but not the
-    /// one at `own`, which the character written has just left. A head that
-    /// a wrap left under other margins stays. A head in the scrollback stays,
-    /// where `alacritty_terminal` clears it: the scrollback's rows are not
-    /// written to, as their pages can be kept cold.
-    fn clear_spacer_head_above(&mut self, x: u16, y: u16, own: Option<u16>) {
-        let (margin, edge) = (self.line_end(x) - 1, self.cols - 1);
+    /// row `y`, where wraps land: for a write at the left margin that goes
+    /// over one, as [`over_wide_start`] tells, and as `alacritty_terminal`
+    /// does. The head at the right margin, and the one at the screen's edge
+    /// when the row above soft-wraps into row `y` and there is no left
+    /// margin, as only a wrap from the last column to the first marks the
+    /// rows, and one from there that does not join them ends the mark; but
+    /// not the one at `own`, which the character written has just left. A
+    /// head that a wrap left at another right margin stays. A head in the
+    /// scrollback stays, where `alacritty_terminal` clears it: the
+    /// scrollback's rows are not written to, as their pages can be kept
+    /// cold.
+    fn clear_spacer_head_above(&mut self, y: u16, own: Option<u16>) {
+        let (margin, edge) = (self.margins.right, self.cols - 1);
         let first_column = self.margins.left == 0;
-        let (page, row) = self.screen_mut().rows.screen_row_mut(y - 1);
-        let wraps = first_column && page.row(row).has(RowFlag::SoftWrapped);
+        let rows = &mut self.screen_mut().rows;
+        let continues = {
+            let (page, row) = rows.screen_row(y);
+            page.row(row).has(RowFlag::Continuation)
+        };
+        let (page, row) = rows.screen_row_mut(y - 1);
+        let wraps = first_column && continues && page.row(row).has(RowFlag::SoftWrapped);
         for last in [margin, edge] {
             let looked_at = last == margin || wraps;
             if looked_at
@@ -678,7 +702,7 @@ impl Terminal {
         let over_wide = y > 0 && over_wide_start(page.cells(row), x, width, start);
         page.clear_halves(row, x, width);
         if over_wide {
-            self.clear_spacer_head_above(x, y, None);
+            self.clear_spacer_head_above(y, None);
         }
     }
 

@@ -5593,6 +5593,86 @@ fn a_head_at_the_screens_edge_goes_with_its_character_alone() {
 }
 
 #[test]
+fn a_head_at_the_screens_edge_follows_the_last_wrap_from_there() {
+    // A wrap from the last column that does not join the rows, under a left
+    // margin or where the index does not move, leaves its head there and
+    // ends the row's soft wrap, which a wrap before it marked: a write over
+    // the character that the mark was for leaves the new head. The mark
+    // came from a wide character, from a narrow one, and, at the bottom
+    // margin right of the right margin, the wrap stays in its row.
+    for (input, head, write) in [
+        (
+            "\x1b[1;10H\u{4e2d}\x1b[4;8s\x1b[1;10H\u{6587}\x1b[1;8s",
+            0,
+            "\x1b[2;1Hx",
+        ),
+        (
+            "\x1b[1;10Hab\x1b[2;1H\u{4e2d}\x1b[4;8s\x1b[1;10H\u{6587}\x1b[1;8s",
+            0,
+            "\x1b[2;1Hx",
+        ),
+        (
+            "\x1b[3;10H\u{4e2d}\x1b[1;3r\x1b[3;10H\u{6587}",
+            2,
+            "\x1b[4;1Hx",
+        ),
+    ] {
+        let mut term = Term::new(10, 4);
+        term.feed("\x1b[?69h\x1b[1;8s").feed(input);
+        assert_eq!(term.cell(9, head).width(), Width::SpacerHead, "{input:?}");
+        assert!(!term.row(head).has(RowFlag::SoftWrapped), "{input:?}");
+        assert!(!term.row(head + 1).has(RowFlag::Continuation), "{input:?}");
+        term.feed(write);
+        assert_eq!(term.cell(9, head).width(), Width::SpacerHead, "{input:?}");
+    }
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}\x1b[4;8s\x1b[1;10H\u{6587}");
+    assert_eq!(term.cell(3, 1).content(), Content::Char('\u{6587}'));
+    // A run of text whose wrap from the right margin goes over the
+    // character that wrapped from the edge empties that one's head.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;10H\u{4e2d}\x1b[1;1Habcdefghx");
+    assert_eq!(term.cell(0, 1).content(), Content::Char('x'));
+    assert_ne!(term.cell(9, 0).width(), Width::SpacerHead);
+    // A row that IL brings in under the soft-wrapped one is not its
+    // continuation: a write there leaves the head of the character that
+    // the insert moved down.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[1;10H\u{4e2d}\x1b[2;1H\x1b[L\x1b[?69h\x1b[1;8s\x1b[2;1H\u{6587}\x1b[2;1Hx");
+    assert_eq!(term.cell(0, 2).content(), Content::Char('\u{4e2d}'));
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    // Nor is one that DL brings under a row whose head is of a wrap that
+    // did not join them, the continuation of another row.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[4;8s\x1b[1;10H\u{6587}\x1b[?69l\x1b[3;10H\u{4e2d}\x1b[2;1H\x1b[2M");
+    assert!(term.row(1).has(RowFlag::Continuation));
+    assert_eq!(term.cell(0, 1).content(), Content::Char('\u{4e2d}'));
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[2;1Hx");
+    assert_eq!(term.cell(9, 0).width(), Width::SpacerHead);
+    // A head that a wrap left at another right margin stays; one at the
+    // right margin goes, under another left margin too.
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[1;8s\x1b[1;8H\u{4e2d}\x1b[1;6s\x1b[2;1Hx");
+    assert_eq!(term.cell(7, 0).width(), Width::SpacerHead);
+    let mut term = Term::new(10, 4);
+    term.feed("\x1b[?69h\x1b[4;8s\x1b[1;8H\u{4e2d}\x1b[1;8s\x1b[2;1H\u{6587}\x1b[2;1Hx");
+    assert_eq!(term.cell(3, 1).content(), Content::Char('\u{4e2d}'));
+    assert_ne!(term.cell(7, 0).width(), Width::SpacerHead);
+    // DECFRA and DECCRA, which write cells rather than text, leave the head
+    // of the character that they go over, as the erasures do.
+    for rectangle in ["\x1b[120;2;1;2;2$x", "\x1b[3;1Hxy\x1b[3;1;3;2;1;2;1;1$v"] {
+        let mut term = Term::new(10, 4);
+        term.feed("\x1b[1;10H\u{4e2d}").feed(rectangle);
+        assert_eq!(
+            term.cell(0, 1).content(),
+            Content::Char('x'),
+            "{rectangle:?}"
+        );
+        assert_eq!(term.cell(9, 0).width(), Width::SpacerHead, "{rectangle:?}");
+    }
+}
+
+#[test]
 fn a_head_or_a_widening_that_empties_a_wrapped_character_empties_its_head() {
     // On a line of two columns, the head that a wide character leaves goes
     // over the character that wrapped there.

@@ -52,8 +52,9 @@ pub enum Width {
     Wide,
     /// The second column of a wide character, which holds nothing itself.
     SpacerTail,
-    /// The last column of a row, left empty because the wide character that
-    /// came next did not fit and went to the next row.
+    /// The last column of a line, at the screen's edge or at the right
+    /// margin, left empty because the wide character that came next did not
+    /// fit and went to the next row.
     SpacerHead,
 }
 
