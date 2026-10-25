@@ -26,6 +26,8 @@ vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 # Platform-independent crates, and the tools of the terminal's tests and
 # tasks, which must keep building, and passing their tests, on Linux.
 portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
+# The platform-independent crates whose tests `check-linux` checks for Linux from any host.
+portable_tests := "-p bolt-pty -p bolt-session -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
 
 # List available commands.
 _default:
@@ -54,9 +56,10 @@ clippy:
 # Lint the codebase: formatting, then clippy.
 lint: fmt-check clippy
 
-# Check the platform-independent crates for Linux, from any host.
+# Check the platform-independent crates for Linux, from any host, with the tests of those whose tests build for it from macOS: the VT core's and the search's need a C compiler for Linux, as criterion builds C for its target.
 check-linux:
     cargo check --locked --target x86_64-unknown-linux-gnu {{ portable }}
+    cargo check --locked --target x86_64-unknown-linux-gnu --tests {{ portable_tests }}
 
 # Test the platform-independent crates on the host (used by the Linux CI job), every suite even after one fails.
 test-portable:

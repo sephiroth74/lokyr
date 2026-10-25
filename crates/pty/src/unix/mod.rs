@@ -952,13 +952,25 @@ mod tests {
         ]
     }
 
+    /// A seccomp filter that lets every system call through, which any
+    /// system that has seccomp's filters installs.
+    #[cfg(target_os = "linux")]
+    fn allowing_all() -> [libc::sock_filter; 1] {
+        [libc::sock_filter {
+            code: (libc::BPF_RET | libc::BPF_K) as u16,
+            jt: 0,
+            jf: 0,
+            k: libc::SECCOMP_RET_ALLOW,
+        }]
+    }
+
     /// Installs `filter` in this process, which `close_inherited` then runs
     /// under, and tells why it could not: async-signal-safe, as it makes two
     /// system calls and builds the error from `errno`.
     #[cfg(target_os = "linux")]
-    fn install(filter: &[libc::sock_filter; 4]) -> std::io::Result<()> {
+    fn install(filter: &[libc::sock_filter]) -> std::io::Result<()> {
         let program = libc::sock_fprog {
-            len: 4,
+            len: u16::try_from(filter.len()).unwrap_or(u16::MAX),
             filter: filter.as_ptr().cast_mut(),
         };
         let zero: libc::c_ulong = 0;
@@ -990,21 +1002,42 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn a_close_range_that_fails_in_the_child_marks_each_descriptor() {
-        let filter = without_close_range();
+        // Runs `/bin/true` in a child that first installs `filter`.
+        let run = |filter: &'static [libc::sock_filter]| {
+            let mut child = Command::new("/bin/true");
+            // SAFETY: `install` makes two system calls between fork and exec.
+            unsafe {
+                child.pre_exec(move || install(filter));
+            }
+            child.status()
+        };
         // Where no filter can be installed, as under qemu's user mode or a
-        // kernel without seccomp's filters, the test does not apply.
-        let mut probe = Command::new("/bin/true");
-        // SAFETY: `install` makes two system calls between fork and exec.
-        unsafe {
-            probe.pre_exec(move || install(&filter));
+        // kernel without seccomp's filters, the test does not apply, but in
+        // CI, which has them; any other failure fails it.
+        static ALLOWING_ALL: std::sync::OnceLock<[libc::sock_filter; 1]> =
+            std::sync::OnceLock::new();
+        static WITHOUT_CLOSE_RANGE: std::sync::OnceLock<[libc::sock_filter; 4]> =
+            std::sync::OnceLock::new();
+        let allowing_all = ALLOWING_ALL.get_or_init(allowing_all);
+        let filter = WITHOUT_CLOSE_RANGE.get_or_init(without_close_range);
+        match run(allowing_all) {
+            Ok(status) => assert!(status.success(), "/bin/true: {status}"),
+            Err(error)
+                if matches!(error.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS))
+                    && std::env::var_os("CI").is_none() =>
+            {
+                eprintln!("no seccomp filter can be installed here: {error}");
+                return;
+            }
+            Err(error) => panic!("a filter that allows everything: {error}"),
         }
-        if let Err(error) = probe.status() {
-            eprintln!("no seccomp filter can be installed here: {error}");
-            return;
-        }
+        // The filter under test installs where one that allows everything
+        // does.
+        let status = run(filter).expect("the filter installs");
+        assert!(status.success(), "/bin/true: {status}");
         // Under the filter, the call marks nothing.
         assert!(kept_after(move || {
-            let _ = install(&filter);
+            let _ = install(filter);
             // SAFETY: as in `close_inherited`.
             unsafe {
                 libc::syscall(
@@ -1018,7 +1051,7 @@ mod tests {
         // And `close_inherited` marks each descriptor in turn.
         let limit = descriptor_limit();
         assert!(!kept_after(move || {
-            let _ = install(&filter);
+            let _ = install(filter);
             close_inherited(limit, &mut []);
         }));
     }
