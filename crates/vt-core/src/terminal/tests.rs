@@ -5594,10 +5594,11 @@ fn a_head_at_the_screens_edge_goes_with_its_character_alone() {
 
 #[test]
 fn a_head_at_the_screens_edge_follows_the_last_wrap_from_there() {
-    // A wrap from the last column that does not join the rows, under a left
-    // margin or where the index does not move, leaves its head there and
-    // ends the row's soft wrap, which a wrap before it marked: a write over
-    // the character that the mark was for leaves the new head. The mark
+    // A wide character's wrap from the screen's last column that does not
+    // join the rows, under a left margin or where the index does not move,
+    // leaves its head there and ends the row's soft wrap, which a wrap
+    // before it marked: a write over the character that the mark was for
+    // leaves the new head. The mark
     // came from a wide character, from a narrow one, and, at the bottom
     // margin right of the right margin, the wrap stays in its row.
     for (input, head, write) in [

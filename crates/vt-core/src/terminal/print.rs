@@ -363,9 +363,9 @@ impl Terminal {
             if self.autowrap {
                 self.clear_overlaps(x, y, 1);
                 self.put(x, y, Cell::EMPTY.with_width(Width::SpacerHead));
-                // A head at the last column whose wrap does not join the rows
-                // stands for text that goes on elsewhere: the row's soft
-                // wrap, which an earlier wrap marked, ends.
+                // A head at the screen's last column whose wrap does not join
+                // the rows stands for text that goes on elsewhere: the row's
+                // soft wrap, which an earlier wrap marked, ends.
                 if x == self.cols - 1 && !self.wrap_joins_rows() {
                     self.end_soft_wrap(y);
                 }
@@ -668,14 +668,13 @@ impl Terminal {
     /// columns from the left margin, as [`over_wide_start`] tells, and as
     /// `alacritty_terminal` does. The head at the right margin, and the one
     /// at the screen's edge when the row above soft-wraps into row `y` and
-    /// there is no left margin, as only a wrap from the last column to the
-    /// first marks the rows, and a head that a wrap from there leaves
-    /// without joining them ends the mark; but
-    /// not the one at `own`, which the character written has just left. A
-    /// head that a wrap left at another right margin stays. A head in the
-    /// scrollback stays, where `alacritty_terminal` clears it: the
-    /// scrollback's rows are not written to, as their pages can be kept
-    /// cold.
+    /// there is no left margin, as only a wrap from the screen's last column
+    /// to the first marks the rows, and a head that a wrap from there leaves
+    /// without joining them ends the mark; but not the one at `own`, which
+    /// the character written has just left. A head that a wrap left at
+    /// another right margin stays. A head in the scrollback stays, where
+    /// `alacritty_terminal` clears it: the scrollback's rows are not written
+    /// to, as their pages can be kept cold.
     fn clear_spacer_head_above(&mut self, y: u16, own: Option<u16>) {
         let (margin, edge) = (self.margins.right, self.cols - 1);
         let first_column = self.margins.left == 0;
