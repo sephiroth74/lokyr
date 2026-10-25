@@ -118,11 +118,12 @@ fn expected(
     found
 }
 
+/// The first and last cells of matches, in the order found.
+type Cells = Vec<(Position, Position)>;
+
 /// The first and last cells of every match, going forward from each match's
 /// next cell, going backward from each match's first cell, oldest first,
 /// and in one pass over the rows `rows`.
-type Cells = Vec<(Position, Position)>;
-
 fn found(
     terminal: &mut Terminal,
     query: &Query,
@@ -284,8 +285,9 @@ proptest! {
     /// one pass over a range of rows, its matches' first and last cells
     /// alike, with lines that cross from one page into the next, the lines'
     /// pages gone cold, and lines within left and right margins, where wide
-    /// characters leave spacer heads inside rows, which needles of their
-    /// own cross.
+    /// characters leave spacer heads inside rows, and at the ends of rows
+    /// that soft-wrap: needles of their own cross the heads, and each finds
+    /// the text that it was built from.
     #[test]
     fn a_literal_finds_what_the_oracle_finds(
         lines_in in prop::collection::vec("[aAb _.\u{4e2d}\u{e9}\u{301}]{0,12}", 1..10),
@@ -380,11 +382,15 @@ proptest! {
         prop_assert_eq!(&back, &expected);
         prop_assert_eq!(&all, &in_rows);
         prop_assert_eq!(terminal.screen_rows().pins(), 0);
-        // Needles that cross the heads inside rows, which tell how a head
-        // reads: as a space, or as nothing.
+        // Needles that cross the heads, inside rows and at the ends of rows
+        // that soft-wrap, which tell how a head reads: as a space, or as
+        // nothing. Each is built from the screen's text, so that it finds
+        // something, whole words aside: the oracle and the search cannot
+        // agree on a wrong reading by both finding nothing.
         let every = 0..terminal.screen_rows().total_rows();
         for across in &crossings {
             let wanted = oracle(across);
+            prop_assert!(whole_word || !wanted.is_empty(), "{:?}", across);
             let query = Query::literal(across, case).unwrap().whole_word(whole_word);
             let (stepped, back, all) = found(&mut terminal, &query, every.clone());
             prop_assert_eq!(&stepped, &wanted, "{:?}", across);
