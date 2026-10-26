@@ -6,6 +6,10 @@
 
 #![cfg(target_os = "macos")]
 
+mod renderer;
+
+pub use renderer::MetalRenderer;
+
 use bolt_render_core::Color;
 use objc2::msg_send;
 use objc2::rc::Retained;
@@ -37,6 +41,9 @@ pub enum Error {
     /// The window is not an AppKit view backed by a `CAMetalLayer`.
     #[error("the window has no Metal layer to draw into")]
     NoLayer,
+    /// The shaders did not load, or a pipeline of them did not build.
+    #[error("the shaders: {0}")]
+    Shaders(String),
 }
 
 /// The GPU, and its queue of commands, which every window's surface shares.

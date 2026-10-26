@@ -24,6 +24,9 @@ bolt-kernel.workspace = true
 bolt-platform-core.workspace = true
 bolt-plugin-host-luau = { workspace = true, optional = true }
 bolt-render-core.workspace = true
+bolt-text-core.workspace = true
+bolt-ui-core.workspace = true
+bolt-vt-core.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 bolt-font-coretext.workspace = true

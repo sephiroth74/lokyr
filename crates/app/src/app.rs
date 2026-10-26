@@ -2,12 +2,19 @@
 
 use std::collections::BTreeMap;
 
+use bolt_font_coretext::CoreText;
 use bolt_platform_core::{
     AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
     WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
-use bolt_render_core::Color;
-use bolt_render_metal::{Gpu, Surface};
+use bolt_render_core::{Color, DisplayList, Item, Renderer};
+use bolt_render_metal::{Gpu, MetalRenderer, Surface};
+use bolt_text_core::FontConfig;
+use bolt_ui_core::font::Font;
+use bolt_ui_core::pane;
+use bolt_vt_core::page::Rgb;
+use bolt_vt_core::parser::Parser;
+use bolt_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
 
 /// The command that quits.
 const QUIT: &str = "quit";
@@ -18,22 +25,74 @@ const WINDOW_SIZE: Size = Size {
     height: 500.0,
 };
 
+/// What draws the windows: the GPU, its renderer, and the font of the text.
+#[derive(Debug)]
+pub struct Drawing {
+    gpu: Gpu,
+    renderer: MetalRenderer,
+    font: Font<CoreText>,
+}
+
+impl Drawing {
+    /// The system's GPU, and the font of the configuration, which tells of a
+    /// family that is not installed.
+    pub fn new() -> Result<Self, String> {
+        let gpu = Gpu::new().map_err(|error| error.to_string())?;
+        let font = Font::new(CoreText::new(), FontConfig::default(), 1.0)
+            .map_err(|error| error.to_string())?;
+        if let Some(family) = font.missing_family() {
+            eprintln!(
+                "bolt: the font family `{family}` is not installed; the text takes `{}`",
+                font.family()
+            );
+        }
+        let (coverage, color) = font.texture_sizes();
+        let renderer =
+            MetalRenderer::new(&gpu, coverage, color).map_err(|error| error.to_string())?;
+        Ok(Self {
+            gpu,
+            renderer,
+            font,
+        })
+    }
+}
+
+/// A window that the app opened.
+#[derive(Debug, Default)]
+struct Window {
+    /// What it draws into, once the app draws and the platform has a layer.
+    surface: Option<Surface>,
+    /// What it shows, and the columns, rows and appearance that it was made
+    /// for.
+    sample: Option<(u16, u16, Appearance, Snapshot)>,
+}
+
+impl Window {
+    /// The text that the window shows at `columns` by `rows`, in the colors
+    /// of `appearance`, made again when one of them changed.
+    fn sample(&mut self, columns: u16, rows: u16, appearance: Appearance) -> &Snapshot {
+        let stale = !matches!(&self.sample, Some((c, r, a, _)) if (*c, *r, *a) == (columns, rows, appearance));
+        if stale {
+            self.sample = Some((columns, rows, appearance, sample(columns, rows, appearance)));
+        }
+        &self.sample.as_ref().expect("made above").3
+    }
+}
+
 /// The application, which opens a window when it starts, and quits with its
 /// last window or from its menu.
 #[derive(Debug, Default)]
 pub struct App {
-    gpu: Option<Gpu>,
-    /// The open windows, each with its surface, which a window has once the
-    /// app has a GPU and the platform a layer to draw into.
-    windows: BTreeMap<WindowId, Option<Surface>>,
+    drawing: Option<Drawing>,
+    windows: BTreeMap<WindowId, Window>,
 }
 
 impl App {
-    /// An application that draws its windows with `gpu`, or nothing without
-    /// one.
-    pub fn new(gpu: Option<Gpu>) -> Self {
+    /// An application that draws its windows with `drawing`, or nothing
+    /// without it.
+    pub fn new(drawing: Option<Drawing>) -> Self {
         Self {
-            gpu,
+            drawing,
             windows: BTreeMap::new(),
         }
     }
@@ -46,7 +105,13 @@ impl App {
         match platform.create_window(&attributes) {
             Ok(window) => {
                 let surface = self.surface(platform, window);
-                self.windows.insert(window, surface);
+                self.windows.insert(
+                    window,
+                    Window {
+                        surface,
+                        sample: None,
+                    },
+                );
                 if let Some(size) = platform.window_size(window) {
                     self.draw(platform, window, size);
                 }
@@ -60,24 +125,52 @@ impl App {
         }
     }
 
-    /// The surface of `window`, if the app has a GPU and the platform a
+    /// The surface of `window`, if the app draws and the platform has a
     /// layer for it.
     fn surface(&self, platform: &dyn Platform, window: WindowId) -> Option<Surface> {
-        let gpu = self.gpu.as_ref()?;
+        let drawing = self.drawing.as_ref()?;
         let handle = platform.window_handle(window)?;
-        Surface::new(gpu, handle)
+        Surface::new(&drawing.gpu, handle)
             .inspect_err(|error| eprintln!("bolt: {error}"))
             .ok()
     }
 
-    /// Sizes the surface of `window` to its content, of `size`, and draws
-    /// the background.
-    fn draw(&self, platform: &dyn Platform, window: WindowId, size: WindowSize) {
-        let Some(Some(surface)) = self.windows.get(&window) else {
+    /// Draws `window`, of `size`: the grid of cells that fits its content,
+    /// and what the window shows in it.
+    fn draw(&mut self, platform: &dyn Platform, window: WindowId, size: WindowSize) {
+        let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
+        else {
+            return;
+        };
+        if state.surface.is_none() {
+            return;
+        }
+        drawing.font.set_scale(size.scale as f32);
+        drawing.font.begin_frame();
+        let cell = *drawing.font.cell();
+        let fit =
+            |pixels: u32, cell: u32| (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16;
+        let (columns, rows) = (
+            fit(size.pixels.width, cell.width),
+            fit(size.pixels.height, cell.height),
+        );
+        let snapshot = state.sample(columns, rows, platform.appearance());
+        let font = &mut drawing.font;
+        let batch = pane::cells(snapshot, &cell, 0, 0, &mut |shown| font.glyph(shown));
+        let list = DisplayList {
+            background: color(snapshot.colors().background),
+            items: vec![Item::Cells(batch)],
+        };
+        let updates = drawing.font.texture_updates();
+        let Some(surface) = &state.surface else {
             return;
         };
         surface.resize(size.pixels.width, size.pixels.height, size.scale);
-        if let Err(error) = surface.clear(background(platform.appearance())) {
+        let drawn = drawing
+            .renderer
+            .update_textures(&updates)
+            .and_then(|()| drawing.renderer.draw(surface, &list));
+        if let Err(error) = drawn {
             eprintln!("bolt: {error}");
         }
     }
@@ -134,13 +227,72 @@ impl Handler for App {
     }
 }
 
-/// The background of a window's content, which follows the system's
-/// appearance.
-fn background(appearance: Appearance) -> Color {
-    match appearance {
-        Appearance::Light => Color::from_rgb8(0xfa, 0xfa, 0xfa),
-        Appearance::Dark => Color::from_rgb8(0x1e, 0x1e, 0x20),
+/// The text and background colors of the system's appearance.
+fn colors(appearance: Appearance) -> Colors {
+    let (foreground, background) = match appearance {
+        Appearance::Light => (rgb(0x1e, 0x1e, 0x20), rgb(0xfa, 0xfa, 0xfa)),
+        Appearance::Dark => (rgb(0xe6, 0xe6, 0xe6), rgb(0x1e, 0x1e, 0x20)),
+    };
+    Colors {
+        foreground,
+        background,
+        cursor: foreground,
+        ..Colors::default()
     }
+}
+
+fn rgb(r: u8, g: u8, b: u8) -> Rgb {
+    Rgb { r, g, b }
+}
+
+fn color(rgb: Rgb) -> Color {
+    Color::from_rgb8(rgb.r, rgb.g, rgb.b)
+}
+
+/// A snapshot of a terminal of `columns` by `rows` that shows the sample
+/// text, in the colors of `appearance`.
+fn sample(columns: u16, rows: u16, appearance: Appearance) -> Snapshot {
+    let mut terminal = Terminal::new(columns, rows, Options::default());
+    terminal.set_default_colors(colors(appearance));
+    Parser::new().advance(&mut terminal, sample_text().as_bytes());
+    let mut snapshot = Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    snapshot
+}
+
+/// The text that a window shows: the palette's sixteen colors on the
+/// default background and as backgrounds, the styles, the 256 colors, direct
+/// color, and code.
+fn sample_text() -> String {
+    let mut text = String::from(
+        "\x1b[1mBolt\x1b[0m: cells drawn by Metal, from a snapshot of a terminal.\r\n\r\n",
+    );
+    for index in 0..16 {
+        text.push_str(&format!("\x1b[38;5;{index}m{index:>3} "));
+    }
+    text.push_str("\x1b[0m\r\n");
+    for index in 0..16 {
+        text.push_str(&format!("\x1b[48;5;{index}m{index:>3} "));
+    }
+    text.push_str("\x1b[0m\r\n\r\n");
+    text.push_str("\x1b[1mbold\x1b[0m \x1b[3mitalic\x1b[0m \x1b[1;3mbold italic\x1b[0m \x1b[7minverse\x1b[0m\r\n\r\n");
+    for index in 16..=231 {
+        text.push_str(&format!("\x1b[48;5;{index}m "));
+        if (index - 16) % 36 == 35 {
+            text.push_str("\x1b[0m\r\n");
+        }
+    }
+    for index in 232..=255 {
+        text.push_str(&format!("\x1b[48;5;{index}m  "));
+    }
+    text.push_str("\x1b[0m\r\n");
+    for step in 0..64 {
+        let red = step * 4;
+        text.push_str(&format!("\x1b[48;2;{red};128;{}m ", 255 - red));
+    }
+    text.push_str("\x1b[0m\r\n\r\n");
+    text.push_str("fn main() { println!(\"Hello, {}!\", \"world\"); } // 0123456789 <>=!&|");
+    text
 }
 
 /// The main menu: the application's menu, with Quit.
@@ -214,7 +366,7 @@ mod tests {
     fn a_window_without_a_layer_draws_nothing() {
         let (mut fake, mut app) = started();
         let window = fake.windows().next().unwrap();
-        assert!(app.windows[&window].is_none());
+        assert!(app.windows[&window].surface.is_none());
         let size = WindowSize::new(
             Size {
                 width: 900.0,
@@ -239,8 +391,21 @@ mod tests {
     }
 
     #[test]
-    fn the_background_follows_the_appearance() {
-        assert_ne!(background(Appearance::Light), background(Appearance::Dark));
+    fn the_colors_follow_the_appearance() {
+        let (light, dark) = (colors(Appearance::Light), colors(Appearance::Dark));
+        assert_ne!(light.background, dark.background);
+        assert_eq!(light.foreground, dark.background);
+    }
+
+    #[test]
+    fn the_sample_fills_the_grid() {
+        let snapshot = sample(80, 24, Appearance::Light);
+        assert_eq!((snapshot.cols(), snapshot.rows()), (80, 24));
+        assert_eq!(snapshot.colors().background, rgb(0xfa, 0xfa, 0xfa));
+        let mut window = Window::default();
+        let first: *const Snapshot = window.sample(80, 24, Appearance::Dark);
+        assert!(std::ptr::eq(first, window.sample(80, 24, Appearance::Dark)));
+        assert_eq!(window.sample(81, 24, Appearance::Dark).cols(), 81);
     }
 
     #[test]

@@ -15,23 +15,30 @@ raw-window-handle.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = { workspace = true, features = ["std", "block2", "objc2"] }
 objc2.workspace = true
 objc2-core-foundation = { workspace = true, features = ["std", "CFCGTypes"] }
 objc2-core-graphics = { workspace = true, features = ["std", "CGColorSpace"] }
 objc2-foundation = { workspace = true, features = ["std", "NSString"] }
 objc2-metal = { workspace = true, features = [
     "std",
+    "dispatch2",
     "MTLAllocation",
+    "MTLBlitCommandEncoder",
+    "MTLBuffer",
     "MTLCommandBuffer",
     "MTLCommandEncoder",
     "MTLCommandQueue",
     "MTLDevice",
     "MTLDrawable",
+    "MTLLibrary",
     "MTLPixelFormat",
     "MTLRenderCommandEncoder",
     "MTLRenderPass",
+    "MTLRenderPipeline",
     "MTLResource",
     "MTLTexture",
+    "MTLTypes",
 ] }
 objc2-quartz-core = { workspace = true, features = [
     "std",

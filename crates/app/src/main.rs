@@ -27,10 +27,10 @@ fn main() -> ExitCode {
 /// Runs the application until it quits.
 #[cfg(target_os = "macos")]
 fn run() -> ExitCode {
-    let gpu = bolt_render_metal::Gpu::new()
+    let drawing = app::Drawing::new()
         .inspect_err(|error| eprintln!("bolt: {error}"))
         .ok();
-    match bolt_platform_macos::run(app::App::new(gpu)) {
+    match bolt_platform_macos::run(app::App::new(drawing)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("bolt: {error}");

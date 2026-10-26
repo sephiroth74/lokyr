@@ -6,7 +6,8 @@
 //! to take it, in order. A texture grows by doubling its side, which keeps
 //! every glyph where it was: the renderer copies the old texture into the
 //! corner of the new one. Past its largest size, it evicts the shelf least
-//! recently used, but never one that the frame in progress uses.
+//! recently used, but never one that the frame in progress uses, nor the
+//! frame before it, which the GPU may still be drawing.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -127,7 +128,7 @@ impl<K: Hash + Eq + Clone> Atlas<K> {
     /// Puts `bitmap` in the atlas as the glyph of `key`, and queues its
     /// pixels for the renderer. Returns where it went; `None` when it is
     /// larger than the texture's largest side, or when the frame in progress
-    /// already uses all of the texture.
+    /// and the one before already use all of the texture.
     pub fn insert(&mut self, key: K, bitmap: &Bitmap) -> Option<Placement> {
         let frame = self.frame;
         let page = match bitmap.format {
@@ -327,13 +328,15 @@ impl<K: Hash + Eq + Clone> Page<K> {
     }
 
     /// Empties the shelf least recently used, of `height` rows or more, that
-    /// the frame in progress does not use, for its rows to take new glyphs.
+    /// neither the frame in progress nor the one before uses, for its rows to
+    /// take new glyphs: the GPU may still draw the frame before while the
+    /// renderer writes the new glyphs' pixels.
     fn evict(&mut self, height: u32, frame: u64) -> Option<usize> {
         let (index, _) = self
             .shelves
             .iter()
             .enumerate()
-            .filter(|(_, shelf)| shelf.height >= height && shelf.used < frame)
+            .filter(|(_, shelf)| shelf.height >= height && shelf.used + 1 < frame)
             .min_by_key(|(_, shelf)| (shelf.used, shelf.height))?;
         self.entries.retain(|_, entry| entry.shelf != Some(index));
         let shelf = &mut self.shelves[index];
@@ -540,7 +543,10 @@ mod tests {
         for key in 0..25 {
             assert!(atlas.get(&key).is_some());
         }
-        // The next frame can evict them.
+        // Nor can the next frame, which the GPU may draw while the frame
+        // before is still on it; the one after can.
+        atlas.begin_frame();
+        assert!(atlas.insert(1000, &gray(11, 11)).is_none());
         atlas.begin_frame();
         assert!(atlas.insert(1000, &gray(11, 11)).is_some());
     }

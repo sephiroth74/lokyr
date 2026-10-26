@@ -74,9 +74,9 @@ pub struct ShapedGlyph {
     pub y_offset: f32,
 }
 
-/// What a face that a family lacks is drawn from: the family's regular face,
+/// What a face that a family lacks is drawn from: another of its faces,
 /// heavier or slanted.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Synthesis {
     /// Drawn heavier, for a bold that the family lacks.
     pub bold: bool,
