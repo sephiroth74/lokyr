@@ -7,13 +7,15 @@ Every key and every section can be left out, and then takes its default: an empt
 ## The file
 
 - **Where it is**: `~/.config/bolt/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/bolt/config.toml` instead.
+  - A variable that your shell's startup files set, such as `XDG_CONFIG_HOME` in `~/.zshrc`, reaches Bolt only when you start it from that shell: started from the Finder or the Dock, Bolt reads `~/.config/bolt/config.toml`.
+  - When the file's directory does not exist, Bolt makes it, empty, as it starts, so that a config that you write there later applies at once.
 - **Links**: the file can be a symbolic link, as dotfiles managers such as GNU Stow make it. Bolt watches the file the link points to as well.
-- **Reloading**: Bolt applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor.
+- **Reloading**: Bolt applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor. Removing the file, or its directory, brings the defaults back.
 - **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults.
 - **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Bolt does not know, it names the nearest key that it knows:
 
   ```text
-  bolt: ~/.config/bolt/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?
+  bolt: /Users/you/.config/bolt/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?
   bolt: none of the config applies, and the one in force stays
   ```
 

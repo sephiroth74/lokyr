@@ -36,9 +36,9 @@ const WINDOW_SIZE: Size = Size {
     height: 500.0,
 };
 
-/// How long the app waits, after a change of the config file, for the
-/// changes that come with it, as an editor's write and rename do, before it
-/// reads the file once.
+/// How long the app waits after the last change of the config file, for
+/// the changes that come with it, as an editor's write and rename do, before
+/// it reads the file once.
 const SETTLE: Duration = Duration::from_millis(100);
 
 /// How often the app looks for the status of a program whose output ended.
@@ -464,6 +464,12 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         if let Some(file) = &mut self.config_file {
+            if let Err(error) = crate::watch::make_directory(&file.path) {
+                eprintln!(
+                    "bolt: the config's directory cannot be made, for {}: {error}",
+                    file.path.display()
+                );
+            }
             file.watch(platform);
         }
         self.open_window(platform);
@@ -477,10 +483,14 @@ impl Handler for App {
             // its program, or changed the config file.
             AppEvent::Wake => {
                 self.exits(platform);
+                // The reading waits for the changes to settle: each change
+                // puts it off.
                 if let Some(file) = &mut self.config_file
                     && file.changed.swap(false, Ordering::AcqRel)
-                    && file.reading.is_none()
                 {
+                    if let Some(timer) = file.reading.take() {
+                        platform.cancel_timer(timer);
+                    }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
                 for &window in self.windows.keys() {
@@ -867,6 +877,59 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         change(&mut fake, &mut app);
         assert_eq!(app.config, Config::default());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_saved_config_reloads_through_the_watch() {
+        let (mut fake, mut app, path) = with_file("watched", "[cursor]\nshape = \"bar\"\n");
+        std::fs::write(&path, "[cursor]\nshape = \"underline\"\n").unwrap();
+        // The watch's thread wakes the app, and the reading follows.
+        run_until(&mut fake, &mut app, |_, app| {
+            app.config.cursor.shape == cursor::Shape::Underline
+        });
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_config_s_directory_is_made_at_the_start_and_watched() {
+        let home = std::env::temp_dir().join(format!("bolt-app-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        // A home without `.config`.
+        let path = home.join(".config").join("bolt").join("config.toml");
+        let mut fake = Fake::default();
+        let mut app = App::new(None, Config::default(), Some(path.clone())).with_program(quiet());
+        fake.start(&mut app);
+        assert!(path.parent().unwrap().is_dir());
+        assert!(app.config_file.as_ref().unwrap().watcher.is_some());
+        std::fs::write(&path, "[cursor]\nshape = \"hollow\"\n").unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            app.config.cursor.shape == cursor::Shape::Hollow
+        });
+        // A directory that goes gives the defaults.
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            app.config == Config::default()
+        });
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn each_change_puts_the_reading_off() {
+        let (mut fake, mut app, path) = with_file("settle", "");
+        let changed = |fake: &mut Fake, app: &mut App| {
+            let file = app.config_file.as_ref().unwrap();
+            file.changed.store(true, Ordering::Release);
+            fake.send_app(app, AppEvent::Wake);
+            app.config_file.as_ref().unwrap().reading.unwrap()
+        };
+        let first = changed(&mut fake, &mut app);
+        let second = changed(&mut fake, &mut app);
+        // The first timer is gone, and the one left counts from the last.
+        assert_ne!(first, second);
+        let timers: Vec<_> = fake.timers().map(|(timer, _)| timer).collect();
+        assert_eq!(timers, [second]);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

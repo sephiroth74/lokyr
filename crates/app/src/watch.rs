@@ -1,7 +1,10 @@
 //! Watching the config file: its directory rather than the file, as editors
 //! save by writing another file and renaming it over the config; the file
-//! that a symbolic link of it points to, as dotfiles managers make; and,
-//! while its directory does not exist, the directory's parent.
+//! that a symbolic link of it points to, as dotfiles managers make; and the
+//! directory's parent, which tells when the directory goes, and, while it
+//! does not exist, when it comes. FSEvents watches a directory with all
+//! that it holds, so that the home directory, whose `Library` never rests,
+//! is never watched.
 
 use std::ffi::OsString;
 use std::fs;
@@ -28,8 +31,10 @@ impl std::fmt::Debug for Watcher {
 
 impl Watcher {
     /// Watches the config file at `path`, and calls `changed`, from the
-    /// watch's thread, when an entry of a watched directory that names the
-    /// file, its link's target or its directory changes.
+    /// watch's thread, when the file, its link's target or its directory
+    /// changes: an entry of a watched directory, by its directory and its
+    /// name, as FSEvents tells the real paths, and the changes deeper in the
+    /// directories that it watches count for nothing.
     pub fn new(path: &Path, changed: impl Fn() + Send + 'static) -> Result<Self, Error> {
         let error = |message: String| Error {
             path: path.to_owned(),
@@ -37,6 +42,15 @@ impl Watcher {
             message,
         };
         let (watched, names) = targets(path);
+        // The entries that count, by their directory's real path.
+        let entries: Vec<(PathBuf, OsString)> = watched
+            .iter()
+            .zip(&names)
+            .map(|(directory, name)| {
+                let real = fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
+                (real, name.clone())
+            })
+            .collect();
         if watched.is_empty() {
             return Err(error(
                 "it cannot be watched, as neither its directory nor that one's parent exists"
@@ -49,8 +63,10 @@ impl Watcher {
                     return;
                 };
                 let named = event.paths.iter().any(|path| {
-                    path.file_name()
-                        .is_some_and(|name| names.iter().any(|known| known == name))
+                    entries.iter().any(|(directory, name)| {
+                        path.parent() == Some(directory.as_path())
+                            && path.file_name() == Some(name.as_os_str())
+                    })
                 });
                 if named && !matches!(event.kind, EventKind::Access(_)) {
                     changed();
@@ -75,17 +91,36 @@ impl Watcher {
     }
 }
 
+/// Makes the directory of the config at `path`, empty, when it does not
+/// exist, so that a config written there later applies at once, as its
+/// directory's watch tells it.
+pub(crate) fn make_directory(path: &Path) -> std::io::Result<()> {
+    match path.parent() {
+        Some(directory) if !directory.exists() => fs::create_dir_all(directory),
+        _ => Ok(()),
+    }
+}
+
 /// The directories to watch for the config at `path`, and the names of
 /// their entries that count: the file's directory and its name, with its
-/// link's target's; or, while that directory does not exist, its parent
-/// and the directory's name.
+/// link's target's, and the directory's parent and its name; or, while
+/// that directory does not exist, its parent alone. The home directory is
+/// never one of them.
 fn targets(path: &Path) -> (Vec<PathBuf>, Vec<OsString>) {
     let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else {
         return (Vec::new(), Vec::new());
     };
-    if directory.is_dir() {
-        let mut watched = vec![directory.to_owned()];
-        let mut names = vec![name.to_owned()];
+    let home = std::env::home_dir();
+    let watchable = |directory: &Path| directory.is_dir() && home.as_deref() != Some(directory);
+    let parent = match (directory.parent(), directory.file_name()) {
+        (Some(parent), Some(name)) if watchable(parent) => Some((parent, name)),
+        _ => None,
+    };
+    let mut watched = Vec::new();
+    let mut names = Vec::new();
+    if watchable(directory) {
+        watched.push(directory.to_owned());
+        names.push(name.to_owned());
         let linked = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
         if linked
             && let Ok(target) = fs::canonicalize(path)
@@ -94,14 +129,12 @@ fn targets(path: &Path) -> (Vec<PathBuf>, Vec<OsString>) {
             watched.push(directory.to_owned());
             names.push(name.to_owned());
         }
-        return (watched, names);
     }
-    match (directory.parent(), directory.file_name()) {
-        (Some(parent), Some(name)) if parent.is_dir() => {
-            (vec![parent.to_owned()], vec![name.to_owned()])
-        }
-        _ => (Vec::new(), Vec::new()),
+    if let Some((parent, name)) = parent {
+        watched.push(parent.to_owned());
+        names.push(name.to_owned());
     }
+    (watched, names)
 }
 
 #[cfg(test)]
@@ -192,6 +225,48 @@ mod tests {
         fs::write(&target, "[cursor]\nshape = \"bar\"\n").unwrap();
         assert!(changed(&receiver));
         fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn an_entry_of_the_same_name_elsewhere_counts_for_nothing() {
+        // `config.toml` of another program, beside the config's directory.
+        let parent = scratch("elsewhere");
+        let path = parent.join("bolt").join("config.toml");
+        make_directory(&path).unwrap();
+        fs::write(&path, "").unwrap();
+        fs::create_dir_all(parent.join("other")).unwrap();
+        let (_watcher, receiver) = watch(&path);
+        fs::write(parent.join("other").join("config.toml"), "").unwrap();
+        assert!(receiver.recv_timeout(Duration::from_millis(500)).is_err());
+        fs::write(&path, "[font]\n").unwrap();
+        assert!(changed(&receiver));
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn a_directory_that_goes_calls_back() {
+        let parent = scratch("gone");
+        let path = parent.join("bolt").join("config.toml");
+        make_directory(&path).unwrap();
+        fs::write(&path, "").unwrap();
+        let (watcher, receiver) = watch(&path);
+        fs::remove_dir_all(parent.join("bolt")).unwrap();
+        assert!(changed(&receiver));
+        // The new watch is the parent's alone.
+        assert!(watcher.is_stale(&path));
+        fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn the_directory_is_made_when_it_does_not_exist() {
+        let parent = scratch("made");
+        let path = parent.join("a").join("bolt").join("config.toml");
+        make_directory(&path).unwrap();
+        assert!(path.parent().unwrap().is_dir());
+        assert!(!path.exists());
+        // An existing one is left as it is.
+        make_directory(&path).unwrap();
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]
