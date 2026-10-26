@@ -9,11 +9,13 @@
 
 #![forbid(unsafe_code)]
 
+mod atlas;
 mod backend;
 mod cell;
 mod config;
 mod faces;
 
+pub use atlas::{Atlas, COLOR_MAX, Change, GRAY_MAX, Placement, START};
 pub use backend::{
     Bitmap, BitmapFormat, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId,
     ShapedGlyph, Synthesis,
