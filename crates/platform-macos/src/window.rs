@@ -26,7 +26,7 @@ use objc2_quartz_core::{CALayer, CAMetalLayer};
 use crate::frame::Pacer;
 use crate::keys;
 use crate::shared::{Pending, Shared};
-use crate::text_input::{self, Handled, TextInput};
+use crate::text_input::{self, Handled, Step, TextInput};
 
 /// A window that the app opened.
 pub(crate) struct Window {
@@ -242,16 +242,7 @@ define_class!(
             let text = text_input::text_of(string);
             let mut input = self.ivars().input.borrow_mut();
             let deleted = input.insert(&text, replacement);
-            match &mut input.handling {
-                Some(handled) => {
-                    handled.deleted += deleted;
-                    handled.inserted.get_or_insert_default().push_str(&text);
-                }
-                None => {
-                    drop(input);
-                    self.post_replacement(deleted, text);
-                }
-            }
+            self.handle(input, Step::Inserted { text, deleted });
         }
 
         #[unsafe(method(doCommandBySelector:))]
@@ -259,8 +250,10 @@ define_class!(
             // The key does not type text: the view sends it as a key once
             // the input method has returned. AppKit's own handling of the
             // selector would beep.
-            if let Some(handled) = &mut self.ivars().input.borrow_mut().handling {
-                handled.commanded = true;
+            let mut input = self.ivars().input.borrow_mut();
+            let composing = input.marked.is_some();
+            if let Some(handled) = &mut input.handling {
+                handled.steps.push(Step::Command { composing });
             }
         }
 
@@ -268,28 +261,18 @@ define_class!(
         fn set_marked_text(&self, string: &AnyObject, selected: NSRange, _replacement: NSRange) {
             let text = text_input::text_of(string);
             let selection = text_input::bytes(&text, selected);
-            {
-                let mut input = self.ivars().input.borrow_mut();
-                input.marked = (!text.is_empty()).then(|| (text.clone(), selected));
-                if let Some(handled) = &mut input.handling {
-                    handled.composed = true;
-                }
-            }
-            self.post(WindowEvent::Ime(Ime::Preedit { text, selection }));
+            let mut input = self.ivars().input.borrow_mut();
+            input.marked = (!text.is_empty()).then(|| (text.clone(), selected));
+            self.handle(input, Step::Marked { text, selection });
         }
 
         #[unsafe(method(unmarkText))]
         fn unmark_text(&self) {
             // The text composed so far is typed, as AppKit asks.
-            let marked = {
-                let mut input = self.ivars().input.borrow_mut();
-                if let Some(handled) = &mut input.handling {
-                    handled.composed = true;
-                }
-                input.marked.take()
-            };
-            if let Some((text, _)) = marked {
-                self.post(WindowEvent::Ime(Ime::Commit(text)));
+            let mut input = self.ivars().input.borrow_mut();
+            if let Some((text, _)) = input.marked.clone() {
+                input.insert(&text, text_input::not_found());
+                self.handle(input, Step::Inserted { text, deleted: 0 });
             }
         }
 
@@ -408,20 +391,27 @@ impl ContentView {
         Some(NSAttributedString::from_nsstring(&NSString::from_str(text)))
     }
 
-    /// Sends `text` in place of the `deleted` characters typed before it:
-    /// a Backspace for each, then the text.
-    fn post_replacement(&self, deleted: usize, text: String) {
-        for _ in 0..deleted {
-            self.post(WindowEvent::Key(bolt_platform_core::KeyEvent {
-                code: bolt_platform_core::KeyCode::Backspace,
-                state: bolt_platform_core::KeyState::Pressed,
-                mods: bolt_platform_core::Modifiers::NONE,
-                text: "\u{7f}".to_owned(),
-                unmodified: "\u{7f}".to_owned(),
-                plain: "\u{7f}".to_owned(),
-            }));
+    /// Keeps `step` for the key that the view handles, or, when the input
+    /// method acts on its own, as a click in its candidates does, sends it
+    /// at once. `input` is the view's, borrowed.
+    fn handle(&self, mut input: std::cell::RefMut<'_, TextInput>, step: Step) {
+        if let Some(handled) = &mut input.handling {
+            handled.steps.push(step);
+            return;
         }
-        self.post(WindowEvent::Ime(Ime::Commit(text)));
+        drop(input);
+        match step {
+            Step::Inserted { text, deleted } => {
+                for _ in 0..deleted {
+                    self.post(WindowEvent::Key(text_input::backspace()));
+                }
+                self.post(WindowEvent::Ime(Ime::Commit(text)));
+            }
+            Step::Marked { text, selection } => {
+                self.post(WindowEvent::Ime(Ime::Preedit { text, selection }));
+            }
+            Step::Command { .. } => {}
+        }
     }
 
     /// Hands a key down to the input method, which composes or types with
@@ -446,23 +436,17 @@ impl ContentView {
         self.interpretKeyEvents(&NSArray::from_slice(&[event]));
         let handled = ivars.input.borrow_mut().handling.take().unwrap_or_default();
         let still = ivars.input.borrow().marked.is_some();
-        let repeat = key.state == bolt_platform_core::KeyState::Repeated;
-        match handled.inserted {
-            Some(text)
-                if handled.deleted == 0 && !composing && !handled.composed && text == key.text =>
-            {
-                self.post(WindowEvent::Key(key));
-            }
-            Some(text) => self.post_replacement(handled.deleted, text),
-            // The input method took the key, to compose, or a repeat of it,
-            // as press and hold does while it shows its accents.
-            None if composing || handled.composed || still => {}
-            None if repeat && !handled.commanded => {}
-            // A key that types nothing, and starts the text typed anew.
-            None => {
-                ivars.input.borrow_mut().typed.clear();
-                self.post(WindowEvent::Key(key));
-            }
+        // A key that types nothing starts the text typed anew.
+        let typed_nothing = handled.steps.is_empty()
+            || handled
+                .steps
+                .iter()
+                .any(|step| matches!(step, Step::Command { composing: false }));
+        if typed_nothing && !composing && !still {
+            ivars.input.borrow_mut().typed.clear();
+        }
+        for event in text_input::events(key, composing, handled.steps, still) {
+            self.post(event);
         }
     }
 

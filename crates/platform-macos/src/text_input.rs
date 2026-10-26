@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use bolt_platform_core::{Point, Size};
+use bolt_platform_core::{Ime, KeyCode, KeyEvent, KeyState, Modifiers, Point, Size, WindowEvent};
 use objc2::runtime::AnyObject;
 use objc2_foundation::{NSAttributedString, NSNotFound, NSRange, NSString};
 
@@ -68,17 +68,92 @@ impl TextInput {
     }
 }
 
-/// What the input method did with a key.
+/// What the input method did with a key, in its order.
 #[derive(Debug, Default)]
 pub(crate) struct Handled {
-    /// The text that it committed.
-    pub(crate) inserted: Option<String>,
-    /// How many characters typed before it deletes first.
-    pub(crate) deleted: usize,
-    /// Whether it composed: it set, changed or ended the marked text.
-    pub(crate) composed: bool,
-    /// Whether the key turned out to be a command, one that types nothing.
-    pub(crate) commanded: bool,
+    pub(crate) steps: Vec<Step>,
+}
+
+/// One thing that the input method did with a key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    /// It typed `text`, in place of the `deleted` characters typed before
+    /// it.
+    Inserted {
+        /// The text.
+        text: String,
+        /// The characters typed before it that it replaces.
+        deleted: usize,
+    },
+    /// It set the marked text, or ended it without typing, when empty.
+    Marked {
+        /// The text.
+        text: String,
+        /// Its part that the input method selects, in bytes.
+        selection: Range<usize>,
+    },
+    /// It turned the key into a command, one that types nothing, while it
+    /// composed or not.
+    Command {
+        /// Whether it still composed.
+        composing: bool,
+    },
+}
+
+/// The events of `key`, which the input method handled with `steps`, in
+/// their order. A key that it typed as the key types it, as plain typing
+/// does, goes on as the key, so that the encoder sees every key that a
+/// program may report; so does a key that it turned into a command once
+/// it no longer composes, after the text that it typed with it. A key that
+/// it did nothing with goes on as the key, unless it composed before or
+/// after it, or it is a repeat, which press and hold keeps.
+pub(crate) fn events(
+    key: KeyEvent,
+    composing: bool,
+    steps: Vec<Step>,
+    still: bool,
+) -> Vec<WindowEvent> {
+    match steps.as_slice() {
+        [Step::Inserted { text, deleted: 0 }] if !composing && *text == key.text => {
+            return vec![WindowEvent::Key(key)];
+        }
+        [] => {
+            let kept = composing || still || key.state == KeyState::Repeated;
+            return if kept {
+                Vec::new()
+            } else {
+                vec![WindowEvent::Key(key)]
+            };
+        }
+        _ => {}
+    }
+    let mut events = Vec::new();
+    for step in steps {
+        match step {
+            Step::Inserted { text, deleted } => {
+                events.extend((0..deleted).map(|_| WindowEvent::Key(backspace())));
+                events.push(WindowEvent::Ime(Ime::Commit(text)));
+            }
+            Step::Marked { text, selection } => {
+                events.push(WindowEvent::Ime(Ime::Preedit { text, selection }));
+            }
+            Step::Command { composing: false } => events.push(WindowEvent::Key(key.clone())),
+            Step::Command { composing: true } => {}
+        }
+    }
+    events
+}
+
+/// A press of Backspace, which deletes a character typed before.
+pub(crate) fn backspace() -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Backspace,
+        state: KeyState::Pressed,
+        mods: Modifiers::NONE,
+        text: "\u{7f}".to_owned(),
+        unmodified: "\u{7f}".to_owned(),
+        plain: "\u{7f}".to_owned(),
+    }
 }
 
 /// The text of `string`, an `NSString` or an `NSAttributedString`, as
@@ -159,6 +234,108 @@ mod tests {
         // The text kept is the last 32 characters.
         input.insert(&"x".repeat(40), not_found());
         assert_eq!(input.typed, "x".repeat(32));
+    }
+
+    fn key(code: KeyCode, text: &str, state: KeyState) -> KeyEvent {
+        KeyEvent {
+            code,
+            state,
+            mods: Modifiers::NONE,
+            text: text.to_owned(),
+            unmodified: text.to_owned(),
+            plain: text.to_owned(),
+        }
+    }
+
+    fn inserted(text: &str, deleted: usize) -> Step {
+        Step::Inserted {
+            text: text.to_owned(),
+            deleted,
+        }
+    }
+
+    fn marked(text: &str) -> Step {
+        Step::Marked {
+            text: text.to_owned(),
+            selection: text.len()..text.len(),
+        }
+    }
+
+    fn commit(text: &str) -> WindowEvent {
+        WindowEvent::Ime(Ime::Commit(text.to_owned()))
+    }
+
+    fn preedit(text: &str) -> WindowEvent {
+        WindowEvent::Ime(Ime::Preedit {
+            text: text.to_owned(),
+            selection: text.len()..text.len(),
+        })
+    }
+
+    #[test]
+    fn plain_typing_and_commands_go_as_keys() {
+        let a = key(KeyCode::KeyA, "a", KeyState::Pressed);
+        assert_eq!(
+            events(a.clone(), false, vec![inserted("a", 0)], false),
+            [WindowEvent::Key(a.clone())]
+        );
+        let left = key(KeyCode::ArrowLeft, "\u{f702}", KeyState::Pressed);
+        let command = Step::Command { composing: false };
+        assert_eq!(
+            events(left.clone(), false, vec![command], false),
+            [WindowEvent::Key(left.clone())]
+        );
+        // A key that the input method does nothing with, as a function key.
+        assert_eq!(
+            events(left.clone(), false, vec![], false),
+            [WindowEvent::Key(left)]
+        );
+    }
+
+    #[test]
+    fn a_commit_and_a_new_composition_come_in_their_order() {
+        // Korean, at a syllable's end: `한` typed, `ㄱ` composed.
+        let r = key(KeyCode::KeyR, "ㄱ", KeyState::Pressed);
+        assert_eq!(
+            events(r, true, vec![inserted("한", 0), marked("ㄱ")], true),
+            [commit("한"), preedit("ㄱ")]
+        );
+    }
+
+    #[test]
+    fn a_commit_and_a_command_give_both() {
+        // Korean's Return after a syllable, and a dead key's.
+        let enter = key(KeyCode::Enter, "\r", KeyState::Pressed);
+        let steps = vec![inserted("한", 0), Step::Command { composing: false }];
+        assert_eq!(
+            events(enter.clone(), true, steps, false),
+            [commit("한"), WindowEvent::Key(enter.clone())]
+        );
+        // A command while the input method still composes is its own.
+        let steps = vec![Step::Command { composing: true }];
+        assert_eq!(events(enter, true, steps, true), []);
+    }
+
+    #[test]
+    fn what_the_input_method_keeps_goes_nowhere() {
+        let n = key(KeyCode::KeyN, "n", KeyState::Pressed);
+        assert_eq!(
+            events(n.clone(), false, vec![marked("n")], true),
+            [preedit("n")]
+        );
+        // A key that it takes while it composes, and a repeat that it keeps.
+        assert_eq!(events(n, true, vec![], true), []);
+        let held = key(KeyCode::KeyE, "e", KeyState::Repeated);
+        assert_eq!(events(held, false, vec![], false), []);
+    }
+
+    #[test]
+    fn a_replacement_deletes_first() {
+        let two = key(KeyCode::Digit2, "2", KeyState::Pressed);
+        assert_eq!(
+            events(two, false, vec![inserted("é", 1)], false),
+            [WindowEvent::Key(backspace()), commit("é")]
+        );
     }
 
     #[test]
