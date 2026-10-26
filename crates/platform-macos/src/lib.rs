@@ -10,6 +10,7 @@
 
 mod alert;
 mod app;
+mod appearance;
 mod backend;
 mod frame;
 mod menu;

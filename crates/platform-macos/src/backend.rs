@@ -10,16 +10,16 @@ use bolt_platform_core::{
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::{
-    NSAlert, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSEvent,
-    NSEventModifierFlags, NSEventType, NSPasteboard, NSPasteboardTypeString,
+    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSPasteboard,
+    NSPasteboardTypeString,
 };
-use objc2_foundation::{NSArray, NSPoint, NSString};
+use objc2_foundation::{NSPoint, NSString};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
-use crate::{alert, menu};
+use crate::{alert, appearance, menu};
 
 /// An alert that is open.
 struct OpenAlert {
@@ -144,17 +144,7 @@ impl Platform for Backend {
     }
 
     fn appearance(&self) -> Appearance {
-        let app = NSApplication::sharedApplication(self.mtm);
-        // SAFETY: the names are AppKit's constants.
-        let (aqua, dark) = unsafe { (NSAppearanceNameAqua, NSAppearanceNameDarkAqua) };
-        let names = NSArray::from_slice(&[aqua, dark]);
-        match app
-            .effectiveAppearance()
-            .bestMatchFromAppearancesWithNames(&names)
-        {
-            Some(name) if &*name == dark => Appearance::Dark,
-            _ => Appearance::Light,
-        }
+        appearance::current(self.mtm)
     }
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {

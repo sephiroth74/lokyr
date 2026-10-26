@@ -13,6 +13,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
 
+use crate::appearance::AppearanceObserver;
 use crate::shared::{Pending, Shared};
 use crate::wake::WakeSource;
 
@@ -35,9 +36,11 @@ pub fn run(handler: impl Handler + 'static) -> Result<(), Error> {
     wake.set_target(&shared);
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+    let appearance = AppearanceObserver::start(mtm, Rc::downgrade(&shared));
 
     app.run();
 
+    appearance.stop();
     app.setDelegate(None);
     drop(wake);
     if let Some(payload) = shared.finish() {

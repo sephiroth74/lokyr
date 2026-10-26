@@ -48,7 +48,9 @@ objc2-quartz-core = { workspace = true, features = [
 objc2-foundation = { workspace = true, features = [
     "std",
     "NSArray",
+    "NSDictionary",
     "NSGeometry",
+    "NSKeyValueObserving",
     "NSNotification",
     "NSObject",
     "NSRunLoop",
@@ -75,6 +77,10 @@ harness = false
 
 [[test]]
 name = "frame_requests"
+harness = false
+
+[[test]]
+name = "appearance"
 harness = false
 
 [lints]

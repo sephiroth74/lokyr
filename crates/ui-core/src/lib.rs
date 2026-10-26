@@ -10,3 +10,4 @@
 
 pub mod font;
 pub mod pane;
+pub mod theme;

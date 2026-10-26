@@ -206,6 +206,7 @@ The `themes` plugin (model, light/dark switching, picker) plus the `theme-iterm2
 | Terminal | 16 ANSI colors, 256-color palette (derived or explicit), foreground, background, bold, cursor, cursor text, selection (background and text), link, underline, badge |
 | Search | `search.match`, `search.current` |
 | UI | Tokens for the tab bar; active, inactive and hovered tabs; dividers; overlays; accent; borders |
+| Chrome | Beyond iTerm2's colors, our themes give the chrome's look too: the tab bar's layout and the tabs' style and shape, the scrollbars' style, width, colors and visibility, and the other chrome that the plugins draw |
 | Options | Light/dark variants; `minimum-contrast`, the minimum ratio between text and background (as in iTerm2 and Ghostty) |
 
 UI tokens that are not specified are **derived** from the terminal colors, the way iTerm2 does it:
@@ -218,7 +219,9 @@ UI tokens that are not specified are **derived** from the terminal colors, the w
 | Dividers | background mixed 15% toward the foreground |
 | Accent | cursor color |
 
-This gives every imported iTerm2 theme matching tabs right away.
+This gives every imported iTerm2 theme matching tabs right away; the chrome's look that an iTerm2 theme does not give comes from the default theme.
+
+The default theme's terminal colors are the built-in palette of F2, with a light and a dark variant, whose colors meet WCAG's contrast on their backgrounds.
 
 ### `.itermcolors` importer
 

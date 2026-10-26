@@ -7,12 +7,12 @@ use bolt_platform_core::{
     AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
     WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
-use bolt_render_core::{Color, DisplayList, Item, Renderer};
+use bolt_render_core::{DisplayList, Item, Renderer};
 use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
 use bolt_ui_core::font::Font;
 use bolt_ui_core::pane;
-use bolt_vt_core::page::Rgb;
+use bolt_ui_core::theme::Theme;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
 
@@ -68,12 +68,19 @@ struct Window {
 }
 
 impl Window {
-    /// The text that the window shows at `columns` by `rows`, in the colors
-    /// of `appearance`, made again when one of them changed.
-    fn sample(&mut self, columns: u16, rows: u16, appearance: Appearance) -> &Snapshot {
+    /// The text that the window shows at `columns` by `rows`, in the
+    /// theme's variant of `appearance`, made again when one of them changed.
+    fn sample(
+        &mut self,
+        columns: u16,
+        rows: u16,
+        appearance: Appearance,
+        theme: &Theme,
+    ) -> &Snapshot {
         let stale = !matches!(&self.sample, Some((c, r, a, _)) if (*c, *r, *a) == (columns, rows, appearance));
         if stale {
-            self.sample = Some((columns, rows, appearance, sample(columns, rows, appearance)));
+            let colors = theme.variant(appearance == Appearance::Dark).colors.clone();
+            self.sample = Some((columns, rows, appearance, sample(columns, rows, colors)));
         }
         &self.sample.as_ref().expect("made above").3
     }
@@ -84,6 +91,7 @@ impl Window {
 #[derive(Debug, Default)]
 pub struct App {
     drawing: Option<Drawing>,
+    theme: Theme,
     windows: BTreeMap<WindowId, Window>,
 }
 
@@ -93,6 +101,7 @@ impl App {
     pub fn new(drawing: Option<Drawing>) -> Self {
         Self {
             drawing,
+            theme: Theme::builtin(),
             windows: BTreeMap::new(),
         }
     }
@@ -154,11 +163,11 @@ impl App {
             fit(size.pixels.width, cell.width),
             fit(size.pixels.height, cell.height),
         );
-        let snapshot = state.sample(columns, rows, platform.appearance());
+        let snapshot = state.sample(columns, rows, platform.appearance(), &self.theme);
         let font = &mut drawing.font;
-        let batch = pane::cells(snapshot, &cell, 0, 0, &mut |shown| font.glyph(shown));
+        let batch = pane::cells(snapshot, &cell, 0, 0, None, &mut |shown| font.glyph(shown));
         let list = DisplayList {
-            background: color(snapshot.colors().background),
+            background: pane::background(snapshot),
             items: vec![Item::Cells(batch)],
         };
         let updates = drawing.font.texture_updates();
@@ -227,33 +236,11 @@ impl Handler for App {
     }
 }
 
-/// The text and background colors of the system's appearance.
-fn colors(appearance: Appearance) -> Colors {
-    let (foreground, background) = match appearance {
-        Appearance::Light => (rgb(0x1e, 0x1e, 0x20), rgb(0xfa, 0xfa, 0xfa)),
-        Appearance::Dark => (rgb(0xe6, 0xe6, 0xe6), rgb(0x1e, 0x1e, 0x20)),
-    };
-    Colors {
-        foreground,
-        background,
-        cursor: foreground,
-        ..Colors::default()
-    }
-}
-
-fn rgb(r: u8, g: u8, b: u8) -> Rgb {
-    Rgb { r, g, b }
-}
-
-fn color(rgb: Rgb) -> Color {
-    Color::from_rgb8(rgb.r, rgb.g, rgb.b)
-}
-
 /// A snapshot of a terminal of `columns` by `rows` that shows the sample
-/// text, in the colors of `appearance`.
-fn sample(columns: u16, rows: u16, appearance: Appearance) -> Snapshot {
+/// text, in `colors`.
+fn sample(columns: u16, rows: u16, colors: Colors) -> Snapshot {
     let mut terminal = Terminal::new(columns, rows, Options::default());
-    terminal.set_default_colors(colors(appearance));
+    terminal.set_default_colors(colors);
     Parser::new().advance(&mut terminal, sample_text().as_bytes());
     let mut snapshot = Snapshot::default();
     terminal.snapshot(&mut snapshot);
@@ -391,21 +378,20 @@ mod tests {
     }
 
     #[test]
-    fn the_colors_follow_the_appearance() {
-        let (light, dark) = (colors(Appearance::Light), colors(Appearance::Dark));
-        assert_ne!(light.background, dark.background);
-        assert_eq!(light.foreground, dark.background);
-    }
-
-    #[test]
-    fn the_sample_fills_the_grid() {
-        let snapshot = sample(80, 24, Appearance::Light);
-        assert_eq!((snapshot.cols(), snapshot.rows()), (80, 24));
-        assert_eq!(snapshot.colors().background, rgb(0xfa, 0xfa, 0xfa));
+    fn the_sample_takes_the_appearance_s_variant() {
+        let theme = Theme::builtin();
         let mut window = Window::default();
-        let first: *const Snapshot = window.sample(80, 24, Appearance::Dark);
-        assert!(std::ptr::eq(first, window.sample(80, 24, Appearance::Dark)));
-        assert_eq!(window.sample(81, 24, Appearance::Dark).cols(), 81);
+        let dark = window.sample(80, 24, Appearance::Dark, &theme);
+        assert_eq!((dark.cols(), dark.rows()), (80, 24));
+        assert_eq!(dark.colors().background, theme.dark.colors.background);
+        let first: *const Snapshot = window.sample(80, 24, Appearance::Dark, &theme);
+        assert!(std::ptr::eq(
+            first,
+            window.sample(80, 24, Appearance::Dark, &theme)
+        ));
+        let light = window.sample(80, 24, Appearance::Light, &theme);
+        assert_eq!(light.colors().background, theme.light.colors.background);
+        assert_eq!(window.sample(81, 24, Appearance::Light, &theme).cols(), 81);
     }
 
     #[test]
