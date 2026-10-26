@@ -73,8 +73,16 @@ deny:
 check-deps:
     cargo xtask check-deps
 
+# Check that the code's comments name no task, phase or ADR.
+check-comments:
+    cargo xtask check-comments
+
+# Check that the internal links and anchors of the Markdown files resolve.
+check-links:
+    cargo xtask check-links
+
 # Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps
+ci: lint build test check-linux deny check-deps check-comments check-links
 
 # Compile the terminfo entry xterm-bolt into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:

@@ -1,0 +1,83 @@
+# Contributing to Bolt
+
+Thank you for your interest in Bolt. This guide tells how to set up the project, the rules that the code and the documents follow, and what a pull request needs before it can be merged.
+
+Bolt is young: its first version is under way, for macOS 26 or later on Apple Silicon. Linux comes later. By taking part, you agree to follow the [code of conduct](CODE_OF_CONDUCT.md).
+
+## Before you start
+
+- **A large change starts as an issue.** Open one before you write a new feature, a new dependency or a change of design, so that we can agree on its shape first. A small fix, a typo or a test can go straight to a pull request.
+- **Read the documents of the part that you change.** Start with [docs/README.md](docs/README.md), then [ARCHITECTURE.md](docs/ARCHITECTURE.md), and the document of the area, such as [VT-CORE.md](docs/VT-CORE.md) for the terminal core. The work is planned in [docs/tasks](docs/tasks/README.md), one file per phase of the [roadmap](docs/ROADMAP.md).
+- **The decisions are in [docs/adr](docs/adr/README.md).** A change that goes against one needs a new ADR first, which an issue discusses.
+
+## Setting up
+
+You need:
+- a Mac with Apple Silicon, on macOS 26 or later;
+- Xcode 26 or later, with its Metal toolchain, which Xcode installs on its own since Xcode 26: `xcodebuild -downloadComponent MetalToolchain`;
+- Rust through [rustup](https://rustup.rs): `rust-toolchain.toml` pins the version, which rustup installs at the first build;
+- [`just`](https://github.com/casey/just), which runs the project's recipes: `brew install just`;
+- [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny), which checks the dependencies' licenses and advisories: `cargo install cargo-deny --locked`.
+
+Then:
+
+```sh
+cargo run -p bolt-app   # the terminal, with your login shell
+just --list             # the project's recipes
+just ci                 # every check that CI runs
+```
+
+Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you need it only to work on the fuzzers.
+
+## The gate: `just ci`
+
+`just ci` runs every check that CI runs, and a pull request needs it green:
+- formatting, `cargo fmt --check`, and clippy with every warning an error;
+- the build and the tests of the whole workspace, and a build of the platform-independent crates for Linux;
+- `cargo deny`: the dependencies' licenses, advisories and sources;
+- `cargo xtask check-deps`: the [dependency rules](tools/xtask/deps-rules.toml), such as no networking in the app and no macOS crate in the platform-independent ones;
+- `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
+- `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve.
+
+## The code
+
+The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones that reviews meet most:
+
+- **English** for the code, its comments, the documents and the commit messages.
+- **Comments describe the code** as it is: what it does and why. They never name the plan: no task's identifier, no phase, no ADR's number, no section of `docs/`. A link to an external specification, such as xterm's, Unicode's or Apple's, is welcome. `just check-comments` catches the plan's names; a review catches the rest.
+- **`unsafe`** only in the crates that the conventions list, such as the platform's, the renderer's, the fonts' and the PTY's, and each block with a `// SAFETY:` comment that tells why it holds. The other crates forbid it.
+- **Errors**: `thiserror` in the libraries, `anyhow` in the binaries.
+- **Dependencies**: the workspace's `Cargo.toml` names them all; a new one needs a reason, a license that `deny.toml` allows, and a place that the dependency rules accept. The app contains no networking code: downloads are Crossbow's.
+- **Formatting**: `cargo fmt`, with the workspace's `rustfmt.toml`.
+
+## Tests
+
+- **New code has tests**, and a fix has the test that would have caught the bug.
+- **The platform's tests** in `crates/platform-macos/tests` run without the test harness, on the main thread, as AppKit needs: each is a program that starts the application, opens its windows and quits. They hide their app at once, but keys typed while they start can still reach their window: run them again if one fails with keys that it did not send.
+- **Checks by hand**: what no test can check, such as an input method, a drawing next to another terminal's or a measure, is told in the pull request, with what you saw.
+
+## The documents
+
+- **A changed decision** gets a new ADR, which supersedes the old one, whose status line says so; an accepted ADR is never rewritten. The tables of [docs/README.md](docs/README.md) and [docs/adr/README.md](docs/adr/README.md) follow.
+- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the users' guide: its values, its default, what it does, and whether it applies yet. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
+- **A changed behavior** changes the documents that describe it.
+- **Links resolve**, which `just check-links` checks.
+
+## Commits
+
+- **One logical change a commit**, which builds and passes its tests on its own.
+- **The message**: a summary line, then a blank line, then a body that tells what changed and why, in English. A planned task's commit starts with its identifier, as `F2-71: review fixes, the cursor's colors`.
+
+## Pull requests
+
+- Open it from a branch of your fork, against `main`, and fill in the [template](.github/pull_request_template.md).
+- Keep it to one subject: a smaller pull request is reviewed sooner.
+- CI must be green. A reviewer may ask for changes; push them as new commits, which are squashed or kept as the review decides.
+
+## Reporting a bug
+
+Open an issue with the bug's template: the macOS version, the Mac, Bolt's commit, your config, the steps that make the bug happen, and what you expected. A security problem goes privately to the maintainer, through GitHub's private vulnerability reporting, not in a public issue.
+
+## License
+
+Bolt is under the [MIT license](LICENSE). By contributing, you agree that your contributions are under the same license.

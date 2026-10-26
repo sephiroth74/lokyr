@@ -1,6 +1,8 @@
 //! Build automation for the Bolt workspace, run as `cargo xtask <task>`.
 
+mod check_comments;
 mod check_deps;
+mod check_links;
 mod terminfo;
 mod ucd;
 
@@ -13,7 +15,9 @@ fn main() -> ExitCode {
             print_help();
             return ExitCode::SUCCESS;
         }
+        Some("check-comments") => check_comments::run(args),
         Some("check-deps") => check_deps::run(args),
+        Some("check-links") => check_links::run(args),
         Some("terminfo") => terminfo::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
@@ -32,7 +36,9 @@ fn print_help() {
     println!(
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
+         check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
+         check-links                 find the internal links of the Markdown files that do not resolve\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-bolt, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );

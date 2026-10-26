@@ -61,6 +61,8 @@ jobs:
           tool: just@1.58.0,cargo-deny@0.20.2
       - run: just fmt-check
       - run: just check-deps
+      - run: just check-comments
+      - run: just check-links
       - run: just deny
       - run: just test-portable
 

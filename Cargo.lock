@@ -1692,6 +1692,7 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "libc",
+ "regex",
  "serde",
  "toml",
 ]
