@@ -237,6 +237,32 @@ fn a_face_has_the_glyphs_of_its_characters() {
 }
 
 #[test]
+fn the_cascade_draws_what_a_face_lacks() {
+    let mut backend = CoreText::new();
+    let menlo = regular(&mut backend, "Menlo");
+    // CJK, Arabic, Devanagari and an emoji, which Menlo lacks.
+    for character in ['日', 'ع', 'क', '🦀'] {
+        assert_eq!(backend.glyph(menlo, character), None, "{character}");
+        let face = backend
+            .fallback(menlo, &character.to_string())
+            .unwrap_or_else(|| panic!("a face for {character}"));
+        assert_ne!(face, menlo);
+        assert!(backend.glyph(face, character).is_some(), "{character}");
+    }
+    // A character that Menlo draws needs no other face.
+    assert_eq!(backend.fallback(menlo, "a"), None);
+    // The emoji's face draws in color.
+    let emoji = backend.fallback(menlo, "🦀").unwrap();
+    let glyph = backend.glyph(emoji, '🦀').unwrap();
+    let bitmap = backend.rasterize(emoji, glyph, 26.0, Synthesis::default());
+    assert_eq!(bitmap.format, BitmapFormat::Rgba);
+    assert!(bitmap.width > 0);
+    // VS16 asks for the emoji of a character that has a text one.
+    let heart = backend.fallback(menlo, "\u{2764}\u{FE0F}").unwrap();
+    assert_eq!(heart, emoji);
+}
+
+#[test]
 fn a_missing_family_falls_back_to_sf_mono() {
     let mut backend = CoreText::new();
     let resolved = resolve_faces(

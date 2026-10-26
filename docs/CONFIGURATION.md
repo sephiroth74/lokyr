@@ -55,6 +55,8 @@ The key is the only one at the top of the file, and the only one with an undersc
 
 The font of the text: its family, its size and the faces that bold and italic text take.
 
+A character that the font lacks, such as Japanese text or an emoji in most programming fonts, takes the font that macOS gives for it, as other apps take it: Hiragino for Japanese, Apple Color Emoji for emoji. A character followed by the variation selector that asks for an emoji, U+FE0F, takes the emoji even when the font has a text form of it.
+
 ### `family`
 
 The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` or `"CaskaydiaCove NFM"`.
@@ -96,7 +98,9 @@ The faces of bold, italic and bold italic text, named as `style` names its face.
 The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese text.
 
 - **Default**: the text's own family.
-- Bolt reads and checks this key, but does not apply it yet: it comes with the fallback of characters that a font lacks.
+- Its faces follow the weights of the text's: bold text takes its bold face. The styles that `style` and the other keys name are the text's family's, not this one's.
+- A character that this family lacks takes the font that macOS gives for it, as for the text's own family.
+- A family that is not installed leaves that text to the text's family, and the log tells it.
 
 ### `line-height`, `cell-width`
 

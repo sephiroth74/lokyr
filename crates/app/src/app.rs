@@ -95,6 +95,12 @@ fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
             font.family()
         );
     }
+    if let Some(family) = font.missing_non_ascii_family() {
+        eprintln!(
+            "bolt: the font family `{family}` is not installed; the text past ASCII takes `{}`",
+            font.family()
+        );
+    }
     Ok(font)
 }
 

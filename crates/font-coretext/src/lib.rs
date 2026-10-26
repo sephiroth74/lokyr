@@ -15,8 +15,8 @@ use bolt_text_core::{
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
-    CFArray, CFDictionary, CFNumber, CFRetained, CFSet, CFString, CFType, CGAffineTransform, Type,
-    kCFTypeSetCallBacks,
+    CFArray, CFDictionary, CFNumber, CFRange, CFRetained, CFSet, CFString, CFType,
+    CGAffineTransform, Type, kCFTypeSetCallBacks,
 };
 use objc2_core_text::{
     CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions,
@@ -227,8 +227,25 @@ impl FontBackend for CoreText {
         glyph_of(&font, character)
     }
 
-    fn fallback(&mut self, _face: FaceId, _cluster: &str) -> Option<FaceId> {
-        unimplemented!("the fallback of CoreText's cascade is not implemented yet")
+    fn fallback(&mut self, face: FaceId, cluster: &str) -> Option<FaceId> {
+        let font = self.font(face, PROBE_SIZE)?;
+        let string = CFString::from_str(cluster);
+        let range = CFRange {
+            location: 0,
+            length: string.length(),
+        };
+        // SAFETY: a font that CoreText made, and a range of the string's
+        // own length. CoreText gives the font of its cascade that draws the
+        // most of the string, the font itself when no other does.
+        let found = unsafe { font.for_string(&string, range) };
+        // SAFETY: fonts that CoreText made.
+        let (name, own) = unsafe { (found.post_script_name(), font.post_script_name()) };
+        if name.to_string() == own.to_string() {
+            return None;
+        }
+        // SAFETY: a font that CoreText made.
+        let descriptor = unsafe { found.font_descriptor() };
+        Some(self.register(&descriptor, &found))
     }
 
     fn shape(
