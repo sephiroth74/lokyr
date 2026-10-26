@@ -276,6 +276,10 @@ dependencies = [
 [[package]]
 name = "bolt-text-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "bolt-ui-core"
