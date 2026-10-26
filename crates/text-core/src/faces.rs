@@ -1,9 +1,8 @@
-//! The faces of a family that the terminal's four styles of text take, as
-//! the configuration names them or the family's weights choose them.
+//! The family that the terminal's text takes, and the faces of it that its
+//! four styles take, as the configuration names them or the family's weights
+//! choose them.
 
-use std::fmt;
-
-use crate::backend::{FaceId, FaceInfo, Synthesis};
+use crate::backend::{FaceId, FaceInfo, FontBackend, Synthesis};
 use crate::config::{FontConfig, Name};
 
 /// A face that a style of text takes, and what is drawn heavier or slanted
@@ -38,27 +37,78 @@ pub struct Faces {
     pub bold_italic: Face,
 }
 
-/// A style that the configuration names, which the family lacks.
+/// What keeps a family's faces from the styles of text.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum FaceError {
+    /// A style that the configuration names, which the family lacks.
+    #[error(
+        "the family `{family}` has no style `{style}`, which `{key}` names; it has {}",
+        available.join(", ")
+    )]
+    MissingStyle {
+        /// The key of the configuration that names the style.
+        key: &'static str,
+        /// The family.
+        family: String,
+        /// The style that the key names.
+        style: String,
+        /// The family's styles, each once, in its order.
+        available: Vec<String>,
+    },
+    /// A family without faces.
+    #[error("the family `{family}` has no face")]
+    NoFace {
+        /// The family.
+        family: String,
+    },
+}
+
+/// The family that the text takes, and the faces of its four styles.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MissingStyle {
-    /// The style that the configuration names.
-    pub style: String,
-    /// The family's styles, in its order.
-    pub available: Vec<String>,
+pub struct Resolved {
+    /// The family's name, as the configuration or the backend gives it.
+    pub family: String,
+    /// The faces of the four styles.
+    pub faces: Faces,
+    /// The family that the configuration names, when it is not installed
+    /// and the text takes the default family instead.
+    pub missing_family: Option<String>,
 }
 
-impl fmt::Display for MissingStyle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "the family has no style `{}`; it has {}",
-            self.style,
-            self.available.join(", ")
-        )
+/// The family that `config` names, or the default one when it names none or
+/// one that is not installed, and the faces of its four styles. A family
+/// that stands in for one that is missing takes its faces by their weights,
+/// as the styles that the configuration names are the missing family's.
+pub fn resolve(backend: &mut dyn FontBackend, config: &FontConfig) -> Result<Resolved, FaceError> {
+    let wanted = config.family.as_ref().map(Name::as_str);
+    if let Some(name) = wanted
+        && let Some(faces) = backend.family(name)
+    {
+        return Ok(Resolved {
+            family: name.to_owned(),
+            faces: choose(name, &faces, config)?,
+            missing_family: None,
+        });
     }
+    let family = backend.default_family();
+    let faces = backend.family(&family).unwrap_or_default();
+    let config = if wanted.is_some() {
+        FontConfig {
+            style: None,
+            bold_style: None,
+            italic_style: None,
+            bold_italic_style: None,
+            ..config.clone()
+        }
+    } else {
+        config.clone()
+    };
+    Ok(Resolved {
+        faces: choose(&family, &faces, &config)?,
+        family,
+        missing_family: wanted.map(str::to_owned),
+    })
 }
-
-impl std::error::Error for MissingStyle {}
 
 /// The weight of a family's regular face, as CSS numbers it.
 const REGULAR: f32 = 400.0;
@@ -80,10 +130,10 @@ const BOLD: f32 = 700.0;
 ///   the bold one's weight, heavier than the italic one; otherwise the bold
 ///   face slanted, or the italic one drawn heavier.
 ///
-/// A style is named as the family names it, but for case, spaces and
-/// hyphens: `semi-bold` is `SemiBold`.
-pub fn choose(faces: &[FaceInfo], config: &FontConfig) -> Result<Faces, MissingStyle> {
-    let named = |style: Option<&Name>| -> Result<Option<&FaceInfo>, MissingStyle> {
+/// A style is named as the family names it, but for case, spaces, hyphens
+/// and underscores: `semi-bold` is `SemiBold`.
+pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<Faces, FaceError> {
+    let named = |key: &'static str, style: Option<&Name>| -> Result<Option<&FaceInfo>, FaceError> {
         let Some(style) = style else {
             return Ok(None);
         };
@@ -92,25 +142,34 @@ pub fn choose(faces: &[FaceInfo], config: &FontConfig) -> Result<Faces, MissingS
             .iter()
             .find(|face| normalize(&face.style) == wanted)
             .map(Some)
-            .ok_or_else(|| MissingStyle {
-                style: style.to_string(),
-                available: faces.iter().map(|face| face.style.clone()).collect(),
+            .ok_or_else(|| {
+                let mut available: Vec<String> = Vec::new();
+                for face in faces {
+                    if !available.contains(&face.style) {
+                        available.push(face.style.clone());
+                    }
+                }
+                FaceError::MissingStyle {
+                    key,
+                    family: family.to_owned(),
+                    style: style.to_string(),
+                    available,
+                }
             })
     };
     let upright = || faces.iter().filter(|face| !face.italic);
     let italics = || faces.iter().filter(|face| face.italic);
 
-    let regular = match named(config.style.as_ref())? {
+    let regular = match named("style", config.style.as_ref())? {
         Some(face) => face,
         None => nearest(upright(), REGULAR)
             .or_else(|| nearest(faces.iter(), REGULAR))
-            .ok_or_else(|| MissingStyle {
-                style: "Regular".to_owned(),
-                available: Vec::new(),
+            .ok_or_else(|| FaceError::NoFace {
+                family: family.to_owned(),
             })?,
     };
 
-    let bold = match named(config.bold_style.as_ref())? {
+    let bold = match named("bold-style", config.bold_style.as_ref())? {
         Some(face) => Some(face),
         None => {
             let target = BOLD.max(regular.weight + 100.0);
@@ -120,11 +179,11 @@ pub fn choose(faces: &[FaceInfo], config: &FontConfig) -> Result<Faces, MissingS
             )
         }
     };
-    let italic = match named(config.italic_style.as_ref())? {
+    let italic = match named("italic-style", config.italic_style.as_ref())? {
         Some(face) => Some(face),
         None => nearest(italics(), regular.weight),
     };
-    let bold_italic = match named(config.bold_italic_style.as_ref())? {
+    let bold_italic = match named("bold-italic-style", config.bold_italic_style.as_ref())? {
         Some(face) => Some(face),
         None => {
             let floor = italic.map_or(regular.weight, |italic| italic.weight);
@@ -259,7 +318,7 @@ mod tests {
     #[test]
     fn a_family_s_regular_takes_its_bold_and_italics() {
         let faces = cascadia();
-        let chosen = choose(&faces, &config(None)).unwrap();
+        let chosen = choose("Test", &faces, &config(None)).unwrap();
         assert_eq!(style(&faces, chosen.regular), ("Regular", PLAIN));
         assert_eq!(style(&faces, chosen.bold), ("Bold", PLAIN));
         assert_eq!(style(&faces, chosen.italic), ("Italic", PLAIN));
@@ -269,7 +328,7 @@ mod tests {
     #[test]
     fn semibold_takes_bold_and_semibold_italic() {
         let faces = cascadia();
-        let chosen = choose(&faces, &config(Some("SemiBold"))).unwrap();
+        let chosen = choose("Test", &faces, &config(Some("SemiBold"))).unwrap();
         assert_eq!(style(&faces, chosen.regular), ("SemiBold", PLAIN));
         assert_eq!(style(&faces, chosen.bold), ("Bold", PLAIN));
         assert_eq!(style(&faces, chosen.italic), ("SemiBold Italic", PLAIN));
@@ -279,7 +338,7 @@ mod tests {
     #[test]
     fn the_heaviest_face_draws_its_bold_heavier() {
         let faces = cascadia();
-        let chosen = choose(&faces, &config(Some("Bold"))).unwrap();
+        let chosen = choose("Test", &faces, &config(Some("Bold"))).unwrap();
         let heavier = Synthesis {
             bold: true,
             italic: false,
@@ -295,7 +354,7 @@ mod tests {
     #[test]
     fn a_family_of_one_face_makes_the_others_of_it() {
         let faces = family(&[("Regular", 400.0, false)]);
-        let chosen = choose(&faces, &FontConfig::default()).unwrap();
+        let chosen = choose("Test", &faces, &FontConfig::default()).unwrap();
         let id = FaceId(0);
         assert_eq!(chosen.regular, Face::plain(id));
         assert_eq!(
@@ -337,7 +396,7 @@ mod tests {
             bold_italic_style: named("SEMIBOLD ITALIC"),
             ..FontConfig::default()
         };
-        let chosen = choose(&faces, &config).unwrap();
+        let chosen = choose("Test", &faces, &config).unwrap();
         assert_eq!(style(&faces, chosen.regular).0, "Light");
         assert_eq!(style(&faces, chosen.bold).0, "SemiBold");
         assert_eq!(style(&faces, chosen.italic).0, "Light Italic");
@@ -351,19 +410,130 @@ mod tests {
             bold_style: Some(Name::try_from("Black".to_owned()).unwrap()),
             ..FontConfig::default()
         };
-        let error = choose(&faces, &config).unwrap_err();
-        assert_eq!(error.available, ["Regular", "Bold"]);
+        let error = choose("Test", &faces, &config).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "the family has no style `Black`; it has Regular, Bold"
+            "the family `Test` has no style `Black`, which `bold-style` names; it has Regular, Bold"
         );
+    }
+
+    #[test]
+    fn the_styles_that_an_error_lists_come_once() {
+        let faces = family(&[
+            ("Regular", 400.0, false),
+            ("Regular", 400.0, false),
+            ("Bold", 700.0, false),
+        ]);
+        let config = FontConfig {
+            style: Some(Name::try_from("Light".to_owned()).unwrap()),
+            ..FontConfig::default()
+        };
+        let error = choose("Test", &faces, &config).unwrap_err();
+        let FaceError::MissingStyle { key, available, .. } = error else {
+            panic!("a missing style: {error}");
+        };
+        assert_eq!(key, "style");
+        assert_eq!(available, ["Regular", "Bold"]);
+    }
+
+    #[test]
+    fn a_family_without_faces_says_so() {
+        assert_eq!(
+            choose("Empty", &[], &FontConfig::default())
+                .unwrap_err()
+                .to_string(),
+            "the family `Empty` has no face"
+        );
+    }
+
+    /// A backend of two families, Mono and Default, whose fonts it neither
+    /// measures nor draws.
+    struct Families;
+
+    impl FontBackend for Families {
+        fn default_family(&mut self) -> String {
+            "Default".to_owned()
+        }
+
+        fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
+            match name {
+                "Mono" => Some(cascadia()),
+                "Default" => Some(family(&[("Regular", 400.0, false), ("Bold", 700.0, false)])),
+                _ => None,
+            }
+        }
+
+        fn metrics(&mut self, _: FaceId, _: f32) -> crate::FaceMetrics {
+            crate::FaceMetrics::default()
+        }
+
+        fn glyph(&mut self, _: FaceId, _: char) -> Option<crate::GlyphId> {
+            None
+        }
+
+        fn fallback(&mut self, _: FaceId, _: &str) -> Option<FaceId> {
+            None
+        }
+
+        fn shape(
+            &mut self,
+            _: FaceId,
+            _: f32,
+            _: &str,
+            _: crate::Features,
+            _: &mut Vec<crate::ShapedGlyph>,
+        ) {
+        }
+
+        fn rasterize(
+            &mut self,
+            _: FaceId,
+            _: crate::GlyphId,
+            _: f32,
+            _: Synthesis,
+        ) -> crate::Bitmap {
+            crate::Bitmap::empty(crate::BitmapFormat::Gray)
+        }
+    }
+
+    fn named_family(family: &str, style: &str) -> FontConfig {
+        FontConfig {
+            family: Some(Name::try_from(family.to_owned()).unwrap()),
+            style: Some(Name::try_from(style.to_owned()).unwrap()),
+            ..FontConfig::default()
+        }
+    }
+
+    #[test]
+    fn a_family_takes_its_faces() {
+        let resolved = resolve(&mut Families, &named_family("Mono", "SemiBold")).unwrap();
+        assert_eq!(resolved.family, "Mono");
+        assert_eq!(resolved.missing_family, None);
+        assert_eq!(style(&cascadia(), resolved.faces.regular).0, "SemiBold");
+    }
+
+    #[test]
+    fn a_family_that_is_not_installed_falls_back_to_the_default() {
+        // The missing family's style, which the default one lacks, is not
+        // looked for in the default one.
+        let resolved = resolve(&mut Families, &named_family("Missing", "SemiBold")).unwrap();
+        assert_eq!(resolved.family, "Default");
+        assert_eq!(resolved.missing_family.as_deref(), Some("Missing"));
+        assert_eq!(resolved.faces.regular, Face::plain(FaceId(0)));
+        assert_eq!(resolved.faces.bold, Face::plain(FaceId(1)));
+    }
+
+    #[test]
+    fn no_family_takes_the_default() {
+        let resolved = resolve(&mut Families, &FontConfig::default()).unwrap();
+        assert_eq!(resolved.family, "Default");
+        assert_eq!(resolved.missing_family, None);
     }
 
     #[test]
     fn a_family_of_italics_alone_takes_one_as_regular() {
         let faces = family(&[("Italic", 400.0, true), ("Bold Italic", 700.0, true)]);
-        let chosen = choose(&faces, &FontConfig::default()).unwrap();
+        let chosen = choose("Test", &faces, &FontConfig::default()).unwrap();
         assert_eq!(chosen.regular.id, FaceId(0));
-        assert!(choose(&[], &FontConfig::default()).is_err());
     }
 }

@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod backend;
+mod cell;
 mod config;
 mod faces;
 
@@ -17,5 +18,8 @@ pub use backend::{
     Bitmap, BitmapFormat, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId,
     ShapedGlyph, Synthesis,
 };
+pub use cell::CellMetrics;
 pub use config::{Factor, FontConfig, Name, Size};
-pub use faces::{Face, Faces, MissingStyle, choose as choose_faces};
+pub use faces::{
+    Face, FaceError, Faces, Resolved, choose as choose_faces, resolve as resolve_faces,
+};
