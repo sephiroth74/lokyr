@@ -298,9 +298,11 @@ dependencies = [
 name = "bolt-ui-core"
 version = "0.1.0"
 dependencies = [
+ "bolt-font-coretext",
  "bolt-render-core",
  "bolt-text-core",
  "bolt-vt-core",
+ "criterion",
 ]
 
 [[package]]

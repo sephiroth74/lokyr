@@ -9,10 +9,10 @@
 //! recently used, but never one that the frame in progress uses, nor the
 //! frame before it, which the GPU may still be drawing.
 
-use std::collections::HashMap;
 use std::hash::Hash;
 
 use crate::backend::{Bitmap, BitmapFormat};
+use crate::hash::FastMap;
 
 /// The side, in pixels, that a texture starts at.
 pub const START: u32 = 1024;
@@ -195,7 +195,7 @@ struct Page<K> {
     shelves: Vec<Shelf>,
     /// The first row below the shelves.
     next_shelf: u32,
-    entries: HashMap<K, Entry>,
+    entries: FastMap<K, Entry>,
 }
 
 impl<K: Hash + Eq + Clone> Page<K> {
@@ -206,7 +206,7 @@ impl<K: Hash + Eq + Clone> Page<K> {
             max,
             shelves: Vec::new(),
             next_shelf: 0,
-            entries: HashMap::new(),
+            entries: FastMap::default(),
         }
     }
 

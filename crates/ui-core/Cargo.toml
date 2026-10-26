@@ -14,5 +14,15 @@ bolt-render-core.workspace = true
 bolt-text-core.workspace = true
 bolt-vt-core.workspace = true
 
+# The benchmark draws with CoreText, and criterion needs a C compiler of
+# its target, which the check for Linux from macOS does not have.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+bolt-font-coretext.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "cells"
+harness = false
+
 [lints]
 workspace = true

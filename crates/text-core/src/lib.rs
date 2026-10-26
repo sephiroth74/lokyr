@@ -14,6 +14,7 @@ mod backend;
 mod cell;
 mod config;
 mod faces;
+mod hash;
 
 pub use atlas::{Atlas, COLOR_MAX, Change, GRAY_MAX, Placement, START};
 pub use backend::{
@@ -25,3 +26,4 @@ pub use config::{Factor, FontConfig, Name, Size};
 pub use faces::{
     Face, FaceError, Faces, Resolved, choose as choose_faces, resolve as resolve_faces,
 };
+pub use hash::{FastHasher, FastMap};

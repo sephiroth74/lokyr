@@ -52,7 +52,8 @@ pub fn background(snapshot: &Snapshot) -> Color {
 /// or not; the cells of `selection` in its colors.
 ///
 /// A character that takes two columns has its glyph in the first, which
-/// spans the two; the second has only its background. Reverse video
+/// spans the two; the second has only its background, as has a glyph
+/// without ink. Reverse video
 /// swaps the default colors; faint text mixes its color halfway to its
 /// background; hidden text shows its background alone.
 pub fn cells(
@@ -66,6 +67,7 @@ pub fn cells(
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
     let colors = snapshot.colors();
     let defaults = defaults(snapshot);
+    let area = usize::from(columns) * usize::from(rows);
     let mut batch = CellBatch {
         x,
         y,
@@ -73,8 +75,8 @@ pub fn cells(
         rows,
         cell_width: cell.width,
         cell_height: cell.height,
-        backgrounds: Vec::with_capacity(usize::from(columns) * usize::from(rows)),
-        glyphs: Vec::new(),
+        backgrounds: Vec::with_capacity(area),
+        glyphs: Vec::with_capacity(area),
         lines: Vec::new(),
     };
     let selected = |column: u16, row: u16| {
@@ -128,7 +130,8 @@ pub fn cells(
                 style: &style,
                 wide: width == Width::Wide,
             };
-            if let Some(found) = glyph(&shown) {
+            // A glyph without ink, a space's, draws nothing.
+            if let Some(found) = glyph(&shown).filter(|found| found.region.width > 0) {
                 batch.glyphs.push(CellGlyph {
                     column,
                     row,
@@ -228,20 +231,22 @@ mod tests {
     }
 
     /// A glyph of the atlas for each character, at a column of its own,
-    /// that records what it was asked for.
+    /// that records what it was asked for; a space's has no ink, as the
+    /// atlas gives it no room.
     fn atlas(
         asked: &mut Vec<(String, bool, bool)>,
     ) -> impl FnMut(&CellText<'_>) -> Option<AtlasGlyph> + '_ {
         move |shown: &CellText<'_>| {
             asked.push((shown.text.to_owned(), shown.style.bold, shown.wide));
-            let first = shown.text.chars().next()? as u32;
+            let first = shown.text.chars().next()?;
+            let (width, height) = if first == ' ' { (0, 0) } else { (6, 10) };
             Some(AtlasGlyph {
                 region: AtlasRegion {
                     texture: Texture::Coverage,
-                    x: first,
+                    x: first as u32,
                     y: 0,
-                    width: 6,
-                    height: 10,
+                    width,
+                    height,
                 },
                 left: 1,
                 top: 10,
@@ -339,6 +344,20 @@ mod tests {
         let red = color(Colors::default().palette[1]);
         assert!(batch.backgrounds.iter().all(|&bg| bg == red));
         assert!(batch.glyphs.is_empty() && asked.is_empty());
+    }
+
+    #[test]
+    fn a_glyph_without_ink_takes_no_instance() {
+        // Spaces that a program writes, as full-screen programs do, over a
+        // background of their own.
+        let snapshot = snapshot(4, 2, "\x1b[44m    \r\n a  ");
+        let mut asked = Vec::new();
+        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        assert_eq!(asked.len(), 8);
+        assert_eq!(batch.glyphs.len(), 1);
+        assert_eq!((batch.glyphs[0].column, batch.glyphs[0].row), (1, 1));
+        let blue = color(Colors::default().palette[4]);
+        assert_eq!(batch.backgrounds, [blue; 8]);
     }
 
     #[test]
