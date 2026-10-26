@@ -48,6 +48,11 @@ pub(crate) struct Shared {
     /// The panic of a call of the handler, which ends the application and
     /// goes on once `run` returns.
     panic: RefCell<Option<Box<dyn Any + Send>>>,
+    /// The loops of alerts without a window in progress, within each other.
+    modals: Cell<usize>,
+    /// Whether the innermost of those loops was asked to end, for the
+    /// application to stop once it has.
+    modal_aborted: Cell<bool>,
 }
 
 impl Shared {
@@ -58,6 +63,8 @@ impl Shared {
             handler: RefCell::new(Some(handler)),
             backend: RefCell::new(Backend::new(mtm, shared.clone(), waker)),
             panic: RefCell::new(None),
+            modals: Cell::new(0),
+            modal_aborted: Cell::new(false),
         })
     }
 
@@ -77,9 +84,16 @@ impl Shared {
     /// handler goes first, with what it holds, then the windows. Returns the
     /// panic of the handler, if one ended the application.
     pub(crate) fn finish(&self) -> Option<Box<dyn Any + Send>> {
+        // What AppKit tells while the windows close, such as the answers of
+        // the sheets that it ends, has no handler left: it is queued, never
+        // dispatched, and dropped.
+        self.dispatching.set(true);
         drop(self.handler.borrow_mut().take());
+        let windows = self.backend.borrow_mut().take_windows();
+        for window in windows {
+            window.close();
+        }
         self.queue.borrow_mut().clear();
-        self.backend.borrow_mut().close_all();
         self.panic.borrow_mut().take()
     }
 
@@ -91,7 +105,8 @@ impl Shared {
             let Some(pending) = self.queue.borrow_mut().pop_front() else {
                 break;
             };
-            if self.backend.borrow().is_stopped() {
+            // Nothing comes once the app has quit.
+            if self.backend.borrow().has_quit() {
                 self.queue.borrow_mut().clear();
                 break;
             }
@@ -100,12 +115,25 @@ impl Shared {
             } else {
                 self.call(pending);
             }
-            let mut backend = self.backend.borrow_mut();
-            if backend.wants_to_stop() {
-                backend.stop();
-            }
+            self.stop_if_quit();
         }
         self.dispatching.set(false);
+    }
+
+    /// Stops the application once the app has quit. Within an alert's
+    /// loop, where `stop` would end the alert's loop rather than the
+    /// application's, it ends the alert's loop first, and the application
+    /// stops once that loop has returned.
+    fn stop_if_quit(&self) {
+        let mut backend = self.backend.borrow_mut();
+        if !backend.has_quit() || backend.is_stopped() {
+            return;
+        }
+        if self.modals.get() == 0 {
+            backend.stop();
+        } else if !self.modal_aborted.replace(true) {
+            backend.abort_modal();
+        }
     }
 
     /// Hands `pending` to the handler, whose panic ends the application.
@@ -122,6 +150,9 @@ impl Shared {
             Pending::Window(window, event) => {
                 // A window that closed meanwhile has nothing more to tell.
                 if backend.has_window(window) {
+                    if event == WindowEvent::Frame {
+                        backend.frame_delivered(window);
+                    }
                     handler.window_event(backend, window, event);
                 }
             }
@@ -146,9 +177,13 @@ impl Shared {
         let Some(modal) = self.backend.borrow().alert(alert) else {
             return;
         };
+        self.modals.set(self.modals.get() + 1);
         self.dispatching.set(false);
         let response = modal.runModal();
         self.dispatching.set(true);
+        self.modals.set(self.modals.get() - 1);
+        // An outer loop, if one runs, is the next to end.
+        self.modal_aborted.set(false);
         self.enqueue(Pending::AlertResponse(alert, response));
     }
 }

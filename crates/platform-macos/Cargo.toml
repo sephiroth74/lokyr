@@ -65,5 +65,21 @@ libc.workspace = true
 name = "run_loop"
 harness = false
 
+[[test]]
+name = "quit_in_modal"
+harness = false
+
+[[test]]
+name = "quit_with_sheet"
+harness = false
+
+[[test]]
+name = "panic_in_modal"
+harness = false
+
+[[test]]
+name = "frame_requests"
+harness = false
+
 [lints]
 workspace = true

@@ -78,8 +78,21 @@ impl Backend {
         self.quit = true;
     }
 
-    pub(crate) fn wants_to_stop(&self) -> bool {
-        self.quit && !self.stopped
+    /// Whether the app has quit.
+    pub(crate) fn has_quit(&self) -> bool {
+        self.quit
+    }
+
+    /// Tells the window's pacer that its frame came.
+    pub(crate) fn frame_delivered(&self, window: WindowId) {
+        if let Some(window) = self.windows.get(&window) {
+            window.frame_delivered();
+        }
+    }
+
+    /// Ends the loop of the alert without a window that runs.
+    pub(crate) fn abort_modal(&self) {
+        NSApplication::sharedApplication(self.mtm).abortModal();
     }
 
     pub(crate) fn is_stopped(&self) -> bool {
@@ -108,12 +121,11 @@ impl Backend {
         }
     }
 
-    /// Closes every window, once the application has ended.
-    pub(crate) fn close_all(&mut self) {
-        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
-        for window in windows {
-            self.close_window(window);
-        }
+    /// Takes every window and alert, once the application has ended, for
+    /// the caller to close the windows.
+    pub(crate) fn take_windows(&mut self) -> Vec<Window> {
+        self.alerts.clear();
+        std::mem::take(&mut self.windows).into_values().collect()
     }
 
     fn next_id(&mut self) -> u64 {

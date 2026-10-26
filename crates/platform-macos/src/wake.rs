@@ -25,10 +25,12 @@ struct Signal {
     run_loop: CFRetained<CFRunLoop>,
 }
 
-// SAFETY: other threads only signal the source and wake its run loop, which
-// Core Foundation makes for them: Apple's Threading Programming Guide signals
-// a custom input source, and wakes its run loop, from any thread. The rest of
-// the source's life is on the main thread.
+// SAFETY: other threads signal the source and wake its run loop, which Core
+// Foundation makes for them: Apple's Threading Programming Guide signals a
+// custom input source, and wakes its run loop, from any thread. The last
+// waker to drop releases both, on whatever thread drops it, which Core
+// Foundation's reference counts allow. The rest of the source's life, from
+// its creation to its invalidation, is on the main thread.
 unsafe impl Send for Signal {}
 // SAFETY: as for `Send`.
 unsafe impl Sync for Signal {}

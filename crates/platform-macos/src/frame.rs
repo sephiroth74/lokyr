@@ -18,6 +18,9 @@ pub(crate) struct FrameTargetIvars {
     window: WindowId,
     /// Whether the app asked for a frame since the last refresh.
     requested: Cell<bool>,
+    /// Whether a frame due at once is queued, which the requests that come
+    /// before it take as theirs.
+    queued: Cell<bool>,
 }
 
 define_class!(
@@ -69,6 +72,7 @@ impl Pacer {
             shared,
             window,
             requested: Cell::new(false),
+            queued: Cell::new(false),
         });
         // SAFETY: `NSObject`'s `init` has this signature.
         let target: Retained<FrameTarget> = unsafe { msg_send![super(target), init] };
@@ -86,13 +90,23 @@ impl Pacer {
     /// stopped, after a refresh without a frame, and starts again for the
     /// frames after this one.
     pub(crate) fn request(&self) -> bool {
+        let ivars = self.target.ivars();
+        if ivars.queued.get() {
+            return false;
+        }
         if self.link.isPaused() {
             self.link.setPaused(false);
+            ivars.queued.set(true);
             true
         } else {
-            self.target.ivars().requested.set(true);
+            ivars.requested.set(true);
             false
         }
+    }
+
+    /// The frame came: requests from now on are for the next.
+    pub(crate) fn delivered(&self) {
+        self.target.ivars().queued.set(false);
     }
 
     /// Takes the link off the run loop, for good.

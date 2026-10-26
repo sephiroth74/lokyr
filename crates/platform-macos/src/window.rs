@@ -98,6 +98,11 @@ impl Window {
         self.pacer.request()
     }
 
+    /// Tells the pacer that the frame came.
+    pub(crate) fn frame_delivered(&self) {
+        self.pacer.delivered();
+    }
+
     pub(crate) fn close(&self) {
         self.pacer.stop();
         // What the window does as it closes, such as losing the focus, has

@@ -106,8 +106,9 @@ fn submenu(
                 if let Some(shortcut) = shortcut {
                     ns_item.setKeyEquivalentModifierMask(modifier_mask(shortcut));
                 }
-                // SAFETY: the target outlives the menu, as its caller keeps
-                // it.
+                // SAFETY: the target is a `MenuTarget`, which answers the
+                // item's action, `runCommand:`. The item holds it weakly, and
+                // the caller keeps it as long as the menu.
                 unsafe { ns_item.setTarget(Some(target)) };
                 ns_item.setTag(*tag);
                 *tag += 1;
