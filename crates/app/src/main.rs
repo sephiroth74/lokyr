@@ -7,6 +7,8 @@
 
 #[cfg(target_os = "macos")]
 mod app;
+#[cfg(target_os = "macos")]
+mod watch;
 
 use std::process::ExitCode;
 
@@ -27,11 +29,26 @@ fn main() -> ExitCode {
 /// Runs the application until it quits.
 #[cfg(target_os = "macos")]
 fn run() -> ExitCode {
-    let config = config();
-    let drawing = app::Drawing::new(config.font)
-        .inspect_err(|error| eprintln!("bolt: {error}"))
-        .ok();
-    match bolt_platform_macos::run(app::App::new(drawing, config.cursor)) {
+    use bolt_kernel::config::Config;
+
+    let (mut config, path) = config();
+    let drawing = match app::Drawing::new(config.font.clone()) {
+        Ok(drawing) => Some(drawing),
+        // A config whose font fails is as invalid as one that does not read.
+        Err(error) if config.font != Config::default().font => {
+            eprintln!("bolt: {error}");
+            eprintln!("bolt: none of the config applies, and the app takes the defaults");
+            config = Config::default();
+            app::Drawing::new(config.font.clone())
+                .inspect_err(|error| eprintln!("bolt: {error}"))
+                .ok()
+        }
+        Err(error) => {
+            eprintln!("bolt: {error}");
+            None
+        }
+    };
+    match bolt_platform_macos::run(app::App::new(drawing, config, path)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("bolt: {error}");
@@ -41,19 +58,20 @@ fn run() -> ExitCode {
 }
 
 /// The config file's, or its defaults when there is none or it is invalid,
-/// which the log tells.
+/// which the log tells, and the file's path.
 #[cfg(target_os = "macos")]
-fn config() -> bolt_kernel::config::Config {
+fn config() -> (bolt_kernel::config::Config, Option<std::path::PathBuf>) {
     use bolt_kernel::config::{self, Config};
 
     let Some(path) = config::path() else {
-        return Config::default();
+        return (Config::default(), None);
     };
-    Config::read(&path).unwrap_or_else(|error| {
+    let config = Config::read(&path).unwrap_or_else(|error| {
         eprintln!("bolt: {error}");
         eprintln!("bolt: none of the config applies, and the app takes the defaults");
         Config::default()
-    })
+    });
+    (config, Some(path))
 }
 
 /// Fails: the target has no platform backend yet.

@@ -1,9 +1,14 @@
-//! The application: its windows, what they draw, and its main menu.
+//! The application: its windows, what they draw, its main menu, and its
+//! config, which it reads again when the file changes.
 
 use std::collections::BTreeMap;
-use std::time::Instant;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use bolt_font_coretext::CoreText;
+use bolt_kernel::config::Config;
 use bolt_platform_core::{
     AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
     TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
@@ -11,12 +16,14 @@ use bolt_platform_core::{
 use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
 use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
-use bolt_ui_core::cursor::{self, Blink, CursorConfig};
+use bolt_ui_core::cursor::{self, Blink};
 use bolt_ui_core::font::Font;
 use bolt_ui_core::pane::{self, CursorLook};
 use bolt_ui_core::theme::Theme;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
+
+use crate::watch::Watcher;
 
 /// The command that quits.
 const QUIT: &str = "quit";
@@ -26,6 +33,11 @@ const WINDOW_SIZE: Size = Size {
     width: 800.0,
     height: 500.0,
 };
+
+/// How long the app waits, after a change of the config file, for the
+/// changes that come with it, as an editor's write and rename do, before it
+/// reads the file once.
+const SETTLE: Duration = Duration::from_millis(100);
 
 /// What draws the windows: the GPU, its renderer, and the font of the text.
 #[derive(Debug)]
@@ -40,13 +52,7 @@ impl Drawing {
     /// family that is not installed.
     pub fn new(config: FontConfig) -> Result<Self, String> {
         let gpu = Gpu::new().map_err(|error| error.to_string())?;
-        let font = Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())?;
-        if let Some(family) = font.missing_family() {
-            eprintln!(
-                "bolt: the font family `{family}` is not installed; the text takes `{}`",
-                font.family()
-            );
-        }
+        let font = font(config)?;
         let (coverage, color) = font.texture_sizes();
         let renderer =
             MetalRenderer::new(&gpu, coverage, color).map_err(|error| error.to_string())?;
@@ -55,6 +61,58 @@ impl Drawing {
             renderer,
             font,
         })
+    }
+
+    /// Takes the font that `config` gives, with an atlas of its own, and a
+    /// renderer of the atlas's textures, in place of those before; or, if
+    /// it fails, keeps them.
+    fn set_font(&mut self, config: FontConfig) -> Result<(), String> {
+        let font = font(config)?;
+        let (coverage, color) = font.texture_sizes();
+        let renderer =
+            MetalRenderer::new(&self.gpu, coverage, color).map_err(|error| error.to_string())?;
+        self.font = font;
+        self.renderer = renderer;
+        Ok(())
+    }
+}
+
+/// The font that `config` gives, which tells of a family that is not
+/// installed.
+fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
+    let font = Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())?;
+    if let Some(family) = font.missing_family() {
+        eprintln!(
+            "bolt: the font family `{family}` is not installed; the text takes `{}`",
+            font.family()
+        );
+    }
+    Ok(font)
+}
+
+/// The config file, and its watch.
+#[derive(Debug)]
+struct ConfigFile {
+    path: PathBuf,
+    watcher: Option<Watcher>,
+    /// Whether the file may have changed, which the watch's thread tells.
+    changed: Arc<AtomicBool>,
+    /// The timer of the reading, which waits for the changes that come
+    /// together.
+    reading: Option<TimerId>,
+}
+
+impl ConfigFile {
+    /// Watches the file, or its directory's parent while its directory does
+    /// not exist, so that its changes wake `platform`.
+    fn watch(&mut self, platform: &dyn Platform) {
+        let (changed, waker) = (Arc::clone(&self.changed), platform.waker());
+        self.watcher = Watcher::new(&self.path, move || {
+            changed.store(true, Ordering::Release);
+            waker.wake();
+        })
+        .inspect_err(|error| eprintln!("bolt: {error}"))
+        .ok();
     }
 }
 
@@ -109,7 +167,10 @@ impl Window {
 pub struct App {
     drawing: Option<Drawing>,
     theme: Theme,
-    cursor: CursorConfig,
+    /// The config in force.
+    config: Config,
+    /// The file of the config, if it has one.
+    config_file: Option<ConfigFile>,
     windows: BTreeMap<WindowId, Window>,
     /// The timer of the next change of a blinking cursor, and its time.
     blink_timer: Option<(TimerId, Instant)>,
@@ -117,14 +178,63 @@ pub struct App {
 
 impl App {
     /// An application that draws its windows with `drawing`, or nothing
-    /// without it, with the cursor of `cursor`.
-    pub fn new(drawing: Option<Drawing>, cursor: CursorConfig) -> Self {
+    /// without it, with `config`, which it reads again from `path`, its
+    /// file, when that changes.
+    pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
         Self {
             drawing,
             theme: Theme::builtin(),
-            cursor,
+            config,
+            config_file: path.map(|path| ConfigFile {
+                path,
+                watcher: None,
+                changed: Arc::new(AtomicBool::new(false)),
+                reading: None,
+            }),
             windows: BTreeMap::new(),
             blink_timer: None,
+        }
+    }
+
+    /// Reads the config file again: a valid config applies whole, and an
+    /// invalid one changes nothing, as the log tells.
+    fn reload(&mut self, platform: &mut dyn Platform) {
+        let Some(file) = &mut self.config_file else {
+            return;
+        };
+        if file
+            .watcher
+            .as_ref()
+            .is_none_or(|watcher| watcher.is_stale(&file.path))
+        {
+            file.watch(platform);
+        }
+        match Config::read(&file.path) {
+            Ok(config) => self.apply(platform, config),
+            Err(error) => {
+                eprintln!("bolt: {error}");
+                eprintln!("bolt: none of the config applies, and the one in force stays");
+            }
+        }
+    }
+
+    /// Takes `config` in place of the one in force, whole, in every window;
+    /// or nothing of it, if its font fails.
+    fn apply(&mut self, platform: &mut dyn Platform, config: Config) {
+        if config == self.config {
+            return;
+        }
+        if config.font != self.config.font
+            && let Some(drawing) = &mut self.drawing
+            && let Err(error) = drawing.set_font(config.font.clone())
+        {
+            eprintln!("bolt: {error}");
+            eprintln!("bolt: none of the config applies, and the one in force stays");
+            return;
+        }
+        self.config = config;
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
         }
     }
 
@@ -177,8 +287,9 @@ impl App {
             .as_ref()
             .map(|(.., snapshot)| snapshot.cursor())
             .unwrap_or_default();
-        let shape = cursor::shape(&program, &self.cursor, state.focused);
-        let (on, next) = if cursor::blinks(&program, &self.cursor, state.focused) {
+        let config = &self.config.cursor;
+        let shape = cursor::shape(&program, config, state.focused);
+        let (on, next) = if cursor::blinks(&program, config, state.focused) {
             state.blink.at(now)
         } else {
             (true, None)
@@ -206,7 +317,7 @@ impl App {
     /// what the window shows in it, and the cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         let shape = self.cursor(platform, window, Instant::now());
-        let config = self.cursor;
+        let config = self.config.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -254,6 +365,9 @@ impl App {
 impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
         platform.set_main_menu(&main_menu());
+        if let Some(file) = &mut self.config_file {
+            file.watch(platform);
+        }
         self.open_window(platform);
     }
 
@@ -261,11 +375,29 @@ impl Handler for App {
         match event {
             AppEvent::Command(command) if command == QUIT => platform.quit(),
             AppEvent::QuitRequested => platform.quit(),
-            // What woke the application changed what a window shows.
+            // What woke the application changed what a window shows, or
+            // the config file.
             AppEvent::Wake => {
+                if let Some(file) = &mut self.config_file
+                    && file.changed.swap(false, Ordering::AcqRel)
+                    && file.reading.is_none()
+                {
+                    file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
+                }
                 for &window in self.windows.keys() {
                     platform.request_frame(window);
                 }
+            }
+            AppEvent::Timer(timer)
+                if self
+                    .config_file
+                    .as_ref()
+                    .is_some_and(|file| file.reading == Some(timer)) =>
+            {
+                if let Some(file) = &mut self.config_file {
+                    file.reading = None;
+                }
+                self.reload(platform);
             }
             // A blinking cursor changes.
             AppEvent::Timer(timer) if self.blink_timer.is_some_and(|(blink, _)| blink == timer) => {
@@ -396,6 +528,7 @@ fn main_menu() -> MainMenu {
 #[cfg(test)]
 mod tests {
     use bolt_platform_core::fake::Fake;
+    use bolt_ui_core::cursor::CursorConfig;
 
     use super::*;
 
@@ -547,18 +680,86 @@ mod tests {
     #[test]
     fn the_configuration_gives_the_cursor_s_shape_and_blinking() {
         let mut fake = Fake::default();
-        let steady_bar = CursorConfig {
+        let mut config = Config::default();
+        config.cursor = CursorConfig {
             shape: cursor::Shape::Bar,
             blink: false,
             thickness: None,
         };
-        let mut app = App::new(None, steady_bar);
+        let mut app = App::new(None, config, None);
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
         let half = Instant::now() + cursor::BLINK_INTERVAL + cursor::BLINK_INTERVAL / 2;
         assert_eq!(app.cursor(&mut fake, window, half), Some(CursorShape::Bar));
         assert_eq!(fake.timers().count(), 0);
+    }
+
+    /// An app started with its config file, in a directory of its own for
+    /// `test`, which holds `text`.
+    fn with_file(test: &str, text: &str) -> (Fake, App, PathBuf) {
+        let directory =
+            std::env::temp_dir().join(format!("bolt-app-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("config.toml");
+        std::fs::write(&path, text).unwrap();
+        let config = Config::read(&path).unwrap();
+        let mut fake = Fake::default();
+        let mut app = App::new(None, config, Some(path.clone()));
+        fake.start(&mut app);
+        assert!(app.config_file.as_ref().unwrap().watcher.is_some());
+        (fake, app, path)
+    }
+
+    /// Tells the app that its file changed, as its watch does, and lets
+    /// the changes settle.
+    fn change(fake: &mut Fake, app: &mut App) {
+        let file = app.config_file.as_ref().unwrap();
+        file.changed.store(true, Ordering::Release);
+        fake.send_app(app, AppEvent::Wake);
+        // Another change meanwhile reads the file once.
+        app.config_file
+            .as_ref()
+            .unwrap()
+            .changed
+            .store(true, Ordering::Release);
+        fake.send_app(app, AppEvent::Wake);
+        let reading = app.config_file.as_ref().unwrap().reading;
+        assert!(reading.is_some());
+        // The one timer, the reading's, as the window has no focus to blink.
+        let timers: Vec<_> = fake.timers().collect();
+        assert_eq!(timers.len(), 1);
+        assert_eq!(Some(timers[0].0), reading);
+        fake.fire_timers(app, timers[0].1);
+        assert_eq!(app.config_file.as_ref().unwrap().reading, None);
+    }
+
+    #[test]
+    fn a_changed_config_applies_whole_once_its_changes_settle() {
+        let (mut fake, mut app, path) = with_file("valid", "[cursor]\nshape = \"bar\"\n");
+        assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        std::fs::write(&path, "[cursor]\nshape = \"hollow\"\nblink = false\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(app.config.cursor.shape, cursor::Shape::Hollow);
+        assert!(!app.config.cursor.blink);
+        assert!(fake.window(window).unwrap().frame_requested);
+        // A file that goes gives the defaults.
+        std::fs::remove_file(&path).unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(app.config, Config::default());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_invalid_config_changes_nothing() {
+        let (mut fake, mut app, path) = with_file("invalid", "[cursor]\nshape = \"bar\"\n");
+        std::fs::write(&path, "[cursor]\nshape = \"beam\"\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
