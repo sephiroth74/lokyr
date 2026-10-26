@@ -119,7 +119,8 @@ const BOLD: f32 = 700.0;
 /// The faces that `faces`, a family's, give to the four styles of text, as
 /// `config` names them:
 /// - regular: the style that it names, or the face nearest to the regular
-///   weight, upright;
+///   weight, upright, among the faces of the style group that the family
+///   was named by when it was named by one;
 /// - bold: the style that it names, or the upright face heavier than the
 ///   regular one nearest to the heavier of bold's weight and one step past
 ///   the regular one, so that SemiBold takes Bold, and Bold ExtraBold;
@@ -159,11 +160,13 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
     };
     let upright = || faces.iter().filter(|face| !face.italic);
     let italics = || faces.iter().filter(|face| face.italic);
+    let grouped = faces.iter().any(|face| face.in_group);
+    let group = || faces.iter().filter(move |face| face.in_group || !grouped);
 
     let regular = match named("style", config.style.as_ref())? {
         Some(face) => face,
-        None => nearest(upright(), REGULAR)
-            .or_else(|| nearest(faces.iter(), REGULAR))
+        None => nearest(group().filter(|face| !face.italic), REGULAR)
+            .or_else(|| nearest(group(), REGULAR))
             .ok_or_else(|| FaceError::NoFace {
                 family: family.to_owned(),
             })?,
@@ -278,6 +281,7 @@ mod tests {
                 style: style.to_owned(),
                 weight,
                 italic,
+                in_group: false,
             })
             .collect()
     }
@@ -333,6 +337,30 @@ mod tests {
         assert_eq!(style(&faces, chosen.bold), ("Bold", PLAIN));
         assert_eq!(style(&faces, chosen.italic), ("SemiBold Italic", PLAIN));
         assert_eq!(style(&faces, chosen.bold_italic), ("Bold Italic", PLAIN));
+    }
+
+    #[test]
+    fn a_style_group_s_name_takes_its_face_as_regular() {
+        // As `CaskaydiaCove NFM SemiBold` names its SemiBold faces, within
+        // the whole family.
+        let mut faces = cascadia();
+        for face in &mut faces {
+            face.in_group = face.style.starts_with("SemiBold");
+        }
+        let chosen = choose("Test", &faces, &config(None)).unwrap();
+        assert_eq!(style(&faces, chosen.regular), ("SemiBold", PLAIN));
+        assert_eq!(style(&faces, chosen.bold), ("Bold", PLAIN));
+        assert_eq!(style(&faces, chosen.italic), ("SemiBold Italic", PLAIN));
+        assert_eq!(style(&faces, chosen.bold_italic), ("Bold Italic", PLAIN));
+        // The styles that the configuration names are the family's.
+        let chosen = choose("Test", &faces, &config(Some("Light"))).unwrap();
+        assert_eq!(style(&faces, chosen.regular), ("Light", PLAIN));
+        // A group of italics alone takes one as regular.
+        for face in &mut faces {
+            face.in_group = face.style == "Light Italic";
+        }
+        let chosen = choose("Test", &faces, &config(None)).unwrap();
+        assert_eq!(style(&faces, chosen.regular), ("Light Italic", PLAIN));
     }
 
     #[test]

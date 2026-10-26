@@ -24,6 +24,11 @@ pub struct FaceInfo {
     pub weight: f32,
     /// Whether it is italic or oblique.
     pub italic: bool,
+    /// Whether it is in the style group that the family was named by: a
+    /// name of a few of the family's faces, of a weight or a width, as
+    /// `CaskaydiaCove NFM SemiBold` is of the SemiBold faces of CaskaydiaCove
+    /// Nerd Font Mono. No face is when the name is the whole family's.
+    pub in_group: bool,
 }
 
 /// What a face measures at a size, in pixels: the distances that go up from
@@ -135,7 +140,9 @@ pub trait FontBackend {
     /// family.
     fn default_family(&mut self) -> String;
 
-    /// The faces of the family `name`, or `None` if it is not installed.
+    /// The faces of the family `name`, or `None` if it is not installed. A
+    /// name of a style group gives the whole family that the group is in,
+    /// the group's faces marked [`FaceInfo::in_group`].
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>>;
 
     /// What `face` measures at `size` pixels.

@@ -42,8 +42,9 @@ fn menlo_s_faces_are_named_in_english() {
 #[test]
 fn sf_mono_is_the_system_s_monospaced_family() {
     let mut backend = CoreText::new();
-    let default = backend.default_family();
-    let system = backend.family(&default).unwrap();
+    assert_eq!(backend.default_family(), SF_MONO);
+    let system = backend.family(&system_monospaced_family()).unwrap();
+    assert!(system.iter().all(|face| !face.in_group));
     assert_eq!(backend.family(SF_MONO), Some(system.clone()));
     assert_eq!(backend.family("sf mono"), Some(system.clone()));
     let found = styles(&system);
@@ -97,6 +98,53 @@ fn a_style_group_s_name_takes_its_whole_family() {
     let found = styles(&faces);
     assert!(found.contains(&("SemiBold", 600.0, false)), "{found:?}");
     assert!(found.contains(&("ExtraLight", 200.0, false)), "{found:?}");
+    // The name of the SemiBold faces' group, as Terminal.app shows the
+    // SemiBold face.
+    assert_eq!(
+        regular_style(&mut backend, "CaskaydiaCove NFM SemiBold"),
+        "SemiBold"
+    );
+}
+
+/// The style of the regular face that text-core chooses in the family that
+/// `name` names.
+fn regular_style(backend: &mut CoreText, name: &str) -> String {
+    let id = regular(backend, name);
+    let faces = backend.family(name).unwrap();
+    faces
+        .into_iter()
+        .find(|face| face.id == id)
+        .map(|face| face.style)
+        .unwrap()
+}
+
+#[test]
+fn a_style_group_s_name_takes_its_face_as_regular() {
+    // Names that the system's fonts give the faces of a weight.
+    let mut backend = CoreText::new();
+    let faces = backend.family("Avenir Next Demi Bold").unwrap();
+    let group: Vec<&str> = faces
+        .iter()
+        .filter(|face| face.in_group)
+        .map(|face| face.style.as_str())
+        .collect();
+    assert_eq!(group, ["Demi Bold", "Demi Bold Italic"]);
+    let resolved = resolve_faces(&mut backend, &config("Avenir Next Demi Bold", None)).unwrap();
+    let style = |id: FaceId| {
+        faces
+            .iter()
+            .find(|face| face.id == id)
+            .map(|face| face.style.as_str())
+            .unwrap()
+    };
+    assert_eq!(style(resolved.faces.regular.id), "Demi Bold");
+    assert_eq!(style(resolved.faces.bold.id), "Bold");
+    assert_eq!(style(resolved.faces.italic.id), "Demi Bold Italic");
+    assert_eq!(style(resolved.faces.bold_italic.id), "Bold Italic");
+    assert_eq!(regular_style(&mut backend, "Hiragino Sans W3"), "W3");
+    // The family's own name, in any case, names no group.
+    assert_eq!(regular_style(&mut backend, "Avenir Next"), "Regular");
+    assert_eq!(regular_style(&mut backend, "avenir next"), "Regular");
 }
 
 /// The cells of `family`'s regular face at 11, 13 and 22 points, at scales
@@ -210,6 +258,20 @@ fn a_missing_style_lists_the_family_s() {
     assert_eq!(
         error.to_string(),
         "the family `Menlo` has no style `Black`, which `style` names; it has Regular, Italic, Bold, Bold Italic"
+    );
+}
+
+#[test]
+fn a_missing_style_of_the_default_family_names_sf_mono() {
+    let config = FontConfig {
+        style: Some(Name::try_from("Black".to_owned()).unwrap()),
+        ..FontConfig::default()
+    };
+    let error = resolve_faces(&mut CoreText::new(), &config).unwrap_err();
+    let message = error.to_string();
+    assert!(
+        message.starts_with("the family `SF Mono` has no style `Black`"),
+        "{message}"
     );
 }
 

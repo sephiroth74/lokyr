@@ -28,7 +28,8 @@ use objc2_core_text::{
 const PROBE_SIZE: f64 = 12.0;
 
 /// The name of the system's monospaced family, which macOS does not install
-/// under it: the configuration's `SF Mono` takes the system's.
+/// under it: the configuration's `SF Mono` takes the system's, and the
+/// default family is named so, rather than by its hidden name.
 const SF_MONO: &str = "SF Mono";
 
 /// The tags of the tables that the backend reads.
@@ -111,6 +112,35 @@ impl CoreText {
         Some(font)
     }
 
+    /// The faces of `descriptors`, of a family, those of `group` marked as
+    /// the style group's.
+    fn faces_of(
+        &mut self,
+        descriptors: &[CFRetained<CTFontDescriptor>],
+        group: &[FaceId],
+    ) -> Vec<FaceInfo> {
+        descriptors
+            .iter()
+            .map(|descriptor| {
+                // SAFETY: a descriptor that CoreText matched, at a size,
+                // without a matrix.
+                let font = unsafe {
+                    CTFont::with_font_descriptor(descriptor, PROBE_SIZE, std::ptr::null())
+                };
+                let id = self.register(descriptor, &font);
+                FaceInfo {
+                    id,
+                    style: style_name(&font),
+                    weight: weight(&font),
+                    // SAFETY: a font that CoreText made.
+                    italic: unsafe { font.symbolic_traits() }
+                        .contains(CTFontSymbolicTraits::TraitItalic),
+                    in_group: group.contains(&id),
+                }
+            })
+            .collect()
+    }
+
     /// The id of the face of `descriptor`, which it registers the first time.
     fn register(&mut self, descriptor: &CTFontDescriptor, font: &CTFont) -> FaceId {
         // SAFETY: a font that CoreText made.
@@ -127,7 +157,7 @@ impl CoreText {
 
 impl FontBackend for CoreText {
     fn default_family(&mut self) -> String {
-        system_monospaced_family()
+        SF_MONO.to_owned()
     }
 
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
@@ -136,32 +166,27 @@ impl FontBackend for CoreText {
                 .then(|| matching(&system_monospaced_family()))
                 .flatten()
         })?;
-        // A name that some faces give their family, as the four faces of a
-        // style group do, takes the family that they belong to, whole.
-        let family = family_name(&descriptors[0]);
-        let descriptors = match family {
-            Some(family) if family != name => matching(&family).unwrap_or(descriptors),
-            _ => descriptors,
+        // A name that some faces give their family, as the faces of a style
+        // group do, takes the family that they belong to, whole, with the
+        // group's faces marked.
+        let whole = match family_name(&descriptors[0]) {
+            Some(family) if family != name => matching(&family),
+            _ => None,
         };
-        let faces = descriptors
-            .iter()
-            .map(|descriptor| {
-                // SAFETY: a descriptor that CoreText matched, at a size,
-                // without a matrix.
-                let font = unsafe {
-                    CTFont::with_font_descriptor(descriptor, PROBE_SIZE, std::ptr::null())
-                };
-                FaceInfo {
-                    id: self.register(descriptor, &font),
-                    style: style_name(&font),
-                    weight: weight(&font),
-                    // SAFETY: a font that CoreText made.
-                    italic: unsafe { font.symbolic_traits() }
-                        .contains(CTFontSymbolicTraits::TraitItalic),
-                }
-            })
+        let Some(whole) = whole else {
+            return Some(self.faces_of(&descriptors, &[]));
+        };
+        let mut group: Vec<FaceId> = self
+            .faces_of(&descriptors, &[])
+            .into_iter()
+            .map(|face| face.id)
             .collect();
-        Some(faces)
+        // The whole family, under another name or in another case, is no
+        // group of it.
+        if group.len() == whole.len() {
+            group.clear();
+        }
+        Some(self.faces_of(&whole, &group))
     }
 
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics {

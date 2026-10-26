@@ -253,12 +253,14 @@ mod tests {
                         style: "Regular".to_owned(),
                         weight: 400.0,
                         italic: false,
+                        in_group: false,
                     },
                     FaceInfo {
                         id: FaceId(1),
                         style: "Bold".to_owned(),
                         weight: 700.0,
                         italic: false,
+                        in_group: false,
                     },
                 ]
             })
