@@ -13,6 +13,8 @@
 //!
 //! [window]
 //! close-on-exit = "clean"   # clean | always | never
+//! padding-x = 4             # points, at the left and the right
+//! padding-y = 4             # points, at the top and the bottom
 //!
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
@@ -101,12 +103,66 @@ impl OptionAsMeta {
     }
 }
 
-/// The `[window]` section: what a window does.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+/// The `[window]` section: what a window does, and the room around its
+/// grid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
     /// What a window does when its program ends.
     pub close_on_exit: CloseOnExit,
+    /// The room between the grid and the window's left and right edges.
+    pub padding_x: Padding,
+    /// The room between the grid and the window's top and bottom edges.
+    pub padding_y: Padding,
+}
+
+/// The room between the grid and two edges of the window, each, in points,
+/// so that it keeps its look on a Retina display. The pixels that the cells
+/// leave over go to the right and the bottom, so that the grid stays where
+/// it is as the window's size changes.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(try_from = "f64")]
+pub struct Padding(f32);
+
+impl Padding {
+    /// The least.
+    pub const MIN: f32 = 0.0;
+    /// The most.
+    pub const MAX: f32 = 100.0;
+
+    /// The padding in points.
+    pub fn points(self) -> f32 {
+        self.0
+    }
+
+    /// The padding in whole pixels, on a display of `scale`.
+    pub fn pixels(self, scale: f64) -> u32 {
+        // A cast from a float saturates.
+        (f64::from(self.0) * scale).round() as u32
+    }
+}
+
+impl Default for Padding {
+    fn default() -> Self {
+        Self(4.0)
+    }
+}
+
+impl TryFrom<f64> for Padding {
+    type Error = String;
+
+    fn try_from(points: f64) -> Result<Self, Self::Error> {
+        if (f64::from(Self::MIN)..=f64::from(Self::MAX)).contains(&points) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(points as f32))
+        } else {
+            Err(format!(
+                "the window's padding, in points, is from {} to {}, not {points}",
+                Self::MIN,
+                Self::MAX
+            ))
+        }
+    }
 }
 
 /// What a window does when its program ends.
@@ -413,6 +469,8 @@ mod tests {
 
             [window]
             close-on-exit = "never"
+            padding-x = 10
+            padding-y = 2.5
 
             [keyboard]
             option-as-meta = "left"
@@ -420,6 +478,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
+        assert_eq!(config.window.padding_x.points(), 10.0);
+        assert_eq!(config.window.padding_y.points(), 2.5);
         assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
@@ -545,6 +605,28 @@ mod tests {
     }
 
     #[test]
+    fn the_padding_is_in_points_within_its_range() {
+        assert_eq!(Config::default().window.padding_x.points(), 4.0);
+        let config = parse("[window]\npadding-x = 0\npadding-y = 100\n").unwrap();
+        assert_eq!(config.window.padding_x.pixels(2.0), 0);
+        assert_eq!(config.window.padding_y.pixels(2.0), 200);
+        assert_eq!(Padding::try_from(2.3).unwrap().pixels(2.0), 5);
+        assert_eq!(
+            error("[window]\npadding-y = -1\n"),
+            (
+                Some((2, 13)),
+                "the window's padding, in points, is from 0 to 100, not -1".to_owned()
+            )
+        );
+        assert!(Padding::try_from(100.5).is_err());
+        assert!(Padding::try_from(f64::NAN).is_err());
+        assert_eq!(
+            error("[window]\npading-x = 2\n").1,
+            "unknown key `pading-x` in `[window]`; did you mean `padding-x`?"
+        );
+    }
+
+    #[test]
     fn only_the_app_s_version_reads() {
         assert_eq!(parse("config_version = 1"), Ok(Config::default()));
         assert_eq!(
@@ -630,7 +712,10 @@ mod tests {
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
-        assert_eq!(keys::<WindowConfig>(), ["close-on-exit"]);
+        assert_eq!(
+            keys::<WindowConfig>(),
+            ["close-on-exit", "padding-x", "padding-y"]
+        );
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
         assert_eq!(font.len(), 10);

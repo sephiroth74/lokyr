@@ -24,6 +24,8 @@ use bolt_ui_core::pane::{self as cells, CursorLook, Preedit};
 use bolt_ui_core::theme::Theme;
 
 use crate::keys;
+#[cfg(test)]
+use crate::pane::RESIZE_PACE;
 use crate::pane::{Exited, Grid, Pane};
 use crate::watch::Watcher;
 
@@ -178,6 +180,9 @@ pub struct App {
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
+    /// The timer of the next size that a program learns, at its pace, and
+    /// its time.
+    resize_timer: Option<(TimerId, Instant)>,
 }
 
 impl App {
@@ -199,6 +204,7 @@ impl App {
             windows: BTreeMap::new(),
             blink_timer: None,
             exit_timer: None,
+            resize_timer: None,
         }
     }
 
@@ -322,9 +328,10 @@ impl App {
             .clone()
     }
 
-    /// The grid that fits a window of `size`, in the cells of the font at
-    /// its display's scale.
+    /// The grid that fits a window of `size`, less its padding, in the
+    /// cells of the font at its display's scale.
     fn grid(&mut self, size: WindowSize) -> Grid {
+        let (x, y) = self.padding(size.scale);
         let (width, height) = match &mut self.drawing {
             Some(drawing) => {
                 drawing.font.set_scale(size.scale as f32);
@@ -333,15 +340,27 @@ impl App {
             }
             None => UNDRAWN_CELL,
         };
-        let fit =
-            |pixels: u32, cell: u32| (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16;
+        let fit = |pixels: u32, padding: u32, cell: u32| {
+            (pixels.saturating_sub(2 * padding) / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16
+        };
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
         Grid {
-            columns: fit(size.pixels.width, width),
-            rows: fit(size.pixels.height, height),
+            columns: fit(size.pixels.width, x, width),
+            rows: fit(size.pixels.height, y, height),
             cell_width: pixels(width),
             cell_height: pixels(height),
         }
+    }
+
+    /// The room between the grid and the window's edges, in pixels on a
+    /// display of `scale`: at the left and the right, and at the top and
+    /// the bottom.
+    fn padding(&self, scale: f64) -> (u32, u32) {
+        let window = &self.config.window;
+        (
+            window.padding_x.pixels(scale),
+            window.padding_y.pixels(scale),
+        )
     }
 
     /// The surface of `window`, if the app draws and the platform has a
@@ -391,17 +410,32 @@ impl App {
         self.blink_timer = Some((platform.start_timer(at), at));
     }
 
+    /// Keeps the timer of the programs' sizes at `at`, unless it comes
+    /// sooner.
+    fn pace_at(&mut self, platform: &mut dyn Platform, at: Instant) {
+        if self.resize_timer.is_some_and(|(_, current)| current <= at) {
+            return;
+        }
+        if let Some((timer, _)) = self.resize_timer.take() {
+            platform.cancel_timer(timer);
+        }
+        self.resize_timer = Some((platform.start_timer(at), at));
+    }
+
     /// Draws `window`, of `size`: its program's screen, brought up to date,
-    /// in the grid that fits its content, with the cursor.
+    /// in the grid that fits its content within the padding, with the
+    /// cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         let grid = self.grid(size);
+        let (left, top) = self.padding(size.scale);
+        let now = Instant::now();
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        state.pane.resize(grid);
+        let due = state.pane.resize(grid, now);
         // Output starts the cursor blinking again, on, as a key does.
         if state.pane.update() {
-            state.blink.restart(Instant::now());
+            state.blink.restart(now);
         }
         // The input method's candidates go at the cursor's cell.
         let at = state.pane.snapshot().cursor().position;
@@ -409,14 +443,17 @@ impl App {
         platform.set_text_area(
             window,
             Point {
-                x: f64::from(at.x) * width / size.scale,
-                y: f64::from(at.y) * height / size.scale,
+                x: (f64::from(left) + f64::from(at.x) * width) / size.scale,
+                y: (f64::from(top) + f64::from(at.y) * height) / size.scale,
             },
             Size {
                 width: width / size.scale,
                 height: height / size.scale,
             },
         );
+        if let Some(due) = due {
+            self.pace_at(platform, due);
+        }
         let shape = self.cursor(platform, window, Instant::now());
         let config = self.config.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
@@ -435,7 +472,11 @@ impl App {
         let snapshot = state.pane.snapshot();
         let font = &mut drawing.font;
         let mut glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
-        let mut batch = cells::cells(snapshot, &cell, 0, 0, None, cursor, &mut glyph);
+        let (x, y) = (
+            i32::try_from(left).unwrap_or(i32::MAX),
+            i32::try_from(top).unwrap_or(i32::MAX),
+        );
+        let mut batch = cells::cells(snapshot, &cell, x, y, None, cursor, &mut glyph);
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, &mut glyph);
         }
@@ -507,6 +548,24 @@ impl Handler for App {
                     file.reading = None;
                 }
                 self.reload(platform);
+            }
+            // The programs whose grid changed within their pace learn it.
+            AppEvent::Timer(timer)
+                if self.resize_timer.is_some_and(|(resize, _)| resize == timer) =>
+            {
+                let Some((_, at)) = self.resize_timer.take() else {
+                    return;
+                };
+                // The timer fires once its time has come, or later.
+                let now = Instant::now().max(at);
+                let next = self
+                    .windows
+                    .values_mut()
+                    .filter_map(|state| state.pane.pace(now))
+                    .min();
+                if let Some(next) = next {
+                    self.pace_at(platform, next);
+                }
             }
             AppEvent::Timer(timer) if self.exit_timer == Some(timer) => {
                 self.exit_timer = None;
@@ -993,9 +1052,150 @@ mod tests {
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "hello");
-        // At the window's grid: 1600 by 1000 pixels, of cells of 8 by 16.
+        // At the window's grid: 1600 by 1000 pixels, less 8 of padding at
+        // each edge, of cells of 8 by 16.
+        let snapshot = app.windows[&window].pane.snapshot();
+        assert_eq!((snapshot.cols(), snapshot.rows()), (198, 61));
+    }
+
+    /// The config of a window without padding.
+    fn unpadded() -> Config {
+        let mut config = Config::default();
+        config.window.padding_x = 0.0.try_into().unwrap();
+        config.window.padding_y = 0.0.try_into().unwrap();
+        config
+    }
+
+    /// A size of a window's content, in points, at a scale of 2: cells of 8
+    /// by 16 pixels make a column of 4 points and a row of 8.
+    fn points(width: f64, height: f64) -> WindowSize {
+        WindowSize::new(Size { width, height }, 2.0)
+    }
+
+    /// The text of every row of a window's screen.
+    fn screen(app: &App, window: WindowId) -> Vec<String> {
+        let rows = app.windows[&window].pane.snapshot().rows();
+        (0..rows).map(|at| row(app, window, at)).collect()
+    }
+
+    #[test]
+    fn the_grid_fits_the_window_less_its_padding() {
+        let (mut fake, mut app, path) = with_file("padding", "[window]\npadding-x = 10\n");
+        // 1600 by 1000 pixels, less 20 at the left and the right and 8 at
+        // the top and the bottom.
+        let grid = app.grid(points(800.0, 500.0));
+        assert_eq!((grid.columns, grid.rows), (195, 61));
+        // A window smaller than its padding keeps a cell.
+        let grid = app.grid(points(15.0, 5.0));
+        assert_eq!((grid.columns, grid.rows), (1, 1));
+        // The input method's candidates go at the cursor's cell, within the
+        // padding.
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        let (origin, _) = fake.window(window).unwrap().text_area.unwrap();
+        assert_eq!((origin.x, origin.y), (10.0, 4.0));
+        // A reloaded padding gives the grid that it leaves.
+        std::fs::write(&path, "[window]\npadding-x = 0\npadding-y = 0\n").unwrap();
+        change(&mut fake, &mut app);
+        assert!(fake.window(window).unwrap().frame_requested);
+        fake.send(&mut app, window, WindowEvent::Frame);
         let snapshot = app.windows[&window].pane.snapshot();
         assert_eq!((snapshot.cols(), snapshot.rows()), (200, 62));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_resize_storm_tells_the_program_its_size_at_its_pace() {
+        let mut fake = Fake::default();
+        // The program prints its size at each SIGWINCH.
+        let script = "trap 'stty size' WINCH; echo ready; while :; do sleep 0.02; done";
+        let mut app = app(unpadded(), shell(script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "ready");
+        // A live resize's steps, as fast as they come.
+        let start = Instant::now();
+        let mut told = Vec::new();
+        let grids: Vec<Grid> = (0..50)
+            .map(|step| {
+                let size = points(400.0 + f64::from(step) * 4.0, 300.0);
+                assert!(fake.send(&mut app, window, WindowEvent::Resized(size)));
+                told.push(app.windows[&window].pane.told());
+                app.grid(size)
+            })
+            .collect();
+        let elapsed = start.elapsed();
+        let last = grids[49];
+        assert_eq!((last.columns, last.rows), (149, 37));
+        // The terminal takes each step at once, and the program the first,
+        // then one every 50 ms at most.
+        let pane = &app.windows[&window].pane;
+        assert_eq!(pane.snapshot().cols(), last.columns);
+        assert_eq!(told[0], grids[0]);
+        told.dedup();
+        let paced = elapsed.as_millis() / RESIZE_PACE.as_millis() + 1;
+        assert!(
+            told.len() as u128 <= paced,
+            "{} sizes in {elapsed:?}",
+            told.len()
+        );
+        // Then the last step, once, as its timer comes: the timer of a size
+        // told since it started comes first, and starts it again.
+        for _ in 0..2 {
+            let Some((timer, at)) = app.resize_timer else {
+                break;
+            };
+            assert_eq!(fake.timers().collect::<Vec<_>>(), [(timer, at)]);
+            assert_eq!(fake.fire_timers(&mut app, at), 1);
+        }
+        assert_eq!(app.resize_timer, None);
+        assert_eq!(app.windows[&window].pane.told(), last);
+        // The program saw few sizes, and the last one.
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window).iter().any(|line| line == "37 149")
+        });
+        let sizes: Vec<String> = screen(&app, window)
+            .into_iter()
+            .skip(1)
+            .filter(|line| !line.is_empty())
+            .collect();
+        assert!(sizes.len() <= told.len() + 1, "{sizes:?}");
+        assert_eq!(sizes.last().map(String::as_str), Some("37 149"));
+    }
+
+    #[test]
+    fn the_screen_and_its_scrollback_reflow_with_the_window() {
+        let mut fake = Fake::default();
+        let script = "seq 1 3000; printf '%150s' '' | tr ' ' x; sleep 10";
+        let mut app = app(unpadded(), shell(script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let line = "x".repeat(150);
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 61) == line);
+        let before = screen(&app, window);
+        assert_eq!(before[60], "3000");
+        // Half as wide, the line takes two rows, and the screen keeps its
+        // height.
+        fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 500.0)));
+        let narrow = screen(&app, window);
+        assert_eq!(narrow.len(), 62);
+        assert_eq!(narrow[59..], ["3000", &line[..100], &line[100..]]);
+        // Through other sizes, taller and shorter too, and back, the screen
+        // is as it was: no row lost, none doubled.
+        for (width, height) in [
+            (52.0, 500.0),
+            (244.0, 200.0),
+            (1000.0, 900.0),
+            (148.0, 500.0),
+        ] {
+            fake.send(
+                &mut app,
+                window,
+                WindowEvent::Resized(points(width, height)),
+            );
+        }
+        fake.send(&mut app, window, WindowEvent::Resized(points(800.0, 500.0)));
+        assert_eq!(screen(&app, window), before);
     }
 
     #[test]
@@ -1158,10 +1358,11 @@ mod tests {
         let (mut fake, mut app) = started();
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Frame);
-        // The candidates' place: the cursor's cell, at the top left, in the
-        // points of cells of 8 by 16 pixels at a scale of 2.
+        // The candidates' place: the cursor's cell, at the top left within
+        // the padding of 4 points, in the points of cells of 8 by 16 pixels
+        // at a scale of 2.
         let (origin, size) = fake.window(window).unwrap().text_area.unwrap();
-        assert_eq!((origin.x, origin.y), (0.0, 0.0));
+        assert_eq!((origin.x, origin.y), (4.0, 4.0));
         assert_eq!((size.width, size.height), (4.0, 8.0));
         let composing = Ime::Preedit {
             text: "にほ".to_owned(),

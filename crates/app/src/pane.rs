@@ -18,6 +18,11 @@ const TERM: &str = "xterm-256color";
 /// before it tells that the program ended, without its status.
 const EXIT_WAIT: Duration = Duration::from_secs(1);
 
+/// How often a pane tells its program a new size at most: a live resize
+/// changes the grid at each step, and the program, which redraws on each
+/// SIGWINCH, learns of the steps a few times a second, and of the last one.
+pub(crate) const RESIZE_PACE: Duration = Duration::from_millis(50);
+
 /// A pane's grid: its columns and rows, and the pixels of its cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Grid {
@@ -62,6 +67,9 @@ pub(crate) struct Pane {
     snapshot: Snapshot,
     /// The grid that the session's terminal has.
     grid: Grid,
+    /// The grid that the program was told last, through the PTY, and when,
+    /// unless it was told only as it started.
+    told: (Grid, Option<Instant>),
     /// When the program's output ended, while the pane waits for its status.
     ended: Option<Instant>,
     /// Whether the pane keeps the screen of a program that ended, or that
@@ -78,6 +86,7 @@ impl std::fmt::Debug for Pane {
         f.debug_struct("Pane")
             .field("running", &self.session.is_some())
             .field("grid", &self.grid)
+            .field("told", &self.told)
             .field("ended", &self.ended)
             .field("kept", &self.kept)
             .finish_non_exhaustive()
@@ -95,6 +104,7 @@ impl Pane {
             session: None,
             snapshot: Snapshot::default(),
             grid,
+            told: (grid, None),
             ended: None,
             kept: false,
             through_login: matches!(program, Program::LoginShell),
@@ -138,21 +148,46 @@ impl Pane {
             .is_some_and(|copied| copied > 0)
     }
 
-    /// Gives the terminal `grid`, when it has another, so that the program
-    /// draws again at its size.
-    pub(crate) fn resize(&mut self, grid: Grid) {
-        if grid == self.grid {
-            return;
-        }
-        self.grid = grid;
-        if let Some(session) = &self.session {
-            session
-                .lock()
-                .set_cell_size(grid.cell_width, grid.cell_height);
-            if let Err(error) = session.resize(grid.size()) {
-                eprintln!("bolt: the terminal cannot take its new size: {error}");
+    /// Gives the terminal `grid` at once, when it has another, reflowing
+    /// its screen, and tells the program, as [`Pane::pace`] does.
+    pub(crate) fn resize(&mut self, grid: Grid, now: Instant) -> Option<Instant> {
+        if grid != self.grid {
+            self.grid = grid;
+            if let Some(session) = &self.session {
+                let mut terminal = session.lock();
+                terminal.set_cell_size(grid.cell_width, grid.cell_height);
+                terminal.resize(grid.columns, grid.rows);
             }
         }
+        self.pace(now)
+    }
+
+    /// Tells the program the terminal's grid, when it was told another, so
+    /// that it draws again at that size; unless it was told one within
+    /// [`RESIZE_PACE`] before `now`: then returns when to tell it.
+    pub(crate) fn pace(&mut self, now: Instant) -> Option<Instant> {
+        let (told, at) = self.told;
+        if told == self.grid || self.kept {
+            return None;
+        }
+        if let Some(at) = at
+            && now < at + RESIZE_PACE
+        {
+            return Some(at + RESIZE_PACE);
+        }
+        self.told = (self.grid, Some(now));
+        if let Some(session) = &self.session
+            && let Err(error) = session.resize_pty(self.grid.size())
+        {
+            eprintln!("bolt: the terminal cannot take its new size: {error}");
+        }
+        None
+    }
+
+    /// The grid that the program was told last.
+    #[cfg(test)]
+    pub(crate) fn told(&self) -> Grid {
+        self.told.0
     }
 
     /// Sends `event` to the program, with `options`. A key with Command
@@ -268,5 +303,54 @@ mod tests {
         // Another program's status is its own, whatever a shell in it told.
         let own = Some(Exit::Code(2));
         assert_eq!(status(own, Some(0), false), own);
+    }
+
+    #[test]
+    fn a_live_resize_tells_the_program_at_its_pace() {
+        let grid = |columns| Grid {
+            columns,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+        let cat = Program::command("/bin/cat", [] as [&str; 0]);
+        let mut pane = Pane::spawn(&cat, grid(80), &Colors::default(), Waker::new(|| {}));
+        // A second of steps, one every 8 ms, as a display of 120 Hz draws
+        // them, with the timer that the app keeps for the pace.
+        let start = Instant::now();
+        let step = Duration::from_millis(8);
+        let mut timer: Option<Instant> = None;
+        let mut tells = Vec::new();
+        for n in 0..125_u16 {
+            let now = start + step * u32::from(n);
+            if let Some(at) = timer.filter(|&at| at <= now) {
+                let told = pane.told();
+                timer = pane.pace(at);
+                if pane.told() != told {
+                    tells.push(at);
+                }
+            }
+            let told = pane.told();
+            timer = timer.or(pane.resize(grid(81 + n), now));
+            if pane.told() != told {
+                tells.push(now);
+            }
+        }
+        // The steps' last size comes once more, at the end.
+        assert_ne!(pane.told(), grid(205));
+        assert_eq!(pane.pace(timer.unwrap()), None);
+        assert_eq!(pane.told(), grid(205));
+        // The first step at once, then one every 50 ms at most.
+        assert_eq!(tells[0], start);
+        assert!(
+            tells
+                .windows(2)
+                .all(|pair| pair[1] - pair[0] >= RESIZE_PACE)
+        );
+        assert!(tells.len() <= 21, "{}", tells.len());
+        // Unchanged, the grid tells nothing, and takes no timer.
+        let later = timer.unwrap() + RESIZE_PACE;
+        assert_eq!(pane.resize(grid(205), later), None);
+        assert_eq!(pane.told(), grid(205));
     }
 }

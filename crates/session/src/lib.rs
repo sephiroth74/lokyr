@@ -265,6 +265,14 @@ impl Session {
         self.pty.resize(size)
     }
 
+    /// Tells the program `size` through the PTY, without resizing the grid,
+    /// which the embedder resized first: one that resizes the grid at each
+    /// step of a live resize tells the program at its own pace, so that it
+    /// redraws a few times a second rather than at each step.
+    pub fn resize_pty(&self, size: Size) -> io::Result<()> {
+        self.pty.resize(size)
+    }
+
     /// How many slices of output the I/O thread has parsed.
     #[cfg(test)]
     fn slices(&self) -> u64 {
