@@ -1,4 +1,4 @@
-use bolt_text_core::{CellMetrics, FaceError, FontConfig, Name, resolve_faces};
+use bolt_text_core::{BitmapFormat, CellMetrics, FaceError, FontConfig, Name, resolve_faces};
 
 use super::*;
 
@@ -10,14 +10,11 @@ fn styles(faces: &[FaceInfo]) -> Vec<(&str, f32, bool)> {
         .collect()
 }
 
-/// The regular face of the family `name`.
+/// The regular face of the family `name`, as text-core chooses it.
 fn regular(backend: &mut CoreText, name: &str) -> FaceId {
-    let faces = backend.family(name).expect("the family is installed");
-    faces
-        .iter()
-        .find(|face| face.style == "Regular")
-        .expect("the family has a regular face")
-        .id
+    let resolved = resolve_faces(backend, &config(name, None)).expect("the family has faces");
+    assert_eq!(resolved.missing_family, None, "{name} is installed");
+    resolved.faces.regular.id
 }
 
 fn config(family: &str, style: Option<&str>) -> FontConfig {
@@ -243,4 +240,253 @@ fn coretext_s_weights_take_appkit_s_numbers() {
     assert_eq!(css_weight(0.62), 900.0);
     assert_eq!(css_weight(2.0), 1000.0);
     assert_eq!(css_weight(-0.2), 350.0);
+}
+
+/// The pixels of `bitmap` whose coverage, or alpha, passes `threshold`, as
+/// the rows and columns that bound them, in the cell whose baseline is
+/// `baseline`: left, top, right and bottom, the last two past the ink.
+fn ink(bitmap: &Bitmap, baseline: u32, threshold: u8) -> Option<(i32, i32, i32, i32)> {
+    let (bytes, channel) = match bitmap.format {
+        BitmapFormat::Gray => (1, 0),
+        BitmapFormat::Rgba => (4, 3),
+    };
+    let width = bitmap.width as usize;
+    let mut bounds: Option<(i32, i32, i32, i32)> = None;
+    for (row, pixels) in bitmap.data.chunks(width * bytes).enumerate() {
+        for (column, pixel) in pixels.chunks(bytes).enumerate() {
+            if pixel[channel] <= threshold {
+                continue;
+            }
+            let x = bitmap.left + column as i32;
+            let y = baseline as i32 - bitmap.top + row as i32;
+            bounds = Some(match bounds {
+                None => (x, y, x + 1, y + 1),
+                Some((l, t, r, b)) => (l.min(x), t.min(y), r.max(x + 1), b.max(y + 1)),
+            });
+        }
+    }
+    bounds
+}
+
+/// The cell of Menlo's regular face at `pixels`.
+fn menlo_cell(backend: &mut CoreText, pixels: f32) -> CellMetrics {
+    let face = regular(backend, "Menlo");
+    CellMetrics::new(&backend.metrics(face, pixels), &FontConfig::default())
+}
+
+fn glyph(
+    backend: &mut CoreText,
+    family: &str,
+    character: char,
+    pixels: f32,
+    synthesis: Synthesis,
+) -> Bitmap {
+    let face = regular(backend, family);
+    let glyph = backend
+        .glyph(face, character)
+        .expect("the face has the character");
+    backend.rasterize(face, glyph, pixels, synthesis)
+}
+
+fn total(bitmap: &Bitmap) -> u64 {
+    bitmap.data.iter().map(|&byte| u64::from(byte)).sum()
+}
+
+#[test]
+fn ascii_keeps_within_its_cell() {
+    let mut backend = CoreText::new();
+    for pixels in [13.0, 26.0] {
+        let cell = menlo_cell(&mut backend, pixels);
+        for character in ['M', 'g', 'j', '_', '|', '@', 'W'] {
+            let bitmap = glyph(
+                &mut backend,
+                "Menlo",
+                character,
+                pixels,
+                Synthesis::default(),
+            );
+            assert_eq!(bitmap.format, BitmapFormat::Gray);
+            assert_eq!(bitmap.data.len(), (bitmap.width * bitmap.height) as usize);
+            // A glyph that meets its neighbours, as `_` does, can take a
+            // pixel of theirs, across; never one of the rows above or
+            // below.
+            let (left, top, right, bottom) = ink(&bitmap, cell.baseline, 64).expect("ink");
+            assert!(
+                left >= -1
+                    && top >= 0
+                    && right <= cell.width as i32 + 1
+                    && bottom <= cell.height as i32,
+                "{character} at {pixels}: {:?} in {cell:?}",
+                (left, top, right, bottom)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_space_draws_nothing() {
+    let mut backend = CoreText::new();
+    let bitmap = glyph(&mut backend, "Menlo", ' ', 13.0, Synthesis::default());
+    assert_eq!((bitmap.width, bitmap.height), (0, 0));
+    assert!(bitmap.data.is_empty());
+}
+
+#[test]
+fn cjk_keeps_within_two_cells() {
+    let mut backend = CoreText::new();
+    for pixels in [13.0, 26.0] {
+        let cell = menlo_cell(&mut backend, pixels);
+        for character in ['日', '本', '語', '國'] {
+            let bitmap = glyph(
+                &mut backend,
+                "Hiragino Sans",
+                character,
+                pixels,
+                Synthesis::default(),
+            );
+            let (left, top, right, bottom) = ink(&bitmap, cell.baseline, 64).expect("ink");
+            assert!(
+                left >= 0
+                    && top >= 0
+                    && right <= 2 * cell.width as i32
+                    && bottom <= cell.height as i32,
+                "{character} at {pixels}: {:?} in two of {cell:?}",
+                (left, top, right, bottom)
+            );
+            // Wider than one cell: it takes the two.
+            assert!(right - left > cell.width as i32, "{character}");
+        }
+    }
+}
+
+#[test]
+fn an_emoji_keeps_its_colors() {
+    let mut backend = CoreText::new();
+    let cell = menlo_cell(&mut backend, 26.0);
+    let bitmap = glyph(
+        &mut backend,
+        "Apple Color Emoji",
+        '🦀',
+        26.0,
+        Synthesis::default(),
+    );
+    assert_eq!(bitmap.format, BitmapFormat::Rgba);
+    assert_eq!(
+        bitmap.data.len(),
+        (bitmap.width * bitmap.height * 4) as usize
+    );
+    let pixels: Vec<&[u8]> = bitmap.data.chunks(4).collect();
+    // Premultiplied: no channel past its alpha.
+    assert!(
+        pixels
+            .iter()
+            .all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3])
+    );
+    // The crab is red: opaque pixels much redder than green.
+    let red = pixels
+        .iter()
+        .filter(|p| p[3] > 200 && u32::from(p[0]) > u32::from(p[1]) + 80)
+        .count();
+    assert!(red > 20, "{red} red pixels");
+    // Its width takes two cells, within a pixel either way.
+    let (left, _, right, _) = ink(&bitmap, cell.baseline, 64).expect("ink");
+    assert!(
+        right - left <= 2 * cell.width as i32 + 2,
+        "{:?} in two of {cell:?}",
+        (left, right)
+    );
+}
+
+#[test]
+fn smoothing_thickens_the_strokes() {
+    let smooth = glyph(
+        &mut CoreText::with_font_smoothing(true),
+        "Menlo",
+        'm',
+        13.0,
+        Synthesis::default(),
+    );
+    let plain = glyph(
+        &mut CoreText::with_font_smoothing(false),
+        "Menlo",
+        'm',
+        13.0,
+        Synthesis::default(),
+    );
+    assert!(
+        total(&smooth) > total(&plain) * 11 / 10,
+        "{} {}",
+        total(&smooth),
+        total(&plain)
+    );
+}
+
+/// How far right the ink of `bitmap`'s top rows is from that of its bottom
+/// rows, in pixels: the lean of a stem.
+fn lean(bitmap: &Bitmap) -> f32 {
+    let width = bitmap.width as usize;
+    let centre = |rows: &[u8]| {
+        let (sum, weight) = rows
+            .chunks(width)
+            .flat_map(|row| row.iter().enumerate())
+            .fold((0.0, 0.0), |(sum, weight), (column, &value)| {
+                (
+                    sum + column as f32 * f32::from(value),
+                    weight + f32::from(value),
+                )
+            });
+        sum / weight
+    };
+    let quarter = (bitmap.height as usize / 4) * width;
+    centre(&bitmap.data[..quarter]) - centre(&bitmap.data[bitmap.data.len() - quarter..])
+}
+
+#[test]
+fn synthesis_draws_a_heavier_and_a_slanted_face() {
+    let mut backend = CoreText::with_font_smoothing(false);
+    let regular = glyph(&mut backend, "Menlo", 'I', 26.0, Synthesis::default());
+    let bold = glyph(
+        &mut backend,
+        "Menlo",
+        'I',
+        26.0,
+        Synthesis {
+            bold: true,
+            italic: false,
+        },
+    );
+    let italic = glyph(
+        &mut backend,
+        "Menlo",
+        'I',
+        26.0,
+        Synthesis {
+            bold: false,
+            italic: true,
+        },
+    );
+    assert!(
+        total(&bold) > total(&regular) * 6 / 5,
+        "{} {}",
+        total(&bold),
+        total(&regular)
+    );
+    // Upright, the stem stands; slanted by 12°, its top is a fifth of its
+    // height to the right of its bottom.
+    assert!(lean(&regular).abs() < 1.0, "{}", lean(&regular));
+    assert!(lean(&italic) > 2.5, "{}", lean(&italic));
+    // The slanted glyph keeps within its bitmap: nothing at its edges.
+    let width = italic.width as usize;
+    for row in italic.data.chunks(width) {
+        assert!(row[0] == 0 && row[width - 1] == 0);
+    }
+}
+
+#[test]
+fn twice_the_scale_twice_the_glyph() {
+    let mut backend = CoreText::new();
+    let small = glyph(&mut backend, "Menlo", 'M', 13.0, Synthesis::default());
+    let large = glyph(&mut backend, "Menlo", 'M', 26.0, Synthesis::default());
+    let near = |a: u32, b: u32| a.abs_diff(b) <= 3;
+    assert!(near(large.width, 2 * small.width) && near(large.height, 2 * small.height));
 }

@@ -1,8 +1,8 @@
 //! CoreText font backend for macOS.
 //!
 //! Font discovery, fallback, shaping and rasterization, on CoreText: the
-//! [`CoreText`] backend finds a family's faces with font descriptors and
-//! measures them.
+//! [`CoreText`] backend finds a family's faces with font descriptors,
+//! measures them, and draws their glyphs.
 
 #![cfg(target_os = "macos")]
 
@@ -15,7 +15,8 @@ use bolt_text_core::{
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
-    CFArray, CFDictionary, CFNumber, CFRetained, CFSet, CFString, CFType, Type, kCFTypeSetCallBacks,
+    CFArray, CFDictionary, CFNumber, CFRetained, CFSet, CFString, CFType, CGAffineTransform, Type,
+    kCFTypeSetCallBacks,
 };
 use objc2_core_text::{
     CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions,
@@ -36,26 +37,78 @@ const FVAR: u32 = u32::from_be_bytes(*b"fvar");
 
 /// The font backend of CoreText. The faces that it finds keep their ids as
 /// long as it lives.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CoreText {
     /// The faces found, by their ids.
     faces: Vec<CFRetained<CTFontDescriptor>>,
     /// The ids of the faces found, by their PostScript names.
     ids: HashMap<String, FaceId>,
+    /// The faces made at a size, by their ids, the bits of the size, and
+    /// whether they are slanted.
+    fonts: HashMap<(FaceId, u64, bool), CFRetained<CTFont>>,
+    /// Whether glyphs are drawn with macOS's font smoothing.
+    smoothing: bool,
+}
+
+impl Default for CoreText {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CoreText {
-    /// A backend that has found no face yet.
+    /// A backend that has found no face yet, and smooths fonts as macOS
+    /// does.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_font_smoothing(raster::system_smooths_fonts())
+    }
+
+    /// A backend that has found no face yet, and smooths fonts or not.
+    pub fn with_font_smoothing(smoothing: bool) -> Self {
+        Self {
+            faces: Vec::new(),
+            ids: HashMap::new(),
+            fonts: HashMap::new(),
+            smoothing,
+        }
     }
 
     /// The face `face` at `size`, if the backend found it.
-    fn font(&self, face: FaceId, size: f64) -> Option<CFRetained<CTFont>> {
+    fn font(&mut self, face: FaceId, size: f64) -> Option<CFRetained<CTFont>> {
+        self.font_slanted(face, size, false)
+    }
+
+    /// The face `face` at `size`, slanted as a synthesized italic or not, if
+    /// the backend found it.
+    fn font_slanted(
+        &mut self,
+        face: FaceId,
+        size: f64,
+        slanted: bool,
+    ) -> Option<CFRetained<CTFont>> {
+        let key = (face, size.to_bits(), slanted);
+        if let Some(font) = self.fonts.get(&key) {
+            return Some(font.clone());
+        }
         let descriptor = self.faces.get(usize::try_from(face.0).ok()?)?;
-        // SAFETY: a descriptor that CoreText matched, at a size, without a
-        // matrix.
-        Some(unsafe { CTFont::with_font_descriptor(descriptor, size, std::ptr::null()) })
+        let shear = CGAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: raster::ITALIC_SHEAR,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        let matrix = if slanted {
+            &raw const shear
+        } else {
+            std::ptr::null()
+        };
+        // SAFETY: a descriptor that CoreText matched, at a size, with a
+        // matrix that outlives the call or none.
+        let font = unsafe { CTFont::with_font_descriptor(descriptor, size, matrix) };
+        self.fonts.insert(key, font.clone());
+        Some(font)
     }
 
     /// The id of the face of `descriptor`, which it registers the first time.
@@ -166,12 +219,16 @@ impl FontBackend for CoreText {
 
     fn rasterize(
         &mut self,
-        _face: FaceId,
-        _glyph: GlyphId,
-        _size: f32,
-        _synthesis: Synthesis,
+        face: FaceId,
+        glyph: GlyphId,
+        size: f32,
+        synthesis: Synthesis,
     ) -> Bitmap {
-        unimplemented!("rasterization with CoreText is not implemented yet")
+        let size = f64::from(size);
+        let Some(font) = self.font_slanted(face, size, synthesis.italic) else {
+            return Bitmap::empty(bolt_text_core::BitmapFormat::Gray);
+        };
+        raster::rasterize(&font, glyph, size, synthesis, self.smoothing)
     }
 }
 
@@ -351,5 +408,6 @@ fn be_i16(bytes: &[u8], at: usize) -> Option<i16> {
     Some(i16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]))
 }
 
+mod raster;
 #[cfg(test)]
 mod tests;
