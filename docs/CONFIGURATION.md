@@ -7,8 +7,8 @@ Every key and every section can be left out, and then takes its default: an empt
 ## The file
 
 - **Where it is**: `~/.config/bolt/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/bolt/config.toml` instead.
-- **Links**: the file can be a symbolic link, as dotfiles managers make it. Bolt watches the file the link points to as well.
-- **Reloading**: Bolt applies the file as soon as you save it, without a restart, whatever the editor, those that save by writing another file and renaming it over the config too.
+- **Links**: the file can be a symbolic link, as dotfiles managers such as GNU Stow make it. Bolt watches the file the link points to as well.
+- **Reloading**: Bolt applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor.
 - **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults.
 - **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Bolt does not know, it names the nearest key that it knows:
 
@@ -57,7 +57,7 @@ The font of the text: its family, its size and the faces that bold and italic te
 
 ### `family`
 
-The font family, by its name, such as `"Menlo"` or `"CaskaydiaCove NFM"`.
+The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` or `"CaskaydiaCove NFM"`.
 
 - **Default**: the system's monospaced font, SF Mono.
 - The case does not matter: `"menlo"` is Menlo.
@@ -120,7 +120,7 @@ Bolt reads and checks this key, but does not apply it yet: it comes with shaping
 
 ## `[cursor]`
 
-The cursor that programs start with. Programs change its shape and its blinking, as editors do in their insert mode, with the escape sequence DECSCUSR; `CSI 0 SP q`, which programs send to give the cursor back, and a reset bring these settings back.
+The cursor that programs start with. Programs change its shape and its blinking, as vim does in insert mode, with the escape sequence DECSCUSR; `CSI 0 SP q`, which programs send to give the cursor back, and a reset bring these settings back.
 
 ### `shape`
 
