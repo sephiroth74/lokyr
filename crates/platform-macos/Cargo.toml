@@ -33,6 +33,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSMenuItem",
     "NSPasteboard",
     "NSResponder",
+    "NSTextInputClient",
     "NSRunningApplication",
     "NSView",
     "NSWindow",
@@ -49,6 +50,7 @@ objc2-foundation = { workspace = true, features = [
     "std",
     "block2",
     "NSArray",
+    "NSAttributedString",
     "NSDate",
     "NSDictionary",
     "NSGeometry",
@@ -56,6 +58,7 @@ objc2-foundation = { workspace = true, features = [
     "NSNotification",
     "NSObjCRuntime",
     "NSObject",
+    "NSRange",
     "NSRunLoop",
     "NSString",
     "NSTimer",
@@ -93,6 +96,10 @@ harness = false
 
 [[test]]
 name = "keys"
+harness = false
+
+[[test]]
+name = "text_input"
 harness = false
 
 [lints]

@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, TimerId, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, Point, Size, TimerId,
+    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -27,6 +27,8 @@ pub struct FakeWindow {
     /// Whether the app asked for a frame, which the next
     /// [`WindowEvent::Frame`] that a test sends gives.
     pub frame_requested: bool,
+    /// Where the app said that the typed text goes, if it said.
+    pub text_area: Option<(Point, Size)>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -54,6 +56,8 @@ pub struct Fake {
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
     timers: BTreeMap<TimerId, Instant>,
+    /// Which Option keys act as Meta.
+    option_as_meta: (bool, bool),
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -78,6 +82,7 @@ impl Fake {
             clipboard: None,
             alerts: Vec::new(),
             timers: BTreeMap::new(),
+            option_as_meta: (false, false),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -207,6 +212,12 @@ impl Fake {
         &self.alerts
     }
 
+    /// Which Option keys act as Meta, as the app said: the left one, and
+    /// the right one.
+    pub fn option_as_meta(&self) -> (bool, bool) {
+        self.option_as_meta
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -241,6 +252,7 @@ impl Platform for Fake {
                 size: WindowSize::new(attributes.size, self.scale),
                 occluded: false,
                 frame_requested: false,
+                text_area: None,
             },
         );
         Ok(id)
@@ -312,5 +324,15 @@ impl Platform for Fake {
 
     fn cancel_timer(&mut self, timer: TimerId) {
         self.timers.remove(&timer);
+    }
+
+    fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.text_area = Some((origin, size));
+        }
+    }
+
+    fn set_option_as_meta(&mut self, left: bool, right: bool) {
+        self.option_as_meta = (left, right);
     }
 }

@@ -159,6 +159,13 @@ impl Pane {
         session.key(event, options);
     }
 
+    /// Sends `text`, which an input method committed.
+    pub(crate) fn text(&self, text: &str) {
+        if let Some(session) = &self.session {
+            session.text(text);
+        }
+    }
+
     /// Gives the terminal the theme's `colors`.
     pub(crate) fn set_colors(&self, colors: &Colors) {
         if let Some(session) = &self.session {

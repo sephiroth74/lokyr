@@ -1,12 +1,13 @@
 //! The [`Platform`] that the app's handler talks to.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use bolt_platform_core::{
-    Alert, AlertId, Appearance, Error, MainMenu, Platform, TimerId, Waker, WindowAttributes,
-    WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
@@ -38,6 +39,8 @@ pub(crate) struct Backend {
     alerts: HashMap<AlertId, OpenAlert>,
     /// The timers that have not fired, or whose firing waits its turn.
     timers: HashMap<TimerId, Retained<NSTimer>>,
+    /// Which Option keys act as Meta, which every window's view reads.
+    option_as_meta: Rc<Cell<(bool, bool)>>,
     /// The target of the main menu's items, which the menu does not retain.
     menu_target: Option<Retained<MenuTarget>>,
     last_id: u64,
@@ -54,6 +57,7 @@ impl Backend {
             windows: BTreeMap::new(),
             alerts: HashMap::new(),
             timers: HashMap::new(),
+            option_as_meta: Rc::new(Cell::new((false, false))),
             menu_target: None,
             last_id: 0,
             quit: false,
@@ -162,7 +166,13 @@ impl Platform for Backend {
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {
         let id = WindowId::new(self.next_id());
-        let window = Window::new(self.mtm, self.shared.clone(), id, attributes);
+        let window = Window::new(
+            self.mtm,
+            self.shared.clone(),
+            id,
+            attributes,
+            Rc::clone(&self.option_as_meta),
+        );
         // The window is in the map before it takes the focus, whose event
         // follows this call.
         self.windows.insert(id, window);
@@ -287,5 +297,15 @@ impl Platform for Backend {
         if let Some(ns_timer) = self.timers.remove(&timer) {
             ns_timer.invalidate();
         }
+    }
+
+    fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_text_area(origin, size);
+        }
+    }
+
+    fn set_option_as_meta(&mut self, left: bool, right: bool) {
+        self.option_as_meta.set((left, right));
     }
 }

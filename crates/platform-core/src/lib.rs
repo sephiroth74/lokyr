@@ -149,6 +149,16 @@ pub trait Platform {
     /// Stops a timer, which then never fires; one that fired, or never was,
     /// takes nothing.
     fn cancel_timer(&mut self, timer: TimerId);
+
+    /// Where the text that the user types goes in `window`: the cursor's
+    /// cell, from the top left corner of its content, in points, by which
+    /// the input method places its candidates.
+    fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size);
+
+    /// Which Option keys act as Meta, the left one and the right one: their
+    /// keys come as they are, never through the input method, so that a
+    /// dead key that Option makes does not compose.
+    fn set_option_as_meta(&mut self, left: bool, right: bool);
 }
 
 /// What the platform calls on the app, on the main thread.

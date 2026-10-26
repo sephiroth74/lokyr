@@ -242,6 +242,14 @@ impl Session {
             .push(Terminal::clipboard_answer(request, data));
     }
 
+    /// Sends `text`, which an input method committed rather than a key
+    /// typed, as the kitty protocol's flags have it.
+    pub fn text(&self, text: &str) {
+        let mut bytes = Vec::new();
+        input::encode_text(text, self.lock().keyboard_flags(), &mut bytes);
+        self.write(bytes);
+    }
+
     /// Pastes `text`, in one entry of the queue, so that no reply comes
     /// between its brackets; the writer writes it in chunks.
     pub fn paste(&self, text: &str) {

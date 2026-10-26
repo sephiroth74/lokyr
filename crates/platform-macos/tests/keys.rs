@@ -61,6 +61,11 @@ mod probe {
                     },
                 })
                 .expect("the window opens");
+            // The app steps back at once, so that the keys of someone typing
+            // at the Mac go to their own app; the probe's go to the window
+            // itself.
+            let mtm = MainThreadMarker::new().expect("the main thread");
+            NSApplication::sharedApplication(mtm).hide(None);
             common::wake_after(platform.waker(), 200);
         }
 
@@ -88,7 +93,11 @@ mod probe {
         }
 
         fn window_event(&mut self, _: &mut dyn Platform, _: WindowId, event: WindowEvent) {
-            if let WindowEvent::Key(key) = event {
+            // The keys of someone typing at the Mac, which reach the window
+            // while it has the focus, are not the probe's.
+            if let WindowEvent::Key(key) = event
+                && matches!(key.code, KeyCode::KeyA | KeyCode::AltRight)
+            {
                 self.keys.borrow_mut().push(key);
             }
         }

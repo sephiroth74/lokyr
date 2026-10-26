@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use bolt_font_coretext::CoreText;
 use bolt_kernel::config::Config;
 use bolt_platform_core::{
-    AppEvent, Appearance, Handler, KeyState, MainMenu, Menu, MenuItem, Platform, Shortcut,
-    ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform, Point,
+    Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use bolt_pty::Program;
 use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
@@ -20,7 +20,7 @@ use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
 use bolt_ui_core::cursor::{self, Blink};
 use bolt_ui_core::font::Font;
-use bolt_ui_core::pane::{self as cells, CursorLook};
+use bolt_ui_core::pane::{self as cells, CursorLook, Preedit};
 use bolt_ui_core::theme::Theme;
 
 use crate::keys;
@@ -131,6 +131,8 @@ struct Window {
     surface: Option<Surface>,
     /// Its program, and what it shows.
     pane: Pane,
+    /// The text that the input method composes, shown at the cursor.
+    preedit: Option<Preedit>,
     /// Whether it has the keyboard's focus.
     focused: bool,
     /// The clock of its cursor's blinking.
@@ -144,6 +146,7 @@ impl Window {
         Self {
             surface,
             pane,
+            preedit: None,
             focused,
             blink: Blink::new(now),
             blinking: false,
@@ -237,6 +240,8 @@ impl App {
             return;
         }
         self.config = config;
+        let (left, right) = self.config.keyboard.option_as_meta.sides();
+        platform.set_option_as_meta(left, right);
         for &window in self.windows.keys() {
             platform.request_frame(window);
         }
@@ -389,6 +394,20 @@ impl App {
         };
         state.pane.resize(grid);
         state.pane.update();
+        // The input method's candidates go at the cursor's cell.
+        let at = state.pane.snapshot().cursor().position;
+        let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
+        platform.set_text_area(
+            window,
+            Point {
+                x: f64::from(at.x) * width / size.scale,
+                y: f64::from(at.y) * height / size.scale,
+            },
+            Size {
+                width: width / size.scale,
+                height: height / size.scale,
+            },
+        );
         let shape = self.cursor(platform, window, Instant::now());
         let config = self.config.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
@@ -406,9 +425,11 @@ impl App {
         });
         let snapshot = state.pane.snapshot();
         let font = &mut drawing.font;
-        let batch = cells::cells(snapshot, &cell, 0, 0, None, cursor, &mut |shown| {
-            font.glyph(shown)
-        });
+        let mut glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
+        let mut batch = cells::cells(snapshot, &cell, 0, 0, None, cursor, &mut glyph);
+        if let Some(preedit) = &state.preedit {
+            cells::preedit(&mut batch, snapshot, &cell, preedit, &mut glyph);
+        }
         let list = DisplayList {
             background: cells::background(snapshot),
             items: vec![Item::Cells(batch)],
@@ -431,6 +452,8 @@ impl App {
 impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
         platform.set_main_menu(&main_menu());
+        let (left, right) = self.config.keyboard.option_as_meta.sides();
+        platform.set_option_as_meta(left, right);
         if let Some(file) = &mut self.config_file {
             file.watch(platform);
         }
@@ -541,6 +564,29 @@ impl Handler for App {
                     state.blink.restart(Instant::now());
                     platform.request_frame(window);
                 }
+            }
+            // The input method's text: composed, shown at the cursor, or
+            // typed, sent to the program.
+            WindowEvent::Ime(ime) => {
+                let Some(state) = self.windows.get_mut(&window) else {
+                    return;
+                };
+                match ime {
+                    Ime::Preedit { text, selection } => {
+                        state.preedit = (!text.is_empty()).then_some(Preedit {
+                            text,
+                            cursor: selection.start,
+                        });
+                    }
+                    Ime::Commit(text) => {
+                        state.preedit = None;
+                        if !state.pane.is_kept() {
+                            state.pane.text(&text);
+                        }
+                        state.blink.restart(Instant::now());
+                    }
+                }
+                platform.request_frame(window);
             }
             WindowEvent::CloseRequested => self.close(platform, window),
             _ => {}
@@ -778,11 +824,18 @@ mod tests {
         assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Frame);
-        std::fs::write(&path, "[cursor]\nshape = \"hollow\"\nblink = false\n").unwrap();
+        assert_eq!(fake.option_as_meta(), (false, false));
+        std::fs::write(
+            &path,
+            "[cursor]\nshape = \"hollow\"\nblink = false\n[keyboard]\noption-as-meta = \"right\"\n",
+        )
+        .unwrap();
         change(&mut fake, &mut app);
         assert_eq!(app.config.cursor.shape, cursor::Shape::Hollow);
         assert!(!app.config.cursor.blink);
         assert!(fake.window(window).unwrap().frame_requested);
+        // The platform learns which Option acts as Meta.
+        assert_eq!(fake.option_as_meta(), (false, true));
         // A file that goes gives the defaults.
         std::fs::remove_file(&path).unwrap();
         change(&mut fake, &mut app);
@@ -825,6 +878,8 @@ mod tests {
         let line = snapshot.line(row);
         line.cells()
             .iter()
+            // A wide character's second cell holds nothing of it.
+            .filter(|cell| cell.width() != bolt_vt_core::page::Width::SpacerTail)
             .map(|cell| match cell.content() {
                 bolt_vt_core::page::Content::Char(c) | bolt_vt_core::page::Content::Grapheme(c) => {
                     c
@@ -952,6 +1007,54 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| {
             row(app, window, 1) == "[the program ended by signal 9; a key closes the window]"
         });
+    }
+
+    #[test]
+    fn the_input_method_s_text_shows_then_reaches_the_program() {
+        use bolt_platform_core::KeyCode;
+
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        // The candidates' place: the cursor's cell, at the top left, in the
+        // points of cells of 8 by 16 pixels at a scale of 2.
+        let (origin, size) = fake.window(window).unwrap().text_area.unwrap();
+        assert_eq!((origin.x, origin.y), (0.0, 0.0));
+        assert_eq!((size.width, size.height), (4.0, 8.0));
+        let composing = Ime::Preedit {
+            text: "にほ".to_owned(),
+            selection: 6..6,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(composing));
+        assert_eq!(
+            app.windows[&window].preedit,
+            Some(Preedit {
+                text: "にほ".to_owned(),
+                cursor: 6
+            })
+        );
+        assert!(fake.window(window).unwrap().frame_requested);
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::Ime(Ime::Commit("日本".to_owned())),
+        );
+        assert_eq!(app.windows[&window].preedit, None);
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        // `cat` writes back the line.
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 1) == "日本");
+        // An empty preedit ends the composition with nothing typed.
+        let composing = Ime::Preedit {
+            text: "k".to_owned(),
+            selection: 1..1,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(composing));
+        let ended = Ime::Preedit {
+            text: String::new(),
+            selection: 0..0,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(ended));
+        assert_eq!(app.windows[&window].preedit, None);
     }
 
     #[test]

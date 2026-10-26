@@ -1,10 +1,13 @@
 //! A pane's grid of cells, as a display list draws it, from a snapshot of
 //! its terminal.
 
-use bolt_render_core::{AtlasRegion, CellBatch, CellCursor, CellGlyph, Color, CursorShape};
+use bolt_render_core::{
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle,
+};
 use bolt_text_core::CellMetrics;
 use bolt_vt_core::page::{self, Content, Rgb, Style, Width};
 use bolt_vt_core::terminal::{Colors, Snapshot};
+use bolt_vt_core::unicode::Widths;
 
 use crate::theme::SelectionColors;
 
@@ -39,6 +42,16 @@ pub struct CursorLook {
     /// The pixels of a bar's width and of an underline's height; a hollow
     /// block's edges take the face's underline thickness.
     pub thickness: u32,
+}
+
+/// The text that an input method composes, which a pane shows at its
+/// cursor and never sends.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Preedit {
+    /// The text.
+    pub text: String,
+    /// Where the input method's cursor is in it, in bytes.
+    pub cursor: usize,
 }
 
 /// The cells of a selection, and its colors.
@@ -175,6 +188,82 @@ pub fn cells(
         }
     }
     batch
+}
+
+/// Draws `preedit` over `batch`, the grid of `snapshot`, from its cursor's
+/// cell: each character in the cells that its width takes, on the default
+/// background and in the default text's color, in place of what they show,
+/// underlined, with the cursor where the input method has its own. What
+/// goes past the right edge is left out, as is a character that takes no
+/// cell.
+pub fn preedit(
+    batch: &mut CellBatch,
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    preedit: &Preedit,
+    glyph: &mut dyn FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
+) {
+    let (foreground, background) = defaults(snapshot);
+    let position = snapshot.cursor().position;
+    let (start, row, columns) = (position.x, position.y, batch.columns);
+    if row >= batch.rows || start >= columns {
+        return;
+    }
+    let widths = Widths::default();
+    let mut column = start;
+    let mut cursor = None;
+    let mut text = String::new();
+    for (at, character) in preedit.text.char_indices() {
+        if at == preedit.cursor {
+            cursor = Some(column);
+        }
+        let width = u16::from(widths.char_width(character));
+        if width == 0 {
+            continue;
+        }
+        if column + width > columns {
+            break;
+        }
+        let covered = column..column + width;
+        batch
+            .glyphs
+            .retain(|glyph| glyph.row != row || !covered.contains(&glyph.column));
+        let first = usize::from(row) * usize::from(columns) + usize::from(column);
+        for drawn in &mut batch.backgrounds[first..first + usize::from(width)] {
+            *drawn = background;
+        }
+        text.clear();
+        text.push(character);
+        let shown = CellText {
+            text: &text,
+            style: &Style::DEFAULT,
+            wide: width == 2,
+        };
+        if let Some(found) = glyph(&shown).filter(|found| found.region.width > 0) {
+            batch.glyphs.push(CellGlyph {
+                column,
+                row,
+                region: found.region,
+                x: found.left,
+                y: i32::try_from(cell.baseline).unwrap_or(i32::MAX) - found.top,
+                color: foreground,
+            });
+        }
+        column += width;
+    }
+    batch.lines.push(CellLine {
+        column: start,
+        row,
+        columns: column - start,
+        style: LineStyle::Single,
+        top: cell.underline_top,
+        thickness: cell.underline_thickness,
+        color: foreground,
+    });
+    if let Some(drawn) = &mut batch.cursor {
+        drawn.column = cursor.unwrap_or(column).min(columns - 1);
+        drawn.columns = 1;
+    }
 }
 
 /// The cursor of `snapshot`, as `look` has it, where it shows: on a wide
@@ -623,6 +712,78 @@ mod tests {
             &mut atlas(&mut asked),
         );
         assert_eq!(batch.cursor, None);
+    }
+
+    #[test]
+    fn the_composed_text_shows_at_the_cursor_underlined() {
+        // The cursor back on `c`, in a grid of 8 columns.
+        let snapshot = snapshot(8, 2, "abcdef\x1b[4D");
+        let mut asked = Vec::new();
+        let look = CursorLook {
+            shape: CursorShape::Bar,
+            thickness: 2,
+        };
+        let mut batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            Some(look),
+            &mut atlas(&mut asked),
+        );
+        let composed = Preedit {
+            text: "にほ".to_owned(),
+            cursor: 3,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut asked),
+        );
+        let row: Vec<(u16, bool)> = batch
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.row == 0)
+            .map(|glyph| {
+                (
+                    glyph.column,
+                    glyph.region.x == u32::from('に') || glyph.region.x == u32::from('ほ'),
+                )
+            })
+            .collect();
+        // `a` and `b`, then the two wide characters over `c` to `f`.
+        assert_eq!(row, [(0, false), (1, false), (2, true), (4, true)]);
+        let line = batch.lines.last().unwrap();
+        assert_eq!((line.column, line.row, line.columns), (2, 0, 4));
+        assert_eq!(line.top, cell().underline_top);
+        // The input method's cursor, after `に`.
+        assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(4));
+        let colors = Colors::default();
+        assert_eq!(batch.backgrounds[2], color(colors.background));
+    }
+
+    #[test]
+    fn composed_text_past_the_right_edge_is_left_out() {
+        let snapshot = snapshot(4, 1, "ab");
+        let mut asked = Vec::new();
+        let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let composed = Preedit {
+            text: "日本語".to_owned(),
+            cursor: 9,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut asked),
+        );
+        let line = batch.lines.last().unwrap();
+        assert_eq!((line.column, line.columns), (2, 2));
+        assert_eq!(batch.glyphs.len(), 3);
     }
 
     #[test]

@@ -16,6 +16,7 @@ mod frame;
 mod keys;
 mod menu;
 mod shared;
+mod text_input;
 mod timer;
 mod wake;
 mod window;
