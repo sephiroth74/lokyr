@@ -548,7 +548,8 @@ impl Handler for App {
                 }
             }
             // A key goes to the program, and starts the cursor blinking
-            // again, on; a key, not a modifier alone, closes a window whose
+            // again, on; a key that types or acts, not a modifier, a lock,
+            // Fn or a Command key that no menu took, closes a window whose
             // program ended.
             WindowEvent::Key(key) => {
                 let options = keys::options(self.config.keyboard.option_as_meta);
@@ -556,12 +557,8 @@ impl Handler for App {
                     return;
                 };
                 let pressed = key.state != KeyState::Released;
-                let modifier = matches!(
-                    keys::terminal_key(&key).map(|key| key.key),
-                    Some(bolt_vt_core::input::Key::Modifier(_))
-                );
                 if state.pane.is_kept() {
-                    if pressed && !modifier {
+                    if pressed && closes(&key) {
                         self.close(platform, window);
                     }
                     return;
@@ -580,6 +577,15 @@ impl Handler for App {
                 let Some(state) = self.windows.get_mut(&window) else {
                     return;
                 };
+                // On a window whose program ended, what the input method
+                // composes does not show, and its commit closes it, as a key
+                // does.
+                if state.pane.is_kept() {
+                    if matches!(ime, Ime::Commit(_)) {
+                        self.close(platform, window);
+                    }
+                    return;
+                }
                 match ime {
                     Ime::Preedit { text, selection } => {
                         state.preedit = (!text.is_empty()).then_some(Preedit {
@@ -589,9 +595,7 @@ impl Handler for App {
                     }
                     Ime::Commit(text) => {
                         state.preedit = None;
-                        if !state.pane.is_kept() {
-                            state.pane.text(&text);
-                        }
+                        state.pane.text(&text);
                         state.blink.restart(Instant::now());
                     }
                 }
@@ -601,6 +605,20 @@ impl Handler for App {
             _ => {}
         }
     }
+}
+
+/// Whether `key` closes a window whose program ended: a key that types or
+/// acts, not a modifier, a lock, Fn, nor a key with Command, which the
+/// app's shortcuts have.
+fn closes(key: &bolt_platform_core::KeyEvent) -> bool {
+    use bolt_vt_core::input::Key;
+    !key.mods.super_key
+        && keys::terminal_key(key).is_some_and(|key| {
+            !matches!(
+                key.key,
+                Key::Modifier(_) | Key::CapsLock | Key::NumLock | Key::ScrollLock
+            )
+        })
 }
 
 /// The main menu: the application's menu, with Quit.
@@ -1002,6 +1020,58 @@ mod tests {
         fake.send(&mut app, window, key());
         assert_eq!(fake.windows().count(), 0);
         assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn a_kept_window_closes_with_a_key_that_types_or_acts_alone() {
+        use bolt_platform_core::KeyCode;
+
+        let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "exit 3");
+        // A lock, Fn, a modifier and a Command key leave it open.
+        for key in [
+            typed(KeyCode::CapsLock, "", false),
+            typed(KeyCode::Fn, "", false),
+            typed(KeyCode::ShiftLeft, "", false),
+            typed(KeyCode::KeyH, "h", true),
+        ] {
+            fake.send(&mut app, window, key);
+            assert_eq!(fake.windows().count(), 1);
+        }
+        // What an input method composes does not show; its commit closes.
+        let composing = Ime::Preedit {
+            text: "に".to_owned(),
+            selection: 3..3,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(composing));
+        assert_eq!(app.windows[&window].preedit, None);
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::Ime(Ime::Commit("日".to_owned())),
+        );
+        assert_eq!(fake.windows().count(), 0);
+    }
+
+    #[test]
+    fn a_program_that_cannot_start_leaves_a_window_that_a_key_closes() {
+        let mut fake = Fake::default();
+        let missing = Program::command("/nonexistent/bolt-program", [] as [&str; 0]);
+        let mut app = app(Config::default(), missing);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        assert!(row(&app, window, 0).starts_with("[the program cannot start"));
+        fake.send(&mut app, window, key());
+        assert_eq!(fake.windows().count(), 0);
+    }
+
+    #[test]
+    fn the_line_of_a_program_that_ended_reads_whatever_it_left_set() {
+        // The line drawing character set, insert mode and no autowrap.
+        let script = "printf '\\033(0\\033[4h\\033[?7l'; exit 3";
+        let (mut fake, mut app, window) = ended(CloseOnExit::Clean, script);
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 1) == "[the program exited with code 3; a key closes the window]"
+        });
     }
 
     #[test]

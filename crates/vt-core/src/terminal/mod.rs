@@ -378,6 +378,9 @@ pub struct Terminal {
     link: osc::Link,
     /// The zone of the text printed next (OSC 133).
     zone: Semantic,
+    /// The status of the last command that ended, as OSC 133's `D` tells
+    /// it.
+    command_status: Option<i32>,
     /// The theme's colors, which the resets bring back, and the colors
     /// now, which programs can change.
     default_colors: Colors,
@@ -493,6 +496,7 @@ impl Terminal {
             scrollback_limit,
             link: osc::Link::default(),
             zone: Semantic::Output,
+            command_status: None,
             default_colors: Colors::default(),
             colors: Colors::default(),
             cell_size: None,
@@ -828,6 +832,14 @@ impl Terminal {
     /// Whether the cursor shows (DECTCEM).
     pub fn cursor_visible(&self) -> bool {
         self.cursor_visible
+    }
+
+    /// The status of the last command that ended, as OSC 133's `D ;
+    /// status` tells it: the last command's of a shell that marks its
+    /// commands, or a shell's own, as the wrapper between `login` and the
+    /// login shell tells it on macOS.
+    pub fn command_status(&self) -> Option<i32> {
+        self.command_status
     }
 
     /// Whether the program asked the cursor to blink (mode 12).

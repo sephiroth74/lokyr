@@ -64,8 +64,13 @@ pub(crate) struct Pane {
     grid: Grid,
     /// When the program's output ended, while the pane waits for its status.
     ended: Option<Instant>,
-    /// Whether the pane keeps the screen of a program that ended.
+    /// Whether the pane keeps the screen of a program that ended, or that
+    /// could not start.
     kept: bool,
+    /// Whether the program is the login shell, which `login` starts on
+    /// macOS, hiding its status, which the shell's wrapper tells through
+    /// the terminal instead.
+    through_login: bool,
 }
 
 impl std::fmt::Debug for Pane {
@@ -92,6 +97,7 @@ impl Pane {
             grid,
             ended: None,
             kept: false,
+            through_login: matches!(program, Program::LoginShell),
         };
         match Session::spawn(&Options::new(pty), move || waker.wake()) {
             Ok(session) => {
@@ -110,6 +116,8 @@ impl Pane {
                 let line = format!("\x1b[2m[the program cannot start: {error}]\x1b[0m");
                 Parser::new().advance(&mut terminal, line.as_bytes());
                 terminal.snapshot(&mut pane.snapshot);
+                // A key closes the window, as after a program that ended.
+                pane.kept = true;
             }
         }
         pane
@@ -196,6 +204,8 @@ impl Pane {
                 None
             }
         };
+        let told = session.lock().command_status();
+        let exit = status(exit, told, self.through_login);
         let closes = match close {
             CloseOnExit::Always => true,
             CloseOnExit::Never => false,
@@ -210,7 +220,12 @@ impl Pane {
             Some(Exit::Signal(signal)) => format!("the program ended by signal {signal}"),
             None => "the program ended".to_owned(),
         };
-        let line = format!("\r\n\x1b[0;2m[{ended}; a key closes the window]\x1b[0m");
+        // The character sets back to ASCII, insert mode off and autowrap on,
+        // which a program that ended may have left otherwise, so that the
+        // line reads as it is written.
+        let line = format!(
+            "\x1b(B\x1b)B\x0f\x1b[4l\x1b[?7h\r\n\x1b[0;2m[{ended}; a key closes the window]\x1b[0m"
+        );
         Parser::new().advance(&mut *session.lock(), line.as_bytes());
         Some(Exited::Keep)
     }
@@ -224,5 +239,34 @@ impl Pane {
     /// Whether the pane keeps the screen of a program that ended.
     pub(crate) fn is_kept(&self) -> bool {
         self.kept
+    }
+}
+
+/// The status of a program that ended: its own, which `exit` gives; or, for
+/// the login shell that `login` starts, whose own status is `login`'s, the
+/// one that the shell's wrapper `told` through the terminal, past 128 for a
+/// signal, as shells give it.
+fn status(exit: Option<Exit>, told: Option<i32>, through_login: bool) -> Option<Exit> {
+    match told {
+        Some(code) if through_login && code > 128 => Some(Exit::Signal(code - 128)),
+        Some(code) if through_login => Some(Exit::Code(code)),
+        _ => exit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_login_shell_s_status_is_the_one_that_it_told() {
+        // `login`'s 0, and what the wrapper told.
+        let login = Some(Exit::Code(0));
+        assert_eq!(status(login, Some(3), true), Some(Exit::Code(3)));
+        assert_eq!(status(login, Some(137), true), Some(Exit::Signal(9)));
+        assert_eq!(status(login, None, true), login);
+        // Another program's status is its own, whatever a shell in it told.
+        let own = Some(Exit::Code(2));
+        assert_eq!(status(own, Some(0), false), own);
     }
 }

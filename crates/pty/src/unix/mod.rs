@@ -732,16 +732,25 @@ fn command_line(
 /// since the user is logged in already, `-p` to keep the environment and
 /// `-l` to stay in the working directory. As `-l` also keeps the shell from
 /// being a login shell, bash starts it with `-` before its name.
+///
+/// `login` exits with 0 whatever the shell's status, and closes the
+/// descriptors past the terminal's: bash waits for the shell, and tells its
+/// status through the terminal, as OSC 133's end of a command does,
+/// `OSC 133 ; D ; status`, 128 and a signal's number for a shell that a
+/// signal ended.
 #[cfg(target_os = "macos")]
 fn login_shell(account: &Account) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     let name = account
         .shell
         .file_name()
         .map_or_else(|| OsString::from("sh"), OsStr::to_owned);
-    let mut exec = b"exec -l -a ".to_vec();
+    let mut exec = b"( exec -l -a ".to_vec();
     exec.extend(quoted(&name));
     exec.push(b' ');
     exec.extend(quoted(account.shell.as_os_str()));
+    exec.extend_from_slice(
+        b" ); status=$?; printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\"",
+    );
     let args = vec![
         "-flp".into(),
         account.name.clone(),
@@ -1392,10 +1401,43 @@ mod tests {
                 "--noprofile",
                 "--norc",
                 "-c",
-                "exec -l -a 'fish' '/opt/my shell/fish'"
+                "( exec -l -a 'fish' '/opt/my shell/fish' ); status=$?; \
+                 printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\""
             ]
         );
         assert_eq!(arg0, None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_login_shell_s_status_comes_through_its_terminal() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+
+        // A shell of its own, which exits with 3, or a signal ends.
+        let directory = std::env::temp_dir().join(format!("bolt-login-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        for (script, status) in [("exit 3", "3"), ("kill -9 $$", "137")] {
+            let shell = directory.join("shell");
+            std::fs::write(&shell, format!("#!/bin/sh\n{script}\n")).unwrap();
+            std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let account = Account {
+                shell,
+                ..Account::current()
+            };
+            let (program, args, _) = command_line(&Program::LoginShell, &account);
+            let options = Options::new(Program::Command { program, args }, "dumb");
+            let mut pty = spawn(&options).unwrap();
+            let mut text = String::new();
+            pty.reader().unwrap().read_to_string(&mut text).unwrap();
+            assert!(
+                text.contains(&format!("\x1b]133;D;{status}\x07")),
+                "{script}: {text:?}"
+            );
+            // `login`'s own status, which tells nothing.
+            assert_eq!(pty.wait().unwrap(), Exit::Code(0));
+        }
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(not(target_os = "macos"))]

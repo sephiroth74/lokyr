@@ -3411,8 +3411,17 @@ fn osc_133_marks_prompts_commands_and_their_output() {
         Prompt,
         "unknown marks change nothing"
     );
+    // `D` tells the command's status, which a full reset forgets.
+    assert_eq!(term.terminal.command_status(), Some(0));
     term.feed("\x1bc");
     assert_eq!(term.terminal.semantic_zone(), Output);
+    assert_eq!(term.terminal.command_status(), None);
+    term.feed("\x1b]133;D;137\x07\x1b]133;D\x07\x1b]133;D;x\x07");
+    assert_eq!(
+        term.terminal.command_status(),
+        Some(137),
+        "an end without a number keeps the status"
+    );
 }
 
 /// The codepoints of the cluster at column `x` of row `y`.

@@ -204,13 +204,19 @@ impl Terminal {
 
     /// OSC 133, FinalTerm's semantic prompts: `A` starts a prompt, which
     /// also marks its row, `B` the command that the user types, and `C`
-    /// its output, as `D` ends the command. The text printed next is in
-    /// that zone.
+    /// its output, as `D` ends the command, with its status when a number
+    /// follows. The text printed next is in that zone.
     fn mark_prompt(&mut self, fields: &[u8]) {
-        let kind = fields
-            .split(|&byte| byte == b';')
-            .next()
-            .unwrap_or_default();
+        let mut fields = fields.split(|&byte| byte == b';');
+        let kind = fields.next().unwrap_or_default();
+        if kind == b"D"
+            && let Some(status) = fields
+                .next()
+                .and_then(|status| std::str::from_utf8(status).ok())
+                .and_then(|status| status.parse().ok())
+        {
+            self.command_status = Some(status);
+        }
         self.zone = match kind {
             b"A" => {
                 let y = self.cursor().y;

@@ -172,9 +172,11 @@ What a window does when its program ends, such as the shell after `exit`.
 |---|---|
 | `"clean"`, `"always"`, `"never"` | `"clean"` |
 
-- `"clean"` closes the window when the program exits with the status 0, and otherwise keeps it open, with a line that tells how the program ended, such as `[the program exited with code 1; a key closes the window]`, until you press a key.
+- `"clean"` closes the window when the program exits with the status 0, and otherwise keeps it open, with a line that tells how the program ended, such as `[the program exited with code 1; a key closes the window]`, until you press a key, one that types or acts: a modifier, Caps Lock, Fn or a key with Command leave it open.
 - `"always"` closes the window.
 - `"never"` keeps it open, with the line, until you press a key.
+
+The login shell's status is its own: on macOS, `login`, which starts it, hides it, and the shell tells it to Bolt as it ends. A status past 128 tells the signal that ended it, as shells give it.
 
 Closing the last window quits Bolt.
 
