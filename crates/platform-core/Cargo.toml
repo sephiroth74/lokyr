@@ -9,5 +9,13 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# The fake platform of `fake`, for the tests of the crates that drive a
+# platform.
+fake = []
+
+[dependencies]
+thiserror.workspace = true
+
 [lints]
 workspace = true
