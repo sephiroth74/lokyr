@@ -7,9 +7,13 @@
 //! family = "CaskaydiaCove NFM"
 //! style = "SemiBold"
 //! size = 22
+//!
+//! [cursor]
+//! shape = "bar"
 //! ```
 //!
-//! Each section documents its keys: `[font]` is [`FontConfig`]. Every key
+//! Each section documents its keys: `[font]` is [`FontConfig`], and
+//! `[cursor]` [`CursorConfig`]. Every key
 //! and every section can be left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -21,6 +25,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use bolt_text_core::FontConfig;
+use bolt_ui_core::cursor::CursorConfig;
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 use toml_edit::{Document, Item, TableLike};
@@ -44,6 +49,8 @@ pub struct Config {
     version: Version,
     /// The `[font]` section.
     pub font: FontConfig,
+    /// The `[cursor]` section.
+    pub cursor: CursorConfig,
 }
 
 /// The version of the file's format: [`VERSION`], the only one so far.
@@ -171,8 +178,11 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 1] {
-    [("font", keys::<FontConfig>())]
+fn sections() -> [(&'static str, &'static [&'static str]); 2] {
+    [
+        ("font", keys::<FontConfig>()),
+        ("cursor", keys::<CursorConfig>()),
+    ]
 }
 
 /// Fails at the first key that the file's sections do not have, with the
@@ -278,6 +288,7 @@ fn keys<T: for<'de> Deserialize<'de>>() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use bolt_text_core::{Factor, Name, Size};
+    use bolt_ui_core::cursor::{Shape, Thickness};
 
     use super::*;
 
@@ -321,9 +332,22 @@ mod tests {
             line-height = 1.2
             cell-width = 1.05
             ligatures = false
+
+            [cursor]
+            shape = "bar"
+            blink = false
+            thickness = 1.5
             "#,
         )
         .unwrap();
+        assert_eq!(
+            config.cursor,
+            CursorConfig {
+                shape: Shape::Bar,
+                blink: false,
+                thickness: Some(Thickness::try_from(1.5).unwrap()),
+            }
+        );
         let font = config.font;
         assert_eq!(font.family, name("CaskaydiaCove NFM"));
         assert_eq!(font.size, Size::try_from(22.0).unwrap());
@@ -413,6 +437,33 @@ mod tests {
     }
 
     #[test]
+    fn the_cursor_s_shape_is_one_of_four() {
+        for (name, shape) in [
+            ("block", Shape::Block),
+            ("bar", Shape::Bar),
+            ("underline", Shape::Underline),
+            ("hollow", Shape::Hollow),
+        ] {
+            let config = parse(&format!("[cursor]\nshape = \"{name}\"")).unwrap();
+            assert_eq!(config.cursor.shape, shape);
+        }
+        let (position, message) = error("[cursor]\nshape = \"beam\"\n");
+        assert_eq!(position, Some((2, 9)));
+        assert!(message.contains("`block`, `bar`, `underline`"), "{message}");
+        assert_eq!(
+            error("[cursor]\nthickness = 30\n"),
+            (
+                Some((2, 13)),
+                "the cursor's thickness, in points, is from 0.5 to 20, not 30".to_owned()
+            )
+        );
+        assert_eq!(
+            error("[cursor]\nblnk = true\n").1,
+            "unknown key `blnk` in `[cursor]`; did you mean `blink`?"
+        );
+    }
+
+    #[test]
     fn only_the_app_s_version_reads() {
         assert_eq!(parse("config_version = 1"), Ok(Config::default()));
         assert_eq!(
@@ -491,7 +542,8 @@ mod tests {
 
     #[test]
     fn the_sections_keys_are_serde_s() {
-        assert_eq!(keys::<Config>(), ["config_version", "font"]);
+        assert_eq!(keys::<Config>(), ["config_version", "font", "cursor"]);
+        assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
         assert_eq!(font.len(), 10);
         assert!(font.contains(&"bold-italic-style"));

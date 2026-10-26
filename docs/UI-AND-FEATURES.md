@@ -294,15 +294,18 @@ AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode o
 
 ```toml
 [cursor]
-shape = "block"           # block | bar | underline
+shape = "block"           # block | bar | underline | hollow
 blink = true
+thickness = 2             # a bar's width and an underline's height, in points (0.5–20); the face's underline thickness when absent
 blink-interval = 500      # how long the cursor stays on, then off, in ms (100–5000)
 smooth-blink = true       # fade out and in, instead of switching
 blink-timeout = 15        # seconds without keys or output before blinking stops; 0 never stops
 movement = "instant"      # instant | snappy | gliding
 ```
 
-- **Shape**: block, bar or underline. Programs change the shape and the blinking with DECSCUSR, as vim does in insert mode. The options are the default, which `CSI 0 SP q` and a reset bring back.
+- **Shape**: a block, a vertical bar, an underline, or a hollow block, of its edges alone. Programs change the shape and the blinking with DECSCUSR, as vim does in insert mode, among the first three. The options are the default, which `CSI 0 SP q` and a reset bring back.
+  - The text under a block takes its cell's background. A bar and an underline take `thickness`, which scales with the display as the font's size does, or else the face's underline thickness, which a hollow block's edges always take.
+  - Mode 12, which `cvvis` sets in xterm's terminfo, makes the cursor blink too. Its reset, which `cnorm` sends as each full-screen program ends, leaves the configuration's blinking, so that the cursor does not stop blinking after `less` or `vim`.
 - **Blinking**: on and off for `blink-interval` each. With `smooth-blink`, the cursor fades between the two instead of switching.
 - **Movement**: `snappy` eases the cursor to its new position over a short time, `gliding` over a longer and softer one, and `instant` moves it at once.
   - The animation only moves the cursor that is drawn. The text that a key press changes still appears in the next frame, so the latency budget holds.

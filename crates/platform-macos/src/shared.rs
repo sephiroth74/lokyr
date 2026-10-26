@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
 use std::rc::{Rc, Weak};
 
-use bolt_platform_core::{AlertId, AppEvent, Handler, Waker, WindowEvent, WindowId};
+use bolt_platform_core::{AlertId, AppEvent, Handler, TimerId, Waker, WindowEvent, WindowId};
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSModalResponse;
 
@@ -35,6 +35,8 @@ pub(crate) enum Pending {
     Modal(AlertId),
     /// An alert closed, with AppKit's answer.
     AlertResponse(AlertId, NSModalResponse),
+    /// A timer fired.
+    Timer(TimerId),
 }
 
 /// The state of a running application, on the main thread.
@@ -161,6 +163,13 @@ impl Shared {
                 if let Some(buttons) = backend.take_alert(alert) {
                     let button = alert::button(response, buttons);
                     handler.app_event(backend, AppEvent::AlertClosed { alert, button });
+                }
+            }
+            Pending::Timer(timer) => {
+                // A timer cancelled after it fired, before its turn, is not
+                // told.
+                if backend.take_timer(timer) {
+                    handler.app_event(backend, AppEvent::Timer(timer));
                 }
             }
             Pending::Modal(_) => {}

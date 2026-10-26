@@ -2,10 +2,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Weak;
+use std::time::Instant;
 
 use bolt_platform_core::{
-    Alert, AlertId, Appearance, Error, MainMenu, Platform, Waker, WindowAttributes, WindowEvent,
-    WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Error, MainMenu, Platform, TimerId, Waker, WindowAttributes,
+    WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
@@ -13,13 +14,13 @@ use objc2_app_kit::{
     NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSPasteboard,
     NSPasteboardTypeString,
 };
-use objc2_foundation::{NSPoint, NSString};
+use objc2_foundation::{NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
-use crate::{alert, appearance, menu};
+use crate::{alert, appearance, menu, timer};
 
 /// An alert that is open.
 struct OpenAlert {
@@ -35,6 +36,8 @@ pub(crate) struct Backend {
     waker: Waker,
     windows: BTreeMap<WindowId, Window>,
     alerts: HashMap<AlertId, OpenAlert>,
+    /// The timers that have not fired, or whose firing waits its turn.
+    timers: HashMap<TimerId, Retained<NSTimer>>,
     /// The target of the main menu's items, which the menu does not retain.
     menu_target: Option<Retained<MenuTarget>>,
     last_id: u64,
@@ -50,6 +53,7 @@ impl Backend {
             waker,
             windows: BTreeMap::new(),
             alerts: HashMap::new(),
+            timers: HashMap::new(),
             menu_target: None,
             last_id: 0,
             quit: false,
@@ -70,6 +74,12 @@ impl Backend {
     /// buttons it had; `None` if it was not open.
     pub(crate) fn take_alert(&mut self, alert: AlertId) -> Option<usize> {
         self.alerts.remove(&alert).map(|open| open.buttons)
+    }
+
+    /// Forgets the timer `timer`, which fired, and returns whether it was
+    /// running: one that the app cancelled is not.
+    pub(crate) fn take_timer(&mut self, timer: TimerId) -> bool {
+        self.timers.remove(&timer).is_some()
     }
 
     /// Ends the application now, without waiting for the app: its handler
@@ -122,9 +132,12 @@ impl Backend {
     }
 
     /// Takes every window and alert, once the application has ended, for
-    /// the caller to close the windows.
+    /// the caller to close the windows, and stops the timers.
     pub(crate) fn take_windows(&mut self) -> Vec<Window> {
         self.alerts.clear();
+        for (_, timer) in self.timers.drain() {
+            timer.invalidate();
+        }
         std::mem::take(&mut self.windows).into_values().collect()
     }
 
@@ -261,5 +274,18 @@ impl Platform for Backend {
             },
         );
         id
+    }
+
+    fn start_timer(&mut self, at: Instant) -> TimerId {
+        let id = TimerId::new(self.next_id());
+        let ns_timer = timer::start(self.shared.clone(), id, at);
+        self.timers.insert(id, ns_timer);
+        id
+    }
+
+    fn cancel_timer(&mut self, timer: TimerId) {
+        if let Some(ns_timer) = self.timers.remove(&timer) {
+            ns_timer.invalidate();
+        }
     }
 }

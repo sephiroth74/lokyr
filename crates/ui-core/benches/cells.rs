@@ -46,13 +46,16 @@ mod cells {
         for (name, snapshot) in &screens {
             // The first frame draws the glyphs into the atlas.
             font.begin_frame();
-            pane::cells(snapshot, &cell, 0, 0, None, &mut |shown| font.glyph(shown));
+            pane::cells(snapshot, &cell, 0, 0, None, None, &mut |shown| {
+                font.glyph(shown)
+            });
             group.bench_function(*name, |b| {
                 b.iter(|| {
                     font.begin_frame();
-                    let batch = pane::cells(black_box(snapshot), &cell, 0, 0, None, &mut |shown| {
-                        font.glyph(shown)
-                    });
+                    let batch =
+                        pane::cells(black_box(snapshot), &cell, 0, 0, None, None, &mut |shown| {
+                            font.glyph(shown)
+                        });
                     black_box(batch)
                 });
             });

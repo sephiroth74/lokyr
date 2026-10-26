@@ -1,4 +1,5 @@
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::fake::Fake;
 use crate::*;
@@ -346,6 +347,28 @@ fn an_alert_closes_with_its_window() {
     fake.send(&mut app, window, WindowEvent::CloseRequested);
     assert!(fake.alerts().is_empty());
     assert!(!fake.answer_alert(&mut app, alert, 0));
+}
+
+#[test]
+fn timers_fire_once_in_their_order_when_their_time_comes() {
+    let (mut fake, mut app, _) = started();
+    let now = Instant::now();
+    let after = |millis| now + Duration::from_millis(millis);
+    let later = fake.start_timer(after(20));
+    let first = fake.start_timer(after(10));
+    let cancelled = fake.start_timer(after(15));
+    fake.cancel_timer(cancelled);
+    assert_eq!(fake.fire_timers(&mut app, now), 0);
+    assert_eq!(fake.fire_timers(&mut app, after(30)), 2);
+    assert_eq!(fake.fire_timers(&mut app, after(40)), 0);
+    assert_eq!(
+        app.app_events,
+        [AppEvent::Timer(first), AppEvent::Timer(later)]
+    );
+    assert_eq!(fake.timers().count(), 0);
+    // A timer that fired, or was cancelled, takes nothing.
+    fake.cancel_timer(first);
+    assert!(first != later && later != cancelled);
 }
 
 #[test]

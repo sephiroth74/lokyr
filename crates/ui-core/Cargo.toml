@@ -13,6 +13,7 @@ publish = false
 bolt-render-core.workspace = true
 bolt-text-core.workspace = true
 bolt-vt-core.workspace = true
+serde.workspace = true
 
 # The benchmark draws with CoreText, and criterion needs a C compiler of
 # its target, which the check for Linux from macOS does not have.

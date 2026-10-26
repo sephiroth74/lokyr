@@ -1,17 +1,19 @@
 //! The application: its windows, what they draw, and its main menu.
 
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use bolt_font_coretext::CoreText;
 use bolt_platform_core::{
     AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
-use bolt_render_core::{DisplayList, Item, Renderer};
+use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
 use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
+use bolt_ui_core::cursor::{self, Blink, CursorConfig};
 use bolt_ui_core::font::Font;
-use bolt_ui_core::pane;
+use bolt_ui_core::pane::{self, CursorLook};
 use bolt_ui_core::theme::Theme;
 use bolt_vt_core::parser::Parser;
 use bolt_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
@@ -57,16 +59,32 @@ impl Drawing {
 }
 
 /// A window that the app opened.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Window {
     /// What it draws into, once the app draws and the platform has a layer.
     surface: Option<Surface>,
     /// What it shows, and the columns, rows and appearance that it was made
     /// for.
     sample: Option<(u16, u16, Appearance, Snapshot)>,
+    /// Whether it has the keyboard's focus.
+    focused: bool,
+    /// The clock of its cursor's blinking.
+    blink: Blink,
+    /// Whether its cursor blinked at its last frame.
+    blinking: bool,
 }
 
 impl Window {
+    fn new(surface: Option<Surface>, focused: bool, now: Instant) -> Self {
+        Self {
+            surface,
+            sample: None,
+            focused,
+            blink: Blink::new(now),
+            blinking: false,
+        }
+    }
+
     /// The text that the window shows at `columns` by `rows`, in the
     /// theme's variant of `appearance`, made again when one of them changed.
     fn sample(
@@ -91,17 +109,22 @@ impl Window {
 pub struct App {
     drawing: Option<Drawing>,
     theme: Theme,
+    cursor: CursorConfig,
     windows: BTreeMap<WindowId, Window>,
+    /// The timer of the next change of a blinking cursor, and its time.
+    blink_timer: Option<(TimerId, Instant)>,
 }
 
 impl App {
     /// An application that draws its windows with `drawing`, or nothing
-    /// without it.
-    pub fn new(drawing: Option<Drawing>) -> Self {
+    /// without it, with the cursor of `cursor`.
+    pub fn new(drawing: Option<Drawing>, cursor: CursorConfig) -> Self {
         Self {
             drawing,
             theme: Theme::builtin(),
+            cursor,
             windows: BTreeMap::new(),
+            blink_timer: None,
         }
     }
 
@@ -113,13 +136,9 @@ impl App {
         match platform.create_window(&attributes) {
             Ok(window) => {
                 let surface = self.surface(platform, window);
-                self.windows.insert(
-                    window,
-                    Window {
-                        surface,
-                        sample: None,
-                    },
-                );
+                let focused = platform.focused_window() == Some(window);
+                self.windows
+                    .insert(window, Window::new(surface, focused, Instant::now()));
                 if let Some(size) = platform.window_size(window) {
                     self.draw(platform, window, size);
                 }
@@ -143,9 +162,51 @@ impl App {
             .ok()
     }
 
+    /// The shape that the cursor of `window` takes at `now`, or `None` while
+    /// its blinking hides it; a cursor that blinks keeps the timer of its
+    /// next change running.
+    fn cursor(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) -> Option<CursorShape> {
+        let state = self.windows.get_mut(&window)?;
+        let program = state
+            .sample
+            .as_ref()
+            .map(|(.., snapshot)| snapshot.cursor())
+            .unwrap_or_default();
+        let shape = cursor::shape(&program, &self.cursor, state.focused);
+        let (on, next) = if cursor::blinks(&program, &self.cursor, state.focused) {
+            state.blink.at(now)
+        } else {
+            (true, None)
+        };
+        // A cursor that stopped blinking stays on, and takes no timer.
+        state.blinking = next.is_some();
+        if let Some(next) = next {
+            self.blink_at(platform, next);
+        }
+        on.then_some(shape)
+    }
+
+    /// Keeps the timer of the blinking cursors at `at`.
+    fn blink_at(&mut self, platform: &mut dyn Platform, at: Instant) {
+        if self.blink_timer.is_some_and(|(_, current)| current == at) {
+            return;
+        }
+        if let Some((timer, _)) = self.blink_timer.take() {
+            platform.cancel_timer(timer);
+        }
+        self.blink_timer = Some((platform.start_timer(at), at));
+    }
+
     /// Draws `window`, of `size`: the grid of cells that fits its content,
-    /// and what the window shows in it.
-    fn draw(&mut self, platform: &dyn Platform, window: WindowId, size: WindowSize) {
+    /// what the window shows in it, and the cursor.
+    fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
+        let shape = self.cursor(platform, window, Instant::now());
+        let config = self.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -156,6 +217,10 @@ impl App {
         drawing.font.set_scale(size.scale as f32);
         drawing.font.begin_frame();
         let cell = *drawing.font.cell();
+        let cursor = shape.map(|shape| CursorLook {
+            shape,
+            thickness: config.thickness(&cell, size.scale as f32),
+        });
         let fit =
             |pixels: u32, cell: u32| (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16;
         let (columns, rows) = (
@@ -164,7 +229,9 @@ impl App {
         );
         let snapshot = state.sample(columns, rows, platform.appearance(), &self.theme);
         let font = &mut drawing.font;
-        let batch = pane::cells(snapshot, &cell, 0, 0, None, &mut |shown| font.glyph(shown));
+        let batch = pane::cells(snapshot, &cell, 0, 0, None, cursor, &mut |shown| {
+            font.glyph(shown)
+        });
         let list = DisplayList {
             background: pane::background(snapshot),
             items: vec![Item::Cells(batch)],
@@ -200,6 +267,15 @@ impl Handler for App {
                     platform.request_frame(window);
                 }
             }
+            // A blinking cursor changes.
+            AppEvent::Timer(timer) if self.blink_timer.is_some_and(|(blink, _)| blink == timer) => {
+                self.blink_timer = None;
+                for (&window, state) in &self.windows {
+                    if state.blinking {
+                        platform.request_frame(window);
+                    }
+                }
+            }
             AppEvent::AppearanceChanged(_) => {
                 let windows: Vec<WindowId> = self.windows.keys().copied().collect();
                 for window in windows {
@@ -220,6 +296,22 @@ impl Handler for App {
             WindowEvent::Frame => {
                 if let Some(size) = platform.window_size(window) {
                     self.draw(platform, window, size);
+                }
+            }
+            // The focus, and a key, start the cursor blinking again, on.
+            WindowEvent::Focused(focused) => {
+                if let Some(state) = self.windows.get_mut(&window) {
+                    state.focused = focused;
+                    if focused {
+                        state.blink.restart(Instant::now());
+                    }
+                    platform.request_frame(window);
+                }
+            }
+            WindowEvent::Key(_) => {
+                if let Some(state) = self.windows.get_mut(&window) {
+                    state.blink.restart(Instant::now());
+                    platform.request_frame(window);
                 }
             }
             WindowEvent::CloseRequested => {
@@ -379,7 +471,7 @@ mod tests {
     #[test]
     fn the_sample_takes_the_appearance_s_variant() {
         let theme = Theme::builtin();
-        let mut window = Window::default();
+        let mut window = Window::new(None, false, Instant::now());
         let dark = window.sample(80, 24, Appearance::Dark, &theme);
         assert_eq!((dark.cols(), dark.rows()), (80, 24));
         assert_eq!(dark.colors().background, theme.dark.colors.background);
@@ -391,6 +483,82 @@ mod tests {
         let light = window.sample(80, 24, Appearance::Light, &theme);
         assert_eq!(light.colors().background, theme.light.colors.background);
         assert_eq!(window.sample(81, 24, Appearance::Light, &theme).cols(), 81);
+    }
+
+    /// The app started, its window focused and drawn once.
+    fn focused() -> (Fake, App, WindowId) {
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        assert!(fake.send(&mut app, window, WindowEvent::Focused(true)));
+        assert!(fake.window(window).unwrap().frame_requested);
+        assert!(fake.send(&mut app, window, WindowEvent::Frame));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn the_focused_window_s_cursor_blinks_on_its_timer() {
+        let (mut fake, mut app, window) = focused();
+        let timers: Vec<_> = fake.timers().collect();
+        assert_eq!(timers.len(), 1);
+        let (timer, at) = timers[0];
+        assert_eq!(app.blink_timer, Some((timer, at)));
+        // The timer asks the window for the frame of the change.
+        assert_eq!(fake.fire_timers(&mut app, at), 1);
+        assert_eq!(app.blink_timer, None);
+        assert!(fake.window(window).unwrap().frame_requested);
+        // Off, then on, as the clock goes.
+        let now = at;
+        assert_eq!(app.cursor(&mut fake, window, now), None);
+        assert_eq!(
+            app.cursor(&mut fake, window, now + cursor::BLINK_INTERVAL),
+            Some(CursorShape::Block)
+        );
+        assert_eq!(fake.timers().count(), 1);
+    }
+
+    #[test]
+    fn blinking_stops_on_after_its_timeout() {
+        let (mut fake, mut app, window) = focused();
+        let later = Instant::now() + cursor::BLINK_TIMEOUT;
+        assert_eq!(
+            app.cursor(&mut fake, window, later),
+            Some(CursorShape::Block)
+        );
+        assert!(!app.windows[&window].blinking);
+        // Its last timer asks for no frame.
+        let fired = fake.fire_timers(&mut app, later + cursor::BLINK_TIMEOUT);
+        assert_eq!(fired, 1);
+        assert!(!fake.window(window).unwrap().frame_requested);
+        assert_eq!(fake.timers().count(), 0);
+    }
+
+    #[test]
+    fn a_window_without_the_focus_shows_a_hollow_block_that_does_not_blink() {
+        let (mut fake, mut app, window) = focused();
+        assert!(fake.send(&mut app, window, WindowEvent::Focused(false)));
+        let now = Instant::now();
+        for millis in [0, 600, 1200] {
+            let at = now + std::time::Duration::from_millis(millis);
+            assert_eq!(app.cursor(&mut fake, window, at), Some(CursorShape::Hollow));
+        }
+        assert!(!app.windows[&window].blinking);
+    }
+
+    #[test]
+    fn the_configuration_gives_the_cursor_s_shape_and_blinking() {
+        let mut fake = Fake::default();
+        let steady_bar = CursorConfig {
+            shape: cursor::Shape::Bar,
+            blink: false,
+            thickness: None,
+        };
+        let mut app = App::new(None, steady_bar);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let half = Instant::now() + cursor::BLINK_INTERVAL + cursor::BLINK_INTERVAL / 2;
+        assert_eq!(app.cursor(&mut fake, window, half), Some(CursorShape::Bar));
+        assert_eq!(fake.timers().count(), 0);
     }
 
     #[test]

@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cursor;
 pub mod font;
 pub mod pane;
 pub mod theme;

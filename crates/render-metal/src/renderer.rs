@@ -5,7 +5,8 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 
 use bolt_render_core::{
-    AtlasRegion, CellBatch, Color, DisplayList, Item, Rect, Renderer, Texture, TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Texture,
+    TextureUpdate,
 };
 use dispatch2::DispatchData;
 use objc2::rc::Retained;
@@ -376,6 +377,23 @@ impl Frame<'_> {
             }
         }
 
+        let cursor: Vec<RectInstance> = batch
+            .cursor
+            .iter()
+            .flat_map(|cursor| {
+                cursor
+                    .rects(batch.x, batch.y, batch.cell_width, batch.cell_height)
+                    .into_iter()
+                    .map(|rect| rect_instance(&rect, cursor.color))
+            })
+            .collect();
+        let block = batch
+            .cursor
+            .is_some_and(|cursor| cursor.shape == CursorShape::Block);
+        if block {
+            self.rects(&cursor);
+        }
+
         let (cell_width, cell_height) = (batch.cell_width as i32, batch.cell_height as i32);
         let cell_origin = |column: u16, row: u16| {
             (
@@ -411,6 +429,9 @@ impl Frame<'_> {
             .collect();
         self.glyphs(&glyphs);
         self.rects(&lines);
+        if !block {
+            self.rects(&cursor);
+        }
     }
 
     /// Draws `glyphs`, those of each texture with its pipeline.
@@ -557,7 +578,7 @@ fn make_texture(
 
 #[cfg(test)]
 mod tests {
-    use bolt_render_core::{CellGlyph, CellLine, LineStyle, PlacedGlyph};
+    use bolt_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -712,6 +733,14 @@ mod tests {
                         thickness: 1,
                         color: white,
                     }],
+                    cursor: Some(CellCursor {
+                        column: 1,
+                        row: 0,
+                        columns: 1,
+                        shape: CursorShape::Hollow,
+                        thickness: 1,
+                        color: white,
+                    }),
                 }),
                 // A clip outside the drawable leaves nothing to draw.
                 Item::PushClip(Rect {

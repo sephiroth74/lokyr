@@ -31,7 +31,7 @@ fn run() -> ExitCode {
     let drawing = app::Drawing::new(config.font)
         .inspect_err(|error| eprintln!("bolt: {error}"))
         .ok();
-    match bolt_platform_macos::run(app::App::new(drawing)) {
+    match bolt_platform_macos::run(app::App::new(drawing, config.cursor)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("bolt: {error}");

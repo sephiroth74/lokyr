@@ -1,7 +1,8 @@
 //! The events that come in from the platform.
 
 use crate::{
-    AlertId, Ime, KeyEvent, Modifiers, MouseButton, Point, ScrollDelta, ScrollPhase, WindowSize,
+    AlertId, Ime, KeyEvent, Modifiers, MouseButton, Point, ScrollDelta, ScrollPhase, TimerId,
+    WindowSize,
 };
 
 /// Something that happened to a window, or in it.
@@ -84,6 +85,8 @@ pub enum AppEvent {
     /// The system asked the application to quit, as when the user logs out;
     /// it goes on until the app calls [`Platform::quit`](crate::Platform::quit).
     QuitRequested,
+    /// A timer that the app started fired.
+    Timer(TimerId),
 }
 
 /// The system's appearance.

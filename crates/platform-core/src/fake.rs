@@ -5,9 +5,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, Waker,
+    Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, TimerId, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
@@ -51,6 +52,8 @@ pub struct Fake {
     menu: Option<MainMenu>,
     clipboard: Option<String>,
     alerts: Vec<FakeAlert>,
+    /// The timers that have not fired, with the time of each.
+    timers: BTreeMap<TimerId, Instant>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -74,6 +77,7 @@ impl Fake {
             menu: None,
             clipboard: None,
             alerts: Vec::new(),
+            timers: BTreeMap::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -152,6 +156,35 @@ impl Fake {
         };
         self.alerts.remove(index);
         self.send_app(handler, AppEvent::AlertClosed { alert, button })
+    }
+
+    /// Fires the timers whose time has come by `now`, from the earliest,
+    /// as the clock reaches it: those that the app starts meanwhile fire
+    /// too, if their time has come. Returns how many fired.
+    pub fn fire_timers(&mut self, handler: &mut dyn Handler, now: Instant) -> usize {
+        let mut fired = 0;
+        loop {
+            let due = self
+                .timers
+                .iter()
+                .filter(|&(_, &at)| at <= now)
+                .min_by_key(|&(&timer, &at)| (at, timer))
+                .map(|(&timer, _)| timer);
+            let Some(timer) = due else {
+                return fired;
+            };
+            self.timers.remove(&timer);
+            if !self.send_app(handler, AppEvent::Timer(timer)) {
+                return fired;
+            }
+            fired += 1;
+        }
+    }
+
+    /// The timers that have not fired, with the time of each, from the
+    /// first started.
+    pub fn timers(&self) -> impl Iterator<Item = (TimerId, Instant)> + '_ {
+        self.timers.iter().map(|(&timer, &at)| (timer, at))
     }
 
     /// A window that is open.
@@ -269,5 +302,15 @@ impl Platform for Fake {
             alert: alert.clone(),
         });
         id
+    }
+
+    fn start_timer(&mut self, at: Instant) -> TimerId {
+        let id = TimerId::new(self.next_id());
+        self.timers.insert(id, at);
+        id
+    }
+
+    fn cancel_timer(&mut self, timer: TimerId) {
+        self.timers.remove(&timer);
     }
 }

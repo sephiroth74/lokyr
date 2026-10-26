@@ -143,6 +143,77 @@ pub struct CellLine {
     pub color: Color,
 }
 
+/// The shape of a grid's cursor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorShape {
+    /// A block over the cell, under its glyph.
+    Block,
+    /// A bar at the cell's left edge.
+    Bar,
+    /// A line at the cell's bottom edge.
+    Underline,
+    /// The edges of a block, as a window without the focus shows it.
+    Hollow,
+}
+
+/// The cursor of a grid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CellCursor {
+    /// The first cell's column.
+    pub column: u16,
+    /// The row.
+    pub row: u16,
+    /// The cells that it covers: two over a wide character.
+    pub columns: u16,
+    /// Its shape.
+    pub shape: CursorShape,
+    /// The pixels that a bar, an underline or a hollow block's edges take.
+    pub thickness: u32,
+    /// Its color.
+    pub color: Color,
+}
+
+impl CellCursor {
+    /// The rectangles that draw it, in a grid whose top left corner is at
+    /// `x` and `y`, of cells of `width` by `height`.
+    pub fn rects(&self, x: i32, y: i32, width: u32, height: u32) -> Vec<Rect> {
+        let left = x + i32::from(self.column) * width as i32;
+        let top = y + i32::from(self.row) * height as i32;
+        let width = u32::from(self.columns) * width;
+        let thickness = self.thickness.clamp(1, width.min(height).max(1));
+        let rect = |x: i32, y: i32, width: u32, height: u32| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        match self.shape {
+            CursorShape::Block => vec![rect(left, top, width, height)],
+            CursorShape::Bar => vec![rect(left, top, thickness, height)],
+            CursorShape::Underline => vec![rect(
+                left,
+                top + (height - thickness) as i32,
+                width,
+                thickness,
+            )],
+            CursorShape::Hollow => {
+                let inner = height.saturating_sub(thickness * 2);
+                vec![
+                    rect(left, top, width, thickness),
+                    rect(left, top + (height - thickness) as i32, width, thickness),
+                    rect(left, top + thickness as i32, thickness, inner),
+                    rect(
+                        left + (width - thickness) as i32,
+                        top + thickness as i32,
+                        thickness,
+                        inner,
+                    ),
+                ]
+            }
+        }
+    }
+}
+
 /// A pane's grid of cells.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CellBatch {
@@ -164,6 +235,9 @@ pub struct CellBatch {
     pub glyphs: Vec<CellGlyph>,
     /// The lines across cells.
     pub lines: Vec<CellLine>,
+    /// The cursor, when it shows: a block goes over the backgrounds and
+    /// under the glyphs, the other shapes over the glyphs.
+    pub cursor: Option<CellCursor>,
 }
 
 /// A glyph placed anywhere, such as the chrome's text.
@@ -229,6 +303,55 @@ pub trait Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cursor(shape: CursorShape, columns: u16) -> CellCursor {
+        CellCursor {
+            column: 2,
+            row: 1,
+            columns,
+            shape,
+            thickness: 2,
+            color: Color::default(),
+        }
+    }
+
+    fn rect(x: i32, y: i32, width: u32, height: u32) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn each_shape_of_cursor_takes_its_part_of_the_cell() {
+        // Cells of 8 by 16, from (10, 20): the third of the second row is
+        // at (26, 36).
+        let rects = |shape, columns| cursor(shape, columns).rects(10, 20, 8, 16);
+        assert_eq!(rects(CursorShape::Block, 1), [rect(26, 36, 8, 16)]);
+        assert_eq!(rects(CursorShape::Block, 2), [rect(26, 36, 16, 16)]);
+        assert_eq!(rects(CursorShape::Bar, 2), [rect(26, 36, 2, 16)]);
+        assert_eq!(rects(CursorShape::Underline, 1), [rect(26, 50, 8, 2)]);
+        assert_eq!(
+            rects(CursorShape::Hollow, 1),
+            [
+                rect(26, 36, 8, 2),
+                rect(26, 50, 8, 2),
+                rect(26, 38, 2, 12),
+                rect(32, 38, 2, 12),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_cursor_s_thickness_keeps_within_its_cell() {
+        let mut thick = cursor(CursorShape::Bar, 1);
+        thick.thickness = 40;
+        assert_eq!(thick.rects(0, 0, 8, 16), [rect(16, 16, 8, 16)]);
+        thick.thickness = 0;
+        assert_eq!(thick.rects(0, 0, 8, 16), [rect(16, 16, 1, 16)]);
+    }
 
     #[test]
     fn a_color_of_bytes_spans_zero_to_one() {

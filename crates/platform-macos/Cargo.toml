@@ -47,14 +47,18 @@ objc2-quartz-core = { workspace = true, features = [
 ] }
 objc2-foundation = { workspace = true, features = [
     "std",
+    "block2",
     "NSArray",
+    "NSDate",
     "NSDictionary",
     "NSGeometry",
     "NSKeyValueObserving",
     "NSNotification",
+    "NSObjCRuntime",
     "NSObject",
     "NSRunLoop",
     "NSString",
+    "NSTimer",
 ] }
 
 # The run loop needs the process's main thread, which the test harness keeps
@@ -81,6 +85,10 @@ harness = false
 
 [[test]]
 name = "appearance"
+harness = false
+
+[[test]]
+name = "timers"
 harness = false
 
 [lints]

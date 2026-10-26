@@ -15,6 +15,7 @@ mod backend;
 mod frame;
 mod menu;
 mod shared;
+mod timer;
 mod wake;
 mod window;
 

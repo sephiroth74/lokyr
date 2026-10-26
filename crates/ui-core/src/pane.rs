@@ -1,7 +1,7 @@
 //! A pane's grid of cells, as a display list draws it, from a snapshot of
 //! its terminal.
 
-use bolt_render_core::{AtlasRegion, CellBatch, CellGlyph, Color};
+use bolt_render_core::{AtlasRegion, CellBatch, CellCursor, CellGlyph, Color, CursorShape};
 use bolt_text_core::CellMetrics;
 use bolt_vt_core::page::{self, Content, Rgb, Style, Width};
 use bolt_vt_core::terminal::{Colors, Snapshot};
@@ -31,6 +31,16 @@ pub struct CellText<'a> {
     pub wide: bool,
 }
 
+/// How the cursor draws in a frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CursorLook {
+    /// Its shape.
+    pub shape: CursorShape,
+    /// The pixels of a bar's width and of an underline's height; a hollow
+    /// block's edges take the face's underline thickness.
+    pub thickness: u32,
+}
+
 /// The cells of a selection, and its colors.
 #[derive(Clone, Copy)]
 pub struct Selection<'a> {
@@ -49,19 +59,22 @@ pub fn background(snapshot: &Snapshot) -> Color {
 /// The grid of `snapshot`, of cells of `cell`, with its top left corner at
 /// `x` and `y`: each cell's background, and the glyph of each cell that
 /// shows a character, which `glyph` finds, through the fonts and the atlas,
-/// or not; the cells of `selection` in its colors.
+/// or not; the cells of `selection` in its colors; and the cursor, as
+/// `cursor` has it look, unless the program hid it or the blinking does.
 ///
 /// A character that takes two columns has its glyph in the first, which
 /// spans the two; the second has only its background, as has a glyph
-/// without ink. Reverse video
-/// swaps the default colors; faint text mixes its color halfway to its
-/// background; hidden text shows its background alone.
+/// without ink. Reverse video swaps the default colors; faint text mixes
+/// its color halfway to its background; hidden text shows its background
+/// alone. The cursor covers both cells of a wide character, and the text
+/// under a block takes its cell's background.
 pub fn cells(
     snapshot: &Snapshot,
     cell: &CellMetrics,
     x: i32,
     y: i32,
     selection: Option<&Selection<'_>>,
+    cursor: Option<CursorLook>,
     glyph: &mut dyn FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
 ) -> CellBatch {
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
@@ -78,7 +91,12 @@ pub fn cells(
         backgrounds: Vec::with_capacity(area),
         glyphs: Vec::with_capacity(area),
         lines: Vec::new(),
+        cursor: cursor.and_then(|look| place_cursor(snapshot, look, cell)),
     };
+    let block = batch
+        .cursor
+        .filter(|cursor| cursor.shape == CursorShape::Block)
+        .map(|cursor| (cursor.column, cursor.row));
     let selected = |column: u16, row: u16| {
         selection
             .filter(|selection| (selection.contains)(column, row))
@@ -122,6 +140,9 @@ pub fn cells(
             if style.faint {
                 foreground = mix(foreground, background);
             }
+            if block == Some((column, row)) {
+                foreground = background;
+            }
             text.clear();
             text.push(character);
             text.extend(line.grapheme(column));
@@ -154,6 +175,34 @@ pub fn cells(
         }
     }
     batch
+}
+
+/// The cursor of `snapshot`, as `look` has it, where it shows: on a wide
+/// character, over its two cells, from either.
+fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Option<CellCursor> {
+    let cursor = snapshot.cursor();
+    let (mut column, row) = (cursor.position.x, cursor.position.y);
+    let (columns, rows) = (snapshot.cols(), snapshot.rows());
+    if !cursor.visible || row >= rows || column >= columns {
+        return None;
+    }
+    let cells = snapshot.line(row).cells();
+    let width = |column: u16| cells.get(usize::from(column)).map(|cell| cell.width());
+    if column > 0 && width(column) == Some(Width::SpacerTail) {
+        column -= 1;
+    }
+    let wide = width(column) == Some(Width::Wide);
+    Some(CellCursor {
+        column,
+        row,
+        columns: if wide { 2 } else { 1 }.min(columns - column),
+        shape: look.shape,
+        thickness: match look.shape {
+            CursorShape::Bar | CursorShape::Underline => look.thickness,
+            CursorShape::Block | CursorShape::Hollow => cell.underline_thickness,
+        },
+        color: color(snapshot.colors().cursor),
+    })
 }
 
 /// The default text and background colors of `snapshot`, swapped in reverse
@@ -262,7 +311,15 @@ mod tests {
     fn a_snapshot_becomes_cells() {
         let snapshot = snapshot(6, 2, "AB\x1b[41;1mC\x1b[0m");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 4, 30, None, &mut atlas(&mut asked));
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            4,
+            30,
+            None,
+            None,
+            &mut atlas(&mut asked),
+        );
         assert_eq!((batch.x, batch.y, batch.columns, batch.rows), (4, 30, 6, 2));
         assert_eq!((batch.cell_width, batch.cell_height), (8, 16));
         assert_eq!(batch.backgrounds.len(), 12);
@@ -300,7 +357,7 @@ mod tests {
     fn a_wide_character_takes_its_first_cell() {
         let snapshot = snapshot(6, 1, "a日b");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let columns: Vec<u16> = batch.glyphs.iter().map(|g| g.column).collect();
         assert_eq!(columns, [0, 1, 3]);
         assert_eq!(asked[1], ("日".to_owned(), false, true));
@@ -311,7 +368,7 @@ mod tests {
     fn a_cluster_comes_whole() {
         let snapshot = snapshot(6, 1, "e\u{301}👍🏽");
         let mut asked = Vec::new();
-        cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let texts: Vec<&str> = asked.iter().map(|(text, ..)| text.as_str()).collect();
         assert_eq!(texts, ["e\u{301}", "👍🏽"]);
     }
@@ -324,7 +381,7 @@ mod tests {
             "\x1b[38;5;196ma\x1b[38;2;1;2;3;48;2;4;5;6mb\x1b[0;7mc",
         );
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let colors = Colors::default();
         assert_eq!(batch.glyphs[0].color, color(colors.palette[196]));
         assert_eq!(batch.glyphs[1].color, rgb(1, 2, 3));
@@ -340,7 +397,7 @@ mod tests {
         // Background color erase: the cleared cells keep the red.
         let snapshot = snapshot(4, 2, "\x1b[41m\x1b[2J\x1b[0m");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let red = color(Colors::default().palette[1]);
         assert!(batch.backgrounds.iter().all(|&bg| bg == red));
         assert!(batch.glyphs.is_empty() && asked.is_empty());
@@ -352,7 +409,7 @@ mod tests {
         // background of their own.
         let snapshot = snapshot(4, 2, "\x1b[44m    \r\n a  ");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         assert_eq!(asked.len(), 8);
         assert_eq!(batch.glyphs.len(), 1);
         assert_eq!((batch.glyphs[0].column, batch.glyphs[0].row), (1, 1));
@@ -363,7 +420,9 @@ mod tests {
     #[test]
     fn a_glyph_that_the_fonts_lack_leaves_its_background() {
         let snapshot = snapshot(3, 1, "abc");
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut |_: &CellText<'_>| None);
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut |_: &CellText<
+            '_,
+        >| None);
         assert!(batch.glyphs.is_empty());
         assert_eq!(batch.backgrounds.len(), 3);
     }
@@ -390,7 +449,7 @@ mod tests {
             pattern.push_str("\x1b[38;5;123m#\x1b[38;2;10;20;30m#\x1b[0m#");
             let snapshot = themed(40, 1, variant.colors.clone(), &pattern);
             let mut asked = Vec::new();
-            let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+            let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
             let palette = &variant.colors.palette;
             let mut expected: Vec<Color> = (0..8)
                 .flat_map(|index| [color(palette[index]), color(palette[index + 8])])
@@ -422,7 +481,7 @@ mod tests {
             "\x1b]4;1;rgb:11/22/33\x07\x1b]10;rgb:44/55/66\x07\x1b]11;#778899\x07\x1b[31ma\x1b[0mb",
         );
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         assert_eq!(batch.glyphs[0].color, rgb(0x11, 0x22, 0x33));
         assert_eq!(batch.glyphs[1].color, rgb(0x44, 0x55, 0x66));
         assert_eq!(batch.backgrounds[3], rgb(0x77, 0x88, 0x99));
@@ -435,7 +494,7 @@ mod tests {
         // stays.
         let snapshot = snapshot(4, 1, "\x1b[?5ha\x1b[31mb");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let colors = Colors::default();
         assert_eq!(batch.glyphs[0].color, color(colors.background));
         assert_eq!(batch.backgrounds[0], color(colors.foreground));
@@ -457,12 +516,113 @@ mod tests {
         };
         let snapshot = themed(4, 1, colors, "\x1b[2ma\x1b[0;8mb\x1b[0mc");
         let mut asked = Vec::new();
-        let batch = cells(&snapshot, &cell(), 0, 0, None, &mut atlas(&mut asked));
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let texts: Vec<&str> = asked.iter().map(|(text, ..)| text.as_str()).collect();
         assert_eq!(texts, ["a", "c"]);
         assert_eq!(batch.glyphs[0].color, Color::from_rgb8(100, 50, 50));
         // The hidden cell keeps its background.
         assert_eq!(batch.backgrounds[1], Color::from_rgb8(0, 0, 100));
+    }
+
+    /// The cursor that `cells` gives `snapshot` in `shape`, and the color
+    /// of each glyph by its column.
+    fn cursor_of(
+        snapshot: &Snapshot,
+        shape: CursorShape,
+    ) -> (Option<CellCursor>, Vec<(u16, Color)>) {
+        let mut asked = Vec::new();
+        let look = CursorLook {
+            shape,
+            thickness: 3,
+        };
+        let batch = cells(
+            snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            Some(look),
+            &mut atlas(&mut asked),
+        );
+        let colors = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.color))
+            .collect();
+        (batch.cursor, colors)
+    }
+
+    #[test]
+    fn the_cursor_takes_its_shape_and_the_theme_s_color() {
+        let colors = Colors::default();
+        let face = cell().underline_thickness;
+        assert_ne!(face, 3);
+        // A bar and an underline take the look's thickness, a hollow block
+        // the face's.
+        for (shape, thickness) in [
+            (CursorShape::Block, face),
+            (CursorShape::Bar, 3),
+            (CursorShape::Underline, 3),
+            (CursorShape::Hollow, face),
+        ] {
+            let (cursor, _) = cursor_of(&snapshot(4, 2, "ab"), shape);
+            assert_eq!(
+                cursor,
+                Some(CellCursor {
+                    column: 2,
+                    row: 0,
+                    columns: 1,
+                    shape,
+                    thickness,
+                    color: color(colors.cursor),
+                })
+            );
+        }
+        // OSC 12 sets its color.
+        let (cursor, _) = cursor_of(&snapshot(4, 2, "\x1b]12;#ff0000\x07"), CursorShape::Bar);
+        assert_eq!(cursor.unwrap().color, rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn the_text_under_a_block_takes_its_cell_s_background() {
+        // The cursor back on `b`, whose background is red.
+        let text = "a\x1b[41mb\x1b[0mc\x1b[2D";
+        let (cursor, glyphs) = cursor_of(&snapshot(4, 1, text), CursorShape::Block);
+        assert_eq!(cursor.map(|cursor| cursor.column), Some(1));
+        let colors = Colors::default();
+        let (ink, red) = (color(colors.foreground), color(colors.palette[1]));
+        assert_eq!(glyphs, [(0, ink), (1, red), (2, ink)]);
+        // The other shapes leave the text's colors.
+        let (_, glyphs) = cursor_of(&snapshot(4, 1, text), CursorShape::Hollow);
+        assert_eq!(glyphs, [(0, ink), (1, ink), (2, ink)]);
+    }
+
+    #[test]
+    fn the_cursor_covers_a_wide_character_from_either_cell() {
+        // On the character, and on its second cell.
+        for text in ["\u{4E2D}\x1b[2D", "\u{4E2D}\x1b[D"] {
+            let (cursor, _) = cursor_of(&snapshot(4, 1, text), CursorShape::Block);
+            let cursor = cursor.unwrap();
+            assert_eq!((cursor.column, cursor.columns), (0, 2), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_hidden_cursor_draws_nothing() {
+        let (cursor, _) = cursor_of(&snapshot(4, 1, "a\x1b[?25l"), CursorShape::Block);
+        assert_eq!(cursor, None);
+        // Nor does one that the blinking hides.
+        let mut asked = Vec::new();
+        let batch = cells(
+            &snapshot(4, 1, "a"),
+            &cell(),
+            0,
+            0,
+            None,
+            None,
+            &mut atlas(&mut asked),
+        );
+        assert_eq!(batch.cursor, None);
     }
 
     #[test]
@@ -486,6 +646,7 @@ mod tests {
             0,
             0,
             Some(&selection),
+            None,
             &mut atlas(&mut asked),
         );
         let red = color(Colors::default().palette[1]);

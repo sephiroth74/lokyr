@@ -12,6 +12,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::time::Instant;
+
 mod event;
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
@@ -44,6 +46,24 @@ impl WindowId {
     }
 
     /// The platform's number for the window.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// A timer that the app started, which no other timer of the process
+/// takes, even once it has fired.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TimerId(u64);
+
+impl TimerId {
+    /// The timer of the platform's number `id`, which it never gives
+    /// another timer of the process.
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// The platform's number for the timer.
     pub fn get(self) -> u64 {
         self.0
     }
@@ -119,6 +139,16 @@ pub trait Platform {
     /// Opens an alert, on `window` or on its own when `None`, and returns
     /// at once: [`AppEvent::AlertClosed`] tells which button closed it.
     fn show_alert(&mut self, window: Option<WindowId>, alert: &Alert) -> AlertId;
+
+    /// Starts a timer that fires once, at `at` or a little after, as the
+    /// system groups its wakeups, with an [`AppEvent::Timer`]; a time
+    /// already past fires once the current call returns. It fires during a
+    /// live resize and while a menu is open too.
+    fn start_timer(&mut self, at: Instant) -> TimerId;
+
+    /// Stops a timer, which then never fires; one that fired, or never was,
+    /// takes nothing.
+    fn cancel_timer(&mut self, timer: TimerId);
 }
 
 /// What the platform calls on the app, on the main thread.
