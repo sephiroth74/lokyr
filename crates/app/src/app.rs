@@ -93,6 +93,12 @@ impl Handler for App {
         match event {
             AppEvent::Command(command) if command == QUIT => platform.quit(),
             AppEvent::QuitRequested => platform.quit(),
+            // What woke the application changed what a window shows.
+            AppEvent::Wake => {
+                for &window in self.windows.keys() {
+                    platform.request_frame(window);
+                }
+            }
             AppEvent::AppearanceChanged(_) => {
                 let windows: Vec<WindowId> = self.windows.keys().copied().collect();
                 for window in windows {
@@ -109,6 +115,11 @@ impl Handler for App {
         match event {
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
                 self.draw(platform, window, size);
+            }
+            WindowEvent::Frame => {
+                if let Some(size) = platform.window_size(window) {
+                    self.draw(platform, window, size);
+                }
             }
             WindowEvent::CloseRequested => {
                 // The surface goes before its window.
@@ -215,6 +226,16 @@ mod tests {
         assert!(fake.send(&mut app, window, WindowEvent::ScaleChanged(size)));
         fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
         assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn a_wake_asks_each_window_for_a_frame() {
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        fake.send_app(&mut app, AppEvent::Wake);
+        assert!(fake.window(window).unwrap().frame_requested);
+        assert!(fake.send(&mut app, window, WindowEvent::Frame));
+        assert!(!fake.window(window).unwrap().frame_requested);
     }
 
     #[test]

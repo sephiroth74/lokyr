@@ -263,6 +263,23 @@ fn closing_the_last_window_quits() {
 }
 
 #[test]
+fn a_frame_answers_the_request_for_it() {
+    let (mut fake, mut app, window) = started();
+    assert!(!fake.window(window).unwrap().frame_requested);
+    fake.request_frame(window);
+    fake.request_frame(window);
+    assert!(fake.window(window).unwrap().frame_requested);
+    assert!(fake.send(&mut app, window, WindowEvent::Frame));
+    assert!(!fake.window(window).unwrap().frame_requested);
+    assert_eq!(
+        app.window_events.last(),
+        Some(&(window, WindowEvent::Frame))
+    );
+    // A window that is not open asks for nothing.
+    fake.request_frame(WindowId::new(99));
+}
+
+#[test]
 fn quitting_from_the_menu_ends_the_application() {
     let (mut fake, mut app, window) = started();
     fake.send_app(&mut app, command("quit"));

@@ -23,6 +23,9 @@ pub struct FakeWindow {
     pub size: WindowSize,
     /// Whether it is hidden or covered.
     pub occluded: bool,
+    /// Whether the app asked for a frame, which the next
+    /// [`WindowEvent::Frame`] that a test sends gives.
+    pub frame_requested: bool,
 }
 
 /// An alert that is open, until a test answers it.
@@ -101,6 +104,7 @@ impl Fake {
         match &event {
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => state.size = *size,
             WindowEvent::Occluded(occluded) => state.occluded = *occluded,
+            WindowEvent::Frame => state.frame_requested = false,
             WindowEvent::Focused(true) => self.focused = Some(window),
             WindowEvent::Focused(false) if self.focused == Some(window) => self.focused = None,
             _ => {}
@@ -203,6 +207,7 @@ impl Platform for Fake {
                 title: attributes.title.clone(),
                 size: WindowSize::new(attributes.size, self.scale),
                 occluded: false,
+                frame_requested: false,
             },
         );
         Ok(id)
@@ -230,6 +235,12 @@ impl Platform for Fake {
     fn window_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {
         // Nothing draws into the fake's windows.
         None
+    }
+
+    fn request_frame(&mut self, window: WindowId) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.frame_requested = true;
+        }
     }
 
     fn focus_window(&mut self, _window: WindowId) {}

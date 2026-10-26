@@ -19,12 +19,14 @@ use objc2_foundation::{
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
+use crate::frame::Pacer;
 use crate::shared::{Pending, Shared};
 
 /// A window that the app opened.
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
+    pacer: Pacer,
     // The window holds its delegate weakly.
     _delegate: Retained<WindowDelegate>,
 }
@@ -64,11 +66,13 @@ impl Window {
         let view = ContentView::new(mtm, content);
         ns_window.setContentView(Some(&view));
         ns_window.center();
+        let pacer = Pacer::new(mtm, &view, shared.clone(), id);
         let delegate = WindowDelegate::new(mtm, shared, id);
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         Self {
             ns_window,
             view,
+            pacer,
             _delegate: delegate,
         }
     }
@@ -88,7 +92,14 @@ impl Window {
         self.ns_window.makeKeyAndOrderFront(None);
     }
 
+    /// Asks for a frame. Returns whether it is due at once, rather than at
+    /// the display's next refresh.
+    pub(crate) fn request_frame(&self) -> bool {
+        self.pacer.request()
+    }
+
     pub(crate) fn close(&self) {
+        self.pacer.stop();
         // What the window does as it closes, such as losing the focus, has
         // no window left to tell it to.
         self.ns_window.setDelegate(None);

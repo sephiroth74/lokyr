@@ -92,6 +92,14 @@ pub trait Platform {
     /// nothing, such as the fake one.
     fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
 
+    /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
+    /// current call returns, if the window drew no frame since its display's
+    /// last refresh, as after a while without one; otherwise at the next
+    /// refresh, so that frames keep to the display's pace. The requests made
+    /// before a frame come as that one. A window that asks for no frame
+    /// wakes nothing.
+    fn request_frame(&mut self, window: WindowId);
+
     /// Brings a window in front of the others, with the focus.
     fn focus_window(&mut self, window: WindowId);
 

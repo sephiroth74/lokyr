@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Weak;
 
 use bolt_platform_core::{
-    Alert, AlertId, Appearance, Error, MainMenu, Platform, Waker, WindowAttributes, WindowHandle,
-    WindowId, WindowSize,
+    Alert, AlertId, Appearance, Error, MainMenu, Platform, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
@@ -180,6 +180,17 @@ impl Platform for Backend {
         // SAFETY: the view is the window's content view, which lives as long
         // as the window, and no window closes while the backend is borrowed.
         Some(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+
+    fn request_frame(&mut self, window: WindowId) {
+        let Some(open) = self.windows.get(&window) else {
+            return;
+        };
+        if open.request_frame()
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(window, WindowEvent::Frame));
+        }
     }
 
     fn focus_window(&mut self, window: WindowId) {

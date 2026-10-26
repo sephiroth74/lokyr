@@ -19,6 +19,10 @@ pub enum WindowEvent {
     /// The user asked to close the window, which stays open until the app
     /// closes it.
     CloseRequested,
+    /// The window is ready for the frame that the app asked for, with
+    /// [`Platform::request_frame`](crate::Platform::request_frame): the app
+    /// draws it now.
+    Frame,
     /// A key.
     Key(KeyEvent),
     /// The input method.

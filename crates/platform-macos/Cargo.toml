@@ -41,6 +41,7 @@ objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
     "std",
     "objc2-core-foundation",
+    "CADisplayLink",
     "CALayer",
     "CAMetalLayer",
 ] }
@@ -50,8 +51,13 @@ objc2-foundation = { workspace = true, features = [
     "NSGeometry",
     "NSNotification",
     "NSObject",
+    "NSRunLoop",
     "NSString",
 ] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+# The test of the run loop counts the process's wakeups.
+libc.workspace = true
 
 # The run loop needs the process's main thread, which the test harness keeps
 # for itself.
