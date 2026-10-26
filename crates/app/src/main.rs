@@ -5,17 +5,39 @@
 
 #![forbid(unsafe_code)]
 
+mod app;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
+        None => run(),
         Some("--version" | "-V") => {
             println!("bolt {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
-        _ => {
-            eprintln!("Usage: bolt --version");
+        Some(_) => {
+            eprintln!("Usage: bolt [--version]");
             ExitCode::FAILURE
         }
     }
+}
+
+/// Runs the application until it quits.
+#[cfg(target_os = "macos")]
+fn run() -> ExitCode {
+    match bolt_platform_macos::run(app::App::default()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("bolt: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Fails: the target has no platform backend yet.
+#[cfg(not(target_os = "macos"))]
+fn run() -> ExitCode {
+    eprintln!("bolt: this platform has no backend yet");
+    ExitCode::FAILURE
 }

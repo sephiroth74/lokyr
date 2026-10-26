@@ -21,12 +21,16 @@ luau-plugins = ["dep:bolt-plugin-host-luau"]
 [dependencies]
 bolt-core-actions.workspace = true
 bolt-kernel.workspace = true
+bolt-platform-core.workspace = true
 bolt-plugin-host-luau = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 bolt-font-coretext.workspace = true
 bolt-platform-macos.workspace = true
 bolt-render-metal.workspace = true
+
+[dev-dependencies]
+bolt-platform-core = { workspace = true, features = ["fake"] }
 
 [lints]
 workspace = true

@@ -1,6 +1,18 @@
 //! macOS platform backend, built on AppKit.
 //!
-//! The application and its windows (each with a single GPU layer), keyboard
-//! and IME input, menus, clipboard and accessibility.
+//! [`run`] starts the application and hands the app's
+//! [`Handler`](bolt_platform_core::Handler) what happens in it, on the main
+//! thread's run loop: its windows, its main menu, the clipboard and alerts,
+//! and the wakes of other threads, through a source of that run loop.
 
 #![cfg(target_os = "macos")]
+
+mod alert;
+mod app;
+mod backend;
+mod menu;
+mod shared;
+mod wake;
+mod window;
+
+pub use app::run;

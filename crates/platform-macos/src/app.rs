@@ -1,0 +1,96 @@
+//! The application, its delegate, and its run loop.
+
+use std::panic;
+use std::rc::{Rc, Weak};
+
+use bolt_platform_core::{AppEvent, Error, Handler};
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
+    NSApplicationTerminateReply,
+};
+use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
+
+use crate::shared::{Pending, Shared};
+use crate::wake::WakeSource;
+
+/// Starts the application, as a regular one, with a Dock icon and a menu
+/// bar, calls [`Handler::started`] once it has launched, and hands the
+/// handler every event until it calls
+/// [`Platform::quit`](bolt_platform_core::Platform::quit). Returns once the
+/// handler, then every window, are gone. A panic of the handler ends the
+/// application, and goes on from here.
+///
+/// It must be called from the process's main thread, once.
+pub fn run(handler: impl Handler + 'static) -> Result<(), Error> {
+    let mtm = MainThreadMarker::new()
+        .ok_or_else(|| Error::Start("the application must run on the main thread".to_owned()))?;
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+
+    let wake = WakeSource::install()?;
+    let shared = Shared::new(mtm, Box::new(handler), wake.waker());
+    wake.set_target(&shared);
+    let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
+    app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+
+    app.run();
+
+    app.setDelegate(None);
+    drop(wake);
+    if let Some(payload) = shared.finish() {
+        panic::resume_unwind(payload);
+    }
+    Ok(())
+}
+
+define_class!(
+    // SAFETY: `NSObject` has no requirement of its subclasses, and the
+    // delegate does not implement `Drop`.
+    #[unsafe(super = NSObject)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = Weak<Shared>]
+    struct AppDelegate;
+
+    // SAFETY: `NSObjectProtocol` has no requirement.
+    unsafe impl NSObjectProtocol for AppDelegate {}
+
+    // SAFETY: `NSApplicationDelegate` has no requirement; each method has
+    // AppKit's signature.
+    unsafe impl NSApplicationDelegate for AppDelegate {
+        #[unsafe(method(applicationDidFinishLaunching:))]
+        fn application_did_finish_launching(&self, _notification: &NSNotification) {
+            // An application that starts from a terminal, rather than from
+            // its bundle, comes forward only when it asks, and the
+            // cooperative `activate` waits for the active application to
+            // yield, which a terminal does not.
+            #[allow(deprecated)]
+            NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
+            self.post(Pending::Started);
+        }
+
+        #[unsafe(method(applicationShouldTerminate:))]
+        fn application_should_terminate(&self, _sender: &NSApplication) -> NSApplicationTerminateReply {
+            // The app decides, and quits by itself, which makes `run`
+            // return: AppKit's termination would end the process before.
+            self.post(Pending::App(AppEvent::QuitRequested));
+            NSApplicationTerminateReply::TerminateCancel
+        }
+    }
+);
+
+impl AppDelegate {
+    fn new(mtm: MainThreadMarker, shared: Weak<Shared>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(shared);
+        // SAFETY: `NSObject`'s `init` has this signature.
+        unsafe { msg_send![super(this), init] }
+    }
+
+    fn post(&self, pending: Pending) {
+        if let Some(shared) = self.ivars().upgrade() {
+            shared.post(pending);
+        }
+    }
+}

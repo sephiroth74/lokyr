@@ -12,5 +12,44 @@ publish = false
 [dependencies]
 bolt-platform-core.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+objc2.workspace = true
+objc2-app-kit = { workspace = true, features = [
+    "std",
+    "block2",
+    "objc2-core-foundation",
+    "NSAlert",
+    "NSAppearance",
+    "NSApplication",
+    "NSButton",
+    "NSControl",
+    "NSEvent",
+    "NSGraphics",
+    "NSGraphicsContext",
+    "NSMenu",
+    "NSMenuItem",
+    "NSPasteboard",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSView",
+    "NSWindow",
+] }
+objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
+objc2-foundation = { workspace = true, features = [
+    "std",
+    "NSArray",
+    "NSGeometry",
+    "NSNotification",
+    "NSObject",
+    "NSString",
+] }
+
+# The run loop needs the process's main thread, which the test harness keeps
+# for itself.
+[[test]]
+name = "run_loop"
+harness = false
+
 [lints]
 workspace = true

@@ -33,9 +33,14 @@ libc = "0.2.190"
 memchr = "2.8.3"
 # Regex search over the grid's text.
 regex-automata = "0.4.18"
-# objc2 crates move together: keep their versions aligned.
+# objc2 crates move together, with block2: keep their versions aligned. Each
+# member enables the classes and functions that it uses.
+block2 = "0.6.2"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
+objc2-foundation = { version = "0.3.2", default-features = false }
 # Without forking and timeouts, which the tests do not use.
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 serde = { version = "1.0.229", features = ["derive"] }
