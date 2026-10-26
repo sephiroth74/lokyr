@@ -34,12 +34,11 @@ pub struct Drawing {
 }
 
 impl Drawing {
-    /// The system's GPU, and the font of the configuration, which tells of a
+    /// The system's GPU, and the font that `config` gives, which tells of a
     /// family that is not installed.
-    pub fn new() -> Result<Self, String> {
+    pub fn new(config: FontConfig) -> Result<Self, String> {
         let gpu = Gpu::new().map_err(|error| error.to_string())?;
-        let font = Font::new(CoreText::new(), FontConfig::default(), 1.0)
-            .map_err(|error| error.to_string())?;
+        let font = Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())?;
         if let Some(family) = font.missing_family() {
             eprintln!(
                 "bolt: the font family `{family}` is not installed; the text takes `{}`",

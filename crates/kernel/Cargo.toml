@@ -14,7 +14,10 @@ bolt-pkg-model.workspace = true
 bolt-plugin-sdk.workspace = true
 bolt-search.workspace = true
 bolt-session.workspace = true
+bolt-text-core.workspace = true
 bolt-ui-core.workspace = true
+serde.workspace = true
+toml_edit.workspace = true
 
 [lints]
 workspace = true

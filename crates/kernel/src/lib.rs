@@ -6,3 +6,5 @@
 //! plugins, but decides nothing about how things look: plugins do.
 
 #![forbid(unsafe_code)]
+
+pub mod config;
