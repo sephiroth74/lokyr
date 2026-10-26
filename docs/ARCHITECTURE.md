@@ -8,7 +8,7 @@ This document describes Bolt as a whole. Each subsystem has its own document wit
 2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones, through a Rust front end instead of a Luau one. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
 3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes the Luau runtime.
 4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)).
-5. **No networking in the app.** Downloading and installing is Crossbow's job ([ADR 0008](adr/0008-separate-package-manager.md)).
+5. **No networking in the app.** Downloading and installing is Crossbow's job ([ADR 0008](adr/0008-separate-package-manager.md)). The MCP server speaks over stdio, through the IPC socket ([ADR 0017](adr/0017-mcp-and-agents.md)).
 6. **Budgets are requirements.** Timings and memory have numeric targets that CI checks ([PERFORMANCE.md](PERFORMANCE.md)).
 
 ## Layers
@@ -177,7 +177,7 @@ Versions and maturity must be rechecked when coding starts.
 
 | Subsystem | Crates | Notes |
 |---|---|---|
-| macOS | `objc2`, `objc2-app-kit`, `objc2-metal`, `objc2-quartz-core`, `objc2-core-text` | The `metal` crate is deprecated. objc2 changes often; keep its version aligned with the one AccessKit uses |
+| macOS | `objc2`, `objc2-app-kit`, `objc2-metal`, `objc2-quartz-core`, `objc2-core-text` | The `metal` crate is deprecated. objc2 changes often, and AccessKit's macOS adapter can trail it: it then builds on its own versions of `objc2`, in one module of `platform-macos` that hands it the view as a raw pointer, until it catches up |
 | Wayland / X11 (F7) | `smithay-client-toolkit` + `calloop`; `x11rb` + `xkbcommon` + `xim` | |
 | GPU on Linux (F7) | `glow` + `khronos-egl` | |
 | Text | CoreText on macOS (discovery, fallback, shaping, rasterization); `harfrust` + `fontconfig` + `freetype-rs` on Linux (F7) | HarfRust is young: benchmark it against `harfbuzz-sys` before adopting it |

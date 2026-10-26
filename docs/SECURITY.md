@@ -11,6 +11,7 @@ A terminal sees everything that is typed and printed, passwords included. That m
 | Third-party plugins | A plugin trying to read the screen, the clipboard or the network without permission |
 | Tampered packages | An archive altered on the CDN, or a compromised publisher account |
 | Local processes | Another user's process trying to drive the terminal through the IPC socket |
+| AI agents | An agent that reads output it cannot trust, and is told by it to type into another pane through the MCP server (prompt injection) |
 
 Out of scope: a process running as the same user with full privileges. It could read the terminal's memory anyway.
 
@@ -52,10 +53,24 @@ Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
 
 ## IPC
 
+IPC comes in F3b ([ROADMAP](ROADMAP.md#f3b--mcp-and-agents)).
+
 - **Socket location**: a Unix socket in a directory with 0700 permissions (`$XDG_RUNTIME_DIR/bolt/` on Linux, `$TMPDIR/bolt-<uid>/` on macOS).
 - **Who can connect**: every connection is checked against the peer's credentials (`getpeereid`). Only the same user is accepted.
 - **Sensitive commands**: reading the scrollback or sending text to a pane requires `ipc.allow-sensitive = true` or an explicit confirmation.
-- **Child processes** receive `BOLT_SOCKET`, so scripts can use the CLI.
+- **Child processes** receive `BOLT_SOCKET`, so scripts can use the CLI, and `BOLT_PANE_ID`, their pane's.
+
+## MCP
+
+The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
+
+- **Transport**: `bolt +mcp` speaks MCP over stdio. The agent starts it, and it reaches the app through the IPC socket, with the socket's checks. The app opens no port and speaks no HTTP.
+- **An agent's scope**:
+  - by default, its own pane, the one whose program it descends from, and the panes that it opened;
+  - `bolt +mcp` names its pane from `BOLT_PANE_ID`, and the app checks it: the socket's peer process must descend from that pane's program;
+  - reading or typing into another pane asks the user first, a pane at a time, with the agent's name, as MCP's `initialize` gives it, and the pane's.
+- **The config**: the `[mcp]` section widens the scope, or turns the server off.
+- **The agents' files**: the app never writes them. The lines that their hooks need are in the documents, and `bolt +agent-hooks <agent>` prints them.
 
 ## Robustness
 

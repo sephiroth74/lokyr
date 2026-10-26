@@ -1,6 +1,6 @@
 # Bolt — project documentation
 
-> **Bolt** is the terminal, and **Crossbow** its plugin package manager: a crossbow shoots bolts. The names replaced the provisional Saetta and Faretra ([ADR 0014](adr/0014-names-bolt-and-crossbow.md)).
+> **Bolt** is the terminal, and **Crossbow** its plugin package manager: a crossbow shoots bolts. The names replaced the provisional Saetta and Faretra ([ADR 0014](adr/0014-names-bolt-and-crossbow.md)), and are working names in their turn: the package manager will be **Shard**, and the terminal's final name is chosen by the end of F2 ([ADR 0016](adr/0016-new-names.md)).
 
 Bolt is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011](adr/0011-macos-only-1-0.md)). The architecture keeps the door open for Linux, planned after 1.0, and later for Windows. Goals:
 
@@ -9,7 +9,7 @@ Bolt is a terminal emulator for macOS. Version 1.0 targets macOS only ([ADR 0011
 - **Everything is a plugin**: tabs, splits, search and themes are all plugins. The terminal itself is a small kernel plus a list of plugins.
 - **An open ecosystem**: third-party plugins are Luau scripts that run in a sandbox, installed by **Crossbow**. Crossbow is a separate program from the app, the same way cargo is separate from rustc.
 
-**Status**: F1, the headless terminal core, done on 25 October 2026; F2, macOS with a single pane, comes next, starting with a review of its breakdown with the user. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid with its scrollback and reflow, the terminal state, Unicode, the input encoders, the PTY, the session and the search, and the tools that check them: the recorded sessions and their replay, the headless harness with esctest and vttest, the differential tests against `alacritty_terminal`, fuzzing, the benchmarks and the Linux job; its exit criteria are met, and its known issues are listed in its tasks' file. This folder holds the architecture, the decisions and the roadmap.
+**Status**: F1, the headless terminal core, done on 25 October 2026; F2, macOS with a single pane, is under way: the review of its breakdown with the user, on 26 October 2026, brought the MCP server and the AI agents into the plan ([ADR 0017](adr/0017-mcp-and-agents.md)), with phase F3b after F3. F0 built the workspace skeleton, CI, the dependency rules and the measurement tools; F1 has the parser, the paged grid with its scrollback and reflow, the terminal state, Unicode, the input encoders, the PTY, the session and the search, and the tools that check them: the recorded sessions and their replay, the headless harness with esctest and vttest, the differential tests against `alacritty_terminal`, fuzzing, the benchmarks and the Linux job; its exit criteria are met, and its known issues are listed in its tasks' file. This folder holds the architecture, the decisions and the roadmap.
 
 ## Documents
 
@@ -49,6 +49,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Crossbow, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
 | Plugin fetching separate from the app | The `bolt` binary contains no networking code, enforced in CI | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
+| Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its sequences and `bolt +notify`, on its tab | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3 |
+| MCP: agents drive the terminal | `bolt +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
 
 ## Architecture decisions
 
@@ -69,7 +71,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
 | [0014](adr/0014-names-bolt-and-crossbow.md) | Names: Bolt for the terminal, Crossbow for the package manager | Accepted |
 | [0015](adr/0015-vt-core-throughput-exception.md) | Throughput of the VT core: vtebench's bottom region, with its lines of one character, is an exception | Accepted |
-| [0016](adr/0016-new-names.md) | New names: Alsvid for the terminal and Arvak for the package manager, or Draupnir | Proposed; would supersede 0014 |
+| [0016](adr/0016-new-names.md) | New names: Shard for the package manager; the terminal's still to choose, by the end of F2 | Proposed; would supersede 0014 |
+| [0017](adr/0017-mcp-and-agents.md) | An MCP server, and the AI agents that run in the terminal; phase F3b | Accepted |
 
 ## Glossary
 

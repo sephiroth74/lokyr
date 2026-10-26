@@ -78,6 +78,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   - bell;
   - progress (OSC 9;4);
   - running process;
+  - an AI agent's state: working, waiting or done ([Agents](#agents));
   - protected input (Secure Keyboard Entry).
 - **Close button**: always visible, on hover only, or never. Closing asks for confirmation if a process other than the shell is running.
 
@@ -274,6 +275,15 @@ The `core-actions` plugin:
 - **Mouse selection**:
   - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
   - copy-on-select is optional.
+
+## Agents
+
+AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode or Aider, are recognized, and can drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
+
+- **Presence**: the pane's foreground program, by its name, from a list in the config.
+- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, its hooks call `bolt +notify`; `bolt +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
+- **Where it shows**: on the pane's tab (F3), and as a notification while the window has no focus (F2).
+- **MCP** (F3b): `bolt +mcp` gives agents tools to list the panes, read them, open tabs and splits, run commands and wait for their exit codes, and type, within the scope of [SECURITY.md](SECURITY.md#mcp).
 
 ## Cursor
 

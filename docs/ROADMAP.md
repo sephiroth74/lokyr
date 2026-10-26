@@ -13,13 +13,14 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
 | F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `bolt-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
-| F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette | Every must-have requirement in place | 10–14 weeks |
+| F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs | Every must-have requirement in place | 10–14 weeks |
+| F3b MCP and agents | IPC and the remote CLI, the MCP server `bolt +mcp` and its tools, the agents' hooks | Agents drive panes over MCP, within their scope | 4–5 weeks |
 | F4 Plugin ecosystem | Luau host, Luau API, Crossbow, registry v0 | Publishing and installing work end to end | 8–10 weeks |
 | F5a Shell integration and blocks | OSC 133, prompt jumping, Warp-style blocks, ssh integration | Verified in zsh, bash and fish, including over ssh | 4–6 weeks |
-| F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast, IPC | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
+| F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
 | F6 Release 1.0 | Hardening, docs, stable plugin API 1.0 | The 1.0 criteria (see [Versions](#versions)) | — |
-| F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, AI | — | — |
+| F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — | — |
 
 ## Phases in detail
 
@@ -63,6 +64,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - app and window, with the titlebar prototype;
   - input and IME (`NSTextInputClient`);
   - live resize, clipboard, menus;
+  - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md));
   - an accessibility skeleton.
 - **`font-coretext` and `text-core`**:
   - font discovery and fallback, and an optional separate font for non-ASCII text, like iTerm2's;
@@ -82,6 +84,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
+- **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **Cursor options**: blink interval, smooth blinking, default shape and smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)).
 
 **Exit**:
@@ -91,6 +94,20 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - the whole iTerm2-Color-Schemes collection imports, Light/Dark keys and color spaces included;
 - IME works in the find bar;
 - every cursor option applies on hot reload, and with smooth blinking and movement on, the latency and idle budgets still hold;
+- budgets green.
+
+### F3b — MCP and agents
+
+- **IPC and the remote CLI** (`bolt cli …`), moved from F5b: the socket and its checks of [SECURITY.md](SECURITY.md#ipc).
+- **The MCP server**: `bolt +mcp`, over stdio, which the agent starts and which talks to the app through the socket; the app opens no port ([ADR 0017](adr/0017-mcp-and-agents.md)).
+- **Its tools**: the windows, tabs and panes; a pane's screen and scrollback; a tab or a split that runs a command; the command's end and its exit code (OSC 133); text and keys sent to a pane; the working directory.
+- **An agent's scope**: its own pane and the panes that it opened; another pane after the user's confirmation; the `[mcp]` section of the config ([SECURITY.md](SECURITY.md#mcp)).
+- **The agents' hooks**: `bolt +notify`, which they call for an exact state, and `bolt +agent-hooks <agent>`, which prints the lines that their config takes.
+
+**Exit**:
+- Claude Code and Codex open a pane over MCP, run a command in it, and read its output and its exit code;
+- an agent that reaches outside its scope gets the user's confirmation first;
+- `bolt cli` lists and drives the panes;
 - budgets green.
 
 ### F4 — Plugin ecosystem
@@ -130,7 +147,6 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
 - **Windows and sessions**: hotkey window and quick terminal, input broadcast, session restore.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
-- **IPC and remote CLI** (`bolt cli …`).
 - **Search**: filter mode.
 - **Settings**: a panel generated from the config schemas.
 - **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
@@ -170,15 +186,16 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Windows**: ConPTY, Win32, DirectWrite, D3D11.
 - **Multiplexing**: a mux daemon and SSH domains.
 - **Memory**: lz4 compression of the scrollback.
-- **Extensibility**: custom shaders; AI plugins and a Warp-style input editor.
+- **Extensibility**: custom shaders; AI plugins, an assistant with an LLM among them ([ADR 0017](adr/0017-mcp-and-agents.md)), and a Warp-style input editor.
 
 ## Versions
 
 | Version | Contents |
 |---|---|
 | 0.1 | macOS MVP (F3) |
-| 0.2 | Luau plugins and Crossbow (F4) |
-| 0.3–0.5 | F5a, F5b, F5c |
+| 0.2 | MCP and agents (F3b) |
+| 0.3 | Luau plugins and Crossbow (F4) |
+| 0.4–0.6 | F5a, F5b, F5c |
 | 1.0 | macOS only. Stable plugin API 1.0, complete docs, no open critical bug for three months |
 | 1.x | Linux (F7), registry v1 |
 
@@ -217,13 +234,15 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 | Question | When to decide |
 |---|---|
-| Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 |
+| Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 ([F2-51](tasks/F2-macos-single-pane.md#f2-51--the-default-font)) |
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
 | How `crossbow check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
-| The registry domain, and the names Bolt and Crossbow in Homebrew and other registries ([ADR 0014](adr/0014-names-bolt-and-crossbow.md)) | Before the public 0.1 |
+| The terminal's final name, with the package manager's already Shard ([ADR 0016](adr/0016-new-names.md)) | By the end of F2 ([F2-59](tasks/F2-macos-single-pane.md#f2-59--exit-review-and-f3-breakdown)) |
+| The registry's domain, which follows the terminal's name ([ADR 0016](adr/0016-new-names.md)) | With the name; bought before F4 |
+| The names in Homebrew and other registries | Before the public 0.1 |
 | Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
 | License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |
