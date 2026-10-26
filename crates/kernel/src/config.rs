@@ -10,10 +10,13 @@
 //!
 //! [cursor]
 //! shape = "bar"
+//!
+//! [window]
+//! close-on-exit = "clean"   # clean | always | never
 //! ```
 //!
-//! Each section documents its keys: `[font]` is [`FontConfig`], and
-//! `[cursor]` [`CursorConfig`]. Every key
+//! Each section documents its keys: `[font]` is [`FontConfig`], `[cursor]`
+//! [`CursorConfig`], and `[window]` [`WindowConfig`]. Every key
 //! and every section can be left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -51,6 +54,31 @@ pub struct Config {
     pub font: FontConfig,
     /// The `[cursor]` section.
     pub cursor: CursorConfig,
+    /// The `[window]` section.
+    pub window: WindowConfig,
+}
+
+/// The `[window]` section: what a window does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct WindowConfig {
+    /// What a window does when its program ends.
+    pub close_on_exit: CloseOnExit,
+}
+
+/// What a window does when its program ends.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CloseOnExit {
+    /// It closes when the program exits with 0, and otherwise keeps its
+    /// screen, with a line that tells how the program ended, until a key
+    /// closes it.
+    #[default]
+    Clean,
+    /// It closes.
+    Always,
+    /// It keeps its screen, with the line, until a key closes it.
+    Never,
 }
 
 /// The version of the file's format: [`VERSION`], the only one so far.
@@ -178,10 +206,11 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 2] {
+fn sections() -> [(&'static str, &'static [&'static str]); 3] {
     [
         ("font", keys::<FontConfig>()),
         ("cursor", keys::<CursorConfig>()),
+        ("window", keys::<WindowConfig>()),
     ]
 }
 
@@ -337,9 +366,13 @@ mod tests {
             shape = "bar"
             blink = false
             thickness = 1.5
+
+            [window]
+            close-on-exit = "never"
             "#,
         )
         .unwrap();
+        assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
         assert_eq!(
             config.cursor,
             CursorConfig {
@@ -542,7 +575,11 @@ mod tests {
 
     #[test]
     fn the_sections_keys_are_serde_s() {
-        assert_eq!(keys::<Config>(), ["config_version", "font", "cursor"]);
+        assert_eq!(
+            keys::<Config>(),
+            ["config_version", "font", "cursor", "window"]
+        );
+        assert_eq!(keys::<WindowConfig>(), ["close-on-exit"]);
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
         assert_eq!(font.len(), 10);

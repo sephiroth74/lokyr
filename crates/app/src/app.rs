@@ -1,5 +1,6 @@
-//! The application: its windows, what they draw, its main menu, and its
-//! config, which it reads again when the file changes.
+//! The application: its windows, each with the pane of its program, what
+//! they draw, its main menu, and its config, which it reads again when the
+//! file changes.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -13,16 +14,16 @@ use bolt_platform_core::{
     AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
     TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
+use bolt_pty::Program;
 use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
 use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
 use bolt_ui_core::cursor::{self, Blink};
 use bolt_ui_core::font::Font;
-use bolt_ui_core::pane::{self, CursorLook};
+use bolt_ui_core::pane::{self as cells, CursorLook};
 use bolt_ui_core::theme::Theme;
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
 
+use crate::pane::{Exited, Grid, Pane};
 use crate::watch::Watcher;
 
 /// The command that quits.
@@ -38,6 +39,12 @@ const WINDOW_SIZE: Size = Size {
 /// changes that come with it, as an editor's write and rename do, before it
 /// reads the file once.
 const SETTLE: Duration = Duration::from_millis(100);
+
+/// How often the app looks for the status of a program whose output ended.
+const EXIT_POLL: Duration = Duration::from_millis(20);
+
+/// The cell of a window that the app does not draw, in pixels.
+const UNDRAWN_CELL: (u32, u32) = (8, 16);
 
 /// What draws the windows: the GPU, its renderer, and the font of the text.
 #[derive(Debug)]
@@ -121,9 +128,8 @@ impl ConfigFile {
 struct Window {
     /// What it draws into, once the app draws and the platform has a layer.
     surface: Option<Surface>,
-    /// What it shows, and the columns, rows and appearance that it was made
-    /// for.
-    sample: Option<(u16, u16, Appearance, Snapshot)>,
+    /// Its program, and what it shows.
+    pane: Pane,
     /// Whether it has the keyboard's focus.
     focused: bool,
     /// The clock of its cursor's blinking.
@@ -133,40 +139,25 @@ struct Window {
 }
 
 impl Window {
-    fn new(surface: Option<Surface>, focused: bool, now: Instant) -> Self {
+    fn new(surface: Option<Surface>, pane: Pane, focused: bool, now: Instant) -> Self {
         Self {
             surface,
-            sample: None,
+            pane,
             focused,
             blink: Blink::new(now),
             blinking: false,
         }
     }
-
-    /// The text that the window shows at `columns` by `rows`, in the
-    /// theme's variant of `appearance`, made again when one of them changed.
-    fn sample(
-        &mut self,
-        columns: u16,
-        rows: u16,
-        appearance: Appearance,
-        theme: &Theme,
-    ) -> &Snapshot {
-        let stale = !matches!(&self.sample, Some((c, r, a, _)) if (*c, *r, *a) == (columns, rows, appearance));
-        if stale {
-            let colors = theme.variant(appearance == Appearance::Dark).colors.clone();
-            self.sample = Some((columns, rows, appearance, sample(columns, rows, colors)));
-        }
-        &self.sample.as_ref().expect("made above").3
-    }
 }
 
 /// The application, which opens a window when it starts, and quits with its
 /// last window or from its menu.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     drawing: Option<Drawing>,
     theme: Theme,
+    /// The program that a new window runs.
+    program: Program,
     /// The config in force.
     config: Config,
     /// The file of the config, if it has one.
@@ -174,6 +165,9 @@ pub struct App {
     windows: BTreeMap<WindowId, Window>,
     /// The timer of the next change of a blinking cursor, and its time.
     blink_timer: Option<(TimerId, Instant)>,
+    /// The timer of the next look for the status of a program whose output
+    /// ended.
+    exit_timer: Option<TimerId>,
 }
 
 impl App {
@@ -184,6 +178,7 @@ impl App {
         Self {
             drawing,
             theme: Theme::builtin(),
+            program: Program::LoginShell,
             config,
             config_file: path.map(|path| ConfigFile {
                 path,
@@ -193,7 +188,15 @@ impl App {
             }),
             windows: BTreeMap::new(),
             blink_timer: None,
+            exit_timer: None,
         }
+    }
+
+    /// The app, whose windows run `program` rather than the login shell.
+    #[cfg(test)]
+    fn with_program(mut self, program: Program) -> Self {
+        self.program = program;
+        self
     }
 
     /// Reads the config file again: a valid config applies whole, and an
@@ -247,11 +250,15 @@ impl App {
             Ok(window) => {
                 let surface = self.surface(platform, window);
                 let focused = platform.focused_window() == Some(window);
+                let size = platform
+                    .window_size(window)
+                    .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
+                let grid = self.grid(size);
+                let colors = &self.colors(platform.appearance());
+                let pane = Pane::spawn(&self.program, grid, colors, platform.waker());
                 self.windows
-                    .insert(window, Window::new(surface, focused, Instant::now()));
-                if let Some(size) = platform.window_size(window) {
-                    self.draw(platform, window, size);
-                }
+                    .insert(window, Window::new(surface, pane, focused, Instant::now()));
+                self.draw(platform, window, size);
             }
             Err(error) => {
                 eprintln!("bolt: {error}");
@@ -259,6 +266,69 @@ impl App {
                     platform.quit();
                 }
             }
+        }
+    }
+
+    /// Closes `window`, and quits with the last one.
+    fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        // The surface and the session go before the window.
+        self.windows.remove(&window);
+        platform.close_window(window);
+        if self.windows.is_empty() {
+            platform.quit();
+        }
+    }
+
+    /// Does what `close-on-exit` says with the windows whose program has
+    /// ended, and looks again soon for the status of those whose output
+    /// ended before it.
+    fn exits(&mut self, platform: &mut dyn Platform) {
+        let now = Instant::now();
+        let close = self.config.window.close_on_exit;
+        let mut closing = Vec::new();
+        let mut waiting = false;
+        for (&window, state) in &mut self.windows {
+            match state.pane.exited(close, now) {
+                Some(Exited::Close) => closing.push(window),
+                Some(Exited::Keep) => platform.request_frame(window),
+                None => waiting |= state.pane.is_waiting(),
+            }
+        }
+        for window in closing {
+            self.close(platform, window);
+        }
+        if waiting && self.exit_timer.is_none() {
+            self.exit_timer = Some(platform.start_timer(now + EXIT_POLL));
+        }
+    }
+
+    /// The theme's colors in `appearance`.
+    fn colors(&self, appearance: Appearance) -> bolt_vt_core::terminal::Colors {
+        self.theme
+            .variant(appearance == Appearance::Dark)
+            .colors
+            .clone()
+    }
+
+    /// The grid that fits a window of `size`, in the cells of the font at
+    /// its display's scale.
+    fn grid(&mut self, size: WindowSize) -> Grid {
+        let (width, height) = match &mut self.drawing {
+            Some(drawing) => {
+                drawing.font.set_scale(size.scale as f32);
+                let cell = drawing.font.cell();
+                (cell.width, cell.height)
+            }
+            None => UNDRAWN_CELL,
+        };
+        let fit =
+            |pixels: u32, cell: u32| (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16;
+        let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
+        Grid {
+            columns: fit(size.pixels.width, width),
+            rows: fit(size.pixels.height, height),
+            cell_width: pixels(width),
+            cell_height: pixels(height),
         }
     }
 
@@ -282,11 +352,7 @@ impl App {
         now: Instant,
     ) -> Option<CursorShape> {
         let state = self.windows.get_mut(&window)?;
-        let program = state
-            .sample
-            .as_ref()
-            .map(|(.., snapshot)| snapshot.cursor())
-            .unwrap_or_default();
+        let program = state.pane.snapshot().cursor();
         let config = &self.config.cursor;
         let shape = cursor::shape(&program, config, state.focused);
         let (on, next) = if cursor::blinks(&program, config, state.focused) {
@@ -313,9 +379,15 @@ impl App {
         self.blink_timer = Some((platform.start_timer(at), at));
     }
 
-    /// Draws `window`, of `size`: the grid of cells that fits its content,
-    /// what the window shows in it, and the cursor.
+    /// Draws `window`, of `size`: its program's screen, brought up to date,
+    /// in the grid that fits its content, with the cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
+        let grid = self.grid(size);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        state.pane.resize(grid);
+        state.pane.update();
         let shape = self.cursor(platform, window, Instant::now());
         let config = self.config.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
@@ -325,26 +397,19 @@ impl App {
         if state.surface.is_none() {
             return;
         }
-        drawing.font.set_scale(size.scale as f32);
         drawing.font.begin_frame();
         let cell = *drawing.font.cell();
         let cursor = shape.map(|shape| CursorLook {
             shape,
             thickness: config.thickness(&cell, size.scale as f32),
         });
-        let fit =
-            |pixels: u32, cell: u32| (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16;
-        let (columns, rows) = (
-            fit(size.pixels.width, cell.width),
-            fit(size.pixels.height, cell.height),
-        );
-        let snapshot = state.sample(columns, rows, platform.appearance(), &self.theme);
+        let snapshot = state.pane.snapshot();
         let font = &mut drawing.font;
-        let batch = pane::cells(snapshot, &cell, 0, 0, None, cursor, &mut |shown| {
+        let batch = cells::cells(snapshot, &cell, 0, 0, None, cursor, &mut |shown| {
             font.glyph(shown)
         });
         let list = DisplayList {
-            background: pane::background(snapshot),
+            background: cells::background(snapshot),
             items: vec![Item::Cells(batch)],
         };
         let updates = drawing.font.texture_updates();
@@ -375,9 +440,10 @@ impl Handler for App {
         match event {
             AppEvent::Command(command) if command == QUIT => platform.quit(),
             AppEvent::QuitRequested => platform.quit(),
-            // What woke the application changed what a window shows, or
-            // the config file.
+            // What woke the application changed what a window shows, ended
+            // its program, or changed the config file.
             AppEvent::Wake => {
+                self.exits(platform);
                 if let Some(file) = &mut self.config_file
                     && file.changed.swap(false, Ordering::AcqRel)
                     && file.reading.is_none()
@@ -399,6 +465,10 @@ impl Handler for App {
                 }
                 self.reload(platform);
             }
+            AppEvent::Timer(timer) if self.exit_timer == Some(timer) => {
+                self.exit_timer = None;
+                self.exits(platform);
+            }
             // A blinking cursor changes.
             AppEvent::Timer(timer) if self.blink_timer.is_some_and(|(blink, _)| blink == timer) => {
                 self.blink_timer = None;
@@ -408,7 +478,11 @@ impl Handler for App {
                     }
                 }
             }
-            AppEvent::AppearanceChanged(_) => {
+            AppEvent::AppearanceChanged(appearance) => {
+                let colors = self.colors(appearance);
+                for state in self.windows.values() {
+                    state.pane.set_colors(&colors);
+                }
                 let windows: Vec<WindowId> = self.windows.keys().copied().collect();
                 for window in windows {
                     if let Some(size) = platform.window_size(window) {
@@ -440,69 +514,21 @@ impl Handler for App {
                     platform.request_frame(window);
                 }
             }
+            // A key closes a window whose program ended.
             WindowEvent::Key(_) => {
                 if let Some(state) = self.windows.get_mut(&window) {
+                    if state.pane.is_kept() {
+                        self.close(platform, window);
+                        return;
+                    }
                     state.blink.restart(Instant::now());
                     platform.request_frame(window);
                 }
             }
-            WindowEvent::CloseRequested => {
-                // The surface goes before its window.
-                self.windows.remove(&window);
-                platform.close_window(window);
-                if self.windows.is_empty() {
-                    platform.quit();
-                }
-            }
+            WindowEvent::CloseRequested => self.close(platform, window),
             _ => {}
         }
     }
-}
-
-/// A snapshot of a terminal of `columns` by `rows` that shows the sample
-/// text, in `colors`.
-fn sample(columns: u16, rows: u16, colors: Colors) -> Snapshot {
-    let mut terminal = Terminal::new(columns, rows, Options::default());
-    terminal.set_default_colors(colors);
-    Parser::new().advance(&mut terminal, sample_text().as_bytes());
-    let mut snapshot = Snapshot::default();
-    terminal.snapshot(&mut snapshot);
-    snapshot
-}
-
-/// The text that a window shows: the palette's sixteen colors on the
-/// default background and as backgrounds, the styles, the 256 colors, direct
-/// color, and code.
-fn sample_text() -> String {
-    let mut text = String::from(
-        "\x1b[1mBolt\x1b[0m: cells drawn by Metal, from a snapshot of a terminal.\r\n\r\n",
-    );
-    for index in 0..16 {
-        text.push_str(&format!("\x1b[38;5;{index}m{index:>3} "));
-    }
-    text.push_str("\x1b[0m\r\n");
-    for index in 0..16 {
-        text.push_str(&format!("\x1b[48;5;{index}m{index:>3} "));
-    }
-    text.push_str("\x1b[0m\r\n\r\n");
-    text.push_str("\x1b[1mbold\x1b[0m \x1b[3mitalic\x1b[0m \x1b[1;3mbold italic\x1b[0m \x1b[7minverse\x1b[0m\r\n\r\n");
-    for index in 16..=231 {
-        text.push_str(&format!("\x1b[48;5;{index}m "));
-        if (index - 16) % 36 == 35 {
-            text.push_str("\x1b[0m\r\n");
-        }
-    }
-    for index in 232..=255 {
-        text.push_str(&format!("\x1b[48;5;{index}m  "));
-    }
-    text.push_str("\x1b[0m\r\n");
-    for step in 0..64 {
-        let red = step * 4;
-        text.push_str(&format!("\x1b[48;2;{red};128;{}m ", 255 - red));
-    }
-    text.push_str("\x1b[0m\r\n\r\n");
-    text.push_str("fn main() { println!(\"Hello, {}!\", \"world\"); } // 0123456789 <>=!&|");
-    text
 }
 
 /// The main menu: the application's menu, with Quit.
@@ -527,14 +553,25 @@ fn main_menu() -> MainMenu {
 
 #[cfg(test)]
 mod tests {
+    use bolt_kernel::config::CloseOnExit;
     use bolt_platform_core::fake::Fake;
     use bolt_ui_core::cursor::CursorConfig;
 
     use super::*;
 
+    /// A program that runs until its terminal hangs up, and writes nothing.
+    fn quiet() -> Program {
+        Program::command("/bin/cat", [] as [&str; 0])
+    }
+
+    /// The app, of `config`, whose windows run `program`.
+    fn app(config: Config, program: Program) -> App {
+        App::new(None, config, None).with_program(program)
+    }
+
     fn started() -> (Fake, App) {
         let mut fake = Fake::default();
-        let mut app = App::default();
+        let mut app = app(Config::default(), quiet());
         fake.start(&mut app);
         (fake, app)
     }
@@ -599,23 +636,6 @@ mod tests {
         assert!(fake.window(window).unwrap().frame_requested);
         assert!(fake.send(&mut app, window, WindowEvent::Frame));
         assert!(!fake.window(window).unwrap().frame_requested);
-    }
-
-    #[test]
-    fn the_sample_takes_the_appearance_s_variant() {
-        let theme = Theme::builtin();
-        let mut window = Window::new(None, false, Instant::now());
-        let dark = window.sample(80, 24, Appearance::Dark, &theme);
-        assert_eq!((dark.cols(), dark.rows()), (80, 24));
-        assert_eq!(dark.colors().background, theme.dark.colors.background);
-        let first: *const Snapshot = window.sample(80, 24, Appearance::Dark, &theme);
-        assert!(std::ptr::eq(
-            first,
-            window.sample(80, 24, Appearance::Dark, &theme)
-        ));
-        let light = window.sample(80, 24, Appearance::Light, &theme);
-        assert_eq!(light.colors().background, theme.light.colors.background);
-        assert_eq!(window.sample(81, 24, Appearance::Light, &theme).cols(), 81);
     }
 
     /// The app started, its window focused and drawn once.
@@ -686,7 +706,7 @@ mod tests {
             blink: false,
             thickness: None,
         };
-        let mut app = App::new(None, config, None);
+        let mut app = app(config, quiet());
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -706,7 +726,7 @@ mod tests {
         std::fs::write(&path, text).unwrap();
         let config = Config::read(&path).unwrap();
         let mut fake = Fake::default();
-        let mut app = App::new(None, config, Some(path.clone()));
+        let mut app = App::new(None, config, Some(path.clone())).with_program(quiet());
         fake.start(&mut app);
         assert!(app.config_file.as_ref().unwrap().watcher.is_some());
         (fake, app, path)
@@ -760,6 +780,137 @@ mod tests {
         change(&mut fake, &mut app);
         assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// Runs the app, as the main thread's loop would, handing it the wakes
+    /// of its programs, the timers that come due and the frames that it asks
+    /// for, until `done` holds; fails after a while.
+    fn run_until(fake: &mut Fake, app: &mut App, mut done: impl FnMut(&Fake, &App) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done(fake, app) {
+            assert!(Instant::now() < deadline, "not done in time");
+            fake.deliver_wake(app);
+            fake.fire_timers(app, Instant::now());
+            let asked: Vec<WindowId> = fake
+                .windows()
+                .filter(|&window| fake.window(window).unwrap().frame_requested)
+                .collect();
+            for window in asked {
+                fake.send(app, window, WindowEvent::Frame);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// The text of row `row` of a window's screen.
+    fn row(app: &App, window: WindowId, row: u16) -> String {
+        let snapshot = app.windows[&window].pane.snapshot();
+        let line = snapshot.line(row);
+        line.cells()
+            .iter()
+            .map(|cell| match cell.content() {
+                bolt_vt_core::page::Content::Char(c) | bolt_vt_core::page::Content::Grapheme(c) => {
+                    c
+                }
+                _ => ' ',
+            })
+            .map(|c| if c == '\0' { ' ' } else { c })
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+    }
+
+    fn shell(script: &str) -> Program {
+        Program::command("/bin/sh", ["-c", script])
+    }
+
+    #[test]
+    fn a_window_shows_its_program_s_output() {
+        let mut fake = Fake::default();
+        let mut app = app(Config::default(), shell("printf 'hello'; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "hello");
+        // At the window's grid: 1600 by 1000 pixels, of cells of 8 by 16.
+        let snapshot = app.windows[&window].pane.snapshot();
+        assert_eq!((snapshot.cols(), snapshot.rows()), (200, 62));
+    }
+
+    #[test]
+    fn a_synchronized_update_shows_whole() {
+        let mut fake = Fake::default();
+        let script = "printf 'before\\r\\n'; sleep 0.3; printf '\\033[?2026hhalf'; sleep 0.5; \
+                      printf ' done\\033[?2026l'; sleep 10";
+        let mut app = app(Config::default(), shell(script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let mut seen = Vec::new();
+        run_until(&mut fake, &mut app, |_, app| {
+            let shown = row(app, window, 1);
+            if seen.last() != Some(&shown) {
+                seen.push(shown.clone());
+            }
+            shown == "half done"
+        });
+        assert!(!seen.iter().any(|shown| shown == "half"), "{seen:?}");
+        assert_eq!(row(&app, window, 0), "before");
+    }
+
+    /// The app with `close-on-exit` as `close`, whose window runs `script`,
+    /// once its program has ended and the window has done what `close`
+    /// says.
+    fn ended(close: CloseOnExit, script: &str) -> (Fake, App, WindowId) {
+        let mut config = Config::default();
+        config.window.close_on_exit = close;
+        let mut fake = Fake::default();
+        let mut app = app(config, shell(script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |fake, app| {
+            fake.windows().count() == 0 || app.windows[&window].pane.is_kept()
+        });
+        (fake, app, window)
+    }
+
+    fn key() -> WindowEvent {
+        WindowEvent::Key(bolt_platform_core::KeyEvent {
+            code: bolt_platform_core::KeyCode::KeyA,
+            state: bolt_platform_core::KeyState::Pressed,
+            mods: bolt_platform_core::Modifiers::default(),
+            text: "a".to_owned(),
+            unmodified: "a".to_owned(),
+        })
+    }
+
+    #[test]
+    fn a_clean_exit_closes_the_window_and_another_keeps_it_until_a_key() {
+        let (fake, _, _) = ended(CloseOnExit::Clean, "exit 0");
+        assert_eq!(fake.windows().count(), 0);
+        assert!(fake.has_quit());
+
+        let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "printf 'oops'; exit 3");
+        assert_eq!(fake.windows().count(), 1);
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 1) == "[the program exited with code 3; a key closes the window]"
+        });
+        assert_eq!(row(&app, window, 0), "oops");
+        fake.send(&mut app, window, key());
+        assert_eq!(fake.windows().count(), 0);
+        assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn always_closes_and_never_keeps() {
+        let (fake, _, _) = ended(CloseOnExit::Always, "exit 3");
+        assert_eq!(fake.windows().count(), 0);
+        let (fake, app, window) = ended(CloseOnExit::Never, "exit 0");
+        assert_eq!(fake.windows().count(), 1);
+        assert!(app.windows[&window].pane.is_kept());
+        // A program that a signal ends.
+        let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "kill -9 $$");
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 1) == "[the program ended by signal 9; a key closes the window]"
+        });
     }
 
     #[test]

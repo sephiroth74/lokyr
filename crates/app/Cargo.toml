@@ -23,7 +23,9 @@ bolt-core-actions.workspace = true
 bolt-kernel.workspace = true
 bolt-platform-core.workspace = true
 bolt-plugin-host-luau = { workspace = true, optional = true }
+bolt-pty.workspace = true
 bolt-render-core.workspace = true
+bolt-session.workspace = true
 bolt-text-core.workspace = true
 bolt-ui-core.workspace = true
 bolt-vt-core.workspace = true
