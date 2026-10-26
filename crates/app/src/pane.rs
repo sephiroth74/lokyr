@@ -7,8 +7,9 @@ use bolt_kernel::config::CloseOnExit;
 use bolt_platform_core::Waker;
 use bolt_pty::{Exit, Program, Size};
 use bolt_session::{Options, Session};
+use bolt_vt_core::input::{KeyEvent, KeyOptions};
 use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{self, Colors, Snapshot, Terminal};
+use bolt_vt_core::terminal::{self, Colors, KeyboardFlags, Snapshot, Terminal};
 
 /// The `TERM` that programs take, which remote hosts know too.
 const TERM: &str = "xterm-256color";
@@ -142,6 +143,20 @@ impl Pane {
                 eprintln!("bolt: the terminal cannot take its new size: {error}");
             }
         }
+    }
+
+    /// Sends `event` to the program, with `options`. A key with Command
+    /// held, which the menus did not take, is the app's: it reaches the
+    /// program only through the kitty protocol, which reports Super, as
+    /// xterm's sequences have no Command.
+    pub(crate) fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
+        let Some(session) = &self.session else {
+            return;
+        };
+        if event.mods.super_key && session.lock().keyboard_flags() == KeyboardFlags::NONE {
+            return;
+        }
+        session.key(event, options);
     }
 
     /// Gives the terminal the theme's `colors`.

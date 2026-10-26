@@ -13,6 +13,7 @@ mod app;
 mod appearance;
 mod backend;
 mod frame;
+mod keys;
 mod menu;
 mod shared;
 mod timer;

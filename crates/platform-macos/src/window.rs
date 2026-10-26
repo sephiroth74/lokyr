@@ -10,8 +10,8 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSResponder, NSView, NSWindow, NSWindowDelegate, NSWindowOcclusionState,
-    NSWindowStyleMask,
+    NSBackingStoreType, NSEvent, NSResponder, NSView, NSWindow, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -20,6 +20,7 @@ use objc2_foundation::{
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::frame::Pacer;
+use crate::keys;
 use crate::shared::{Pending, Shared};
 
 /// A window that the app opened.
@@ -63,8 +64,10 @@ impl Window {
         // release.
         unsafe { ns_window.setReleasedWhenClosed(false) };
         ns_window.setTitle(&NSString::from_str(&attributes.title));
-        let view = ContentView::new(mtm, content);
+        let view = ContentView::new(mtm, content, shared.clone(), id);
         ns_window.setContentView(Some(&view));
+        // The keys go to the view.
+        ns_window.makeFirstResponder(Some(&view));
         ns_window.center();
         let pacer = Pacer::new(mtm, &view, shared.clone(), id);
         let delegate = WindowDelegate::new(mtm, shared, id);
@@ -155,14 +158,45 @@ fn points(size: NSSize) -> Size {
     }
 }
 
+pub(crate) struct ContentViewIvars {
+    shared: Weak<Shared>,
+    id: WindowId,
+}
+
 define_class!(
     // SAFETY: `NSView` has no requirement of its subclasses that this one
     // breaks, and the view does not implement `Drop`.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
+    #[ivars = ContentViewIvars]
     pub(crate) struct ContentView;
 
     impl ContentView {
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(acceptsFirstResponder))]
+        fn accepts_first_responder(&self) -> bool {
+            true
+        }
+
+        // SAFETY: AppKit's signature. The keys that the menus' shortcuts
+        // take never come here.
+        #[unsafe(method(keyDown:))]
+        fn key_down(&self, event: &NSEvent) {
+            self.post_key(event);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(keyUp:))]
+        fn key_up(&self, event: &NSEvent) {
+            self.post_key(event);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(flagsChanged:))]
+        fn flags_changed(&self, event: &NSEvent) {
+            self.post_key(event);
+        }
+
         // SAFETY: AppKit's signature: the layer that backs the view.
         #[unsafe(method_id(makeBackingLayer))]
         fn make_backing_layer(&self) -> Retained<CALayer> {
@@ -187,13 +221,28 @@ define_class!(
 );
 
 impl ContentView {
-    /// A view of the size of `frame`, backed by a `CAMetalLayer`.
-    fn new(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(());
+    /// A view of the size of `frame`, backed by a `CAMetalLayer`, which
+    /// tells `shared` the keys of the window `id`.
+    fn new(
+        mtm: MainThreadMarker,
+        frame: NSRect,
+        shared: Weak<Shared>,
+        id: WindowId,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(ContentViewIvars { shared, id });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
         view
+    }
+
+    fn post_key(&self, event: &NSEvent) {
+        let ivars = self.ivars();
+        if let Some(key) = keys::key_event(event)
+            && let Some(shared) = ivars.shared.upgrade()
+        {
+            shared.post(Pending::Window(ivars.id, WindowEvent::Key(key)));
+        }
     }
 }
 

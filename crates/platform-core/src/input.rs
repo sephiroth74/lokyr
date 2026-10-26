@@ -267,6 +267,11 @@ pub struct KeyEvent {
     /// What the key types with Shift alone, without Control or Alt: on the
     /// Mac, `charactersIgnoringModifiers`.
     pub unmodified: String,
+    /// What the key types without any modifier, Shift neither, as the layout
+    /// has it: on the Mac, `charactersByApplyingModifiers:` with none. The
+    /// kitty protocol takes it as the key's code, which, with Shift held,
+    /// the texts above cannot give.
+    pub plain: String,
 }
 
 /// What an input method does in a window.

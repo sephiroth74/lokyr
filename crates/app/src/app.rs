@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use bolt_font_coretext::CoreText;
 use bolt_kernel::config::Config;
 use bolt_platform_core::{
-    AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
-    TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, Handler, KeyState, MainMenu, Menu, MenuItem, Platform, Shortcut,
+    ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use bolt_pty::Program;
 use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
@@ -23,6 +23,7 @@ use bolt_ui_core::font::Font;
 use bolt_ui_core::pane::{self as cells, CursorLook};
 use bolt_ui_core::theme::Theme;
 
+use crate::keys;
 use crate::pane::{Exited, Grid, Pane};
 use crate::watch::Watcher;
 
@@ -514,13 +515,29 @@ impl Handler for App {
                     platform.request_frame(window);
                 }
             }
-            // A key closes a window whose program ended.
-            WindowEvent::Key(_) => {
-                if let Some(state) = self.windows.get_mut(&window) {
-                    if state.pane.is_kept() {
+            // A key goes to the program, and starts the cursor blinking
+            // again, on; a key, not a modifier alone, closes a window whose
+            // program ended.
+            WindowEvent::Key(key) => {
+                let options = keys::options(self.config.keyboard.option_as_meta);
+                let Some(state) = self.windows.get_mut(&window) else {
+                    return;
+                };
+                let pressed = key.state != KeyState::Released;
+                let modifier = matches!(
+                    keys::terminal_key(&key).map(|key| key.key),
+                    Some(bolt_vt_core::input::Key::Modifier(_))
+                );
+                if state.pane.is_kept() {
+                    if pressed && !modifier {
                         self.close(platform, window);
-                        return;
                     }
+                    return;
+                }
+                if let Some(event) = keys::terminal_key(&key) {
+                    state.pane.key(&event, options);
+                }
+                if pressed {
                     state.blink.restart(Instant::now());
                     platform.request_frame(window);
                 }
@@ -873,13 +890,37 @@ mod tests {
     }
 
     fn key() -> WindowEvent {
+        typed(bolt_platform_core::KeyCode::KeyA, "a", false)
+    }
+
+    /// A key, of `code`, that types `text`, with Command held or not.
+    fn typed(code: bolt_platform_core::KeyCode, text: &str, command: bool) -> WindowEvent {
         WindowEvent::Key(bolt_platform_core::KeyEvent {
-            code: bolt_platform_core::KeyCode::KeyA,
-            state: bolt_platform_core::KeyState::Pressed,
-            mods: bolt_platform_core::Modifiers::default(),
-            text: "a".to_owned(),
-            unmodified: "a".to_owned(),
+            code,
+            state: KeyState::Pressed,
+            mods: bolt_platform_core::Modifiers {
+                super_key: command,
+                ..bolt_platform_core::Modifiers::default()
+            },
+            text: text.to_owned(),
+            unmodified: text.to_owned(),
+            plain: text.to_owned(),
         })
+    }
+
+    #[test]
+    fn keys_reach_the_program_but_command_s_do_not() {
+        use bolt_platform_core::KeyCode;
+
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        // `cat`, which the terminal echoes, and which writes back each line.
+        fake.send(&mut app, window, typed(KeyCode::KeyH, "h", true));
+        fake.send(&mut app, window, typed(KeyCode::KeyO, "o", false));
+        fake.send(&mut app, window, typed(KeyCode::KeyK, "k", false));
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 1) == "ok");
+        assert_eq!(row(&app, window, 0), "ok");
     }
 
     #[test]

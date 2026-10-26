@@ -13,10 +13,14 @@
 //!
 //! [window]
 //! close-on-exit = "clean"   # clean | always | never
+//!
+//! [keyboard]
+//! option-as-meta = "none"   # none | left | right | both
 //! ```
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[cursor]`
-//! [`CursorConfig`], and `[window]` [`WindowConfig`]. Every key
+//! [`CursorConfig`], `[window]` [`WindowConfig`], and `[keyboard]`
+//! [`KeyboardConfig`]. Every key
 //! and every section can be left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -56,6 +60,45 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
+    /// The `[keyboard]` section.
+    pub keyboard: KeyboardConfig,
+}
+
+/// The `[keyboard]` section: how keys reach programs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct KeyboardConfig {
+    /// Which Option keys act as Meta, sending an escape before the key,
+    /// rather than typing the characters that the layout gives them.
+    pub option_as_meta: OptionAsMeta,
+}
+
+/// Which Option keys act as Meta.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OptionAsMeta {
+    /// Neither, as Option types `@ # [ ] { } ~` on many layouts, the
+    /// Italian one among them.
+    #[default]
+    None,
+    /// The left one.
+    Left,
+    /// The right one.
+    Right,
+    /// Both.
+    Both,
+}
+
+impl OptionAsMeta {
+    /// Whether the left Option, and the right one, act as Meta.
+    pub fn sides(self) -> (bool, bool) {
+        match self {
+            Self::None => (false, false),
+            Self::Left => (true, false),
+            Self::Right => (false, true),
+            Self::Both => (true, true),
+        }
+    }
 }
 
 /// The `[window]` section: what a window does.
@@ -206,11 +249,12 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 3] {
+fn sections() -> [(&'static str, &'static [&'static str]); 4] {
     [
         ("font", keys::<FontConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
+        ("keyboard", keys::<KeyboardConfig>()),
     ]
 }
 
@@ -369,10 +413,14 @@ mod tests {
 
             [window]
             close-on-exit = "never"
+
+            [keyboard]
+            option-as-meta = "left"
             "#,
         )
         .unwrap();
         assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
+        assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
             CursorConfig {
@@ -577,8 +625,11 @@ mod tests {
     fn the_sections_keys_are_serde_s() {
         assert_eq!(
             keys::<Config>(),
-            ["config_version", "font", "cursor", "window"]
+            ["config_version", "font", "cursor", "window", "keyboard"]
         );
+        assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
+        assert_eq!(OptionAsMeta::default().sides(), (false, false));
+        assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(keys::<WindowConfig>(), ["close-on-exit"]);
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();

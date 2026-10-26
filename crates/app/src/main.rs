@@ -8,6 +8,8 @@
 #[cfg(target_os = "macos")]
 mod app;
 #[cfg(target_os = "macos")]
+mod keys;
+#[cfg(target_os = "macos")]
 mod pane;
 #[cfg(target_os = "macos")]
 mod watch;
