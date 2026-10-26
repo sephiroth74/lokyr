@@ -106,10 +106,6 @@ pub fn cells(
         lines: Vec::new(),
         cursor: cursor.and_then(|look| place_cursor(snapshot, look, cell)),
     };
-    let block = batch
-        .cursor
-        .filter(|cursor| cursor.shape == CursorShape::Block)
-        .map(|cursor| (cursor.column, cursor.row));
     let selected = |column: u16, row: u16| {
         selection
             .filter(|selection| (selection.contains)(column, row))
@@ -153,9 +149,6 @@ pub fn cells(
             if style.faint {
                 foreground = mix(foreground, background);
             }
-            if block == Some((column, row)) {
-                foreground = background;
-            }
             text.clear();
             text.push(character);
             text.extend(line.grapheme(column));
@@ -187,7 +180,70 @@ pub fn cells(
                 .push(chosen.map_or(defaults.1, |chosen| chosen.background));
         }
     }
+    settle_cursor(&mut batch, snapshot);
     batch
+}
+
+/// The least contrast, as WCAG measures it, of a cursor on its cell's
+/// background.
+const CURSOR_CONTRAST: f64 = 1.5;
+
+/// Gives `batch`'s cursor a color apart from its cell's background, as
+/// xterm keeps the cursor's color apart from the background's: the
+/// cursor's own color, or, when that is too near, as on inverse text or in
+/// reverse video, the color of the cell's text, or else black or white,
+/// whichever stands farther; a block's text takes the cell's background.
+fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
+    let Some(cursor) = &mut batch.cursor else {
+        return;
+    };
+    let (column, row) = (cursor.column, cursor.row);
+    let index = usize::from(row) * usize::from(batch.columns) + usize::from(column);
+    let Some(&background) = batch.backgrounds.get(index) else {
+        return;
+    };
+    let glyph = batch
+        .glyphs
+        .iter_mut()
+        .find(|glyph| glyph.row == row && glyph.column == column);
+    let text = glyph
+        .as_ref()
+        .map_or(defaults(snapshot).0, |glyph| glyph.color);
+    let own = color(snapshot.colors().cursor);
+    cursor.color = if contrast(own, background) >= CURSOR_CONTRAST {
+        own
+    } else if contrast(text, background) >= CURSOR_CONTRAST {
+        text
+    } else if luminance(background) > 0.18 {
+        Color::from_rgb8(0, 0, 0)
+    } else {
+        Color::from_rgb8(255, 255, 255)
+    };
+    if cursor.shape == CursorShape::Block
+        && let Some(glyph) = glyph
+    {
+        glyph.color = background;
+    }
+}
+
+/// The relative luminance of `color`, of sRGB's encoded components, as
+/// WCAG 2 defines it.
+fn luminance(color: Color) -> f64 {
+    let linear = |channel: f32| {
+        let value = f64::from(channel);
+        if value <= 0.040_45 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+}
+
+/// The contrast ratio of two colors, as WCAG 2 defines it: from 1 to 21.
+fn contrast(a: Color, b: Color) -> f64 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
 /// Draws `preedit` over `batch`, the grid of `snapshot`, from its cursor's
@@ -205,13 +261,24 @@ pub fn preedit(
 ) {
     let (foreground, background) = defaults(snapshot);
     let position = snapshot.cursor().position;
-    let (start, row, columns) = (position.x, position.y, batch.columns);
+    let (mut start, row, columns) = (position.x, position.y, batch.columns);
     if row >= batch.rows || start >= columns {
         return;
+    }
+    // From a wide character's second cell, its first.
+    let line = snapshot.line(row);
+    let width_at = |column: u16| {
+        line.cells()
+            .get(usize::from(column))
+            .map(|cell| cell.width())
+    };
+    if start > 0 && width_at(start) == Some(Width::SpacerTail) {
+        start -= 1;
     }
     let widths = Widths::default();
     let mut column = start;
     let mut cursor = None;
+    let mut placed = Vec::new();
     let mut text = String::new();
     for (at, character) in preedit.text.char_indices() {
         if at == preedit.cursor {
@@ -249,6 +316,7 @@ pub fn preedit(
                 color: foreground,
             });
         }
+        placed.push((column, width));
         column += width;
     }
     batch.lines.push(CellLine {
@@ -261,9 +329,16 @@ pub fn preedit(
         color: foreground,
     });
     if let Some(drawn) = &mut batch.cursor {
-        drawn.column = cursor.unwrap_or(column).min(columns - 1);
-        drawn.columns = 1;
+        let at = cursor.unwrap_or(column).min(columns - 1);
+        // A block over a wide composed character covers it whole.
+        let width = placed
+            .iter()
+            .find(|&&(column, _)| column == at)
+            .map_or(1, |&(_, width)| width);
+        drawn.column = at;
+        drawn.columns = width.min(columns - at);
     }
+    settle_cursor(batch, snapshot);
 }
 
 /// The cursor of `snapshot`, as `look` has it, where it shows: on a wide
@@ -763,6 +838,152 @@ mod tests {
         assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(4));
         let colors = Colors::default();
         assert_eq!(batch.backgrounds[2], color(colors.background));
+    }
+
+    /// The batch of `text` on a grid of `cols` by one row, with the cursor
+    /// of `shape`.
+    fn with_cursor(cols: u16, text: &str, shape: CursorShape) -> CellBatch {
+        let mut asked = Vec::new();
+        let look = CursorLook {
+            shape,
+            thickness: 2,
+        };
+        cells(
+            &snapshot(cols, 1, text),
+            &cell(),
+            0,
+            0,
+            None,
+            Some(look),
+            &mut atlas(&mut asked),
+        )
+    }
+
+    fn glyph_color(batch: &CellBatch, column: u16) -> Option<Color> {
+        batch
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.column == column)
+            .map(|glyph| glyph.color)
+    }
+
+    #[test]
+    fn a_block_on_inverse_text_stays_apart_from_its_cell() {
+        // `b` in inverse, whose background is the cursor's color.
+        let batch = with_cursor(4, "a\x1b[7mb\x1b[0mc\x1b[2D", CursorShape::Block);
+        let colors = Colors::default();
+        let (text, background) = (color(colors.foreground), color(colors.background));
+        let cursor = batch.cursor.unwrap();
+        assert_eq!((cursor.column, batch.backgrounds[1]), (1, text));
+        // The block takes the cell's text color, and its text the cell's
+        // background.
+        assert_eq!(cursor.color, background);
+        assert_eq!(glyph_color(&batch, 1), Some(text));
+        // On a plain cell, the cursor's own color.
+        let batch = with_cursor(4, "ab\x1b[D", CursorShape::Block);
+        assert_eq!(batch.cursor.unwrap().color, color(colors.cursor));
+        assert_eq!(glyph_color(&batch, 1), Some(background));
+    }
+
+    #[test]
+    fn every_shape_shows_in_reverse_video() {
+        let colors = Colors::default();
+        let dark = color(colors.background);
+        for shape in [
+            CursorShape::Bar,
+            CursorShape::Underline,
+            CursorShape::Hollow,
+        ] {
+            // On a character, and past the text.
+            for text in ["\x1b[?5hab\x1b[D", "\x1b[?5hab"] {
+                let batch = with_cursor(4, text, shape);
+                let cursor = batch.cursor.unwrap();
+                let under = batch.backgrounds[usize::from(cursor.column)];
+                assert_eq!(cursor.color, dark, "{shape:?} {text:?}");
+                assert_ne!(cursor.color, under);
+            }
+        }
+    }
+
+    #[test]
+    fn a_cell_of_one_color_takes_black_or_white() {
+        // Text and background both of the cursor's light gray.
+        let gray = "\x1b[38;2;229;229;229;48;2;229;229;229mx\x1b[D";
+        let batch = with_cursor(4, gray, CursorShape::Block);
+        assert_eq!(batch.cursor.unwrap().color, Color::from_rgb8(0, 0, 0));
+    }
+
+    #[test]
+    fn a_block_under_a_composition_leaves_its_text_readable() {
+        let look = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 2,
+        };
+        let compose = |text: &str, composed: &str, cursor: usize| {
+            let snapshot = snapshot(8, 1, text);
+            let mut asked = Vec::new();
+            let mut batch = cells(
+                &snapshot,
+                &cell(),
+                0,
+                0,
+                None,
+                Some(look),
+                &mut atlas(&mut asked),
+            );
+            let composed = Preedit {
+                text: composed.to_owned(),
+                cursor,
+            };
+            preedit(
+                &mut batch,
+                &snapshot,
+                &cell(),
+                &composed,
+                &mut atlas(&mut asked),
+            );
+            batch
+        };
+        let background = color(Colors::default().background);
+        // The cursor after `x`, on the `d` that follows the composition.
+        let batch = compose("abcdef\x1b[4D", "x", 1);
+        let cursor = batch.cursor.unwrap();
+        assert_eq!((cursor.column, cursor.columns), (3, 1));
+        assert_eq!(glyph_color(&batch, 3), Some(background));
+        // On a wide composed character, which it covers whole.
+        let batch = compose("ab", "日本", 3);
+        let cursor = batch.cursor.unwrap();
+        assert_eq!((cursor.column, cursor.columns), (4, 2));
+        assert_eq!(glyph_color(&batch, 4), Some(background));
+        assert_eq!(
+            glyph_color(&batch, 2),
+            Some(color(Colors::default().foreground))
+        );
+    }
+
+    #[test]
+    fn a_composition_from_a_wide_character_s_second_cell_starts_on_its_first() {
+        // `中`, and the cursor on its second cell.
+        let snapshot = snapshot(4, 1, "\u{4E2D}\x1b[2G");
+        assert_eq!(snapshot.cursor().position.x, 1);
+        let mut asked = Vec::new();
+        let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let composed = Preedit {
+            text: "x".to_owned(),
+            cursor: 1,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut asked),
+        );
+        let row: Vec<u16> = batch.glyphs.iter().map(|glyph| glyph.column).collect();
+        assert_eq!(row, [0]);
+        assert_eq!(batch.glyphs[0].region.x, u32::from('x'));
+        let line = batch.lines.last().unwrap();
+        assert_eq!((line.column, line.columns), (0, 1));
     }
 
     #[test]

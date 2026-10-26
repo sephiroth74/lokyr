@@ -148,8 +148,8 @@ Whether the cursor blinks.
 | `true`, `false` | `true` |
 
 - The cursor stays on for half a second and off for another.
-- It stops blinking, and stays on, 15 seconds after the last key, so that an idle window keeps the Mac idle too. A key, or the window's focus, makes it blink again.
-- Only the window that has the focus blinks.
+- It stops blinking, and stays on, 15 seconds after the last key or the last output, so that an idle window keeps the Mac idle too. A key, output, or the window's focus makes it blink again.
+- Only the window that has the focus blinks, and a cursor that the program hides, as full-screen programs such as `htop` hide it, does not blink.
 - A program can turn blinking on or off with DECSCUSR. The escape sequence of mode 12, which some programs send as they start, turns blinking on too; its reset, which most full-screen programs send as they end, leaves this setting as it is.
 
 ### `thickness`

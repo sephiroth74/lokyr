@@ -121,11 +121,13 @@ impl Pane {
     }
 
     /// Brings the screen up to date with the session's, unless a
-    /// synchronized update holds it, when it stays as it was.
-    pub(crate) fn update(&mut self) {
-        if let Some(session) = &self.session {
-            session.snapshot(&mut self.snapshot);
-        }
+    /// synchronized update holds it, when it stays as it was. Returns
+    /// whether the screen changed.
+    pub(crate) fn update(&mut self) -> bool {
+        self.session
+            .as_ref()
+            .and_then(|session| session.snapshot(&mut self.snapshot))
+            .is_some_and(|copied| copied > 0)
     }
 
     /// Gives the terminal `grid`, when it has another, so that the program

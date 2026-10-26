@@ -135,13 +135,15 @@ pub fn shape(cursor: &SnapshotCursor, config: &CursorConfig, focused: bool) -> C
     }
 }
 
-/// Whether the cursor blinks, in the window that has the focus alone: as
-/// the program asked with DECSCUSR, or as the configuration says. Mode 12,
-/// which `cvvis` sets in xterm's terminfo, makes it blink too; its reset,
-/// which `cnorm` sends as each full-screen program ends, leaves the
-/// configuration's blinking as it is.
+/// Whether the cursor blinks, in the window that has the focus alone, and
+/// while it shows: as the program asked with DECSCUSR, or as the
+/// configuration says. Mode 12, which `cvvis` sets in xterm's terminfo,
+/// makes it blink too; its reset, which `cnorm` sends as each full-screen
+/// program ends, leaves the configuration's blinking as it is. A cursor that
+/// the program hides (DECTCEM) does not blink, and takes no wakeup.
 pub fn blinks(cursor: &SnapshotCursor, config: &CursorConfig, focused: bool) -> bool {
     focused
+        && cursor.visible
         && match cursor.style {
             Some(style) => style.blinking,
             None => config.blink || cursor.blink,
@@ -193,6 +195,7 @@ mod tests {
         SnapshotCursor {
             style: style.map(|(shape, blinking)| CursorStyle { shape, blinking }),
             blink,
+            visible: true,
             ..SnapshotCursor::default()
         }
     }
@@ -266,8 +269,14 @@ mod tests {
             &config(Shape::Block, false),
             true
         ));
-        // Only the window that has the focus blinks.
+        // Only the window that has the focus blinks, and a hidden cursor
+        // does not.
         assert!(!blinks(&blinking, &config(Shape::Block, true), false));
+        let hidden = SnapshotCursor {
+            visible: false,
+            ..blinking
+        };
+        assert!(!blinks(&hidden, &config(Shape::Block, true), true));
     }
 
     #[test]

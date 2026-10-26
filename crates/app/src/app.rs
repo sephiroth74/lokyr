@@ -399,7 +399,10 @@ impl App {
             return;
         };
         state.pane.resize(grid);
-        state.pane.update();
+        // Output starts the cursor blinking again, on, as a key does.
+        if state.pane.update() {
+            state.blink.restart(Instant::now());
+        }
         // The input method's candidates go at the cursor's cell.
         let at = state.pane.snapshot().cursor().position;
         let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
@@ -1061,6 +1064,22 @@ mod tests {
         };
         fake.send(&mut app, window, WindowEvent::Ime(ended));
         assert_eq!(app.windows[&window].preedit, None);
+    }
+
+    #[test]
+    fn output_starts_the_blinking_again() {
+        let mut fake = Fake::default();
+        let mut app = app(Config::default(), shell("sleep 0.3; printf x; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let focused = Instant::now();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "x");
+        // The output came at least 0.3 s after the focus: 15.1 s after the
+        // focus, the cursor still blinks, as its timeout counts from it.
+        let later = focused + cursor::BLINK_TIMEOUT + Duration::from_millis(100);
+        app.cursor(&mut fake, window, later);
+        assert!(app.windows[&window].blinking);
     }
 
     #[test]
