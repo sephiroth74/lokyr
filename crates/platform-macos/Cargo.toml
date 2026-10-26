@@ -55,10 +55,6 @@ objc2-foundation = { workspace = true, features = [
     "NSString",
 ] }
 
-[target.'cfg(target_os = "macos")'.dev-dependencies]
-# The test of the run loop counts the process's wakeups.
-libc.workspace = true
-
 # The run loop needs the process's main thread, which the test harness keeps
 # for itself.
 [[test]]
