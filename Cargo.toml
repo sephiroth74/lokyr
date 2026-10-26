@@ -41,8 +41,12 @@ objc2-app-kit = { version = "0.3.2", default-features = false }
 objc2-core-foundation = { version = "0.3.2", default-features = false }
 objc2-core-graphics = { version = "0.3.2", default-features = false }
 objc2-foundation = { version = "0.3.2", default-features = false }
+objc2-metal = { version = "0.3.2", default-features = false }
+objc2-quartz-core = { version = "0.3.2", default-features = false }
 # Without forking and timeouts, which the tests do not use.
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+# What a platform hands a renderer of a window: on the Mac, its content view.
+raw-window-handle = "0.6.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"

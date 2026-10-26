@@ -1,9 +1,13 @@
-//! The application: its windows and its main menu.
+//! The application: its windows, what they draw, and its main menu.
+
+use std::collections::BTreeMap;
 
 use bolt_platform_core::{
-    AppEvent, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
-    WindowAttributes, WindowEvent, WindowId,
+    AppEvent, Appearance, Handler, MainMenu, Menu, MenuItem, Platform, Shortcut, ShortcutKey, Size,
+    WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
+use bolt_render_core::Color;
+use bolt_render_metal::{Gpu, Surface};
 
 /// The command that quits.
 const QUIT: &str = "quit";
@@ -18,23 +22,63 @@ const WINDOW_SIZE: Size = Size {
 /// last window or from its menu.
 #[derive(Debug, Default)]
 pub struct App {
-    windows: Vec<WindowId>,
+    gpu: Option<Gpu>,
+    /// The open windows, each with its surface, which a window has once the
+    /// app has a GPU and the platform a layer to draw into.
+    windows: BTreeMap<WindowId, Option<Surface>>,
 }
 
 impl App {
+    /// An application that draws its windows with `gpu`, or nothing without
+    /// one.
+    pub fn new(gpu: Option<Gpu>) -> Self {
+        Self {
+            gpu,
+            windows: BTreeMap::new(),
+        }
+    }
+
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let attributes = WindowAttributes {
             title: "Bolt".to_owned(),
             size: WINDOW_SIZE,
         };
         match platform.create_window(&attributes) {
-            Ok(window) => self.windows.push(window),
+            Ok(window) => {
+                let surface = self.surface(platform, window);
+                self.windows.insert(window, surface);
+                if let Some(size) = platform.window_size(window) {
+                    self.draw(platform, window, size);
+                }
+            }
             Err(error) => {
                 eprintln!("bolt: {error}");
                 if self.windows.is_empty() {
                     platform.quit();
                 }
             }
+        }
+    }
+
+    /// The surface of `window`, if the app has a GPU and the platform a
+    /// layer for it.
+    fn surface(&self, platform: &dyn Platform, window: WindowId) -> Option<Surface> {
+        let gpu = self.gpu.as_ref()?;
+        let handle = platform.window_handle(window)?;
+        Surface::new(gpu, handle)
+            .inspect_err(|error| eprintln!("bolt: {error}"))
+            .ok()
+    }
+
+    /// Sizes the surface of `window` to its content, of `size`, and draws
+    /// the background.
+    fn draw(&self, platform: &dyn Platform, window: WindowId, size: WindowSize) {
+        let Some(Some(surface)) = self.windows.get(&window) else {
+            return;
+        };
+        surface.resize(size.pixels.width, size.pixels.height, size.scale);
+        if let Err(error) = surface.clear(background(platform.appearance())) {
+            eprintln!("bolt: {error}");
         }
     }
 }
@@ -49,18 +93,42 @@ impl Handler for App {
         match event {
             AppEvent::Command(command) if command == QUIT => platform.quit(),
             AppEvent::QuitRequested => platform.quit(),
+            AppEvent::AppearanceChanged(_) => {
+                let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+                for window in windows {
+                    if let Some(size) = platform.window_size(window) {
+                        self.draw(platform, window, size);
+                    }
+                }
+            }
             _ => {}
         }
     }
 
     fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
-        if event == WindowEvent::CloseRequested {
-            platform.close_window(window);
-            self.windows.retain(|&open| open != window);
-            if self.windows.is_empty() {
-                platform.quit();
+        match event {
+            WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
+                self.draw(platform, window, size);
             }
+            WindowEvent::CloseRequested => {
+                // The surface goes before its window.
+                self.windows.remove(&window);
+                platform.close_window(window);
+                if self.windows.is_empty() {
+                    platform.quit();
+                }
+            }
+            _ => {}
         }
+    }
+}
+
+/// The background of a window's content, which follows the system's
+/// appearance.
+fn background(appearance: Appearance) -> Color {
+    match appearance {
+        Appearance::Light => Color::from_rgb8(0xfa, 0xfa, 0xfa),
+        Appearance::Dark => Color::from_rgb8(0x1e, 0x1e, 0x20),
     }
 }
 
@@ -129,6 +197,29 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::CloseRequested);
         assert_eq!(fake.windows().count(), 0);
         assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn a_window_without_a_layer_draws_nothing() {
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        assert!(app.windows[&window].is_none());
+        let size = WindowSize::new(
+            Size {
+                width: 900.0,
+                height: 600.0,
+            },
+            1.0,
+        );
+        assert!(fake.send(&mut app, window, WindowEvent::Resized(size)));
+        assert!(fake.send(&mut app, window, WindowEvent::ScaleChanged(size)));
+        fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+        assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn the_background_follows_the_appearance() {
+        assert_ne!(background(Appearance::Light), background(Appearance::Dark));
     }
 
     #[test]

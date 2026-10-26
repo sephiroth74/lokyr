@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Weak;
 
 use bolt_platform_core::{
-    Alert, AlertId, Appearance, Error, MainMenu, Platform, Waker, WindowAttributes, WindowId,
-    WindowSize,
+    Alert, AlertId, Appearance, Error, MainMenu, Platform, Waker, WindowAttributes, WindowHandle,
+    WindowId, WindowSize,
 };
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
@@ -14,6 +14,7 @@ use objc2_app_kit::{
     NSEventModifierFlags, NSEventType, NSPasteboard, NSPasteboardTypeString,
 };
 use objc2_foundation::{NSArray, NSPoint, NSString};
+use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
 use crate::shared::{Pending, Shared};
@@ -171,6 +172,14 @@ impl Platform for Backend {
 
     fn window_size(&self, window: WindowId) -> Option<WindowSize> {
         self.windows.get(&window).map(Window::size)
+    }
+
+    fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>> {
+        let view = self.windows.get(&window)?.view_address();
+        let raw = RawWindowHandle::AppKit(AppKitWindowHandle::new(view));
+        // SAFETY: the view is the window's content view, which lives as long
+        // as the window, and no window closes while the backend is borrowed.
+        Some(unsafe { WindowHandle::borrow_raw(raw) })
     }
 
     fn focus_window(&mut self, window: WindowId) {

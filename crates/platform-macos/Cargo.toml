@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 bolt-platform-core.workspace = true
+raw-window-handle.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2.workspace = true
@@ -19,6 +20,7 @@ objc2-app-kit = { workspace = true, features = [
     "std",
     "block2",
     "objc2-core-foundation",
+    "objc2-quartz-core",
     "NSAlert",
     "NSAppearance",
     "NSApplication",
@@ -36,6 +38,12 @@ objc2-app-kit = { workspace = true, features = [
     "NSWindow",
 ] }
 objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
+objc2-quartz-core = { workspace = true, features = [
+    "std",
+    "objc2-core-foundation",
+    "CALayer",
+    "CAMetalLayer",
+] }
 objc2-foundation = { workspace = true, features = [
     "std",
     "NSArray",

@@ -127,6 +127,7 @@ fn starting_opens_a_window_and_sets_the_menu() {
         }
     );
     assert_eq!(fake.main_menu(), Some(&menu()));
+    assert!(fake.window_handle(window).is_none());
     assert!(!fake.has_quit());
 }
 

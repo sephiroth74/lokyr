@@ -15,6 +15,7 @@ publish = false
 fake = []
 
 [dependencies]
+raw-window-handle.workspace = true
 thiserror.workspace = true
 
 [lints]

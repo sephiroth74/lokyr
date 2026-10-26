@@ -1,6 +1,6 @@
 //! The application on the main thread's run loop: it starts, opens a window
-//! of the size asked, takes a wake from another thread, and returns from
-//! `run` once its handler quits. AppKit needs the process's main thread,
+//! of the size asked, whose content a `CAMetalLayer` backs, takes a wake from
+//! another thread, and returns from `run` once its handler quits. AppKit needs the process's main thread,
 //! which this test has to itself.
 
 #[cfg(target_os = "macos")]
@@ -10,6 +10,10 @@ mod probe {
     use std::rc::Rc;
     use std::thread;
     use std::time::Duration;
+
+    use objc2_app_kit::NSView;
+    use objc2_quartz_core::CAMetalLayer;
+    use raw_window_handle::RawWindowHandle;
 
     use bolt_platform_core::{
         AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
@@ -29,6 +33,8 @@ mod probe {
         started: bool,
         size: Option<WindowSize>,
         title_kept: bool,
+        /// The scale of the content view's layer, if it is a `CAMetalLayer`.
+        metal_layer_scale: Option<f64>,
         wakes: usize,
         wake_on_main: bool,
         closed: bool,
@@ -52,6 +58,18 @@ mod probe {
             seen.started = true;
             seen.size = platform.window_size(window);
             seen.title_kept = platform.window_size(WindowId::new(u64::MAX)).is_none();
+            let handle = platform
+                .window_handle(window)
+                .expect("the window has a handle");
+            if let RawWindowHandle::AppKit(appkit) = handle.as_raw() {
+                // SAFETY: the handle holds the window's view while the
+                // platform is borrowed.
+                let view: &NSView = unsafe { appkit.ns_view.cast().as_ref() };
+                seen.metal_layer_scale = view
+                    .layer()
+                    .and_then(|layer| layer.downcast::<CAMetalLayer>().ok())
+                    .map(|layer| layer.contentsScale());
+            }
             self.window = Some(window);
 
             let waker = platform.waker();
@@ -105,6 +123,7 @@ mod probe {
         assert_eq!(f64::from(size.pixels.width), SIZE.width * size.scale);
         assert_eq!(f64::from(size.pixels.height), SIZE.height * size.scale);
         assert!(seen.title_kept, "{seen:?}");
+        assert_eq!(seen.metal_layer_scale, Some(size.scale), "{seen:?}");
         assert_eq!(seen.wakes, 1, "{seen:?}");
         assert!(seen.wake_on_main, "{seen:?}");
         assert!(seen.closed, "{seen:?}");

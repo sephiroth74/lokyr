@@ -1,5 +1,8 @@
-//! Windows, and the delegate that tells what happens to them.
+//! Windows, their content view, and the delegate that tells what happens
+//! to them.
 
+use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::rc::Weak;
 
 use bolt_platform_core::{PixelSize, Size, WindowAttributes, WindowEvent, WindowId, WindowSize};
@@ -7,17 +10,21 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSWindow, NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
+    NSBackingStoreType, NSResponder, NSView, NSWindow, NSWindowDelegate, NSWindowOcclusionState,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
+
+use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::shared::{Pending, Shared};
 
 /// A window that the app opened.
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
+    view: Retained<ContentView>,
     // The window holds its delegate weakly.
     _delegate: Retained<WindowDelegate>,
 }
@@ -54,13 +61,22 @@ impl Window {
         // release.
         unsafe { ns_window.setReleasedWhenClosed(false) };
         ns_window.setTitle(&NSString::from_str(&attributes.title));
+        let view = ContentView::new(mtm, content);
+        ns_window.setContentView(Some(&view));
         ns_window.center();
         let delegate = WindowDelegate::new(mtm, shared, id);
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         Self {
             ns_window,
+            view,
             _delegate: delegate,
         }
+    }
+
+    /// The window's content view, by its address, for a renderer: it lives
+    /// as long as the window.
+    pub(crate) fn view_address(&self) -> NonNull<c_void> {
+        NonNull::from(&*self.view).cast()
     }
 
     pub(crate) fn ns_window(&self) -> &NSWindow {
@@ -120,6 +136,48 @@ fn points(size: NSSize) -> Size {
     Size {
         width: size.width,
         height: size.height,
+    }
+}
+
+define_class!(
+    // SAFETY: `NSView` has no requirement of its subclasses that this one
+    // breaks, and the view does not implement `Drop`.
+    #[unsafe(super(NSView, NSResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    pub(crate) struct ContentView;
+
+    impl ContentView {
+        // SAFETY: AppKit's signature: the layer that backs the view.
+        #[unsafe(method_id(makeBackingLayer))]
+        fn make_backing_layer(&self) -> Retained<CALayer> {
+            let layer = CAMetalLayer::new();
+            layer.setOpaque(true);
+            Retained::into_super(layer)
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(wantsUpdateLayer))]
+        fn wants_update_layer(&self) -> bool {
+            // The renderer draws the layer; AppKit draws nothing into it.
+            true
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(isOpaque))]
+        fn is_opaque(&self) -> bool {
+            true
+        }
+    }
+);
+
+impl ContentView {
+    /// A view of the size of `frame`, backed by a `CAMetalLayer`.
+    fn new(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(());
+        // SAFETY: `NSView`'s `initWithFrame:` has this signature.
+        let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
+        view.setWantsLayer(true);
+        view
     }
 }
 

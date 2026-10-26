@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, Waker,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -225,6 +225,11 @@ impl Platform for Fake {
 
     fn window_size(&self, window: WindowId) -> Option<WindowSize> {
         self.windows.get(&window).map(|state| state.size)
+    }
+
+    fn window_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {
+        // Nothing draws into the fake's windows.
+        None
     }
 
     fn focus_window(&mut self, _window: WindowId) {}

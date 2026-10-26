@@ -28,6 +28,7 @@ pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, ScrollDelta, ScrollPhase,
 };
 pub use menu::{Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, Shortcut, ShortcutKey};
+pub use raw_window_handle::WindowHandle;
 pub use waker::Waker;
 
 /// A window, which no other window of the process takes, even once it is
@@ -83,6 +84,13 @@ pub trait Platform {
 
     /// The size of a window's content.
     fn window_size(&self, window: WindowId) -> Option<WindowSize>;
+
+    /// What a renderer draws the window's content into: on the Mac, its
+    /// content view, whose layer is a `CAMetalLayer`. It is valid while the
+    /// platform is borrowed, as no window can close meanwhile; a renderer
+    /// that keeps the layer retains it. `None` for a platform that draws
+    /// nothing, such as the fake one.
+    fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
 
     /// Brings a window in front of the others, with the focus.
     fn focus_window(&mut self, window: WindowId);

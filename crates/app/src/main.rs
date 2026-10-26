@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "macos")]
 mod app;
 
 use std::process::ExitCode;
@@ -26,7 +27,10 @@ fn main() -> ExitCode {
 /// Runs the application until it quits.
 #[cfg(target_os = "macos")]
 fn run() -> ExitCode {
-    match bolt_platform_macos::run(app::App::default()) {
+    let gpu = bolt_render_metal::Gpu::new()
+        .inspect_err(|error| eprintln!("bolt: {error}"))
+        .ok();
+    match bolt_platform_macos::run(app::App::new(gpu)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("bolt: {error}");
