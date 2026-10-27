@@ -15,12 +15,14 @@ use lokyr_text_core::{
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
-    CFArray, CFDictionary, CFNumber, CFRange, CFRetained, CFSet, CFString, CFType,
-    CGAffineTransform, Type, kCFTypeSetCallBacks,
+    CFArray, CFAttributedString, CFDictionary, CFNumber, CFRange, CFRetained, CFSet, CFString,
+    CFType, CGAffineTransform, CGPoint, CGSize, Type, kCFTypeSetCallBacks,
 };
 use objc2_core_text::{
-    CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions,
-    kCTFontFamilyNameAttribute, kCTFontStyleNameKey, kCTFontWeightTrait,
+    CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions, CTLine,
+    CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute,
+    kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey,
+    kCTFontWeightTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -47,6 +49,9 @@ pub struct CoreText {
     /// The faces made at a size, by their ids, the bits of the size, and
     /// whether they are slanted.
     fonts: HashMap<(FaceId, u64, bool), CFRetained<CTFont>>,
+    /// The faces that shape text without ligatures, by their ids and the
+    /// bits of the size.
+    unjoined: HashMap<(FaceId, u64), CFRetained<CTFont>>,
     /// Whether glyphs are drawn with macOS's font smoothing.
     smoothing: bool,
 }
@@ -70,6 +75,7 @@ impl CoreText {
             faces: Vec::new(),
             ids: HashMap::new(),
             fonts: HashMap::new(),
+            unjoined: HashMap::new(),
             smoothing,
         }
     }
@@ -110,6 +116,51 @@ impl CoreText {
         let font = unsafe { CTFont::with_font_descriptor(descriptor, size, matrix) };
         self.fonts.insert(key, font.clone());
         Some(font)
+    }
+
+    /// The face `face` at `size` that shapes text with `features`: without
+    /// ligatures, its contextual alternates, standard and discretionary
+    /// ligatures turned off, as some fonts put their ligatures in the first.
+    fn shaping_font(
+        &mut self,
+        face: FaceId,
+        size: f64,
+        features: Features,
+    ) -> Option<CFRetained<CTFont>> {
+        let font = self.font(face, size)?;
+        if features.ligatures {
+            return Some(font);
+        }
+        if let Some(unjoined) = self.unjoined.get(&(face, size.to_bits())) {
+            return Some(unjoined.clone());
+        }
+        // SAFETY: Core Text's constants.
+        let (tag, value) = unsafe { (kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue) };
+        let off = CFNumber::new_i32(0);
+        let settings: Vec<CFRetained<CFDictionary<CFString, CFType>>> = ["calt", "liga", "dlig"]
+            .into_iter()
+            .map(|feature| {
+                let name = CFString::from_str(feature);
+                CFDictionary::<CFString, CFType>::from_slices(
+                    &[tag, value],
+                    &[name.as_ref(), off.as_ref()],
+                )
+            })
+            .collect();
+        let settings = CFArray::from_retained_objects(&settings);
+        // SAFETY: Core Text's constant.
+        let key = unsafe { kCTFontFeatureSettingsAttribute };
+        let attributes =
+            CFDictionary::<CFString, CFType>::from_slices(&[key], &[settings.as_ref()]);
+        // SAFETY: a dictionary of descriptor attributes.
+        let descriptor = unsafe { CTFontDescriptor::with_attributes(attributes.as_opaque()) };
+        // SAFETY: a font that CoreText made, at its own size, without a
+        // matrix.
+        let unjoined =
+            unsafe { font.copy_with_attributes(size, std::ptr::null(), Some(&descriptor)) };
+        self.unjoined
+            .insert((face, size.to_bits()), unjoined.clone());
+        Some(unjoined)
     }
 
     /// The faces of `descriptors`, of a family, those of `group` marked as
@@ -250,13 +301,16 @@ impl FontBackend for CoreText {
 
     fn shape(
         &mut self,
-        _face: FaceId,
-        _size: f32,
-        _text: &str,
-        _features: Features,
-        _glyphs: &mut Vec<ShapedGlyph>,
+        face: FaceId,
+        size: f32,
+        text: &str,
+        features: Features,
+        glyphs: &mut Vec<ShapedGlyph>,
     ) {
-        unimplemented!("shaping with CoreText is not implemented yet")
+        let Some(font) = self.shaping_font(face, f64::from(size), features) else {
+            return;
+        };
+        shape(&font, text, glyphs);
     }
 
     fn rasterize(
@@ -398,6 +452,91 @@ fn widest_digit(font: &CTFont) -> f64 {
         .iter()
         .map(|advance| advance.width)
         .fold(0.0, f64::max)
+}
+
+/// Shapes `text` in `font` as a line of CoreText, and appends its glyphs to
+/// `glyphs`, in the order that they are drawn. The glyphs of another font,
+/// which CoreText takes for what `font` lacks, are left out, as their ids
+/// are not `font`'s, but their advances count.
+fn shape(font: &CTFont, text: &str, glyphs: &mut Vec<ShapedGlyph>) {
+    // The byte of each UTF-16 unit of `text`, which CoreText counts in.
+    let mut bytes = Vec::with_capacity(text.len());
+    for (at, character) in text.char_indices() {
+        let at = u32::try_from(at).unwrap_or(u32::MAX);
+        bytes.extend(std::iter::repeat_n(at, character.len_utf16()));
+    }
+    let string = CFString::from_str(text);
+    // SAFETY: Core Text's constant.
+    let key = unsafe { kCTFontAttributeName };
+    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[font.as_ref()]);
+    // SAFETY: a string and a dictionary of its attributes, which the call
+    // copies.
+    let Some(attributed) =
+        (unsafe { CFAttributedString::new(None, Some(&string), Some(attributes.as_opaque())) })
+    else {
+        return;
+    };
+    // SAFETY: an attributed string, which the line copies.
+    let line = unsafe { CTLine::with_attributed_string(&attributed) };
+    // SAFETY: a line that CoreText made.
+    let runs = unsafe { line.glyph_runs() };
+    // SAFETY: the runs of a line are `CTRun`s.
+    let runs = unsafe { runs.cast_unchecked::<CTRun>() };
+    // SAFETY: a font that CoreText made.
+    let own = unsafe { font.post_script_name() }.to_string();
+    let mut pen = 0.0_f64;
+    for run in runs.iter() {
+        // SAFETY: a run that CoreText made.
+        let count = usize::try_from(unsafe { run.glyph_count() }).unwrap_or(0);
+        if count == 0 {
+            continue;
+        }
+        let mut ids = vec![0_u16; count];
+        let mut positions = vec![CGPoint::ZERO; count];
+        let mut advances = vec![CGSize::ZERO; count];
+        let mut indices = vec![0_isize; count];
+        // A range of no length is the run's whole.
+        let whole = CFRange {
+            location: 0,
+            length: 0,
+        };
+        // SAFETY: each buffer holds the run's `count` items, which the
+        // calls write.
+        unsafe {
+            run.glyphs(whole, NonNull::new_unchecked(ids.as_mut_ptr()));
+            run.positions(whole, NonNull::new_unchecked(positions.as_mut_ptr()));
+            run.advances(whole, NonNull::new_unchecked(advances.as_mut_ptr()));
+            run.string_indices(whole, NonNull::new_unchecked(indices.as_mut_ptr()));
+        }
+        let ours = run_font(&run).is_some_and(|name| name == own);
+        for at in 0..count {
+            let advance = advances[at].width;
+            if ours {
+                let unit = usize::try_from(indices[at]).unwrap_or(0);
+                glyphs.push(ShapedGlyph {
+                    glyph: GlyphId(ids[at]),
+                    cluster: bytes.get(unit).copied().unwrap_or(0),
+                    x_advance: advance as f32,
+                    x_offset: (positions[at].x - pen) as f32,
+                    y_offset: positions[at].y as f32,
+                });
+            }
+            pen += advance;
+        }
+    }
+}
+
+/// The PostScript name of the font that `run` draws in.
+fn run_font(run: &CTRun) -> Option<String> {
+    // SAFETY: a run that CoreText made.
+    let attributes = unsafe { run.attributes() };
+    // SAFETY: a run's attributes are keyed by strings.
+    let attributes = unsafe { attributes.cast_unchecked::<CFString, CFType>() };
+    // SAFETY: Core Text's constant.
+    let font = attributes.get(unsafe { kCTFontAttributeName })?;
+    let font = font.downcast::<CTFont>().ok()?;
+    // SAFETY: a font that CoreText made.
+    Some(unsafe { font.post_script_name() }.to_string())
 }
 
 /// The glyph of `character` in `font`, if it has one.

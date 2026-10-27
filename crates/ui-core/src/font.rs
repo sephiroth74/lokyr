@@ -5,12 +5,17 @@
 
 use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
 use lokyr_text_core::{
-    Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, FontBackend,
-    FontConfig, GlyphId, Resolved, Synthesis, choose_faces, resolve_faces,
+    Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
+    FontBackend, FontConfig, GlyphId, Resolved, ShapedGlyph, Synthesis, choose_faces,
+    resolve_faces,
 };
 use lokyr_vt_core::unicode;
 
-use crate::pane::{AtlasGlyph, CellText};
+use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
+
+/// The runs that the cache of shaped runs keeps in each of its two
+/// generations: a screen's runs, and more.
+const SHAPED_RUNS: usize = 4096;
 
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
@@ -82,15 +87,90 @@ pub struct Font<B> {
     cell: CellMetrics,
     atlas: Atlas<GlyphKey>,
     glyphs: Glyphs,
+    shaped: ShapedRuns,
+    /// The glyphs of the run being laid out, reused from run to run.
+    scratch: Vec<ShapedGlyph>,
+    /// Where the run's cells find their glyphs, reused from run to run.
+    found: Vec<Option<Found>>,
+    /// The region of each glyph drawn, with its key, for the tests.
+    #[cfg(test)]
+    drawn: Vec<(AtlasRegion, GlyphKey)>,
+}
+
+/// The key of a shaped run: its face, the bits of its size, whether its
+/// ligatures join, and its text.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+struct RunKey {
+    face: u32,
+    size: u32,
+    ligatures: bool,
+    text: String,
+}
+
+/// The runs shaped lately, so that a frame shapes only the runs that
+/// changed: those of the frame before stay, in two generations, the older
+/// dropped once the newer is full.
+#[derive(Debug, Default)]
+struct ShapedRuns {
+    newer: FastMap<RunKey, Vec<ShapedGlyph>>,
+    older: FastMap<RunKey, Vec<ShapedGlyph>>,
+    /// The key being looked up, reused so that a lookup allocates nothing.
+    key: RunKey,
+    /// How many runs were shaped, for the tests.
+    #[cfg(test)]
+    shapings: usize,
+}
+
+impl ShapedRuns {
+    /// Puts the glyphs of `text` shaped in `face` at `size` pixels, with
+    /// `features`, into `glyphs`: from the cache, or shaped by `backend`.
+    fn shape<B: FontBackend>(
+        &mut self,
+        backend: &mut B,
+        face: FaceId,
+        size: f32,
+        features: Features,
+        text: &str,
+        glyphs: &mut Vec<ShapedGlyph>,
+    ) {
+        glyphs.clear();
+        self.key.face = face.0;
+        self.key.size = size.to_bits();
+        self.key.ligatures = features.ligatures;
+        self.key.text.clear();
+        self.key.text.push_str(text);
+        if let Some(known) = self.newer.get(&self.key) {
+            glyphs.extend_from_slice(known);
+            return;
+        }
+        let known = match self.older.remove(&self.key) {
+            Some(known) => known,
+            None => {
+                #[cfg(test)]
+                {
+                    self.shapings += 1;
+                }
+                let mut shaped = Vec::new();
+                backend.shape(face, size, text, features, &mut shaped);
+                shaped
+            }
+        };
+        glyphs.extend_from_slice(&known);
+        if self.newer.len() >= SHAPED_RUNS {
+            self.older = std::mem::take(&mut self.newer);
+        }
+        self.newer.insert(self.key.clone(), known);
+    }
 }
 
 /// Where a character's glyph is: the face that draws it, what its style
-/// draws heavier or slanted, and the glyph.
+/// draws heavier or slanted, the glyph, and whether it is drawn as an emoji.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Found {
     face: FaceId,
     synthesis: Synthesis,
     glyph: GlyphId,
+    emoji: bool,
 }
 
 /// Where each style finds each character that it was asked for, in its
@@ -170,6 +250,11 @@ impl<B: FontBackend> Font<B> {
             cell,
             atlas: Atlas::new(),
             glyphs: Glyphs::new(&resolved.faces, non_ascii.as_ref()),
+            shaped: ShapedRuns::default(),
+            scratch: Vec::new(),
+            found: Vec::new(),
+            #[cfg(test)]
+            drawn: Vec::new(),
             resolved,
             non_ascii,
             missing_non_ascii,
@@ -211,6 +296,12 @@ impl<B: FontBackend> Font<B> {
         self.cell = CellMetrics::new(&metrics, &self.config);
     }
 
+    /// The keys of the glyphs drawn, with their regions in the atlas.
+    #[cfg(test)]
+    fn atlas_keys(&self) -> impl Iterator<Item = (GlyphKey, AtlasRegion)> + '_ {
+        self.drawn.iter().map(|&(region, key)| (key, region))
+    }
+
     /// Starts a frame: the glyphs that it uses stay in the atlas.
     pub fn begin_frame(&mut self) {
         self.atlas.begin_frame();
@@ -220,14 +311,49 @@ impl<B: FontBackend> Font<B> {
     /// its style, of the non-ASCII family's style for a character past ASCII
     /// and else of the text's family, or else in the face that the system's
     /// cascade gives for its text; as an emoji, in the face that the cascade
-    /// gives for its emoji, the system's emoji font, and else as text. Drawn
-    /// into the atlas the first time. `None` when no face draws its
-    /// character.
+    /// gives for its emoji, the system's emoji font, and else as text. An
+    /// emoji sequence, of a ZWJ, a flag, a keycap or a skin tone, takes the
+    /// one glyph that the emoji face shapes it into. Drawn into the atlas the
+    /// first time. `None` when no face draws its character.
     pub fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph> {
-        let style = usize::from(shown.style.bold) | usize::from(shown.style.italic) << 1;
+        let style = style_of(shown.style);
         let character = shown.text.chars().next()?;
-        let asked = Presentation::asked(shown.text);
-        let found = self.find(style, character, asked)?;
+        let found = self.find(style, character, Presentation::asked(shown.text))?;
+        let found = self.sequence(found, shown.text);
+        self.draw(found)
+    }
+
+    /// The glyph of `found`, an emoji, of the whole `cluster`, when the
+    /// cluster is a sequence that its face shapes into one glyph.
+    fn sequence(&mut self, found: Found, cluster: &str) -> Found {
+        if !found.emoji || cluster.chars().nth(1).is_none() {
+            return found;
+        }
+        let mut shaped = std::mem::take(&mut self.scratch);
+        let features = Features {
+            ligatures: self.config.ligatures,
+        };
+        self.shaped.shape(
+            &mut self.backend,
+            found.face,
+            self.pixels,
+            features,
+            cluster,
+            &mut shaped,
+        );
+        let whole = match shaped.as_slice() {
+            [one] => Found {
+                glyph: one.glyph,
+                ..found
+            },
+            _ => found,
+        };
+        self.scratch = shaped;
+        whole
+    }
+
+    /// The glyph `found` in the atlas, drawn into it the first time.
+    fn draw(&mut self, found: Found) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
@@ -243,17 +369,164 @@ impl<B: FontBackend> Font<B> {
                 self.atlas.insert(key, &bitmap)?
             }
         };
+        let region = AtlasRegion {
+            texture: texture(placement.format),
+            x: placement.x,
+            y: placement.y,
+            width: placement.width,
+            height: placement.height,
+        };
+        #[cfg(test)]
+        if !self.drawn.contains(&(region, key)) {
+            self.drawn.push((region, key));
+        }
         Some(AtlasGlyph {
-            region: AtlasRegion {
-                texture: texture(placement.format),
-                x: placement.x,
-                y: placement.y,
-                width: placement.width,
-                height: placement.height,
-            },
+            region,
             left: placement.left,
             top: placement.top,
         })
+    }
+
+    /// Appends the glyphs of `run` to `out`: its cells in one face, as
+    /// text, shaped together when their ligatures or their clusters of
+    /// several characters ask for it, each glyph at the cell of its cluster;
+    /// an emoji alone. A cell alone, and text without ligatures of clusters
+    /// of one character, takes each cell's glyph without shaping.
+    fn lay_out(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
+        let style = style_of(run.style);
+        let mut cells = std::mem::take(&mut self.found);
+        cells.clear();
+        for index in 0..run.cells.len() {
+            let cluster = run.cluster(index);
+            let found = cluster.chars().next().and_then(|character| {
+                // A cluster of one character asks for no presentation.
+                let asked = if cluster.len() == character.len_utf8() {
+                    None
+                } else {
+                    Presentation::asked(cluster)
+                };
+                self.find(style, character, asked)
+            });
+            cells.push(found);
+        }
+        let mut index = 0;
+        while index < cells.len() {
+            let Some(found) = cells[index] else {
+                index += 1;
+                continue;
+            };
+            if found.emoji {
+                let found = self.sequence(found, run.cluster(index));
+                if let Some(glyph) = self.draw(found) {
+                    out.push(RunGlyph {
+                        cell: index,
+                        glyph,
+                        x: 0,
+                        y: 0,
+                    });
+                }
+                index += 1;
+                continue;
+            }
+            // The cells after it in the same face, as text.
+            let end = (index + 1..cells.len())
+                .find(|&next| {
+                    cells[next].is_none_or(|other| {
+                        other.emoji
+                            || (other.face, other.synthesis) != (found.face, found.synthesis)
+                    })
+                })
+                .unwrap_or(cells.len());
+            let start = run.cells[index].start as usize;
+            let stop = run
+                .cells
+                .get(end)
+                .map_or(run.text.len(), |cell| cell.start as usize);
+            let text = &run.text[start..stop];
+            if self.needs_shaping(text, end - index) {
+                self.shape_cells(run, index, end, found, text, out);
+            } else {
+                for (cell, found) in cells.iter().enumerate().take(end).skip(index) {
+                    if let Some(glyph) = found.and_then(|found| self.draw(found)) {
+                        out.push(RunGlyph {
+                            cell,
+                            glyph,
+                            x: 0,
+                            y: 0,
+                        });
+                    }
+                }
+            }
+            index = end;
+        }
+        self.found = cells;
+    }
+
+    /// Whether `text`, of `cells`, can change once shaped: it has a cluster
+    /// of several characters, or, with ligatures, several cells, as a font's
+    /// contextual alternates can change letters too.
+    fn needs_shaping(&self, text: &str, cells: usize) -> bool {
+        if self.config.ligatures && cells > 1 {
+            return true;
+        }
+        // A cluster takes a byte at least: as many bytes as cells are as
+        // many clusters of one character.
+        text.len() != cells && text.chars().nth(cells).is_some()
+    }
+
+    /// Shapes `text`, the clusters of the cells of `run` from `first` to
+    /// `end`, in `found`'s face, and appends its glyphs to `out`, each at
+    /// the cell where its cluster starts, moved from that cell's pen as the
+    /// shaping moves it from the cluster's.
+    fn shape_cells(
+        &mut self,
+        run: &Run<'_>,
+        first: usize,
+        end: usize,
+        found: Found,
+        text: &str,
+        out: &mut Vec<RunGlyph>,
+    ) {
+        let features = Features {
+            ligatures: self.config.ligatures,
+        };
+        let mut shaped = std::mem::take(&mut self.scratch);
+        self.shaped.shape(
+            &mut self.backend,
+            found.face,
+            self.pixels,
+            features,
+            text,
+            &mut shaped,
+        );
+        let base = run.cells[first].start;
+        let starts = &run.cells[first..end];
+        let (mut pen, mut cell_pen, mut at) = (0.0_f32, 0.0_f32, usize::MAX);
+        for glyph in &shaped {
+            let cluster = base + glyph.cluster;
+            let cell = first
+                + starts
+                    .partition_point(|cell| cell.start <= cluster)
+                    .saturating_sub(1);
+            if cell != at {
+                at = cell;
+                cell_pen = pen;
+            }
+            let drawn = Found {
+                glyph: glyph.glyph,
+                ..found
+            };
+            if let Some(atlas) = self.draw(drawn) {
+                out.push(RunGlyph {
+                    cell,
+                    glyph: atlas,
+                    x: (pen - cell_pen + glyph.x_offset).round() as i32,
+                    y: glyph.y_offset.round() as i32,
+                });
+            }
+            pen += glyph.x_advance;
+        }
+        self.scratch = shaped;
     }
 
     /// The sides of the atlas's two textures, coverage's and color's.
@@ -321,7 +594,12 @@ impl<B: FontBackend> Font<B> {
             return *known;
         }
         let presentation = asked.unwrap_or_else(|| Presentation::default_of(character));
-        let found = self.look_up(style, character, presentation);
+        let found = self
+            .look_up(style, character, presentation)
+            .map(|found| Found {
+                emoji: presentation == Presentation::Emoji,
+                ..found
+            });
         self.glyphs.others.insert((table, character, asked), found);
         found
     }
@@ -398,6 +676,7 @@ fn cascade<B: FontBackend>(
             Presentation::Text => face.synthesis,
         },
         glyph,
+        emoji: false,
     })
 }
 
@@ -413,8 +692,24 @@ fn in_faces<B: FontBackend>(
             face: face.id,
             synthesis: face.synthesis,
             glyph,
+            emoji: false,
         })
     })
+}
+
+impl<B: FontBackend> GlyphSource for Font<B> {
+    fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph> {
+        Font::glyph(self, shown)
+    }
+
+    fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
+        self.lay_out(run, out);
+    }
+}
+
+/// The style's index: bold its first bit, italic its second.
+fn style_of(style: &lokyr_vt_core::page::Style) -> usize {
+    usize::from(style.bold) | usize::from(style.italic) << 1
 }
 
 /// The glyph of `character` in `face`, which the backend gives once.
@@ -476,6 +771,7 @@ mod tests {
         looked_up: HashMap<(FaceId, char), usize>,
         fallbacks: usize,
         asked: Vec<String>,
+        shapings: usize,
     }
 
     fn is_cjk(character: char) -> bool {
@@ -553,7 +849,55 @@ mod tests {
             }
         }
 
-        fn shape(&mut self, _: FaceId, _: f32, _: &str, _: Features, _: &mut Vec<ShapedGlyph>) {}
+        /// Shapes a glyph a character, of its code, a cell's advance each,
+        /// but for its ligatures: `->` as two alternates of its cells, as a
+        /// font's contextual alternates are, and `fi` as one glyph; an acute
+        /// accent goes back over its base; and the emoji face shapes a ZWJ
+        /// sequence into one glyph.
+        fn shape(
+            &mut self,
+            face: FaceId,
+            size: f32,
+            text: &str,
+            features: Features,
+            glyphs: &mut Vec<ShapedGlyph>,
+        ) {
+            self.shapings += 1;
+            let advance = size * 0.6;
+            let glyph = |glyph: u16, cluster: usize, x_advance: f32, x_offset: f32| ShapedGlyph {
+                glyph: GlyphId(glyph),
+                cluster: cluster as u32,
+                x_advance,
+                x_offset,
+                y_offset: 0.0,
+            };
+            if face == EMOJI && text.contains('\u{200D}') {
+                glyphs.push(glyph(0xF46A, 0, advance * 2.0, 0.0));
+                return;
+            }
+            let mut characters = text.char_indices().peekable();
+            let mut base = 0;
+            while let Some((at, character)) = characters.next() {
+                let next = characters.peek().map(|&(_, next)| next);
+                match (character, next) {
+                    ('-', Some('>')) if features.ligatures => {
+                        glyphs.push(glyph(0xE100, at, advance, 0.0));
+                        glyphs.push(glyph(0xE101, at + 1, advance, 0.0));
+                        characters.next();
+                    }
+                    ('f', Some('i')) if features.ligatures => {
+                        glyphs.push(glyph(0xFB01, at, advance * 2.0, 0.0));
+                        characters.next();
+                    }
+                    ('\u{301}', _) => glyphs.push(glyph(0x301, base, 0.0, -advance / 2.0)),
+                    _ => {
+                        base = at;
+                        let code = u16::try_from(u32::from(character)).unwrap_or(0);
+                        glyphs.push(glyph(code, at, advance, 0.0));
+                    }
+                }
+            }
+        }
 
         fn rasterize(
             &mut self,
@@ -683,6 +1027,105 @@ mod tests {
             .unwrap();
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x2764)), Some(&1));
         assert_eq!(font.backend.drawn.get(&(EMOJI, 0x2764)), Some(&1));
+    }
+
+    /// The glyphs of a run of `clusters`, a cell each, wide ones with an
+    /// emoji, in the regular face: each as its cell, its glyph's code, and
+    /// how far it moves from the cell's pen.
+    fn run(font: &mut Font<Squares>, clusters: &[&str]) -> Vec<(usize, u16, i32)> {
+        let text = clusters.concat();
+        let mut cells = Vec::new();
+        let mut start = 0;
+        for cluster in clusters {
+            cells.push(crate::pane::RunCell {
+                start,
+                wide: cluster.chars().next().is_some_and(|c| c > '\u{1F000}'),
+            });
+            start += cluster.len() as u32;
+        }
+        let run = Run {
+            text: &text,
+            cells: &cells,
+            style: &Style::DEFAULT,
+        };
+        let mut out = Vec::new();
+        font.lay_out(&run, &mut out);
+        // The glyph's code from the atlas's key, as the backend drew it.
+        out.iter()
+            .map(|placed| {
+                let code = font
+                    .atlas_keys()
+                    .find(|(_, region)| *region == placed.glyph.region)
+                    .map_or(0, |(key, _)| key.glyph.0);
+                (placed.cell, code, placed.x)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_ligature_shapes_across_its_cells() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        // `->` takes its alternates, a glyph a cell.
+        assert_eq!(
+            run(&mut font, &["a", "-", ">", "b"]),
+            [(0, 0x61, 0), (1, 0xE100, 0), (2, 0xE101, 0), (3, 0x62, 0)]
+        );
+        // `fi` takes one glyph, at its first cell, and none at its second.
+        assert_eq!(
+            run(&mut font, &["f", "i", "x"]),
+            [(0, 0xFB01, 0), (2, 0x78, 0)]
+        );
+        // Without ligatures, each character its own glyph.
+        let config = FontConfig {
+            ligatures: false,
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 1.0).unwrap();
+        assert_eq!(
+            run(&mut font, &["a", "-", ">"]),
+            [(0, 0x61, 0), (1, 0x2D, 0), (2, 0x3E, 0)]
+        );
+        assert_eq!(font.backend.shapings, 0, "no ligature, nothing to shape");
+    }
+
+    #[test]
+    fn a_combining_mark_goes_over_its_base_in_its_cell() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 10.0 / 13.0).unwrap();
+        // At 10 pixels, an advance of 6: the accent goes back half of it,
+        // from the pen after its base, in the base's cell.
+        assert_eq!(
+            run(&mut font, &["e\u{301}", "x"]),
+            [(0, 0x65, 0), (0, 0x301, 3), (1, 0x78, 0)]
+        );
+    }
+
+    #[test]
+    fn a_cell_alone_is_not_shaped_and_a_run_is_shaped_once() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        run(&mut font, &["a"]);
+        run(&mut font, &["\u{2714}"]);
+        assert_eq!(font.backend.shapings, 0);
+        for _ in 0..3 {
+            font.begin_frame();
+            run(&mut font, &["a", "-", ">"]);
+        }
+        assert_eq!(font.backend.shapings, 1);
+        assert_eq!(font.shaped.shapings, 1);
+    }
+
+    #[test]
+    fn an_emoji_sequence_takes_one_glyph() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        // ❤️ and a ZWJ, as in ❤️‍🔥, of the codes that the fake backend
+        // draws.
+        let family = "\u{2764}\u{FE0F}\u{200D}\u{2B50}";
+        font.glyph(&shown(family, &Style::DEFAULT)).unwrap();
+        assert_eq!(font.backend.drawn.get(&(EMOJI, 0xF46A)), Some(&1));
+        // In a run, alone, at its cell.
+        assert_eq!(
+            run(&mut font, &["a", family, "b"]),
+            [(0, 0x61, 0), (1, 0xF46A, 0), (2, 0x62, 0)]
+        );
     }
 
     #[test]
@@ -828,6 +1271,76 @@ mod system {
             Some(Texture::Color)
         );
         assert_eq!(texture_of(&mut font, "1"), Some(Texture::Coverage));
+    }
+
+    /// The glyphs that `font` lays out for a run of `clusters`, a cell each,
+    /// as their cells and textures.
+    fn laid_out(font: &mut Font<CoreText>, clusters: &[&str]) -> Vec<(usize, Texture)> {
+        let text = clusters.concat();
+        let mut cells = Vec::new();
+        let mut start = 0;
+        for cluster in clusters {
+            cells.push(crate::pane::RunCell { start, wide: false });
+            start += cluster.len() as u32;
+        }
+        let run = Run {
+            text: &text,
+            cells: &cells,
+            style: &Style::DEFAULT,
+        };
+        let mut out = Vec::new();
+        font.lay_out(&run, &mut out);
+        out.iter()
+            .filter(|placed| placed.glyph.region.width > 0)
+            .map(|placed| (placed.cell, placed.glyph.region.texture))
+            .collect()
+    }
+
+    #[test]
+    fn a_ligature_joins_across_its_cells() {
+        // Hoefler Text, which macOS installs, joins `fi`.
+        let name = lokyr_text_core::Name::try_from("Hoefler Text".to_owned()).unwrap();
+        let config = FontConfig {
+            family: Some(name),
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(CoreText::new(), config.clone(), 2.0).unwrap();
+        let cells: Vec<usize> = laid_out(&mut font, &["f", "i", "x"])
+            .into_iter()
+            .map(|(cell, _)| cell)
+            .collect();
+        assert_eq!(cells, [0, 2]);
+        let apart = FontConfig {
+            ligatures: false,
+            ..config
+        };
+        let mut font = Font::new(CoreText::new(), apart, 2.0).unwrap();
+        assert_eq!(laid_out(&mut font, &["f", "i", "x"]).len(), 3);
+    }
+
+    #[test]
+    fn an_emoji_sequence_draws_as_one_glyph() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        let region = |font: &mut Font<CoreText>, text: &str| {
+            let shown = CellText {
+                text,
+                style: &Style::DEFAULT,
+                wide: true,
+            };
+            font.glyph(&shown).map(|glyph| glyph.region)
+        };
+        // A ZWJ family, a flag, a keycap and a skin tone, each a glyph of
+        // the emoji face, which is not its first character's.
+        for (sequence, first) in [
+            ("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", "\u{1F468}"),
+            ("\u{1F1EE}\u{1F1F9}", "\u{1F1EE}"),
+            ("1\u{FE0F}\u{20E3}", "1\u{FE0F}"),
+            ("\u{1F44D}\u{1F3FD}", "\u{1F44D}"),
+        ] {
+            let whole = region(&mut font, sequence).expect("the sequence draws");
+            assert_eq!(whole.texture, Texture::Color, "{sequence:?}");
+            assert_ne!(Some(whole), region(&mut font, first), "{sequence:?}");
+        }
     }
 
     /// With a Nerd Font and `non-ascii-family`, the icons stay the font's;

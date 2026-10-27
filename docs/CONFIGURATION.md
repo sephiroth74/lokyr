@@ -148,7 +148,10 @@ Whether the glyphs that a font joins into ligatures, such as `->` or `!=`, are j
 |---|---|
 | `true`, `false` | `true` |
 
-Lokyr reads and checks this key, but does not apply it yet: it comes with shaping, and until then no ligature is drawn.
+- Programming fonts that have ligatures, such as Cascadia Code or Fira Code, join `->`, `=>`, `!=` or `===` into one drawing, each keeping the cells of its characters.
+- The cell under the cursor shows its own character, so that a ligature splits where you edit it.
+- `false` turns off the font's ligatures, its contextual alternates too, which some fonts use for them.
+- Emoji sequences are drawn whole either way: a family joined by ZWJ, a flag, a keycap such as 1️⃣, or a skin tone.
 
 ## `[cursor]`
 

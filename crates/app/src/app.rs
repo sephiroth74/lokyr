@@ -506,14 +506,13 @@ impl App {
         });
         let snapshot = state.pane.snapshot();
         let font = &mut drawing.font;
-        let mut glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
         let (x, y) = (
             i32::try_from(left).unwrap_or(i32::MAX),
             i32::try_from(top).unwrap_or(i32::MAX),
         );
-        let mut batch = cells::cells(snapshot, &cell, x, y, None, cursor, &mut glyph);
+        let mut batch = cells::cells(snapshot, &cell, x, y, None, cursor, font);
         if let Some(preedit) = &state.preedit {
-            cells::preedit(&mut batch, snapshot, &cell, preedit, &mut glyph);
+            cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
         // Over a backdrop, what the cells leave shows it.
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };

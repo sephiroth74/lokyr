@@ -22,6 +22,7 @@ objc2-app-kit = { workspace = true, features = [
 objc2-core-foundation = { workspace = true, features = [
     "std",
     "CFArray",
+    "CFAttributedString",
     "CFCGTypes",
     "CFData",
     "CFDictionary",
@@ -45,6 +46,9 @@ objc2-core-text = { workspace = true, features = [
     "CTFont",
     "CTFontDescriptor",
     "CTFontTraits",
+    "CTLine",
+    "CTRun",
+    "CTStringAttributes",
 ] }
 
 [lints]

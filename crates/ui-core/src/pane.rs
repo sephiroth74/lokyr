@@ -34,6 +34,167 @@ pub struct CellText<'a> {
     pub wide: bool,
 }
 
+/// A run of a row's cells of one face's style, which a font may shape
+/// together, as ligatures and combining marks need.
+#[derive(Clone, Copy, Debug)]
+pub struct Run<'a> {
+    /// The cells' grapheme clusters, one after another.
+    pub text: &'a str,
+    /// The cells, from the left.
+    pub cells: &'a [RunCell],
+    /// Their style: bold and italic choose the face.
+    pub style: &'a Style,
+}
+
+impl<'a> Run<'a> {
+    /// The grapheme cluster of the run's cell `index`.
+    pub fn cluster(&self, index: usize) -> &'a str {
+        let start = self.cells[index].start as usize;
+        let end = self
+            .cells
+            .get(index + 1)
+            .map_or(self.text.len(), |next| next.start as usize);
+        &self.text[start..end]
+    }
+}
+
+/// A cell of a [`Run`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RunCell {
+    /// The byte where its cluster starts, in the run's text.
+    pub start: u32,
+    /// Whether it takes two columns.
+    pub wide: bool,
+}
+
+/// A glyph of a [`Run`], at one of its cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RunGlyph {
+    /// The run's cell, by its index, where the glyph's cluster starts: its
+    /// pen.
+    pub cell: usize,
+    /// The glyph.
+    pub glyph: AtlasGlyph,
+    /// How far the glyph moves from the cell's pen, rightwards, in pixels.
+    pub x: i32,
+    /// How far it moves from the baseline, upwards, in pixels.
+    pub y: i32,
+}
+
+/// What finds the glyphs of a pane's text, through a font and its atlas.
+pub trait Glyphs {
+    /// The glyph of one cell's text.
+    fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph>;
+
+    /// Appends the glyphs of `run` to `out`: by default, each cell's own.
+    fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
+        for (index, cell) in run.cells.iter().enumerate() {
+            let shown = CellText {
+                text: run.cluster(index),
+                style: run.style,
+                wide: cell.wide,
+            };
+            if let Some(glyph) = self.glyph(&shown) {
+                out.push(RunGlyph {
+                    cell: index,
+                    glyph,
+                    x: 0,
+                    y: 0,
+                });
+            }
+        }
+    }
+}
+
+/// A function that gives a cell's glyph finds the glyphs a cell at a time.
+impl<F: FnMut(&CellText<'_>) -> Option<AtlasGlyph>> Glyphs for F {
+    fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph> {
+        self(shown)
+    }
+}
+
+/// The cells of the run being laid out in a row: their text, and the
+/// column and the text's color of each.
+#[derive(Default)]
+struct RunBuilder {
+    text: String,
+    cells: Vec<RunCell>,
+    columns: Vec<u16>,
+    colors: Vec<Color>,
+    style: Style,
+    glyphs: Vec<RunGlyph>,
+}
+
+impl RunBuilder {
+    /// Whether a cell of `style` goes on with the run: of the same face's
+    /// style, bold and italic alike.
+    fn takes(&self, style: &Style) -> bool {
+        self.cells.is_empty() || (self.style.bold, self.style.italic) == (style.bold, style.italic)
+    }
+
+    /// Adds a cell, at `column`, of `cluster`, in `color`.
+    fn push(
+        &mut self,
+        column: u16,
+        cluster: impl Iterator<Item = char>,
+        wide: bool,
+        style: &Style,
+        color: Color,
+    ) {
+        if self.cells.is_empty() {
+            self.style = *style;
+        }
+        self.cells.push(RunCell {
+            start: u32::try_from(self.text.len()).unwrap_or(u32::MAX),
+            wide,
+        });
+        self.text.extend(cluster);
+        self.columns.push(column);
+        self.colors.push(color);
+    }
+
+    /// Lays out the run's glyphs into `batch`, at `row`, on the baseline of
+    /// `cell`, and starts a new run.
+    fn flush(
+        &mut self,
+        batch: &mut CellBatch,
+        row: u16,
+        cell: &CellMetrics,
+        glyphs: &mut dyn Glyphs,
+    ) {
+        if self.cells.is_empty() {
+            return;
+        }
+        let run = Run {
+            text: &self.text,
+            cells: &self.cells,
+            style: &self.style,
+        };
+        glyphs.run(&run, &mut self.glyphs);
+        let baseline = i32::try_from(cell.baseline).unwrap_or(i32::MAX);
+        // A glyph without ink, a space's, draws nothing.
+        for placed in self.glyphs.drain(..) {
+            if placed.glyph.region.width == 0 {
+                continue;
+            }
+            batch.glyphs.push(CellGlyph {
+                column: self.columns[placed.cell],
+                row,
+                region: placed.glyph.region,
+                x: placed.glyph.left + placed.x,
+                // The baseline's row, in the cell, less the rows of the
+                // glyph above it.
+                y: baseline - placed.glyph.top - placed.y,
+                color: self.colors[placed.cell],
+            });
+        }
+        self.text.clear();
+        self.cells.clear();
+        self.columns.clear();
+        self.colors.clear();
+    }
+}
+
 /// How the cursor draws in a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CursorLook {
@@ -91,7 +252,7 @@ pub fn cells(
     y: i32,
     selection: Option<&Selection<'_>>,
     cursor: Option<CursorLook>,
-    glyph: &mut dyn FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
+    glyphs: &mut dyn Glyphs,
 ) -> CellBatch {
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
     let colors = snapshot.colors();
@@ -114,10 +275,16 @@ pub fn cells(
             .filter(|selection| (selection.contains)(column, row))
             .map(|selection| selection.colors)
     };
-    let mut text = String::new();
+    // The cursor's cell is a run of its own, so that the text under it shows
+    // its own characters, as a ligature would not.
+    let at = batch.cursor.map(|cursor| (cursor.column, cursor.row));
+    let mut run = RunBuilder::default();
     for row in 0..rows {
         let line = snapshot.line(row);
         for (column, &cell_of) in (0..columns).zip(line.cells()) {
+            if at == Some((column, row)) {
+                run.flush(&mut batch, row, cell, glyphs);
+            }
             let chosen = selected(column, row);
             let style = line.style(cell_of.style());
             let (mut foreground, mut background) = style_colors(&style, colors, defaults);
@@ -146,37 +313,31 @@ pub fn cells(
             }
             batch.backgrounds.push(background);
             let width = cell_of.width();
-            if character == '\0'
-                || style.invisible
-                || matches!(width, Width::SpacerTail | Width::SpacerHead)
-            {
+            // A wide character's second cell goes on with its run.
+            if width == Width::SpacerTail {
+                continue;
+            }
+            // A space draws nothing, and ends a run, as no ligature takes
+            // one: most of a screen is spaces.
+            let grapheme = line.grapheme(column);
+            let blank = character == '\0' || (character == ' ' && grapheme.is_empty());
+            if blank || style.invisible || width == Width::SpacerHead {
+                run.flush(&mut batch, row, cell, glyphs);
                 continue;
             }
             if style.faint {
                 foreground = mix(foreground, background);
             }
-            text.clear();
-            text.push(character);
-            text.extend(line.grapheme(column));
-            let shown = CellText {
-                text: &text,
-                style: &style,
-                wide: width == Width::Wide,
-            };
-            // A glyph without ink, a space's, draws nothing.
-            if let Some(found) = glyph(&shown).filter(|found| found.region.width > 0) {
-                batch.glyphs.push(CellGlyph {
-                    column,
-                    row,
-                    region: found.region,
-                    x: found.left,
-                    // The baseline's row, in the cell, less the rows of the
-                    // glyph above it.
-                    y: i32::try_from(cell.baseline).unwrap_or(i32::MAX) - found.top,
-                    color: foreground,
-                });
+            if !run.takes(&style) {
+                run.flush(&mut batch, row, cell, glyphs);
+            }
+            let cluster = std::iter::once(character).chain(grapheme.iter().copied());
+            run.push(column, cluster, width == Width::Wide, &style, foreground);
+            if at == Some((column, row)) {
+                run.flush(&mut batch, row, cell, glyphs);
             }
         }
+        run.flush(&mut batch, row, cell, glyphs);
         // A line shorter than the screen, as after a resize, has the
         // default background past its end.
         for column in u16::try_from(line.cells().len()).unwrap_or(u16::MAX)..columns {
@@ -263,7 +424,7 @@ pub fn preedit(
     snapshot: &Snapshot,
     cell: &CellMetrics,
     preedit: &Preedit,
-    glyph: &mut dyn FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
+    glyphs: &mut dyn Glyphs,
 ) {
     let (foreground, background) = defaults(snapshot);
     let position = snapshot.cursor().position;
@@ -312,7 +473,7 @@ pub fn preedit(
             style: &Style::DEFAULT,
             wide: width == 2,
         };
-        if let Some(found) = glyph(&shown).filter(|found| found.region.width > 0) {
+        if let Some(found) = glyphs.glyph(&shown).filter(|found| found.region.width > 0) {
             batch.glyphs.push(CellGlyph {
                 column,
                 row,
@@ -581,14 +742,53 @@ mod tests {
         assert!(batch.glyphs.is_empty() && asked.is_empty());
     }
 
+    /// The runs that a layout asks for, by their text.
+    #[derive(Default)]
+    struct Runs(Vec<String>);
+
+    impl Glyphs for Runs {
+        fn glyph(&mut self, _: &CellText<'_>) -> Option<AtlasGlyph> {
+            None
+        }
+
+        fn run(&mut self, run: &Run<'_>, _: &mut Vec<RunGlyph>) {
+            self.0.push(run.text.to_owned());
+        }
+    }
+
     #[test]
-    fn a_glyph_without_ink_takes_no_instance() {
+    fn a_row_is_laid_out_in_runs_of_a_face_s_style() {
+        // Runs end at a space, an empty cell, and a change of bold or
+        // italic, but not of color.
+        let styled = snapshot(20, 1, "a->b \x1b[31mc=d\x1b[1mef\x1b[3mg\x1b[0m  h");
+        let mut runs = Runs::default();
+        cells(&styled, &cell(), 0, 0, None, None, &mut runs);
+        assert_eq!(runs.0, ["a->b", "c=d", "ef", "g", "h"]);
+        // The cursor's cell is a run of its own.
+        let under = snapshot(20, 1, "a->b\x1b[3D");
+        let look = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 1,
+        };
+        let mut runs = Runs::default();
+        cells(&under, &cell(), 0, 0, None, Some(look), &mut runs);
+        assert_eq!(runs.0, ["a", "-", ">b"]);
+        // A wide character is one cell of its run.
+        let wide = snapshot(20, 1, "a\u{65E5}b");
+        let mut runs = Runs::default();
+        cells(&wide, &cell(), 0, 0, None, None, &mut runs);
+        assert_eq!(runs.0, ["a\u{65E5}b"]);
+    }
+
+    #[test]
+    fn a_space_takes_no_glyph() {
         // Spaces that a program writes, as full-screen programs do, over a
-        // background of their own.
+        // background of their own: the font is asked for none of them.
         let snapshot = snapshot(4, 2, "\x1b[44m    \r\n a  ");
         let mut asked = Vec::new();
         let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
-        assert_eq!(asked.len(), 8);
+        let texts: Vec<&str> = asked.iter().map(|(text, ..)| text.as_str()).collect();
+        assert_eq!(texts, ["a"]);
         assert_eq!(batch.glyphs.len(), 1);
         assert_eq!((batch.glyphs[0].column, batch.glyphs[0].row), (1, 1));
         let blue = color(Colors::default().palette[4]);

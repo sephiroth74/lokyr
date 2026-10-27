@@ -578,3 +578,72 @@ fn twice_the_scale_twice_the_glyph() {
     let near = |a: u32, b: u32| a.abs_diff(b) <= 3;
     assert!(near(large.width, 2 * small.width) && near(large.height, 2 * small.height));
 }
+
+/// The glyphs of `text` shaped in `family`'s first face, with ligatures or
+/// not, as their ids and clusters.
+fn shaped(backend: &mut CoreText, family: &str, text: &str, ligatures: bool) -> Vec<(u16, u32)> {
+    let face = backend.family(family).expect("the family is installed")[0].id;
+    let mut glyphs = Vec::new();
+    backend.shape(face, 32.0, text, Features { ligatures }, &mut glyphs);
+    glyphs
+        .iter()
+        .map(|glyph| (glyph.glyph.0, glyph.cluster))
+        .collect()
+}
+
+#[test]
+fn ligatures_join_glyphs_unless_they_are_off() {
+    let mut backend = CoreText::new();
+    // Hoefler Text, which macOS installs, joins `ffi` and `fi`, of
+    // standard ligatures.
+    let joined = shaped(&mut backend, "Hoefler Text", "office fi", true);
+    let apart = shaped(&mut backend, "Hoefler Text", "office fi", false);
+    assert_eq!(joined.len(), 6, "{joined:?}");
+    assert_eq!(apart.len(), 9, "{apart:?}");
+    // The ligature's cluster is the byte where it starts.
+    assert_eq!(joined[1].1, 1);
+    assert_eq!(
+        apart
+            .iter()
+            .map(|&(_, cluster)| cluster)
+            .collect::<Vec<_>>(),
+        (0..9).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn contextual_alternates_are_ligatures_too() {
+    // Cascadia's ligatures are contextual alternates, a glyph a cell; it is
+    // not installed on CI, where the test checks nothing.
+    let mut backend = CoreText::new();
+    if backend.family("CaskaydiaCove NFM").is_none() {
+        eprintln!("CaskaydiaCove NFM is not installed: the test checks nothing");
+        return;
+    }
+    let joined = shaped(&mut backend, "CaskaydiaCove NFM", "a->b", true);
+    let apart = shaped(&mut backend, "CaskaydiaCove NFM", "a->b", false);
+    assert_eq!(joined.len(), 4);
+    assert_eq!(apart.len(), 4);
+    assert_ne!(
+        joined[1..3],
+        apart[1..3],
+        "the arrow's glyphs are its alternates"
+    );
+    assert_eq!(joined[0], apart[0]);
+}
+
+#[test]
+fn an_emoji_sequence_shapes_into_one_glyph() {
+    let mut backend = CoreText::new();
+    for sequence in [
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        "\u{1F1EE}\u{1F1F9}",
+        "1\u{FE0F}\u{20E3}",
+        "\u{1F44D}\u{1F3FD}",
+    ] {
+        let glyphs = shaped(&mut backend, "Apple Color Emoji", sequence, true);
+        assert_eq!(glyphs.len(), 1, "{sequence:?}: {glyphs:?}");
+    }
+    // A combining mark joins its base, in a font that composes them.
+    assert_eq!(shaped(&mut backend, "Menlo", "e\u{301}x", true).len(), 2);
+}
