@@ -52,6 +52,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Plugin fetching separate from the app | The `lokyr` binary contains no networking code, enforced in CI | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
 | Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its sequences and `lokyr +notify`, on its tab | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3 |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
+| Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
 
 ## Architecture decisions
 
@@ -76,6 +77,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0017](adr/0017-mcp-and-agents.md) | An MCP server, and the AI agents that run in the terminal; phase F3b | Accepted |
 | [0018](adr/0018-names-lokyr-and-sleip.md) | Names: Lokyr for the terminal, Sleip for the package manager | Accepted |
 | [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted |
+| [0020](adr/0020-localization.md) | Localization: every text that Lokyr shows, in Fluent catalogs, English and Italian first; the system's preferred language, or the config's | Accepted |
 
 ## Glossary
 
