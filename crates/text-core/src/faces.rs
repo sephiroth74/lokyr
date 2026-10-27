@@ -119,8 +119,9 @@ const BOLD: f32 = 700.0;
 /// The faces that `faces`, a family's, give to the four styles of text, as
 /// `config` names them:
 /// - regular: the style that it names, or the face nearest to the regular
-///   weight, upright, among the faces of the style group that the family
-///   was named by when it was named by one;
+///   weight, upright and of the normal width when the family has one, among
+///   the faces of the style group that the family was named by when it was
+///   named by one;
 /// - bold: the style that it names, or the upright face heavier than the
 ///   regular one nearest to the heavier of bold's weight and one step past
 ///   the regular one, so that SemiBold takes Bold, and Bold ExtraBold;
@@ -130,6 +131,13 @@ const BOLD: f32 = 700.0;
 /// - bold italic: the style that it names, or the italic face nearest to
 ///   the bold one's weight, heavier than the italic one; otherwise the bold
 ///   face slanted, or the italic one drawn heavier.
+///
+/// The others are of the regular face's width, for a family of several. An
+/// italic is a true italic rather than an oblique when the family has both,
+/// and a bold italic the same; a family of italics alone takes its heavier
+/// italic as bold. Faces as near to a weight are told apart as CSS does,
+/// the heavier taken for a weight of 500 or more and the lighter below it,
+/// and then by their styles' names, whatever order the backend gives them.
 ///
 /// A style is named as the family names it, but for case, spaces, hyphens
 /// and underscores: `semi-bold` is `SemiBold`.
@@ -158,28 +166,59 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
                 }
             })
     };
-    let upright = || faces.iter().filter(|face| !face.italic);
-    let italics = || faces.iter().filter(|face| face.italic);
     let grouped = faces.iter().any(|face| face.in_group);
     let group = || faces.iter().filter(move |face| face.in_group || !grouped);
+    // The width nearest to the normal one, of the faces of a slant.
+    let normal = |italic: bool| {
+        group()
+            .filter(|face| face.italic == italic)
+            .map(|face| face.width)
+            .min_by(|a, b| a.abs().total_cmp(&b.abs()))
+    };
 
     let regular = match named("style", config.style.as_ref())? {
         Some(face) => face,
-        None => nearest(group().filter(|face| !face.italic), REGULAR)
-            .or_else(|| nearest(group(), REGULAR))
+        None => {
+            let upright = normal(false);
+            nearest(
+                group().filter(|face| !face.italic && Some(face.width) == upright),
+                REGULAR,
+            )
+            .or_else(|| {
+                let width = normal(true);
+                nearest(group().filter(|face| Some(face.width) == width), REGULAR)
+            })
             .ok_or_else(|| FaceError::NoFace {
                 family: family.to_owned(),
-            })?,
+            })?
+        }
+    };
+    // The faces of the regular one's width; of its italics, the true ones
+    // when the family has them.
+    let wide = |face: &&FaceInfo| face.width == regular.width;
+    let upright = || faces.iter().filter(wide).filter(|face| !face.italic);
+    let true_italics = faces
+        .iter()
+        .filter(wide)
+        .any(|face| face.italic && !face.oblique);
+    let italics = move || {
+        faces
+            .iter()
+            .filter(wide)
+            .filter(move |face| face.italic && !(true_italics && face.oblique))
     };
 
     let bold = match named("bold-style", config.bold_style.as_ref())? {
         Some(face) => Some(face),
         None => {
             let target = BOLD.max(regular.weight + 100.0);
-            nearest(
-                upright().filter(|face| face.weight > regular.weight),
-                target,
-            )
+            let heavier = |face: &&FaceInfo| face.weight > regular.weight;
+            // A family of italics alone takes its heavier italic.
+            if upright().next().is_none() {
+                nearest(italics().filter(heavier), target)
+            } else {
+                nearest(upright().filter(heavier), target)
+            }
         }
     };
     let italic = match named("italic-style", config.italic_style.as_ref())? {
@@ -248,12 +287,23 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
     })
 }
 
-/// The face of `faces` whose weight is nearest to `weight`, the first of
-/// those as near.
+/// The face of `faces` whose weight is nearest to `weight`; of those as
+/// near, the heavier for a weight of 500 or more and the lighter below it,
+/// as CSS has it, and then the first by its style's name.
 fn nearest<'a>(faces: impl Iterator<Item = &'a FaceInfo>, weight: f32) -> Option<&'a FaceInfo> {
-    faces.fold(None, |best: Option<&FaceInfo>, face| match best {
-        Some(best) if (best.weight - weight).abs() <= (face.weight - weight).abs() => Some(best),
-        _ => Some(face),
+    let side = |face: &FaceInfo| {
+        if weight >= 500.0 {
+            -face.weight
+        } else {
+            face.weight
+        }
+    };
+    faces.min_by(|a, b| {
+        (a.weight - weight)
+            .abs()
+            .total_cmp(&(b.weight - weight).abs())
+            .then(side(a).total_cmp(&side(b)))
+            .then_with(|| normalize(&a.style).cmp(&normalize(&b.style)))
     })
 }
 
@@ -281,6 +331,12 @@ mod tests {
                 style: style.to_owned(),
                 weight,
                 italic,
+                oblique: style.contains("Oblique"),
+                width: if style.contains("Condensed") {
+                    -0.2
+                } else {
+                    0.0
+                },
                 in_group: false,
             })
             .collect()
@@ -377,6 +433,112 @@ mod tests {
         // the italic, drawn heavier, as the bold is the regular drawn
         // heavier.
         assert_eq!(style(&faces, chosen.bold_italic), ("Bold Italic", heavier));
+    }
+
+    /// The styles of the four faces that `faces` give, as `config` names
+    /// them, in the order given and the other way round, which must agree.
+    fn chosen(faces: &[(&str, f32, bool)], config: &FontConfig) -> [String; 4] {
+        let pick = |faces: Vec<FaceInfo>| {
+            let chosen = choose("Family", &faces, config).unwrap();
+            [
+                chosen.regular,
+                chosen.bold,
+                chosen.italic,
+                chosen.bold_italic,
+            ]
+            .map(|face| {
+                let (name, synthesis) = style(&faces, face);
+                format!(
+                    "{name}{}{}",
+                    if synthesis.bold { " +bold" } else { "" },
+                    if synthesis.italic { " +slant" } else { "" }
+                )
+            })
+        };
+        let given = pick(family(faces));
+        let mut reversed = family(faces);
+        reversed.reverse();
+        assert_eq!(pick(reversed), given, "the backend's order changes nothing");
+        given
+    }
+
+    #[test]
+    fn faces_as_near_are_told_apart_as_css_does() {
+        // Below 500, the lighter: Light, of Light and Demi, for 400; from
+        // 500, the heavier: Heavy, of Demibold and Heavy, for 700; where
+        // the names' order would give the others.
+        let faces = [
+            ("Light", 300.0, false),
+            ("Demi", 500.0, false),
+            ("Demibold", 600.0, false),
+            ("Heavy", 800.0, false),
+        ];
+        let [regular, bold, ..] = chosen(&faces, &config(None));
+        assert_eq!((regular.as_str(), bold.as_str()), ("Light", "Heavy"));
+    }
+
+    #[test]
+    fn an_italic_is_a_true_one_rather_than_an_oblique() {
+        // Of names that come after the obliques', as the order of names
+        // would not take them.
+        let faces = [
+            ("Regular", 400.0, false),
+            ("Bold", 700.0, false),
+            ("Oblique", 400.0, true),
+            ("Text Italic", 400.0, true),
+            ("Bold Oblique", 700.0, true),
+            ("Bold Text Italic", 700.0, true),
+        ];
+        let [_, _, italic, bold_italic] = chosen(&faces, &config(None));
+        assert_eq!(
+            (italic.as_str(), bold_italic.as_str()),
+            ("Text Italic", "Bold Text Italic")
+        );
+        // A family of obliques alone takes them.
+        let faces = [
+            ("Regular", 400.0, false),
+            ("Oblique", 400.0, true),
+            ("Bold Oblique", 700.0, true),
+        ];
+        let [_, _, italic, bold_italic] = chosen(&faces, &config(None));
+        assert_eq!(
+            (italic.as_str(), bold_italic.as_str()),
+            ("Oblique", "Bold Oblique")
+        );
+    }
+
+    #[test]
+    fn a_family_of_italics_alone_takes_its_bold_italic_as_bold() {
+        let faces = [("Italic", 400.0, true), ("Bold Italic", 700.0, true)];
+        assert_eq!(
+            chosen(&faces, &config(None)),
+            ["Italic", "Bold Italic", "Italic", "Bold Italic"]
+        );
+    }
+
+    #[test]
+    fn the_faces_keep_the_regular_one_s_width() {
+        let faces = [
+            ("Condensed", 400.0, false),
+            ("Condensed Bold", 700.0, false),
+            ("Condensed Italic", 400.0, true),
+            ("Regular", 400.0, false),
+            ("Bold", 700.0, false),
+            ("Italic", 400.0, true),
+        ];
+        assert_eq!(
+            chosen(&faces, &config(None)),
+            ["Regular", "Bold", "Italic", "Bold +slant"]
+        );
+        assert_eq!(
+            chosen(&faces, &config(Some("Condensed"))),
+            [
+                "Condensed",
+                "Condensed Bold",
+                "Condensed Italic",
+                "Condensed Bold +slant"
+            ]
+        );
     }
 
     #[test]

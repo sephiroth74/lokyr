@@ -17,6 +17,10 @@ use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
 /// and of the powerline symbols, whose glyph is their character's code.
 const SPRITES: FaceId = FaceId(u32::MAX);
 
+/// The frames after which a glyph that the atlas refused is drawn again, as
+/// the atlas may have room for it then: a second or two.
+const REFUSED_FRAMES: u64 = 120;
+
 /// The runs that the cache of shaped runs keeps in each of its two
 /// generations: a screen's runs, and more.
 const SHAPED_RUNS: usize = 4096;
@@ -96,6 +100,12 @@ pub struct Font<B> {
     scratch: Vec<ShapedGlyph>,
     /// Where the run's cells find their glyphs, reused from run to run.
     found: Vec<Option<Found>>,
+    /// The frames, counted from the first.
+    frame: u64,
+    /// The glyphs that the atlas refused, as too large or with no room, by
+    /// the frame that it refused each, so that a frame does not draw them
+    /// again at once.
+    refused: FastMap<GlyphKey, u64>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -257,6 +267,8 @@ impl<B: FontBackend> Font<B> {
             shaped: ShapedRuns::default(),
             scratch: Vec::new(),
             found: Vec::new(),
+            frame: 0,
+            refused: FastMap::default(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -308,6 +320,7 @@ impl<B: FontBackend> Font<B> {
 
     /// Starts a frame: the glyphs that it uses stay in the atlas.
     pub fn begin_frame(&mut self) {
+        self.frame += 1;
         self.atlas.begin_frame();
     }
 
@@ -367,6 +380,13 @@ impl<B: FontBackend> Font<B> {
         let placement = match self.atlas.get(&key) {
             Some(placement) => placement,
             None => {
+                if self
+                    .refused
+                    .get(&key)
+                    .is_some_and(|&at| self.frame < at + REFUSED_FRAMES)
+                {
+                    return None;
+                }
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
                     sprite::draw(character, &self.cell)?
@@ -374,7 +394,14 @@ impl<B: FontBackend> Font<B> {
                     self.backend
                         .rasterize(found.face, found.glyph, self.pixels, found.synthesis)
                 };
-                self.atlas.insert(key, &bitmap)?
+                let Some(placement) = self.atlas.insert(key, &bitmap) else {
+                    // The refusals of long ago go, rather than pile up.
+                    let frame = self.frame;
+                    self.refused.retain(|_, at| frame < *at + REFUSED_FRAMES);
+                    self.refused.insert(key, frame);
+                    return None;
+                };
+                placement
             }
         };
         let region = AtlasRegion {
@@ -811,6 +838,8 @@ mod tests {
                     style: "Regular".to_owned(),
                     weight: 400.0,
                     italic: false,
+                    oblique: false,
+                    width: 0.0,
                     in_group: false,
                 }]);
             }
@@ -821,6 +850,8 @@ mod tests {
                         style: "Regular".to_owned(),
                         weight: 400.0,
                         italic: false,
+                        oblique: false,
+                        width: 0.0,
                         in_group: false,
                     },
                     FaceInfo {
@@ -828,6 +859,8 @@ mod tests {
                         style: "Bold".to_owned(),
                         weight: 700.0,
                         italic: false,
+                        oblique: false,
+                        width: 0.0,
                         in_group: false,
                     },
                 ]
@@ -1262,6 +1295,26 @@ mod tests {
         assert_eq!(font.missing_non_ascii_family(), Some("Nope"));
         font.glyph(&shown("é", &Style::DEFAULT)).unwrap();
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE9)), Some(&1));
+    }
+
+    #[test]
+    fn a_glyph_that_the_atlas_refuses_is_not_drawn_at_each_frame() {
+        // At 200 points and a scale of 50, the fake backend's squares are
+        // 5000 pixels a side, past the atlas's largest texture.
+        let config = FontConfig {
+            size: lokyr_text_core::Size::try_from(200.0).unwrap(),
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 50.0).unwrap();
+        for _ in 0..REFUSED_FRAMES {
+            font.begin_frame();
+            assert_eq!(font.glyph(&shown("x", &Style::DEFAULT)), None);
+        }
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x78)), Some(&1));
+        // Later, it is drawn again, as the atlas may have room for it then.
+        font.begin_frame();
+        font.glyph(&shown("x", &Style::DEFAULT));
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x78)), Some(&2));
     }
 
     #[test]

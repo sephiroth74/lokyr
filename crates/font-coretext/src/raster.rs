@@ -4,12 +4,10 @@
 use std::ptr::NonNull;
 
 use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Synthesis};
-use objc2_core_foundation::{
-    CFNumber, CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication,
-};
+use objc2_core_foundation::{CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGImageAlphaInfo, CGImageByteOrderInfo,
-    CGTextDrawingMode, kCGColorSpaceSRGB,
+    CGLineJoin, CGTextDrawingMode, kCGColorSpaceSRGB,
 };
 use objc2_core_text::{CTFont, CTFontOrientation, CTFontSymbolicTraits};
 
@@ -21,15 +19,26 @@ pub(crate) const ITALIC_SHEAR: CGFloat = 0.212_556_56;
 const MARGIN: CGFloat = 1.0;
 
 /// Whether macOS smooths fonts, as the user set it, thickening their stems:
-/// the default is to, which `AppleFontSmoothing` set to 0 turns off.
+/// the default is to, which `AppleFontSmoothing` set to 0 turns off. The
+/// value is read as Core Foundation's preferences read an integer, from the
+/// application's domain or the global one, a string of digits too, as
+/// `defaults write -g AppleFontSmoothing 0` writes one.
 pub(crate) fn system_smooths_fonts() -> bool {
     let key = CFString::from_static_str("AppleFontSmoothing");
     // SAFETY: Core Foundation's constant.
     let domain = unsafe { kCFPreferencesCurrentApplication };
-    objc2_core_foundation::CFPreferencesCopyAppValue(&key, domain)
-        .and_then(|value| value.downcast::<CFNumber>().ok())
-        .and_then(|number| number.as_i64())
-        .is_none_or(|value| value != 0)
+    let mut valid = 0;
+    // SAFETY: a key, a domain, and a flag that the call writes.
+    let value = unsafe {
+        objc2_core_foundation::CFPreferencesGetAppIntegerValue(&key, domain, &raw mut valid)
+    };
+    smooths(valid != 0, value)
+}
+
+/// Whether fonts are smoothed for a value of `AppleFontSmoothing`, when the
+/// preferences have a `valid` one: unless it is 0.
+fn smooths(valid: bool, value: isize) -> bool {
+    !valid || value != 0
 }
 
 /// The width of the stroke that draws a synthesized bold at `size` pixels,
@@ -120,6 +129,9 @@ pub(crate) fn rasterize(
         CGContext::set_text_drawing_mode(drawing, CGTextDrawingMode::FillStroke);
         CGContext::set_gray_stroke_color(drawing, 1.0, 1.0);
         CGContext::set_line_width(drawing, stroke);
+        // Round joins, as the default miter's spikes at sharp corners, of
+        // `M` or `^`, would leave the bitmap.
+        CGContext::set_line_join(drawing, CGLineJoin::Round);
     }
     let mut origin = CGPoint::new(-left, -bottom);
     // SAFETY: one glyph at one position, into the context, which is alive.
@@ -139,5 +151,18 @@ pub(crate) fn rasterize(
         left: left as i32,
         top: top as i32,
         data,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fonts_are_smoothed_unless_the_preference_is_0() {
+        assert!(smooths(false, 0), "no preference");
+        assert!(smooths(true, 1));
+        assert!(smooths(true, 2));
+        assert!(!smooths(true, 0));
     }
 }

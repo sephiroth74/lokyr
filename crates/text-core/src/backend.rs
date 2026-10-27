@@ -24,6 +24,12 @@ pub struct FaceInfo {
     pub weight: f32,
     /// Whether it is italic or oblique.
     pub italic: bool,
+    /// Whether it is oblique: its upright forms slanted, rather than
+    /// italic forms of their own.
+    pub oblique: bool,
+    /// Its width, as CoreText measures it: 0 for the normal width, below
+    /// for a condensed face, above for an expanded one.
+    pub width: f32,
     /// Whether it is in the style group that the family was named by: a
     /// name of a few of the family's faces, of a weight or a width, as
     /// `CaskaydiaCove NFM SemiBold` is of the SemiBold faces of CaskaydiaCove

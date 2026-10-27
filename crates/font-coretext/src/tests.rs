@@ -647,3 +647,66 @@ fn an_emoji_sequence_shapes_into_one_glyph() {
     // A combining mark joins its base, in a font that composes them.
     assert_eq!(shaped(&mut backend, "Menlo", "e\u{301}x", true).len(), 2);
 }
+
+#[test]
+fn a_face_marked_bold_of_the_regular_class_weighs_as_bold() {
+    // An OS/2 table's weight class at 4 and selection at 62.
+    let table = |class: u16, selection: u16| {
+        let mut os2 = vec![0_u8; 64];
+        os2[4..6].copy_from_slice(&class.to_be_bytes());
+        os2[62..64].copy_from_slice(&selection.to_be_bytes());
+        os2
+    };
+    let bold = 1 << 5;
+    assert_eq!(os2_weight(&table(400, bold)), Some(700.0));
+    assert_eq!(os2_weight(&table(400, 0)), Some(400.0));
+    assert_eq!(os2_weight(&table(600, bold)), Some(600.0));
+    assert_eq!(os2_weight(&table(800, bold)), Some(800.0));
+    assert_eq!(os2_weight(&table(0, bold)), None);
+    assert_eq!(os2_weight(&[0; 4]), None);
+}
+
+#[test]
+fn the_system_s_faces_tell_their_widths_and_obliques() {
+    let mut backend = CoreText::new();
+    // Helvetica's Oblique faces, and Avenir Next Condensed's width.
+    let helvetica = backend.family("Helvetica").unwrap();
+    let oblique = helvetica
+        .iter()
+        .find(|face| face.style == "Oblique")
+        .unwrap();
+    assert!(oblique.italic && oblique.oblique);
+    let regular = helvetica
+        .iter()
+        .find(|face| face.style == "Regular")
+        .unwrap();
+    assert!(!regular.oblique && regular.width == 0.0);
+    let condensed = backend.family("Avenir Next Condensed").unwrap();
+    assert!(
+        condensed.iter().all(|face| face.width < 0.0),
+        "{condensed:?}"
+    );
+}
+
+#[test]
+fn a_synthesized_bold_keeps_its_corners_within_its_bitmap() {
+    // The default miter's spikes at the sharp corners of these reach past
+    // the margin that the stroke takes, and the bitmap cuts them: round
+    // joins leave its edges blank.
+    let mut backend = CoreText::new();
+    let face = regular(&mut backend, "Menlo");
+    let bold = Synthesis {
+        bold: true,
+        italic: false,
+    };
+    for character in ['M', '^', 'W'] {
+        let glyph = backend.glyph(face, character).unwrap();
+        let bitmap = backend.rasterize(face, glyph, 96.0, bold);
+        let (width, height) = (bitmap.width as usize, bitmap.height as usize);
+        let at = |x: usize, y: usize| bitmap.data[y * width + x];
+        let edges = (0..width)
+            .flat_map(|x| [at(x, 0), at(x, height - 1)])
+            .chain((0..height).flat_map(|y| [at(0, y), at(width - 1, y)]));
+        assert!(edges.into_iter().all(|pixel| pixel == 0), "{character}");
+    }
+}

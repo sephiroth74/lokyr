@@ -22,7 +22,7 @@ use objc2_core_text::{
     CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions, CTLine,
     CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute,
     kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey,
-    kCTFontWeightTrait,
+    kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -33,6 +33,10 @@ const PROBE_SIZE: f64 = 12.0;
 /// under it: the configuration's `SF Mono` takes the system's, and the
 /// default family is named so, rather than by its hidden name.
 const SF_MONO: &str = "SF Mono";
+
+/// The bits of the OS/2 table's selection that mark a face bold and oblique.
+const FS_SELECTION_BOLD: u16 = 1 << 5;
+const FS_SELECTION_OBLIQUE: u16 = 1 << 9;
 
 /// The tags of the tables that the backend reads.
 const OS2: u32 = u32::from_be_bytes(*b"OS/2");
@@ -179,13 +183,18 @@ impl CoreText {
                     CTFont::with_font_descriptor(descriptor, PROBE_SIZE, std::ptr::null())
                 };
                 let id = self.register(descriptor, &font);
+                let style = style_name(&font);
+                // SAFETY: Core Text's constant.
+                let width = trait_value(&font, unsafe { kCTFontWidthTrait });
                 FaceInfo {
                     id,
-                    style: style_name(&font),
+                    oblique: oblique(&font, &style),
+                    style,
                     weight: weight(&font),
                     // SAFETY: a font that CoreText made.
                     italic: unsafe { font.symbolic_traits() }
                         .contains(CTFontSymbolicTraits::TraitItalic),
+                    width: width as f32,
                     in_group: group.contains(&id),
                 }
             })
@@ -380,24 +389,53 @@ fn style_name(font: &CTFont) -> String {
 /// weights, as a variable font's instances share one OS/2 table.
 fn weight(font: &CTFont) -> f32 {
     let variable = table(font, FVAR).is_some();
-    if !variable
-        && let Some(os2) = table(font, OS2)
-        && let Some(class) = be_u16(&os2, 4)
-        && (1..=1000).contains(&class)
-    {
-        return f32::from(class);
+    if !variable && let Some(weight) = table(font, OS2).and_then(|os2| os2_weight(&os2)) {
+        return weight;
     }
-    // SAFETY: a font that CoreText made. Its traits hold the weight, when
+    // SAFETY: Core Text's constant.
+    css_weight(trait_value(font, unsafe { kCTFontWeightTrait }))
+}
+
+/// The weight that an OS/2 table gives: its weight class, from 1 to 1000;
+/// or bold, 700, for a face that its selection marks bold with the class of
+/// the regular weight or lighter, as some families give their bold faces
+/// 400. A face marked bold of a class between, as a Demi Bold that a family
+/// links to its regular one as bold, keeps its class.
+fn os2_weight(os2: &[u8]) -> Option<f32> {
+    let class = be_u16(os2, 4).filter(|class| (1..=1000).contains(class))?;
+    let bold = be_u16(os2, 62).is_some_and(|selection| selection & FS_SELECTION_BOLD != 0);
+    Some(if bold && class <= 400 {
+        700.0
+    } else {
+        f32::from(class)
+    })
+}
+
+/// Whether `font`, of the style `style`, is oblique, as its OS/2 table's
+/// selection marks it, from the table's version 4, or as its style's name
+/// says.
+fn oblique(font: &CTFont, style: &str) -> bool {
+    let marked = table(font, OS2).is_some_and(|os2| {
+        be_u16(&os2, 0).is_some_and(|version| version >= 4)
+            && be_u16(&os2, 62).is_some_and(|selection| selection & FS_SELECTION_OBLIQUE != 0)
+    });
+    let named = style.to_lowercase();
+    marked || named.contains("oblique") || named.contains("slanted")
+}
+
+/// The value of the trait `key` of `font`, as CoreText gives it from -1 to
+/// 1: 0 when it has none.
+fn trait_value(font: &CTFont, key: &CFString) -> f64 {
+    // SAFETY: a font that CoreText made. Its traits hold the value, when
     // they hold it, as a CFNumber, which lives as long as `traits`, within
     // the block.
-    let trait_weight = unsafe {
+    unsafe {
         let traits = font.traits();
-        let value = traits.value(std::ptr::from_ref::<CFString>(kCTFontWeightTrait).cast());
+        let value = traits.value(std::ptr::from_ref::<CFString>(key).cast());
         NonNull::new(value.cast_mut()).map_or(0.0, |number| {
             number.cast::<CFNumber>().as_ref().as_f64().unwrap_or(0.0)
         })
-    };
-    css_weight(trait_weight)
+    }
 }
 
 /// A weight of CoreText's, from -1 to 1, as CSS numbers it, by the weights

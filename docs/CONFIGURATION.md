@@ -112,7 +112,7 @@ The size is in points, so that the text takes the same room on a Retina display,
 
 The face of the text that has no style, by the name that the font gives it, such as `"SemiBold"` or `"Light"`.
 
-- **Default**: the family's regular face: its upright face nearest to the regular weight.
+- **Default**: the family's regular face: its upright face nearest to the regular weight, of the normal width when the family has several, such as Condensed faces too.
 - The case, spaces, hyphens and underscores do not matter: `"semi-bold"` is `SemiBold`.
 - A style that the family does not have is an error, which lists the styles that it has.
 
@@ -125,6 +125,7 @@ The faces of bold, italic and bold italic text, named as `style` names its face.
 - **Default of `bold-style`**: the family's upright face heavier than the regular one, nearest to Bold's weight, or one step past the regular one's: Regular takes Bold, SemiBold takes Bold, and Bold takes ExtraBold. A family without one draws its regular face heavier.
 - **Default of `italic-style`**: the family's italic face nearest to the regular one's weight. A family without italics slants its regular face.
 - **Default of `bold-italic-style`**: the family's italic face nearest to the bold one's weight. A family without one slants its bold face, or draws its italic one heavier.
+- The three take faces of the regular one's width. An italic is a true italic rather than an oblique when the family has both. A family of italics alone takes its heavier italic as bold. Of two faces as near to a weight, the heavier is taken for Bold's and the lighter for the regular one's, whatever order macOS lists them in.
 
 ### `non-ascii-family`
 

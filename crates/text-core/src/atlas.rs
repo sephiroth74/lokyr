@@ -327,22 +327,71 @@ impl<K: Hash + Eq + Clone> Page<K> {
         }
     }
 
-    /// Empties the shelf least recently used, of `height` rows or more, that
-    /// neither the frame in progress nor the one before uses, for its rows to
-    /// take new glyphs: the GPU may still draw the frame before while the
-    /// renderer writes the new glyphs' pixels.
+    /// Empties the shelves least recently used, one after another down the
+    /// texture, whose rows together take `height`, that neither the frame in
+    /// progress nor the one before uses, for their rows to take new glyphs:
+    /// the GPU may still draw the frame before while the renderer writes the
+    /// new glyphs' pixels. The shelves join into one, of the height that the
+    /// glyph needs, so that a texture of short shelves makes room for a tall
+    /// glyph; the rows past it make an empty shelf of their own.
     fn evict(&mut self, height: u32, frame: u64) -> Option<usize> {
-        let (index, _) = self
-            .shelves
-            .iter()
-            .enumerate()
-            .filter(|(_, shelf)| shelf.height >= height && shelf.used + 1 < frame)
-            .min_by_key(|(_, shelf)| (shelf.used, shelf.height))?;
-        self.entries.retain(|_, entry| entry.shelf != Some(index));
-        let shelf = &mut self.shelves[index];
-        shelf.next = 0;
-        shelf.used = frame;
-        Some(index)
+        let free = |shelf: &Shelf| shelf.used + 1 < frame;
+        // The run of free shelves, from `start` to `end`, that takes the
+        // height and was used least lately, and of the fewest rows.
+        let mut best: Option<(usize, usize, (u64, u32))> = None;
+        for start in 0..self.shelves.len() {
+            let (mut rows, mut used) = (0, 0);
+            for end in start..self.shelves.len() {
+                let shelf = &self.shelves[end];
+                if !free(shelf) {
+                    break;
+                }
+                rows += shelf.height;
+                used = used.max(shelf.used);
+                if rows >= height {
+                    let rank = (used, rows);
+                    if best.is_none_or(|(_, _, best)| rank < best) {
+                        best = Some((start, end + 1, rank));
+                    }
+                    break;
+                }
+            }
+        }
+        let (start, end, (_, rows)) = best?;
+        let needed = height.div_ceil(SHELF_STEP) * SHELF_STEP;
+        let split = rows >= needed + SHELF_STEP;
+        let y = self.shelves[start].y;
+        // The run's glyphs go, and the shelves after it take their new
+        // places.
+        let gone = (end - start) as isize - 1 - isize::from(split);
+        self.entries.retain(|_, entry| {
+            entry
+                .shelf
+                .is_none_or(|shelf| shelf < start || shelf >= end)
+        });
+        for entry in self.entries.values_mut() {
+            if let Some(shelf) = &mut entry.shelf
+                && *shelf >= end
+            {
+                *shelf = shelf.saturating_add_signed(-gone);
+            }
+        }
+        let mut joined = vec![Shelf {
+            y,
+            height: if split { needed } else { rows },
+            next: 0,
+            used: frame,
+        }];
+        if split {
+            joined.push(Shelf {
+                y: y + needed,
+                height: rows - needed,
+                next: 0,
+                used: 0,
+            });
+        }
+        self.shelves.splice(start..end, joined);
+        Some(start)
     }
 
     /// The upload of `bitmap` at `placement`, with its gutter cleared, so
@@ -526,6 +575,53 @@ mod tests {
         assert!(atlas.get(&0).is_some() && atlas.get(&20).is_some());
         assert_eq!((newcomer.x, newcomer.y), (0, 12));
         assert_eq!(atlas.texture_size(BitmapFormat::Gray), 64);
+    }
+
+    #[test]
+    fn an_evicted_shelf_takes_the_height_of_its_glyph() {
+        let mut atlas = Atlas::with_sizes(64, 64, 64);
+        // Two shelves of 32 rows, of old frames.
+        atlas.begin_frame();
+        atlas.insert(1, &gray(30, 30)).unwrap();
+        atlas.insert(2, &gray(30, 30)).unwrap();
+        atlas.insert(3, &gray(30, 30)).unwrap();
+        atlas.insert(4, &gray(30, 30)).unwrap();
+        atlas.begin_frame();
+        atlas.begin_frame();
+        // A short glyph takes the first's rows that it needs; the rows past
+        // them take another short glyph, of another height.
+        let short = atlas.insert(5, &gray(10, 10)).unwrap();
+        let other = atlas.insert(6, &gray(10, 14)).unwrap();
+        assert_eq!((short.x, short.y), (0, 0));
+        assert_eq!((other.x, other.y), (0, 12));
+        assert!(atlas.get(&1).is_none() && atlas.get(&2).is_none());
+        assert!(atlas.get(&3).is_some() && atlas.get(&4).is_some());
+        // The glyphs of the shelf after the evicted one keep their places.
+        assert_eq!(atlas.get(&3).map(|placement| placement.y), Some(32));
+        let third = atlas.insert(7, &gray(10, 6)).unwrap();
+        assert!(third.y < 32);
+    }
+
+    #[test]
+    fn a_texture_of_short_shelves_makes_room_for_a_tall_glyph() {
+        let mut atlas = Atlas::with_sizes(64, 64, 64);
+        // Eight shelves of 8 rows, of old frames, the texture full.
+        atlas.begin_frame();
+        for key in 0..64_u32 {
+            atlas.insert(key, &gray(7, 7)).unwrap();
+        }
+        assert!(atlas.insert(100, &gray(7, 7)).is_none());
+        atlas.begin_frame();
+        atlas.begin_frame();
+        // A glyph of 40 rows takes five of them, joined.
+        let tall = atlas.insert(200, &gray(20, 39)).unwrap();
+        assert_eq!(tall.y, 0);
+        assert!((0..40).all(|key| atlas.get(&key).is_none()));
+        // The 24 glyphs below stay, which a lookup would mark as the frame's.
+        assert_eq!(atlas.len(), 25);
+        // Their shelves take glyphs, as they leave.
+        let below = atlas.insert(300, &gray(7, 7)).unwrap();
+        assert!(below.y >= 40, "{below:?}");
     }
 
     #[test]
