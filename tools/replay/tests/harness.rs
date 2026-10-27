@@ -463,6 +463,8 @@ fn a_reply_that_the_test_makes_goes_before_the_keys_that_follow() {
 fn quiet_for_as_long_as_its_limit_succeeds_on_a_silent_program() {
     let mut harness = harness(20, 3, "echo armed; sleep 30");
     harness.wait("armed", LIMIT).unwrap();
+    // The line's end can come after its text, on a loaded machine.
+    harness.quiet(Duration::from_millis(100), LIMIT).unwrap();
     for _ in 0..50 {
         harness
             .quiet(Duration::from_millis(20), Duration::from_millis(20))

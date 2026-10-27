@@ -490,7 +490,9 @@ fn a_short_name_one_in_base64_for_urls_and_one_of_wide_characters_are_caught() {
 fn text_that_a_tab_separates_shows_no_name() {
     let (output, cast) = record(
         "tab",
-        "size 20 3\nrun sh -c \"printf 'zz-some\\\\tone-zz\\\\n'\"\nexit\n",
+        // The program waits after its output, which the terminal's hang-up
+        // can lose on Linux, as the other recordings do.
+        "size 20 3\nrun sh -c \"printf 'zz-some\\\\tone-zz\\\\n'; sleep 0.3\"\nexit\n",
         &[("USER", "zz-someone-zz")],
     );
     assert!(

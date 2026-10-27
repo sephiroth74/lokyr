@@ -15,7 +15,7 @@ use objc2_foundation::NSString;
 use objc2_metal::{
     MTLBlendFactor, MTLBlitCommandEncoder, MTLBuffer, MTLClearColor, MTLCommandBuffer,
     MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLLibrary, MTLLoadAction, MTLOrigin,
-    MTLPixelFormat, MTLPrimitiveType, MTLRegion, MTLRenderCommandEncoder, MTLRenderPassDescriptor,
+    MTLPixelFormat, MTLPrimitiveType, MTLRenderCommandEncoder, MTLRenderPassDescriptor,
     MTLRenderPipelineDescriptor, MTLRenderPipelineState, MTLResourceOptions, MTLScissorRect,
     MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture, MTLTextureDescriptor, MTLTextureUsage,
 };
@@ -73,6 +73,9 @@ pub struct MetalRenderer {
     color_glyphs: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
+    /// The commands of the last uploads, which the tests wait for.
+    #[cfg(test)]
+    uploaded: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
 }
 
 impl MetalRenderer {
@@ -96,6 +99,8 @@ impl MetalRenderer {
             color: make_texture(&device, Texture::Color, color)?,
             queue: gpu.queue.clone(),
             device,
+            #[cfg(test)]
+            uploaded: None,
         })
     }
 
@@ -107,8 +112,8 @@ impl MetalRenderer {
     }
 
     /// Grows `texture` to `size`, copying its pixels into the new one's
-    /// corner, and waits for the copy: the pixels written next may fall where
-    /// it writes.
+    /// corner, on the queue, after the uploads before it and before those
+    /// after it.
     fn grow(&mut self, texture: Texture, size: u32) -> Result<(), Error> {
         let old = self.texture(texture).clone();
         let new = make_texture(&self.device, texture, size)?;
@@ -121,7 +126,7 @@ impl MetalRenderer {
             .ok_or(Error::Device("blit command encoder"))?;
         let side = old.width();
         // SAFETY: the old texture's whole first level, into the new one's,
-        // which is larger.
+        // which is larger. The command buffer keeps both alive.
         unsafe {
             blit.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
                 &old,
@@ -141,7 +146,6 @@ impl MetalRenderer {
         }
         blit.endEncoding();
         buffer.commit();
-        buffer.waitUntilCompleted();
         match texture {
             Texture::Coverage => self.coverage = new,
             Texture::Color => self.color = new,
@@ -149,41 +153,79 @@ impl MetalRenderer {
         Ok(())
     }
 
-    /// Writes `data` into `region` of its texture.
-    fn upload(&self, region: &AtlasRegion, data: &[u8]) {
-        let texture = self.texture(region.texture);
-        let bytes = match region.texture {
-            Texture::Coverage => 1,
-            Texture::Color => 4,
-        };
-        let (x, y) = (region.x as usize, region.y as usize);
-        let (width, height) = (region.width as usize, region.height as usize);
-        if width == 0
-            || height == 0
-            || data.len() < width * height * bytes
-            || x + width > texture.width()
-            || y + height > texture.height()
+    /// Writes each of `uploads`' bytes into its region of its texture,
+    /// through the GPU: the bytes into one buffer, and a copy of each into
+    /// its texture, on the queue that draws the frames. Each lands after the
+    /// frames before it, which may still read what it covers, and before
+    /// those after it; and on every GPU, where a write of the CPU into a
+    /// texture that the GPU wrote may not reach it, as a virtual machine's
+    /// GPU loses it. An upload outside its texture, or whose bytes do not
+    /// fill its region, is dropped.
+    fn upload(&mut self, uploads: &[(&AtlasRegion, &[u8])]) -> Result<(), Error> {
+        let mut bytes = Vec::new();
+        let mut copies = Vec::new();
+        for &(region, data) in uploads {
+            let texture = self.texture(region.texture);
+            let pixel = match region.texture {
+                Texture::Coverage => 1,
+                Texture::Color => 4,
+            };
+            let (x, y) = (region.x as usize, region.y as usize);
+            let (width, height) = (region.width as usize, region.height as usize);
+            let length = width * height * pixel;
+            if length == 0
+                || data.len() < length
+                || x + width > texture.width()
+                || y + height > texture.height()
+            {
+                continue;
+            }
+            // A copy's bytes start at a multiple of its pixel's size.
+            bytes.resize(bytes.len().next_multiple_of(4), 0);
+            copies.push((region.texture, bytes.len(), pixel, x, y, width, height));
+            bytes.extend_from_slice(&data[..length]);
+        }
+        if copies.is_empty() {
+            return Ok(());
+        }
+        let source = self.buffer(&bytes).ok_or(Error::Device("buffer"))?;
+        let buffer = self
+            .queue
+            .commandBuffer()
+            .ok_or(Error::Device("command buffer"))?;
+        let blit = buffer
+            .blitCommandEncoder()
+            .ok_or(Error::Device("blit command encoder"))?;
+        for (texture, offset, pixel, x, y, width, height) in copies {
+            // SAFETY: the copy's rows, `width * pixel` bytes each, lie within
+            // the buffer from `offset`, and its region within the texture,
+            // as the checks above keep them. The command buffer keeps both
+            // alive.
+            unsafe {
+                blit.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+                    &source,
+                    offset,
+                    width * pixel,
+                    width * height * pixel,
+                    MTLSize {
+                        width,
+                        height,
+                        depth: 1,
+                    },
+                    self.texture(texture),
+                    0,
+                    0,
+                    MTLOrigin { x, y, z: 0 },
+                );
+            }
+        }
+        blit.endEncoding();
+        buffer.commit();
+        #[cfg(test)]
         {
-            return;
+            self.uploaded = Some(buffer);
         }
-        let region = MTLRegion {
-            origin: MTLOrigin { x, y, z: 0 },
-            size: MTLSize {
-                width,
-                height,
-                depth: 1,
-            },
-        };
-        // SAFETY: `data` holds the region's rows, `width * bytes` bytes each,
-        // which the region keeps within the texture.
-        unsafe {
-            texture.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                region,
-                0,
-                NonNull::new_unchecked(data.as_ptr().cast_mut().cast()),
-                width * bytes,
-            );
-        }
+        Ok(())
     }
 
     /// A buffer of `items`, for the shaders; `None` for none.
@@ -208,13 +250,20 @@ impl Renderer for MetalRenderer {
     type Error = Error;
 
     fn update_textures(&mut self, updates: &[TextureUpdate]) -> Result<(), Error> {
+        let mut uploads = Vec::new();
         for update in updates {
             match update {
-                TextureUpdate::Grown { texture, size } => self.grow(*texture, *size)?,
-                TextureUpdate::Upload { region, data } => self.upload(region, data),
+                // The uploads before a growth go to the texture that it
+                // copies.
+                TextureUpdate::Grown { texture, size } => {
+                    self.upload(&uploads)?;
+                    uploads.clear();
+                    self.grow(*texture, *size)?;
+                }
+                TextureUpdate::Upload { region, data } => uploads.push((region, data.as_slice())),
             }
         }
-        Ok(())
+        self.upload(&uploads)
     }
 
     fn draw(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
@@ -579,6 +628,7 @@ fn make_texture(
 #[cfg(test)]
 mod tests {
     use bolt_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
+    use objc2_metal::MTLRegion;
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -590,6 +640,13 @@ mod tests {
         };
         let renderer = MetalRenderer::new(&gpu, 64, 32).expect("the shaders load");
         Some((gpu, renderer))
+    }
+
+    /// Waits for the GPU to write the last uploads.
+    fn finish(renderer: &MetalRenderer) {
+        if let Some(uploaded) = &renderer.uploaded {
+            uploaded.waitUntilCompleted();
+        }
     }
 
     /// The bytes of `region` of the texture, read back.
@@ -659,9 +716,30 @@ mod tests {
             ])
             .unwrap();
         assert_eq!(renderer.coverage.width(), 128);
+        finish(&renderer);
         assert_eq!(read(&renderer.coverage, 2, 3, 4, 1), [10, 20, 30, 40]);
         assert_eq!(read(&renderer.coverage, 100, 90, 2, 1), [7, 8]);
         assert_eq!(read(&renderer.color, 1, 1, 1, 4), [1, 2, 3, 4]);
+        // Uploads land in their order, after the growth's copy too.
+        renderer
+            .update_textures(&[
+                TextureUpdate::Upload {
+                    region: region(Texture::Coverage, 3, 3, 2, 1),
+                    data: vec![1, 2],
+                },
+                TextureUpdate::Grown {
+                    texture: Texture::Coverage,
+                    size: 256,
+                },
+                TextureUpdate::Upload {
+                    region: region(Texture::Coverage, 4, 3, 1, 1),
+                    data: vec![3],
+                },
+            ])
+            .unwrap();
+        finish(&renderer);
+        assert_eq!(read(&renderer.coverage, 2, 3, 4, 1), [10, 1, 3, 40]);
+        assert_eq!(read(&renderer.coverage, 100, 90, 2, 1), [7, 8]);
     }
 
     #[test]
@@ -675,6 +753,7 @@ mod tests {
                 data: vec![9; 4],
             }])
             .unwrap();
+        assert!(renderer.uploaded.is_none());
         assert_eq!(read(&renderer.coverage, 60, 0, 4, 1), [0; 4]);
     }
 
