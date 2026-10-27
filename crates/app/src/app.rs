@@ -14,6 +14,7 @@ use lokyr_kernel::config::{AppConfig, Config};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
+use lokyr_kernel::l10n::{self, Texts};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
 use lokyr_kernel::workspace::{self, Environment, Event, Exited, Grid, Pane, PaneId, Workspace};
@@ -45,6 +46,15 @@ const QUIT: &str = "app.quit";
 
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
+
+/// The catalogs of the texts that the app shows, the kernel's and its own,
+/// by language.
+const CATALOGS: [(&str, &str); 4] = [
+    l10n::KERNEL[0],
+    l10n::KERNEL[1],
+    ("en", include_str!("../resources/locales/en/app.ftl")),
+    ("it", include_str!("../resources/locales/it/app.ftl")),
+];
 
 /// The size of a new window's content, in points.
 const WINDOW_SIZE: Size = Size {
@@ -216,6 +226,10 @@ pub struct App {
     config: Config,
     /// The file of the config, if it has one.
     config_file: Option<ConfigFile>,
+    /// The texts that the app shows, in the language shown.
+    texts: Texts,
+    /// The user's languages, as the system has them, from the first.
+    preferred: Vec<String>,
     /// The commands, which the app runs.
     commands: Registry,
     /// The bindings of keys to commands: the defaults, and the config's.
@@ -258,7 +272,9 @@ impl App {
                 changed: Arc::new(AtomicBool::new(false)),
                 reading: None,
             }),
-            commands: commands(),
+            commands: commands(&Texts::new(l10n::SOURCE, &CATALOGS)),
+            texts: Texts::new(l10n::SOURCE, &CATALOGS),
+            preferred: Vec::new(),
             keymap,
             workspace: Workspace::new(),
             windows: BTreeMap::new(),
@@ -339,6 +355,7 @@ impl App {
             return;
         }
         let icon_changed = config.app.icon != self.config.app.icon;
+        let language_changed = config.app.language != self.config.app.language;
         if config.keys != self.config.keys {
             self.keymap = Keymap::with_config(default_bindings(), &config.keys);
         }
@@ -350,6 +367,11 @@ impl App {
         }
         if icon_changed {
             self.show_icon(platform);
+        }
+        if language_changed {
+            self.texts = texts(&self.config.app.language, &self.preferred);
+            self.commands = commands(&self.texts);
+            platform.set_main_menu(&main_menu(&self.commands));
         }
         for &window in self.windows.keys() {
             platform.request_frame(window);
@@ -572,9 +594,16 @@ impl App {
                 let grid = self.grid(size);
                 let colors = &self.colors(platform.appearance());
                 let waker = platform.waker();
-                let pane = Pane::spawn(&self.program, &self.environment, grid, colors, move || {
-                    waker.wake();
-                });
+                let pane = Pane::spawn(
+                    &self.program,
+                    &self.environment,
+                    grid,
+                    colors,
+                    &self.texts,
+                    move || {
+                        waker.wake();
+                    },
+                );
                 pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
@@ -616,7 +645,7 @@ impl App {
             let Some(pane) = self.workspace.pane_mut(state.pane) else {
                 continue;
             };
-            match pane.exited(close, now) {
+            match pane.exited(close, now, &self.texts) {
                 Some(Exited::Close) => closing.push(window),
                 Some(Exited::Keep) => platform.request_frame(window),
                 None => waiting |= pane.is_waiting(),
@@ -964,12 +993,15 @@ impl App {
 
 impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
+        self.preferred = platform.locales();
+        self.texts = texts(&self.config.app.language, &self.preferred);
+        self.commands = commands(&self.texts);
         platform.set_main_menu(&main_menu(&self.commands));
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
         self.environment.locale =
-            environment::utf8_locale(&platform.locales(), &environment::system_locales());
+            environment::utf8_locale(&self.preferred, &environment::system_locales());
         if let Some(file) = &mut self.config_file {
             if let Err(error) = crate::watch::make_directory(&file.path) {
                 eprintln!(
@@ -1257,17 +1289,32 @@ fn default_bindings() -> Vec<Binding> {
         .collect()
 }
 
-/// The app's commands, which it runs itself.
-fn commands() -> Registry {
+/// The texts of the language `chosen`, as the config names it, or of the
+/// first of the user's `preferred` languages that the catalogs have; a
+/// language that they lack goes to the log, with those that they have.
+fn texts(chosen: &str, preferred: &[String]) -> Texts {
+    let available = l10n::languages(&CATALOGS);
+    let (language, unknown) = l10n::choose(chosen, preferred, &available);
+    if unknown {
+        eprintln!(
+            "lokyr: the language `{chosen}` is not one of Lokyr's: {}; the system's shows",
+            available.join(", ")
+        );
+    }
+    Texts::new(&language, &CATALOGS)
+}
+
+/// The app's commands, which it runs itself, with their titles in `texts`.
+fn commands(texts: &Texts) -> Registry {
     let mut registry = Registry::new();
     let commands = [
-        (NEW_WINDOW, "New Window", Category::Windows),
-        (QUIT, "Quit Lokyr", Category::App),
+        (NEW_WINDOW, "command-window-new", Category::Windows),
+        (QUIT, "command-app-quit", Category::App),
     ];
     for (name, title, category) in commands {
         let command = Command {
             name: name.to_owned(),
-            title: title.to_owned(),
+            title: texts.text(title),
             category,
             capabilities: Vec::new(),
             params: Vec::new(),
@@ -1375,7 +1422,7 @@ mod tests {
 
     #[test]
     fn the_app_s_commands_register_with_their_categories_and_titles() {
-        let registry = commands();
+        let registry = commands(&Texts::new("en", &CATALOGS));
         let registered: Vec<(&str, &str, Category)> = registry
             .commands()
             .map(|command| {
@@ -1416,6 +1463,71 @@ mod tests {
         assert!(!fake.has_quit());
         app.run(&mut fake, QUIT, Args::new());
         assert!(fake.has_quit());
+    }
+
+    /// The titles of the items of the main menu that `fake` has.
+    fn menu_titles(fake: &Fake) -> Vec<String> {
+        fake.main_menu().unwrap().menus[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command { title, .. } => Some(title.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_menus_take_the_config_s_language_and_change_with_it() {
+        let (mut fake, mut app, path) = with_file("language", "[app]\nlanguage = \"it\"\n");
+        assert_eq!(menu_titles(&fake), ["Nuova finestra", "Esci da Lokyr"]);
+        std::fs::write(&path, "[app]\nlanguage = \"en\"\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(menu_titles(&fake), ["New Window", "Quit Lokyr"]);
+        assert_eq!(app.texts.language(), "en");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn the_system_s_language_shows_unless_the_config_names_one() {
+        let mut fake = Fake::default();
+        fake.set_locales(&["de_CH", "it_CH"]);
+        let mut first = app(Config::default(), quiet());
+        fake.start(&mut first);
+        assert_eq!(menu_titles(&fake), ["Nuova finestra", "Esci da Lokyr"]);
+        // A language that Lokyr lacks takes the system's.
+        let mut fake = Fake::default();
+        fake.set_locales(&["it_IT"]);
+        let mut config = Config::default();
+        config.app.language = "fr".to_owned();
+        let mut second = app(config, quiet());
+        fake.start(&mut second);
+        assert_eq!(second.texts.language(), "it");
+        // Without a language of Lokyr's, English.
+        let (fake, _) = started();
+        assert_eq!(menu_titles(&fake), ["New Window", "Quit Lokyr"]);
+    }
+
+    #[test]
+    fn the_app_s_catalogs_match_their_source() {
+        let pairs = [
+            (
+                include_str!("../resources/locales/en/app.ftl"),
+                include_str!("../resources/locales/it/app.ftl"),
+            ),
+            (
+                include_str!("../resources/locales/en/infoplist.ftl"),
+                include_str!("../resources/locales/it/infoplist.ftl"),
+            ),
+        ];
+        for (source, italian) in pairs {
+            assert_eq!(l10n::check(source, italian), Ok(()));
+        }
+        // Every command's title is a message of the catalogs.
+        let texts = Texts::new("it", &CATALOGS);
+        for command in commands(&texts).commands() {
+            assert!(!command.title.starts_with("command-"), "{}", command.title);
+        }
     }
 
     #[test]

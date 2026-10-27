@@ -6,6 +6,7 @@ use lokyr_pty::Program;
 use lokyr_vt_core::terminal::Colors;
 
 use super::*;
+use crate::l10n::Texts;
 
 fn grid() -> Grid {
     Grid {
@@ -24,6 +25,7 @@ fn pane(script: &str) -> Pane {
         &Environment::default(),
         grid(),
         &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
         || {},
     )
 }
@@ -130,6 +132,50 @@ fn the_sessions_events_come_in_as_they_are_collected() {
 }
 
 #[test]
+fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
+    let program = Program::command("/bin/sh", ["-c", "exit 3"]);
+    let texts = Texts::new("it", &crate::l10n::KERNEL);
+    let mut pane = Pane::spawn(
+        &program,
+        &Environment::default(),
+        grid(),
+        &Colors::default(),
+        &texts,
+        || {},
+    );
+    let start = Instant::now();
+    while pane
+        .exited(crate::config::CloseOnExit::Clean, Instant::now(), &texts)
+        .is_none()
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the program ends"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    pane.update();
+    let snapshot = pane.snapshot();
+    let shown: String = (0..snapshot.rows())
+        .map(|row| {
+            snapshot
+                .line(row)
+                .cells()
+                .iter()
+                .map(|cell| match cell.content() {
+                    lokyr_vt_core::page::Content::Char(c) if c != '\0' => c,
+                    _ => ' ',
+                })
+                .collect::<String>()
+        })
+        .collect();
+    assert!(
+        shown.contains("[il programma è uscito con codice 3; un tasto chiude la finestra]"),
+        "{shown:?}"
+    );
+}
+
+#[test]
 fn a_pane_that_cannot_start_tells_nothing() {
     let program = Program::command("/nonexistent/program", [""; 0]);
     let pane = Pane::spawn(
@@ -137,6 +183,7 @@ fn a_pane_that_cannot_start_tells_nothing() {
         &Environment::default(),
         grid(),
         &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
         || {},
     );
     assert!(pane.is_kept());

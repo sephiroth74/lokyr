@@ -1,15 +1,19 @@
 //! `cargo xtask bundle`: builds `target/Lokyr.app` from the release binary.
 //!
 //! The bundle holds the binary, its `Info.plist`, the terminfo entry
-//! compiled into `Contents/Resources/terminfo`, and the icons: the
+//! compiled into `Contents/Resources/terminfo`, the icons: the
 //! default variant's as the bundle's own, `AppIcon.icns`, and every
-//! variant's in `Contents/Resources/icons`, from `crates/app/resources/icons`.
+//! variant's in `Contents/Resources/icons`, from `crates/app/resources/icons`;
+//! and, for each language of the app's catalogs, `<language>.lproj` with
+//! the usage strings of its `infoplist.ftl`, which `Info.plist` takes in
+//! English.
 //! It is signed with the project's Developer ID when the
 //! keychain has it, so that macOS keeps the permissions that it gave the
 //! app from one build to the next, or with the identity that
 //! `LOKYR_SIGN_IDENTITY` names; otherwise, as on a machine without it,
 //! ad hoc. It is not notarized.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -43,46 +47,33 @@ const IDENTITY_VARIABLE: &str = "LOKYR_SIGN_IDENTITY";
 
 /// The usage strings that macOS shows when a program started in the
 /// terminal asks for what its privacy settings guard, which it asks on the
-/// terminal's behalf: each key, and what the program wants.
-const USAGES: [(&str, &str); 16] = [
-    ("NSMicrophoneUsageDescription", "use the microphone"),
-    ("NSCameraUsageDescription", "use the camera"),
-    ("NSAppleEventsUsageDescription", "control other apps"),
-    ("NSDesktopFolderUsageDescription", "read the Desktop folder"),
-    (
-        "NSDocumentsFolderUsageDescription",
-        "read the Documents folder",
-    ),
-    (
-        "NSDownloadsFolderUsageDescription",
-        "read the Downloads folder",
-    ),
-    (
-        "NSRemovableVolumesUsageDescription",
-        "read removable volumes",
-    ),
-    ("NSNetworkVolumesUsageDescription", "read network volumes"),
-    (
-        "NSLocalNetworkUsageDescription",
-        "reach devices on the local network",
-    ),
-    ("NSBluetoothAlwaysUsageDescription", "use Bluetooth"),
-    ("NSContactsUsageDescription", "read your contacts"),
-    (
-        "NSCalendarsFullAccessUsageDescription",
-        "use your calendars",
-    ),
-    (
-        "NSRemindersFullAccessUsageDescription",
-        "use your reminders",
-    ),
-    ("NSPhotoLibraryUsageDescription", "read your photos"),
-    ("NSLocationUsageDescription", "know your location"),
-    (
-        "NSSpeechRecognitionUsageDescription",
-        "use speech recognition",
-    ),
+/// terminal's behalf: the keys of `Info.plist`, which the catalogs'
+/// `infoplist.ftl` give their texts.
+const USAGES: [&str; 16] = [
+    "NSMicrophoneUsageDescription",
+    "NSCameraUsageDescription",
+    "NSAppleEventsUsageDescription",
+    "NSDesktopFolderUsageDescription",
+    "NSDocumentsFolderUsageDescription",
+    "NSDownloadsFolderUsageDescription",
+    "NSRemovableVolumesUsageDescription",
+    "NSNetworkVolumesUsageDescription",
+    "NSLocalNetworkUsageDescription",
+    "NSBluetoothAlwaysUsageDescription",
+    "NSContactsUsageDescription",
+    "NSCalendarsFullAccessUsageDescription",
+    "NSRemindersFullAccessUsageDescription",
+    "NSPhotoLibraryUsageDescription",
+    "NSLocationUsageDescription",
+    "NSSpeechRecognitionUsageDescription",
 ];
+
+/// The app's catalogs, a directory each language, relative to the workspace
+/// root.
+const LOCALES: &str = "crates/app/resources/locales";
+
+/// The language of the source catalogs, which `Info.plist` takes.
+const SOURCE: &str = "en";
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     if let Some(arg) = args.next() {
@@ -114,9 +105,20 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &resources.join("terminfo"),
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
+    let catalogs = usage_catalogs(&root.join(LOCALES))?;
+    for (language, usages) in &catalogs {
+        let directory = resources.join(format!("{language}.lproj"));
+        fs::create_dir_all(&directory)
+            .with_context(|| format!("making {}", directory.display()))?;
+        fs::write(directory.join("InfoPlist.strings"), plist(usages, false))
+            .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
+    }
     let version = env!("CARGO_PKG_VERSION");
-    fs::write(app.join("Contents/Info.plist"), info_plist(version))
-        .context("writing the Info.plist")?;
+    fs::write(
+        app.join("Contents/Info.plist"),
+        info_plist(version, &catalogs)?,
+    )
+    .context("writing the Info.plist")?;
     let identity = identity()?;
     sign(&app, &identity)?;
     println!(
@@ -140,8 +142,83 @@ fn run_command(command: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// The `Info.plist` of the app at `version`.
-fn info_plist(version: &str) -> String {
+/// The usage strings of each language of the catalogs in `locales`, by
+/// language: each language's `infoplist.ftl`, of a message for each key of
+/// [`USAGES`], each a line `key = text`, without variables.
+fn usage_catalogs(locales: &Path) -> Result<BTreeMap<String, Vec<(String, String)>>> {
+    let mut catalogs = BTreeMap::new();
+    for entry in fs::read_dir(locales).with_context(|| format!("reading {}", locales.display()))? {
+        let directory = entry?.path();
+        let Some(language) = directory.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let path = directory.join("infoplist.ftl");
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        catalogs.insert(
+            language.to_owned(),
+            usages(&text).with_context(|| path.display().to_string())?,
+        );
+    }
+    if !catalogs.contains_key(SOURCE) {
+        bail!("{} has no catalog of {SOURCE}", locales.display());
+    }
+    Ok(catalogs)
+}
+
+/// The usage strings of `text`, a catalog's `infoplist.ftl`, in the order of
+/// [`USAGES`], each of which it has.
+fn usages(text: &str) -> Result<Vec<(String, String)>> {
+    let mut messages = BTreeMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(" = ") else {
+            bail!("`{line}` is not a message, `key = text`");
+        };
+        if value.contains(['{', '}']) {
+            bail!("the text of `{key}` takes no variable");
+        }
+        messages.insert(key.to_owned(), value.to_owned());
+    }
+    USAGES
+        .iter()
+        .map(|&key| {
+            let value = messages
+                .remove(key)
+                .with_context(|| format!("no message `{key}`"))?;
+            Ok((key.to_owned(), value))
+        })
+        .collect()
+}
+
+/// A plist of `pairs`, keys and their strings, with `NSHighResolutionCapable`
+/// when `high_resolution`.
+fn plist(pairs: &[(String, String)], high_resolution: bool) -> String {
+    let mut plist = String::from(concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+        "<plist version=\"1.0\">\n<dict>\n",
+    ));
+    for (key, value) in pairs {
+        plist.push_str(&format!(
+            "\t<key>{key}</key>\n\t<string>{}</string>\n",
+            escaped(value)
+        ));
+    }
+    if high_resolution {
+        plist.push_str("\t<key>NSHighResolutionCapable</key>\n\t<true/>\n");
+    }
+    plist.push_str("</dict>\n</plist>\n");
+    plist
+}
+
+/// The `Info.plist` of the app at `version`, with the usage strings of
+/// the source's catalog and the languages of `catalogs`.
+fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>) -> Result<String> {
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
@@ -156,26 +233,27 @@ fn info_plist(version: &str) -> String {
         ("NSPrincipalClass", "NSApplication".to_owned()),
     ];
     keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
-    for (key, what) in USAGES {
-        keys.push((
-            key,
-            format!("A program started in the terminal wants to {what}."),
-        ));
-    }
-    let mut plist = String::from(concat!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
-        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
-        "<plist version=\"1.0\">\n<dict>\n",
-    ));
-    for (key, value) in keys {
-        plist.push_str(&format!(
-            "\t<key>{key}</key>\n\t<string>{}</string>\n",
-            escaped(&value)
-        ));
-    }
-    plist.push_str("\t<key>NSHighResolutionCapable</key>\n\t<true/>\n</dict>\n</plist>\n");
-    plist
+    let mut pairs: Vec<(String, String)> = keys
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect();
+    let source = catalogs
+        .get(SOURCE)
+        .with_context(|| format!("no catalog of {SOURCE}"))?;
+    pairs.extend(source.iter().cloned());
+    let mut plist = plist(&pairs, true);
+    // The languages that the bundle has, which the system's own texts of
+    // the app, as its menus' items, take.
+    let languages: String = catalogs
+        .keys()
+        .map(|language| format!("\t\t<string>{language}</string>\n"))
+        .collect();
+    let at = plist.rfind("</dict>").expect("the plist's dictionary ends");
+    plist.insert_str(
+        at,
+        &format!("\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n"),
+    );
+    Ok(plist)
 }
 
 /// `text` with XML's special characters escaped.
@@ -277,9 +355,43 @@ mod tests {
         assert_eq!(developer_id("     0 valid identities found\n"), None);
     }
 
+    /// The catalogs of the workspace's app.
+    fn catalogs() -> BTreeMap<String, Vec<(String, String)>> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        usage_catalogs(&root.join(LOCALES)).unwrap()
+    }
+
+    #[test]
+    fn the_catalogs_give_every_usage_string_in_every_language() {
+        let catalogs = catalogs();
+        let languages: Vec<&str> = catalogs.keys().map(String::as_str).collect();
+        assert_eq!(languages, ["en", "it"]);
+        for usages in catalogs.values() {
+            assert_eq!(usages.len(), USAGES.len());
+        }
+        let italian = &catalogs["it"];
+        assert_eq!(italian[0].0, "NSMicrophoneUsageDescription");
+        assert_eq!(
+            italian[0].1,
+            "Un programma avviato nel terminale vuole usare il microfono."
+        );
+        let strings = plist(italian, false);
+        assert!(strings.contains("<key>NSCameraUsageDescription</key>"));
+        assert!(!strings.contains("NSHighResolutionCapable"));
+        // A catalog that lacks one, or gives one a variable, is refused.
+        assert!(usages("NSMicrophoneUsageDescription = x\n").is_err());
+        let variable = "NSMicrophoneUsageDescription = { $x }\n";
+        assert!(
+            usages(variable)
+                .unwrap_err()
+                .to_string()
+                .contains("no variable")
+        );
+    }
+
     #[test]
     fn the_info_plist_has_the_keys_of_the_bundle() {
-        let plist = info_plist("1.2.3");
+        let plist = info_plist("1.2.3", &catalogs()).unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
             ("CFBundleExecutable", "lokyr"),
@@ -297,6 +409,9 @@ mod tests {
             );
         }
         assert!(plist.contains("<key>NSHighResolutionCapable</key>\n\t<true/>"));
+        assert!(plist.contains(
+            "<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>en</string>\n\t\t<string>it</string>\n\t</array>"
+        ));
     }
 
     /// The plist reads back as macOS reads it, whole, with each key's value.
@@ -304,7 +419,7 @@ mod tests {
     #[test]
     fn the_info_plist_is_one_that_macos_reads() {
         let path = std::env::temp_dir().join(format!("lokyr-info-{}.plist", std::process::id()));
-        fs::write(&path, info_plist("1.2.3")).unwrap();
+        fs::write(&path, info_plist("1.2.3", &catalogs()).unwrap()).unwrap();
         let lint = Command::new("plutil")
             .arg("-lint")
             .arg(&path)

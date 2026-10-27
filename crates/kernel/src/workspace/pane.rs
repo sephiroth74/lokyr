@@ -15,6 +15,7 @@ use lokyr_vt_core::terminal::{
 
 use super::PaneId;
 use crate::config::CloseOnExit;
+use crate::l10n::{Arg, Texts};
 
 /// The `TERM` that programs take, which remote hosts know too.
 const TERM: &str = "xterm-256color";
@@ -153,12 +154,13 @@ pub(super) struct Happened {
 impl Pane {
     /// A pane that runs `program` in a terminal of `grid`, in `colors`,
     /// whose changes call `wake`, from the session's threads; or, when the
-    /// program cannot start, a pane whose screen tells why.
+    /// program cannot start, a pane whose screen tells why, in `texts`.
     pub fn spawn(
         program: &Program,
         environment: &Environment,
         grid: Grid,
         colors: &Colors,
+        texts: &Texts,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         let pty = pty_options(program, environment, grid);
@@ -193,7 +195,9 @@ impl Pane {
                 let mut terminal =
                     Terminal::new(grid.columns, grid.rows, terminal::Options::default());
                 terminal.set_default_colors(colors.clone());
-                let line = format!("\x1b[2m[the program cannot start: {error}]\x1b[0m");
+                let error = error.to_string();
+                let why = texts.text_with("program-cannot-start", &[("error", Arg::Text(&error))]);
+                let line = format!("\x1b[2m[{why}]\x1b[0m");
                 Parser::new().advance(&mut terminal, line.as_bytes());
                 terminal.snapshot(&mut pane.snapshot);
                 // A key closes the window, as after a program that ended.
@@ -371,7 +375,8 @@ impl Pane {
     /// What the window does, as `close` says, once the program has ended:
     /// `None` while it runs, once the pane keeps its screen, and while its
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.
-    pub fn exited(&mut self, close: CloseOnExit, now: Instant) -> Option<Exited> {
+    /// The line that a kept screen shows is in `texts`.
+    pub fn exited(&mut self, close: CloseOnExit, now: Instant, texts: &Texts) -> Option<Exited> {
         if self.kept {
             return None;
         }
@@ -401,16 +406,19 @@ impl Pane {
         }
         self.kept = true;
         let ended = match exit {
-            Some(Exit::Code(code)) => format!("the program exited with code {code}"),
-            Some(Exit::Signal(signal)) => format!("the program ended by signal {signal}"),
-            None => "the program ended".to_owned(),
+            Some(Exit::Code(code)) => {
+                texts.text_with("program-exited", &[("code", Arg::Number(code.into()))])
+            }
+            Some(Exit::Signal(signal)) => texts.text_with(
+                "program-signalled",
+                &[("signal", Arg::Number(signal.into()))],
+            ),
+            None => texts.text("program-ended"),
         };
         // The character sets back to ASCII, insert mode off and autowrap on,
         // which a program that ended may have left otherwise, so that the
         // line reads as it is written.
-        let line = format!(
-            "\x1b(B\x1b)B\x0f\x1b[4l\x1b[?7h\r\n\x1b[0;2m[{ended}; a key closes the window]\x1b[0m"
-        );
+        let line = format!("\x1b(B\x1b)B\x0f\x1b[4l\x1b[?7h\r\n\x1b[0;2m[{ended}]\x1b[0m");
         Parser::new().advance(&mut *session.lock(), line.as_bytes());
         Some(Exited::Keep)
     }
@@ -449,6 +457,7 @@ fn status(exit: Option<Exit>, told: Option<i32>, through_login: bool) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::l10n::KERNEL;
 
     #[test]
     fn a_program_starts_in_the_app_s_environment() {
@@ -531,6 +540,7 @@ mod tests {
             &Environment::default(),
             grid(80),
             &Colors::default(),
+            &Texts::new("en", &KERNEL),
             || {},
         );
         wait_for(&mut pane, "ready", 1);
@@ -565,6 +575,7 @@ mod tests {
             &Environment::default(),
             grid(80),
             &Colors::default(),
+            &Texts::new("en", &KERNEL),
             || {},
         );
         // A second of steps, one every 8 ms, as a display of 120 Hz draws

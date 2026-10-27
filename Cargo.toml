@@ -23,6 +23,10 @@ alacritty_terminal = { version = "0.26.0", default-features = false }
 cargo_metadata = "0.23.1"
 # Benchmarks, without plots or rayon.
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+# The catalogs of the texts that Lokyr shows, in Project Fluent's format, and
+# their parser, for the tests that compare them.
+fluent-bundle = "0.16.0"
+fluent-syntax = "0.12.0"
 # Instruction counts under callgrind, in the Linux job. Its runner,
 # gungraun-runner, must have the version that Cargo.lock holds.
 gungraun = "0.20.0"
@@ -60,6 +64,8 @@ notify = { version = "8.2.1", default-features = false, features = ["macos_fseve
 toml_edit = { version = "0.25.17", default-features = false, features = ["parse", "serde"] }
 tracing = "0.1.44"
 unicode-normalization = "0.1.25"
+# The language tags of the catalogs.
+unic-langid = "0.9.6"
 # The reference parser that tests compare vt-core against.
 vte = "0.15.0"
 

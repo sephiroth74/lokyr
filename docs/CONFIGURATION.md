@@ -73,6 +73,7 @@ option-as-meta = "left"              # none | left | right | both
 
 [app]
 icon = "laguz"                       # jormungandr | laguz
+language = "it"                      # system | en | it
 
 [keys]
 "cmd+shift+n" = "window.new"         # keys, and the command that they run
@@ -443,6 +444,23 @@ The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app
 - A new variant applies at once, as you save the file.
 - The Finder and Launchpad show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
 - A name that is not one of Lokyr's variants keeps the default, and the log names the variants; the rest of the file applies.
+
+### `language`
+
+<sub>Platforms: macOS</sub>
+
+The language of what Lokyr shows: its menus, the titles of its commands, and the line of a window whose program ended.
+
+| Values | Default |
+|---|---|
+| `"system"`, `"en"`, `"it"` | `"system"` |
+
+- `"system"` takes the first of your preferred languages, in the system's settings, that Lokyr has, and English when it has none of them.
+- A language with its region, as `"it-IT"`, takes its language.
+- A new value applies at once, as you save the file, to the menus too; a line already shown stays as it was.
+- A language that Lokyr does not have takes the system's, and the log names those that it has; the rest of the file applies.
+- The prompts that macOS shows when a program asks for the camera, the contacts and the like follow the system's language, whatever the key says.
+- The log, for the reports of problems, stays in English.
 
 ## `[keys]`
 

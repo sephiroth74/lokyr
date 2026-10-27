@@ -145,13 +145,17 @@ pub enum ArgValue {
     String(String),
 }
 
-/// The `[app]` section: the application's own looks.
+/// The `[app]` section: the application's own looks and language.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AppConfig {
     /// The variant of the icon that shows while the app runs, by its name
     /// without `lokyr-`, which the app looks for among its icons.
     pub icon: String,
+    /// The language of the texts that the app shows: `system`, the first
+    /// of the system's preferred languages that the app has, or one, as
+    /// `en` or `it`.
+    pub language: String,
 }
 
 impl AppConfig {
@@ -164,6 +168,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             icon: Self::DEFAULT_ICON.to_owned(),
+            language: "system".to_owned(),
         }
     }
 }
@@ -775,9 +780,12 @@ mod tests {
 
             [app]
             icon = "laguz"
+            language = "it"
             "#,
         )
         .unwrap();
+        assert_eq!(config.app.language, "it");
+        assert_eq!(Config::default().app.language, "system");
         assert!(config.scrollback.scroll_on_output);
         assert!(!Config::default().scrollback.scroll_on_output);
         assert_eq!(config.app.icon, "laguz");
@@ -1137,7 +1145,7 @@ mod tests {
         );
         assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
-        assert_eq!(keys::<AppConfig>(), ["icon"]);
+        assert_eq!(keys::<AppConfig>(), ["icon", "language"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(

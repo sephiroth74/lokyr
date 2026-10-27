@@ -108,7 +108,7 @@ lokyr/
 │   ├── pty/               fork+exec, resize; no RawFd in the API (ConPTY later)
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
-│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, services; implements HostApi
+│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services; implements HostApi
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables
 │   ├── render-core/       Renderer trait, display-list types, shaders

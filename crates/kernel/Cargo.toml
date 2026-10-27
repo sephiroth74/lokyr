@@ -10,6 +10,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+fluent-bundle.workspace = true
+fluent-syntax.workspace = true
 lokyr-pkg-model.workspace = true
 lokyr-plugin-sdk.workspace = true
 lokyr-pty.workspace = true
@@ -20,6 +22,7 @@ lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
 serde.workspace = true
 toml_edit.workspace = true
+unic-langid.workspace = true
 
 [lints]
 workspace = true
