@@ -14,7 +14,7 @@ Lokyr is young: its first version is under way, for macOS 26 or later on Apple S
 
 You need:
 - a Mac with Apple Silicon, on macOS 26 or later;
-- Xcode 26 or later, with its Metal toolchain, which Xcode installs on its own since Xcode 26: `xcodebuild -downloadComponent MetalToolchain`;
+- Xcode 26 or later, with its Metal toolchain, a download of its own since Xcode 26, which the renderer's shaders need to build: `xcodebuild -downloadComponent MetalToolchain`;
 - Rust through [rustup](https://rustup.rs): `rust-toolchain.toml` pins the version, which rustup installs at the first build;
 - [`just`](https://github.com/casey/just), which runs the project's recipes: `brew install just`;
 - [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny), which checks the dependencies' licenses and advisories: `cargo install cargo-deny --locked`.
@@ -24,14 +24,14 @@ Then:
 ```sh
 cargo run -p lokyr-app   # the terminal, with your login shell
 just --list             # the project's recipes
-just ci                 # every check that CI runs
+just ci                 # the checks of CI, as the next section tells
 ```
 
 Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you need it only to work on the fuzzers.
 
 ## The gate: `just ci`
 
-`just ci` runs every check that CI runs, and a pull request needs it green:
+`just ci` runs the checks of CI that a Mac can make, and a pull request needs it green:
 - formatting, `cargo fmt --check`, and clippy with every warning an error;
 - the build and the tests of the whole workspace, and a build of the platform-independent crates for Linux;
 - `cargo deny`: the dependencies' licenses, advisories and sources;
@@ -39,6 +39,8 @@ Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you ne
 - `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
 - `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
 - `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed ad hoc on a Mac without the project's Developer ID, or with the identity that `LOKYR_SIGN_IDENTITY` names.
+
+Two checks of CI are not in it, and run on Linux: the tests of the platform-independent crates, which `just ci` builds for Linux without running; and the count of the instructions that the terminal's core takes for a set of scenarios, which fails a pull request that raises one by more than 3% over its base, with `just instructions <base>` where Valgrind runs.
 
 ## The code
 

@@ -37,9 +37,9 @@ _default:
 build:
     cargo build --locked --workspace --all-targets
 
-# Test the workspace.
+# Test the workspace, every suite even after one fails.
 test:
-    cargo test --locked --workspace
+    cargo test --locked --workspace --no-fail-fast
 
 # Format the codebase.
 fmt:

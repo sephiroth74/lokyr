@@ -17,16 +17,25 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 /// when the file may have changed.
 pub struct Watcher {
     _watcher: RecommendedWatcher,
-    /// The directories watched.
-    watched: Vec<PathBuf>,
+    /// What the watch looks at.
+    targets: Targets,
 }
 
 impl std::fmt::Debug for Watcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Watcher")
-            .field("watched", &self.watched)
+            .field("targets", &self.targets)
             .finish_non_exhaustive()
     }
+}
+
+/// The directories that a watch of the config looks at, and the entries in
+/// them that count, each by its directory's real path, which FSEvents tells,
+/// and its name.
+#[derive(Debug, PartialEq, Eq)]
+struct Targets {
+    watched: Vec<PathBuf>,
+    entries: Vec<(PathBuf, OsString)>,
 }
 
 impl Watcher {
@@ -41,17 +50,9 @@ impl Watcher {
             position: None,
             message,
         };
-        let (watched, names) = targets(path);
-        // The entries that count, by their directory's real path.
-        let entries: Vec<(PathBuf, OsString)> = watched
-            .iter()
-            .zip(&names)
-            .map(|(directory, name)| {
-                let real = fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
-                (real, name.clone())
-            })
-            .collect();
-        if watched.is_empty() {
+        let targets = targets(path);
+        let entries = targets.entries.clone();
+        if targets.watched.is_empty() {
             return Err(error(
                 "it cannot be watched, as neither its directory nor that one's parent exists"
                     .to_owned(),
@@ -73,21 +74,23 @@ impl Watcher {
                 }
             })
             .map_err(|e| error(format!("it cannot be watched: {e}")))?;
-        for directory in &watched {
+        for directory in &targets.watched {
             watcher
                 .watch(directory, RecursiveMode::NonRecursive)
                 .map_err(|e| error(format!("it cannot be watched: {e}")))?;
         }
         Ok(Self {
             _watcher: watcher,
-            watched,
+            targets,
         })
     }
 
     /// Whether the config at `path` needs another watch than this one: its
-    /// directory came into being, or its link points elsewhere.
+    /// directory came into being or went, or its link, or a link of its
+    /// directory, points elsewhere, even to another file of the same
+    /// directory.
     pub fn is_stale(&self, path: &Path) -> bool {
-        targets(path).0 != self.watched
+        targets(path) != self.targets
     }
 }
 
@@ -101,14 +104,17 @@ pub(crate) fn make_directory(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// The directories to watch for the config at `path`, and the names of
-/// their entries that count: the file's directory and its name, with its
-/// link's target's, and the directory's parent and its name; or, while
-/// that directory does not exist, its parent alone. The home directory is
-/// never one of them.
-fn targets(path: &Path) -> (Vec<PathBuf>, Vec<OsString>) {
+/// The directories to watch for the config at `path`, and the entries of
+/// them that count: the file's directory and its name, with its link's
+/// target's, and the directory's parent and its name; or, while that
+/// directory does not exist, its parent alone. The home directory is never
+/// one of them.
+fn targets(path: &Path) -> Targets {
     let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else {
-        return (Vec::new(), Vec::new());
+        return Targets {
+            watched: Vec::new(),
+            entries: Vec::new(),
+        };
     };
     let home = std::env::home_dir();
     let watchable = |directory: &Path| directory.is_dir() && home.as_deref() != Some(directory);
@@ -134,7 +140,17 @@ fn targets(path: &Path) -> (Vec<PathBuf>, Vec<OsString>) {
         watched.push(parent.to_owned());
         names.push(name.to_owned());
     }
-    (watched, names)
+    // A directory that a link stands for, as GNU Stow folds one, by its
+    // target.
+    let entries = watched
+        .iter()
+        .zip(names)
+        .map(|(directory, name)| {
+            let real = fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
+            (real, name)
+        })
+        .collect();
+    Targets { watched, entries }
 }
 
 #[cfg(test)]
@@ -228,18 +244,79 @@ mod tests {
     }
 
     #[test]
+    fn a_link_pointed_elsewhere_is_watched_at_its_new_target() {
+        let home = scratch("repointed");
+        let dotfiles = home.join("dotfiles");
+        let config = home.join("config");
+        fs::create_dir_all(&dotfiles).unwrap();
+        fs::create_dir_all(&config).unwrap();
+        let (first, second) = (dotfiles.join("first.toml"), dotfiles.join("second.toml"));
+        fs::write(&first, "").unwrap();
+        fs::write(&second, "").unwrap();
+        let path = config.join("config.toml");
+        std::os::unix::fs::symlink(&first, &path).unwrap();
+        let (watcher, receiver) = watch(&path);
+        // As `ln -sf` points it to another file of the same directory.
+        fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&second, &path).unwrap();
+        assert!(changed(&receiver));
+        assert!(watcher.is_stale(&path));
+        drop(watcher);
+        let (watcher, receiver) = watch(&path);
+        assert!(!watcher.is_stale(&path));
+        fs::write(&second, "[cursor]\nshape = \"bar\"\n").unwrap();
+        assert!(changed(&receiver));
+        drop(watcher);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_directory_link_pointed_elsewhere_is_watched_at_its_new_target() {
+        // GNU Stow's packages, of which the config's directory is a link to
+        // one.
+        let home = scratch("folded");
+        let packages = [
+            home.join("one").join("lokyr"),
+            home.join("two").join("lokyr"),
+        ];
+        for package in &packages {
+            fs::create_dir_all(package).unwrap();
+            fs::write(package.join("config.toml"), "").unwrap();
+        }
+        let config = home.join("config");
+        fs::create_dir_all(&config).unwrap();
+        let directory = config.join("lokyr");
+        std::os::unix::fs::symlink(&packages[0], &directory).unwrap();
+        let path = directory.join("config.toml");
+        let (watcher, receiver) = watch(&path);
+        fs::write(packages[0].join("config.toml"), "[font]\n").unwrap();
+        assert!(changed(&receiver));
+        assert!(!watcher.is_stale(&path));
+        fs::remove_file(&directory).unwrap();
+        std::os::unix::fs::symlink(&packages[1], &directory).unwrap();
+        assert!(changed(&receiver));
+        assert!(watcher.is_stale(&path));
+        drop(watcher);
+        let (watcher, receiver) = watch(&path);
+        fs::write(packages[1].join("config.toml"), "[font]\n").unwrap();
+        assert!(changed(&receiver));
+        drop(watcher);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
     fn an_entry_of_the_same_name_elsewhere_counts_for_nothing() {
-        // `config.toml` of another program, beside the config's directory.
+        // `config.toml` of another program, in the directory above the
+        // config's, which the watch looks at for the config's directory.
         let parent = scratch("elsewhere");
         let path = parent.join("lokyr").join("config.toml");
         make_directory(&path).unwrap();
         fs::write(&path, "").unwrap();
-        fs::create_dir_all(parent.join("other")).unwrap();
         let (_watcher, receiver) = watch(&path);
         // FSEvents can tell the config's write of a moment before the watch
         // started: it goes first.
         while receiver.recv_timeout(Duration::from_millis(300)).is_ok() {}
-        fs::write(parent.join("other").join("config.toml"), "").unwrap();
+        fs::write(parent.join("config.toml"), "").unwrap();
         assert!(receiver.recv_timeout(Duration::from_millis(500)).is_err());
         fs::write(&path, "[font]\n").unwrap();
         assert!(changed(&receiver));

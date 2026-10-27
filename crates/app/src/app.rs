@@ -1009,6 +1009,69 @@ mod tests {
     }
 
     #[test]
+    fn a_link_pointed_elsewhere_reloads_at_its_new_target() {
+        use std::os::unix::fs::symlink;
+
+        let home = std::env::temp_dir().join(format!("lokyr-app-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        // The config's link to a file of the dotfiles, pointed to another
+        // of the same directory; then its directory's link, as GNU Stow
+        // folds one, pointed to another package.
+        for folded in [false, true] {
+            let root = home.join(if folded { "folded" } else { "file" });
+            let (one, two) = if folded {
+                (root.join("one"), root.join("two"))
+            } else {
+                (root.join("dotfiles"), root.join("dotfiles"))
+            };
+            let target = |package: &std::path::Path, name: &str| {
+                if folded {
+                    package.to_owned()
+                } else {
+                    package.join(name)
+                }
+            };
+            let file = |package: &std::path::Path, name: &str| {
+                if folded {
+                    package.join("config.toml")
+                } else {
+                    package.join(name)
+                }
+            };
+            for package in [&one, &two] {
+                std::fs::create_dir_all(package).unwrap();
+            }
+            std::fs::write(file(&one, "one.toml"), "[cursor]\nshape = \"bar\"\n").unwrap();
+            std::fs::write(file(&two, "two.toml"), "[cursor]\nshape = \"underline\"\n").unwrap();
+            let directory = root.join("lokyr");
+            let path = directory.join("config.toml");
+            let linked = if folded {
+                directory.clone()
+            } else {
+                std::fs::create_dir_all(&directory).unwrap();
+                path.clone()
+            };
+            symlink(target(&one, "one.toml"), &linked).unwrap();
+            let config = Config::read(&path).unwrap();
+            let mut fake = Fake::default();
+            let mut app = App::new(None, config, Some(path.clone())).with_program(quiet());
+            fake.start(&mut app);
+            assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
+            std::fs::remove_file(&linked).unwrap();
+            symlink(target(&two, "two.toml"), &linked).unwrap();
+            run_until(&mut fake, &mut app, |_, app| {
+                app.config.cursor.shape == cursor::Shape::Underline
+            });
+            // A later edit of the new target reloads too.
+            std::fs::write(file(&two, "two.toml"), "[cursor]\nshape = \"hollow\"\n").unwrap();
+            run_until(&mut fake, &mut app, |_, app| {
+                app.config.cursor.shape == cursor::Shape::Hollow
+            });
+        }
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
     fn a_config_s_directory_is_made_at_the_start_and_watched() {
         let home = std::env::temp_dir().join(format!("lokyr-app-home-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
