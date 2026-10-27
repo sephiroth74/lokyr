@@ -70,6 +70,11 @@ pub(crate) struct Pane {
     /// The grid that the program was told last, through the PTY, and when,
     /// unless it was told only as it started.
     told: (Grid, Option<Instant>),
+    /// Whether the terminal's grid changed since the program was told,
+    /// though it may be back at the grid told: a resize there and back
+    /// changes the screen, as it clears the prompt and cuts the alternate
+    /// screen, which the program must draw again.
+    changed: bool,
     /// When the program's output ended, while the pane waits for its status.
     ended: Option<Instant>,
     /// Whether the pane keeps the screen of a program that ended, or that
@@ -105,6 +110,7 @@ impl Pane {
             snapshot: Snapshot::default(),
             grid,
             told: (grid, None),
+            changed: false,
             ended: None,
             kept: false,
             through_login: matches!(program, Program::LoginShell),
@@ -153,6 +159,7 @@ impl Pane {
     pub(crate) fn resize(&mut self, grid: Grid, now: Instant) -> Option<Instant> {
         if grid != self.grid {
             self.grid = grid;
+            self.changed = true;
             if let Some(session) = &self.session {
                 let mut terminal = session.lock();
                 terminal.set_cell_size(grid.cell_width, grid.cell_height);
@@ -162,12 +169,14 @@ impl Pane {
         self.pace(now)
     }
 
-    /// Tells the program the terminal's grid, when it was told another, so
-    /// that it draws again at that size; unless it was told one within
-    /// [`RESIZE_PACE`] before `now`: then returns when to tell it.
+    /// Tells the program the terminal's grid, when it changed since it was
+    /// told, so that it draws again at that size; unless it was told one
+    /// within [`RESIZE_PACE`] before `now`: then returns when to tell it. A
+    /// grid back at the one told is told by SIGWINCH alone, as the PTY's
+    /// size, unchanged, would not signal it.
     pub(crate) fn pace(&mut self, now: Instant) -> Option<Instant> {
         let (told, at) = self.told;
-        if told == self.grid || self.kept {
+        if !self.changed || self.kept {
             return None;
         }
         if let Some(at) = at
@@ -176,9 +185,16 @@ impl Pane {
             return Some(at + RESIZE_PACE);
         }
         self.told = (self.grid, Some(now));
-        if let Some(session) = &self.session
-            && let Err(error) = session.resize_pty(self.grid.size())
-        {
+        self.changed = false;
+        let Some(session) = &self.session else {
+            return None;
+        };
+        let told = if told == self.grid {
+            session.signal_resize()
+        } else {
+            session.resize_pty(self.grid.size())
+        };
+        if let Err(error) = told {
             eprintln!("lokyr: the terminal cannot take its new size: {error}");
         }
         None
@@ -303,6 +319,70 @@ mod tests {
         // Another program's status is its own, whatever a shell in it told.
         let own = Some(Exit::Code(2));
         assert_eq!(status(own, Some(0), false), own);
+    }
+
+    /// The rows of `pane`'s screen, once its output reaches it.
+    fn rows(pane: &mut Pane) -> Vec<String> {
+        pane.update();
+        let snapshot = pane.snapshot();
+        (0..snapshot.rows())
+            .map(|row| {
+                let line = snapshot.line(row);
+                let text: String = line
+                    .cells()
+                    .iter()
+                    .map(|cell| match cell.content() {
+                        lokyr_vt_core::page::Content::Char(c) if c != '\0' => c,
+                        _ => ' ',
+                    })
+                    .collect();
+                text.trim_end().to_owned()
+            })
+            .collect()
+    }
+
+    /// Waits until `pane`'s screen has `count` rows of `text`, for a few
+    /// seconds at most.
+    fn wait_for(pane: &mut Pane, text: &str, count: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let rows = rows(pane);
+            if rows.iter().filter(|row| *row == text).count() >= count {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{count} of {text:?}: {rows:?}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn a_grid_back_at_the_size_told_signals_the_program() {
+        let grid = |columns| Grid {
+            columns,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+        // A program that writes a line at each SIGWINCH.
+        let script = "trap 'echo W' WINCH; echo ready; while :; do sleep 0.01; done";
+        let program = Program::command("/bin/sh", ["-c", script]);
+        let mut pane = Pane::spawn(&program, grid(80), &Colors::default(), Waker::new(|| {}));
+        wait_for(&mut pane, "ready", 1);
+        // A step, told at once; then back and forth within the pace, to the
+        // grid told, which the PTY's size cannot tell again.
+        let start = Instant::now();
+        assert_eq!(pane.resize(grid(81), start), None);
+        wait_for(&mut pane, "W", 1);
+        let step = Duration::from_millis(10);
+        assert!(pane.resize(grid(80), start + step).is_some());
+        let due = pane
+            .resize(grid(81), start + step * 2)
+            .expect("the pace's time");
+        assert_eq!(pane.told(), grid(81));
+        assert_eq!(pane.pace(due), None);
+        wait_for(&mut pane, "W", 2);
+        // Unchanged since, it tells nothing more.
+        assert_eq!(pane.pace(due + RESIZE_PACE), None);
     }
 
     #[test]

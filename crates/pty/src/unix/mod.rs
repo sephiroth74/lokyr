@@ -159,6 +159,23 @@ impl Pty {
         Ok(())
     }
 
+    /// Tells the program's foreground process group, through SIGWINCH,
+    /// that the terminal's size changed, without changing it: as when the
+    /// terminal was resized and back since it was last told, which
+    /// `TIOCSWINSZ` of the same size would not signal.
+    pub fn signal_resize(&self) -> std::io::Result<()> {
+        // SAFETY: the master's descriptor, which the PTY owns.
+        let group = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
+        if group <= 0 {
+            return Err(IoError::last_os_error());
+        }
+        // SAFETY: a signal to a process group, which may be gone.
+        if unsafe { libc::killpg(group, libc::SIGWINCH) } == -1 {
+            return Err(IoError::last_os_error());
+        }
+        Ok(())
+    }
+
     /// The terminal's size, in cells and in pixels.
     pub fn size(&self) -> std::io::Result<Size> {
         // SAFETY: an all-zero `winsize` is a valid value to overwrite.

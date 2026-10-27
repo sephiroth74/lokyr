@@ -265,6 +265,14 @@ impl Session {
         self.pty.resize(size)
     }
 
+    /// Tells the program that its terminal's size changed, through SIGWINCH,
+    /// without changing the PTY's: for an embedder whose grid came back to
+    /// the size that the program was told last, which the program must
+    /// draw again, as the grid's prompt or screen changed meanwhile.
+    pub fn signal_resize(&self) -> io::Result<()> {
+        self.pty.signal_resize()
+    }
+
     /// Tells the program `size` through the PTY, without resizing the grid,
     /// which the embedder resized first: one that resizes the grid at each
     /// step of a live resize tells the program at its own pace, so that it

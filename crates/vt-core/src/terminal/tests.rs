@@ -3928,6 +3928,40 @@ fn a_resize_clears_the_prompt_that_the_shell_draws_again() {
 }
 
 #[test]
+fn a_cleared_prompt_keeps_its_cursor_s_row_and_the_default_background() {
+    // A prompt of two lines, and a command typed past the narrower width.
+    let mut term = Term::new(30, 6);
+    term.feed("out\r\n\x1b]133;A\x07prompt-line-one\r\n> \x1b]133;B\x07");
+    term.feed("\x1b[41m");
+    term.feed("abcdefghijklmnopqrstuvwxy");
+    assert_eq!(term.cursor(), (27, 2, false));
+    term.terminal.resize(10, 6);
+    // The cursor keeps its row, within the width, where the shell goes up
+    // from: no row of the cleared prompt is left above the one drawn again.
+    assert_eq!(term.cursor(), (9, 2, false));
+    assert_eq!(term.screen(), ["out", "", "", "", "", ""]);
+    // The cleared rows take the default background, not the pen's red.
+    for y in 1..6 {
+        assert_eq!(term.cell(0, y).content(), Content::Char('\0'), "row {y}");
+    }
+}
+
+#[test]
+fn output_without_a_final_newline_stays_through_a_wider_screen() {
+    // `foo` without a newline, then zsh's mark of its end, which fills the
+    // row and wraps into the prompt's.
+    let mut term = Term::new(10, 6);
+    term.feed("foo%       \r");
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert!(page.row(row).has(RowFlag::SoftWrapped));
+    term.feed("\x1b]133;A\x07left\r\n> \x1b]133;B\x07ls");
+    term.terminal.resize(20, 6);
+    // The shell goes up a row from its cursor and draws its prompt again.
+    term.feed("\x1b[A\r\x1b[J\x1b]133;A\x07left\r\n> \x1b]133;B\x07ls");
+    assert_eq!(term.screen()[..3], ["foo%", "left", "> ls"]);
+}
+
+#[test]
 fn the_redraw_option_tells_what_a_resize_clears() {
     // Nothing, for a shell that draws nothing again.
     let mut term = prompted("A;redraw=0");

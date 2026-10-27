@@ -652,7 +652,7 @@ impl Terminal {
         if (cols.max(2), rows.max(1)) == (self.cols, self.rows) {
             return;
         }
-        self.clear_prompt();
+        self.clear_prompt(cols);
         self.resize_screens(cols, rows);
         self.given_cols = self.cols;
         let limit = self.scrollback_limit;
@@ -665,10 +665,19 @@ impl Terminal {
     /// as many rows above the cursor as it took when the shell drew it,
     /// which a reflow of the prompt would change, leaving the first rows of
     /// a prompt that it made taller above the one drawn again. A shell that
-    /// draws the prompt's last line alone has the cursor's line cleared,
-    /// and one that draws nothing keeps its prompt, which reflows. Only the
-    /// primary screen's prompt, and one that starts on the screen, clears.
-    fn clear_prompt(&mut self) {
+    /// draws the prompt's last line alone has the cursor's line cleared, from
+    /// the screen's first row when the line starts above it, and one that
+    /// draws nothing keeps its prompt, which reflows. Only the primary
+    /// screen's prompt clears, and of a whole prompt only one that starts on
+    /// the screen.
+    ///
+    /// The cleared rows take the default background, whatever the pen's;
+    /// the row above no longer goes on into them, as output without a final
+    /// newline does under a shell's mark of its end, so that a wider screen
+    /// does not join that output to them, which the shell's drawing would
+    /// erase; and the cursor comes within the `cols` columns that the screen
+    /// takes, so that the reflow does not wrap its empty row down.
+    fn clear_prompt(&mut self, cols: u16) {
         if self.alternate_active || self.zone == Semantic::Output {
             return;
         }
@@ -694,8 +703,20 @@ impl Terminal {
         let Some(start) = start else {
             return;
         };
+        if start > 0 {
+            self.end_soft_wrap(start - 1);
+        }
         for y in start..self.rows {
-            self.erase_in_row(y, 0..self.cols, false);
+            let width = self.cols;
+            let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+            page.erase(row, 0..width, Cell::EMPTY, false);
+            self.end_soft_wrap(y);
+        }
+        let last = cols.max(2) - 1;
+        let cursor = &mut self.screen_mut().cursor;
+        if cursor.x > last {
+            cursor.x = last;
+            cursor.pending_wrap = false;
         }
     }
 
