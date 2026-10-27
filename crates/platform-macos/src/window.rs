@@ -13,8 +13,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSEvent, NSResponder, NSTextInputClient, NSView, NSWindow,
-    NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
+    NSBackingStoreType, NSColor, NSEvent, NSResponder, NSTextInputClient, NSTitlebarSeparatorStyle,
+    NSView, NSWindow, NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSObject,
@@ -161,6 +161,14 @@ impl Window {
             None => NSColor::windowBackgroundColor(),
         };
         self.ns_window.setBackgroundColor(Some(&background));
+        // The titlebar shows the backdrop too, without the material and the
+        // line that the system draws over an opaque window's.
+        self.ns_window.setTitlebarAppearsTransparent(!opaque);
+        self.ns_window.setTitlebarSeparatorStyle(if opaque {
+            NSTitlebarSeparatorStyle::Automatic
+        } else {
+            NSTitlebarSeparatorStyle::None
+        });
         let radius = backdrop.map_or(0, |backdrop| backdrop.blur.round() as isize);
         // SAFETY: the window server's calls take its connection, a window's
         // number and a radius; a window of the process, open, is its own.

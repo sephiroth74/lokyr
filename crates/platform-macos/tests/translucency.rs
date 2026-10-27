@@ -20,9 +20,10 @@ mod probe {
 
     use crate::common;
 
-    /// Whether the window, its view and the view's layer are opaque, and
-    /// the opacity of the window's background.
-    type Look = (bool, bool, bool, f64);
+    /// Whether the window, its view and the view's layer are opaque, the
+    /// opacity of the window's background, and whether its titlebar is
+    /// transparent.
+    type Look = (bool, bool, bool, f64, bool);
 
     fn look(platform: &dyn Platform, window: WindowId) -> Look {
         let handle = platform.window_handle(window).expect("a handle");
@@ -40,6 +41,7 @@ mod probe {
             view.isOpaque(),
             layer.isOpaque(),
             background.alphaComponent(),
+            ns_window.titlebarAppearsTransparent(),
         )
     }
 
@@ -92,11 +94,13 @@ mod probe {
         let opaque = seen[0];
         assert_eq!((opaque.0, opaque.1, opaque.2), (true, true, true));
         assert!(opaque.3 > 0.0, "{seen:?}");
+        assert!(!opaque.4, "{seen:?}");
         // Translucent, blurred or not, over the backdrop's color.
         for translucent in &seen[1..3] {
-            let (window, view, layer, alpha) = *translucent;
+            let (window, view, layer, alpha, titlebar) = *translucent;
             assert_eq!((window, view, layer), (false, false, false), "{seen:?}");
             assert!((alpha - 0.8).abs() < 1e-6, "{seen:?}");
+            assert!(titlebar, "the titlebar shows the backdrop: {seen:?}");
         }
         assert_eq!(seen[3], opaque, "back as it opened");
         println!("translucency: ok");
