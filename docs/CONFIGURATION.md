@@ -25,28 +25,37 @@ Under each key's name, a small line tells the platforms where the key applies: m
 
 ### A complete example
 
+Every key that Lokyr reads, each with a value other than its default where it has one, and its other values in the comment:
+
 ```toml
 config_version = 1
 
 [font]
-family = "CaskaydiaCove NFM"
-style = "SemiBold"
-size = 22
+family = "CaskaydiaCove NFM"         # a family as Font Book shows it; SF Mono by default
+size = 22                            # points, from 4 to 200
+style = "SemiBold"                   # the face of plain text, by the font's name for it
+bold-style = "Bold"                  # the faces of bold, italic and bold italic text
+italic-style = "Italic"
+bold-italic-style = "Bold Italic"
+non-ascii-family = "Hiragino Sans"   # the family of the text past ASCII
+line-height = 1.1                    # factors of the cell, from 0.5 to 3
+cell-width = 1.0
+ligatures = false                    # true | false
 
 [cursor]
-shape = "bar"
-blink = true
-thickness = 2
+shape = "bar"                        # block | bar | underline | hollow
+blink = false                        # true | false
+thickness = 2                        # points, from 0.5 to 20
 
 [window]
-close-on-exit = "clean"
-padding-x = 6
+close-on-exit = "never"              # clean | always | never
+padding-x = 6                        # points, from 0 to 100
 padding-y = 4
-background-opacity = 0.9
-background-blur = 20
+background-opacity = 0.9             # from 0 to 1
+background-blur = 20                 # points, from 0 to 100
 
 [keyboard]
-option-as-meta = "left"
+option-as-meta = "left"              # none | left | right | both
 ```
 
 ## `config_version`

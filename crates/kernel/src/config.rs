@@ -835,6 +835,35 @@ mod tests {
         assert!(font.contains(&"non-ascii-family"));
     }
 
+    /// The complete example of the configuration's guide reads, and holds
+    /// every key that the file can have, so that the example keeps up with
+    /// the keys.
+    #[test]
+    fn the_guide_s_complete_example_reads_and_has_every_key() {
+        let guide = include_str!("../../../docs/CONFIGURATION.md");
+        let example = guide
+            .split_once("### A complete example")
+            .and_then(|(_, rest)| rest.split_once("```toml\n"))
+            .and_then(|(_, rest)| rest.split_once("```"))
+            .map(|(example, _)| example)
+            .expect("the guide has a complete example");
+        parse(example).expect("the complete example reads");
+        let document: Document<String> = example.parse().unwrap();
+        let root = document.as_table();
+        for key in keys::<Config>() {
+            assert!(root.contains_key(key), "`{key}` is in the complete example");
+        }
+        for (section, keys) in sections() {
+            let table = root[section].as_table().expect("a section");
+            for key in keys {
+                assert!(
+                    table.contains_key(key),
+                    "`{key}` of `[{section}]` is in the complete example"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_nearest_name_is_near_enough() {
         assert_eq!(distance("sise", "size"), 1);

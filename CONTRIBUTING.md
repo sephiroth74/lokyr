@@ -60,7 +60,7 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 ## The documents
 
 - **A changed decision** gets a new ADR, which supersedes the old one, whose status line says so; an accepted ADR is never rewritten. The tables of [docs/README.md](docs/README.md) and [docs/adr/README.md](docs/adr/README.md) follow.
-- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the users' guide: the platforms where it applies, in a small line under its name, `<sub>Platforms: macOS</sub>`; its values, its default, what it does, and whether it applies yet. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
+- **A key of the config** that a change adds, changes or removes is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md), the users' guide: the platforms where it applies, in a small line under its name, `<sub>Platforms: macOS</sub>`; its values, its default, what it does, and whether it applies yet. The guide's complete example holds every key, which a test of the kernel checks. The guide names no other terminal emulator; it can name the tools that help, such as vim, Font Book on macOS or GNU Stow.
 - **A changed behavior** changes the documents that describe it.
 - **Links resolve**, which `just check-links` checks.
 
