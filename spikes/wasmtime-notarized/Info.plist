@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>spike</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.sephiroth74.bolt.spike</string>
+    <string>io.github.sephiroth74.lokyr.spike</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

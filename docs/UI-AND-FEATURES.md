@@ -238,7 +238,7 @@ The default theme's terminal colors are the built-in palette of F2, with a light
   - `Device`, or missing: treated as sRGB.
 - **`(Light)` / `(Dark)` suffixes**: keys from profiles that use separate colors for light and dark mode. They become the theme's two variants.
 - **Missing keys**: sensible defaults (bold = foreground, cursor text = background, derived selection).
-- **Theme locations**: `~/.config/bolt/themes/`, or `themes` packages.
+- **Theme locations**: `~/.config/lokyr/themes/`, or `themes` packages.
 - **Other formats**: importers for Ghostty, kitty, Alacritty and base16 ship as separate plugins.
 
 ### Usage
@@ -284,9 +284,9 @@ The `core-actions` plugin:
 AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode or Aider, are recognized, and can drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
 
 - **Presence**: the pane's foreground program, by its name, from a list in the config.
-- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, its hooks call `bolt +notify`; `bolt +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
+- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, its hooks call `lokyr +notify`; `lokyr +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
 - **Where it shows**: on the pane's tab (F3), and as a notification while the window has no focus (F2).
-- **MCP** (F3b): `bolt +mcp` gives agents tools to list the panes, read them, open tabs and splits, run commands and wait for their exit codes, and type, within the scope of [SECURITY.md](SECURITY.md#mcp).
+- **MCP** (F3b): `lokyr +mcp` gives agents tools to list the panes, read them, open tabs and splits, run commands and wait for their exit codes, and type, within the scope of [SECURITY.md](SECURITY.md#mcp).
 
 ## Cursor
 

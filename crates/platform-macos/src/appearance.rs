@@ -5,7 +5,7 @@ use std::cell::Cell;
 use std::ffi::c_void;
 use std::rc::Weak;
 
-use bolt_platform_core::{AppEvent, Appearance};
+use lokyr_platform_core::{AppEvent, Appearance};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};

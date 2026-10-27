@@ -1,6 +1,6 @@
 [package]
-name = "bolt-plugin-host-luau"
-description = "Runs third-party Bolt plugins written in Luau"
+name = "lokyr-plugin-host-luau"
+description = "Runs third-party Lokyr plugins written in Luau"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-plugin-sdk.workspace = true
+lokyr-plugin-sdk.workspace = true
 
 [lints]
 workspace = true

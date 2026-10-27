@@ -1,8 +1,8 @@
-//! `bolt-record`: runs a program in a pseudo-terminal, as a script drives
+//! `lokyr-record`: runs a program in a pseudo-terminal, as a script drives
 //! it, and writes what the program shows as an asciicast, for tests to
 //! replay.
 //!
-//! `bolt-record SCRIPT...` writes each script's recording next to it, with
+//! `lokyr-record SCRIPT...` writes each script's recording next to it, with
 //! the extension `cast`. The program runs in a headless terminal, which
 //! answers its queries as the session's does; it runs with no environment
 //! but the one that every recording has and the script's, in a directory of
@@ -18,11 +18,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail};
-use bolt_replay::harness::{
+use lokyr_replay::harness::{
     Event, Harness, HarnessOptions, line_around, lines, reach, screen_lines,
 };
-use bolt_vt_core::parser::{Handler, Limits, Params, Parser, StringEnd};
-use bolt_vt_core::terminal::{Cursor, Options, Terminal};
+use lokyr_vt_core::parser::{Handler, Limits, Params, Parser, StringEnd};
+use lokyr_vt_core::terminal::{Cursor, Options, Terminal};
 use unicode_normalization::UnicodeNormalization;
 
 use cast::Cast;
@@ -38,7 +38,7 @@ fn main() -> ExitCode {
     let scripts: Vec<String> = std::env::args().skip(1).collect();
     if scripts.is_empty() || scripts.iter().any(|arg| arg == "-h" || arg == "--help") {
         println!(
-            "Usage: bolt-record SCRIPT...\n\n\
+            "Usage: lokyr-record SCRIPT...\n\n\
              Runs the program of each script in a pseudo-terminal, as the script drives it,\n\
              and writes what it shows next to the script, as an asciicast (.cast)."
         );
@@ -84,11 +84,11 @@ struct Home {
 
 /// What the homes' names start with, before the script's name and the
 /// recorder's process id.
-const HOME_PREFIX: &str = "bolt-record-";
+const HOME_PREFIX: &str = "lokyr-record-";
 
 /// The file that marks a directory as a recorder's, next to the program's
 /// home, where the program does not look.
-const MARK: &str = ".bolt-record";
+const MARK: &str = ".lokyr-record";
 
 impl Home {
     fn new(name: &str) -> Result<Self> {

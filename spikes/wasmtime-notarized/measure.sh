@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 runs="${1:-10}"
 out="build/measure"
-cache="${TMPDIR:-/tmp}/bolt-spike"
+cache="${TMPDIR:-/tmp}/lokyr-spike"
 rm -rf "$out"
 mkdir -p "$out"
 

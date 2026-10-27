@@ -1,7 +1,7 @@
 //! vtebench's scenarios (<https://github.com/alacritty/vtebench>), whose
 //! payloads its scripts print, rebuilt as they print them at 120 by 40, with
 //! the data that they read from a checkout of vtebench, and the line feeds
-//! that a PTY turns into CR LF. `bolt-throughput` times them, and the
+//! that a PTY turns into CR LF. `lokyr-throughput` times them, and the
 //! `instructions` benchmark counts the instructions that the VT core takes
 //! for them.
 

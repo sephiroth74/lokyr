@@ -6,10 +6,10 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell as Count;
 
-use bolt_vt_core::page::{Capacity, Cell, Content, Page, PageList, Rgb, Scrollback, TableFull};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
-use bolt_vt_core::unicode::Normalization;
+use lokyr_vt_core::page::{Capacity, Cell, Content, Page, PageList, Rgb, Scrollback, TableFull};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
+use lokyr_vt_core::unicode::Normalization;
 
 /// The system allocator, counting the allocations of each thread and the
 /// bytes that they hold, so that tests that run in parallel do not count

@@ -1,6 +1,6 @@
 [package]
-name = "bolt-pkg-model"
-description = "Package formats shared by Bolt, Crossbow and the registry"
+name = "lokyr-pkg-model"
+description = "Package formats shared by Lokyr, Sleip and the registry"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -6,7 +6,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
-use bolt_platform_core::{
+use lokyr_platform_core::{
     Backdrop, Ime, PixelSize, Point, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;

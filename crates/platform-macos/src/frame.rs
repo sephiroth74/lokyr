@@ -4,7 +4,7 @@
 use std::cell::Cell;
 use std::rc::Weak;
 
-use bolt_platform_core::{WindowEvent, WindowId};
+use lokyr_platform_core::{WindowEvent, WindowId};
 use objc2::rc::Retained;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::NSView;

@@ -3,13 +3,13 @@
 
 use std::time::{Duration, Instant};
 
-use bolt_kernel::config::CloseOnExit;
-use bolt_platform_core::Waker;
-use bolt_pty::{Exit, Program, Size};
-use bolt_session::{Options, Session};
-use bolt_vt_core::input::{KeyEvent, KeyOptions};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{self, Colors, KeyboardFlags, Snapshot, Terminal};
+use lokyr_kernel::config::CloseOnExit;
+use lokyr_platform_core::Waker;
+use lokyr_pty::{Exit, Program, Size};
+use lokyr_session::{Options, Session};
+use lokyr_vt_core::input::{KeyEvent, KeyOptions};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{self, Colors, KeyboardFlags, Snapshot, Terminal};
 
 /// The `TERM` that programs take, which remote hosts know too.
 const TERM: &str = "xterm-256color";
@@ -98,7 +98,7 @@ impl Pane {
     /// whose changes wake `waker`; or, when the program cannot start, a pane
     /// whose screen tells why.
     pub(crate) fn spawn(program: &Program, grid: Grid, colors: &Colors, waker: Waker) -> Self {
-        let mut pty = bolt_pty::Options::new(program.clone(), TERM);
+        let mut pty = lokyr_pty::Options::new(program.clone(), TERM);
         pty.size = grid.size();
         let mut pane = Self {
             session: None,
@@ -119,7 +119,7 @@ impl Pane {
                 pane.session = Some(session);
             }
             Err(error) => {
-                eprintln!("bolt: the program cannot start: {error}");
+                eprintln!("lokyr: the program cannot start: {error}");
                 let mut terminal =
                     Terminal::new(grid.columns, grid.rows, terminal::Options::default());
                 terminal.set_default_colors(colors.clone());
@@ -179,7 +179,7 @@ impl Pane {
         if let Some(session) = &self.session
             && let Err(error) = session.resize_pty(self.grid.size())
         {
-            eprintln!("bolt: the terminal cannot take its new size: {error}");
+            eprintln!("lokyr: the terminal cannot take its new size: {error}");
         }
         None
     }
@@ -235,7 +235,7 @@ impl Pane {
             Ok(None) if now < since + EXIT_WAIT => return None,
             Ok(None) => None,
             Err(error) => {
-                eprintln!("bolt: the program's status cannot be read: {error}");
+                eprintln!("lokyr: the program's status cannot be read: {error}");
                 None
             }
         };

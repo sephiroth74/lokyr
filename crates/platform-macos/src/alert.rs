@@ -3,7 +3,7 @@
 use std::rc::Weak;
 
 use block2::RcBlock;
-use bolt_platform_core::{Alert, AlertId, AlertStyle};
+use lokyr_platform_core::{Alert, AlertId, AlertStyle};
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSModalResponse, NSWindow};

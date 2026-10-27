@@ -24,7 +24,7 @@ const SIZE: Size = Size {
 fn menu() -> MainMenu {
     MainMenu {
         menus: vec![Menu {
-            title: "Bolt".to_owned(),
+            title: "Lokyr".to_owned(),
             items: vec![
                 MenuItem::Command {
                     title: "New Window".to_owned(),
@@ -39,7 +39,7 @@ fn menu() -> MainMenu {
                 },
                 MenuItem::Separator,
                 MenuItem::Command {
-                    title: "Quit Bolt".to_owned(),
+                    title: "Quit Lokyr".to_owned(),
                     command: "quit".to_owned(),
                     shortcut: None,
                 },

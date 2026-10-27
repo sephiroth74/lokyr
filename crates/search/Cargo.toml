@@ -1,5 +1,5 @@
 [package]
-name = "bolt-search"
+name = "lokyr-search"
 description = "Literal and regex search over the terminal grid"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-vt-core.workspace = true
+lokyr-vt-core.workspace = true
 memchr.workspace = true
 regex-automata.workspace = true
 

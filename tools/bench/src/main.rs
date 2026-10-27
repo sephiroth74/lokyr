@@ -1,7 +1,7 @@
-//! Measurement tools for the Bolt performance budgets.
+//! Measurement tools for the Lokyr performance budgets.
 //!
 //! Probes for memory footprint, idle wakeups and startup time, usable on
-//! Bolt and on other terminals for comparison.
+//! Lokyr and on other terminals for comparison.
 
 // `deny` rather than `forbid`: reading other processes' statistics and
 // listing windows go through C APIs, which are `unsafe`, and each of those
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
 
 fn print_help() {
     println!(
-        "Usage: bolt-bench <probe> [options]\n\n\
+        "Usage: lokyr-bench <probe> [options]\n\n\
          Probes (macOS):\n  \
          memory --pid <pid> [--interval <ms>] [--duration <s>]\n      \
          sample the memory footprint of a process, with and without its GPU\n      \

@@ -1,14 +1,14 @@
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
 
-use bolt_pty::Program;
-use bolt_vt_core::input::{Key, KeyAction, Mods};
+use lokyr_pty::Program;
+use lokyr_vt_core::input::{Key, KeyAction, Mods};
 
 use super::*;
 use crate::queue::REPLY_BYTES;
 
 fn options(program: &str, args: &[&str]) -> Options {
-    Options::new(bolt_pty::Options::new(
+    Options::new(lokyr_pty::Options::new(
         Program::command(program, args.iter().copied()),
         "xterm-256color",
     ))
@@ -295,7 +295,7 @@ fn an_update_that_an_exited_program_left_ends_with_its_output() {
 
 #[test]
 fn a_reply_never_lands_inside_a_bracketed_paste() {
-    let out = std::env::temp_dir().join(format!("bolt-paste-{}", std::process::id()));
+    let out = std::env::temp_dir().join(format!("lokyr-paste-{}", std::process::id()));
     let _ = std::fs::remove_file(&out);
     // Bracketed paste on, raw mode, what is typed saved to `out`, and a
     // stream of DA1 queries, as a program that polls the terminal sends.
@@ -456,8 +456,8 @@ fn slow_renderer(
     })
 }
 
-fn line_text(line: &bolt_vt_core::terminal::Line) -> String {
-    use bolt_vt_core::page::Content;
+fn line_text(line: &lokyr_vt_core::terminal::Line) -> String {
+    use lokyr_vt_core::page::Content;
     line.cells()
         .iter()
         .map(|cell| match cell.content() {
@@ -662,7 +662,7 @@ fn errors_leave_their_causes_to_their_sources() {
     let source = std::error::Error::source(&error).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no threads"));
     // The PTY's error, as the PTY tells it.
-    let error = Error::from(bolt_pty::Error::Open(io::Error::other("no terminals")));
+    let error = Error::from(lokyr_pty::Error::Open(io::Error::other("no terminals")));
     assert_eq!(error.to_string(), "cannot open a pseudo-terminal");
     let source = std::error::Error::source(&error).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no terminals"));

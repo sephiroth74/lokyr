@@ -14,7 +14,7 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use bolt_vt_core::page::{PageList, PinId, Position};
+use lokyr_vt_core::page::{PageList, PinId, Position};
 
 /// Which way a search goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

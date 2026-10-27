@@ -16,7 +16,7 @@ mod probe {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
     };
     use objc2_app_kit::NSView;
@@ -223,7 +223,7 @@ mod probe {
             paced_from: None,
             requested_at: None,
         };
-        bolt_platform_macos::run(probe).expect("the application runs");
+        lokyr_platform_macos::run(probe).expect("the application runs");
 
         let seen = seen.borrow();
         eprintln!("run_loop: {seen:?}");

@@ -6,10 +6,10 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use bolt_search::{Case, Direction, Query};
-use bolt_vt_core::page::{Position, Scrollback};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_search::{Case, Direction, Query};
+use lokyr_vt_core::page::{Position, Scrollback};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// The system's allocator, counting the bytes in use and their peak.
 struct Counting;
@@ -62,7 +62,7 @@ fn a_long_line_takes_a_few_bytes_a_cell() {
     let before = IN_USE.load(Ordering::Relaxed);
     PEAK.store(before, Ordering::Relaxed);
     let rows = terminal.screen_rows_mut();
-    let found = bolt_search::find(
+    let found = lokyr_search::find(
         rows,
         &query,
         from,
@@ -95,10 +95,11 @@ fn a_kept_match_takes_a_few_dozen_bytes() {
     let total = rows.total_rows();
     let before = IN_USE.load(Ordering::Relaxed);
     let matches =
-        bolt_search::find_all(rows, &query, 0..total, usize::MAX, &AtomicBool::new(false)).unwrap();
+        lokyr_search::find_all(rows, &query, 0..total, usize::MAX, &AtomicBool::new(false))
+            .unwrap();
     assert_eq!(matches.pinned.len(), lines);
     let held = IN_USE.load(Ordering::Relaxed) - before;
-    let results = matches.pinned.capacity() * size_of::<bolt_search::Match>();
+    let results = matches.pinned.capacity() * size_of::<lokyr_search::Match>();
     let per_match = (held - results) / lines;
     eprintln!("{per_match} bytes a match, besides the results");
     // Two pins of 20 bytes in the list's slab, which grows by doubling,

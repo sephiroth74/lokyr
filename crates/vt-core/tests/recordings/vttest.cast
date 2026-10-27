@@ -1,4 +1,4 @@
-{"bolt":{"window_ops":true},"env":{"TERM":"xterm-256color"},"height":24,"version":2,"width":80}
+{"lokyr":{"window_ops":true},"env":{"TERM":"xterm-256color"},"height":24,"version":2,"width":80}
 [0.116,"o","\u001b%@"]
 [0.116,"o","\u001b[0c"]
 [0.116,"i","\u001b[?62;22c"]

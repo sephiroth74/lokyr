@@ -1,8 +1,8 @@
 //! The platform's keys, as the terminal's encoder takes them.
 
-use bolt_kernel::config::OptionAsMeta;
-use bolt_platform_core::{KeyCode, KeyEvent, KeyState};
-use bolt_vt_core::input::{self, Key, KeyAction, KeyOptions, Keypad, Media, ModifierKey, Mods};
+use lokyr_kernel::config::OptionAsMeta;
+use lokyr_platform_core::{KeyCode, KeyEvent, KeyState};
+use lokyr_vt_core::input::{self, Key, KeyAction, KeyOptions, Keypad, Media, ModifierKey, Mods};
 
 /// The key options of `option_as_meta`: which Option keys act as Meta.
 pub(crate) fn options(option_as_meta: OptionAsMeta) -> KeyOptions {
@@ -117,9 +117,9 @@ fn numpad_digit(code: KeyCode) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use bolt_platform_core::Modifiers;
-    use bolt_vt_core::input::encode_key;
-    use bolt_vt_core::terminal::{InputModes, KeyboardFlags};
+    use lokyr_platform_core::Modifiers;
+    use lokyr_vt_core::input::encode_key;
+    use lokyr_vt_core::terminal::{InputModes, KeyboardFlags};
 
     use super::*;
 

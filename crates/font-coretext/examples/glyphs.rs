@@ -4,7 +4,7 @@
 //! Size, on a display of a scale of 1.
 //!
 //! ```text
-//! cargo run -p bolt-font-coretext --example glyphs -- "CaskaydiaCove NFM" 22 SemiBold 1 glyphs.bmp
+//! cargo run -p lokyr-font-coretext --example glyphs -- "CaskaydiaCove NFM" 22 SemiBold 1 glyphs.bmp
 //! ```
 
 use std::fs;
@@ -128,8 +128,10 @@ impl Image {
 
 #[cfg(target_os = "macos")]
 fn draw(family: &str, points: f32, style: Option<&str>, scale: f32) -> Result<Image, String> {
-    use bolt_font_coretext::CoreText;
-    use bolt_text_core::{BitmapFormat, CellMetrics, FontBackend, FontConfig, Name, resolve_faces};
+    use lokyr_font_coretext::CoreText;
+    use lokyr_text_core::{
+        BitmapFormat, CellMetrics, FontBackend, FontConfig, Name, resolve_faces,
+    };
 
     let mut backend = CoreText::new();
     let name = |name: &str| Name::try_from(name.to_owned());

@@ -1,5 +1,5 @@
 [package]
-name = "bolt-vt-core"
+name = "lokyr-vt-core"
 description = "Terminal emulation core: escape-sequence parser, terminal state and paged grid"
 version.workspace = true
 edition.workspace = true

@@ -22,9 +22,9 @@ use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::Processor;
 use anyhow::{Context, Result, bail};
-use bolt_differential::vtebench::{COLS, READ, ROWS, Scenario, onlcr, samples, scenarios};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_differential::vtebench::{COLS, READ, ROWS, Scenario, onlcr, samples, scenarios};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// How many samples a run of a scenario times.
 const SAMPLES: usize = 8;
@@ -63,8 +63,8 @@ fn run() -> Result<()> {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage: bolt-throughput [--vtebench <checkout>] [--runs <n>] [<file>...]\n       \
-                     bolt-throughput --write-cat <path>\n\n  \
+                    "usage: lokyr-throughput [--vtebench <checkout>] [--runs <n>] [<file>...]\n       \
+                     lokyr-throughput --write-cat <path>\n\n  \
                      --vtebench <checkout>  measure vtebench's scenarios, with the data of that checkout\n  \
                      --runs <n>             how many runs each median takes, 5 by default\n  \
                      --write-cat <path>     write a file of 1 GiB to measure: the repository's Rust\n                         \
@@ -89,26 +89,26 @@ fn run() -> Result<()> {
         for scenario in scenarios(&dir)? {
             let samples = samples(&scenario.payload);
             let bytes = SAMPLES * samples.len();
-            let (bolt, alacritty) = medians(
+            let (lokyr, alacritty) = medians(
                 runs,
-                || time_scenario(&mut BoltCore::new(), &scenario, &samples),
+                || time_scenario(&mut LokyrCore::new(), &scenario, &samples),
                 || time_scenario(&mut AlacrittyCore::new(), &scenario, &samples),
             );
-            row(&mut table, scenario.name, bytes, bolt, alacritty);
+            row(&mut table, scenario.name, bytes, lokyr, alacritty);
         }
     }
     for file in files {
         let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
-        let (bolt, alacritty) = medians(
+        let (lokyr, alacritty) = medians(
             runs,
-            || time_bytes(&mut BoltCore::new(), &bytes),
+            || time_bytes(&mut LokyrCore::new(), &bytes),
             || time_bytes(&mut AlacrittyCore::new(), &bytes),
         );
         let name = file.file_name().map_or_else(
             || file.display().to_string(),
             |name| name.to_string_lossy().into_owned(),
         );
-        row(&mut table, &name, bytes.len(), bolt, alacritty);
+        row(&mut table, &name, bytes.len(), lokyr, alacritty);
     }
     print!("{table}");
     Ok(())
@@ -119,12 +119,12 @@ trait Core {
     fn feed(&mut self, bytes: &[u8]);
 }
 
-struct BoltCore {
+struct LokyrCore {
     parser: Parser,
     terminal: Terminal,
 }
 
-impl BoltCore {
+impl LokyrCore {
     fn new() -> Self {
         Self {
             parser: Parser::new(),
@@ -133,7 +133,7 @@ impl BoltCore {
     }
 }
 
-impl Core for BoltCore {
+impl Core for LokyrCore {
     fn feed(&mut self, bytes: &[u8]) {
         self.parser.advance(&mut self.terminal, bytes);
     }
@@ -215,12 +215,12 @@ fn median(mut rates: Vec<f64>) -> f64 {
     rates[rates.len() / 2]
 }
 
-fn row(table: &mut String, name: &str, bytes: usize, bolt: f64, alacritty: f64) {
+fn row(table: &mut String, name: &str, bytes: usize, lokyr: f64, alacritty: f64) {
     let mib = bytes as f64 / (1024.0 * 1024.0);
     let _ = writeln!(
         table,
-        "| {name} | {mib:.1} MiB | {bolt:.1} MiB/s | {alacritty:.1} MiB/s | {:.2} |",
-        bolt / alacritty
+        "| {name} | {mib:.1} MiB | {lokyr:.1} MiB/s | {alacritty:.1} MiB/s | {:.2} |",
+        lokyr / alacritty
     );
 }
 

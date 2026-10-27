@@ -35,8 +35,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use bolt_text_core::FontConfig;
-use bolt_ui_core::cursor::CursorConfig;
+use lokyr_text_core::FontConfig;
+use lokyr_ui_core::cursor::CursorConfig;
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 use toml_edit::{Document, Item, TableLike};
@@ -45,7 +45,7 @@ use toml_edit::{Document, Item, TableLike};
 pub const VERSION: i64 = 1;
 
 /// The app's directory in the user's config directory.
-const DIRECTORY: &str = "bolt";
+const DIRECTORY: &str = "lokyr";
 
 /// The config file's name.
 const FILE: &str = "config.toml";
@@ -494,8 +494,8 @@ fn keys<T: for<'de> Deserialize<'de>>() -> &'static [&'static str] {
 
 #[cfg(test)]
 mod tests {
-    use bolt_text_core::{Factor, Name, Size};
-    use bolt_ui_core::cursor::{Shape, Thickness};
+    use lokyr_text_core::{Factor, Name, Size};
+    use lokyr_ui_core::cursor::{Shape, Thickness};
 
     use super::*;
 
@@ -752,7 +752,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_the_defaults_and_an_unreadable_one_an_error() {
-        let directory = std::env::temp_dir().join(format!("bolt-config-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("lokyr-config-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         assert_eq!(
             Config::read(&directory.join("missing.toml")),
@@ -793,11 +793,11 @@ mod tests {
         let home = Some(PathBuf::from("/Users/me"));
         assert_eq!(
             path_in(None, home.clone()),
-            Some(PathBuf::from("/Users/me/.config/bolt/config.toml"))
+            Some(PathBuf::from("/Users/me/.config/lokyr/config.toml"))
         );
         assert_eq!(
             path_in(Some("/tmp/xdg".into()), home.clone()),
-            Some(PathBuf::from("/tmp/xdg/bolt/config.toml"))
+            Some(PathBuf::from("/tmp/xdg/lokyr/config.toml"))
         );
         // A relative or empty one is ignored.
         assert_eq!(

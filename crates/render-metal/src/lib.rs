@@ -10,7 +10,7 @@ mod renderer;
 
 pub use renderer::MetalRenderer;
 
-use bolt_render_core::Color;
+use lokyr_render_core::Color;
 use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};

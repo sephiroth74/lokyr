@@ -60,7 +60,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp Info.plist "$app/Contents/Info.plist"
 plutil -replace CFBundleName -string "$name" "$app/Contents/Info.plist"
-plutil -replace CFBundleIdentifier -string "io.github.sephiroth74.bolt.spike.$variant" "$app/Contents/Info.plist"
+plutil -replace CFBundleIdentifier -string "io.github.sephiroth74.lokyr.spike.$variant" "$app/Contents/Info.plist"
 cp "$target_dir/release/spike" "$app/Contents/MacOS/spike"
 cp "${resources[@]}" "$app/Contents/Resources/"
 

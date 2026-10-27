@@ -9,7 +9,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId,
     };
 
@@ -79,7 +79,7 @@ mod probe {
             window: None,
             frames: 0,
         };
-        bolt_platform_macos::run(probe).expect("the application runs");
+        lokyr_platform_macos::run(probe).expect("the application runs");
         let seen = seen.borrow();
         assert_eq!(seen.frames, Some(1), "{seen:?}");
         println!("frame_requests: ok");

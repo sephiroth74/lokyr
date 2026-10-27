@@ -10,7 +10,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Handler, KeyCode, KeyEvent, KeyState, Platform, Size, WindowAttributes,
         WindowEvent, WindowId,
     };
@@ -110,7 +110,7 @@ mod probe {
             keys: Rc::clone(&keys),
             sent: false,
         };
-        bolt_platform_macos::run(probe).expect("the application runs");
+        lokyr_platform_macos::run(probe).expect("the application runs");
         let keys = keys.borrow();
         let seen: Vec<(KeyCode, KeyState, &str, &str, &str)> = keys
             .iter()

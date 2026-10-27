@@ -1,5 +1,5 @@
 [package]
-name = "bolt-fuzz"
+name = "lokyr-fuzz"
 description = "Fuzz targets, run with cargo-fuzz on a nightly toolchain"
 version = "0.0.0"
 edition = "2024"
@@ -11,8 +11,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4.13"
-bolt-vt-core = { path = "../crates/vt-core" }
-bolt-differential = { path = "../tools/differential" }
+lokyr-vt-core = { path = "../crates/vt-core" }
+lokyr-differential = { path = "../tools/differential" }
 
 [[bin]]
 name = "parser"

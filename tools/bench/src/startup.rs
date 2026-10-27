@@ -1,4 +1,4 @@
-//! `bolt-bench startup`: times how long an app takes to show its first
+//! `lokyr-bench startup`: times how long an app takes to show its first
 //! window.
 //!
 //! Each run launches the app through LaunchServices, as the Dock does, then

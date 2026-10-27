@@ -12,9 +12,9 @@
 
 use std::time::{Duration, Instant};
 
-use bolt_render_core::CursorShape;
-use bolt_text_core::CellMetrics;
-use bolt_vt_core::terminal::{self, SnapshotCursor};
+use lokyr_render_core::CursorShape;
+use lokyr_text_core::CellMetrics;
+use lokyr_vt_core::terminal::{self, SnapshotCursor};
 use serde::Deserialize;
 
 /// How long the blinking cursor stays on, then off.
@@ -187,7 +187,7 @@ impl Blink {
 
 #[cfg(test)]
 mod tests {
-    use bolt_vt_core::terminal::CursorStyle;
+    use lokyr_vt_core::terminal::CursorStyle;
 
     use super::*;
 

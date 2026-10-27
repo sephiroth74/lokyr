@@ -1,11 +1,11 @@
-# The terminfo entry of Bolt, which XTGETTCAP answers from too.
+# The terminfo entry of Lokyr, which XTGETTCAP answers from too.
 #
-# It is xterm-256color as ncurses 6.0 describes it, without what Bolt does
+# It is xterm-256color as ncurses 6.0 describes it, without what Lokyr does
 # not do: printing (mc0, mc4, mc5, mc5i), meta mode (smm, rmm) and memory
 # lock (meml, memu). Backspace sends
 # DEL (kbs), Se restores the cursor style that the user chose, and kmous and
 # XM ask for SGR mouse reports, which X10's stop at column 223. Then come
-# the extensions that Bolt supports, as ncurses, tmux and other terminals
+# the extensions that Lokyr supports, as ncurses, tmux and other terminals
 # name them. RGB is left out: with 256 colors, ncurses would read it as
 # direct color with 3, 3 and 2 bits; Tc and setrgbf tell programs that 24-bit
 # color works.
@@ -17,7 +17,7 @@
 # are written.
 #
 # `cargo xtask terminfo` compiles it.
-xterm-bolt|bolt|Bolt terminal emulator,
+xterm-lokyr|lokyr|Lokyr terminal emulator,
 # Booleans.
 	OTbs,
 	am,
@@ -268,7 +268,7 @@ xterm-bolt|bolt|Bolt terminal emulator,
 	kUP5=\E[1;5A,
 	kUP6=\E[1;6A,
 	kUP7=\E[1;7A,
-# Extensions that Bolt adds: bracketed paste, focus events, SGR mouse
+# Extensions that Lokyr adds: bracketed paste, focus events, SGR mouse
 # reports, overline and strikethrough, styled and colored underlines,
 # 24-bit color and synchronized updates.
 	BD=\E[?2004l,

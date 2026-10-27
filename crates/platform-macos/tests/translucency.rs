@@ -10,7 +10,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Backdrop, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
@@ -89,7 +89,7 @@ mod probe {
     pub fn main() {
         common::deadline("translucency", 20);
         let seen = Rc::new(RefCell::new(Vec::new()));
-        bolt_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
+        lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
         let opaque = seen[0];
         assert_eq!((opaque.0, opaque.1, opaque.2), (true, true, true));

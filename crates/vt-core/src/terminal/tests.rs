@@ -2448,7 +2448,7 @@ fn xtversion_reports_the_name_and_version() {
     let mut term = Term::new(10, 1);
     term.feed("\x1b[>q\x1b[>1q");
     let version = env!("CARGO_PKG_VERSION");
-    assert_eq!(replies(&mut term), format!("\x1bP>|bolt {version}\x1b\\"));
+    assert_eq!(replies(&mut term), format!("\x1bP>|lokyr {version}\x1b\\"));
 }
 
 #[test]
@@ -2659,7 +2659,7 @@ fn decrqss_does_not_echo_what_it_does_not_know() {
 #[test]
 fn xtgettcap_reports_capabilities_by_name() {
     let options = Options {
-        term: "xterm-bolt".to_owned(),
+        term: "xterm-lokyr".to_owned(),
         ..Options::default()
     };
     let mut term = Term::with(10, 1, options);
@@ -2669,7 +2669,7 @@ fn xtgettcap_reports_capabilities_by_name() {
         replies(&mut term),
         format!(
             "\x1bP1+r544E={}\x1b\\\x1bP1+r436F={}\x1b\\\x1bP1+r524742={}\x1b\\\x1bP0+r5858\x1b\\",
-            hex("xterm-bolt"),
+            hex("xterm-lokyr"),
             hex("256"),
             hex("8/8/8")
         )
@@ -2693,7 +2693,7 @@ fn xtgettcap_reports_capabilities_by_name() {
             hex("colors"),
             hex("256"),
             hex("name"),
-            hex("xterm-bolt"),
+            hex("xterm-lokyr"),
             hex("smm"),
         )
     );
@@ -2709,7 +2709,7 @@ fn xtgettcap_reports_capabilities_by_name() {
 #[test]
 fn ris_keeps_what_the_embedder_configured() {
     let options = Options {
-        term: "xterm-bolt".to_owned(),
+        term: "xterm-lokyr".to_owned(),
         title_reports: true,
         ..Options::default()
     };
@@ -2720,7 +2720,7 @@ fn ris_keeps_what_the_embedder_configured() {
     term.feed("\x1b[22t\x1bc\x1b[16t\x1b[21t\x1bP+q544E\x1b\\\x1b[23t");
     let reply = replies(&mut term);
     assert!(reply.starts_with("\x1b[6;16;8t\x1b]l\x1b\\"), "{reply:?}");
-    assert!(reply.ends_with("=787465726D2D626F6C74\x1b\\"));
+    assert!(reply.ends_with("=787465726D2D6C6F6B7972\x1b\\"));
     assert_eq!(term.terminal.title(), "", "RIS dropped the title stack too");
 }
 

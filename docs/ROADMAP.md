@@ -11,11 +11,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Phase | Contents | Exit criteria | Duration |
 |---|---|---|---|
 | F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
-| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `bolt-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
+| F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs | Every must-have requirement in place | 10–14 weeks |
-| F3b MCP and agents | IPC and the remote CLI, the MCP server `bolt +mcp` and its tools, the agents' hooks | Agents drive panes over MCP, within their scope | 4–5 weeks |
-| F4 Plugin ecosystem | Luau host, Luau API, Crossbow, registry v0 | Publishing and installing work end to end | 8–10 weeks |
+| F3b MCP and agents | IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks | Agents drive panes over MCP, within their scope | 4–5 weeks |
+| F4 Plugin ecosystem | Luau host, Luau API, Sleip, registry v0 | Publishing and installing work end to end | 8–10 weeks |
 | F5a Shell integration and blocks | OSC 133, prompt jumping, Warp-style blocks, ssh integration | Verified in zsh, bash and fish, including over ssh | 4–6 weeks |
 | F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
@@ -43,7 +43,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 - **`vt-core`**: parser, state, paged grid, scrollback, reflow, Unicode, input encoding.
 - **Other crates**: `pty`, `session` and the `search` engine.
-- **`bolt-replay`** plus the test battery:
+- **`lokyr-replay`** plus the test battery:
   - golden tests from recorded sessions;
   - esctest and vttest;
   - differential tests against `alacritty_terminal`;
@@ -98,16 +98,16 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 ### F3b — MCP and agents
 
-- **IPC and the remote CLI** (`bolt cli …`), moved from F5b: the socket and its checks of [SECURITY.md](SECURITY.md#ipc).
-- **The MCP server**: `bolt +mcp`, over stdio, which the agent starts and which talks to the app through the socket; the app opens no port ([ADR 0017](adr/0017-mcp-and-agents.md)).
+- **IPC and the remote CLI** (`lokyr cli …`), moved from F5b: the socket and its checks of [SECURITY.md](SECURITY.md#ipc).
+- **The MCP server**: `lokyr +mcp`, over stdio, which the agent starts and which talks to the app through the socket; the app opens no port ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **Its tools**: the windows, tabs and panes; a pane's screen and scrollback; a tab or a split that runs a command; the command's end and its exit code (OSC 133); text and keys sent to a pane; the working directory.
 - **An agent's scope**: its own pane and the panes that it opened; another pane after the user's confirmation; the `[mcp]` section of the config ([SECURITY.md](SECURITY.md#mcp)).
-- **The agents' hooks**: `bolt +notify`, which they call for an exact state, and `bolt +agent-hooks <agent>`, which prints the lines that their config takes.
+- **The agents' hooks**: `lokyr +notify`, which they call for an exact state, and `lokyr +agent-hooks <agent>`, which prints the lines that their config takes.
 
 **Exit**:
 - Claude Code and Codex open a pane over MCP, run a command in it, and read its output and its exit code;
 - an agent that reaches outside its scope gets the user's confirmation first;
-- `bolt cli` lists and drives the panes;
+- `lokyr cli` lists and drives the panes;
 - budgets green.
 
 ### F4 — Plugin ecosystem
@@ -117,15 +117,15 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - `plugin-host-luau`, with one VM per plugin, capabilities, the memory limit and the watchdog;
   - the Luau front end and its type definitions, generated from the Rust types;
   - the conformance suite, and the hostile plugins in CI.
-- **Crossbow**:
+- **Sleip**:
   - `new`, `check`, `test`, `dev`;
   - `add` from a path, from git, and then from the registry;
   - the shared `pkg-model` formats.
-- **`plugin-manager` plugin**: the in-app UI for Crossbow.
+- **`plugin-manager` plugin**: the in-app UI for Sleip.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors.
 
 **Exit**:
-- the `crossbow new → check → dev` loop works;
+- the `sleip new → check → dev` loop works;
 - a published plugin installs on another Mac and activates without a restart;
 - the hostile test plugins are stopped.
 
@@ -194,7 +194,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 |---|---|
 | 0.1 | macOS MVP (F3) |
 | 0.2 | MCP and agents (F3b) |
-| 0.3 | Luau plugins and Crossbow (F4) |
+| 0.3 | Luau plugins and Sleip (F4) |
 | 0.4–0.6 | F5a, F5b, F5c |
 | 1.0 | macOS only. Stable plugin API 1.0, complete docs, no open critical bug for three months |
 | 1.x | Linux (F7), registry v1 |
@@ -226,7 +226,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | `crates/pty/src/{lib,unix}.rs` | PTY and fork+exec |
 | `crates/session/src/{lib,io,snapshot}.rs` | I/O thread and snapshots |
 | `crates/search/src/{lib,literal,regex}.rs` | Search engine |
-| `tools/replay/src/main.rs` | `bolt-replay` |
+| `tools/replay/src/main.rs` | `lokyr-replay` |
 | `fuzz/fuzz_targets/parser.rs` | First fuzz target |
 | `crates/vt-core/tests/recordings/` | Recorded sessions and their `insta` snapshots |
 
@@ -237,11 +237,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 ([F2-51](tasks/F2-macos-single-pane.md#f2-51--the-default-font)) |
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
-| How `crossbow check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
+| How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
-| The terminal's final name, with the package manager's already Shard ([ADR 0016](adr/0016-new-names.md)) | By the end of F2 ([F2-59](tasks/F2-macos-single-pane.md#f2-59--exit-review-and-f3-breakdown)) |
-| The registry's domain, which follows the terminal's name ([ADR 0016](adr/0016-new-names.md)) | With the name; bought before F4 |
+| Buying the domains of [ADR 0018](adr/0018-names-lokyr-and-sleip.md): `lokyr.dev`, `lokyr.sh`, `lokyr.app`, and the registry's, `pkg.lokyr.dev` | Before F4 |
+| Lokyr's and Sleip's marks, in the US, Europe and elsewhere, checked by hand ([ADR 0018](adr/0018-names-lokyr-and-sleip.md)) | Before the public 0.1 |
 | The names in Homebrew and other registries | Before the public 0.1 |
 | Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
 | License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |

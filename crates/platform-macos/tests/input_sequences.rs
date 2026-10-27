@@ -14,7 +14,7 @@ mod probe {
     use std::ffi::CStr;
     use std::rc::Rc;
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Handler, Ime, KeyCode, Platform, Size, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::runtime::{AnyObject, Imp, Sel};
@@ -203,7 +203,7 @@ mod probe {
             seen: Rc::clone(&seen),
             sent: false,
         };
-        bolt_platform_macos::run(probe).expect("the application runs");
+        lokyr_platform_macos::run(probe).expect("the application runs");
         let backspace = format!("key {:?}", KeyCode::Backspace);
         assert_eq!(
             *seen.borrow(),

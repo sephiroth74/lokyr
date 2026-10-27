@@ -3,7 +3,7 @@
 channel = "1.99.0"
 profile = "minimal"
 components = ["rustfmt", "clippy"]
-# Bolt runs on Apple Silicon only, so aarch64-apple-darwin is the only macOS
+# Lokyr runs on Apple Silicon only, so aarch64-apple-darwin is the only macOS
 # target. x86_64-unknown-linux-gnu lets us `cargo check` the
 # platform-independent crates for Linux from macOS.
 targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]

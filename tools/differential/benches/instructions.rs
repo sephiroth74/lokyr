@@ -4,7 +4,7 @@
 //! which the count leaves out. Valgrind runs on Linux only.
 //!
 //! The scenarios read vtebench's data files from the checkout that
-//! `BOLT_VTEBENCH` names, or else from `target/vtebench`, which `just
+//! `LOKYR_VTEBENCH` names, or else from `target/vtebench`, which `just
 //! vtebench` fetches.
 
 #![expect(
@@ -15,10 +15,10 @@
 use std::hint::black_box;
 use std::path::PathBuf;
 
-use bolt_differential::vtebench::{self, COLS, READ, ROWS};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
 use gungraun::prelude::*;
+use lokyr_differential::vtebench::{self, COLS, READ, ROWS};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// A terminal as a sample finds it, with its parser, and the sample.
 struct Prepared {
@@ -33,7 +33,7 @@ fn prepared(name: &str) -> Prepared {
     let (setup, sample) = if name == "cat" {
         (Vec::new(), cat())
     } else {
-        let dir = std::env::var_os("BOLT_VTEBENCH").map_or_else(
+        let dir = std::env::var_os("LOKYR_VTEBENCH").map_or_else(
             || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/vtebench"),
             PathBuf::from,
         );

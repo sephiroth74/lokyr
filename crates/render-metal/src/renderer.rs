@@ -4,11 +4,11 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use bolt_render_core::{
+use dispatch2::DispatchData;
+use lokyr_render_core::{
     AtlasRegion, CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Texture,
     TextureUpdate,
 };
-use dispatch2::DispatchData;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
@@ -637,7 +637,7 @@ fn make_texture(
 
 #[cfg(test)]
 mod tests {
-    use bolt_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
+    use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
     use objc2_metal::MTLRegion;
     use objc2_quartz_core::CAMetalLayer;
 

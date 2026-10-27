@@ -1,5 +1,5 @@
 [package]
-name = "bolt-replay"
+name = "lokyr-replay"
 description = "Replays a byte stream or a recording into the VT core and prints the screen"
 version.workspace = true
 edition.workspace = true
@@ -8,12 +8,12 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 publish = false
-default-run = "bolt-replay"
+default-run = "lokyr-replay"
 
 [dependencies]
 anyhow.workspace = true
-bolt-pty.workspace = true
-bolt-vt-core.workspace = true
+lokyr-pty.workspace = true
+lokyr-vt-core.workspace = true
 libc.workspace = true
 serde_json.workspace = true
 unicode-normalization.workspace = true

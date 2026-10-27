@@ -10,7 +10,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{AppEvent, Handler, Platform, WindowEvent, WindowId};
+    use lokyr_platform_core::{AppEvent, Handler, Platform, WindowEvent, WindowId};
 
     use crate::common;
 
@@ -46,7 +46,7 @@ mod probe {
     pub fn main() {
         common::deadline("quit_in_modal", 20);
         let seen = Rc::new(RefCell::new(Seen::default()));
-        bolt_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
+        lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
         assert_eq!(seen.wakes, 1, "{seen:?}");
         assert!(!seen.answered, "{seen:?}");

@@ -25,5 +25,5 @@ The conformance test of grapheme cluster boundaries, from the Unicode Character 
 
 The byte sequences that the parser's tests compare against `vte`'s parser, which the differential tests feed to the VT core and to `alacritty_terminal` too. It is Rust, a constant that both include, so that they read the same sequences.
 
-- **Author**: the Bolt contributors
+- **Author**: the Lokyr contributors
 - **License**: MIT, as the rest of the repository

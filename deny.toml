@@ -38,24 +38,24 @@ wildcards = "deny"
 # Internal crates are private and use path dependencies without a version.
 allow-wildcard-paths = true
 deny = [
-    # Only Crossbow may use the network or an async runtime: the app never opens
-    # network connections. Crates of Crossbow's HTTP stack that depend directly
+    # Only Sleip may use the network or an async runtime: the app never opens
+    # network connections. Crates of Sleip's HTTP stack that depend directly
     # on these (for example hyper-util) must be added to the wrappers.
-    { crate = "reqwest", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
-    { crate = "hyper", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
-    { crate = "rustls", wrappers = ["crossbow-index"], reason = "only Crossbow may use the network" },
-    { crate = "tokio", wrappers = ["crossbow-cli", "crossbow-index"], reason = "only Crossbow may use an async runtime" },
+    { crate = "reqwest", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
+    { crate = "hyper", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
+    { crate = "rustls", wrappers = ["sleip-index"], reason = "only Sleip may use the network" },
+    { crate = "tokio", wrappers = ["sleip-cli", "sleip-index"], reason = "only Sleip may use an async runtime" },
     # Not used anywhere: TLS is rustls, and the only async runtime is tokio.
     { crate = "native-tls", reason = "TLS is provided by rustls" },
     { crate = "openssl", reason = "TLS is provided by rustls" },
-    { crate = "async-std", reason = "the only async runtime is tokio, in Crossbow" },
+    { crate = "async-std", reason = "the only async runtime is tokio, in Sleip" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
-    { crate = "bolt-kernel", wrappers = ["bolt-app"], reason = "only the app may depend on the kernel" },
+    { crate = "lokyr-kernel", wrappers = ["lokyr-app"], reason = "only the app may depend on the kernel" },
     # Luau, a C++ runtime, stays behind the plugin host and its feature.
-    { crate = "mlua", wrappers = ["bolt-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
+    { crate = "mlua", wrappers = ["lokyr-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
     # Only the differential tests compare the VT core against alacritty_terminal:
     # no crate of the terminal uses it, not even in its own tests.
-    { crate = "alacritty_terminal", wrappers = ["bolt-differential"], reason = "only the differential tests use alacritty_terminal" },
+    { crate = "alacritty_terminal", wrappers = ["lokyr-differential"], reason = "only the differential tests use alacritty_terminal" },
 ]
 
 [sources]

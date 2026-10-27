@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use bolt_platform_core::{Ime, KeyCode, KeyEvent, KeyState, Modifiers, Point, Size, WindowEvent};
+use lokyr_platform_core::{Ime, KeyCode, KeyEvent, KeyState, Modifiers, Point, Size, WindowEvent};
 use objc2::runtime::AnyObject;
 use objc2_foundation::{NSAttributedString, NSNotFound, NSRange, NSString};
 

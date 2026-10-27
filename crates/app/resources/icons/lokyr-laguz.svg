@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Lokyr – Laguz</title>
+  <defs>
+    <linearGradient id="la-bg" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#26384F"/>
+      <stop offset="1" stop-color="#0F1724"/>
+    </linearGradient>
+    <linearGradient id="la-rune" x1="0" y1="270" x2="0" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B4FCEE"/>
+      <stop offset="1" stop-color="#2FBFA9"/>
+    </linearGradient>
+    <clipPath id="la-clip">
+      <rect x="100" y="100" width="824" height="824" rx="184"/>
+    </clipPath>
+    <filter id="la-sh" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+    <filter id="la-gl" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+
+  <!-- Base -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#la-bg)" filter="url(#la-sh)"/>
+
+  <!-- Increspature -->
+  <g clip-path="url(#la-clip)" fill="none" stroke="#7FE9D9" stroke-width="6">
+    <circle cx="512" cy="780" r="190" stroke-opacity="0.12"/>
+    <circle cx="512" cy="780" r="290" stroke-opacity="0.08"/>
+    <circle cx="512" cy="780" r="390" stroke-opacity="0.05"/>
+    <circle cx="512" cy="780" r="490" stroke-opacity="0.03"/>
+  </g>
+
+  <!-- Bagliore -->
+  <g filter="url(#la-gl)" opacity="0.55">
+    <path d="M400 300 L400 724 M400 300 L570 432" fill="none" stroke="#5FE3CC" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="500" y="664" width="150" height="60" rx="14" fill="#5FE3CC"/>
+  </g>
+
+  <!-- Runa Laguz + cursore -->
+  <path d="M400 300 L400 724 M400 300 L570 432" fill="none" stroke="url(#la-rune)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="500" y="664" width="150" height="60" rx="14" fill="url(#la-rune)"/>
+
+  <!-- Bordo luce -->
+  <rect x="101" y="101" width="822" height="822" rx="183" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.12"/>
+</svg>

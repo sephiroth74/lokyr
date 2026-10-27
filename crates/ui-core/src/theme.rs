@@ -1,9 +1,9 @@
 //! The built-in theme: its colors in a light and a dark variant, which follow
 //! the system's appearance.
 
-use bolt_render_core::Color;
-use bolt_vt_core::page::Rgb;
-use bolt_vt_core::terminal::Colors;
+use lokyr_render_core::Color;
+use lokyr_vt_core::page::Rgb;
+use lokyr_vt_core::terminal::Colors;
 
 /// The colors of a selection.
 #[derive(Clone, Copy, Debug, PartialEq)]

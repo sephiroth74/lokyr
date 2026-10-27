@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use bolt_search::{Cancelled, Case, Direction, Match, Query};
-use bolt_vt_core::page::{PageList, PinId, Position, Scrollback};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_search::{Cancelled, Case, Direction, Match, Query};
+use lokyr_vt_core::page::{PageList, PinId, Position, Scrollback};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 fn printed(cols: u16, rows: u16, text: &str) -> Terminal {
     let mut terminal = Terminal::new(cols, rows, Options::default());
@@ -27,7 +27,7 @@ fn place(list: &PageList, pin: PinId) -> (u16, u16) {
 }
 
 fn find(list: &mut PageList, query: &Query, from: Position, direction: Direction) -> Option<Match> {
-    bolt_search::find(list, query, from, direction, &AtomicBool::new(false)).unwrap()
+    lokyr_search::find(list, query, from, direction, &AtomicBool::new(false)).unwrap()
 }
 
 /// Where `query` matches, from row and column `from`, as two cells of the
@@ -282,7 +282,7 @@ fn a_pass_pins_as_many_matches_as_it_is_asked_and_counts_them_all() {
     let mut terminal = printed(80, 801, &"ab ".repeat(21_333));
     let query = Query::literal("ab", Case::Sensitive).unwrap();
     let rows = terminal.screen_rows_mut();
-    let found = bolt_search::find_all(rows, &query, 0..801, 10, &AtomicBool::new(false)).unwrap();
+    let found = lokyr_search::find_all(rows, &query, 0..801, 10, &AtomicBool::new(false)).unwrap();
     assert_eq!(found.count, 21_333);
     assert_eq!(found.pinned.len(), 10);
     assert_eq!(rows.pins(), 20, "a start and an end each");
@@ -316,11 +316,11 @@ fn a_limit_pins_the_first_matches_of_any_range() {
     };
     // From the first row, and from a row that goes on the line before it.
     for range in [0..12, 1..12, 3..8] {
-        let all = bolt_search::find_all(rows, &query, range.clone(), usize::MAX, &cancel).unwrap();
+        let all = lokyr_search::find_all(rows, &query, range.clone(), usize::MAX, &cancel).unwrap();
         let every = starts(rows, &all.pinned);
         assert_eq!(all.count, every.len());
         for limit in [0, 1, 3, all.count, all.count + 5] {
-            let some = bolt_search::find_all(rows, &query, range.clone(), limit, &cancel).unwrap();
+            let some = lokyr_search::find_all(rows, &query, range.clone(), limit, &cancel).unwrap();
             assert_eq!(some.count, all.count, "{range:?}, {limit}");
             assert_eq!(
                 starts(rows, &some.pinned),
@@ -344,12 +344,12 @@ fn a_cancelled_pass_stops() {
     let rows = terminal.screen_rows_mut();
     let query = regex("b");
     assert_eq!(
-        bolt_search::find_all(rows, &query, 0..2, usize::MAX, &AtomicBool::new(true)),
+        lokyr_search::find_all(rows, &query, 0..2, usize::MAX, &AtomicBool::new(true)),
         Err(Cancelled)
     );
     assert_eq!(
-        bolt_search::find_all(rows, &query, 1..1, usize::MAX, &AtomicBool::new(false)),
-        Ok(bolt_search::Matches {
+        lokyr_search::find_all(rows, &query, 1..1, usize::MAX, &AtomicBool::new(false)),
+        Ok(lokyr_search::Matches {
             pinned: Vec::new(),
             count: 0
         })
@@ -414,7 +414,7 @@ fn another_thread_cancels_a_running_search() {
         let from = at(&terminal, 23, 0);
         let started = Instant::now();
         let rows = terminal.screen_rows_mut();
-        let found = bolt_search::find(
+        let found = lokyr_search::find(
             rows,
             &query,
             from,
@@ -431,7 +431,7 @@ fn another_thread_cancels_a_running_search() {
             loop {
                 let from = at(&terminal, 23, 0);
                 let rows = terminal.screen_rows_mut();
-                match bolt_search::find(rows, &query, from, Direction::Backward, &cancel) {
+                match lokyr_search::find(rows, &query, from, Direction::Backward, &cancel) {
                     Ok(None) => {}
                     Ok(Some(_)) => panic!("nothing to find"),
                     Err(Cancelled) => return Instant::now(),
@@ -508,7 +508,7 @@ fn all_starts(
 ) -> Vec<Position> {
     let list = terminal.screen_rows_mut();
     let found =
-        bolt_search::find_all(list, query, rows, usize::MAX, &AtomicBool::new(false)).unwrap();
+        lokyr_search::find_all(list, query, rows, usize::MAX, &AtomicBool::new(false)).unwrap();
     assert_eq!(found.count, found.pinned.len());
     found
         .pinned
@@ -631,7 +631,7 @@ fn a_search_stops_inside_a_long_line() {
             })
         };
         let rows = terminal.screen_rows_mut();
-        let found = bolt_search::find(rows, &query, from, direction, &cancel);
+        let found = lokyr_search::find(rows, &query, from, direction, &cancel);
         let stopped = Instant::now();
         let asked = flag.join().unwrap();
         assert_eq!(found, Err(Cancelled), "{direction:?}");
@@ -652,7 +652,7 @@ fn a_cancelled_search_stops_either_way() {
     for direction in [Direction::Forward, Direction::Backward] {
         let rows = terminal.screen_rows_mut();
         assert_eq!(
-            bolt_search::find(rows, &query, from, direction, &cancelled),
+            lokyr_search::find(rows, &query, from, direction, &cancelled),
             Err(Cancelled)
         );
     }

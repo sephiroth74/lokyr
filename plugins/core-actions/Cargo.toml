@@ -1,5 +1,5 @@
 [package]
-name = "bolt-core-actions"
+name = "lokyr-core-actions"
 description = "Built-in plugin with the basic terminal actions"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-plugin-sdk.workspace = true
+lokyr-plugin-sdk.workspace = true
 
 [lints]
 workspace = true

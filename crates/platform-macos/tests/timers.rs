@@ -10,7 +10,7 @@ mod probe {
     use std::rc::Rc;
     use std::time::{Duration, Instant};
 
-    use bolt_platform_core::{AppEvent, Handler, Platform, TimerId, WindowEvent, WindowId};
+    use lokyr_platform_core::{AppEvent, Handler, Platform, TimerId, WindowEvent, WindowId};
 
     use crate::common;
 
@@ -85,7 +85,7 @@ mod probe {
     pub fn main() {
         common::deadline("timers", 20);
         let seen = Rc::new(RefCell::new(Seen::default()));
-        bolt_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
+        lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
         let order: Vec<&str> = seen.fired.iter().map(|&(name, _)| name).collect();
         assert_eq!(order, ["past", "first", "chained", "last"], "{seen:?}");

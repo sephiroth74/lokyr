@@ -3,14 +3,14 @@
 
 use std::fmt;
 
-use bolt_vt_core::page::Width;
-use bolt_vt_core::parser::{Handler, Params, StringEnd};
-use bolt_vt_core::terminal::{Charset, Shift, Terminal};
+use lokyr_vt_core::page::Width;
+use lokyr_vt_core::parser::{Handler, Params, StringEnd};
+use lokyr_vt_core::terminal::{Charset, Shift, Terminal};
 
 #[cfg(test)]
 use crate::Screen;
 use crate::cause::{self, Cause, Seen};
-use crate::{DEL, Difference, NUL, Pair, bolt_cell_text};
+use crate::{DEL, Difference, NUL, Pair, lokyr_cell_text};
 
 /// What a byte made the VT core do, as its parser dispatched it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -206,13 +206,13 @@ impl Before {
             },
             starts: if terminal.insert_mode() {
                 (cursor.y..terminal.rows())
-                    .map(|y| [0, 1].map(|x| bolt_cell_text(terminal, x, y)))
+                    .map(|y| [0, 1].map(|x| lokyr_cell_text(terminal, x, y)))
                     .collect()
             } else {
                 Vec::new()
             },
             left: (terminal.insert_mode() && cursor.x > 0 && !cursor.pending_wrap)
-                .then(|| bolt_cell_text(terminal, cursor.x - 1, cursor.y)),
+                .then(|| lokyr_cell_text(terminal, cursor.x - 1, cursor.y)),
             tab_stops: (0..terminal.cols()).map(|x| terminal.tab_stop(x)).collect(),
             last_printed: terminal.last_printed().map(|c| {
                 let c = terminal.charsets().translate(c);
@@ -319,7 +319,7 @@ pub fn explore_after(
         let step = pair.step(byte);
         track.note(&step, &before);
         let after = Before::of(pair.terminal(), track);
-        let screens = (!pair.same()).then(|| (pair.bolt(), pair.alacritty()));
+        let screens = (!pair.same()).then(|| (pair.lokyr(), pair.alacritty()));
         let wide = match step {
             Step::Print(c) => pair.terminal().widths().char_width(c) == 2,
             _ => false,
@@ -329,7 +329,9 @@ pub fn explore_after(
             byte,
             before: &before,
             after: &after,
-            screens: screens.as_ref().map(|(bolt, alacritty)| (bolt, alacritty)),
+            screens: screens
+                .as_ref()
+                .map(|(lokyr, alacritty)| (lokyr, alacritty)),
             wide,
         };
         if let Some(cause) = cause::ending(&seen).or_else(|| cause::cause(&seen)) {
@@ -353,7 +355,7 @@ impl Pair {
     /// Feeds `byte` to both, and returns what it made the VT core do.
     fn step(&mut self, byte: u8) -> Step {
         let mut probe = Probe {
-            terminal: &mut self.bolt,
+            terminal: &mut self.lokyr,
             step: Step::Nothing,
         };
         let ground = self.parser.in_ground();
@@ -457,7 +459,7 @@ pub(crate) struct Parted {
     pub(crate) byte: u8,
     pub(crate) before: Before,
     pub(crate) after: Before,
-    pub(crate) bolt: Screen,
+    pub(crate) lokyr: Screen,
     pub(crate) alacritty: Screen,
     pub(crate) wide: bool,
 }
@@ -502,7 +504,7 @@ fn seen_at(cols: u16, rows: u16, bytes: &[u8], last: bool) -> Option<Parted> {
                 byte,
                 before,
                 after,
-                bolt: pair.bolt(),
+                lokyr: pair.lokyr(),
                 alacritty: pair.alacritty(),
                 wide,
             });

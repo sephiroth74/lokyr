@@ -4,10 +4,10 @@
 
 use std::sync::atomic::AtomicBool;
 
-use bolt_search::{Case, Direction, Query};
-use bolt_vt_core::page::{Capacity, Content, PageList, Position, RowFlag, Width};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_search::{Case, Direction, Query};
+use lokyr_vt_core::page::{Capacity, Content, PageList, Position, RowFlag, Width};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 use proptest::prelude::*;
 
 /// A logical line's text, and its cells that show something: where each
@@ -134,7 +134,8 @@ fn found(
     let mut stepped = Vec::new();
     let (page, row) = list.row_at(0).unwrap();
     let mut from = Position { page, row, col: 0 };
-    while let Some(hit) = bolt_search::find(list, query, from, Direction::Forward, &cancel).unwrap()
+    while let Some(hit) =
+        lokyr_search::find(list, query, from, Direction::Forward, &cancel).unwrap()
     {
         let start = list.pin_position(hit.start).unwrap();
         let end = list.pin_position(hit.end).unwrap();
@@ -163,7 +164,7 @@ fn found(
         col: list.cols() - 1,
     };
     while let Some(hit) =
-        bolt_search::find(list, query, from, Direction::Backward, &cancel).unwrap()
+        lokyr_search::find(list, query, from, Direction::Backward, &cancel).unwrap()
     {
         let start = list.pin_position(hit.start).unwrap();
         let end = list.pin_position(hit.end).unwrap();
@@ -172,7 +173,7 @@ fn found(
         from = start;
     }
     back.reverse();
-    let all = bolt_search::find_all(list, query, rows, usize::MAX, &cancel).unwrap();
+    let all = lokyr_search::find_all(list, query, rows, usize::MAX, &cancel).unwrap();
     let all = all
         .pinned
         .into_iter()

@@ -9,7 +9,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{AppEvent, Appearance, Handler, Platform, WindowEvent, WindowId};
+    use lokyr_platform_core::{AppEvent, Appearance, Handler, Platform, WindowEvent, WindowId};
     use objc2::MainThreadMarker;
     use objc2_app_kit::{
         NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
@@ -76,7 +76,7 @@ mod probe {
     pub fn main() {
         common::deadline("appearance", 20);
         let seen = Rc::new(RefCell::new(Seen::default()));
-        bolt_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
+        lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
         let first = seen.first.expect("the application started");
         assert_eq!(seen.changes, [other(first), first], "{seen:?}");

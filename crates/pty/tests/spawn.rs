@@ -5,7 +5,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use bolt_pty::{Exit, Options, Program, PtyReader, ReadOutcome, Size, spawn};
+use lokyr_pty::{Exit, Options, Program, PtyReader, ReadOutcome, Size, spawn};
 
 /// What the program writes, read on a thread of its own so that a test
 /// gives up rather than hang.
@@ -101,7 +101,7 @@ fn a_shell_reads_its_terminal_and_term() {
 fn the_program_gets_the_environment_and_the_size() {
     let dir = std::env::temp_dir().canonicalize().unwrap();
     let mut options = Options::new(
-        sh(r#"echo "$COLORTERM $TERM_PROGRAM $BOLT_RESOURCES_DIR"; pwd; stty size"#),
+        sh(r#"echo "$COLORTERM $TERM_PROGRAM $LOKYR_RESOURCES_DIR"; pwd; stty size"#),
         "xterm-256color",
     );
     options.working_directory = Some(dir.clone());
@@ -117,7 +117,7 @@ fn the_program_gets_the_environment_and_the_size() {
     let mut text = String::new();
     pty.reader().unwrap().read_to_string(&mut text).unwrap();
     let lines: Vec<&str> = text.split("\r\n").collect();
-    assert_eq!(lines[0], "truecolor bolt /resources");
+    assert_eq!(lines[0], "truecolor lokyr /resources");
     assert_eq!(lines[1], dir.to_str().unwrap());
     assert_eq!(lines[2], "30 100");
 }
@@ -240,7 +240,7 @@ fn a_program_that_cannot_start_is_an_error() {
 
 #[test]
 fn a_pseudo_terminal_that_cannot_open_leaves_the_cause_to_the_source() {
-    let error = bolt_pty::Error::Open(std::io::Error::other("no terminals"));
+    let error = lokyr_pty::Error::Open(std::io::Error::other("no terminals"));
     assert_eq!(error.to_string(), "cannot open a pseudo-terminal");
     let source = std::error::Error::source(&error).map(ToString::to_string);
     assert_eq!(source.as_deref(), Some("no terminals"));
@@ -545,7 +545,7 @@ fn a_deadline_that_has_passed_still_reads_and_writes_what_it_can() {
 
 /// A new directory of the temporary one, named for the test.
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("bolt-pty-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lokyr-pty-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir(&dir).unwrap();
     dir
@@ -586,7 +586,7 @@ fn a_working_directory_that_is_a_fifo_fails_without_waiting_for_a_writer() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(
-        matches!(failed, Ok(Err(bolt_pty::Error::WorkingDirectory { .. }))),
+        matches!(failed, Ok(Err(lokyr_pty::Error::WorkingDirectory { .. }))),
         "{failed:?}"
     );
 }

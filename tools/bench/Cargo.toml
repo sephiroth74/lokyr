@@ -1,6 +1,6 @@
 [package]
-name = "bolt-bench"
-description = "Measurement tools for the Bolt performance budgets"
+name = "lokyr-bench"
+description = "Measurement tools for the Lokyr performance budgets"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

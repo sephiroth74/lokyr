@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
 use std::rc::{Rc, Weak};
 
-use bolt_platform_core::{AlertId, AppEvent, Handler, TimerId, Waker, WindowEvent, WindowId};
+use lokyr_platform_core::{AlertId, AppEvent, Handler, TimerId, Waker, WindowEvent, WindowId};
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSModalResponse;
 

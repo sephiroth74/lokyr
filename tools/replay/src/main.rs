@@ -1,4 +1,4 @@
-//! `bolt-replay`: feeds a byte stream, raw or an asciicast recording, to
+//! `lokyr-replay`: feeds a byte stream, raw or an asciicast recording, to
 //! the VT core, headless, and prints the screen it leaves.
 
 use std::io::Read as _;
@@ -6,10 +6,10 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use bolt_replay::recording::Recording;
-use bolt_replay::screen;
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_replay::recording::Recording;
+use lokyr_replay::screen;
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// The size of the screen when neither the command line nor the recording
 /// gives one.
@@ -81,7 +81,7 @@ fn main() -> ExitCode {
 
 fn print_help() {
     println!(
-        "Usage: bolt-replay [options] <file>\n\n\
+        "Usage: lokyr-replay [options] <file>\n\n\
          Feeds <file>, a raw byte stream or an asciicast recording (v2 or v3), to the VT core,\n\
          headless, and prints the screen it leaves. `-` reads standard input.\n\n\
          Options:\n  \

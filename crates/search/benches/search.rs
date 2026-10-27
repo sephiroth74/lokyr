@@ -7,11 +7,11 @@
 use std::hint::black_box;
 use std::sync::atomic::AtomicBool;
 
-use bolt_search::{Case, Direction, Query};
-use bolt_vt_core::page::{Position, Scrollback};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
 use criterion::{Criterion, criterion_group, criterion_main};
+use lokyr_search::{Case, Direction, Query};
+use lokyr_vt_core::page::{Position, Scrollback};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// The width of the terminal.
 const COLS: u16 = 120;
@@ -78,7 +78,7 @@ fn long_line(cells: usize) -> Terminal {
 fn search_back(terminal: &mut Terminal, query: &Query) {
     let (page, row) = terminal.screen_rows().screen_row_id(39);
     let from = Position { page, row, col: 0 };
-    let found = bolt_search::find(
+    let found = lokyr_search::find(
         terminal.screen_rows_mut(),
         query,
         from,
@@ -116,7 +116,7 @@ fn search(c: &mut Criterion) {
         b.iter(|| {
             let rows = terminal.screen_rows_mut();
             let all = 0..rows.total_rows();
-            let found = bolt_search::find_all(rows, &fox, all, 1000, &AtomicBool::new(false));
+            let found = lokyr_search::find_all(rows, &fox, all, 1000, &AtomicBool::new(false));
             let matches = found.unwrap();
             assert!(matches.count >= 100_000);
             for found in matches.pinned {

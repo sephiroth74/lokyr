@@ -1,13 +1,13 @@
 //! A pane's grid of cells, as a display list draws it, from a snapshot of
 //! its terminal.
 
-use bolt_render_core::{
+use lokyr_render_core::{
     AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle,
 };
-use bolt_text_core::CellMetrics;
-use bolt_vt_core::page::{self, Content, Rgb, Style, Width};
-use bolt_vt_core::terminal::{Colors, Snapshot};
-use bolt_vt_core::unicode::Widths;
+use lokyr_text_core::CellMetrics;
+use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
+use lokyr_vt_core::terminal::{Colors, Snapshot};
+use lokyr_vt_core::unicode::Widths;
 
 use crate::theme::SelectionColors;
 
@@ -421,10 +421,10 @@ fn color(rgb: Rgb) -> Color {
 
 #[cfg(test)]
 mod tests {
-    use bolt_render_core::Texture;
-    use bolt_text_core::{FaceMetrics, FontConfig};
-    use bolt_vt_core::parser::Parser;
-    use bolt_vt_core::terminal::{Options, Terminal};
+    use lokyr_render_core::Texture;
+    use lokyr_text_core::{FaceMetrics, FontConfig};
+    use lokyr_vt_core::parser::Parser;
+    use lokyr_vt_core::terminal::{Options, Terminal};
 
     use super::*;
 

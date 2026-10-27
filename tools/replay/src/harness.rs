@@ -12,11 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-pub use bolt_pty::Exit;
-use bolt_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
-use bolt_vt_core::page::{Content, ListRow, PageList, RowFlag, Width};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{self, Options, Terminal};
+pub use lokyr_pty::Exit;
+use lokyr_pty::{Program, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
+use lokyr_vt_core::page::{Content, ListRow, PageList, RowFlag, Width};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{self, Options, Terminal};
 
 /// How a harness starts its program.
 #[derive(Clone, Debug)]
@@ -124,10 +124,10 @@ impl Harness {
         // The terminal first, which clamps the size, for the PTY to have the
         // same.
         let terminal = Terminal::new(options.cols, options.rows, options.terminal.clone());
-        let mut pty_options = bolt_pty::Options::new(Program::command("/usr/bin/env", args), term);
+        let mut pty_options = lokyr_pty::Options::new(Program::command("/usr/bin/env", args), term);
         pty_options.working_directory = Some(options.dir.clone());
         pty_options.size = size(&terminal);
-        let pty = bolt_pty::spawn(&pty_options).context("starting the program")?;
+        let pty = lokyr_pty::spawn(&pty_options).context("starting the program")?;
         let size = pty_options.size;
         Ok(Self {
             reader: pty.reader()?,

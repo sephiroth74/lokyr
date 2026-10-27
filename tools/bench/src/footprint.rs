@@ -111,7 +111,7 @@ impl TempFile {
     fn new() -> Self {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let name = format!("bolt-bench-footprint-{}-{n}.json", std::process::id());
+        let name = format!("lokyr-bench-footprint-{}-{n}.json", std::process::id());
         Self(std::env::temp_dir().join(name))
     }
 }

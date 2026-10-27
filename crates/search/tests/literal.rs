@@ -2,20 +2,20 @@
 
 use std::sync::atomic::AtomicBool;
 
-use bolt_search::{Case, Direction, Match, Query};
-use bolt_vt_core::page::{Content, PageList, Position, Scrollback};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_search::{Case, Direction, Match, Query};
+use lokyr_vt_core::page::{Content, PageList, Position, Scrollback};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 use proptest::prelude::*;
 
 /// Finds `query`, without cancelling.
 fn find(
-    list: &mut bolt_vt_core::page::PageList,
+    list: &mut lokyr_vt_core::page::PageList,
     query: &Query,
     from: Position,
     direction: Direction,
 ) -> Option<Match> {
-    bolt_search::find(list, query, from, direction, &AtomicBool::new(false)).unwrap()
+    lokyr_search::find(list, query, from, direction, &AtomicBool::new(false)).unwrap()
 }
 
 fn printed(cols: u16, rows: u16, text: &str) -> Terminal {
@@ -31,7 +31,7 @@ fn at(terminal: &Terminal, y: u16, col: u16) -> Position {
 }
 
 /// The screen's row and column of a pin.
-fn place(terminal: &Terminal, pin: bolt_vt_core::page::PinId) -> Option<(u16, u16)> {
+fn place(terminal: &Terminal, pin: lokyr_vt_core::page::PinId) -> Option<(u16, u16)> {
     let rows = terminal.screen_rows();
     let position = rows.pin_position(pin)?;
     rows.pin_on_screen(pin).map(|(col, y)| {
@@ -300,7 +300,7 @@ fn matches_stay_on_their_cells_as_output_scrolls() {
 fn a_match_whose_cells_left_the_scrollback_is_lost() {
     let mut parser = Parser::new();
     let options = Options {
-        scrollback: bolt_vt_core::page::Scrollback {
+        scrollback: lokyr_vt_core::page::Scrollback {
             limit: 1,
             budget: None,
         },
@@ -384,7 +384,7 @@ fn a_cell_past_the_last_column_finds_nothing() {
 fn a_list_asked_for_no_columns_is_searched() {
     let mut list = PageList::new(0, 2, Scrollback::default());
     let literal = Query::literal("x", Case::Sensitive).unwrap();
-    let found = bolt_search::find_all(&mut list, &literal, 0..2, 10, &AtomicBool::new(false));
+    let found = lokyr_search::find_all(&mut list, &literal, 0..2, 10, &AtomicBool::new(false));
     assert_eq!(found.map(|matches| matches.count), Ok(0));
 }
 
@@ -418,7 +418,7 @@ fn a_cold_row_reads_its_empty_cells_too() {
     let warm = search(&mut terminal);
     assert_eq!(warm, Some((0, 4, 1, 0)));
     // Enough rows after it that its page goes cold.
-    let page_rows = usize::from(bolt_vt_core::page::Capacity::standard(10).rows);
+    let page_rows = usize::from(lokyr_vt_core::page::Capacity::standard(10).rows);
     parser.advance(&mut terminal, "\r\n".repeat(page_rows + 50).as_bytes());
     assert!(terminal.compact_scrollback() > 0);
     let (page, _) = terminal.screen_rows().row_at(0).unwrap();
@@ -514,7 +514,7 @@ proptest! {
 
 #[test]
 fn a_match_crosses_from_one_page_into_the_next() {
-    use bolt_vt_core::page::Capacity;
+    use lokyr_vt_core::page::Capacity;
     let cols = 2000;
     let per_page = usize::from(Capacity::standard(cols).rows);
     // Lines up to the last row of the first page, then one that wraps from

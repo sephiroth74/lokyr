@@ -1,4 +1,4 @@
-//! Build automation for the Bolt workspace, run as `cargo xtask <task>`.
+//! Build automation for the Lokyr workspace, run as `cargo xtask <task>`.
 
 mod bundle;
 mod check_comments;
@@ -38,11 +38,11 @@ fn print_help() {
     println!(
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
-         bundle                      build target/Bolt.app from the release binary, signed\n  \
+         bundle                      build target/Lokyr.app from the release binary, signed\n  \
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
-         terminfo [--out DIR]        compile the terminfo entry xterm-bolt, into target/terminfo by default\n  \
+         terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );
 }

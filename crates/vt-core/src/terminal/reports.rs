@@ -171,7 +171,7 @@ impl Terminal {
 
     /// XTVERSION: the terminal's name and version.
     pub(super) fn report_version(&mut self) {
-        let reply = format!("\x1bP>|bolt {}\x1b\\", env!("CARGO_PKG_VERSION"));
+        let reply = format!("\x1bP>|lokyr {}\x1b\\", env!("CARGO_PKG_VERSION"));
         self.reply(reply.as_bytes());
     }
 

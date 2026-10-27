@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in Bolt does not work as it should
+about: Something in Lokyr does not work as it should
 labels: bug
 ---
 
@@ -18,16 +18,16 @@ labels: bug
 
 - macOS version:
 - Mac (such as MacBook Pro M3):
-- Bolt's commit (`git rev-parse --short HEAD`):
+- Lokyr's commit (`git rev-parse --short HEAD`):
 - The program in the terminal, if it matters (such as vim 9.1, htop 3.3):
 
 ## Config
 
-<!-- Your ~/.config/bolt/config.toml, or "none". -->
+<!-- Your ~/.config/lokyr/config.toml, or "none". -->
 
 ```toml
 ```
 
 ## Log
 
-<!-- What Bolt printed to the terminal that started it, if anything. -->
+<!-- What Lokyr printed to the terminal that started it, if anything. -->

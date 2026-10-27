@@ -25,9 +25,9 @@ vtebench_commit := "ead80032e57dee2e75f0b51f2ea67528647d9944"
 
 # Platform-independent crates, and the tools of the terminal's tests and
 # tasks, which must keep building, and passing their tests, on Linux.
-portable := "-p bolt-vt-core -p bolt-pty -p bolt-session -p bolt-search -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
+portable := "-p lokyr-vt-core -p lokyr-pty -p lokyr-session -p lokyr-search -p lokyr-kernel -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
 # The platform-independent crates whose tests `check-linux` checks for Linux from any host.
-portable_tests := "-p bolt-pty -p bolt-session -p bolt-kernel -p bolt-text-core -p bolt-render-core -p bolt-ui-core -p bolt-platform-core -p bolt-replay -p bolt-differential -p xtask"
+portable_tests := "-p lokyr-pty -p lokyr-session -p lokyr-kernel -p lokyr-text-core -p lokyr-render-core -p lokyr-ui-core -p lokyr-platform-core -p lokyr-replay -p lokyr-differential -p xtask"
 
 # List available commands.
 _default:
@@ -84,11 +84,11 @@ check-links:
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps check-comments check-links bundle
 
-# Build target/Bolt.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc.
+# Build target/Lokyr.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc.
 bundle:
     cargo xtask bundle
 
-# Compile the terminfo entry xterm-bolt into target/terminfo, with the tic on the PATH or $TIC.
+# Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
     cargo xtask terminfo
 
@@ -102,7 +102,7 @@ ucd-check:
 
 # Record the sessions of the VT core's tests again (needs vim, htop, tmux, less and fzf, and builds vttest).
 record: vttest
-    cargo run -q --release -p bolt-replay --bin bolt-record -- crates/vt-core/tests/recordings/*.script
+    cargo run -q --release -p lokyr-replay --bin lokyr-record -- crates/vt-core/tests/recordings/*.script
 
 # Run esctest in the headless terminal, from a checkout of the pinned commit in target/esctest2 (downloads it), and print the pass rate and the failures by sequence; `args` go to esctest, each whole, as `--include='CUP|CUB'`.
 [positional-arguments]
@@ -119,7 +119,7 @@ esctest *args:
         git -C "$clone" archive FETCH_HEAD | tar -x -C "$dir"
         echo {{ esctest_commit }} > "$dir/.commit"
     fi
-    cargo run -q --release -p bolt-replay --bin bolt-esctest -- "$dir/esctest" "$@"
+    cargo run -q --release -p lokyr-replay --bin lokyr-esctest -- "$dir/esctest" "$@"
 
 # Build vttest from the pinned commit into target/vttest (downloads it), for the recording of its screens.
 vttest:
@@ -139,12 +139,12 @@ vttest:
 
 # Measure throughput: the criterion benchmarks of the VT core and of search, then both cores, the VT core and alacritty_terminal, over vtebench's scenarios and a file of 1 GiB, which `cat` would print; on an idle machine.
 bench: vtebench
-    cargo bench --locked -p bolt-vt-core -p bolt-search
-    cargo build --locked --release -p bolt-differential --bin bolt-throughput -p bolt-replay --bin bolt-replay
+    cargo bench --locked -p lokyr-vt-core -p lokyr-search
+    cargo build --locked --release -p lokyr-differential --bin lokyr-throughput -p lokyr-replay --bin lokyr-replay
     # The file of 1 GiB, written again when a source is newer.
-    if [ ! -f target/cat-1g.txt ] || [ -n "$(find crates tools -name '*.rs' -newer target/cat-1g.txt -print -quit)" ]; then target/release/bolt-throughput --write-cat target/cat-1g.txt; fi
-    target/release/bolt-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
-    target/release/bolt-replay --bench --cols 120 --rows 40 target/cat-1g.txt
+    if [ ! -f target/cat-1g.txt ] || [ -n "$(find crates tools -name '*.rs' -newer target/cat-1g.txt -print -quit)" ]; then target/release/lokyr-throughput --write-cat target/cat-1g.txt; fi
+    target/release/lokyr-throughput --vtebench target/vtebench --runs 5 target/cat-1g.txt
+    target/release/lokyr-replay --bench --cols 120 --rows 40 target/cat-1g.txt
 
 # Fetch vtebench's scenarios from the pinned commit into target/vtebench (downloads it): their scripts, which nothing runs, and their data files.
 vtebench:
@@ -179,8 +179,8 @@ instructions base="": _valgrind vtebench
     CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
     case "$CARGO_TARGET_DIR" in /*) ;; *) CARGO_TARGET_DIR="$PWD/$CARGO_TARGET_DIR" ;; esac
     export CARGO_TARGET_DIR
-    export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" BOLT_VTEBENCH="$PWD/target/vtebench" GUNGRAUN_ENVS=BOLT_VTEBENCH
-    count() { cargo bench --locked -p bolt-differential --bench instructions -- "$@"; }
+    export GUNGRAUN_HOME="$CARGO_TARGET_DIR/gungraun" LOKYR_VTEBENCH="$PWD/target/vtebench" GUNGRAUN_ENVS=LOKYR_VTEBENCH
+    count() { cargo bench --locked -p lokyr-differential --bench instructions -- "$@"; }
     # A warning, which a GitHub job shows besides its log.
     warn() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$1"; else echo "$1"; fi; }
     base="{{ base }}"
@@ -392,4 +392,4 @@ _fuzz-run target seconds workers log flags:
 
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
-    BOLT_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p bolt-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact
+    LOKYR_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p lokyr-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact

@@ -281,28 +281,28 @@ mod tests {
 
     /// Workspace members of the test graph, shaped like the real workspace.
     const MEMBERS: &[(&str, &str)] = &[
-        ("crossbow-cli", "crossbow/cli"),
-        ("crossbow-index", "crossbow/index"),
-        ("crossbow-resolver", "crossbow/resolver"),
-        ("bolt-app", "crates/app"),
-        ("bolt-bench", "tools/bench"),
-        ("bolt-core-actions", "plugins/core-actions"),
-        ("bolt-differential", "tools/differential"),
-        ("bolt-font-coretext", "crates/font-coretext"),
-        ("bolt-kernel", "crates/kernel"),
-        ("bolt-pkg-model", "crates/pkg-model"),
-        ("bolt-platform-core", "crates/platform-core"),
-        ("bolt-platform-macos", "crates/platform-macos"),
-        ("bolt-plugin-host-luau", "crates/plugin-host-luau"),
-        ("bolt-plugin-sdk", "crates/plugin-sdk"),
-        ("bolt-pty", "crates/pty"),
-        ("bolt-render-core", "crates/render-core"),
-        ("bolt-render-metal", "crates/render-metal"),
-        ("bolt-search", "crates/search"),
-        ("bolt-session", "crates/session"),
-        ("bolt-text-core", "crates/text-core"),
-        ("bolt-ui-core", "crates/ui-core"),
-        ("bolt-vt-core", "crates/vt-core"),
+        ("sleip-cli", "sleip/cli"),
+        ("sleip-index", "sleip/index"),
+        ("sleip-resolver", "sleip/resolver"),
+        ("lokyr-app", "crates/app"),
+        ("lokyr-bench", "tools/bench"),
+        ("lokyr-core-actions", "plugins/core-actions"),
+        ("lokyr-differential", "tools/differential"),
+        ("lokyr-font-coretext", "crates/font-coretext"),
+        ("lokyr-kernel", "crates/kernel"),
+        ("lokyr-pkg-model", "crates/pkg-model"),
+        ("lokyr-platform-core", "crates/platform-core"),
+        ("lokyr-platform-macos", "crates/platform-macos"),
+        ("lokyr-plugin-host-luau", "crates/plugin-host-luau"),
+        ("lokyr-plugin-sdk", "crates/plugin-sdk"),
+        ("lokyr-pty", "crates/pty"),
+        ("lokyr-render-core", "crates/render-core"),
+        ("lokyr-render-metal", "crates/render-metal"),
+        ("lokyr-search", "crates/search"),
+        ("lokyr-session", "crates/session"),
+        ("lokyr-text-core", "crates/text-core"),
+        ("lokyr-ui-core", "crates/ui-core"),
+        ("lokyr-vt-core", "crates/vt-core"),
         ("xtask", "tools/xtask"),
     ];
 
@@ -311,39 +311,39 @@ mod tests {
 
     /// Dependencies of the test graph; they satisfy every rule.
     const EDGES: &[(&str, &str)] = &[
-        ("crossbow-cli", "crossbow-index"),
-        ("crossbow-cli", "crossbow-resolver"),
-        ("crossbow-cli", "bolt-pkg-model"),
-        ("crossbow-index", "reqwest"),
-        ("crossbow-index", "bolt-pkg-model"),
-        ("crossbow-resolver", "bolt-pkg-model"),
+        ("sleip-cli", "sleip-index"),
+        ("sleip-cli", "sleip-resolver"),
+        ("sleip-cli", "lokyr-pkg-model"),
+        ("sleip-index", "reqwest"),
+        ("sleip-index", "lokyr-pkg-model"),
+        ("sleip-resolver", "lokyr-pkg-model"),
         ("hyper", "tokio"),
         ("reqwest", "hyper"),
         ("reqwest", "tokio"),
-        ("bolt-app", "bolt-core-actions"),
-        ("bolt-app", "bolt-font-coretext"),
-        ("bolt-app", "bolt-kernel"),
-        ("bolt-app", "bolt-platform-macos"),
-        ("bolt-app", "bolt-plugin-host-luau"),
-        ("bolt-app", "bolt-render-metal"),
-        ("bolt-core-actions", "bolt-plugin-sdk"),
-        ("bolt-differential", "alacritty_terminal"),
-        ("bolt-differential", "bolt-vt-core"),
-        ("bolt-font-coretext", "bolt-text-core"),
-        ("bolt-kernel", "bolt-pkg-model"),
-        ("bolt-kernel", "bolt-plugin-sdk"),
-        ("bolt-kernel", "bolt-search"),
-        ("bolt-kernel", "bolt-session"),
-        ("bolt-kernel", "bolt-ui-core"),
-        ("bolt-platform-macos", "objc2"),
-        ("bolt-platform-macos", "bolt-platform-core"),
-        ("bolt-plugin-host-luau", "bolt-plugin-sdk"),
-        ("bolt-render-metal", "bolt-render-core"),
-        ("bolt-search", "bolt-vt-core"),
-        ("bolt-session", "bolt-pty"),
-        ("bolt-session", "bolt-vt-core"),
-        ("bolt-ui-core", "bolt-render-core"),
-        ("bolt-ui-core", "bolt-text-core"),
+        ("lokyr-app", "lokyr-core-actions"),
+        ("lokyr-app", "lokyr-font-coretext"),
+        ("lokyr-app", "lokyr-kernel"),
+        ("lokyr-app", "lokyr-platform-macos"),
+        ("lokyr-app", "lokyr-plugin-host-luau"),
+        ("lokyr-app", "lokyr-render-metal"),
+        ("lokyr-core-actions", "lokyr-plugin-sdk"),
+        ("lokyr-differential", "alacritty_terminal"),
+        ("lokyr-differential", "lokyr-vt-core"),
+        ("lokyr-font-coretext", "lokyr-text-core"),
+        ("lokyr-kernel", "lokyr-pkg-model"),
+        ("lokyr-kernel", "lokyr-plugin-sdk"),
+        ("lokyr-kernel", "lokyr-search"),
+        ("lokyr-kernel", "lokyr-session"),
+        ("lokyr-kernel", "lokyr-ui-core"),
+        ("lokyr-platform-macos", "objc2"),
+        ("lokyr-platform-macos", "lokyr-platform-core"),
+        ("lokyr-plugin-host-luau", "lokyr-plugin-sdk"),
+        ("lokyr-render-metal", "lokyr-render-core"),
+        ("lokyr-search", "lokyr-vt-core"),
+        ("lokyr-session", "lokyr-pty"),
+        ("lokyr-session", "lokyr-vt-core"),
+        ("lokyr-ui-core", "lokyr-render-core"),
+        ("lokyr-ui-core", "lokyr-text-core"),
     ];
 
     /// The test graph, with an optional extra dependency.
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn selectors_match_by_directory_or_by_name() {
         let member = Crate {
-            name: "bolt-vt-core".to_owned(),
+            name: "lokyr-vt-core".to_owned(),
             path: Some("crates/vt-core".to_owned()),
         };
         let external = Crate {
@@ -419,18 +419,21 @@ mod tests {
     #[test]
     fn each_rule_catches_its_own_violation() {
         let cases = [
-            ("pure-terminal-core", ("bolt-vt-core", "bolt-ui-core")),
-            ("sdk-stands-alone", ("bolt-plugin-sdk", "bolt-pkg-model")),
-            ("plugins-use-the-sdk", ("bolt-core-actions", "bolt-session")),
+            ("pure-terminal-core", ("lokyr-vt-core", "lokyr-ui-core")),
+            ("sdk-stands-alone", ("lokyr-plugin-sdk", "lokyr-pkg-model")),
+            (
+                "plugins-use-the-sdk",
+                ("lokyr-core-actions", "lokyr-session"),
+            ),
             (
                 "kernel-only-in-app",
-                ("bolt-plugin-host-luau", "bolt-kernel"),
+                ("lokyr-plugin-host-luau", "lokyr-kernel"),
             ),
-            ("app-without-network", ("bolt-kernel", "tokio")),
-            ("portable-without-macos", ("bolt-session", "objc2")),
+            ("app-without-network", ("lokyr-kernel", "tokio")),
+            ("portable-without-macos", ("lokyr-session", "objc2")),
             (
                 "alacritty-only-in-the-differential-tests",
-                ("bolt-vt-core", "alacritty_terminal"),
+                ("lokyr-vt-core", "alacritty_terminal"),
             ),
         ];
         let tested: BTreeSet<&str> = cases.iter().map(|(rule, _)| *rule).collect();
@@ -453,7 +456,7 @@ mod tests {
 
     #[test]
     fn forbid_reports_the_dependency_path() {
-        let graph = workspace(Some(("bolt-kernel", "tokio")));
+        let graph = workspace(Some(("lokyr-kernel", "tokio")));
         let messages: Vec<String> = real_rules()
             .iter()
             .flat_map(|rule| rule.check(&graph))
@@ -461,7 +464,7 @@ mod tests {
             .collect();
         assert_eq!(
             messages,
-            ["`bolt-app` depends on `tokio`: bolt-app → bolt-kernel → tokio"]
+            ["`lokyr-app` depends on `tokio`: lokyr-app → lokyr-kernel → tokio"]
         );
     }
 

@@ -1,10 +1,10 @@
 //! The known causes of the divergences between the two cores, and how a
 //! step that the screens part at shows one.
 
-use bolt_vt_core::page::Width;
-use bolt_vt_core::parser::MAX_PARAMS;
-use bolt_vt_core::terminal::{Charset, Shift};
-use bolt_vt_core::unicode::Widths;
+use lokyr_vt_core::page::Width;
+use lokyr_vt_core::parser::MAX_PARAMS;
+use lokyr_vt_core::terminal::{Charset, Shift};
+use lokyr_vt_core::unicode::Widths;
 
 use crate::{Before, HEAD, Screen, Step, TAIL};
 
@@ -273,16 +273,16 @@ impl Seen<'_> {
     /// Whether the screens' cells are the same, their cursors aside.
     fn cells_same(&self) -> bool {
         self.screens
-            .is_none_or(|(bolt, alacritty)| bolt.rows == alacritty.rows)
+            .is_none_or(|(lokyr, alacritty)| lokyr.rows == alacritty.rows)
     }
 
     /// Whether the screens' rows are the same but for the rows in `rows`.
     fn rows_same_but(&self, rows: &[usize]) -> bool {
-        self.screens.is_none_or(|(bolt, alacritty)| {
-            bolt.rows.len() == alacritty.rows.len()
-                && (0..bolt.rows.len())
+        self.screens.is_none_or(|(lokyr, alacritty)| {
+            lokyr.rows.len() == alacritty.rows.len()
+                && (0..lokyr.rows.len())
                     .filter(|y| !rows.contains(y))
-                    .all(|y| bolt.rows[y] == alacritty.rows[y])
+                    .all(|y| lokyr.rows[y] == alacritty.rows[y])
         })
     }
 
@@ -291,7 +291,7 @@ impl Seen<'_> {
     fn cursors(&self) -> (At, At) {
         self.screens.map_or(
             (self.after.cursor, self.after.cursor),
-            |(bolt, alacritty)| (bolt.cursor, alacritty.cursor),
+            |(lokyr, alacritty)| (lokyr.cursor, alacritty.cursor),
         )
     }
 
@@ -299,15 +299,15 @@ impl Seen<'_> {
     /// when the wrap was pending: in that alone, which the VT core ended
     /// and `alacritty_terminal` kept.
     fn cursors_same_but_the_wrap(&self) -> bool {
-        let (bolt, alacritty) = self.cursors();
-        bolt == alacritty || (self.before.cursor.2 && self.wrap_kept())
+        let (lokyr, alacritty) = self.cursors();
+        lokyr == alacritty || (self.before.cursor.2 && self.wrap_kept())
     }
 
     /// Whether the cursors differ in their pending wrap alone, which the VT
     /// core ended and `alacritty_terminal` kept.
     fn wrap_kept(&self) -> bool {
-        let (bolt, alacritty) = self.cursors();
-        (bolt.0, bolt.1) == (alacritty.0, alacritty.1) && !bolt.2 && alacritty.2
+        let (lokyr, alacritty) = self.cursors();
+        (lokyr.0, lokyr.1) == (alacritty.0, alacritty.1) && !lokyr.2 && alacritty.2
     }
 }
 
@@ -331,7 +331,7 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
             return Some(Cause::SavedOrigin);
         }
     }
-    let (bolt, alacritty) = seen.cursors();
+    let (lokyr, alacritty) = seen.cursors();
     match step {
         Step::Csi { values, .. } if *values >= MAX_PARAMS => Some(Cause::Params),
         Step::Csi {
@@ -348,7 +348,7 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
                     .is_some_and(|&bottom| usize::from(bottom) > before.rows)
                     && usize::from(params.first().copied().unwrap_or(0)) >= before.rows
                     && seen.cells_same()
-                    && bolt == before.cursor =>
+                    && lokyr == before.cursor =>
             {
                 Some(Cause::Region)
             }
@@ -359,7 +359,7 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'u')
                 if (params.len() > 1 || params.first().is_some_and(|&value| value > 0))
                     && seen.cells_same()
-                    && bolt == before.cursor =>
+                    && lokyr == before.cursor =>
             {
                 Some(Cause::Scorc)
             }
@@ -383,7 +383,7 @@ pub(crate) fn ending(seen: &Seen<'_>) -> Option<Cause> {
             final_byte: b'8',
         } if intermediates == b"#"
             && seen.cells_same()
-            && bolt == (0, 0, false)
+            && lokyr == (0, 0, false)
             && alacritty == before.cursor =>
         {
             Some(Cause::Decaln)
@@ -431,10 +431,10 @@ fn restores(step: &Step) -> bool {
 /// they part at, recognized from what the step made the VT core do, its
 /// state before it, and the difference's shape, as each cause makes it.
 pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
-    let (bolt_screen, alacritty_screen) = seen.screens?;
+    let (lokyr_screen, alacritty_screen) = seen.screens?;
     let before = seen.before;
     let (x, y, pending) = before.cursor;
-    let (bolt, alacritty) = (bolt_screen.cursor, alacritty_screen.cursor);
+    let (lokyr, alacritty) = (lokyr_screen.cursor, alacritty_screen.cursor);
     let place = |at: At| (at.0, at.1);
     let first = |params: &[u16]| usize::from(params.first().copied().unwrap_or(0).max(1));
     let (top, bottom) = before.region;
@@ -445,9 +445,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         step if restores(step)
             && seen.after.origin
             && seen.cells_same()
-            && bolt.0 == alacritty.0
-            && bolt.2 == alacritty.2
-            && bolt.1 == bottom
+            && lokyr.0 == alacritty.0
+            && lokyr.2 == alacritty.2
+            && lokyr.1 == bottom
             && alacritty.1 > bottom =>
         {
             Some(Cause::RestoredBelow)
@@ -466,7 +466,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"?", b'l')
                 if params.contains(&6)
                     && seen.cells_same()
-                    && bolt == (0, 0, false)
+                    && lokyr == (0, 0, false)
                     && ((place(alacritty) == (x, y)
                         && !(params.contains(&1049) && before.restored.is_some()))
                         || (params
@@ -484,11 +484,11 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 if before.origin
                     && top > 0
                     && seen.cells_same()
-                    && bolt.0 == alacritty.0
-                    && !bolt.2
+                    && lokyr.0 == alacritty.0
+                    && !lokyr.2
                     && !alacritty.2
-                    && bolt.1 != alacritty.1
-                    && (bolt.1, alacritty.1)
+                    && lokyr.1 != alacritty.1
+                    && (lokyr.1, alacritty.1)
                         == origin_rows(*final_byte, first(params), y, before.region) =>
             {
                 Some(Cause::OriginMoves)
@@ -500,10 +500,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && y >= top
                     && y < top + first(params)
                     && seen.cells_same()
-                    && bolt.0 == alacritty.0
-                    && !bolt.2
+                    && lokyr.0 == alacritty.0
+                    && !lokyr.2
                     && !alacritty.2
-                    && bolt.1 == top
+                    && lokyr.1 == top
                     && alacritty.1 < top =>
             {
                 Some(Cause::Margins)
@@ -515,10 +515,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && y <= bottom
                     && y + first(params) > bottom
                     && seen.cells_same()
-                    && bolt.0 == alacritty.0
-                    && !bolt.2
+                    && lokyr.0 == alacritty.0
+                    && !lokyr.2
                     && !alacritty.2
-                    && bolt.1 == bottom
+                    && lokyr.1 == bottom
                     && alacritty.1 > bottom =>
             {
                 Some(Cause::Margins)
@@ -530,10 +530,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 if first(params) > before.cols - x
                     && seen.rows_same_but(&[y])
                     && seen.cursors_same_but_the_wrap()
-                    && bolt_screen.rows[y].len() <= x
+                    && lokyr_screen.rows[y].len() <= x
                     && alacritty_screen.rows[y]
                         == prefix(
-                            &bolt_screen.rows[y],
+                            &lokyr_screen.rows[y],
                             before.cols - first(params).min(before.cols),
                         ) =>
             {
@@ -549,7 +549,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'L' | b'M')
                 if (x > 0 || pending)
                     && seen.cells_same()
-                    && bolt == (0, y, false)
+                    && lokyr == (0, y, false)
                     && alacritty == before.cursor =>
             {
                 Some(Cause::Lines)
@@ -565,7 +565,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                         &[0]
                     })
                     && seen.cursors_same_but_the_wrap()
-                    && bolt_screen.rows[0].is_empty() =>
+                    && lokyr_screen.rows[0].is_empty() =>
             {
                 Some(Cause::Ed1)
             }
@@ -585,7 +585,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && params.first().is_none_or(|&mode| mode == 0)
                     && seen.rows_same_but(&[y])
                     && seen.wrap_kept()
-                    && but_last(&alacritty_screen.rows[y], before.cols) == bolt_screen.rows[y] =>
+                    && but_last(&alacritty_screen.rows[y], before.cols) == lokyr_screen.rows[y] =>
             {
                 Some(Cause::EditWrap)
             }
@@ -608,10 +608,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                             .filter(|&&stop| stop)
                             .count()
                     && seen.cells_same()
-                    && bolt.0 == 0
+                    && lokyr.0 == 0
                     && alacritty.0 > 0
-                    && bolt.1 == alacritty.1
-                    && !bolt.2
+                    && lokyr.1 == alacritty.1
+                    && !lokyr.2
                     && alacritty.2 == pending =>
             {
                 Some(Cause::CbtFirst)
@@ -622,7 +622,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'b')
                 if before.insert
                     && meets_a_wide_character(params, before)
-                    && bolt == alacritty
+                    && lokyr == alacritty
                     && before.last_printed.is_some_and(|(c, _)| {
                         inserted_over_wide(seen, &copies(params, before, None), c)
                     }) =>
@@ -630,7 +630,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 Some(Cause::WideEdit)
             }
             // SD, which `alacritty_terminal` takes, and the cursor stays.
-            (b"", b'T') if params.len() > 1 && bolt == alacritty => Some(Cause::Highlight),
+            (b"", b'T') if params.len() > 1 && lokyr == alacritty => Some(Cause::Highlight),
             // REP in insert mode of a wide character, one of whose copies
             // lands at the last column alone: the first from it, or a later
             // one when the cells left from the cursor are odd, or, when they
@@ -649,7 +649,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                         before.cols % 2 == 1
                             && first(params) > (before.cols - x) / 2 + (before.cols - 1) / 2
                     }
-                    && bolt == alacritty
+                    && lokyr == alacritty
                     && before.last_printed.is_some_and(|(c, _)| {
                         inserted_on_wrapping(seen, &copies(params, before, None), c)
                     }) =>
@@ -663,7 +663,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             (b"", b'b')
                 if before.autowrap
                     && !before.insert
-                    && bolt == alacritty
+                    && lokyr == alacritty
                     && before.last_printed.is_some_and(|(_, width)| width == 2)
                     && heads_left(seen, &copies(params, before, None)) =>
             {
@@ -679,10 +679,10 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     && !before.autowrap
                     && (before.cols - x) % 2 == 1
                     && 2 * first(params) > before.cols - x
-                    && bolt == alacritty
+                    && lokyr == alacritty
                     && seen.rows_same_but(&[y])
                     && before.last_printed.is_some_and(|(c, _)| {
-                        same_but_the_end(bolt_screen, alacritty_screen, y, before.cols, c)
+                        same_but_the_end(lokyr_screen, alacritty_screen, y, before.cols, c)
                     }) =>
             {
                 Some(Cause::NoWrapWide)
@@ -691,7 +691,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             // forgot in `alacritty_terminal` alone: the VT core leaves its
             // cursor.
             (b"", b'b')
-                if bolt == before.cursor
+                if lokyr == before.cursor
                     && before.reset.is_some_and(|width| {
                         printed_alone(seen, &copies(params, before, Some(usize::from(width))))
                     }) =>
@@ -715,7 +715,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // the bottom margin.
         Step::Execute(0x09)
             if pending
-                && bolt == before.cursor
+                && lokyr == before.cursor
                 && alacritty.0 == 0
                 && (seen.cells_same() || y == bottom) =>
         {
@@ -726,15 +726,15 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // nothing.
         Step::Print('\u{FFFD}')
             if (0x80..=0x9F).contains(&seen.byte)
-                && bolt == advanced(before, 1, 1)
+                && lokyr == advanced(before, 1, 1)
                 && alacritty == before.cursor
-                && seen.rows_same_but(&[y, bolt.1]) =>
+                && seen.rows_same_but(&[y, lokyr.1]) =>
         {
             Some(Cause::C1)
         }
         // The VT core takes no cell, and `alacritty_terminal` one.
         Step::Print('\u{D7C7}'..='\u{D7CA}' | '\u{D7FC}'..='\u{D7FF}')
-            if bolt == before.cursor
+            if lokyr == before.cursor
                 && alacritty == advanced(before, 1, 1)
                 && seen.rows_same_but(&[y, alacritty.1]) =>
         {
@@ -743,9 +743,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // The VT core widens the cluster by a cell, and `alacritty_terminal`
         // takes none.
         Step::Print('\u{FE0F}')
-            if bolt == advanced(before, 1, 1)
+            if lokyr == advanced(before, 1, 1)
                 && alacritty == before.cursor
-                && seen.rows_same_but(&[y, bolt.1]) =>
+                && seen.rows_same_but(&[y, lokyr.1]) =>
         {
             Some(Cause::Emoji)
         }
@@ -753,7 +753,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
         // pushes one past the row's end, on the row that it goes in; or at
         // the start of a row, under the spacer head above it.
         Step::Print(c)
-            if before.insert && bolt == alacritty && printed_in_insert_mode(seen, *c) =>
+            if before.insert && lokyr == alacritty && printed_in_insert_mode(seen, *c) =>
         {
             Some(Cause::WideEdit)
         }
@@ -765,7 +765,7 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                 && before.autowrap
                 && !pending
                 && x + 1 == before.cols
-                && bolt == alacritty
+                && lokyr == alacritty
                 && inserted_on_wrapping(seen, &copies(&[1], before, Some(2)), *c) =>
         {
             Some(Cause::InsertWrap)
@@ -776,9 +776,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
             if seen.wide
                 && !before.autowrap
                 && x + 1 == before.cols
-                && bolt == alacritty
+                && lokyr == alacritty
                 && seen.rows_same_but(&[y])
-                && same_but_the_end(bolt_screen, alacritty_screen, y, before.cols, *c) =>
+                && same_but_the_end(lokyr_screen, alacritty_screen, y, before.cols, *c) =>
         {
             Some(Cause::NoWrapWide)
         }
@@ -796,9 +796,9 @@ pub(crate) fn cause(seen: &Seen<'_>) -> Option<Cause> {
                     .iter()
                     .any(|width| matches!(width, Width::Wide | Width::SpacerTail))
                 && seen.rows_same_but(&[y])
-                && bolt == alacritty
-                && bolt_screen.rows[y].get(x).is_some_and(|cell| cell == HEAD)
-                && but_last(&bolt_screen.rows[y], before.cols)
+                && lokyr == alacritty
+                && lokyr_screen.rows[y].get(x).is_some_and(|cell| cell == HEAD)
+                && but_last(&lokyr_screen.rows[y], before.cols)
                     == but_last(&alacritty_screen.rows[y], before.cols) =>
         {
             Some(Cause::WrapHead)
@@ -824,9 +824,9 @@ fn origin_rows(
         b'B' | b'E' | b'e' => (y + n) as isize,
         _ => y as isize,
     };
-    let bolt = target.clamp(top as isize, bottom as isize);
+    let lokyr = target.clamp(top as isize, bottom as isize);
     let alacritty = (target + top as isize).clamp(0, bottom as isize);
-    (bolt as usize, alacritty as usize)
+    (lokyr as usize, alacritty as usize)
 }
 
 /// Where printing `n` characters `width` cells wide takes the cursor from
@@ -922,13 +922,13 @@ fn head_emptied(printed: &[String], other: &[String], cols: usize) -> bool {
 /// start of differs as [`came_back`] tells, the copies taken as inserted in
 /// both.
 fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
-    let Some((bolt, alacritty)) = seen.screens else {
+    let Some((lokyr, alacritty)) = seen.screens else {
         return true;
     };
     let cols = seen.before.cols;
     let copy = c.to_string();
-    (0..bolt.rows.len()).all(|row| {
-        if bolt.rows[row] == alacritty.rows[row] {
+    (0..lokyr.rows.len()).all(|row| {
+        if lokyr.rows[row] == alacritty.rows[row] {
             return true;
         }
         let passes = copies.passes(row);
@@ -937,7 +937,7 @@ fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
         }) = passes.last()
         {
             let (ours_row, theirs_row) = (
-                padded(&bolt.rows[row], cols),
+                padded(&lokyr.rows[row], cols),
                 padded(&alacritty.rows[row], cols),
             );
             // Each copy is taken as inserted in both cores: where
@@ -1009,20 +1009,20 @@ fn inserted_over_wide(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
 /// that `copies` wrapped from at the last column: the VT core's has a
 /// spacer head there and `alacritty_terminal`'s an empty cell.
 fn heads_left(seen: &Seen<'_>, copies: &Copies) -> bool {
-    let Some((bolt, alacritty)) = seen.screens else {
+    let Some((lokyr, alacritty)) = seen.screens else {
         return true;
     };
     let cols = seen.before.cols;
-    (0..bolt.rows.len()).all(|row| {
-        bolt.rows[row] == alacritty.rows[row]
+    (0..lokyr.rows.len()).all(|row| {
+        lokyr.rows[row] == alacritty.rows[row]
             || (copies.wraps_from.contains(&row)
-                && bolt.rows[row]
+                && lokyr.rows[row]
                     .get(cols - 1)
                     .is_some_and(|cell| cell == HEAD)
                 && alacritty.rows[row]
                     .get(cols - 1)
                     .is_none_or(|cell| cell == " ")
-                && but_last(&bolt.rows[row], cols) == but_last(&alacritty.rows[row], cols))
+                && but_last(&lokyr.rows[row], cols) == but_last(&alacritty.rows[row], cols))
     })
 }
 
@@ -1047,7 +1047,7 @@ fn heads_left(seen: &Seen<'_>, copies: &Copies) -> bool {
 /// head that `alacritty_terminal` empties as it writes over the wide
 /// character at that start.
 fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
-    let Some((bolt, alacritty)) = seen.screens else {
+    let Some((lokyr, alacritty)) = seen.screens else {
         return true;
     };
     // A wrap from the bottom margin scrolls, and the copy goes into a new
@@ -1057,8 +1057,8 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
     }
     let cols = seen.before.cols;
     let copy = c.to_string();
-    (0..bolt.rows.len()).all(|row| {
-        if bolt.rows[row] == alacritty.rows[row] {
+    (0..lokyr.rows.len()).all(|row| {
+        if lokyr.rows[row] == alacritty.rows[row] {
             return true;
         }
         let passes = copies.passes(row);
@@ -1066,7 +1066,7 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
             return head_above(seen, copies, row);
         };
         let (ours, theirs) = (
-            padded(&bolt.rows[row], cols),
+            padded(&lokyr.rows[row], cols),
             padded(&alacritty.rows[row], cols),
         );
         // A row that a later copy wraps from ends with its head, which
@@ -1090,7 +1090,7 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
                 // character, empties its first half in the VT core, which
                 // `alacritty_terminal` keeps as it was.
                 let from = stretch.from;
-                let mut ours = bolt.rows[row].clone();
+                let mut ours = lokyr.rows[row].clone();
                 if seen.before.widths.get(from) == Some(&Width::SpacerTail)
                     && let (Some(left), Some(theirs)) = (
                         from.checked_sub(1).and_then(|left| ours.get_mut(left)),
@@ -1145,13 +1145,13 @@ fn inserted_on_wrapping(seen: &Seen<'_>, copies: &Copies, c: char) -> bool {
 /// `alacritty_terminal` empties. The rows are as the region's scrolls leave
 /// them, and `Before` and `copies.starts` tell them as they were.
 fn head_above(seen: &Seen<'_>, copies: &Copies, row: usize) -> bool {
-    let Some((bolt, alacritty)) = seen.screens else {
+    let Some((lokyr, alacritty)) = seen.screens else {
         return true;
     };
     let before_them = copies.before_scrolls(row, seen.before.region);
     copies.starts.contains(&(before_them + 1))
         && seen.before.ends_with_head.get(before_them) == Some(&true)
-        && head_emptied(&alacritty.rows[row], &bolt.rows[row], seen.before.cols)
+        && head_emptied(&alacritty.rows[row], &lokyr.rows[row], seen.before.cols)
 }
 
 /// Whether the screens' row that copies came back to the start of, the
@@ -1317,13 +1317,13 @@ fn two_cells_right(ours: &[&str], theirs: &[&str], from: usize) -> bool {
 /// it, and the one before is as `alacritty_terminal`'s, or empty where it
 /// held the first half of a wide character whose second half the character
 /// went over, which `alacritty_terminal` keeps.
-fn same_but_the_end(bolt: &Screen, alacritty: &Screen, y: usize, cols: usize, c: char) -> bool {
+fn same_but_the_end(lokyr: &Screen, alacritty: &Screen, y: usize, cols: usize, c: char) -> bool {
     let start = cols.saturating_sub(3);
     let (ours, theirs) = (
-        padded(&bolt.rows[y], cols),
+        padded(&lokyr.rows[y], cols),
         padded(&alacritty.rows[y], cols),
     );
-    prefix(&bolt.rows[y], start) == prefix(&alacritty.rows[y], start)
+    prefix(&lokyr.rows[y], start) == prefix(&alacritty.rows[y], start)
         && ours[cols - 2] == c.to_string()
         && ours[cols - 1] == TAIL
         && (cols < 3
@@ -1636,7 +1636,7 @@ fn printed_in_insert_mode(seen: &Seen<'_>, c: char) -> bool {
 }
 
 /// The sets that G0 to G3 hold.
-pub(crate) fn sets(charsets: bolt_vt_core::terminal::Charsets) -> [Charset; 4] {
+pub(crate) fn sets(charsets: lokyr_vt_core::terminal::Charsets) -> [Charset; 4] {
     [Shift::G0, Shift::G1, Shift::G2, Shift::G3].map(|slot| charsets.get(slot))
 }
 
@@ -1647,14 +1647,14 @@ mod tests {
     use crate::explore::{Parted, parted, stepped};
 
     /// The cause that the rules give the screens that `parted` saw, with
-    /// the VT core's as `bolt`.
-    fn explained(parted: &Parted, bolt: &Screen) -> Option<Cause> {
+    /// the VT core's as `lokyr`.
+    fn explained(parted: &Parted, lokyr: &Screen) -> Option<Cause> {
         let seen = Seen {
             step: &parted.step,
             byte: parted.byte,
             before: &parted.before,
             after: &parted.after,
-            screens: (*bolt != parted.alacritty).then_some((bolt, &parted.alacritty)),
+            screens: (*lokyr != parted.alacritty).then_some((lokyr, &parted.alacritty)),
             wide: parted.wide,
         };
         ending(&seen).or_else(|| cause(&seen))
@@ -1864,7 +1864,7 @@ mod tests {
     /// the last row.
     fn bugs(parted: &Parted) -> Vec<(&'static str, Screen)> {
         let (cols, rows) = (parted.before.cols, parted.before.rows);
-        let screen = &parted.bolt;
+        let screen = &parted.lokyr;
         let (x, y, pending) = screen.cursor;
         let mut bugs = Vec::new();
         let mut moved = |name, cursor| {
@@ -1908,7 +1908,7 @@ mod tests {
     fn each_rule_explains_its_cause_and_none_of_the_bugs_that_look_like_it() {
         for (name, expected, input) in cases() {
             let parted = parted(80, 24, &input).expect("the screens part");
-            assert_eq!(explained(&parted, &parted.bolt), Some(expected), "{name}");
+            assert_eq!(explained(&parted, &parted.lokyr), Some(expected), "{name}");
             for (bug, screen) in bugs(&parted) {
                 if expected == Highlight && bug.ends_with("row written") {
                     // SD's rows, which `alacritty_terminal` scrolls, are any.
@@ -1943,7 +1943,7 @@ mod tests {
         for (input, rows) in inputs {
             let step = stepped(80, 24, input.as_bytes()).expect("the screens part no sooner");
             for &row in rows {
-                let mut bug = step.bolt.clone();
+                let mut bug = step.lokyr.clone();
                 match bug.rows[row].get_mut(5) {
                     Some(cell) => *cell = "#".to_owned(),
                     None => bug.rows[row].push("#".to_owned()),
@@ -1975,16 +1975,16 @@ mod tests {
         )
         .expect("no parting");
         assert_eq!(
-            explained(&pushed, &with_cell(&pushed.bolt, 5, 0, "#")),
+            explained(&pushed, &with_cell(&pushed.lokyr, 5, 0, "#")),
             None
         );
-        let emptied = with_cell(&with_cell(&pushed.bolt, 10, 0, " "), 11, 0, " ");
+        let emptied = with_cell(&with_cell(&pushed.lokyr, 10, 0, " "), 11, 0, " ");
         assert_eq!(explained(&pushed, &emptied), None);
         // A spacer head at the end of a row that the copies do not wrap
         // from: theirs, or one below whose start they do not write.
         for y in [0, 5] {
             assert_eq!(
-                explained(&pushed, &with_cell(&pushed.bolt, 79, y, HEAD)),
+                explained(&pushed, &with_cell(&pushed.lokyr, 79, y, HEAD)),
                 None,
                 "row {y}"
             );
@@ -1998,7 +1998,7 @@ mod tests {
             "\x1b[3;6r\x1b[6;19H\u{6587}\x1b[6;1Ha\x1b[4h\x1b[99b".as_bytes(),
         )
         .expect("no parting");
-        assert_eq!(explained(&past, &with_cell(&past.bolt, 1, 1, "a")), None);
+        assert_eq!(explained(&past, &with_cell(&past.lokyr, 1, 1, "a")), None);
         // Copies that wrap in insert mode over a row with a wide character:
         // InsertWrap's, whose shape a cell off in the next row is no part
         // of.
@@ -2008,8 +2008,8 @@ mod tests {
             "\x1b[2;10H\u{4e2d}\x1b[1;1H\u{4e2d}\x1b[1;80H\x1b[4h\x1b[2b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&wrap, &wrap.bolt), Some(InsertWrap));
-        let mut shifted = wrap.bolt.clone();
+        assert_eq!(explained(&wrap, &wrap.lokyr), Some(InsertWrap));
+        let mut shifted = wrap.lokyr.clone();
         shifted.rows[1].insert(0, " ".to_owned());
         assert_eq!(explained(&wrap, &shifted), None);
         // Copies that scroll the screen: a cell written in any row is no
@@ -2022,7 +2022,7 @@ mod tests {
         .expect("no parting before");
         for y in 0..6 {
             assert_eq!(
-                explained(&scrolled, &with_cell(&scrolled.bolt, 0, y, "#")),
+                explained(&scrolled, &with_cell(&scrolled.lokyr, 0, y, "#")),
                 None,
                 "row {y}"
             );
@@ -2042,9 +2042,9 @@ mod tests {
                 .as_bytes(),
             )
             .expect("the screens part");
-            assert_eq!(explained(&odd, &odd.bolt), Some(InsertWrap), "{count}");
+            assert_eq!(explained(&odd, &odd.lokyr), Some(InsertWrap), "{count}");
             assert_eq!(
-                explained(&odd, &with_cell(&odd.bolt, 3, 1, "#")),
+                explained(&odd, &with_cell(&odd.lokyr, 3, 1, "#")),
                 None,
                 "{count}"
             );
@@ -2064,12 +2064,12 @@ mod tests {
         ] {
             let later = parted(19, 6, input.as_bytes()).expect("the screens part");
             assert_eq!(
-                explained(&later, &later.bolt),
+                explained(&later, &later.lokyr),
                 Some(InsertWrap),
                 "{input:?}"
             );
             assert_eq!(
-                explained(&later, &with_cell(&later.bolt, x, y, "#")),
+                explained(&later, &with_cell(&later.lokyr, x, y, "#")),
                 None,
                 "{input:?}"
             );
@@ -2084,13 +2084,13 @@ mod tests {
         )
         .expect("the screens part");
         later.alacritty = with_cell(&later.alacritty, 18, 3, "#");
-        assert_eq!(explained(&later, &later.bolt), None);
+        assert_eq!(explained(&later, &later.lokyr), None);
         // Fewer copies, which reach no row's last column alone: a spacer
         // head at the end of their row is no part of InsertWrap.
         let short =
             stepped(19, 6, "\x1b[3;14H\x1b[4h\u{4e2d}\x1b[b".as_bytes()).expect("no parting");
         assert_eq!(
-            explained(&short, &with_cell(&short.bolt, 18, 2, HEAD)),
+            explained(&short, &with_cell(&short.lokyr, 18, 2, HEAD)),
             None
         );
         // A wrap in insert mode from the bottom margin, which scrolls, and
@@ -2102,7 +2102,7 @@ mod tests {
         ] {
             let bottom = stepped(80, 24, input.as_bytes()).expect("no parting before");
             assert_eq!(
-                explained(&bottom, &with_cell(&bottom.bolt, 3, 0, "#")),
+                explained(&bottom, &with_cell(&bottom.lokyr, 3, 0, "#")),
                 None,
                 "{input:?}"
             );
@@ -2127,9 +2127,9 @@ mod tests {
             "\x1b[5;80Hx\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&wrap, &wrap.bolt), Some(WrapHead));
+        assert_eq!(explained(&wrap, &wrap.lokyr), Some(WrapHead));
         for row in [1, 4, 23] {
-            assert_eq!(explained(&wrap, &head(&wrap.bolt, row)), None, "row {row}");
+            assert_eq!(explained(&wrap, &head(&wrap.lokyr, row)), None, "row {row}");
         }
         // Two copies, the second on the row that the first goes to, which
         // ends with an `x`, and rows that start with 中 after it and lower:
@@ -2142,22 +2142,22 @@ mod tests {
                 .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&wrap, &wrap.bolt), Some(WrapHead));
+        assert_eq!(explained(&wrap, &wrap.lokyr), Some(WrapHead));
         for row in [1, 9] {
-            assert_eq!(explained(&wrap, &head(&wrap.bolt, row)), None, "row {row}");
+            assert_eq!(explained(&wrap, &head(&wrap.lokyr, row)), None, "row {row}");
         }
         // Nor a head after a copy that does not wrap.
         let stays = stepped(80, 24, "\x1b[1;10H\u{4e2d}\x1b[b".as_bytes()).expect("no parting");
-        assert_eq!(explained(&stays, &head(&stays.bolt, 0)), None);
+        assert_eq!(explained(&stays, &head(&stays.lokyr, 0)), None);
         // Copies that wrap in insert mode into an empty row, which both
         // cores show the same: a cell written in the row that they leave,
         // or the next row's cells a column off, are no part of InsertWrap.
         let insert = stepped(80, 24, "\x1b[H\u{4e2d}\x1b[1;78H\x1b[4h\x1b[2b".as_bytes())
             .expect("no parting");
-        let mut written = insert.bolt.clone();
+        let mut written = insert.lokyr.clone();
         written.rows[0][5] = "#".to_owned();
         assert_eq!(explained(&insert, &written), None);
-        let mut shifted = insert.bolt.clone();
+        let mut shifted = insert.lokyr.clone();
         shifted.rows[1].insert(0, " ".to_owned());
         assert_eq!(explained(&insert, &shifted), None);
     }
@@ -2169,15 +2169,15 @@ mod tests {
         // row's last three is no part of NoWrapWide.
         let even = stepped(80, 24, "\x1b[?7l\x1b[H\u{4e2d}\x1b[1;77H\x1b[3b".as_bytes())
             .expect("no parting");
-        let mut changed = even.bolt.clone();
+        let mut changed = even.lokyr.clone();
         changed.rows[0][77] = "#".to_owned();
         assert_eq!(explained(&even, &changed), None);
         // A wide character at the last column without autowrap: a cell
         // changed at the row's start is no part of it.
         let printed =
             parted(80, 24, "\x1b[?7lab\x1b[80G\u{4e2d}".as_bytes()).expect("the screens part");
-        assert_eq!(explained(&printed, &printed.bolt), Some(NoWrapWide));
-        let mut changed = printed.bolt.clone();
+        assert_eq!(explained(&printed, &printed.lokyr), Some(NoWrapWide));
+        let mut changed = printed.lokyr.clone();
         changed.rows[0][0] = "#".to_owned();
         assert_eq!(explained(&printed, &changed), None);
     }
@@ -2192,9 +2192,9 @@ mod tests {
             "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;78H\x1b[4h\x1b[2b",
         ] {
             let wrap = parted(80, 24, input.as_bytes()).expect("the screens part");
-            assert_eq!(explained(&wrap, &wrap.bolt), Some(InsertWrap), "{input:?}");
+            assert_eq!(explained(&wrap, &wrap.lokyr), Some(InsertWrap), "{input:?}");
             assert_eq!(
-                explained(&wrap, &with_cell(&wrap.bolt, 79, 0, "#")),
+                explained(&wrap, &with_cell(&wrap.lokyr, 79, 0, "#")),
                 None,
                 "{input:?}"
             );
@@ -2206,7 +2206,7 @@ mod tests {
             parted(80, 24, "\x1b[?7lab\x1b[80G\u{4e2d}".as_bytes()).expect("the screens part");
         for x in 77..80 {
             assert_eq!(
-                explained(&back, &with_cell(&back.bolt, x, 0, "#")),
+                explained(&back, &with_cell(&back.lokyr, x, 0, "#")),
                 None,
                 "column {x}"
             );
@@ -2219,7 +2219,7 @@ mod tests {
             "\x1b[1;80Hx\x1b[2;3H\u{4e2d}\x1b[2;1Ha\x1b[4h\x1b[b".as_bytes(),
         )
         .expect("no parting");
-        assert_eq!(explained(&kept, &with_cell(&kept.bolt, 79, 0, HEAD)), None);
+        assert_eq!(explained(&kept, &with_cell(&kept.lokyr, 79, 0, HEAD)), None);
         // A head left on a row that the copies wrote and did not wrap from.
         let wrap = parted(
             80,
@@ -2227,8 +2227,8 @@ mod tests {
             "\x1b[3;1H\u{4e2d}\x1b[2;1H\u{4e2d}\x1b[1;78H\u{4e2d}\x1b[2b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&wrap, &wrap.bolt), Some(WrapHead));
-        assert_eq!(explained(&wrap, &with_cell(&wrap.bolt, 79, 1, HEAD)), None);
+        assert_eq!(explained(&wrap, &wrap.lokyr), Some(WrapHead));
+        assert_eq!(explained(&wrap, &with_cell(&wrap.lokyr, 79, 1, HEAD)), None);
         // The cell left of where copies that wrap in insert mode start: a
         // narrow one emptied, and the first half of a wide character that
         // they went over, which `alacritty_terminal` did not keep as it was.
@@ -2237,9 +2237,9 @@ mod tests {
             "a".repeat(78)
         );
         let narrow = parted(80, 24, narrow.as_bytes()).expect("the screens part");
-        assert_eq!(explained(&narrow, &narrow.bolt), Some(InsertWrap));
+        assert_eq!(explained(&narrow, &narrow.lokyr), Some(InsertWrap));
         assert_eq!(
-            explained(&narrow, &with_cell(&narrow.bolt, 0, 1, " ")),
+            explained(&narrow, &with_cell(&narrow.lokyr, 0, 1, " ")),
             None
         );
         let from_a_tail = format!(
@@ -2248,10 +2248,10 @@ mod tests {
             "b".repeat(79)
         );
         let mut split = parted(80, 24, from_a_tail.as_bytes()).expect("the screens part");
-        assert_eq!(explained(&split, &split.bolt), Some(InsertWrap));
-        assert_eq!(explained(&split, &with_cell(&split.bolt, 0, 1, "#")), None);
+        assert_eq!(explained(&split, &split.lokyr), Some(InsertWrap));
+        assert_eq!(explained(&split, &with_cell(&split.lokyr, 0, 1, "#")), None);
         split.alacritty = with_cell(&split.alacritty, 0, 1, "\u{6587}");
-        assert_eq!(explained(&split, &split.bolt), None);
+        assert_eq!(explained(&split, &split.lokyr), None);
         // A wide character that wraps in insert mode back to the start of
         // the last row, below the region: a head left at the end of a row
         // other than the one above it.
@@ -2260,10 +2260,13 @@ mod tests {
             "a".repeat(79)
         );
         let back = parted(80, 24, wrap_back.as_bytes()).expect("the screens part");
-        assert_eq!(explained(&back, &back.bolt), Some(InsertWrap));
-        assert_eq!(explained(&back, &with_cell(&back.bolt, 79, 21, HEAD)), None);
+        assert_eq!(explained(&back, &back.lokyr), Some(InsertWrap));
+        assert_eq!(
+            explained(&back, &with_cell(&back.lokyr, 79, 21, HEAD)),
+            None
+        );
         // A cell written in the row that it wraps back to, past the copy.
-        assert_eq!(explained(&back, &with_cell(&back.bolt, 40, 23, "#")), None);
+        assert_eq!(explained(&back, &with_cell(&back.lokyr, 40, 23, "#")), None);
     }
 
     #[test]
@@ -2274,13 +2277,13 @@ mod tests {
         let back = stepped(19, 6, "\u{4e2d}\x1b[?7l\x1b[1;1H\x1b[4h\x1b[11b".as_bytes())
             .expect("no parting before");
         assert_eq!(
-            explained(&back, &with_cell(&back.bolt, 16, 0, "\u{4e2d}")),
+            explained(&back, &with_cell(&back.lokyr, 16, 0, "\u{4e2d}")),
             None
         );
         let split =
             parted(20, 6, "\u{4e2d}\x1b[1;2H\x1b[4h\x1b[b".as_bytes()).expect("the screens part");
         assert_eq!(
-            explained(&split, &with_cell(&split.bolt, 0, 0, "\u{4e2d}")),
+            explained(&split, &with_cell(&split.lokyr, 0, 0, "\u{4e2d}")),
             None
         );
         // A head at the end of a row of the region that the copies' scrolls
@@ -2296,13 +2299,13 @@ mod tests {
         )
         .expect("no parting before");
         assert_eq!(
-            explained(&scrolled, &with_cell(&scrolled.bolt, 18, 0, HEAD)),
+            explained(&scrolled, &with_cell(&scrolled.lokyr, 18, 0, HEAD)),
             None
         );
         // A copy that fits, without autowrap, which no copy goes back over.
         let fits = stepped(20, 6, "\u{4e2d}\x1b[?7l\x1b[1;2H\x1b[b".as_bytes())
             .expect("no parting before");
-        let extra = with_cell(&with_cell(&fits.bolt, 18, 0, "\u{4e2d}"), 19, 0, TAIL);
+        let extra = with_cell(&with_cell(&fits.lokyr, 18, 0, "\u{4e2d}"), 19, 0, TAIL);
         assert_eq!(explained(&fits, &extra), None);
         // A wide character that a row below starts with, emptied where the
         // insert does not push it to the row's end.
@@ -2311,7 +2314,7 @@ mod tests {
             .collect();
         let below = parted(20, 6, format!("{rows}\x1b[1;2H\x1b[4h\x1b[10b").as_bytes())
             .expect("the screens part");
-        assert_eq!(explained(&below, &with_cell(&below.bolt, 2, 1, " ")), None);
+        assert_eq!(explained(&below, &with_cell(&below.lokyr, 2, 1, " ")), None);
     }
 
     #[test]
@@ -2373,11 +2376,11 @@ mod tests {
         ] {
             let pushed = parted(20, 6, input.as_bytes()).expect("the screens part");
             assert_eq!(
-                explained(&pushed, &pushed.bolt),
+                explained(&pushed, &pushed.lokyr),
                 Some(WideEdit),
                 "{input:?}"
             );
-            assert_eq!(explained(&pushed, &written(&pushed.bolt, 3, 0)), None);
+            assert_eq!(explained(&pushed, &written(&pushed.lokyr, 3, 0)), None);
         }
         // Without autowrap, a last copy that goes one column back in the VT
         // core, after copies that split a wide character at the cursor: the
@@ -2388,11 +2391,11 @@ mod tests {
             "\x1b[1;1H\u{4e2d}\x1b[?7l\x1b[1;2H\x1b[4h\x1b[10b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&back, &back.bolt), Some(WideEdit));
+        assert_eq!(explained(&back, &back.lokyr), Some(WideEdit));
         for x in [17, 18, 19] {
-            assert_eq!(explained(&back, &written(&back.bolt, x, 0)), None);
+            assert_eq!(explained(&back, &written(&back.lokyr, x, 0)), None);
         }
-        let other = with_cell(&back.bolt, 18, 0, "\u{6587}");
+        let other = with_cell(&back.lokyr, 18, 0, "\u{6587}");
         assert_eq!(explained(&back, &other), None);
         // Copies that fill the row's end exactly, which none goes back
         // from; and narrow ones, which never do.
@@ -2402,14 +2405,17 @@ mod tests {
             "ab\u{6587}cd\x1b[2;1H\u{4e2d}\x1b[?7l\x1b[1;3H\x1b[4h\x1b[9b".as_bytes(),
         )
         .expect("no parting before");
-        assert_eq!(explained(&exact, &with_cell(&exact.bolt, 17, 0, " ")), None);
+        assert_eq!(
+            explained(&exact, &with_cell(&exact.lokyr, 17, 0, " ")),
+            None
+        );
         let narrow = parted(
             20,
             6,
             "\x1b[1;1H\u{4e2d}\x1b[2;1Hh\x1b[?7l\x1b[1;2H\x1b[4h\x1b[19b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&narrow, &narrow.bolt), Some(WideEdit));
+        assert_eq!(explained(&narrow, &narrow.lokyr), Some(WideEdit));
         // A single copy that goes back over a wide character at the row's
         // end, past which the VT core keeps the cell before.
         let over = parted(
@@ -2422,8 +2428,8 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&over, &over.bolt), Some(WideEdit));
-        assert_eq!(explained(&over, &with_cell(&over.bolt, 17, 0, " ")), None);
+        assert_eq!(explained(&over, &over.lokyr), Some(WideEdit));
+        assert_eq!(explained(&over, &with_cell(&over.lokyr, 17, 0, " ")), None);
         // InsertWrap's first row, whose cell left of the copies
         // `alacritty_terminal` empties as its insert turns the second half
         // of the wide character at the row's end round to the cursor.
@@ -2437,8 +2443,8 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&left, &left.bolt), Some(InsertWrap));
-        assert_eq!(explained(&left, &written(&left.bolt, 16, 1)), None);
+        assert_eq!(explained(&left, &left.lokyr), Some(InsertWrap));
+        assert_eq!(explained(&left, &written(&left.lokyr, 16, 1)), None);
         // The head above the row whose start the copies write in, after
         // they scroll the screen a row: the row that it moved to, alone.
         let head = format!(
@@ -2453,14 +2459,14 @@ mod tests {
             let input = format!("{head}\x1b[{count}b");
             let scrolled = parted(20, 6, input.as_bytes()).expect("the screens part");
             assert_eq!(
-                explained(&scrolled, &scrolled.bolt),
+                explained(&scrolled, &scrolled.lokyr),
                 Some(WideEdit),
                 "{input:?}"
             );
             assert_eq!(
                 explained(
                     &scrolled,
-                    &with_cell(&scrolled.bolt, 19, head_row - 1, HEAD)
+                    &with_cell(&scrolled.lokyr, 19, head_row - 1, HEAD)
                 ),
                 None
             );
@@ -2484,22 +2490,22 @@ mod tests {
             "\x1b[1;3r\x1b[6;1Hxy\x1b[1;1H\u{4e2d}\x1b[6;20H\x1b[4h\u{4e2d}".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&printed, &printed.bolt), Some(InsertWrap));
+        assert_eq!(explained(&printed, &printed.lokyr), Some(InsertWrap));
         for x in [2, 3] {
-            assert_eq!(explained(&printed, &written(&printed.bolt, x, 5)), None);
+            assert_eq!(explained(&printed, &written(&printed.lokyr, x, 5)), None);
         }
         // Another wide character in the VT core where the copy goes, and
         // a copy where the row held nothing.
-        let other = with_cell(&printed.bolt, 0, 5, "\u{65e5}");
+        let other = with_cell(&printed.lokyr, 0, 5, "\u{65e5}");
         assert_eq!(explained(&printed, &other), None);
-        let copied = with_cell(&with_cell(&printed.bolt, 10, 5, "\u{4e2d}"), 11, 5, TAIL);
+        let copied = with_cell(&with_cell(&printed.lokyr, 10, 5, "\u{4e2d}"), 11, 5, TAIL);
         assert_eq!(explained(&printed, &copied), None);
         let wrap_back = format!(
             "\x1b[1;2r\x1b[23;1H{}\u{4e2d}\x1b[24;80H\x1b[4h\u{4e2d}",
             "a".repeat(79)
         );
         let back = parted(80, 24, wrap_back.as_bytes()).expect("the screens part");
-        assert_eq!(explained(&back, &written(&back.bolt, 2, 23)), None);
+        assert_eq!(explained(&back, &written(&back.lokyr, 2, 23)), None);
         // Copies that come back after a pass in the cursor's row, which ended
         // with a spacer head: the insert pushed it off the row, and the
         // cell there is what came before it.
@@ -2510,7 +2516,7 @@ mod tests {
         )
         .expect("no parting before");
         assert_eq!(
-            explained(&agreed, &with_cell(&agreed.bolt, 19, 5, HEAD)),
+            explained(&agreed, &with_cell(&agreed.lokyr, 19, 5, HEAD)),
             None
         );
         let kept = parted(
@@ -2519,8 +2525,8 @@ mod tests {
             "\x1b[1;3r\x1b[1;1H\u{4e2d}\x1b[6;2H\x1b[4h\x1b[10b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&kept, &kept.bolt), Some(InsertWrap));
-        assert_eq!(explained(&kept, &written(&kept.bolt, 19, 5)), None);
+        assert_eq!(explained(&kept, &kept.lokyr), Some(InsertWrap));
+        assert_eq!(explained(&kept, &written(&kept.lokyr, 19, 5)), None);
         // After more passes, a copy of the pass before whose first half
         // `alacritty_terminal` empties, and the VT core turns into a second
         // half alone.
@@ -2530,9 +2536,9 @@ mod tests {
             "\x1b[1;3r\x1b[1;1H\u{4e2d}\x1b[6;2H\x1b[4h\x1b[30b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&passes, &passes.bolt), Some(WideEdit));
+        assert_eq!(explained(&passes, &passes.lokyr), Some(WideEdit));
         assert_eq!(
-            explained(&passes, &with_cell(&passes.bolt, 2, 5, TAIL)),
+            explained(&passes, &with_cell(&passes.lokyr, 2, 5, TAIL)),
             None
         );
         // The first half of a wide character at the row's start, which the
@@ -2544,7 +2550,7 @@ mod tests {
             "\x1b[1;3r\x1b[6;1H\u{4e2d}\x1b[6;2H\x1b[4h\x1b[10b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&first, &first.bolt), Some(InsertWrap));
+        assert_eq!(explained(&first, &first.lokyr), Some(InsertWrap));
         // On 19 columns, from a row below the cursor's: copies that come
         // back after a spacer head, past which the VT core empties the
         // first half that the push split at the row's end; and, after more
@@ -2552,7 +2558,7 @@ mod tests {
         for count in [30, 45] {
             let input = format!("\x1b[1;3r\x1b[1;1H\u{4e2d}\x1b[4;1H\x1b[4h\x1b[{count}b");
             let more = parted(19, 6, input.as_bytes()).expect("the screens part");
-            assert_eq!(explained(&more, &more.bolt), Some(WideEdit), "{input:?}");
+            assert_eq!(explained(&more, &more.lokyr), Some(WideEdit), "{input:?}");
         }
         // Copies that come back with no pass before them, from a wrap
         // pending at the end of the row: what it held, pushed right.
@@ -2566,14 +2572,14 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&pending, &pending.bolt), Some(WideEdit));
-        let copied = with_cell(&with_cell(&pending.bolt, 8, 5, "\u{4e2d}"), 9, 5, TAIL);
+        assert_eq!(explained(&pending, &pending.lokyr), Some(WideEdit));
+        let copied = with_cell(&with_cell(&pending.lokyr, 8, 5, "\u{4e2d}"), 9, 5, TAIL);
         assert_eq!(explained(&pending, &copied), None);
         // Each pass keeps its own cells: copies after RIS at the last
         // column and at the start of the row; and the cursor's row of `q`,
         // which the copies that come back push right.
         let reset = parted(20, 6, b"x\x1bc\x1b[1;3r\x1b[6;20H\x1b[2b").expect("the screens part");
-        assert_eq!(explained(&reset, &reset.bolt), Some(RepReset));
+        assert_eq!(explained(&reset, &reset.lokyr), Some(RepReset));
         let pushed = parted(
             20,
             6,
@@ -2584,8 +2590,8 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&pushed, &pushed.bolt), Some(InsertWrap));
-        assert_eq!(explained(&pushed, &written(&pushed.bolt, 10, 5)), None);
+        assert_eq!(explained(&pushed, &pushed.lokyr), Some(InsertWrap));
+        assert_eq!(explained(&pushed, &written(&pushed.lokyr, 10, 5)), None);
         // On 19 columns, the first half of the wide character that the
         // first pass split, which `alacritty_terminal` keeps, pushed right
         // by the copies that come back.
@@ -2599,8 +2605,8 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&split, &split.bolt), Some(WideEdit));
-        assert_eq!(explained(&split, &written(&split.bolt, 2, 5)), None);
+        assert_eq!(explained(&split, &split.lokyr), Some(WideEdit));
+        assert_eq!(explained(&split, &written(&split.lokyr, 2, 5)), None);
         // Copies that come back after a spacer head, past which the VT core
         // keeps the cell left of the cursor, which `alacritty_terminal`
         // empties: emptied in the VT core too.
@@ -2614,8 +2620,8 @@ mod tests {
             .as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&left, &left.bolt), Some(WideEdit));
-        assert_eq!(explained(&left, &with_cell(&left.bolt, 4, 5, " ")), None);
+        assert_eq!(explained(&left, &left.lokyr), Some(WideEdit));
+        assert_eq!(explained(&left, &with_cell(&left.lokyr, 4, 5, " ")), None);
     }
 
     #[test]
@@ -2630,7 +2636,7 @@ mod tests {
             "\x1b[2;1Ha\u{4e2d}\x1b[1;1H\u{4e2d}\x1b[?7l\x1b[2;1H\x1b[4h\x1b[10b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&tail, &emptied(&tail.bolt, 19, 1)), None);
+        assert_eq!(explained(&tail, &emptied(&tail.lokyr, 19, 1)), None);
         let row = "\u{4e2d}".repeat(10);
         let head = stepped(
             20,
@@ -2638,7 +2644,7 @@ mod tests {
             format!("\x1b[1;1H{row}\x1b[?7l\x1b[1;20H\x1b[4h\u{4e2d}").as_bytes(),
         )
         .expect("no parting");
-        assert_eq!(explained(&head, &emptied(&head.bolt, 18, 0)), None);
+        assert_eq!(explained(&head, &emptied(&head.lokyr, 18, 0)), None);
         // On 19 columns, a cell that the insert pushed to the end of a row
         // that the copies wrap to, emptied in the VT core.
         let rows: String = (1..=6)
@@ -2650,7 +2656,7 @@ mod tests {
             format!("{rows}\x1b[1;1H\u{4e2d}\x1b[1;16H\x1b[4h\x1b[20b").as_bytes(),
         )
         .expect("no parting before");
-        assert_eq!(explained(&odd, &emptied(&odd.bolt, 18, 2)), None);
+        assert_eq!(explained(&odd, &emptied(&odd.lokyr, 18, 2)), None);
         // A wide character that the insert pushed to the last column of a
         // row that the copies wrap to, which it splits there: the VT core
         // empties its first half, for both rules.
@@ -2660,7 +2666,7 @@ mod tests {
             "\x1b[2;1H\u{4e2d}\x1b[1;1H\u{4e2d}\x1b[1;18H\x1b[4h\x1b[10b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&split, &split.bolt), Some(WideEdit));
+        assert_eq!(explained(&split, &split.lokyr), Some(WideEdit));
         let written_over = parted(
             19,
             6,
@@ -2668,7 +2674,7 @@ mod tests {
         )
         .expect("the screens part");
         assert_eq!(
-            explained(&written_over, &written_over.bolt),
+            explained(&written_over, &written_over.lokyr),
             Some(InsertWrap)
         );
         // A row that the copies wrap to and from, whose last cell, the
@@ -2679,7 +2685,7 @@ mod tests {
             "\x1b[2;1H\u{4e2d}\x1b[1;1H\u{4e2d}\x1b[1;16H\x1b[4h\x1b[20b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&through, &through.bolt), Some(WideEdit));
+        assert_eq!(explained(&through, &through.lokyr), Some(WideEdit));
         // Wide copies that come back to the start of the last row, below
         // the region, which held no wide character: their own meet them.
         let own = parted(
@@ -2688,12 +2694,12 @@ mod tests {
             "\x1b[1;2r\x1b[1;1H\u{4e2d}\x1b[6;2H\x1b[4h\x1b[11b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&own, &own.bolt), Some(WideEdit));
+        assert_eq!(explained(&own, &own.lokyr), Some(WideEdit));
         // REP after RIS, which leaves the VT core's screen empty: a cell
         // written where the copy goes in `alacritty_terminal`.
         let reset = parted(80, 24, b"x\x1bc\x1b[b").expect("the screens part");
-        assert_eq!(explained(&reset, &reset.bolt), Some(RepReset));
-        assert_eq!(explained(&reset, &with_cell(&reset.bolt, 0, 0, "#")), None);
+        assert_eq!(explained(&reset, &reset.lokyr), Some(RepReset));
+        assert_eq!(explained(&reset, &with_cell(&reset.lokyr, 0, 0, "#")), None);
     }
 
     #[test]
@@ -2712,7 +2718,7 @@ mod tests {
             let step = stepped(80, 24, input.as_bytes()).expect("no parting");
             for cells in [&[78, 79][..], &[79]] {
                 assert_eq!(
-                    explained(&step, &emptied(&step.bolt, 0, cells)),
+                    explained(&step, &emptied(&step.lokyr, 0, cells)),
                     None,
                     "{input:?} {cells:?}"
                 );
@@ -2726,7 +2732,7 @@ mod tests {
             "\x1b[1;10H\u{4e2d}\x1b[1;9Ha\x1b[4h\x1b[9b".as_bytes(),
         )
         .expect("no parting");
-        assert_eq!(explained(&step, &emptied(&step.bolt, 0, &[18])), None);
+        assert_eq!(explained(&step, &emptied(&step.lokyr, 0, &[18])), None);
         // The second half of a wide character left of where the copies
         // start, which they do not split: emptied in the VT core.
         for input in [
@@ -2735,7 +2741,7 @@ mod tests {
         ] {
             let step = stepped(80, 24, input.as_bytes()).expect("no parting");
             assert_eq!(
-                explained(&step, &emptied(&step.bolt, 0, &[1])),
+                explained(&step, &emptied(&step.lokyr, 0, &[1])),
                 None,
                 "{input:?}"
             );
@@ -2748,32 +2754,35 @@ mod tests {
             "\x1b[2;3H\u{4e2d}\x1b[2;1Ha\x1b[4h\x1b[b".as_bytes(),
         )
         .expect("no parting");
-        assert_eq!(explained(&step, &with_cell(&step.bolt, 79, 0, HEAD)), None);
+        assert_eq!(explained(&step, &with_cell(&step.lokyr, 79, 0, HEAD)), None);
         // A wide character at the last column without autowrap, which the
         // VT core sets one column back: the `x` before it, which it does not
         // go over, erased.
         let back = parted(80, 24, "\x1b[?7lab\x1b[78Gx\x1b[80G\u{4e2d}".as_bytes())
             .expect("the screens part");
-        assert_eq!(explained(&back, &back.bolt), Some(NoWrapWide));
-        assert_eq!(explained(&back, &emptied(&back.bolt, 0, &[77])), None);
+        assert_eq!(explained(&back, &back.lokyr), Some(NoWrapWide));
+        assert_eq!(explained(&back, &emptied(&back.lokyr, 0, &[77])), None);
         // DECOM's reset before 1049's on the alternate screen, which both
         // cores leave where 1049 saved the cursor: a VT core that stays home.
         let step = stepped(80, 24, b"\x1b[5;10H\x1b[?1049h\x1b[?6;1049l").expect("no parting");
         let home = Screen {
             cursor: (0, 0, false),
-            ..step.bolt.clone()
+            ..step.lokyr.clone()
         };
         assert_eq!(explained(&step, &home), None);
         // REP after RIS, which the VT core does nothing for: a cell written
         // in its row past where the copy goes.
         let reset = parted(80, 24, b" \x1bc\x1b[b").expect("the screens part");
-        assert_eq!(explained(&reset, &reset.bolt), Some(RepReset));
-        assert_eq!(explained(&reset, &with_cell(&reset.bolt, 50, 0, "#")), None);
+        assert_eq!(explained(&reset, &reset.lokyr), Some(RepReset));
+        assert_eq!(
+            explained(&reset, &with_cell(&reset.lokyr, 50, 0, "#")),
+            None
+        );
         // A wide copy after RIS that wraps from the last column, where
         // `alacritty_terminal` leaves its spacer head.
         let wrap =
             parted(80, 24, "\u{4e2d}\x1bc\x1b[1;80H\x1b[b".as_bytes()).expect("the screens part");
-        assert_eq!(explained(&wrap, &wrap.bolt), Some(RepReset));
+        assert_eq!(explained(&wrap, &wrap.lokyr), Some(RepReset));
         // An insert in the last row below the region, which wraps back to
         // its start, under a row that ends with no head: a head that the
         // VT core adds there.
@@ -2783,8 +2792,11 @@ mod tests {
             "\x1b[1;2r\x1b[24;1H\u{4e2d}\x1b[24;80H\x1b[4h\u{4e2d}".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&back, &back.bolt), Some(InsertWrap));
-        assert_eq!(explained(&back, &with_cell(&back.bolt, 79, 22, HEAD)), None);
+        assert_eq!(explained(&back, &back.lokyr), Some(InsertWrap));
+        assert_eq!(
+            explained(&back, &with_cell(&back.lokyr, 79, 22, HEAD)),
+            None
+        );
         // A character inserted over the second half of a wide character,
         // without autowrap, which `alacritty_terminal` pushes to the row's
         // end without its first half, and the VT core empties.
@@ -2794,7 +2806,7 @@ mod tests {
             "\x1b[?7l\x1b[1;18H\u{4e2d}\u{e9}\x1b[4h\x1b[1;19H%".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&orphan, &orphan.bolt), Some(WideEdit));
+        assert_eq!(explained(&orphan, &orphan.lokyr), Some(WideEdit));
     }
 
     #[test]
@@ -2810,13 +2822,13 @@ mod tests {
         .expect("no parting");
         let empty = Screen {
             rows: vec![Vec::new(); 6],
-            ..scrolled.bolt.clone()
+            ..scrolled.lokyr.clone()
         };
         assert_eq!(explained(&scrolled, &empty), None);
         // Nor is a cell written past the copies in the new row that the
         // last scroll brought in, which held nothing.
         assert_eq!(
-            explained(&scrolled, &with_cell(&scrolled.bolt, 4, 5, "#")),
+            explained(&scrolled, &with_cell(&scrolled.lokyr, 4, 5, "#")),
             None
         );
         // The cells that the copies push right in the row that they wrap
@@ -2827,11 +2839,11 @@ mod tests {
             ("\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;78H\x1b[4h\x1b[2b", 2),
         ] {
             let wrap = parted(80, 24, input.as_bytes()).expect("the screens part");
-            assert_eq!(explained(&wrap, &wrap.bolt), Some(InsertWrap), "{input:?}");
+            assert_eq!(explained(&wrap, &wrap.lokyr), Some(InsertWrap), "{input:?}");
             for cell in ["#", " "] {
                 for x in [x, x + 1] {
                     assert_eq!(
-                        explained(&wrap, &with_cell(&wrap.bolt, x, 1, cell)),
+                        explained(&wrap, &with_cell(&wrap.lokyr, x, 1, cell)),
                         None,
                         "{input:?} {x} {cell:?}"
                     );
@@ -2847,8 +2859,8 @@ mod tests {
             "\x1b[2;1Hxy\x1b[1;1H\u{4e2d}\x1b[1;2H\x1b[4h\x1b[12b".as_bytes(),
         )
         .expect("the screens part");
-        assert_eq!(explained(&kept, &kept.bolt), Some(InsertWrap));
-        assert_eq!(explained(&kept, &with_cell(&kept.bolt, 19, 0, " ")), None);
+        assert_eq!(explained(&kept, &kept.lokyr), Some(InsertWrap));
+        assert_eq!(explained(&kept, &with_cell(&kept.lokyr, 19, 0, " ")), None);
         // On rows of `a中` below the region, on 19 by 6: copies that come
         // back to the start of the last row push the ones before them right
         // with the rest of the row; and, on 21 by 6, copies in the cursor's
@@ -2876,7 +2888,7 @@ mod tests {
             ),
         ] {
             let wrap = parted(cols, 6, input.as_bytes()).expect("the screens part");
-            assert_eq!(explained(&wrap, &wrap.bolt), Some(InsertWrap), "{input:?}");
+            assert_eq!(explained(&wrap, &wrap.lokyr), Some(InsertWrap), "{input:?}");
         }
     }
 
@@ -2884,7 +2896,7 @@ mod tests {
     fn restores_explain_the_cursors_that_their_modes_make() {
         let moved = |step: &Parted, cursor| Screen {
             cursor,
-            ..step.bolt.clone()
+            ..step.lokyr.clone()
         };
         // A restore outside origin mode, which caps nothing in either core:
         // a VT core that caps it is no part of RestoredBelow.
@@ -2899,17 +2911,17 @@ mod tests {
         // where it was nor where 1049 saved it is no part of Decom.
         let mut reset = parted(80, 24, b"\x1b[5;10H\x1b[?1049h\x1b[2;3H\x1b[?1049;6l")
             .expect("the screens part");
-        assert_eq!(explained(&reset, &reset.bolt), Some(Decom));
+        assert_eq!(explained(&reset, &reset.lokyr), Some(Decom));
         reset.alacritty.cursor = (5, 5, false);
-        assert_eq!(explained(&reset, &reset.bolt), None);
+        assert_eq!(explained(&reset, &reset.lokyr), None);
         // The same on the primary screen, where 1049's reset brings back
         // nothing: an `alacritty_terminal` cursor where DECSC saved it is
         // no part of Decom.
         let mut reset =
             parted(80, 24, b"\x1b[5;10H\x1b7\x1b[2;3H\x1b[?1049;6l").expect("the screens part");
-        assert_eq!(explained(&reset, &reset.bolt), Some(Decom));
+        assert_eq!(explained(&reset, &reset.lokyr), Some(Decom));
         reset.alacritty.cursor = (9, 4, false);
-        assert_eq!(explained(&reset, &reset.bolt), None);
+        assert_eq!(explained(&reset, &reset.lokyr), None);
     }
 
     #[test]
@@ -2924,8 +2936,8 @@ mod tests {
     fn dch_explains_nothing_of_a_vt_core_that_keeps_the_cell_under_the_cursor() {
         // DCH past the row's end that keeps the cell under the cursor.
         let dch = parted(80, 24, b"ABCDEFGH\x1b[1;5H\x1b[77P").expect("the screens part");
-        assert_eq!(explained(&dch, &dch.bolt), Some(Dch));
-        let mut kept = dch.bolt.clone();
+        assert_eq!(explained(&dch, &dch.lokyr), Some(Dch));
+        let mut kept = dch.lokyr.clone();
         kept.rows[0].push("E".to_owned());
         assert_eq!(explained(&dch, &kept), None);
     }
@@ -2934,8 +2946,8 @@ mod tests {
     fn rep_without_autowrap_explains_nothing_of_a_vt_core_that_changes_the_row_before_its_end() {
         let rep =
             parted(80, 24, "\x1b[?7l\x1b[2G\u{4e2d}\x1b[40b".as_bytes()).expect("the screens part");
-        assert_eq!(explained(&rep, &rep.bolt), Some(NoWrapWide));
-        let mut changed = rep.bolt.clone();
+        assert_eq!(explained(&rep, &rep.lokyr), Some(NoWrapWide));
+        let mut changed = rep.lokyr.clone();
         changed.rows[0][0] = "#".to_owned();
         assert_eq!(explained(&rep, &changed), None);
     }

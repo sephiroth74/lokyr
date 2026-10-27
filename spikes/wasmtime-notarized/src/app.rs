@@ -108,7 +108,7 @@ fn main_window(mtm: MainThreadMarker) -> Retained<NSWindow> {
     // SAFETY: the delegate keeps the window alive, so AppKit must not
     // release it when it closes.
     unsafe { window.setReleasedWhenClosed(false) };
-    window.setTitle(ns_string!("Bolt spike"));
+    window.setTitle(ns_string!("Lokyr spike"));
     window.center();
     window
 }

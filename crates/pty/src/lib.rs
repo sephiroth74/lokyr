@@ -108,7 +108,7 @@ pub struct Options {
     /// if `None`.
     pub working_directory: Option<PathBuf>,
     /// The directory of the app's resources, which the program finds in
-    /// `BOLT_RESOURCES_DIR`.
+    /// `LOKYR_RESOURCES_DIR`.
     pub resources_dir: Option<PathBuf>,
     /// The locale that `LANG` gets when the environment sets none, as when
     /// the app starts from the Dock: a UTF-8 one.

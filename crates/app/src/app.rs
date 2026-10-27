@@ -8,21 +8,21 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use bolt_font_coretext::CoreText;
-use bolt_kernel::config::Config;
-use bolt_platform_core::{
+use lokyr_font_coretext::CoreText;
+use lokyr_kernel::config::Config;
+use lokyr_platform_core::{
     AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform,
     Point, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
     WindowSize,
 };
-use bolt_pty::Program;
-use bolt_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
-use bolt_render_metal::{Gpu, MetalRenderer, Surface};
-use bolt_text_core::FontConfig;
-use bolt_ui_core::cursor::{self, Blink};
-use bolt_ui_core::font::Font;
-use bolt_ui_core::pane::{self as cells, CursorLook, Preedit};
-use bolt_ui_core::theme::Theme;
+use lokyr_pty::Program;
+use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
+use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
+use lokyr_text_core::FontConfig;
+use lokyr_ui_core::cursor::{self, Blink};
+use lokyr_ui_core::font::Font;
+use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit};
+use lokyr_ui_core::theme::Theme;
 
 use crate::keys;
 #[cfg(test)]
@@ -94,13 +94,13 @@ fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
     let font = Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())?;
     if let Some(family) = font.missing_family() {
         eprintln!(
-            "bolt: the font family `{family}` is not installed; the text takes `{}`",
+            "lokyr: the font family `{family}` is not installed; the text takes `{}`",
             font.family()
         );
     }
     if let Some(family) = font.missing_non_ascii_family() {
         eprintln!(
-            "bolt: the font family `{family}` is not installed; the text past ASCII takes `{}`",
+            "lokyr: the font family `{family}` is not installed; the text past ASCII takes `{}`",
             font.family()
         );
     }
@@ -128,7 +128,7 @@ impl ConfigFile {
             changed.store(true, Ordering::Release);
             waker.wake();
         })
-        .inspect_err(|error| eprintln!("bolt: {error}"))
+        .inspect_err(|error| eprintln!("lokyr: {error}"))
         .ok();
     }
 }
@@ -235,8 +235,8 @@ impl App {
         match Config::read(&file.path) {
             Ok(config) => self.apply(platform, config),
             Err(error) => {
-                eprintln!("bolt: {error}");
-                eprintln!("bolt: none of the config applies, and the one in force stays");
+                eprintln!("lokyr: {error}");
+                eprintln!("lokyr: none of the config applies, and the one in force stays");
             }
         }
     }
@@ -251,8 +251,8 @@ impl App {
             && let Some(drawing) = &mut self.drawing
             && let Err(error) = drawing.set_font(config.font.clone())
         {
-            eprintln!("bolt: {error}");
-            eprintln!("bolt: none of the config applies, and the one in force stays");
+            eprintln!("lokyr: {error}");
+            eprintln!("lokyr: none of the config applies, and the one in force stays");
             return;
         }
         self.config = config;
@@ -265,7 +265,7 @@ impl App {
 
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let attributes = WindowAttributes {
-            title: "Bolt".to_owned(),
+            title: "Lokyr".to_owned(),
             size: WINDOW_SIZE,
         };
         match platform.create_window(&attributes) {
@@ -283,7 +283,7 @@ impl App {
                 self.draw(platform, window, size);
             }
             Err(error) => {
-                eprintln!("bolt: {error}");
+                eprintln!("lokyr: {error}");
                 if self.windows.is_empty() {
                     platform.quit();
                 }
@@ -325,7 +325,7 @@ impl App {
     }
 
     /// The theme's colors in `appearance`.
-    fn colors(&self, appearance: Appearance) -> bolt_vt_core::terminal::Colors {
+    fn colors(&self, appearance: Appearance) -> lokyr_vt_core::terminal::Colors {
         self.theme
             .variant(appearance == Appearance::Dark)
             .colors
@@ -392,7 +392,7 @@ impl App {
         let drawing = self.drawing.as_ref()?;
         let handle = platform.window_handle(window)?;
         Surface::new(&drawing.gpu, handle)
-            .inspect_err(|error| eprintln!("bolt: {error}"))
+            .inspect_err(|error| eprintln!("lokyr: {error}"))
             .ok()
     }
 
@@ -531,7 +531,7 @@ impl App {
             .update_textures(&updates)
             .and_then(|()| drawing.renderer.draw(surface, &list));
         if let Err(error) = drawn {
-            eprintln!("bolt: {error}");
+            eprintln!("lokyr: {error}");
         }
     }
 }
@@ -544,7 +544,7 @@ impl Handler for App {
         if let Some(file) = &mut self.config_file {
             if let Err(error) = crate::watch::make_directory(&file.path) {
                 eprintln!(
-                    "bolt: the config's directory cannot be made, for {}: {error}",
+                    "lokyr: the config's directory cannot be made, for {}: {error}",
                     file.path.display()
                 );
             }
@@ -716,8 +716,8 @@ impl Handler for App {
 /// Whether `key` closes a window whose program ended: a key that types or
 /// acts, not a modifier, a lock, Fn, nor a key with Command, which the
 /// app's shortcuts have.
-fn closes(key: &bolt_platform_core::KeyEvent) -> bool {
-    use bolt_vt_core::input::Key;
+fn closes(key: &lokyr_platform_core::KeyEvent) -> bool {
+    use lokyr_vt_core::input::Key;
     !key.mods.super_key
         && keys::terminal_key(key).is_some_and(|key| {
             !matches!(
@@ -731,9 +731,9 @@ fn closes(key: &bolt_platform_core::KeyEvent) -> bool {
 fn main_menu() -> MainMenu {
     MainMenu {
         menus: vec![Menu {
-            title: "Bolt".to_owned(),
+            title: "Lokyr".to_owned(),
             items: vec![MenuItem::Command {
-                title: "Quit Bolt".to_owned(),
+                title: "Quit Lokyr".to_owned(),
                 command: QUIT.to_owned(),
                 shortcut: Some(Shortcut {
                     key: ShortcutKey::Char('q'),
@@ -749,9 +749,9 @@ fn main_menu() -> MainMenu {
 
 #[cfg(test)]
 mod tests {
-    use bolt_kernel::config::CloseOnExit;
-    use bolt_platform_core::fake::Fake;
-    use bolt_ui_core::cursor::CursorConfig;
+    use lokyr_kernel::config::CloseOnExit;
+    use lokyr_platform_core::fake::Fake;
+    use lokyr_ui_core::cursor::CursorConfig;
 
     use super::*;
 
@@ -915,7 +915,7 @@ mod tests {
     /// `test`, which holds `text`.
     fn with_file(test: &str, text: &str) -> (Fake, App, PathBuf) {
         let directory =
-            std::env::temp_dir().join(format!("bolt-app-{test}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("lokyr-app-{test}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("config.toml");
@@ -989,11 +989,11 @@ mod tests {
 
     #[test]
     fn a_config_s_directory_is_made_at_the_start_and_watched() {
-        let home = std::env::temp_dir().join(format!("bolt-app-home-{}", std::process::id()));
+        let home = std::env::temp_dir().join(format!("lokyr-app-home-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         // A home without `.config`.
-        let path = home.join(".config").join("bolt").join("config.toml");
+        let path = home.join(".config").join("lokyr").join("config.toml");
         let mut fake = Fake::default();
         let mut app = App::new(None, Config::default(), Some(path.clone())).with_program(quiet());
         fake.start(&mut app);
@@ -1065,11 +1065,10 @@ mod tests {
         line.cells()
             .iter()
             // A wide character's second cell holds nothing of it.
-            .filter(|cell| cell.width() != bolt_vt_core::page::Width::SpacerTail)
+            .filter(|cell| cell.width() != lokyr_vt_core::page::Width::SpacerTail)
             .map(|cell| match cell.content() {
-                bolt_vt_core::page::Content::Char(c) | bolt_vt_core::page::Content::Grapheme(c) => {
-                    c
-                }
+                lokyr_vt_core::page::Content::Char(c)
+                | lokyr_vt_core::page::Content::Grapheme(c) => c,
                 _ => ' ',
             })
             .map(|c| if c == '\0' { ' ' } else { c })
@@ -1162,7 +1161,7 @@ mod tests {
         // The terminal's default background, of the light variant, with the
         // opacity.
         let light = reloaded.colors(Appearance::Light).background;
-        let rgb = |rgb: bolt_vt_core::page::Rgb| {
+        let rgb = |rgb: lokyr_vt_core::page::Rgb| {
             [rgb.r, rgb.g, rgb.b].map(|component| f64::from(f32::from(component) / 255.0))
         };
         let [red, green, blue] = rgb(light);
@@ -1330,17 +1329,17 @@ mod tests {
     }
 
     fn key() -> WindowEvent {
-        typed(bolt_platform_core::KeyCode::KeyA, "a", false)
+        typed(lokyr_platform_core::KeyCode::KeyA, "a", false)
     }
 
     /// A key, of `code`, that types `text`, with Command held or not.
-    fn typed(code: bolt_platform_core::KeyCode, text: &str, command: bool) -> WindowEvent {
-        WindowEvent::Key(bolt_platform_core::KeyEvent {
+    fn typed(code: lokyr_platform_core::KeyCode, text: &str, command: bool) -> WindowEvent {
+        WindowEvent::Key(lokyr_platform_core::KeyEvent {
             code,
             state: KeyState::Pressed,
-            mods: bolt_platform_core::Modifiers {
+            mods: lokyr_platform_core::Modifiers {
                 super_key: command,
-                ..bolt_platform_core::Modifiers::default()
+                ..lokyr_platform_core::Modifiers::default()
             },
             text: text.to_owned(),
             unmodified: text.to_owned(),
@@ -1350,7 +1349,7 @@ mod tests {
 
     #[test]
     fn keys_reach_the_program_but_command_s_do_not() {
-        use bolt_platform_core::KeyCode;
+        use lokyr_platform_core::KeyCode;
 
         let (mut fake, mut app) = started();
         let window = fake.windows().next().unwrap();
@@ -1382,7 +1381,7 @@ mod tests {
 
     #[test]
     fn a_kept_window_closes_with_a_key_that_types_or_acts_alone() {
-        use bolt_platform_core::KeyCode;
+        use lokyr_platform_core::KeyCode;
 
         let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "exit 3");
         // A lock, Fn, a modifier and a Command key leave it open.
@@ -1413,7 +1412,7 @@ mod tests {
     #[test]
     fn a_program_that_cannot_start_leaves_a_window_that_a_key_closes() {
         let mut fake = Fake::default();
-        let missing = Program::command("/nonexistent/bolt-program", [] as [&str; 0]);
+        let missing = Program::command("/nonexistent/lokyr-program", [] as [&str; 0]);
         let mut app = app(Config::default(), missing);
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
@@ -1448,7 +1447,7 @@ mod tests {
 
     #[test]
     fn the_input_method_s_text_shows_then_reaches_the_program() {
-        use bolt_platform_core::KeyCode;
+        use lokyr_platform_core::KeyCode;
 
         let (mut fake, mut app) = started();
         let window = fake.windows().next().unwrap();
@@ -1514,7 +1513,7 @@ mod tests {
     /// A directory of the test's own, made empty.
     fn directory(test: &str) -> PathBuf {
         let directory =
-            std::env::temp_dir().join(format!("bolt-app-{test}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("lokyr-app-{test}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         directory

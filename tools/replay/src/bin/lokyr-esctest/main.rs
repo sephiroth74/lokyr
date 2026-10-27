@@ -1,9 +1,9 @@
-//! `bolt-esctest`: runs esctest, the suite of terminal tests of iTerm2 and
+//! `lokyr-esctest`: runs esctest, the suite of terminal tests of iTerm2 and
 //! xterm (<https://github.com/ThomasDickey/esctest2>), in a headless
 //! terminal, and tells its pass rate and its failures, grouped by the
 //! sequence that each test's class is named for.
 //!
-//! `bolt-esctest DIR [ARG...]` runs `DIR/esctest.py` with `python3`, from a
+//! `lokyr-esctest DIR [ARG...]` runs `DIR/esctest.py` with `python3`, from a
 //! checkout that the repository does not keep, and passes it the ARGs, as
 //! `--include=REGEX`. The terminal is 80 by 25, the size that esctest asks
 //! for, with cells of 8 by 16 pixels and xterm's default colors, black on
@@ -27,10 +27,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use bolt_pty::Exit;
-use bolt_replay::harness::{Harness, HarnessOptions};
-use bolt_vt_core::page::Rgb;
-use bolt_vt_core::terminal::{Colors, Event, Options, SPECIAL_COLORS};
+use lokyr_pty::Exit;
+use lokyr_replay::harness::{Harness, HarnessOptions};
+use lokyr_vt_core::page::Rgb;
+use lokyr_vt_core::terminal::{Colors, Event, Options, SPECIAL_COLORS};
 
 /// How long esctest waits for each byte of a reply, in seconds: shorter
 /// than its own default of a second, as a reply that a headless terminal
@@ -47,7 +47,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let Some(dir) = args.next().filter(|arg| arg != "-h" && arg != "--help") else {
         println!(
-            "Usage: bolt-esctest DIR [ARG...]\n\n\
+            "Usage: lokyr-esctest DIR [ARG...]\n\n\
              Runs DIR/esctest.py in a headless terminal, with the ARGs, and tells the pass\n\
              rate and the failures, by sequence."
         );
@@ -221,7 +221,7 @@ impl Temp {
         // A number for each, as tests make several at once.
         static MADE: AtomicUsize = AtomicUsize::new(0);
         let made = MADE.fetch_add(1, Ordering::Relaxed);
-        let name = format!("bolt-esctest-{}-{made}", std::process::id());
+        let name = format!("lokyr-esctest-{}-{made}", std::process::id());
         let dir = std::env::temp_dir().join(name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;

@@ -3,8 +3,8 @@
 //! draw what they lack, its cell, and the atlas that holds the glyphs drawn
 //! so far.
 
-use bolt_render_core::{AtlasRegion, Texture, TextureUpdate};
-use bolt_text_core::{
+use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
+use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, FontBackend,
     FontConfig, GlyphId, Resolved, Synthesis, choose_faces, resolve_faces,
 };
@@ -350,8 +350,8 @@ fn texture(format: BitmapFormat) -> Texture {
 mod tests {
     use std::collections::HashMap;
 
-    use bolt_text_core::{Bitmap, FaceInfo, FaceMetrics, Features, ShapedGlyph};
-    use bolt_vt_core::page::Style;
+    use lokyr_text_core::{Bitmap, FaceInfo, FaceMetrics, Features, ShapedGlyph};
+    use lokyr_vt_core::page::Style;
 
     use super::*;
 
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn the_non_ascii_family_takes_the_text_past_ascii() {
         let config = |family: &str| FontConfig {
-            non_ascii_family: Some(bolt_text_core::Name::try_from(family.to_owned()).unwrap()),
+            non_ascii_family: Some(lokyr_text_core::Name::try_from(family.to_owned()).unwrap()),
             ..FontConfig::default()
         };
         let mut font = Font::new(Squares::default(), config("Wide"), 1.0).unwrap();

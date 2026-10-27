@@ -1,6 +1,6 @@
 [package]
-name = "bolt-plugin-sdk"
-description = "The Bolt plugin API and its Rust SDK"
+name = "lokyr-plugin-sdk"
+description = "The Lokyr plugin API and its Rust SDK"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -8,8 +8,8 @@
 
 #![no_main]
 
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

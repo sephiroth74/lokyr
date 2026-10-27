@@ -6,13 +6,13 @@
 mod cells {
     use std::hint::black_box;
 
-    use bolt_font_coretext::CoreText;
-    use bolt_text_core::FontConfig;
-    use bolt_ui_core::font::Font;
-    use bolt_ui_core::pane;
-    use bolt_vt_core::parser::Parser;
-    use bolt_vt_core::terminal::{Options, Snapshot, Terminal};
     use criterion::{Criterion, Throughput};
+    use lokyr_font_coretext::CoreText;
+    use lokyr_text_core::FontConfig;
+    use lokyr_ui_core::font::Font;
+    use lokyr_ui_core::pane;
+    use lokyr_vt_core::parser::Parser;
+    use lokyr_vt_core::terminal::{Options, Snapshot, Terminal};
 
     const COLUMNS: u16 = 400;
     const ROWS: u16 = 120;

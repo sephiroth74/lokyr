@@ -1,25 +1,25 @@
 # Configuration
 
-Bolt reads its settings from one TOML file. This guide lists every key that the file can hold: what it does, the values it takes and its default.
+Lokyr reads its settings from one TOML file. This guide lists every key that the file can hold: what it does, the values it takes and its default.
 
-Every key and every section can be left out, and then takes its default: an empty file, or no file at all, gives Bolt as it ships.
+Every key and every section can be left out, and then takes its default: an empty file, or no file at all, gives Lokyr as it ships.
 
 ## The file
 
-- **Where it is**: `~/.config/bolt/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/bolt/config.toml` instead.
-  - A variable that your shell's startup files set, such as `XDG_CONFIG_HOME` in `~/.zshrc`, reaches Bolt only when you start it from that shell: started from the Finder or the Dock, Bolt reads `~/.config/bolt/config.toml`.
-  - When the file's directory does not exist, Bolt makes it, empty, as it starts, so that a config that you write there later applies at once.
-- **Links**: the file can be a symbolic link, as dotfiles managers such as GNU Stow make it. Bolt watches the file the link points to as well.
-- **Reloading**: Bolt applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor. Removing the file, or its directory, brings the defaults back.
+- **Where it is**: `~/.config/lokyr/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/lokyr/config.toml` instead.
+  - A variable that your shell's startup files set, such as `XDG_CONFIG_HOME` in `~/.zshrc`, reaches Lokyr only when you start it from that shell: started from the Finder or the Dock, Lokyr reads `~/.config/lokyr/config.toml`.
+  - When the file's directory does not exist, Lokyr makes it, empty, as it starts, so that a config that you write there later applies at once.
+- **Links**: the file can be a symbolic link, as dotfiles managers such as GNU Stow make it. Lokyr watches the file the link points to as well.
+- **Reloading**: Lokyr applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor. Removing the file, or its directory, brings the defaults back.
 - **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults.
-- **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Bolt does not know, it names the nearest key that it knows:
+- **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Lokyr does not know, it names the nearest key that it knows:
 
   ```text
-  bolt: /Users/you/.config/bolt/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?
-  bolt: none of the config applies, and the one in force stays
+  lokyr: /Users/you/.config/lokyr/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?
+  lokyr: none of the config applies, and the one in force stays
   ```
 
-  For now the errors go to the log: to the terminal that started Bolt, when you start it from one. A notice in the window comes later.
+  For now the errors go to the log: to the terminal that started Lokyr, when you start it from one. A notice in the window comes later.
 
 ### A complete example
 
@@ -49,7 +49,7 @@ option-as-meta = "left"
 
 ## `config_version`
 
-The version of the file's format. Bolt reads version `1`, and refuses any other.
+The version of the file's format. Lokyr reads version `1`, and refuses any other.
 
 | Value | Default |
 |---|---|
@@ -126,7 +126,7 @@ Whether the glyphs that a font joins into ligatures, such as `->` or `!=`, are j
 |---|---|
 | `true`, `false` | `true` |
 
-Bolt reads and checks this key, but does not apply it yet: it comes with shaping, and until then no ligature is drawn.
+Lokyr reads and checks this key, but does not apply it yet: it comes with shaping, and until then no ligature is drawn.
 
 ## `[cursor]`
 
@@ -182,9 +182,9 @@ What a window does when its program ends, such as the shell after `exit`.
 - `"always"` closes the window.
 - `"never"` keeps it open, with the line, until you press a key.
 
-The login shell's status is its own: on macOS, `login`, which starts it, hides it, and the shell tells it to Bolt as it ends. A status past 128 tells the signal that ended it, as shells give it.
+The login shell's status is its own: on macOS, `login`, which starts it, hides it, and the shell tells it to Lokyr as it ends. A status past 128 tells the signal that ended it, as shells give it.
 
-Closing the last window quits Bolt.
+Closing the last window quits Lokyr.
 
 ### `padding-x`, `padding-y`
 
@@ -218,7 +218,7 @@ The radius of the blur of what shows through the background, in points.
 | from `0` to `100`, whole or not | `0`, no blur |
 
 - The blur shows only below a `background-opacity` of 1.
-- macOS has no public way to blur what is behind a window: Bolt asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
+- macOS has no public way to blur what is behind a window: Lokyr asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
 
 ## `[keyboard]`
 

@@ -72,25 +72,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
-name = "bolt-differential"
+name = "lokyr-differential"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
- "bolt-vt-core",
+ "lokyr-vt-core",
 ]
 
 [[package]]
-name = "bolt-fuzz"
+name = "lokyr-fuzz"
 version = "0.0.0"
 dependencies = [
- "bolt-differential",
- "bolt-vt-core",
+ "lokyr-differential",
+ "lokyr-vt-core",
  "libfuzzer-sys",
 ]
 
 [[package]]
-name = "bolt-vt-core"
+name = "lokyr-vt-core"
 version = "0.1.0"
 dependencies = [
  "thiserror",

@@ -6,8 +6,8 @@ wit_bindgen::generate!({
     world: "plugin",
 });
 
-use exports::bolt::spike::bench::{Guest, Node, Span};
-use bolt::spike::host_log;
+use exports::lokyr::spike::bench::{Guest, Node, Span};
+use lokyr::spike::host_log;
 
 struct Bench;
 

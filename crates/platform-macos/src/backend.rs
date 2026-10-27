@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
-use bolt_platform_core::{
+use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };

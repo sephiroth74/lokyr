@@ -1,7 +1,7 @@
 //! macOS platform backend, built on AppKit.
 //!
 //! [`run`] starts the application and hands the app's
-//! [`Handler`](bolt_platform_core::Handler) what happens in it, on the main
+//! [`Handler`](lokyr_platform_core::Handler) what happens in it, on the main
 //! thread's run loop: its windows, and their frames at their displays' pace;
 //! its main menu, the clipboard and alerts; and the wakes of other threads,
 //! through a source of that run loop.

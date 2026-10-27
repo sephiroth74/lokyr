@@ -29,7 +29,7 @@ impl Cast {
             "env": { "TERM": term },
         });
         if window_ops {
-            header["bolt"] = json!({ "window_ops": true });
+            header["lokyr"] = json!({ "window_ops": true });
         }
         Self {
             lines: vec![header.to_string()],
@@ -168,9 +168,9 @@ mod tests {
             let text = Cast::new(10, 2, "xterm-256color", window_ops).finish();
             text.lines().next().unwrap().to_owned()
         };
-        assert!(!header(false).contains("bolt"));
+        assert!(!header(false).contains("lokyr"));
         assert!(
-            header(true).contains("\"bolt\":{\"window_ops\":true}"),
+            header(true).contains("\"lokyr\":{\"window_ops\":true}"),
             "{}",
             header(true)
         );

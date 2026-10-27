@@ -1,4 +1,4 @@
-//! What `bolt-replay`, `bolt-record` and their tests share: recordings, as
+//! What `lokyr-replay`, `lokyr-record` and their tests share: recordings, as
 //! they are read, the screen, as it is printed, and a headless terminal
 //! that runs a program.
 

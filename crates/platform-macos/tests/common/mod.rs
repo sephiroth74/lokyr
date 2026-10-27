@@ -8,7 +8,7 @@ use std::process;
 use std::thread;
 use std::time::Duration;
 
-use bolt_platform_core::{Alert, AlertStyle, Waker};
+use lokyr_platform_core::{Alert, AlertStyle, Waker};
 
 /// Fails the test `name` if it has not ended within `seconds`.
 pub fn deadline(name: &'static str, seconds: u64) {

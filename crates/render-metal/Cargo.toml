@@ -1,5 +1,5 @@
 [package]
-name = "bolt-render-metal"
+name = "lokyr-render-metal"
 description = "Metal renderer for macOS"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-render-core.workspace = true
+lokyr-render-core.workspace = true
 raw-window-handle.workspace = true
 thiserror.workspace = true
 

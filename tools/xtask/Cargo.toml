@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Build automation for the Bolt workspace"
+description = "Build automation for the Lokyr workspace"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -5,10 +5,10 @@
 
 use std::hint::black_box;
 
-use bolt_vt_core::page::{Capacity, Cell, PageList, Scrollback};
-use bolt_vt_core::parser::{Handler, Parser};
-use bolt_vt_core::terminal::{Options, Terminal};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
+use lokyr_vt_core::page::{Capacity, Cell, PageList, Scrollback};
+use lokyr_vt_core::parser::{Handler, Parser};
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// About how many bytes each input has.
 const SIZE: usize = 1024 * 1024;

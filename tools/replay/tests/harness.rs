@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bolt_replay::harness::{Event, Exit, Harness, HarnessOptions};
-use bolt_vt_core::terminal::{Event as TerminalEvent, Options};
+use lokyr_replay::harness::{Event, Exit, Harness, HarnessOptions};
+use lokyr_vt_core::terminal::{Event as TerminalEvent, Options};
 
 const LIMIT: Duration = Duration::from_secs(10);
 
@@ -187,7 +187,7 @@ fn the_terminals_options_answer_and_its_events_are_taken() {
 
 #[test]
 fn replies_go_out_while_the_test_does_something_else() {
-    let dir = std::env::temp_dir().join(format!("bolt-harness-serve-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lokyr-harness-serve-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir(&dir).unwrap();
     // The program says that it got the reply in a file, which the test
@@ -391,8 +391,8 @@ fn a_send_that_fails_on_an_error_takes_back_its_keys() {
 /// them without writing, written as fast as the PTY takes them.
 fn straight(bytes: &[u8]) -> Duration {
     let script = "stty raw -echo; echo armed; exec cat >/dev/null";
-    let pty = bolt_pty::spawn(&bolt_pty::Options::new(
-        bolt_pty::Program::command("/bin/sh", ["-c", script]),
+    let pty = lokyr_pty::spawn(&lokyr_pty::Options::new(
+        lokyr_pty::Program::command("/bin/sh", ["-c", script]),
         "xterm-256color",
     ))
     .unwrap();
@@ -402,7 +402,7 @@ fn straight(bytes: &[u8]) -> Duration {
     while !read.ends_with(b"armed\n") {
         let deadline = std::time::Instant::now() + LIMIT;
         match reader.read_until(&mut buffer, Some(deadline)).unwrap() {
-            bolt_pty::ReadOutcome::Read(n) => read.extend_from_slice(&buffer[..n]),
+            lokyr_pty::ReadOutcome::Read(n) => read.extend_from_slice(&buffer[..n]),
             outcome => panic!("{outcome:?} before the program was ready"),
         }
     }

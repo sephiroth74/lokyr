@@ -7,7 +7,7 @@ use std::rc::Weak;
 use std::time::Instant;
 
 use block2::RcBlock;
-use bolt_platform_core::TimerId;
+use lokyr_platform_core::TimerId;
 use objc2::rc::Retained;
 use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes, NSTimer};
 

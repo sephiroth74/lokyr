@@ -1,5 +1,5 @@
 [package]
-name = "bolt-platform-macos"
+name = "lokyr-platform-macos"
 description = "macOS platform backend built on AppKit"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-platform-core.workspace = true
+lokyr-platform-core.workspace = true
 raw-window-handle.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

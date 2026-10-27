@@ -4,7 +4,7 @@
 use std::sync::LazyLock;
 
 /// The entry's source.
-const SOURCE: &str = include_str!("../../terminfo/xterm-bolt.terminfo");
+const SOURCE: &str = include_str!("../../terminfo/xterm-lokyr.terminfo");
 
 /// What the entry says of a capability.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -218,7 +218,7 @@ mod tests {
                 "{flag}"
             );
         }
-        for missing in ["RGB", "smm", "mc0", "mc5i", "xterm-bolt", "bolt", ""] {
+        for missing in ["RGB", "smm", "mc0", "mc5i", "xterm-lokyr", "lokyr", ""] {
             assert_eq!(capability(missing.as_bytes()), None, "{missing}");
         }
     }

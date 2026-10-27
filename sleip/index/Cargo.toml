@@ -1,6 +1,6 @@
 [package]
-name = "crossbow-resolver"
-description = "Version resolution for Crossbow"
+name = "sleip-index"
+description = "Registry index client for Sleip"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-pkg-model.workspace = true
+lokyr-pkg-model.workspace = true
 
 [lints]
 workspace = true

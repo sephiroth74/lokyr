@@ -1,4 +1,4 @@
-//! `bolt-bench idle`: counts how often a process wakes up.
+//! `lokyr-bench idle`: counts how often a process wakes up.
 //!
 //! Reads the process's wakeup counters at the start and at every interval,
 //! then prints JSON on standard output: the wakeups of each interval, and the

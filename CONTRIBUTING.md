@@ -1,8 +1,8 @@
-# Contributing to Bolt
+# Contributing to Lokyr
 
-Thank you for your interest in Bolt. This guide tells how to set up the project, the rules that the code and the documents follow, and what a pull request needs before it can be merged.
+Thank you for your interest in Lokyr. This guide tells how to set up the project, the rules that the code and the documents follow, and what a pull request needs before it can be merged.
 
-Bolt is young: its first version is under way, for macOS 26 or later on Apple Silicon. Linux comes later. By taking part, you agree to follow the [code of conduct](CODE_OF_CONDUCT.md).
+Lokyr is young: its first version is under way, for macOS 26 or later on Apple Silicon. Linux comes later. By taking part, you agree to follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Before you start
 
@@ -22,7 +22,7 @@ You need:
 Then:
 
 ```sh
-cargo run -p bolt-app   # the terminal, with your login shell
+cargo run -p lokyr-app   # the terminal, with your login shell
 just --list             # the project's recipes
 just ci                 # every check that CI runs
 ```
@@ -38,7 +38,7 @@ Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you ne
 - `cargo xtask check-deps`: the [dependency rules](tools/xtask/deps-rules.toml), such as no networking in the app and no macOS crate in the platform-independent ones;
 - `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
 - `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
-- `cargo xtask bundle`: the app's bundle, `target/Bolt.app`, signed ad hoc on a Mac without the project's Developer ID, or with the identity that `BOLT_SIGN_IDENTITY` names.
+- `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed ad hoc on a Mac without the project's Developer ID, or with the identity that `LOKYR_SIGN_IDENTITY` names.
 
 ## The code
 
@@ -48,7 +48,7 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 - **Comments describe the code** as it is: what it does and why. They never name the plan: no task's identifier, no phase, no ADR's number, no section of `docs/`. A link to an external specification, such as xterm's, Unicode's or Apple's, is welcome. `just check-comments` catches the plan's names; a review catches the rest.
 - **`unsafe`** only in the crates that the conventions list, such as the platform's, the renderer's, the fonts' and the PTY's, and each block with a `// SAFETY:` comment that tells why it holds. The other crates forbid it.
 - **Errors**: `thiserror` in the libraries, `anyhow` in the binaries.
-- **Dependencies**: the workspace's `Cargo.toml` names them all; a new one needs a reason, a license that `deny.toml` allows, and a place that the dependency rules accept. The app contains no networking code: downloads are Crossbow's.
+- **Dependencies**: the workspace's `Cargo.toml` names them all; a new one needs a reason, a license that `deny.toml` allows, and a place that the dependency rules accept. The app contains no networking code: downloads are Sleip's.
 - **Formatting**: `cargo fmt`, with the workspace's `rustfmt.toml`.
 
 ## Tests
@@ -77,8 +77,8 @@ The [conventions](docs/ARCHITECTURE.md#conventions) are the full list. The ones 
 
 ## Reporting a bug
 
-Open an issue with the bug's template: the macOS version, the Mac, Bolt's commit, your config, the steps that make the bug happen, and what you expected. A security problem goes privately to the maintainer, through GitHub's private vulnerability reporting, not in a public issue.
+Open an issue with the bug's template: the macOS version, the Mac, Lokyr's commit, your config, the steps that make the bug happen, and what you expected. A security problem goes privately to the maintainer, through GitHub's private vulnerability reporting, not in a public issue.
 
 ## License
 
-Bolt is under the [MIT license](LICENSE). By contributing, you agree that your contributions are under the same license.
+Lokyr is under the [MIT license](LICENSE). By contributing, you agree that your contributions are under the same license.

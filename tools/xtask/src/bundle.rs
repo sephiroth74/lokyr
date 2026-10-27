@@ -1,13 +1,13 @@
-//! `cargo xtask bundle`: builds `target/Bolt.app` from the release binary.
+//! `cargo xtask bundle`: builds `target/Lokyr.app` from the release binary.
 //!
 //! The bundle holds the binary, its `Info.plist`, the terminfo entry
-//! compiled into `Contents/Resources/terminfo`, and the icon, which
-//! `actool` compiles from the Icon Composer document
-//! `crates/app/resources/AppIcon.icon` into `Assets.car` and
-//! `AppIcon.icns`. It is signed with the project's Developer ID when the
+//! compiled into `Contents/Resources/terminfo`, and the icons: the
+//! default variant's as the bundle's own, `AppIcon.icns`, and every
+//! variant's in `Contents/Resources/icons`, from `crates/app/resources/icons`.
+//! It is signed with the project's Developer ID when the
 //! keychain has it, so that macOS keeps the permissions that it gave the
 //! app from one build to the next, or with the identity that
-//! `BOLT_SIGN_IDENTITY` names; otherwise, as on a machine without it,
+//! `LOKYR_SIGN_IDENTITY` names; otherwise, as on a machine without it,
 //! ad hoc. It is not notarized.
 
 use std::fs;
@@ -17,25 +17,29 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, Result, bail};
 
 /// The bundle's identifier, which follows the terminal's name.
-pub const IDENTIFIER: &str = "io.github.sephiroth74.bolt";
+pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
 
 /// The bundle's name, and the app's in the Finder and the Dock.
-const NAME: &str = "Bolt";
+const NAME: &str = "Lokyr";
 
 /// The binary, as the app's crate names it.
-const EXECUTABLE: &str = "bolt";
+const EXECUTABLE: &str = "lokyr";
 
 /// The oldest macOS that the app runs on.
 const MINIMUM_SYSTEM: &str = "26.0";
 
-/// The Icon Composer document of the icon, relative to the workspace root.
-const ICON: &str = "crates/app/resources/AppIcon.icon";
+/// The icons' variants, each an SVG and its `.icns`, relative to the
+/// workspace root.
+const ICONS: &str = "crates/app/resources/icons";
+
+/// The variant that the bundle shows as its own.
+const DEFAULT_ICON: &str = "lokyr-jormungandr";
 
 /// The team of the project's Developer ID.
 const TEAM: &str = "XXXXXXXXXX";
 
 /// The variable that names another signing identity, or `-` for ad hoc.
-const IDENTITY_VARIABLE: &str = "BOLT_SIGN_IDENTITY";
+const IDENTITY_VARIABLE: &str = "LOKYR_SIGN_IDENTITY";
 
 /// The usage strings that macOS shows when a program started in the
 /// terminal asks for what its privacy settings guard, which it asks on the
@@ -90,7 +94,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .context("the workspace's root")?;
     run_command(
         Command::new(env!("CARGO"))
-            .args(["build", "--release", "--locked", "-p", "bolt-app"])
+            .args(["build", "--release", "--locked", "-p", "lokyr-app"])
             .current_dir(&root),
         "building the app",
     )?;
@@ -109,19 +113,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &root.join(crate::terminfo::SOURCE),
         &resources.join("terminfo"),
     )?;
-    let icon = root.join(ICON);
-    let has_icon = icon.exists();
-    if has_icon {
-        compile_icon(&icon, &resources)?;
-    } else {
-        eprintln!("bundle: no icon at {ICON}: the app takes the system's");
-    }
+    copy_icons(&root.join(ICONS), &resources)?;
     let version = env!("CARGO_PKG_VERSION");
-    fs::write(
-        app.join("Contents/Info.plist"),
-        info_plist(version, has_icon),
-    )
-    .context("writing the Info.plist")?;
+    fs::write(app.join("Contents/Info.plist"), info_plist(version))
+        .context("writing the Info.plist")?;
     let identity = identity()?;
     sign(&app, &identity)?;
     println!(
@@ -145,9 +140,8 @@ fn run_command(command: &mut Command, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// The `Info.plist` of the app at `version`, which names its icon when it
-/// has one.
-fn info_plist(version: &str, icon: bool) -> String {
+/// The `Info.plist` of the app at `version`.
+fn info_plist(version: &str) -> String {
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
@@ -161,10 +155,7 @@ fn info_plist(version: &str, icon: bool) -> String {
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
     ];
-    if icon {
-        keys.push(("CFBundleIconName", "AppIcon".to_owned()));
-        keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
-    }
+    keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
     for (key, what) in USAGES {
         keys.push((
             key,
@@ -194,38 +185,35 @@ fn escaped(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Compiles the Icon Composer document `icon` into `resources`: the asset
-/// catalog, `Assets.car`, which `CFBundleIconName` names, and
-/// `AppIcon.icns`, which `CFBundleIconFile` names, for what reads no
-/// catalog.
-fn compile_icon(icon: &Path, resources: &Path) -> Result<()> {
-    let partial = std::env::temp_dir().join(format!("bolt-icon-{}.plist", std::process::id()));
-    let compiled = run_command(
-        Command::new("xcrun")
-            .arg("actool")
-            .arg(icon)
-            .arg("--compile")
-            .arg(resources)
-            .args(["--platform", "macosx"])
-            .args(["--minimum-deployment-target", MINIMUM_SYSTEM])
-            .args(["--app-icon", "AppIcon"])
-            .args(["--include-all-app-icons", "--errors", "--warnings"])
-            .args(["--output-format", "human-readable-text"])
-            .arg("--output-partial-info-plist")
-            .arg(&partial),
-        "compiling the icon with actool",
-    );
-    let _ = fs::remove_file(&partial);
-    compiled?;
-    for made in ["Assets.car", "AppIcon.icns"] {
-        if !resources.join(made).exists() {
-            bail!("actool made no {made} from {}", icon.display());
+/// Copies the icons' variants from `icons` into `resources`: each one's
+/// `.icns` into `icons`, and the default's as the bundle's own,
+/// `AppIcon.icns`, which `CFBundleIconFile` names.
+fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
+    let variants = resources.join("icons");
+    fs::create_dir_all(&variants).with_context(|| format!("making {}", variants.display()))?;
+    let mut found = Vec::new();
+    for entry in fs::read_dir(icons).with_context(|| format!("reading {}", icons.display()))? {
+        let path = entry?.path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "icns")
+        {
+            let name = path.file_name().context("an icon's name")?;
+            fs::copy(&path, variants.join(name))
+                .with_context(|| format!("copying {}", path.display()))?;
+            found.push(path);
         }
     }
+    let default = icons.join(format!("{DEFAULT_ICON}.icns"));
+    if !found.contains(&default) {
+        bail!("no default icon at {}", default.display());
+    }
+    fs::copy(&default, resources.join("AppIcon.icns"))
+        .with_context(|| format!("copying {}", default.display()))?;
     Ok(())
 }
 
-/// The identity that signs the bundle: the one that `BOLT_SIGN_IDENTITY`
+/// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
 /// names, the project's Developer ID when the keychain has it, or `-`, ad
 /// hoc.
 fn identity() -> Result<String> {
@@ -291,13 +279,13 @@ mod tests {
 
     #[test]
     fn the_info_plist_has_the_keys_of_the_bundle() {
-        let plist = info_plist("1.2.3", true);
+        let plist = info_plist("1.2.3");
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
-            ("CFBundleExecutable", "bolt"),
+            ("CFBundleExecutable", "lokyr"),
             ("CFBundleShortVersionString", "1.2.3"),
             ("LSMinimumSystemVersion", "26.0"),
-            ("CFBundleIconName", "AppIcon"),
+            ("CFBundleIconFile", "AppIcon"),
             (
                 "NSMicrophoneUsageDescription",
                 "A program started in the terminal wants to use the microphone.",
@@ -309,15 +297,14 @@ mod tests {
             );
         }
         assert!(plist.contains("<key>NSHighResolutionCapable</key>\n\t<true/>"));
-        assert!(!info_plist("1.2.3", false).contains("CFBundleIconName"));
     }
 
     /// The plist reads back as macOS reads it, whole, with each key's value.
     #[cfg(target_os = "macos")]
     #[test]
     fn the_info_plist_is_one_that_macos_reads() {
-        let path = std::env::temp_dir().join(format!("bolt-info-{}.plist", std::process::id()));
-        fs::write(&path, info_plist("1.2.3", true)).unwrap();
+        let path = std::env::temp_dir().join(format!("lokyr-info-{}.plist", std::process::id()));
+        fs::write(&path, info_plist("1.2.3")).unwrap();
         let lint = Command::new("plutil")
             .arg("-lint")
             .arg(&path)

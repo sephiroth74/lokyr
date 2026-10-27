@@ -1,4 +1,4 @@
-//! `bolt-replay` run as a program, on the recordings in `tests/data/`.
+//! `lokyr-replay` run as a program, on the recordings in `tests/data/`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -11,19 +11,19 @@ fn data(name: &str) -> PathBuf {
 }
 
 fn replay(args: &[&str], stdin: Option<&[u8]>) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_bolt-replay"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lokyr-replay"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("bolt-replay runs");
+        .expect("lokyr-replay runs");
     let mut input = child.stdin.take().expect("a pipe");
     if let Some(bytes) = stdin {
         input.write_all(bytes).expect("writing standard input");
     }
     drop(input);
-    child.wait_with_output().expect("bolt-replay ends")
+    child.wait_with_output().expect("lokyr-replay ends")
 }
 
 fn stdout(output: &Output) -> &str {
@@ -121,20 +121,20 @@ fn the_recorded_sessions_replay() {
     }
 }
 
-/// Runs `bolt-record` on a script made of `lines`, in a directory of its
+/// Runs `lokyr-record` on a script made of `lines`, in a directory of its
 /// own, with `env` set, and returns its output and the recording, if it
 /// wrote one.
 fn record(name: &str, lines: &str, env: &[(&str, &str)]) -> (Output, Option<String>) {
-    let dir = std::env::temp_dir().join(format!("bolt-replay-test-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lokyr-replay-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join(format!("{name}.script"));
     std::fs::write(&script, lines).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_bolt-record"))
+    let output = Command::new(env!("CARGO_BIN_EXE_lokyr-record"))
         .arg(&script)
         .envs(env.iter().copied())
         .output()
-        .expect("bolt-record runs");
+        .expect("lokyr-record runs");
     let cast = std::fs::read_to_string(script.with_extension("cast")).ok();
     let _ = std::fs::remove_dir_all(&dir);
     (output, cast)
@@ -520,7 +520,7 @@ impl Drop for OwnTemp {
 }
 
 fn own_temp(name: &str) -> OwnTemp {
-    let dir = std::env::temp_dir().join(format!("bolt-replay-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lokyr-replay-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     OwnTemp(dir.canonicalize().unwrap())
@@ -627,7 +627,7 @@ fn the_programs_own_home_is_private_too() {
         let (output, cast) = record(name, &script, &[]);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains(&format!("bolt-record-{name}-")),
+            stderr.contains(&format!("lokyr-record-{name}-")),
             "{name}: {stderr}"
         );
         assert_eq!(cast, None, "{name}");
@@ -681,23 +681,23 @@ fn typing_waits_for_the_program_for_a_while_and_reads_meanwhile() {
 
 #[test]
 fn a_killed_recorders_home_goes_with_the_next_run() {
-    let temp = std::env::temp_dir().join(format!("bolt-replay-stale-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("lokyr-replay-stale-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     // A home that a recorder marked, whose process has gone; one of a
     // process that runs, as another user; and a directory that is not a
     // home, though its name looks like one.
-    let stale = temp.join("bolt-record-stale-2147483646");
-    let running = temp.join("bolt-record-root-1");
-    let other = temp.join("bolt-record-notes-2024");
+    let stale = temp.join("lokyr-record-stale-2147483646");
+    let running = temp.join("lokyr-record-root-1");
+    let other = temp.join("lokyr-record-notes-2024");
     // Marked, but with a sign or leading zeros, which a recorder never
     // writes.
-    let signed = temp.join("bolt-record-signed-+2147483646");
-    let padded = temp.join("bolt-record-padded-002147483646");
+    let signed = temp.join("lokyr-record-signed-+2147483646");
+    let padded = temp.join("lokyr-record-padded-002147483646");
     for dir in [&stale, &running, &other, &signed, &padded] {
         std::fs::create_dir_all(dir.join("home")).unwrap();
     }
     for dir in [&stale, &running, &signed, &padded] {
-        std::fs::write(dir.join(".bolt-record"), b"").unwrap();
+        std::fs::write(dir.join(".lokyr-record"), b"").unwrap();
     }
     let (output, _) = record(
         "next",

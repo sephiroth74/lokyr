@@ -5,7 +5,7 @@ use std::iter::Peekable;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
-use bolt_vt_core::page::{Content, ListRow, PageId, PageList, Position, RowFlag, Width};
+use lokyr_vt_core::page::{Content, ListRow, PageId, PageList, Position, RowFlag, Width};
 
 use crate::query::Text;
 use crate::{Cancelled, Query};

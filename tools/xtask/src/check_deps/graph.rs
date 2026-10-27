@@ -10,7 +10,7 @@ use cargo_metadata::{CargoOpt, DependencyKind, Metadata, MetadataCommand};
 /// A crate in the dependency graph.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Crate {
-    /// Package name, e.g. `bolt-vt-core`.
+    /// Package name, e.g. `lokyr-vt-core`.
     pub name: String,
     /// Directory relative to the workspace root, e.g. `crates/vt-core`.
     /// Only workspace members have one.

@@ -1,4 +1,4 @@
-package bolt:spike;
+package lokyr:spike;
 
 /// What the host offers to plugins.
 interface host-log {

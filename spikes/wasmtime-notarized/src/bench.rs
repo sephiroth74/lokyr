@@ -23,7 +23,7 @@ struct HostState {
     logs: Vec<String>,
 }
 
-impl bolt::spike::host_log::Host for HostState {
+impl lokyr::spike::host_log::Host for HostState {
     fn log(&mut self, message: String) {
         self.logs.push(message);
     }
@@ -106,7 +106,7 @@ pub fn run(path: &Path, options: Options) -> Result<()> {
     let engine_time = started.elapsed();
     let footprint_engine = footprint::current()?;
 
-    let cache_dir = std::env::temp_dir().join("bolt-spike");
+    let cache_dir = std::env::temp_dir().join("lokyr-spike");
     std::fs::create_dir_all(&cache_dir)?;
     // One artifact per guest and variant: they are not interchangeable.
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("guest");
@@ -139,7 +139,7 @@ pub fn run(path: &Path, options: Options) -> Result<()> {
     // The host's own interfaces first; then, instead of a WASI
     // implementation, every other import traps if it is ever called.
     let mut linker = Linker::<HostState>::new(&engine);
-    bolt::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
+    lokyr::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
     linker.define_unknown_imports_as_traps(&component)?;
     let mut store = Store::new(&engine, HostState::default());
 
@@ -147,7 +147,7 @@ pub fn run(path: &Path, options: Options) -> Result<()> {
     let plugin = Plugin::instantiate(&mut store, &component, &linker)?;
     let instantiate_time = started.elapsed();
     let footprint_instantiated = footprint::current()?;
-    let guest = plugin.bolt_spike_bench();
+    let guest = plugin.lokyr_spike_bench();
     guest.call_init(&mut store)?;
 
     let noop = median_of(NOOP_CALLS, || guest.call_noop(&mut store))?;
@@ -236,11 +236,11 @@ pub fn workloads(path: &Path) -> Result<()> {
     // with this engine.
     let component = unsafe { Component::deserialize(&engine, &compiled)? };
     let mut linker = Linker::<HostState>::new(&engine);
-    bolt::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
+    lokyr::spike::host_log::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
     linker.define_unknown_imports_as_traps(&component)?;
     let mut store = Store::new(&engine, HostState::default());
     let plugin = Plugin::instantiate(&mut store, &component, &linker)?;
-    let guest = plugin.bolt_spike_bench();
+    let guest = plugin.lokyr_spike_bench();
     guest.call_init(&mut store)?;
 
     let lines = spike_workload::sample_lines(WORKLOAD_LINES);

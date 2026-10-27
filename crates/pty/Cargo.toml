@@ -1,5 +1,5 @@
 [package]
-name = "bolt-pty"
+name = "lokyr-pty"
 description = "Pseudo-terminals and child processes"
 version.workspace = true
 edition.workspace = true

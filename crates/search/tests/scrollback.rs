@@ -4,10 +4,10 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use bolt_search::{Case, Direction, Query};
-use bolt_vt_core::page::{Budget, Capacity, Position, Scrollback};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_search::{Case, Direction, Query};
+use lokyr_vt_core::page::{Budget, Capacity, Position, Scrollback};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 struct Pane {
     terminal: Terminal,
@@ -47,7 +47,7 @@ impl Pane {
         let from = Position { page, row, col: 0 };
         let query = Query::literal("needle", Case::Sensitive).unwrap();
         let rows = self.terminal.screen_rows_mut();
-        let found = bolt_search::find(
+        let found = lokyr_search::find(
             rows,
             &query,
             from,

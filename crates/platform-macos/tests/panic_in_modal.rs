@@ -8,7 +8,7 @@ mod common;
 mod probe {
     use std::panic::{self, AssertUnwindSafe};
 
-    use bolt_platform_core::{AppEvent, Handler, Platform, WindowEvent, WindowId};
+    use lokyr_platform_core::{AppEvent, Handler, Platform, WindowEvent, WindowId};
 
     use crate::common;
 
@@ -31,7 +31,7 @@ mod probe {
 
     pub fn main() {
         common::deadline("panic_in_modal", 20);
-        let outcome = panic::catch_unwind(AssertUnwindSafe(|| bolt_platform_macos::run(Probe)));
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| lokyr_platform_macos::run(Probe)));
         let payload = outcome.expect_err("the panic comes from `run`");
         let message = payload
             .downcast_ref::<String>()

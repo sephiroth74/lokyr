@@ -7,7 +7,7 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
-use bolt_platform_core::{AppEvent, Error, Waker};
+use lokyr_platform_core::{AppEvent, Error, Waker};
 use objc2_core_foundation::{
     CFRetained, CFRunLoop, CFRunLoopSource, CFRunLoopSourceContext, kCFRunLoopCommonModes,
 };

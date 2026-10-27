@@ -3,7 +3,7 @@
 use std::panic;
 use std::rc::{Rc, Weak};
 
-use bolt_platform_core::{AppEvent, Error, Handler};
+use lokyr_platform_core::{AppEvent, Error, Handler};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
@@ -20,7 +20,7 @@ use crate::wake::WakeSource;
 /// Starts the application, as a regular one, with a Dock icon and a menu
 /// bar, calls [`Handler::started`] once it has launched, and hands the
 /// handler every event until it calls
-/// [`Platform::quit`](bolt_platform_core::Platform::quit). Returns once the
+/// [`Platform::quit`](lokyr_platform_core::Platform::quit). Returns once the
 /// handler, then every window, are gone. A panic of the handler ends the
 /// application, and goes on from here.
 ///

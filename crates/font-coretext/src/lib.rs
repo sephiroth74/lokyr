@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use bolt_text_core::{
+use lokyr_text_core::{
     Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, ShapedGlyph, Synthesis,
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
@@ -268,7 +268,7 @@ impl FontBackend for CoreText {
     ) -> Bitmap {
         let size = f64::from(size);
         let Some(font) = self.font_slanted(face, size, synthesis.italic) else {
-            return Bitmap::empty(bolt_text_core::BitmapFormat::Gray);
+            return Bitmap::empty(lokyr_text_core::BitmapFormat::Gray);
         };
         raster::rasterize(&font, glyph, size, synthesis, self.smoothing)
     }

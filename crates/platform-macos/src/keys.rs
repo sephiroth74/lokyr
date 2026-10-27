@@ -2,7 +2,7 @@
 //! macOS's virtual key codes, what they type, and the modifiers held, the
 //! two of each side apart.
 
-use bolt_platform_core::{KeyCode, KeyEvent, KeyState, Modifiers};
+use lokyr_platform_core::{KeyCode, KeyEvent, KeyState, Modifiers};
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
 
 /// The bits of `modifierFlags` that tell the key of each side, as IOKit's

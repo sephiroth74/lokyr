@@ -5,9 +5,9 @@
 
 use std::path::PathBuf;
 
-use bolt_differential::Cause::{self, *};
-use bolt_differential::{Difference, Pair, Screen};
-use bolt_replay::recording::Recording;
+use lokyr_differential::Cause::{self, *};
+use lokyr_differential::{Difference, Pair, Screen};
+use lokyr_replay::recording::Recording;
 
 /// The sequences that the parser's tests feed it.
 mod corpus {
@@ -464,7 +464,7 @@ fn stretches() -> Vec<Stretch> {
         };
         for (point, piece) in (first..).zip(&input.pieces) {
             pair.feed(piece);
-            let (mut ours, mut theirs) = (pair.bolt(), pair.alacritty());
+            let (mut ours, mut theirs) = (pair.lokyr(), pair.alacritty());
             if let Compare::CursorRow = input.compare {
                 let y = ours.cursor.1;
                 (ours, theirs) = (ours.only_row(y), theirs.only_row(y));
@@ -535,7 +535,7 @@ fn each_case_parts_the_screens_for_its_cause_when_fed_a_byte_at_a_time() {
         let listed = EXPLAINED.iter().find(|explained| explained.0 == name);
         let cause = listed.map(|&(_, cause, ..)| cause);
         assert_eq!(
-            bolt_differential::explore(80, 24, &bytes),
+            lokyr_differential::explore(80, 24, &bytes),
             Ok(cause),
             "{name}"
         );
@@ -555,7 +555,7 @@ fn each_stretch_of_the_recordings_starts_for_its_cause() {
         let bytes = std::fs::read(recordings().join(format!("{recording}.cast"))).unwrap();
         let chunks = Recording::parse(&bytes).unwrap().chunks;
         let size = Recording::parse(&bytes).unwrap().size.unwrap();
-        let found = bolt_differential::explore_after(
+        let found = lokyr_differential::explore_after(
             size.0,
             size.1,
             &chunks[..start].concat(),

@@ -38,15 +38,15 @@ Out of scope: a process running as the same user with full privileges. It could 
 - **Luau sandbox**: one VM per plugin, with only the libraries that compute, a memory limit and a deadline per call. A plugin that fails or misses its deadline is disabled.
 - **Sources only**: packages carry Luau sources, never bytecode, and the host compiles every script itself.
 - **Audit log**: capability requests and grants are recorded and can be reviewed.
-- **Networking** goes through a helper process (`crossbow net-helper`) that enforces the allowed hosts. The app has no HTTP client.
+- **Networking** goes through a helper process (`sleip net-helper`) that enforces the allowed hosts. The app has no HTTP client.
 - **First-party plugins** are our own code, reviewed and limited to the SDK.
 
 ## Packages and the registry
 
-- **Integrity**: Crossbow verifies ed25519 signatures and SHA-256 checksums. The app re-checks the hash when it loads a plugin.
+- **Integrity**: Sleip verifies ed25519 signatures and SHA-256 checksums. The app re-checks the hash when it loads a plugin.
 - **Archives**: regular files only, no `..` or absolute paths, size limits and a compression-ratio limit.
 - **Store and lockfile**: the store is content-addressed, and the lockfile is written atomically.
-- **Names and versions**: `owner/name` namespaces with `bolt/*` reserved, yanked versions, and security advisories (F7).
+- **Names and versions**: `owner/name` namespaces with `lokyr/*` reserved, yanked versions, and security advisories (F7).
 - **Provenance**: in v0 the registry packages plugins from their tagged sources, so every artifact traces back to a commit.
 
 Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
@@ -55,22 +55,22 @@ Details in [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md).
 
 IPC comes in F3b ([ROADMAP](ROADMAP.md#f3b--mcp-and-agents)).
 
-- **Socket location**: a Unix socket in a directory with 0700 permissions (`$XDG_RUNTIME_DIR/bolt/` on Linux, `$TMPDIR/bolt-<uid>/` on macOS).
+- **Socket location**: a Unix socket in a directory with 0700 permissions (`$XDG_RUNTIME_DIR/lokyr/` on Linux, `$TMPDIR/lokyr-<uid>/` on macOS).
 - **Who can connect**: every connection is checked against the peer's credentials (`getpeereid`). Only the same user is accepted.
 - **Sensitive commands**: reading the scrollback or sending text to a pane requires `ipc.allow-sensitive = true` or an explicit confirmation.
-- **Child processes** receive `BOLT_SOCKET`, so scripts can use the CLI, and `BOLT_PANE_ID`, their pane's.
+- **Child processes** receive `LOKYR_SOCKET`, so scripts can use the CLI, and `LOKYR_PANE_ID`, their pane's.
 
 ## MCP
 
 The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
 
-- **Transport**: `bolt +mcp` speaks MCP over stdio. The agent starts it, and it reaches the app through the IPC socket, with the socket's checks. The app opens no port and speaks no HTTP.
+- **Transport**: `lokyr +mcp` speaks MCP over stdio. The agent starts it, and it reaches the app through the IPC socket, with the socket's checks. The app opens no port and speaks no HTTP.
 - **An agent's scope**:
   - by default, its own pane, the one whose program it descends from, and the panes that it opened;
-  - `bolt +mcp` names its pane from `BOLT_PANE_ID`, and the app checks it: the socket's peer process must descend from that pane's program;
+  - `lokyr +mcp` names its pane from `LOKYR_PANE_ID`, and the app checks it: the socket's peer process must descend from that pane's program;
   - reading or typing into another pane asks the user first, a pane at a time, with the agent's name, as MCP's `initialize` gives it, and the pane's.
 - **The config**: the `[mcp]` section widens the scope, or turns the server off.
-- **The agents' files**: the app never writes them. The lines that their hooks need are in the documents, and `bolt +agent-hooks <agent>` prints them.
+- **The agents' files**: the app never writes them. The lines that their hooks need are in the documents, and `lokyr +agent-hooks <agent>` prints them.
 
 ## Robustness
 

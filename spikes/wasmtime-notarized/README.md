@@ -83,7 +83,7 @@ app="$PWD/build/Spike-Pulley.app"
 open -W --stdout pulley.json "$app" --args --bench "$app/Contents/Resources/unknown.wasm"
 ```
 
-For the Cranelift bundle, add `--from-memory` to the arguments. `notarize.sh` uses the `bolt-notary` keychain profile; `SPIKE_NOTARY_PROFILE` overrides it.
+For the Cranelift bundle, add `--from-memory` to the arguments. `notarize.sh` uses the `lokyr-notary` keychain profile; `SPIKE_NOTARY_PROFILE` overrides it.
 
 ## Lua runtimes
 

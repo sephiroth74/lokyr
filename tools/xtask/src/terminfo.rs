@@ -1,6 +1,6 @@
-//! `cargo xtask terminfo`: compiles the terminfo entry of Bolt with `tic`.
+//! `cargo xtask terminfo`: compiles the terminfo entry of Lokyr with `tic`.
 //!
-//! The source is `crates/vt-core/terminfo/xterm-bolt.terminfo`, which
+//! The source is `crates/vt-core/terminfo/xterm-lokyr.terminfo`, which
 //! XTGETTCAP answers from too. The compiled entry goes to
 //! `target/terminfo/`, or to the directory that `--out` gives, in the
 //! layout of the `tic` that compiles it: one directory for each first
@@ -19,10 +19,10 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, Result, bail};
 
 /// The source, relative to the workspace root.
-pub(crate) const SOURCE: &str = "crates/vt-core/terminfo/xterm-bolt.terminfo";
+pub(crate) const SOURCE: &str = "crates/vt-core/terminfo/xterm-lokyr.terminfo";
 
 /// The entry's name.
-const ENTRY: &str = "xterm-bolt";
+const ENTRY: &str = "xterm-lokyr";
 
 /// The magic number of the legacy format, octal 0432, little-endian; the
 /// format for numbers above 32767 has another, which older libraries do
@@ -342,7 +342,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bolt-terminfo-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("lokyr-terminfo-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -422,7 +423,7 @@ mod tests {
         // A description without spaces, which older versions would take
         // for another name.
         let source = out.join("warns.terminfo");
-        fs::write(&source, "xterm-bolt|Bolt,\n\tam,\n").unwrap();
+        fs::write(&source, "xterm-lokyr|Lokyr,\n\tam,\n").unwrap();
         let compiled = out.join("compiled");
         let error = compile(&source, &compiled).unwrap_err();
         assert!(error.to_string().contains("cleanly"), "{error:#}");
@@ -449,7 +450,7 @@ mod tests {
 
     #[test]
     fn capabilities_are_read_as_tic_reads_them() {
-        let text = "#\tA comment, with a comma\nxterm-bolt|Bolt terminal,\n\tam, bw@,\n\tcols#80, it#010, lines#0x18, x=a\\,b, ich=\\E[%p1%d@,\n\ty=\\E[4\\:%p1%dm^G\\177,\n";
+        let text = "#\tA comment, with a comma\nxterm-lokyr|Lokyr terminal,\n\tam, bw@,\n\tcols#80, it#010, lines#0x18, x=a\\,b, ich=\\E[%p1%d@,\n\ty=\\E[4\\:%p1%dm^G\\177,\n";
         let read = capabilities(text).unwrap();
         let names: Vec<&String> = read.keys().collect();
         assert_eq!(names, ["am", "cols", "ich", "it", "lines", "x", "y"]);

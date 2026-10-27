@@ -67,7 +67,7 @@ dependents = ["tools/differential"]
 [[rule]]
 name = "app-without-network"
 kind = "forbid"
-description = "The app contains no HTTP, TLS or async-runtime crate: downloading plugins is Crossbow's job."
+description = "The app contains no HTTP, TLS or async-runtime crate: downloading plugins is Sleip's job."
 crates = ["crates/app"]
 forbidden = [
     "async-std",

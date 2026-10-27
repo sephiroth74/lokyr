@@ -11,7 +11,7 @@ mod probe {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use bolt_platform_core::{
+    use lokyr_platform_core::{
         AppEvent, Handler, Ime, KeyCode, Platform, Point, Size, WindowAttributes, WindowEvent,
         WindowId,
     };
@@ -153,7 +153,7 @@ mod probe {
             window: None,
             sent: false,
         };
-        bolt_platform_macos::run(probe).expect("the application runs");
+        lokyr_platform_macos::run(probe).expect("the application runs");
         let seen = seen.borrow();
         let imes: Vec<&Ime> = seen
             .events

@@ -10,7 +10,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bolt_kernel::config::Error;
+use lokyr_kernel::config::Error;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 /// A watch of the config file, which calls back, from a thread of its own,
@@ -150,7 +150,7 @@ mod tests {
     /// A directory of its own for `test`, empty.
     fn scratch(test: &str) -> PathBuf {
         let directory =
-            std::env::temp_dir().join(format!("bolt-watch-{test}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("lokyr-watch-{test}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
         fs::create_dir_all(&directory).unwrap();
         // FSEvents tells the real paths, without the links of `/var`.
@@ -197,9 +197,9 @@ mod tests {
     #[test]
     fn a_directory_that_comes_into_being_calls_back() {
         let parent = scratch("directory");
-        let path = parent.join("bolt").join("config.toml");
+        let path = parent.join("lokyr").join("config.toml");
         let (watcher, receiver) = watch(&path);
-        fs::create_dir(parent.join("bolt")).unwrap();
+        fs::create_dir(parent.join("lokyr")).unwrap();
         assert!(changed(&receiver));
         // The new watch is the directory's.
         assert!(watcher.is_stale(&path));
@@ -217,7 +217,7 @@ mod tests {
         let config = home.join("config");
         fs::create_dir_all(&dotfiles).unwrap();
         fs::create_dir_all(&config).unwrap();
-        let target = dotfiles.join("bolt.toml");
+        let target = dotfiles.join("lokyr.toml");
         fs::write(&target, "").unwrap();
         let path = config.join("config.toml");
         std::os::unix::fs::symlink(&target, &path).unwrap();
@@ -231,7 +231,7 @@ mod tests {
     fn an_entry_of_the_same_name_elsewhere_counts_for_nothing() {
         // `config.toml` of another program, beside the config's directory.
         let parent = scratch("elsewhere");
-        let path = parent.join("bolt").join("config.toml");
+        let path = parent.join("lokyr").join("config.toml");
         make_directory(&path).unwrap();
         fs::write(&path, "").unwrap();
         fs::create_dir_all(parent.join("other")).unwrap();
@@ -249,11 +249,11 @@ mod tests {
     #[test]
     fn a_directory_that_goes_calls_back() {
         let parent = scratch("gone");
-        let path = parent.join("bolt").join("config.toml");
+        let path = parent.join("lokyr").join("config.toml");
         make_directory(&path).unwrap();
         fs::write(&path, "").unwrap();
         let (watcher, receiver) = watch(&path);
-        fs::remove_dir_all(parent.join("bolt")).unwrap();
+        fs::remove_dir_all(parent.join("lokyr")).unwrap();
         assert!(changed(&receiver));
         // The new watch is the parent's alone.
         assert!(watcher.is_stale(&path));
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn the_directory_is_made_when_it_does_not_exist() {
         let parent = scratch("made");
-        let path = parent.join("a").join("bolt").join("config.toml");
+        let path = parent.join("a").join("lokyr").join("config.toml");
         make_directory(&path).unwrap();
         assert!(path.parent().unwrap().is_dir());
         assert!(!path.exists());

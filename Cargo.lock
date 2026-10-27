@@ -114,211 +114,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bolt-app"
-version = "0.1.0"
-dependencies = [
- "bolt-core-actions",
- "bolt-font-coretext",
- "bolt-kernel",
- "bolt-platform-core",
- "bolt-platform-macos",
- "bolt-plugin-host-luau",
- "bolt-pty",
- "bolt-render-core",
- "bolt-render-metal",
- "bolt-session",
- "bolt-text-core",
- "bolt-ui-core",
- "bolt-vt-core",
- "notify",
-]
-
-[[package]]
-name = "bolt-bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libc",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bolt-core-actions"
-version = "0.1.0"
-dependencies = [
- "bolt-plugin-sdk",
-]
-
-[[package]]
-name = "bolt-differential"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "bolt-replay",
- "bolt-vt-core",
- "gungraun",
-]
-
-[[package]]
-name = "bolt-font-coretext"
-version = "0.1.0"
-dependencies = [
- "bolt-text-core",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-core-text",
-]
-
-[[package]]
-name = "bolt-kernel"
-version = "0.1.0"
-dependencies = [
- "bolt-pkg-model",
- "bolt-plugin-sdk",
- "bolt-search",
- "bolt-session",
- "bolt-text-core",
- "bolt-ui-core",
- "serde",
- "toml_edit",
-]
-
-[[package]]
-name = "bolt-pkg-model"
-version = "0.1.0"
-
-[[package]]
-name = "bolt-platform-core"
-version = "0.1.0"
-dependencies = [
- "raw-window-handle",
- "thiserror",
-]
-
-[[package]]
-name = "bolt-platform-macos"
-version = "0.1.0"
-dependencies = [
- "block2",
- "bolt-platform-core",
- "objc2",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-foundation",
- "objc2-quartz-core",
- "raw-window-handle",
-]
-
-[[package]]
-name = "bolt-plugin-host-luau"
-version = "0.1.0"
-dependencies = [
- "bolt-plugin-sdk",
-]
-
-[[package]]
-name = "bolt-plugin-sdk"
-version = "0.1.0"
-
-[[package]]
-name = "bolt-pty"
-version = "0.1.0"
-dependencies = [
- "libc",
- "thiserror",
-]
-
-[[package]]
-name = "bolt-render-core"
-version = "0.1.0"
-
-[[package]]
-name = "bolt-render-metal"
-version = "0.1.0"
-dependencies = [
- "bolt-render-core",
- "dispatch2",
- "objc2",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-foundation",
- "objc2-metal",
- "objc2-quartz-core",
- "raw-window-handle",
- "thiserror",
-]
-
-[[package]]
-name = "bolt-replay"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bolt-pty",
- "bolt-vt-core",
- "insta",
- "libc",
- "serde_json",
- "unicode-normalization",
-]
-
-[[package]]
-name = "bolt-search"
-version = "0.1.0"
-dependencies = [
- "bolt-vt-core",
- "criterion",
- "memchr",
- "proptest",
- "regex-automata",
-]
-
-[[package]]
-name = "bolt-session"
-version = "0.1.0"
-dependencies = [
- "bolt-pty",
- "bolt-vt-core",
- "thiserror",
-]
-
-[[package]]
-name = "bolt-text-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "bolt-ui-core"
-version = "0.1.0"
-dependencies = [
- "bolt-font-coretext",
- "bolt-render-core",
- "bolt-text-core",
- "bolt-vt-core",
- "criterion",
- "serde",
-]
-
-[[package]]
-name = "bolt-vt-core"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "proptest",
- "thiserror",
- "unicode-normalization",
- "vte",
-]
-
-[[package]]
 name = "camino"
 version = "1.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -498,29 +293,6 @@ name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
-
-[[package]]
-name = "crossbow-cli"
-version = "0.1.0"
-dependencies = [
- "bolt-pkg-model",
- "crossbow-index",
- "crossbow-resolver",
-]
-
-[[package]]
-name = "crossbow-index"
-version = "0.1.0"
-dependencies = [
- "bolt-pkg-model",
-]
-
-[[package]]
-name = "crossbow-resolver"
-version = "0.1.0"
-dependencies = [
- "bolt-pkg-model",
-]
 
 [[package]]
 name = "crunchy"
@@ -807,6 +579,211 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "lokyr-app"
+version = "0.1.0"
+dependencies = [
+ "lokyr-core-actions",
+ "lokyr-font-coretext",
+ "lokyr-kernel",
+ "lokyr-platform-core",
+ "lokyr-platform-macos",
+ "lokyr-plugin-host-luau",
+ "lokyr-pty",
+ "lokyr-render-core",
+ "lokyr-render-metal",
+ "lokyr-session",
+ "lokyr-text-core",
+ "lokyr-ui-core",
+ "lokyr-vt-core",
+ "notify",
+]
+
+[[package]]
+name = "lokyr-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lokyr-core-actions"
+version = "0.1.0"
+dependencies = [
+ "lokyr-plugin-sdk",
+]
+
+[[package]]
+name = "lokyr-differential"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "gungraun",
+ "lokyr-replay",
+ "lokyr-vt-core",
+]
+
+[[package]]
+name = "lokyr-font-coretext"
+version = "0.1.0"
+dependencies = [
+ "lokyr-text-core",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-text",
+]
+
+[[package]]
+name = "lokyr-kernel"
+version = "0.1.0"
+dependencies = [
+ "lokyr-pkg-model",
+ "lokyr-plugin-sdk",
+ "lokyr-search",
+ "lokyr-session",
+ "lokyr-text-core",
+ "lokyr-ui-core",
+ "serde",
+ "toml_edit",
+]
+
+[[package]]
+name = "lokyr-pkg-model"
+version = "0.1.0"
+
+[[package]]
+name = "lokyr-platform-core"
+version = "0.1.0"
+dependencies = [
+ "raw-window-handle",
+ "thiserror",
+]
+
+[[package]]
+name = "lokyr-platform-macos"
+version = "0.1.0"
+dependencies = [
+ "block2",
+ "lokyr-platform-core",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "raw-window-handle",
+]
+
+[[package]]
+name = "lokyr-plugin-host-luau"
+version = "0.1.0"
+dependencies = [
+ "lokyr-plugin-sdk",
+]
+
+[[package]]
+name = "lokyr-plugin-sdk"
+version = "0.1.0"
+
+[[package]]
+name = "lokyr-pty"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
+]
+
+[[package]]
+name = "lokyr-render-core"
+version = "0.1.0"
+
+[[package]]
+name = "lokyr-render-metal"
+version = "0.1.0"
+dependencies = [
+ "dispatch2",
+ "lokyr-render-core",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-metal",
+ "objc2-quartz-core",
+ "raw-window-handle",
+ "thiserror",
+]
+
+[[package]]
+name = "lokyr-replay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "insta",
+ "libc",
+ "lokyr-pty",
+ "lokyr-vt-core",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "lokyr-search"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "lokyr-vt-core",
+ "memchr",
+ "proptest",
+ "regex-automata",
+]
+
+[[package]]
+name = "lokyr-session"
+version = "0.1.0"
+dependencies = [
+ "lokyr-pty",
+ "lokyr-vt-core",
+ "thiserror",
+]
+
+[[package]]
+name = "lokyr-text-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "lokyr-ui-core"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "lokyr-font-coretext",
+ "lokyr-render-core",
+ "lokyr-text-core",
+ "lokyr-vt-core",
+ "serde",
+]
+
+[[package]]
+name = "lokyr-vt-core"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "proptest",
+ "thiserror",
+ "unicode-normalization",
+ "vte",
+]
 
 [[package]]
 name = "memchr"
@@ -1364,6 +1341,29 @@ name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+
+[[package]]
+name = "sleip-cli"
+version = "0.1.0"
+dependencies = [
+ "lokyr-pkg-model",
+ "sleip-index",
+ "sleip-resolver",
+]
+
+[[package]]
+name = "sleip-index"
+version = "0.1.0"
+dependencies = [
+ "lokyr-pkg-model",
+]
+
+[[package]]
+name = "sleip-resolver"
+version = "0.1.0"
+dependencies = [
+ "lokyr-pkg-model",
+]
 
 [[package]]
 name = "smallvec"

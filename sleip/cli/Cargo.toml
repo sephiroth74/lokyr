@@ -1,6 +1,6 @@
 [package]
-name = "crossbow-cli"
-description = "Crossbow, the plugin package manager for Bolt"
+name = "sleip-cli"
+description = "Sleip, the plugin package manager for Lokyr"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,13 +10,13 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "crossbow"
+name = "sleip"
 path = "src/main.rs"
 
 [dependencies]
-crossbow-index.workspace = true
-crossbow-resolver.workspace = true
-bolt-pkg-model.workspace = true
+sleip-index.workspace = true
+sleip-resolver.workspace = true
+lokyr-pkg-model.workspace = true
 
 [lints]
 workspace = true

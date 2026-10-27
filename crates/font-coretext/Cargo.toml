@@ -1,5 +1,5 @@
 [package]
-name = "bolt-font-coretext"
+name = "lokyr-font-coretext"
 description = "CoreText font backend for macOS"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-text-core.workspace = true
+lokyr-text-core.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { workspace = true, features = [

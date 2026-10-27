@@ -1,12 +1,12 @@
 ---
 name: Feature request
-about: Something that Bolt could do
+about: Something that Lokyr could do
 labels: enhancement
 ---
 
 ## What you would like
 
-<!-- What Bolt would do, and how you would use it. -->
+<!-- What Lokyr would do, and how you would use it. -->
 
 ## Why
 
@@ -14,4 +14,4 @@ labels: enhancement
 
 ## How others do it
 
-<!-- If another tool does it, how; and what Bolt could do otherwise. -->
+<!-- If another tool does it, how; and what Lokyr could do otherwise. -->

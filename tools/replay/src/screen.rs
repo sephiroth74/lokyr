@@ -2,8 +2,8 @@
 
 use std::fmt::Write as _;
 
-use bolt_vt_core::page::{Color, Content, Rgb, Style, Underline};
-use bolt_vt_core::terminal::Terminal;
+use lokyr_vt_core::page::{Color, Content, Rgb, Style, Underline};
+use lokyr_vt_core::terminal::Terminal;
 
 /// Every row of the screen, a line each, trailing spaces taken off.
 pub fn text(terminal: &Terminal) -> String {
@@ -117,8 +117,8 @@ fn hex(Rgb { r, g, b }: Rgb) -> String {
 
 #[cfg(test)]
 mod tests {
-    use bolt_vt_core::parser::Parser;
-    use bolt_vt_core::terminal::Options;
+    use lokyr_vt_core::parser::Parser;
+    use lokyr_vt_core::terminal::Options;
 
     use super::*;
 

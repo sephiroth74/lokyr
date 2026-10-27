@@ -6,7 +6,7 @@
 
 #![no_main]
 
-use bolt_vt_core::parser::{Action, Limits, Parser, Recorder};
+use lokyr_vt_core::parser::{Action, Limits, Parser, Recorder};
 use libfuzzer_sys::fuzz_target;
 
 /// The lengths of the reads that the input is split into, taken in turn.

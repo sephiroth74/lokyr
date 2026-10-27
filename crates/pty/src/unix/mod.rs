@@ -808,19 +808,19 @@ fn environment(
     };
     set("TERM", options.term.clone().into());
     set("COLORTERM", "truecolor".into());
-    set("TERM_PROGRAM", "bolt".into());
+    set("TERM_PROGRAM", "lokyr".into());
     set("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION").into());
     match &options.resources_dir {
         Some(dir) => {
-            set("BOLT_RESOURCES_DIR", dir.clone().into());
+            set("LOKYR_RESOURCES_DIR", dir.clone().into());
             // The terminal's own entry, which the app keeps with its
             // resources, where programs would not otherwise find it.
-            if matches!(options.term.as_str(), "xterm-bolt" | "bolt") {
+            if matches!(options.term.as_str(), "xterm-lokyr" | "lokyr") {
                 set("TERMINFO", dir.join("terminfo").into());
             }
         }
         None => {
-            env.remove(OsStr::new("BOLT_RESOURCES_DIR"));
+            env.remove(OsStr::new("LOKYR_RESOURCES_DIR"));
         }
     }
     env.extend(options.env.iter().cloned());
@@ -1080,7 +1080,7 @@ mod tests {
     #[test]
     fn a_program_that_is_not_there_fails_as_not_found() {
         let options = Options::new(
-            Program::command("bolt-no-such-program", [""; 0]),
+            Program::command("lokyr-no-such-program", [""; 0]),
             "xterm-256color",
         );
         let failed = spawn(&options).map(drop);
@@ -1096,7 +1096,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("bolt-pty-{name}-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("lokyr-pty-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)
@@ -1301,7 +1301,7 @@ mod tests {
     #[test]
     fn the_environment_describes_this_terminal() {
         let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
-        options.resources_dir = Some("/Applications/Bolt.app/Contents/Resources".into());
+        options.resources_dir = Some("/Applications/Lokyr.app/Contents/Resources".into());
         options.env = vars(&[("EDITOR", "vi"), ("COLORTERM", "24bit")]);
         let inherited = vars(&[
             ("PATH", "/usr/bin:/bin"),
@@ -1315,14 +1315,14 @@ mod tests {
         let env = environment(&options, inherited);
         assert_eq!(get(&env, "PATH"), Some("/usr/bin:/bin"));
         assert_eq!(get(&env, "TERM"), Some("xterm-256color"));
-        assert_eq!(get(&env, "TERM_PROGRAM"), Some("bolt"));
+        assert_eq!(get(&env, "TERM_PROGRAM"), Some("lokyr"));
         assert_eq!(
             get(&env, "TERM_PROGRAM_VERSION"),
             Some(env!("CARGO_PKG_VERSION"))
         );
         assert_eq!(
-            get(&env, "BOLT_RESOURCES_DIR"),
-            Some("/Applications/Bolt.app/Contents/Resources")
+            get(&env, "LOKYR_RESOURCES_DIR"),
+            Some("/Applications/Lokyr.app/Contents/Resources")
         );
         assert_eq!(get(&env, "EDITOR"), Some("vi"));
         assert_eq!(
@@ -1342,7 +1342,7 @@ mod tests {
         let env = environment(&options, vars(&[("HOME", "/Users/me")]));
         assert_eq!(get(&env, "LANG"), Some("en_US.UTF-8"));
         assert_eq!(get(&env, "COLORTERM"), Some("truecolor"));
-        assert_eq!(get(&env, "BOLT_RESOURCES_DIR"), None);
+        assert_eq!(get(&env, "LOKYR_RESOURCES_DIR"), None);
         // An empty variable sets no locale; any of the three does.
         let env = environment(&options, vars(&[("LANG", "")]));
         assert_eq!(get(&env, "LANG"), Some("en_US.UTF-8"));
@@ -1350,26 +1350,26 @@ mod tests {
             let env = environment(&options, vars(&[(name, "C.UTF-8")]));
             assert_eq!(get(&env, "LANG"), None, "{name}");
         }
-        let stale = environment(&options, vars(&[("BOLT_RESOURCES_DIR", "/old")]));
-        assert_eq!(get(&stale, "BOLT_RESOURCES_DIR"), None);
+        let stale = environment(&options, vars(&[("LOKYR_RESOURCES_DIR", "/old")]));
+        assert_eq!(get(&stale, "LOKYR_RESOURCES_DIR"), None);
     }
 
     #[test]
     fn terminfo_points_to_the_entry_that_the_app_keeps() {
-        let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-bolt");
+        let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-lokyr");
         let inherited = || vars(&[("TERMINFO", "/opt/other/terminfo")]);
         // Without the resources, there is no entry to point to.
         assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
-        options.resources_dir = Some("/Applications/Bolt.app/Contents/Resources".into());
+        options.resources_dir = Some("/Applications/Lokyr.app/Contents/Resources".into());
         assert_eq!(
             get(&environment(&options, inherited()), "TERMINFO"),
-            Some("/Applications/Bolt.app/Contents/Resources/terminfo")
+            Some("/Applications/Lokyr.app/Contents/Resources/terminfo")
         );
         // And for the entry's other name.
-        options.term = "bolt".to_owned();
+        options.term = "lokyr".to_owned();
         assert_eq!(
             get(&environment(&options, inherited()), "TERMINFO"),
-            Some("/Applications/Bolt.app/Contents/Resources/terminfo")
+            Some("/Applications/Lokyr.app/Contents/Resources/terminfo")
         );
         // Another TERM finds its entry where the system keeps it.
         options.term = "xterm-256color".to_owned();
@@ -1415,7 +1415,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         // A shell of its own, which exits with 3, or a signal ends.
-        let directory = std::env::temp_dir().join(format!("bolt-login-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("lokyr-login-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         for (script, status) in [("exit 3", "3"), ("kill -9 $$", "137")] {
             let shell = directory.join("shell");

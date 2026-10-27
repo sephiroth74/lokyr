@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measures one terminal with bolt-bench, and writes its JSON reports to
+# Measures one terminal with lokyr-bench, and writes its JSON reports to
 # <out-dir>/<name>-{startup,memory,idle}.json:
 #
 #   tools/bench/baseline.sh <app> <name> <out-dir>
@@ -15,9 +15,9 @@ app="${1:?usage: baseline.sh <app> <name> <out-dir>}"
 name="${2:?usage: baseline.sh <app> <name> <out-dir>}"
 out="${3:?usage: baseline.sh <app> <name> <out-dir>}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-bench="$root/target/release/bolt-bench"
+bench="$root/target/release/lokyr-bench"
 
-(cd "$root" && cargo build --quiet --release --locked -p bolt-bench)
+(cd "$root" && cargo build --quiet --release --locked -p lokyr-bench)
 mkdir -p "$out"
 executable="$app/Contents/MacOS/$(plutil -extract CFBundleExecutable raw -o - "$app/Contents/Info.plist")"
 

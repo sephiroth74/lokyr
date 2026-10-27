@@ -1,4 +1,4 @@
-use bolt_text_core::{BitmapFormat, CellMetrics, FaceError, FontConfig, Name, resolve_faces};
+use lokyr_text_core::{BitmapFormat, CellMetrics, FaceError, FontConfig, Name, resolve_faces};
 
 use super::*;
 
@@ -74,7 +74,7 @@ fn obliques_are_italic() {
 
 #[test]
 fn a_family_that_is_not_installed_has_no_faces() {
-    assert_eq!(CoreText::new().family("No Such Family Of Bolt's"), None);
+    assert_eq!(CoreText::new().family("No Such Family Of Lokyr's"), None);
 }
 
 #[test]
@@ -267,13 +267,13 @@ fn a_missing_family_falls_back_to_sf_mono() {
     let mut backend = CoreText::new();
     let resolved = resolve_faces(
         &mut backend,
-        &config("No Such Family Of Bolt's", Some("SemiBold")),
+        &config("No Such Family Of Lokyr's", Some("SemiBold")),
     )
     .unwrap();
     assert_eq!(resolved.family, backend.default_family());
     assert_eq!(
         resolved.missing_family.as_deref(),
-        Some("No Such Family Of Bolt's")
+        Some("No Such Family Of Lokyr's")
     );
 }
 

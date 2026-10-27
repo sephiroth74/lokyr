@@ -1,5 +1,5 @@
 [package]
-name = "bolt-platform-core"
+name = "lokyr-platform-core"
 description = "Platform interface implemented by each OS backend"
 version.workspace = true
 edition.workspace = true

@@ -3,7 +3,7 @@
 
 use std::ptr::NonNull;
 
-use bolt_text_core::{Bitmap, BitmapFormat, GlyphId, Synthesis};
+use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Synthesis};
 use objc2_core_foundation::{
     CFNumber, CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication,
 };

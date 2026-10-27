@@ -16,7 +16,7 @@
 //! they part must have one of the known [`Cause`]s, after which they are
 //! compared no more.
 //!
-//! [`vtebench`] rebuilds vtebench's scenarios, which `bolt-throughput`
+//! [`vtebench`] rebuilds vtebench's scenarios, which `lokyr-throughput`
 //! times against `alacritty_terminal`'s, and whose instructions the
 //! `instructions` benchmark counts.
 
@@ -36,9 +36,9 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::{Processor, Timeout};
-use bolt_vt_core::page::{Content, Width};
-use bolt_vt_core::parser::Parser;
-use bolt_vt_core::terminal::{Options, Terminal};
+use lokyr_vt_core::page::{Content, Width};
+use lokyr_vt_core::parser::Parser;
+use lokyr_vt_core::terminal::{Options, Terminal};
 
 /// The second cell of a wide character.
 pub const TAIL: &str = "[tail]";
@@ -123,7 +123,7 @@ pub(crate) const NUL: u8 = 0x00;
 /// NUL.
 pub struct Pair {
     parser: Parser,
-    bolt: Terminal,
+    lokyr: Terminal,
     processor: Processor,
     alacritty: Term<VoidListener>,
 }
@@ -134,7 +134,7 @@ impl Pair {
         let size = TermSize::new(usize::from(cols), usize::from(rows));
         Self {
             parser: Parser::new(),
-            bolt: Terminal::new(cols, rows, Options::default()),
+            lokyr: Terminal::new(cols, rows, Options::default()),
             processor: Processor::new(),
             alacritty: Term::new(Config::default(), &size, VoidListener),
         }
@@ -147,32 +147,32 @@ impl Pair {
         let mut rest = bytes;
         while let Some(at) = rest.iter().position(|&byte| byte == DEL) {
             let (before, after) = rest.split_at(at);
-            self.parser.advance(&mut self.bolt, before);
+            self.parser.advance(&mut self.lokyr, before);
             self.processor.advance(&mut self.alacritty, before);
             let ground = self.parser.in_ground();
-            self.parser.advance(&mut self.bolt, &[DEL]);
+            self.parser.advance(&mut self.lokyr, &[DEL]);
             let theirs = if ground { NUL } else { DEL };
             self.processor.advance(&mut self.alacritty, &[theirs]);
             rest = &after[1..];
         }
-        self.parser.advance(&mut self.bolt, rest);
+        self.parser.advance(&mut self.lokyr, rest);
         self.processor.advance(&mut self.alacritty, rest);
     }
 
     /// The VT core's terminal, for the state that the screens do not show.
     pub fn terminal(&self) -> &Terminal {
-        &self.bolt
+        &self.lokyr
     }
 
     /// The VT core's screen.
-    pub fn bolt(&self) -> Screen {
-        let terminal = &self.bolt;
+    pub fn lokyr(&self) -> Screen {
+        let terminal = &self.lokyr;
         let rows = (0..terminal.rows())
-            .map(|y| trimmed(bolt_cells(terminal, y).map(Cell::text).collect()))
+            .map(|y| trimmed(lokyr_cells(terminal, y).map(Cell::text).collect()))
             .collect();
         Screen {
             rows,
-            cursor: bolt_cursor(terminal),
+            cursor: lokyr_cursor(terminal),
         }
     }
 
@@ -200,20 +200,20 @@ impl Pair {
     /// Where the two screens differ first, if they do.
     pub fn difference(&mut self) -> Option<Difference> {
         let alacritty = self.alacritty();
-        self.bolt().first_difference(&alacritty)
+        self.lokyr().first_difference(&alacritty)
     }
 
     /// Whether the two screens are the same, as [`Pair::difference`] finds
     /// them, without reading them into text: for a check after every byte.
     pub fn same(&mut self) -> bool {
         self.end_sync();
-        let (bolt, alacritty) = (&self.bolt, &self.alacritty);
-        let rows = usize::from(bolt.rows());
+        let (lokyr, alacritty) = (&self.lokyr, &self.alacritty);
+        let rows = usize::from(lokyr.rows());
         rows == alacritty.grid().screen_lines()
-            && bolt_cursor(bolt) == alacritty_cursor(alacritty)
-            && (0..bolt.rows()).all(|y| {
+            && lokyr_cursor(lokyr) == alacritty_cursor(alacritty)
+            && (0..lokyr.rows()).all(|y| {
                 // A screen has fewer rows than an i32 holds.
-                bolt_cells(bolt, y).eq(alacritty_cells(alacritty, usize::from(y)))
+                lokyr_cells(lokyr, y).eq(alacritty_cells(alacritty, usize::from(y)))
             })
     }
 
@@ -250,14 +250,14 @@ impl Cell<'_> {
 
 /// The text of the cell at column `x` of row `y` of the VT core's screen,
 /// as the screens are compared by.
-pub(crate) fn bolt_cell_text(terminal: &Terminal, x: u16, y: u16) -> String {
-    bolt_cells(terminal, y)
+pub(crate) fn lokyr_cell_text(terminal: &Terminal, x: u16, y: u16) -> String {
+    lokyr_cells(terminal, y)
         .nth(usize::from(x))
         .map_or_else(|| " ".to_owned(), Cell::text)
 }
 
 /// The cells of row `y` of the VT core's screen.
-fn bolt_cells(terminal: &Terminal, y: u16) -> impl Iterator<Item = Cell<'_>> {
+fn lokyr_cells(terminal: &Terminal, y: u16) -> impl Iterator<Item = Cell<'_>> {
     let (page, row) = terminal.screen_rows().screen_row(y);
     (0..)
         .zip(page.cells(row))
@@ -273,7 +273,7 @@ fn bolt_cells(terminal: &Terminal, y: u16) -> impl Iterator<Item = Cell<'_>> {
 }
 
 /// The VT core's cursor, as [`Screen::cursor`] has it.
-fn bolt_cursor(terminal: &Terminal) -> (usize, usize, bool) {
+fn lokyr_cursor(terminal: &Terminal) -> (usize, usize, bool) {
     let cursor = terminal.cursor();
     (
         usize::from(cursor.x),
@@ -370,13 +370,13 @@ mod tests {
         // the cursor has left its row.
         let mut pair = Pair::new(10, 2);
         pair.feed("x\u{2600}\u{FE0F}y\r\n".as_bytes());
-        assert_eq!(pair.bolt().rows[0], ["x", "\u{2600}\u{FE0F}", TAIL, "y"]);
+        assert_eq!(pair.lokyr().rows[0], ["x", "\u{2600}\u{FE0F}", TAIL, "y"]);
         assert_eq!(pair.alacritty().rows[0], ["x", "\u{2600}\u{FE0F}", "y"]);
         // A wide character that does not fit leaves the same cell in both.
         let mut pair = Pair::new(4, 2);
         pair.feed("abc\u{4E2D}".as_bytes());
-        assert_eq!(pair.bolt().rows[0], ["a", "b", "c", HEAD]);
-        assert_eq!(pair.bolt().rows[1], ["\u{4E2D}", TAIL]);
+        assert_eq!(pair.lokyr().rows[0], ["a", "b", "c", HEAD]);
+        assert_eq!(pair.lokyr().rows[1], ["\u{4E2D}", TAIL]);
         assert_eq!(pair.difference(), None);
     }
 
@@ -406,6 +406,6 @@ mod tests {
         assert_eq!(pair.alacritty().rows[0], ["X"]);
         pair.feed(b"Y\x1b[?2026lZ");
         assert_eq!(pair.difference(), None);
-        assert_eq!(pair.bolt().rows[0], ["X", "Y", "Z"]);
+        assert_eq!(pair.lokyr().rows[0], ["X", "Y", "Z"]);
     }
 }

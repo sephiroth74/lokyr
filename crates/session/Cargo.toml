@@ -1,5 +1,5 @@
 [package]
-name = "bolt-session"
+name = "lokyr-session"
 description = "The session behind a pane: PTY, child process and terminal state"
 version.workspace = true
 edition.workspace = true
@@ -10,8 +10,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bolt-pty.workspace = true
-bolt-vt-core.workspace = true
+lokyr-pty.workspace = true
+lokyr-vt-core.workspace = true
 thiserror.workspace = true
 
 [lints]
