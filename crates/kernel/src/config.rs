@@ -29,16 +29,22 @@
 //!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
+//!
+//! [keys]
+//! "cmd+shift+]" = "tabs.next"                    # a command
+//! "ctrl+a>c" = { command = "tabs.new", when = "pane.focused" }
+//! "cmd+k" = false                                # takes a default away
 //! ```
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
 //! `[scrollback]` [`ScrollbackConfig`], `[keyboard]` [`KeyboardConfig`],
-//! and `[app]` [`AppConfig`]. Every key and every section can be
+//! `[app]` [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
@@ -83,6 +89,60 @@ pub struct Config {
     pub keyboard: KeyboardConfig,
     /// The `[app]` section.
     pub app: AppConfig,
+    /// The `[keys]` section.
+    pub keys: KeysConfig,
+}
+
+/// The `[keys]` section: bindings of keys to commands over the defaults, by
+/// their keys, as [`crate::keymap`] writes them.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(transparent)]
+pub struct KeysConfig {
+    /// The bindings, by their keys.
+    pub bindings: BTreeMap<String, KeyValue>,
+}
+
+/// What keys take: a command, a binding, several in their contexts, or
+/// `false`, which takes the defaults of the keys away.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum KeyValue {
+    /// A command, without arguments, in every context.
+    Command(String),
+    /// `false`: the keys take nothing.
+    Unbound(bool),
+    /// A command, with its arguments and its context.
+    Binding(KeyBinding),
+    /// Bindings in their contexts, of which the last that holds wins.
+    Bindings(Vec<KeyBinding>),
+}
+
+/// A binding of keys: its command, its arguments and its context.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyBinding {
+    /// The command's name.
+    pub command: String,
+    /// Its arguments.
+    #[serde(default)]
+    pub args: BTreeMap<String, ArgValue>,
+    /// The context in which it holds, as `pane.focused && !selection`.
+    #[serde(default)]
+    pub when: Option<String>,
+}
+
+/// An argument's value, as TOML writes it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum ArgValue {
+    /// True or false.
+    Boolean(bool),
+    /// A whole number.
+    Integer(i64),
+    /// A number.
+    Number(f64),
+    /// Text.
+    String(String),
 }
 
 /// The `[app]` section: the application's own looks.
@@ -362,6 +422,7 @@ impl Config {
         };
         let document = Document::parse(text).map_err(|e| error(e.span(), e.message()))?;
         check_keys(document.as_table()).map_err(|(span, message)| error(span, &message))?;
+        check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         Self::deserialize(toml_edit::de::Deserializer::from(document))
             .map_err(|e| error(e.span(), e.message()))
     }
@@ -443,6 +504,107 @@ fn sections() -> [(&'static str, &'static [&'static str]); 7] {
         ("keyboard", keys::<KeyboardConfig>()),
         ("app", keys::<AppConfig>()),
     ]
+}
+
+/// Fails at the first binding of `[keys]` that is not one: keys that are not
+/// a combination or a sequence, a command's name that is not one, `true`, a
+/// binding without its command or with another field, arguments that are
+/// not plain values, and a `when` that is not an expression of the
+/// contexts.
+fn check_bindings(root: &dyn TableLike) -> Result<(), (Option<std::ops::Range<usize>>, String)> {
+    let Some(item) = root.get("keys") else {
+        return Ok(());
+    };
+    let Some(table) = item.as_table_like() else {
+        return Err((item.span(), "`keys` is a section, not a value".to_owned()));
+    };
+    for (keys, value) in table.iter() {
+        let span = table.key(keys).and_then(toml_edit::Key::span);
+        crate::keymap::parse_keys(keys).map_err(|message| (span.clone(), message))?;
+        let fail = |message: String| (value.span().or(span.clone()), message);
+        if let Some(command) = value.as_str() {
+            check_command(command).map_err(fail)?;
+        } else if let Some(bound) = value.as_bool() {
+            if bound {
+                return Err(fail(format!(
+                    "`{keys}` takes a command, a binding or `false`, not `true`"
+                )));
+            }
+        } else if let Some(binding) = value.as_table_like() {
+            check_binding(binding).map_err(fail)?;
+        } else if let Some(bindings) = value.as_array() {
+            for binding in bindings {
+                let Some(binding) = binding.as_inline_table() else {
+                    return Err(fail(format!("the bindings of `{keys}` are tables")));
+                };
+                check_binding(binding).map_err(fail)?;
+            }
+        } else if let Some(bindings) = value.as_array_of_tables() {
+            for binding in bindings {
+                check_binding(binding).map_err(fail)?;
+            }
+        } else {
+            return Err(fail(format!(
+                "`{keys}` takes a command, a binding or `false`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Fails for a command's name that is not one.
+fn check_command(command: &str) -> Result<(), String> {
+    if crate::commands::is_name(command) {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{command}` is not a command's name, `namespace.action`"
+        ))
+    }
+}
+
+/// Fails for a binding without its command, with another field, with
+/// arguments that are not plain values, or with a `when` that is not one.
+fn check_binding(binding: &dyn TableLike) -> Result<(), String> {
+    for (field, value) in binding.iter() {
+        match field {
+            "command" => match value.as_str() {
+                Some(command) => check_command(command)?,
+                None => return Err("a binding's `command` is a command's name".to_owned()),
+            },
+            "args" => {
+                let Some(args) = value.as_table_like() else {
+                    return Err("a binding's `args` are a table".to_owned());
+                };
+                for (name, value) in args.iter() {
+                    let plain = value.as_str().is_some()
+                        || value.as_integer().is_some()
+                        || value.as_float().is_some()
+                        || value.as_bool().is_some();
+                    if !plain {
+                        return Err(format!(
+                            "the argument `{name}` is a string, an integer, a number or a boolean"
+                        ));
+                    }
+                }
+            }
+            "when" => match value.as_str() {
+                Some(when) => {
+                    crate::keymap::When::parse(when)?;
+                }
+                None => return Err("a binding's `when` is an expression, in a string".to_owned()),
+            },
+            other => {
+                return Err(format!(
+                    "a binding has `command`, `args` and `when`, not `{other}`"
+                ));
+            }
+        }
+    }
+    if binding.get("command").is_none() {
+        return Err("a binding needs its `command`".to_owned());
+    }
+    Ok(())
 }
 
 /// Fails at the first key that the file's sections do not have, with the
@@ -645,6 +807,91 @@ mod tests {
         assert_eq!(font.line_height, Factor::try_from(1.2).unwrap());
         assert_eq!(font.cell_width, Factor::try_from(1.05).unwrap());
         assert!(!font.ligatures);
+    }
+
+    #[test]
+    fn the_keys_read_as_bindings() {
+        let config = parse(
+            r#"
+            [keys]
+            "cmd+shift+]" = "tabs.next"
+            "cmd+1" = { command = "tabs.goto", args = { index = 1, wrap = true, speed = 1.5, label = "one" } }
+            "ctrl+a>c" = { command = "tabs.new", when = "pane.focused" }
+            "cmd+k" = false
+            "cmd+d" = [
+                { command = "panes.split", when = "!alternate-screen" },
+                { command = "view.clear", when = "alternate-screen" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let bindings = &config.keys.bindings;
+        assert_eq!(bindings.len(), 5);
+        assert_eq!(
+            bindings["cmd+shift+]"],
+            KeyValue::Command("tabs.next".to_owned())
+        );
+        assert_eq!(bindings["cmd+k"], KeyValue::Unbound(false));
+        let KeyValue::Binding(goto) = &bindings["cmd+1"] else {
+            panic!("a binding: {:?}", bindings["cmd+1"]);
+        };
+        assert_eq!(goto.args["index"], ArgValue::Integer(1));
+        assert_eq!(goto.args["wrap"], ArgValue::Boolean(true));
+        assert_eq!(goto.args["speed"], ArgValue::Number(1.5));
+        assert_eq!(goto.args["label"], ArgValue::String("one".to_owned()));
+        let KeyValue::Bindings(split) = &bindings["cmd+d"] else {
+            panic!("bindings: {:?}", bindings["cmd+d"]);
+        };
+        assert_eq!(split.len(), 2);
+    }
+
+    #[test]
+    fn a_binding_that_is_not_one_tells_its_place() {
+        let cases = [
+            (
+                "[keys]\n\"cmd+foo\" = \"tabs.new\"\n",
+                2,
+                "`foo` is not a key",
+            ),
+            ("[keys]\n\"cmd+t\" = \"new\"\n", 2, "not a command's name"),
+            ("[keys]\n\"cmd+t\" = true\n", 2, "not `true`"),
+            ("[keys]\n\"cmd+t\" = 3\n", 2, "takes a command"),
+            (
+                "[keys]\n\"cmd+t\" = { when = \"selection\" }\n",
+                2,
+                "needs its `command`",
+            ),
+            (
+                "[keys]\n\"cmd+t\" = { command = \"tabs.new\", key = 1 }\n",
+                2,
+                "not `key`",
+            ),
+            (
+                "[keys]\n\"cmd+t\" = { command = \"tabs.new\", when = \"focus\" }\n",
+                2,
+                "no context",
+            ),
+            (
+                "[keys]\n\"cmd+t\" = { command = \"tabs.new\", args = { a = [1] } }\n",
+                2,
+                "the argument `a`",
+            ),
+            (
+                "[keys]\n\"ctrl+a>wheel-up\" = \"font.increase\"\n",
+                2,
+                "takes no sequence",
+            ),
+            ("keys = 3\n", 1, "is a section"),
+        ];
+        for (text, line, message) in cases {
+            let (position, error) = error(text);
+            assert_eq!(
+                position.map(|(line, _)| line),
+                Some(line),
+                "{text}: {error}"
+            );
+            assert!(error.contains(message), "{text}: {error}");
+        }
     }
 
     #[test]
@@ -884,7 +1131,8 @@ mod tests {
                 "window",
                 "scrollback",
                 "keyboard",
-                "app"
+                "app",
+                "keys"
             ]
         );
         assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);

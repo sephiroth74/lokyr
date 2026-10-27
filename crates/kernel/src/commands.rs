@@ -51,6 +51,12 @@ fn is_part(name: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
+/// Whether `name` is a command's name, `namespace.action`, each part of
+/// lowercase letters, digits and `-`, from a letter.
+pub fn is_name(name: &str) -> bool {
+    name.contains('.') && name.split('.').all(is_part)
+}
+
 impl Registry {
     /// A registry without commands.
     pub fn new() -> Self {
@@ -62,8 +68,7 @@ impl Registry {
     /// defaults of their kinds.
     pub fn register(&mut self, command: Command) -> Result<(), Error> {
         let name = &command.name;
-        let valid = name.contains('.') && name.split('.').all(is_part);
-        if !valid {
+        if !is_name(name) {
             return Err(Error::new(
                 Code::InvalidName,
                 format!("`{name}` is not a command's name, `namespace.action`"),

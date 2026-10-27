@@ -11,13 +11,16 @@ use std::time::{Duration, Instant};
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
 use lokyr_kernel::config::{AppConfig, Config};
+use lokyr_kernel::keymap::{
+    self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
+};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
 use lokyr_kernel::workspace::{self, Environment, Event, Exited, Grid, Pane, PaneId, Workspace};
 use lokyr_platform_core::{
-    AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Modifiers,
-    MouseButton, Platform, Point, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TimerId,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu,
+    MenuItem, Modifiers, MouseButton, Platform, Point, ScrollDelta, ScrollPhase, Shortcut,
+    ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
@@ -167,6 +170,13 @@ struct Window {
     /// Whether the platform tells the pointer's moves without a button, as
     /// a program asked for them.
     mouse_moves: bool,
+    /// The sequence of keys under way, as the keymap resolves it.
+    resolver: Resolver,
+    /// The keys of the sequence under way, which go to the program if the
+    /// next key does not go on with it.
+    held_back: Vec<KeyEvent>,
+    /// The keys whose presses the keymap took, whose releases go nowhere.
+    taken: Vec<KeyCode>,
 }
 
 impl Window {
@@ -187,6 +197,9 @@ impl Window {
             backdrop: None,
             mouse: Mouse::default(),
             mouse_moves: false,
+            resolver: Resolver::new(),
+            held_back: Vec::new(),
+            taken: Vec::new(),
         }
     }
 }
@@ -205,6 +218,8 @@ pub struct App {
     config_file: Option<ConfigFile>,
     /// The commands, which the app runs.
     commands: Registry,
+    /// The bindings of keys to commands: the defaults, and the config's.
+    keymap: Keymap,
     /// The windows, their tabs and panes.
     workspace: Workspace,
     /// The platform's windows, each with what the app keeps of it.
@@ -231,6 +246,7 @@ impl App {
     /// without it, with `config`, which it reads again from `path`, its
     /// file, when that changes.
     pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
+        let keymap = Keymap::with_config(default_bindings(), &config.keys);
         Self {
             drawing,
             theme: Theme::builtin(),
@@ -243,6 +259,7 @@ impl App {
                 reading: None,
             }),
             commands: commands(),
+            keymap,
             workspace: Workspace::new(),
             windows: BTreeMap::new(),
             blink_timer: None,
@@ -322,6 +339,9 @@ impl App {
             return;
         }
         let icon_changed = config.app.icon != self.config.app.icon;
+        if config.keys != self.config.keys {
+            self.keymap = Keymap::with_config(default_bindings(), &config.keys);
+        }
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
@@ -485,21 +505,41 @@ impl App {
         let row_points = f64::from(pane.grid().cell_height) / scale;
         let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
         let to_program = !mods.shift && !pane.is_kept();
+        // A binding of a step takes it first, before the program and the
+        // view.
+        let context = context(Some(pane));
+        let bound = |wheel| match Resolver::new().press(
+            &self.keymap,
+            Pressed::wheel(wheel, binding_mods(mods)),
+            &context,
+        ) {
+            Resolved::Run(invocation) => Some(invocation),
+            _ => None,
+        };
+        let mut runs = Vec::new();
         let mut view: i64 = 0;
         let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
+        let up_bound = bound(wheel);
         for _ in 0..up.unsigned_abs() {
+            if let Some(invocation) = &up_bound {
+                runs.push(invocation.clone());
+                continue;
+            }
             let event = mouse_event(MouseAction::Wheel(wheel), mods, pointer);
             if !(to_program && pane.mouse(&event)) {
                 view += i64::from(up.signum());
             }
         }
-        if to_program {
-            let wheel = if across > 0 {
-                Wheel::Left
-            } else {
-                Wheel::Right
-            };
-            for _ in 0..across.unsigned_abs() {
+        let wheel = if across > 0 {
+            Wheel::Left
+        } else {
+            Wheel::Right
+        };
+        let across_bound = bound(wheel);
+        for _ in 0..across.unsigned_abs() {
+            if let Some(invocation) = &across_bound {
+                runs.push(invocation.clone());
+            } else if to_program {
                 pane.mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer));
             }
         }
@@ -511,6 +551,9 @@ impl App {
                 Scroll::Down(rows)
             });
             platform.request_frame(window);
+        }
+        for invocation in runs {
+            self.run(platform, &invocation.command, invocation.args);
         }
     }
 
@@ -584,6 +627,48 @@ impl App {
         }
         if waiting && self.exit_timer.is_none() {
             self.exit_timer = Some(platform.start_timer(now + EXIT_POLL));
+        }
+    }
+
+    /// What the keymap does with `key`, in `window`: runs a command, holds
+    /// the key back as a sequence goes on, or gives it to the program,
+    /// after the keys of a sequence that it did not go on with. A release
+    /// of a key that the keymap took goes nowhere.
+    fn resolve_key(&mut self, window: WindowId, key: &KeyEvent) -> Taken {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return Taken::Held;
+        };
+        if key.state == KeyState::Released {
+            if let Some(at) = state.taken.iter().position(|&code| code == key.code) {
+                state.taken.remove(at);
+                return Taken::Held;
+            }
+            return Taken::Program(vec![key.clone()]);
+        }
+        let pressed = keys::terminal_key(key).and_then(|event| {
+            Pressed::key(event.key, binding_mods(key.mods), key.code.base_layout())
+        });
+        // A modifier alone neither takes a binding nor ends a sequence.
+        let Some(pressed) = pressed else {
+            return Taken::Program(vec![key.clone()]);
+        };
+        let context = context(self.workspace.pane(state.pane));
+        match state.resolver.press(&self.keymap, pressed, &context) {
+            Resolved::Run(invocation) => {
+                state.held_back.clear();
+                state.taken.push(key.code);
+                Taken::Run(invocation)
+            }
+            Resolved::Pending => {
+                state.held_back.push(key.clone());
+                state.taken.push(key.code);
+                Taken::Held
+            }
+            Resolved::Program { .. } => {
+                let mut keys = std::mem::take(&mut state.held_back);
+                keys.push(key.clone());
+                Taken::Program(keys)
+            }
         }
     }
 
@@ -1018,12 +1103,29 @@ impl Handler for App {
                     }
                     return;
                 }
-                if let Some(event) = keys::terminal_key(&key) {
-                    pane.key(&event, options);
-                }
                 if pressed {
                     state.blink.restart(Instant::now());
                     platform.request_frame(window);
+                }
+                match self.resolve_key(window, &key) {
+                    Taken::Run(invocation) => {
+                        self.run(platform, &invocation.command, invocation.args);
+                    }
+                    Taken::Held => {}
+                    Taken::Program(keys) => {
+                        let Some(pane) = self
+                            .windows
+                            .get(&window)
+                            .and_then(|state| self.workspace.pane(state.pane))
+                        else {
+                            return;
+                        };
+                        for key in &keys {
+                            if let Some(event) = keys::terminal_key(key) {
+                                pane.key(&event, options);
+                            }
+                        }
+                    }
                 }
             }
             // The input method's text: composed, shown at the cursor, or
@@ -1106,6 +1208,53 @@ fn closes(key: &lokyr_platform_core::KeyEvent) -> bool {
                 Key::Modifier(_) | Key::CapsLock | Key::NumLock | Key::ScrollLock
             )
         })
+}
+
+/// What the keymap does with a key.
+enum Taken {
+    /// It runs a command.
+    Run(Invocation),
+    /// It holds the key back, or takes its release.
+    Held,
+    /// It gives these keys to the program, in their order.
+    Program(Vec<KeyEvent>),
+}
+
+/// The modifiers of `mods`, as bindings name them.
+fn binding_mods(mods: Modifiers) -> keymap::Mods {
+    keymap::Mods {
+        cmd: mods.super_key,
+        ctrl: mods.control,
+        alt: mods.left_alt || mods.right_alt,
+        shift: mods.shift,
+    }
+}
+
+/// The context of the keys in a window of `pane`: its pane has the
+/// keyboard, and its program may show the alternate screen.
+fn context(pane: Option<&Pane>) -> Context {
+    let mut names = vec!["pane.focused"];
+    if pane.is_some_and(Pane::is_alternate_screen) {
+        names.push("alternate-screen");
+    }
+    Context::new(names)
+}
+
+/// The default bindings of the app's commands.
+fn default_bindings() -> Vec<Binding> {
+    [("cmd+n", NEW_WINDOW), ("cmd+q", QUIT)]
+        .into_iter()
+        .filter_map(|(keys, command)| {
+            Some(Binding {
+                keys: keymap::parse_keys(keys).ok()?,
+                invocation: Invocation {
+                    command: command.to_owned(),
+                    args: Args::new(),
+                },
+                when: None,
+            })
+        })
+        .collect()
 }
 
 /// The app's commands, which it runs itself.
@@ -2191,6 +2340,150 @@ mod tests {
             unmodified: text.to_owned(),
             plain: text.to_owned(),
         })
+    }
+
+    /// The press, or the release, of the key at `code`, which types `plain`
+    /// without modifiers, with `mods`.
+    fn key_event(code: KeyCode, plain: &str, mods: Modifiers, pressed: bool) -> WindowEvent {
+        let control = mods.control && plain.len() == 1;
+        let text = if control {
+            // Control types the letter's control code.
+            let byte = plain.as_bytes()[0].to_ascii_uppercase() & 0x1f;
+            char::from(byte).to_string()
+        } else {
+            plain.to_owned()
+        };
+        WindowEvent::Key(KeyEvent {
+            code,
+            state: if pressed {
+                KeyState::Pressed
+            } else {
+                KeyState::Released
+            },
+            mods,
+            text,
+            unmodified: plain.to_owned(),
+            plain: plain.to_owned(),
+        })
+    }
+
+    const CMD: Modifiers = Modifiers {
+        super_key: true,
+        ..Modifiers::NONE
+    };
+
+    const CTRL: Modifiers = Modifiers {
+        control: true,
+        ..Modifiers::NONE
+    };
+
+    /// The app without padding, of a config whose `[keys]` are `keys`, its
+    /// window running `program`, once it shows `ready`.
+    fn bound(keys: &str, program: Program) -> (Fake, App, WindowId) {
+        let mut config = Config::parse(
+            &format!("[keys]\n{keys}"),
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        config.window = unpadded().window;
+        let mut fake = Fake::default();
+        let mut app = app(config, program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn a_bound_key_runs_its_command_and_its_release_goes_nowhere() {
+        let keys = "\"cmd+shift+n\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader("\\033[>3u"));
+        let shifted = Modifiers { shift: true, ..CMD };
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyN, "n", shifted, true),
+        );
+        assert_eq!(fake.windows().count(), 2);
+        // The release reaches nothing, though the program asked for
+        // releases, as the kitty protocol's flags have it.
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyN, "n", shifted, false),
+        );
+        // The default too.
+        fake.send(&mut app, window, key_event(KeyCode::KeyN, "n", CMD, true));
+        assert_eq!(fake.windows().count(), 3);
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        let shown = screen(&app, window).concat();
+        assert!(!shown.contains("^["), "{shown:?}");
+    }
+
+    #[test]
+    fn a_sequence_holds_its_keys_back_until_it_runs_or_gives_them_to_the_program() {
+        let keys = "\"ctrl+a>n\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader(""));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, false));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyN, "n", Modifiers::NONE, true),
+        );
+        assert_eq!(fake.windows().count(), 2);
+        // A key that goes on with no sequence: both reach the program.
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyE, "e", Modifiers::NONE, true),
+        );
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^Ae"));
+        let shown = screen(&app, window).concat();
+        assert_eq!(shown.matches("^A").count(), 1, "{shown:?}");
+        assert!(!shown.contains('n'), "{shown:?}");
+    }
+
+    #[test]
+    fn a_binding_holds_in_its_context() {
+        let keys = "\"ctrl+o\" = { command = \"window.new\", when = \"alternate-screen\" }\n";
+        let program = shell(
+            "stty raw -echo; echo ready; head -c 1 >/dev/null; printf '\\033[?1049h'; echo alt; cat -v",
+        );
+        let (mut fake, mut app, window) = bound(keys, program);
+        // On the primary screen, the key is the program's.
+        fake.send(&mut app, window, key_event(KeyCode::KeyO, "o", CTRL, true));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "alt"));
+        assert_eq!(fake.windows().count(), 1);
+        fake.send(&mut app, window, key_event(KeyCode::KeyO, "o", CTRL, true));
+        assert_eq!(fake.windows().count(), 2);
+    }
+
+    #[test]
+    fn a_step_of_the_wheel_runs_its_binding() {
+        let keys = "\"cmd+wheel-up\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader(""));
+        let up = ScrollDelta::Lines { x: 0.0, y: 2.0 };
+        fake.send(&mut app, window, wheel(up, CMD));
+        assert_eq!(fake.windows().count(), 3, "a window a step");
+        // Without Command, the wheel is the view's.
+        fake.send(&mut app, window, wheel(up, Modifiers::NONE));
+        assert_eq!(fake.windows().count(), 3);
+    }
+
+    #[test]
+    fn a_reloaded_config_binds_its_keys_anew() {
+        let (mut fake, mut app, path) = with_file("keys", "[keys]\n\"cmd+n\" = false\n");
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, key_event(KeyCode::KeyN, "n", CMD, true));
+        assert_eq!(fake.windows().count(), 1, "the default taken away");
+        std::fs::write(&path, "").unwrap();
+        change(&mut fake, &mut app);
+        fake.send(&mut app, window, key_event(KeyCode::KeyN, "n", CMD, true));
+        assert_eq!(fake.windows().count(), 2);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

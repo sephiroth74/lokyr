@@ -421,6 +421,13 @@ impl Pane {
         self.ended.is_some() && !self.kept
     }
 
+    /// Whether the program shows the alternate screen.
+    pub fn is_alternate_screen(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.lock().is_alternate_screen())
+    }
+
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept

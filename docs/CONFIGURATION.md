@@ -73,6 +73,11 @@ option-as-meta = "left"              # none | left | right | both
 
 [app]
 icon = "laguz"                       # jormungandr | laguz
+
+[keys]
+"cmd+shift+n" = "window.new"         # keys, and the command that they run
+"ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
+"cmd+q" = false                      # takes a default away
 ```
 
 ## `config_version`
@@ -438,3 +443,43 @@ The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app
 - A new variant applies at once, as you save the file.
 - The Finder and Launchpad show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
 - A name that is not one of Lokyr's variants keeps the default, and the log names the variants; the rest of the file applies.
+
+## `[keys]`
+
+The bindings of keys, and of the wheel, to Lokyr's commands, over the defaults. A key that a binding takes runs its command, and never reaches the program; the others go to the program, as they always do.
+
+### Bindings
+
+<sub>Platforms: macOS</sub>
+
+Each entry of the section is a binding: its name is the keys, in quotes, and its value the command that they run.
+
+```toml
+[keys]
+"cmd+shift+n" = "window.new"
+"ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
+"cmd+q" = false
+```
+
+- **The keys**: modifiers, each followed by `+`, and the key: `cmd+shift+n`.
+  - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`.
+  - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
+  - Your keyboard layout gives the characters: a key whose character no binding takes runs the binding of the character at its place on the US layout, so that `cmd+]` works on a layout where `]` takes Option.
+- **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it. A step of the wheel makes no sequence.
+- **The value**:
+  - a command, as `"window.new"`;
+  - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;
+  - an array of such tables, for the keys in several contexts;
+  - `false`, which takes away the defaults of the keys.
+- **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. `alternate-screen` holds while a program such as vim or less shows its own screen. A binding without `when` holds everywhere.
+- **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
+- A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
+- For now, the keys of the menus' items, Command-N and Command-Q, stay theirs: the menus take them before the bindings see them.
+- A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
+
+The defaults:
+
+| Keys | Command | What it does |
+|---|---|---|
+| `cmd+n` | `window.new` | Opens a window |
+| `cmd+q` | `app.quit` | Quits Lokyr |

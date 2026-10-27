@@ -1,0 +1,288 @@
+//! The keymap's bindings, their contexts and sequences, as keys resolve.
+
+use lokyr_vt_core::input::ModifierKey;
+
+use super::*;
+
+fn mods(cmd: bool, ctrl: bool, alt: bool, shift: bool) -> Mods {
+    Mods {
+        cmd,
+        ctrl,
+        alt,
+        shift,
+    }
+}
+
+fn combo(text: &str) -> Combo {
+    Combo::parse(text).unwrap()
+}
+
+fn binding(keys: &str, command: &str, when: Option<&str>) -> Binding {
+    Binding {
+        keys: parse_keys(keys).unwrap(),
+        invocation: Invocation {
+            command: command.to_owned(),
+            args: Args::new(),
+        },
+        when: when.map(|when| When::parse(when).unwrap()),
+    }
+}
+
+fn run(command: &str) -> Resolved {
+    Resolved::Run(Invocation {
+        command: command.to_owned(),
+        args: Args::new(),
+    })
+}
+
+/// The key that types `character` with `mods`, on the US layout.
+fn key(character: char, mods: Mods) -> Pressed {
+    Pressed::key(Key::Char(character), mods, Some(character)).unwrap()
+}
+
+const NONE: Mods = Mods {
+    cmd: false,
+    ctrl: false,
+    alt: false,
+    shift: false,
+};
+
+const CMD: Mods = Mods {
+    cmd: true,
+    ctrl: false,
+    alt: false,
+    shift: false,
+};
+
+const CTRL: Mods = Mods {
+    cmd: false,
+    ctrl: true,
+    alt: false,
+    shift: false,
+};
+
+#[test]
+fn a_combination_names_its_modifiers_and_its_key() {
+    let cases = [
+        (
+            "cmd+shift+]",
+            mods(true, false, false, true),
+            Press::Char(']'),
+        ),
+        ("ctrl++", mods(false, true, false, false), Press::Char('+')),
+        ("+", NONE, Press::Char('+')),
+        ("opt+K", mods(false, false, true, false), Press::Char('k')),
+        (
+            "command+option+control+x",
+            mods(true, true, true, false),
+            Press::Char('x'),
+        ),
+        ("enter", NONE, Press::Named(Named::Enter)),
+        ("esc", NONE, Press::Named(Named::Escape)),
+        (
+            "shift+F5",
+            mods(false, false, false, true),
+            Press::Named(Named::F(5)),
+        ),
+        (
+            "alt+pageup",
+            mods(false, false, true, false),
+            Press::Named(Named::PageUp),
+        ),
+        ("cmd+wheel-up", CMD, Press::Wheel(Direction::Up)),
+    ];
+    for (text, mods, press) in cases {
+        assert_eq!(Combo::parse(text), Ok(Combo { mods, press }), "{text}");
+    }
+    assert_eq!(combo("cmd+shift+]").to_string(), "cmd+shift+]");
+    assert_eq!(combo("ctrl+esc").to_string(), "ctrl+escape");
+    assert_eq!(combo("f12").to_string(), "f12");
+    assert_eq!(combo("cmd+wheel-down").to_string(), "cmd+wheel-down");
+    for text in [
+        "hyper+a",
+        "cmd+cmd+a",
+        "cmd+",
+        "cmd+foo",
+        "f36",
+        "f0",
+        "",
+        "Cmd+a",
+        "cmd+ ",
+    ] {
+        assert!(Combo::parse(text).is_err(), "{text}");
+    }
+}
+
+#[test]
+fn keys_make_a_sequence_with_the_wheel_alone() {
+    assert_eq!(
+        parse_keys("ctrl+a>c"),
+        Ok(vec![combo("ctrl+a"), combo("c")])
+    );
+    // `>` as a key, after a `+` or a `>`.
+    assert_eq!(parse_keys("shift+>"), Ok(vec![combo("shift+>")]));
+    assert_eq!(
+        parse_keys("ctrl+a>>"),
+        Ok(vec![combo("ctrl+a"), combo(">")])
+    );
+    assert_eq!(parse_keys(">"), Ok(vec![combo(">")]));
+    assert!(parse_keys("cmd+wheel-up").is_ok());
+    assert!(parse_keys("ctrl+a>wheel-up").is_err());
+    assert!(parse_keys("ctrl+a>").is_err());
+}
+
+#[test]
+fn a_when_holds_in_its_contexts() {
+    let context = |names: &[&str]| Context::new(names.iter().copied());
+    let when = When::parse("pane.focused && !selection").unwrap();
+    assert!(when.holds(&context(&["pane.focused"])));
+    assert!(!when.holds(&context(&["pane.focused", "selection"])));
+    let when = When::parse("selection || pane.focused && alternate-screen").unwrap();
+    assert!(when.holds(&context(&["selection"])));
+    assert!(
+        !when.holds(&context(&["pane.focused"])),
+        "`&&` binds tighter"
+    );
+    let when = When::parse("!(selection || alternate-screen)").unwrap();
+    assert!(when.holds(&context(&[])));
+    assert!(!when.holds(&context(&["alternate-screen"])));
+    for text in [
+        "focus",
+        "selection & pane.focused",
+        "(selection",
+        "selection &&",
+        "selection selection",
+        "",
+        "Selection",
+    ] {
+        assert!(When::parse(text).is_err(), "{text}");
+    }
+}
+
+#[test]
+fn the_last_binding_that_holds_wins() {
+    let mut keymap = Keymap::new(vec![
+        binding("cmd+k", "view.clear", None),
+        binding("cmd+c", "pane.copy", Some("selection")),
+    ]);
+    keymap.bind(binding("cmd+k", "view.reset", Some("alternate-screen")));
+    let mut resolver = Resolver::new();
+    let plain = Context::new(["pane.focused"]);
+    let alternate = Context::new(["pane.focused", "alternate-screen"]);
+    assert_eq!(
+        resolver.press(&keymap, key('k', CMD), &plain),
+        run("view.clear")
+    );
+    assert_eq!(
+        resolver.press(&keymap, key('k', CMD), &alternate),
+        run("view.reset")
+    );
+    // Without a selection, Command-C goes to the program.
+    assert_eq!(
+        resolver.press(&keymap, key('c', CMD), &plain),
+        Resolved::Program { before: 0 }
+    );
+    let selected = Context::new(["selection"]);
+    assert_eq!(
+        resolver.press(&keymap, key('c', CMD), &selected),
+        run("pane.copy")
+    );
+    // Another modifier, another combination.
+    assert_eq!(
+        resolver.press(&keymap, key('k', CTRL), &plain),
+        Resolved::Program { before: 0 }
+    );
+    keymap.unbind(&parse_keys("cmd+k").unwrap());
+    assert_eq!(
+        resolver.press(&keymap, key('k', CMD), &alternate),
+        Resolved::Program { before: 0 }
+    );
+    assert_eq!(keymap.bindings().len(), 1);
+}
+
+#[test]
+fn a_sequence_waits_for_its_next_key_or_gives_its_keys_to_the_program() {
+    let keymap = Keymap::new(vec![
+        binding("ctrl+a>c", "tabs.new", None),
+        binding("ctrl+a>ctrl+a", "tabs.last", None),
+    ]);
+    let mut resolver = Resolver::new();
+    let context = Context::default();
+    assert_eq!(
+        resolver.press(&keymap, key('a', CTRL), &context),
+        Resolved::Pending
+    );
+    assert!(resolver.is_pending());
+    assert_eq!(
+        resolver.press(&keymap, key('c', NONE), &context),
+        run("tabs.new")
+    );
+    assert!(!resolver.is_pending());
+    assert_eq!(
+        resolver.press(&keymap, key('a', CTRL), &context),
+        Resolved::Pending
+    );
+    assert_eq!(
+        resolver.press(&keymap, key('a', CTRL), &context),
+        run("tabs.last")
+    );
+    // A key that goes on with no sequence: both go to the program.
+    resolver.press(&keymap, key('a', CTRL), &context);
+    assert_eq!(
+        resolver.press(&keymap, key('e', NONE), &context),
+        Resolved::Program { before: 1 }
+    );
+    assert!(!resolver.is_pending());
+}
+
+#[test]
+fn a_key_takes_the_us_layout_s_binding_when_its_own_has_none() {
+    // The Italian layout's `è`, at the US layout's `[`, and its `+`, at `]`.
+    let keymap = Keymap::new(vec![
+        binding("cmd+[", "tabs.prev", None),
+        binding("cmd+]", "tabs.next", None),
+        binding("cmd++", "font.increase", None),
+    ]);
+    let mut resolver = Resolver::new();
+    let context = Context::default();
+    let e_grave = Pressed::key(Key::Char('è'), CMD, Some('[')).unwrap();
+    assert_eq!(resolver.press(&keymap, e_grave, &context), run("tabs.prev"));
+    // The layout's own character first.
+    let plus = Pressed::key(Key::Char('+'), CMD, Some(']')).unwrap();
+    assert_eq!(
+        resolver.press(&keymap, plus, &context),
+        run("font.increase")
+    );
+    let unbound = Keymap::new(vec![binding("cmd+]", "tabs.next", None)]);
+    assert_eq!(resolver.press(&unbound, plus, &context), run("tabs.next"));
+    // Capitals and the space take their bindings' names.
+    let capital = Pressed::key(Key::Char('K'), CMD, Some('k')).unwrap();
+    assert_eq!(capital.press, Press::Char('k'));
+    assert_eq!(capital.us, None);
+    let space = Pressed::key(Key::Char(' '), CTRL, Some(' ')).unwrap();
+    assert_eq!(space.press, Press::Named(Named::Space));
+    // A modifier alone takes no binding.
+    assert_eq!(
+        Pressed::key(Key::Modifier(ModifierKey::LeftShift), NONE, None),
+        None
+    );
+}
+
+#[test]
+fn the_wheel_takes_its_bindings() {
+    let keymap = Keymap::new(vec![binding("cmd+wheel-up", "font.increase", None)]);
+    let mut resolver = Resolver::new();
+    let context = Context::default();
+    assert_eq!(
+        resolver.press(&keymap, Pressed::wheel(Wheel::Up, CMD), &context),
+        run("font.increase")
+    );
+    assert_eq!(
+        resolver.press(&keymap, Pressed::wheel(Wheel::Down, CMD), &context),
+        Resolved::Program { before: 0 }
+    );
+    assert_eq!(
+        resolver.press(&keymap, Pressed::wheel(Wheel::Up, NONE), &context),
+        Resolved::Program { before: 0 }
+    );
+}
