@@ -6,7 +6,7 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use bolt_platform_core::{
-    Alert, AlertId, Appearance, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
+    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::MainThreadMarker;
@@ -309,9 +309,9 @@ impl Platform for Backend {
         self.option_as_meta.set((left, right));
     }
 
-    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>) {
+    fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {
         if let Some(window) = self.windows.get(&window) {
-            window.set_translucent(blur);
+            window.set_translucent(backdrop);
         }
     }
 }

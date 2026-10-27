@@ -1,6 +1,6 @@
 //! A window made translucent, then opaque again: the window, its content
-//! view and the view's layer turn non-opaque together, over a clear
-//! background, and back.
+//! view and the view's layer turn non-opaque together, over the backdrop's
+//! color, and back.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -11,7 +11,7 @@ mod probe {
     use std::rc::Rc;
 
     use bolt_platform_core::{
-        AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId,
+        AppEvent, Backdrop, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -60,9 +60,19 @@ mod probe {
             NSApplication::sharedApplication(mtm).hide(None);
             let mut seen = self.0.borrow_mut();
             seen.push(look(platform, window));
-            platform.set_translucent(window, Some(20.0));
+            let backdrop = Backdrop {
+                color: [0.2, 0.4, 0.6, 0.8],
+                blur: 20.0,
+            };
+            platform.set_translucent(window, Some(backdrop));
             seen.push(look(platform, window));
-            platform.set_translucent(window, Some(0.0));
+            platform.set_translucent(
+                window,
+                Some(Backdrop {
+                    blur: 0.0,
+                    ..backdrop
+                }),
+            );
             seen.push(look(platform, window));
             platform.set_translucent(window, None);
             seen.push(look(platform, window));
@@ -82,9 +92,11 @@ mod probe {
         let opaque = seen[0];
         assert_eq!((opaque.0, opaque.1, opaque.2), (true, true, true));
         assert!(opaque.3 > 0.0, "{seen:?}");
-        // Translucent, blurred or not, over a clear background.
+        // Translucent, blurred or not, over the backdrop's color.
         for translucent in &seen[1..3] {
-            assert_eq!(*translucent, (false, false, false, 0.0), "{seen:?}");
+            let (window, view, layer, alpha) = *translucent;
+            assert_eq!((window, view, layer), (false, false, false), "{seen:?}");
+            assert!((alpha - 0.8).abs() < 1e-6, "{seen:?}");
         }
         assert_eq!(seen[3], opaque, "back as it opened");
         println!("translucency: ok");

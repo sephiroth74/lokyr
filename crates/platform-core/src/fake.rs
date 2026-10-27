@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Error, Handler, MainMenu, Platform, Point, Size, TimerId,
-    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, Error, Handler, MainMenu, Platform, Point,
+    Size, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -29,8 +29,8 @@ pub struct FakeWindow {
     pub frame_requested: bool,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
-    /// The blur of what shows through it, when it is translucent.
-    pub translucent: Option<f64>,
+    /// Its backdrop, when it is translucent.
+    pub translucent: Option<Backdrop>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -339,9 +339,9 @@ impl Platform for Fake {
         self.option_as_meta = (left, right);
     }
 
-    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>) {
+    fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {
         if let Some(state) = self.windows.get_mut(&window) {
-            state.translucent = blur;
+            state.translucent = backdrop;
         }
     }
 }

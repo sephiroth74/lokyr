@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use bolt_platform_core::{
-    Ime, PixelSize, Point, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Backdrop, Ime, PixelSize, Point, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -140,25 +140,28 @@ impl Window {
         self.view.ivars().input.borrow_mut().area = (origin, size);
     }
 
-    /// Lets what is behind the window show through its content where the
-    /// renderer draws it clear, blurred by `blur` points; or, with `None`,
+    /// Makes the window translucent over `backdrop`, its background, which
+    /// fills its whole shape, the titlebar and the rounded corners too,
+    /// under the content that the renderer draws clear; or, with `None`,
     /// keeps it opaque. The window, its view and the view's layer turn
     /// non-opaque together, as the window server composes the window with
     /// what is behind it only then.
-    pub(crate) fn set_translucent(&self, blur: Option<f64>) {
-        let opaque = blur.is_none();
+    pub(crate) fn set_translucent(&self, backdrop: Option<Backdrop>) {
+        let opaque = backdrop.is_none();
         self.view.ivars().opaque.set(opaque);
         if let Some(layer) = self.view.layer() {
             layer.setOpaque(opaque);
         }
         self.ns_window.setOpaque(opaque);
-        let background = if opaque {
-            NSColor::windowBackgroundColor()
-        } else {
-            NSColor::clearColor()
+        let background = match backdrop {
+            Some(Backdrop {
+                color: [red, green, blue, alpha],
+                ..
+            }) => NSColor::colorWithSRGBRed_green_blue_alpha(red, green, blue, alpha),
+            None => NSColor::windowBackgroundColor(),
         };
         self.ns_window.setBackgroundColor(Some(&background));
-        let radius = blur.map_or(0, |points| points.round() as isize);
+        let radius = backdrop.map_or(0, |backdrop| backdrop.blur.round() as isize);
         // SAFETY: the window server's calls take its connection, a window's
         // number and a radius; a window of the process, open, is its own.
         // Each argument goes as a word, which the call reads whole or in its

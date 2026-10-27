@@ -78,6 +78,18 @@ pub struct WindowAttributes {
     pub size: Size,
 }
 
+/// The background of a translucent window, under what the app draws, and
+/// through which what is behind the window shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Backdrop {
+    /// Its color: sRGB's encoded components, from 0 to 1, and its opacity,
+    /// from 0, clear, to 1, opaque.
+    pub color: [f64; 4],
+    /// The radius of the blur of what shows through it, in points; 0 for
+    /// none.
+    pub blur: f64,
+}
+
 /// What the app asks of the platform, from the main thread.
 ///
 /// A window that is closed, or that never was, takes nothing: what is done
@@ -155,10 +167,11 @@ pub trait Platform {
     /// the input method places its candidates.
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size);
 
-    /// Lets what is behind `window` show through its content where what it
-    /// draws is not opaque, blurred by a radius of `blur` points, 0 for no
-    /// blur; or, with `None`, keeps the window opaque, as it opens.
-    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>);
+    /// Makes `window` translucent, over `backdrop`, which covers its whole
+    /// frame, the titlebar too, under what the app draws: what is behind
+    /// the window shows through it, and through what the app draws clear;
+    /// or, with `None`, keeps the window opaque, as it opens.
+    fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>);
 
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a

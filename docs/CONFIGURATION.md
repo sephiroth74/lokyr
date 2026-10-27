@@ -206,7 +206,7 @@ The opacity of the window's background, from 0, clear, to 1, opaque: below 1, wh
 |---|---|
 | from `0` to `1` | `1` |
 
-- Only the default background lets it show, with the padding: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.
+- Only the default background lets it show, with the padding and the title bar, which take it: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.
 - At `1` the window is opaque, as it is by default.
 
 ### `background-blur`

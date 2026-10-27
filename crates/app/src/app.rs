@@ -11,11 +11,12 @@ use std::time::{Duration, Instant};
 use bolt_font_coretext::CoreText;
 use bolt_kernel::config::Config;
 use bolt_platform_core::{
-    AppEvent, Appearance, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform, Point,
-    Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform,
+    Point, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use bolt_pty::Program;
-use bolt_render_core::{CursorShape, DisplayList, Item, Renderer};
+use bolt_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
 use bolt_render_metal::{Gpu, MetalRenderer, Surface};
 use bolt_text_core::FontConfig;
 use bolt_ui_core::cursor::{self, Blink};
@@ -147,6 +148,8 @@ struct Window {
     blink: Blink,
     /// Whether its cursor blinked at its last frame.
     blinking: bool,
+    /// The backdrop that the platform has for it, while it is translucent.
+    backdrop: Option<Backdrop>,
 }
 
 impl Window {
@@ -158,6 +161,7 @@ impl Window {
             focused,
             blink: Blink::new(now),
             blinking: false,
+            backdrop: None,
         }
     }
 }
@@ -254,9 +258,7 @@ impl App {
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
-        let translucency = self.translucency();
         for &window in self.windows.keys() {
-            platform.set_translucent(window, translucency);
             platform.request_frame(window);
         }
     }
@@ -268,7 +270,6 @@ impl App {
         };
         match platform.create_window(&attributes) {
             Ok(window) => {
-                platform.set_translucent(window, self.translucency());
                 let surface = self.surface(platform, window);
                 let focused = platform.focused_window() == Some(window);
                 let size = platform
@@ -355,15 +356,23 @@ impl App {
         }
     }
 
-    /// What the windows take of the config's background: the blur of what
-    /// shows through it, in points, when its opacity lets something show;
-    /// `None` when they are opaque.
-    fn translucency(&self) -> Option<f64> {
+    /// The backdrop of a window whose terminal's default background is
+    /// `background`, as the config's opacity and blur make it: `None` for
+    /// an opaque one.
+    fn backdrop(&self, background: Color) -> Option<Backdrop> {
         let window = &self.config.window;
         window
             .background_opacity
             .is_translucent()
-            .then(|| f64::from(window.background_blur.points()))
+            .then(|| Backdrop {
+                color: [
+                    f64::from(background.red),
+                    f64::from(background.green),
+                    f64::from(background.blue),
+                    f64::from(window.background_opacity.value()),
+                ],
+                blur: f64::from(window.background_blur.points()),
+            })
     }
 
     /// The room between the grid and the window's edges, in pixels on a
@@ -465,6 +474,18 @@ impl App {
                 height: height / size.scale,
             },
         );
+        // A translucent window's backdrop is the terminal's default
+        // background, under the whole window, the titlebar too, and follows
+        // it, as the theme, the program or reverse video change it.
+        let background = cells::background(state.pane.snapshot());
+        let sent = state.backdrop;
+        let backdrop = self.backdrop(background);
+        if backdrop != sent {
+            platform.set_translucent(window, backdrop);
+            if let Some(state) = self.windows.get_mut(&window) {
+                state.backdrop = backdrop;
+            }
+        }
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
@@ -494,9 +515,10 @@ impl App {
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, &mut glyph);
         }
-        let opacity = self.config.window.background_opacity.value();
+        // Over a backdrop, what the cells leave shows it.
+        let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
         let list = DisplayList {
-            background: cells::background(snapshot).with_alpha(opacity),
+            background: background.with_alpha(opacity),
             items: vec![Item::Cells(batch)],
         };
         let updates = drawing.font.texture_updates();
@@ -1123,21 +1145,47 @@ mod tests {
     fn a_translucent_background_makes_the_window_translucent() {
         let (mut fake, mut reloaded, path) = with_file("translucent", "");
         let window = fake.windows().next().unwrap();
-        assert_eq!(fake.window(window).unwrap().translucent, None);
+        let backdrop = |fake: &mut Fake, app: &mut App| {
+            fake.send(app, window, WindowEvent::Frame);
+            fake.window(window)
+                .unwrap()
+                .translucent
+                .map(|backdrop| (backdrop.color, backdrop.blur))
+        };
+        assert_eq!(backdrop(&mut fake, &mut reloaded), None);
         std::fs::write(
             &path,
             "[window]\nbackground-opacity = 0.9\nbackground-blur = 20\n",
         )
         .unwrap();
         change(&mut fake, &mut reloaded);
-        assert_eq!(fake.window(window).unwrap().translucent, Some(20.0));
+        // The terminal's default background, of the light variant, with the
+        // opacity.
+        let light = reloaded.colors(Appearance::Light).background;
+        let rgb = |rgb: bolt_vt_core::page::Rgb| {
+            [rgb.r, rgb.g, rgb.b].map(|component| f64::from(f32::from(component) / 255.0))
+        };
+        let [red, green, blue] = rgb(light);
+        let opacity = f64::from(0.9_f32);
+        assert_eq!(
+            backdrop(&mut fake, &mut reloaded),
+            Some(([red, green, blue, opacity], 20.0))
+        );
+        // The dark variant's background takes its place.
+        fake.send_app(&mut reloaded, AppEvent::AppearanceChanged(Appearance::Dark));
+        let [red, green, blue] = rgb(reloaded.colors(Appearance::Dark).background);
+        assert_eq!(
+            backdrop(&mut fake, &mut reloaded),
+            Some(([red, green, blue, opacity], 20.0))
+        );
         // A blur alone, of an opaque background, leaves the window opaque.
         std::fs::write(&path, "[window]\nbackground-blur = 20\n").unwrap();
         change(&mut fake, &mut reloaded);
-        assert_eq!(fake.window(window).unwrap().translucent, None);
+        assert_eq!(backdrop(&mut fake, &mut reloaded), None);
         std::fs::write(&path, "[window]\nbackground-opacity = 0.5\n").unwrap();
         change(&mut fake, &mut reloaded);
-        assert_eq!(fake.window(window).unwrap().translucent, Some(0.0));
+        let blur = backdrop(&mut fake, &mut reloaded).map(|(_, blur)| blur);
+        assert_eq!(blur, Some(0.0));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
         // A window opens as the config says.
         let mut config = Config::default();
@@ -1147,7 +1195,8 @@ mod tests {
         let mut app = app(config, quiet());
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
-        assert_eq!(fake.window(window).unwrap().translucent, Some(12.0));
+        let opened = fake.window(window).unwrap().translucent;
+        assert_eq!(opened.map(|backdrop| backdrop.blur), Some(12.0));
     }
 
     #[test]
