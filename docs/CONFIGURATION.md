@@ -4,6 +4,8 @@ Lokyr reads its settings from one TOML file. This guide lists every key that the
 
 Every key and every section can be left out, and then takes its default: an empty file, or no file at all, gives Lokyr as it ships.
 
+Under each key's name, a small line tells the platforms where the key applies: macOS alone for now, as Lokyr's first version runs on macOS. As Lokyr comes to other systems, the line names them, and a key that one system alone has says so.
+
 ## The file
 
 - **Where it is**: `~/.config/lokyr/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/lokyr/config.toml` instead.
@@ -49,6 +51,8 @@ option-as-meta = "left"
 
 ## `config_version`
 
+<sub>Platforms: macOS</sub>
+
 The version of the file's format. Lokyr reads version `1`, and refuses any other.
 
 | Value | Default |
@@ -65,6 +69,8 @@ A character that the font lacks, such as Japanese text or an emoji in most progr
 
 ### `family`
 
+<sub>Platforms: macOS</sub>
+
 The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` or `"CaskaydiaCove NFM"`.
 
 - **Default**: the system's monospaced font, SF Mono.
@@ -74,6 +80,8 @@ The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` 
 - A family that is not installed gives the default one, and the log tells it. The styles that the file names then do not apply, as they are the missing family's.
 
 ### `size`
+
+<sub>Platforms: macOS</sub>
 
 The size of the text, in points.
 
@@ -85,6 +93,8 @@ The size is in points, so that the text takes the same room on a Retina display,
 
 ### `style`
 
+<sub>Platforms: macOS</sub>
+
 The face of the text that has no style, by the name that the font gives it, such as `"SemiBold"` or `"Light"`.
 
 - **Default**: the family's regular face: its upright face nearest to the regular weight.
@@ -93,6 +103,8 @@ The face of the text that has no style, by the name that the font gives it, such
 
 ### `bold-style`, `italic-style`, `bold-italic-style`
 
+<sub>Platforms: macOS</sub>
+
 The faces of bold, italic and bold italic text, named as `style` names its face.
 
 - **Default of `bold-style`**: the family's upright face heavier than the regular one, nearest to Bold's weight, or one step past the regular one's: Regular takes Bold, SemiBold takes Bold, and Bold takes ExtraBold. A family without one draws its regular face heavier.
@@ -100,6 +112,8 @@ The faces of bold, italic and bold italic text, named as `style` names its face.
 - **Default of `bold-italic-style`**: the family's italic face nearest to the bold one's weight. A family without one slants its bold face, or draws its italic one heavier.
 
 ### `non-ascii-family`
+
+<sub>Platforms: macOS</sub>
 
 The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese text.
 
@@ -110,6 +124,8 @@ The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese
 
 ### `line-height`, `cell-width`
 
+<sub>Platforms: macOS</sub>
+
 The height and the width of the grid's cells, as factors of the face's line height and of its characters' advance.
 
 | Values | Default |
@@ -119,6 +135,8 @@ The height and the width of the grid's cells, as factors of the face's line heig
 A factor below one makes a closer grid, but a cell is never smaller than the glyphs of the face.
 
 ### `ligatures`
+
+<sub>Platforms: macOS</sub>
 
 Whether the glyphs that a font joins into ligatures, such as `->` or `!=`, are joined.
 
@@ -134,6 +152,8 @@ The cursor that programs start with. Programs change its shape and its blinking,
 
 ### `shape`
 
+<sub>Platforms: macOS</sub>
+
 | Values | Default |
 |---|---|
 | `"block"`, `"bar"`, `"underline"`, `"hollow"` | `"block"` |
@@ -146,6 +166,8 @@ The cursor that programs start with. Programs change its shape and its blinking,
 Programs can choose among the first three alone, as DECSCUSR has no hollow block.
 
 ### `blink`
+
+<sub>Platforms: macOS</sub>
 
 Whether the cursor blinks.
 
@@ -160,6 +182,8 @@ Whether the cursor blinks.
 
 ### `thickness`
 
+<sub>Platforms: macOS</sub>
+
 The width of a bar and the height of an underline, in points, so that they keep their look on a Retina display.
 
 | Values | Default |
@@ -171,6 +195,8 @@ A hollow block's edges always take the font's underline thickness.
 ## `[window]`
 
 ### `close-on-exit`
+
+<sub>Platforms: macOS</sub>
 
 What a window does when its program ends, such as the shell after `exit`.
 
@@ -188,6 +214,8 @@ Closing the last window quits Lokyr.
 
 ### `padding-x`, `padding-y`
 
+<sub>Platforms: macOS</sub>
+
 The room between the grid and the window's edges, in points: `padding-x` at the left and the right, `padding-y` at the top and the bottom.
 
 | Values | Default |
@@ -200,6 +228,8 @@ The room between the grid and the window's edges, in points: `padding-x` at the 
 
 ### `background-opacity`
 
+<sub>Platforms: macOS</sub>
+
 The opacity of the window's background, from 0, clear, to 1, opaque: below 1, what is behind the window shows through it.
 
 | Values | Default |
@@ -210,6 +240,8 @@ The opacity of the window's background, from 0, clear, to 1, opaque: below 1, wh
 - At `1` the window is opaque, as it is by default.
 
 ### `background-blur`
+
+<sub>Platforms: macOS</sub>
 
 The radius of the blur of what shows through the background, in points.
 
@@ -223,6 +255,8 @@ The radius of the blur of what shows through the background, in points.
 ## `[keyboard]`
 
 ### `option-as-meta`
+
+<sub>Platforms: macOS</sub>
 
 Which Option keys act as Meta: they send an escape before the key, rather than typing the characters that the keyboard layout gives them.
 
