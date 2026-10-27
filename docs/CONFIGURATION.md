@@ -65,7 +65,11 @@ The key is the only one at the top of the file, and the only one with an undersc
 
 The font of the text: its family, its size and the faces that bold and italic text take.
 
-A character that the font lacks, such as Japanese text or an emoji in most programming fonts, takes the font that macOS gives for it, as other apps take it: Hiragino for Japanese, Apple Color Emoji for emoji. A character followed by the variation selector that asks for an emoji, U+FE0F, takes the emoji even when the font has a text form of it.
+A character that the font lacks, such as Japanese text, takes the font that macOS gives for it, as other apps take it: Hiragino for Japanese. A symbol takes the form that Unicode gives it:
+
+- **Emoji**, such as ⚡, ☕ or 🦀, take Apple Color Emoji, in their own colors, even when the font has a plain form of them.
+- **Symbols that have an emoji too**, such as ✔, ⚠, ℹ or ❤, stay text: the font's, or another font's that has them as text, in the color that the program gives them.
+- **A variation selector** after the character chooses otherwise: U+FE0F asks for the emoji, as in ❤️, and U+FE0E for the text, as in ⚡︎. A symbol that no font has in the form asked takes the other.
 
 ### `family`
 
@@ -119,7 +123,7 @@ The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese
 
 - **Default**: the text's own family.
 - Its faces follow the weights of the text's: bold text takes its bold face. The styles that `style` and the other keys name are the text's family's, not this one's.
-- A character that this family lacks takes the font that macOS gives for it, as for the text's own family.
+- A character that this family lacks takes the text's own family, and then the font that macOS gives for it: the icons of a Nerd Font, such as those of a shell's prompt, stay the font's.
 - A family that is not installed leaves that text to the text's family, and the log tells it.
 
 ### `line-height`, `cell-width`
