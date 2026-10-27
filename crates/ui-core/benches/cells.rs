@@ -1,6 +1,8 @@
 //! The time that a frame's cells take to lay out, with the system's fonts:
 //! a full screen of text, and one of spaces, whose glyphs are all in the
-//! atlas already, as most frames find them.
+//! atlas already, as most frames find them; and a screen of words that
+//! differ, of a family with ligatures where one is installed, whose runs
+//! the shaping's cache keeps.
 
 #[cfg(target_os = "macos")]
 mod cells {
@@ -28,6 +30,58 @@ mod cells {
         snapshot
     }
 
+    /// A screen of words that differ, as code's are: about 48 runs a row.
+    fn words() -> Snapshot {
+        let mut terminal = Terminal::new(COLUMNS, ROWS, Options::default());
+        // A generator of words that repeats nothing on the screen.
+        let mut state: u32 = 0x9E37_79B9;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let letters = b"abcdefghijklmnopqrstuvwxyz_->=!<";
+        let mut text = String::new();
+        for row in 0..ROWS {
+            let mut line = String::new();
+            while line.len() < usize::from(COLUMNS) - 10 {
+                let length = 3 + next() % 7;
+                for _ in 0..length {
+                    line.push(char::from(letters[(next() % 32) as usize]));
+                }
+                line.push(' ');
+            }
+            text.push_str(&line);
+            if row + 1 < ROWS {
+                text.push_str("\r\n");
+            }
+        }
+        Parser::new().advance(&mut terminal, text.as_bytes());
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        snapshot
+    }
+
+    /// The first of the families with ligatures that is installed.
+    fn ligatures() -> Option<Font<CoreText>> {
+        [
+            "CaskaydiaCove NFM",
+            "Cascadia Code",
+            "JetBrains Mono",
+            "Fira Code",
+        ]
+        .into_iter()
+        .find_map(|family| {
+            let config = FontConfig {
+                family: Some(lokyr_text_core::Name::try_from(family.to_owned()).ok()?),
+                ..FontConfig::default()
+            };
+            let font = Font::new(CoreText::new(), config, 2.0).ok()?;
+            font.missing_family().is_none().then_some(font)
+        })
+    }
+
     pub fn cells(c: &mut Criterion) {
         let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0)
             .expect("the system's monospaced font");
@@ -52,6 +106,27 @@ mod cells {
                     font.begin_frame();
                     let batch =
                         pane::cells(black_box(snapshot), &cell, 0, 0, None, None, &mut font);
+                    black_box(batch)
+                });
+            });
+        }
+        let words = words();
+        let mut families = vec![(
+            "words",
+            Font::new(CoreText::new(), FontConfig::default(), 2.0)
+                .expect("the system's monospaced font"),
+        )];
+        if let Some(font) = ligatures() {
+            families.push(("words with ligatures", font));
+        }
+        for (name, mut font) in families {
+            let cell = *font.cell();
+            font.begin_frame();
+            pane::cells(&words, &cell, 0, 0, None, None, &mut font);
+            group.bench_function(name, |b| {
+                b.iter(|| {
+                    font.begin_frame();
+                    let batch = pane::cells(black_box(&words), &cell, 0, 0, None, None, &mut font);
                     black_box(batch)
                 });
             });

@@ -657,6 +657,82 @@ fn an_emoji_sequence_shapes_into_one_glyph() {
 }
 
 #[test]
+fn a_run_in_another_font_takes_that_font_s_face() {
+    let mut backend = CoreText::new();
+    let mono = regular(&mut backend, "SF Mono");
+    if backend.glyph(mono, '\u{336}').is_some() {
+        eprintln!("SF Mono has U+0336: the test checks nothing");
+        return;
+    }
+    // CoreText draws the long stroke, which SF Mono lacks, with its base,
+    // in a font of its cascade, which becomes a face of the backend's.
+    let mut glyphs = Vec::new();
+    let features = Features { ligatures: true };
+    backend.shape(mono, 26.0, "s\u{336}x", features, &mut glyphs);
+    let (stroke, after) = glyphs.split_at(glyphs.len() - 1);
+    assert!(
+        stroke.len() == 2
+            && stroke
+                .iter()
+                .all(|glyph| glyph.face != mono && glyph.cluster < 3),
+        "{glyphs:?}"
+    );
+    for glyph in stroke {
+        let bitmap = backend.rasterize(
+            glyph.face,
+            glyph.glyph,
+            26.0,
+            Synthesis::default(),
+            Rendering {
+                antialias: true,
+                thin: false,
+            },
+        );
+        assert!(bitmap.width > 0, "{glyph:?}");
+    }
+    // The `x` after it is SF Mono's, where the line puts it, after the
+    // other font's advance.
+    assert_eq!((after[0].face, after[0].cluster), (mono, 3));
+    assert!(after[0].x > 0.0);
+    // Shaped again, the same face.
+    let mut again = Vec::new();
+    backend.shape(mono, 26.0, "s\u{336}x", features, &mut again);
+    assert_eq!(again, glyphs);
+}
+
+#[test]
+fn a_face_substitutes_in_context_by_its_tables() {
+    let mut backend = CoreText::new();
+    // SF Mono's `GSUB` has neither ligatures nor contextual alternates.
+    let mono = regular(&mut backend, "SF Mono");
+    assert!(!backend.substitutes(mono));
+    // Hoefler Text joins `fi` through its `morx` table.
+    let hoefler = backend
+        .family("Hoefler Text")
+        .unwrap()
+        .into_iter()
+        .find(|face| face.style == "Regular")
+        .unwrap();
+    assert!(backend.substitutes(hoefler.id));
+    // A `GSUB` table of a header and a list of features.
+    let gsub = |tags: &[&[u8; 4]]| {
+        let mut table = vec![0, 1, 0, 0, 0, 0, 0, 10, 0, 0];
+        table.extend_from_slice(&u16::try_from(tags.len()).unwrap().to_be_bytes());
+        for tag in tags {
+            table.extend_from_slice(*tag);
+            table.extend_from_slice(&[0, 0]);
+        }
+        table
+    };
+    assert!(gsub_substitutes(&gsub(&[b"ccmp", b"calt"])));
+    assert!(gsub_substitutes(&gsub(&[b"rclt"])));
+    assert!(!gsub_substitutes(&gsub(&[b"ccmp", b"locl", b"ss01"])));
+    assert!(!gsub_substitutes(&gsub(&[])));
+    // A table too short to read is taken to substitute.
+    assert!(gsub_substitutes(&[0, 1, 0]));
+}
+
+#[test]
 fn a_face_marked_bold_of_the_regular_class_weighs_as_bold() {
     // An OS/2 table's weight class at 4 and selection at 62.
     let table = |class: u16, selection: u16| {

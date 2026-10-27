@@ -72,17 +72,18 @@ pub struct Features {
 /// A glyph of a shaped run, with where it goes, in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShapedGlyph {
+    /// The face that draws the glyph: the face shaped in, or another that
+    /// the shaping took for a cluster that it lacks a character of.
+    pub face: FaceId,
     /// The glyph.
     pub glyph: GlyphId,
-    /// The byte, in the run's text, where the cluster that the glyph draws
-    /// starts.
+    /// The byte, in the run's text, of the character that the glyph draws,
+    /// or of the first of those that it draws together.
     pub cluster: u32,
-    /// How far the pen goes after the glyph.
-    pub x_advance: f32,
-    /// How far the glyph moves from the pen, rightwards.
-    pub x_offset: f32,
-    /// How far the glyph moves from the pen, upwards.
-    pub y_offset: f32,
+    /// Where the glyph is from the run's start, rightwards, in pixels.
+    pub x: f32,
+    /// Where the glyph is from the baseline, upwards, in pixels.
+    pub y: f32,
 }
 
 /// What a face that a family lacks is drawn from: another of its faces,
@@ -182,8 +183,18 @@ pub trait FontBackend {
     /// face of the system draws it.
     fn fallback(&mut self, face: FaceId, cluster: &str) -> Option<FaceId>;
 
+    /// Whether `face` substitutes glyphs for others in context, as its
+    /// ligatures and contextual alternates do, which a shaping of text of
+    /// one character a cluster can change: `true` when it cannot tell.
+    fn substitutes(&mut self, face: FaceId) -> bool {
+        let _ = face;
+        true
+    }
+
     /// Shapes `text` in `face` at `size` pixels, with `features`, and
-    /// appends its glyphs, in the order that they are drawn, to `glyphs`.
+    /// appends its glyphs, in the order that they are drawn, to `glyphs`:
+    /// those of a cluster that the face lacks a character of in the face
+    /// that the system draws it in.
     fn shape(
         &mut self,
         face: FaceId,
