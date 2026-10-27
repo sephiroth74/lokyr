@@ -6,3 +6,5 @@
 //! are never re-entered, and neither spawn threads nor block.
 
 #![forbid(unsafe_code)]
+
+pub mod command;

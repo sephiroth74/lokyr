@@ -168,7 +168,7 @@ type Direction = "left" | "right" | "up" | "down"
 -- failure, 3xx security, 4xx fault (ADR 0019).
 type Error = {
     code: number,
-    kind: "not-found" | "invalid-args" | "failed" | "denied" | "fault",
+    kind: "not-found" | "invalid-args" | "invalid" | "failed" | "denied" | "fault",
     message: string,
 }
 
@@ -279,6 +279,29 @@ type Plugin = {
     on_ui_event: ((cx: Cx, event: UiEvent) -> ())?,
 }
 ```
+
+## Commands
+
+- **A command** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) has a name, `namespace.action`, each part of lowercase letters, digits and `-`, from a letter, as `window.new`, `tabs.goto` or `search-plus.open`; a title, for the menus and the palette; a category; the capabilities that its action needs; and its parameters, a flat schema: each named as the parts are, of a string, an integer, a number or a boolean, and required, or optional with a default of its kind.
+- **The kernel's registry**, `kernel::commands::Registry`, registers the commands of the app and of the plugins, and checks a call before its action runs: its name, and its arguments, to which it adds the defaults of those left out; an integer is a number too. A plugin's call is checked as well against the commands that its manifest declares and the capabilities that it has, its own commands aside. The action runs where it can: in the app for those that the platform does, in the plugin that registered the command otherwise.
+- **The app's commands**: `app.quit` and `window.new`, which its menu runs.
+- **Errors**: a code, never renumbered, whose hundreds tell the category and how serious it is, a kind, as the Luau API names it, and a message:
+
+  | Code | Kind | Category | Meaning |
+  |---|---|---|---|
+  | 101 | `not-found` | Usage | No command of the name |
+  | 102 | `invalid-args` | Usage | An argument that the command does not take |
+  | 103 | `invalid-args` | Usage | A required argument missing |
+  | 104 | `invalid-args` | Usage | An argument of another kind than its parameter's |
+  | 105 | `invalid` | Usage | A command's or a parameter's name that is not one |
+  | 106 | `invalid` | Usage | A command registered already |
+  | 107 | `invalid` | Usage | A schema that repeats a parameter, or whose default is of another kind |
+  | 201 | `failed` | Failure | The command ran, and failed |
+  | 301 | `denied` | Security | A command that the plugin's manifest does not declare |
+  | 302 | `denied` | Security | A capability that the command needs, which the plugin lacks |
+  | 401 | `fault` | Fault | A command that broke, as by a panic |
+
+  Usage errors go to the caller, failures to the log and, later, a notice in the window, security errors to the log and the audit log, and faults to the log, with a notice, and can disable the plugin.
 
 ## Capabilities
 

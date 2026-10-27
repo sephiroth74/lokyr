@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
+use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
 use lokyr_kernel::config::{AppConfig, Config};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
@@ -37,10 +38,10 @@ use crate::mouse::{self, Mouse, Pointer};
 use crate::watch::Watcher;
 
 /// The command that quits.
-const QUIT: &str = "quit";
+const QUIT: &str = "app.quit";
 
 /// The command that opens a window.
-const NEW_WINDOW: &str = "new-window";
+const NEW_WINDOW: &str = "window.new";
 
 /// The size of a new window's content, in points.
 const WINDOW_SIZE: Size = Size {
@@ -202,6 +203,8 @@ pub struct App {
     config: Config,
     /// The file of the config, if it has one.
     config_file: Option<ConfigFile>,
+    /// The commands, which the app runs.
+    commands: Registry,
     /// The windows, their tabs and panes.
     workspace: Workspace,
     /// The platform's windows, each with what the app keeps of it.
@@ -239,6 +242,7 @@ impl App {
                 changed: Arc::new(AtomicBool::new(false)),
                 reading: None,
             }),
+            commands: commands(),
             workspace: Workspace::new(),
             windows: BTreeMap::new(),
             blink_timer: None,
@@ -583,6 +587,28 @@ impl App {
         }
     }
 
+    /// Runs the command `name` with `args`, as the menus and the keys ask,
+    /// once the registry took them; an error goes to the log.
+    fn run(&mut self, platform: &mut dyn Platform, name: &str, args: Args) {
+        let ran = self.commands.check(name, args).and_then(|_| match name {
+            QUIT => {
+                platform.quit();
+                Ok(())
+            }
+            NEW_WINDOW => {
+                self.open_window(platform);
+                Ok(())
+            }
+            _ => Err(Error::new(
+                Code::Failed,
+                format!("`{name}` has no action in the app"),
+            )),
+        });
+        if let Err(error) = ran {
+            eprintln!("lokyr: {error}");
+        }
+    }
+
     /// Takes the workspace's events. The tabs keep their programs' titles
     /// and colors, which the windows do not show; the bells and the
     /// programs' writes to the clipboards go unanswered, and a program's
@@ -853,7 +879,7 @@ impl App {
 
 impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
-        platform.set_main_menu(&main_menu());
+        platform.set_main_menu(&main_menu(&self.commands));
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
@@ -873,8 +899,7 @@ impl Handler for App {
 
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
-            AppEvent::Command(command) if command == QUIT => platform.quit(),
-            AppEvent::Command(command) if command == NEW_WINDOW => self.open_window(platform),
+            AppEvent::Command(command) => self.run(platform, &command, Args::new()),
             AppEvent::QuitRequested => platform.quit(),
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
@@ -1083,14 +1108,42 @@ fn closes(key: &lokyr_platform_core::KeyEvent) -> bool {
         })
 }
 
-/// The main menu: the application's menu, with Quit.
-fn main_menu() -> MainMenu {
+/// The app's commands, which it runs itself.
+fn commands() -> Registry {
+    let mut registry = Registry::new();
+    let commands = [
+        (NEW_WINDOW, "New Window", Category::Windows),
+        (QUIT, "Quit Lokyr", Category::App),
+    ];
+    for (name, title, category) in commands {
+        let command = Command {
+            name: name.to_owned(),
+            title: title.to_owned(),
+            category,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+        };
+        if let Err(error) = registry.register(command) {
+            eprintln!("lokyr: {error}");
+        }
+    }
+    registry
+}
+
+/// The main menu: the application's menu, with New Window and Quit, by the
+/// titles of their commands in `commands`.
+fn main_menu(commands: &Registry) -> MainMenu {
+    let title = |name: &str| {
+        commands
+            .get(name)
+            .map_or_else(|| name.to_owned(), |command| command.title.clone())
+    };
     MainMenu {
         menus: vec![Menu {
             title: "Lokyr".to_owned(),
             items: vec![
                 MenuItem::Command {
-                    title: "New Window".to_owned(),
+                    title: title(NEW_WINDOW),
                     command: NEW_WINDOW.to_owned(),
                     shortcut: Some(Shortcut {
                         key: ShortcutKey::Char('n'),
@@ -1101,7 +1154,7 @@ fn main_menu() -> MainMenu {
                     }),
                 },
                 MenuItem::Command {
-                    title: "Quit Lokyr".to_owned(),
+                    title: title(QUIT),
                     command: QUIT.to_owned(),
                     shortcut: Some(Shortcut {
                         key: ShortcutKey::Char('q'),
@@ -1169,6 +1222,51 @@ mod tests {
             shortcuts,
             [(NEW_WINDOW.to_owned(), 'n'), (QUIT.to_owned(), 'q')]
         );
+    }
+
+    #[test]
+    fn the_app_s_commands_register_with_their_categories_and_titles() {
+        let registry = commands();
+        let registered: Vec<(&str, &str, Category)> = registry
+            .commands()
+            .map(|command| {
+                (
+                    command.name.as_str(),
+                    command.title.as_str(),
+                    command.category,
+                )
+            })
+            .collect();
+        assert_eq!(
+            registered,
+            [
+                ("app.quit", "Quit Lokyr", Category::App),
+                ("window.new", "New Window", Category::Windows),
+            ]
+        );
+        let menu = main_menu(&registry);
+        let titles: Vec<&str> = menu.menus[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command { title, .. } => Some(title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(titles, ["New Window", "Quit Lokyr"]);
+        // A command that takes no argument rejects one, and does nothing.
+        let mut args = Args::new();
+        args.insert(
+            "now".to_owned(),
+            lokyr_kernel::commands::Value::Boolean(true),
+        );
+        let error = registry.check(QUIT, args.clone()).unwrap_err();
+        assert_eq!(error.code.number(), 102);
+        let (mut fake, mut app) = started();
+        app.run(&mut fake, QUIT, args);
+        assert!(!fake.has_quit());
+        app.run(&mut fake, QUIT, Args::new());
+        assert!(fake.has_quit());
     }
 
     #[test]
