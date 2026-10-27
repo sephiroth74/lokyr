@@ -1348,6 +1348,7 @@ mod tests {
         font.set_text(TextConfig {
             bold: false,
             italic: false,
+            ..TextConfig::default()
         });
         let styled = Style {
             bold: true,

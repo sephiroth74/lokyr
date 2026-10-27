@@ -845,7 +845,10 @@ mod tests {
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
         assert_eq!(font.len(), 14);
-        assert_eq!(keys::<TextConfig>(), ["bold", "italic"]);
+        assert_eq!(
+            keys::<TextConfig>(),
+            ["bold", "italic", "ansi-colors", "bold-is-bright", "blink"]
+        );
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
         assert!(font.contains(&"builtin-powerline"));

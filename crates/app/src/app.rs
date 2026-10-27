@@ -21,7 +21,7 @@ use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::cursor::{self, Blink};
 use lokyr_ui_core::font::Font;
-use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit};
+use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 
 use crate::keys;
@@ -490,6 +490,27 @@ impl App {
             self.pace_at(platform, due);
         }
         let shape = self.cursor(platform, window, Instant::now());
+        // Text that blinks takes the cursor's clock, in the window that has
+        // the focus, and stops shown with it.
+        let text = self.config.text;
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let blinking =
+            text.blink && state.focused && cells::has_blinking_text(state.pane.snapshot());
+        let (blink_shown, next) = if blinking {
+            state.blink.at(Instant::now())
+        } else {
+            (true, None)
+        };
+        if let Some(next) = next {
+            state.blinking = true;
+            self.blink_at(platform, next);
+        }
+        let look = TextLook {
+            config: text,
+            blink_shown,
+        };
         let config = self.config.cursor;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
@@ -511,7 +532,7 @@ impl App {
             i32::try_from(left).unwrap_or(i32::MAX),
             i32::try_from(top).unwrap_or(i32::MAX),
         );
-        let mut batch = cells::cells(snapshot, &cell, x, y, None, cursor, font);
+        let mut batch = cells::cells_with(snapshot, &cell, (x, y), None, cursor, look, font);
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
@@ -1609,6 +1630,33 @@ print -z 'echo typed'
         let expected = ["output 1", "output 2", "output 3", "left", "right", ">", ""];
         prompt_through_a_drag(&bash, &expected);
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn blinking_text_keeps_the_blinking_s_timer_in_the_focused_window() {
+        // A cursor that does not blink, over text that does.
+        let config = |text_blink: bool| {
+            let mut config = Config::default();
+            config.cursor.blink = false;
+            config.text.blink = text_blink;
+            config
+        };
+        let script = "printf '\\033[5mblink\\033[0m'; sleep 10";
+        for (text_blink, focused, timer) in [
+            (true, true, true),
+            (false, true, false),
+            (true, false, false),
+        ] {
+            let mut fake = Fake::default();
+            let mut app = app(config(text_blink), shell(script));
+            fake.start(&mut app);
+            let window = fake.windows().next().unwrap();
+            fake.send(&mut app, window, WindowEvent::Focused(focused));
+            run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "blink");
+            fake.send(&mut app, window, WindowEvent::Frame);
+            assert_eq!(app.blink_timer.is_some(), timer, "{text_blink} {focused}");
+            assert_eq!(app.windows[&window].blinking, timer);
+        }
     }
 
     #[test]

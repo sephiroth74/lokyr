@@ -9,6 +9,7 @@ use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
 use lokyr_vt_core::terminal::{Colors, Snapshot};
 use lokyr_vt_core::unicode::Widths;
 
+use crate::text::TextConfig;
 use crate::theme::SelectionColors;
 
 /// A glyph as the atlas holds it: its pixels, and where they go from the pen
@@ -208,6 +209,26 @@ impl RunBuilder {
     }
 }
 
+/// How the text draws in a frame: its section of the configuration, and
+/// whether the text that blinks shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextLook {
+    /// The configuration's `[text]` section.
+    pub config: TextConfig,
+    /// Whether the text that blinks shows in this frame, which hides it half
+    /// of the time.
+    pub blink_shown: bool,
+}
+
+impl Default for TextLook {
+    fn default() -> Self {
+        Self {
+            config: TextConfig::default(),
+            blink_shown: true,
+        }
+    }
+}
+
 /// How the cursor draws in a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CursorLook {
@@ -267,6 +288,37 @@ pub fn cells(
     cursor: Option<CursorLook>,
     glyphs: &mut dyn Glyphs,
 ) -> CellBatch {
+    cells_with(
+        snapshot,
+        cell,
+        (x, y),
+        selection,
+        cursor,
+        TextLook::default(),
+        glyphs,
+    )
+}
+
+/// Whether `snapshot` shows text that blinks, as SGR 5 and 6 make it: some
+/// cell of a style that blinks.
+pub fn has_blinking_text(snapshot: &Snapshot) -> bool {
+    (0..snapshot.rows()).any(|row| snapshot.line(row).styles().any(|style| style.blink))
+}
+
+/// The grid of `snapshot`, as [`cells`] lays it out, its text as `text`
+/// has it look: the programs' colors, or the default ones without
+/// `ansi-colors`; bold text of the first eight colors in their bright ones
+/// with `bold-is-bright`; and the text that blinks hidden when the frame
+/// does not show it, with `blink`.
+pub fn cells_with(
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    (x, y): (i32, i32),
+    selection: Option<&Selection<'_>>,
+    cursor: Option<CursorLook>,
+    text: TextLook,
+    glyphs: &mut dyn Glyphs,
+) -> CellBatch {
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
     let colors = snapshot.colors();
     let defaults = defaults(snapshot);
@@ -300,12 +352,21 @@ pub fn cells(
             }
             let chosen = selected(column, row);
             let style = line.style(cell_of.style());
-            let (mut foreground, mut background) = style_colors(&style, colors, defaults);
-            if style.bg == page::Color::Default && !style.inverse {
+            let (mut foreground, mut background) =
+                style_colors(&style, colors, defaults, text.config);
+            let own_background = text.config.ansi_colors && style.bg != page::Color::Default;
+            if !own_background && !style.inverse {
                 background = background.with_alpha(0.0);
             }
             let character = match cell_of.content() {
                 Content::Char(character) | Content::Grapheme(character) => character,
+                Content::BgPalette(_) | Content::BgRgb(_) if !text.config.ansi_colors => {
+                    let erased = defaults.1.with_alpha(0.0);
+                    batch
+                        .backgrounds
+                        .push(chosen.map_or(erased, |chosen| chosen.background));
+                    continue;
+                }
                 Content::BgPalette(index) => {
                     let erased = color(colors.palette[usize::from(index)]);
                     batch
@@ -334,7 +395,10 @@ pub fn cells(
             // one: most of a screen is spaces.
             let grapheme = line.grapheme(column);
             let blank = character == '\0' || (character == ' ' && grapheme.is_empty());
-            if blank || style.invisible || width == Width::SpacerHead {
+            // Text that blinks shows half of the time.
+            let blinking = style.blink && text.config.blink;
+            let hidden = style.invisible || (blinking && !text.blink_shown);
+            if blank || hidden || width == Width::SpacerHead {
                 run.flush(&mut batch, row, cell, glyphs);
                 continue;
             }
@@ -578,14 +642,28 @@ fn defaults(snapshot: &Snapshot) -> (Color, Color) {
 }
 
 /// The text's and the background's colors of `style`, from `colors` and the
-/// `defaults`, and swapped for inverse text.
-fn style_colors(style: &Style, colors: &Colors, (fg, bg): (Color, Color)) -> (Color, Color) {
+/// `defaults`, and swapped for inverse text: the defaults alone without
+/// `text`'s `ansi-colors`, and a bright color for bold text of one of the
+/// first eight with its `bold-is-bright`.
+fn style_colors(
+    style: &Style,
+    colors: &Colors,
+    (fg, bg): (Color, Color),
+    text: TextConfig,
+) -> (Color, Color) {
     let resolve = |which: page::Color, default: Color| match which {
+        _ if !text.ansi_colors => default,
         page::Color::Default => default,
         page::Color::Palette(index) => color(colors.palette[usize::from(index)]),
         page::Color::Rgb(rgb) => color(rgb),
     };
-    let foreground = resolve(style.fg, fg);
+    let fg_color = match style.fg {
+        page::Color::Palette(index) if text.bold_is_bright && style.bold && index < 8 => {
+            page::Color::Palette(index + 8)
+        }
+        other => other,
+    };
+    let foreground = resolve(fg_color, fg);
     let background = resolve(style.bg, bg);
     if style.inverse {
         (background, foreground)
@@ -818,6 +896,116 @@ mod tests {
         let mut runs = Runs::default();
         cells(&wide, &cell(), 0, 0, None, None, &mut runs);
         assert_eq!(runs.0, ["a\u{65E5}b"]);
+    }
+
+    /// The grid of `text` on a screen of 8 by 1, its text as `config` and
+    /// `shown`, the blinking's phase, have it look.
+    fn looked(text: &str, config: TextConfig, shown: bool) -> CellBatch {
+        let snapshot = snapshot(8, 1, text);
+        let mut asked = Vec::new();
+        let look = TextLook {
+            config,
+            blink_shown: shown,
+        };
+        cells_with(
+            &snapshot,
+            &cell(),
+            (0, 0),
+            None,
+            None,
+            look,
+            &mut atlas(&mut asked),
+        )
+    }
+
+    #[test]
+    fn without_ansi_colors_the_text_takes_the_default_colors() {
+        let plain = TextConfig {
+            ansi_colors: false,
+            ..TextConfig::default()
+        };
+        // Red on blue, a 256-color and an RGB one, and a line erased in green.
+        let batch = looked(
+            "\x1b[31;44ma\x1b[38;5;200mb\x1b[38;2;1;2;3mc\x1b[42m\x1b[K",
+            plain,
+            true,
+        );
+        let colors = Colors::default();
+        assert!(
+            batch
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.color == color(colors.foreground))
+        );
+        let background = clear(color(colors.background));
+        assert!(
+            batch.backgrounds.iter().all(|&bg| bg == background),
+            "{:?}",
+            batch.backgrounds
+        );
+        // Inverse text still swaps the colors.
+        let batch = looked("\x1b[31;7ma", plain, true);
+        assert_eq!(batch.glyphs[0].color, color(colors.background));
+        assert_eq!(batch.backgrounds[0], color(colors.foreground));
+        // With them, as the program sets them.
+        let batch = looked("\x1b[31;44ma", TextConfig::default(), true);
+        assert_eq!(batch.glyphs[0].color, color(colors.palette[1]));
+        assert_eq!(batch.backgrounds[0], color(colors.palette[4]));
+    }
+
+    #[test]
+    fn bold_text_of_the_first_eight_colors_can_take_the_bright_ones() {
+        let bright = TextConfig {
+            bold_is_bright: true,
+            ..TextConfig::default()
+        };
+        let colors = Colors::default();
+        // Bold red, red, bold bright green, bold default.
+        let text = "\x1b[1;31ma\x1b[0;31mb\x1b[1;92mc\x1b[0;1md";
+        let found: Vec<Color> = looked(text, bright, true)
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.color)
+            .collect();
+        assert_eq!(
+            found,
+            [
+                color(colors.palette[9]),
+                color(colors.palette[1]),
+                color(colors.palette[10]),
+                color(colors.foreground)
+            ]
+        );
+        let plain = looked(text, TextConfig::default(), true);
+        assert_eq!(plain.glyphs[0].color, color(colors.palette[1]));
+    }
+
+    #[test]
+    fn blinking_text_hides_when_the_frame_does_not_show_it() {
+        let text = "\x1b[5mab\x1b[0mc\x1b[6md";
+        let columns = |batch: CellBatch| {
+            batch
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.column)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            columns(looked(text, TextConfig::default(), true)),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(columns(looked(text, TextConfig::default(), false)), [2]);
+        // Its background stays.
+        let batch = looked("\x1b[5;41ma", TextConfig::default(), false);
+        assert_eq!(batch.backgrounds[0], color(Colors::default().palette[1]));
+        // Without blinking, it shows steadily.
+        let steady = TextConfig {
+            blink: false,
+            ..TextConfig::default()
+        };
+        assert_eq!(columns(looked(text, steady, false)), [0, 1, 2, 3]);
+        assert!(has_blinking_text(&snapshot(8, 1, text)));
+        assert!(!has_blinking_text(&snapshot(8, 1, "abc")));
     }
 
     #[test]

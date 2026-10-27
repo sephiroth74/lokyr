@@ -125,6 +125,11 @@ impl Line {
         &self.cells
     }
 
+    /// The styles that the line's cells use, each once.
+    pub fn styles(&self) -> impl Iterator<Item = &Style> + '_ {
+        self.styles.iter().map(|(_, style)| style)
+    }
+
     /// The style that `id`, the style of one of the cells, stands for.
     pub fn style(&self, id: StyleId) -> Style {
         match self.styles.binary_search_by_key(&id, |&(id, _)| id) {

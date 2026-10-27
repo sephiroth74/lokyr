@@ -49,6 +49,9 @@ thin-strokes = "retina-dark"         # never | always | retina | dark | retina-d
 [text]
 bold = false                         # true | false: bold text in the bold face
 italic = false                       # true | false: italic text in the italic face
+ansi-colors = false                  # true | false: the colors that programs set
+bold-is-bright = true                # true | false: bold text of the first eight colors in their bright ones
+blink = false                        # true | false: text that programs make blink
 
 [cursor]
 shape = "bar"                        # block | bar | underline | hollow
@@ -217,7 +220,7 @@ Where the text is drawn of thinner strokes: without the darkening that macOS add
 
 ## `[text]`
 
-How the text's styles are drawn.
+How the text's styles and colors are drawn.
 
 ### `bold`, `italic`
 
@@ -231,6 +234,47 @@ Whether bold text takes the font's bold face, and italic text its italic face.
 
 - `bold = false` draws bold text in the regular face: a program's bold then shows only by its color.
 - `italic = false` draws italic text upright.
+
+### `ansi-colors`
+
+<sub>Platforms: macOS</sub>
+
+Whether the colors that programs give the text and its background show.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- `false` draws all the text in the default colors, the theme's: the sixteen colors of the palette, the 256 and the RGB ones that programs set, for the text and its background, take the default text's and background's.
+- Inverse text still swaps its colors, and the selection and the cursor keep theirs.
+
+### `bold-is-bright`
+
+<sub>Platforms: macOS</sub>
+
+Whether bold text in one of the palette's first eight colors takes its bright color, of the eight after: bold red as bright red.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- Most programs choose their bright colors themselves, so that the default leaves bold text in its own color; some older ones mean bold to brighten it.
+- Bold text still takes the bold face, as `bold` says.
+
+### `blink`
+
+<sub>Platforms: macOS</sub>
+
+Whether text that programs make blink, with the escape sequences SGR 5 and 6, blinks.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The text blinks as the cursor does: half a second shown and half a second hidden, only in the window that has the focus.
+- It stops blinking, and stays shown, 15 seconds after the last key or output, as the cursor stops, so that an idle window keeps the Mac idle.
+- `false` shows it steadily.
+- Each blink draws a frame of the window, as the cursor's blinking does; a later version blinks both without the app's work.
 
 ## `[cursor]`
 
