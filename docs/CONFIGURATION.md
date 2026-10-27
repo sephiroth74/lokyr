@@ -40,6 +40,8 @@ thickness = 2
 close-on-exit = "clean"
 padding-x = 6
 padding-y = 4
+background-opacity = 0.9
+background-blur = 20
 
 [keyboard]
 option-as-meta = "left"
@@ -195,6 +197,28 @@ The room between the grid and the window's edges, in points: `padding-x` at the 
 - In points, so that it keeps its look on a Retina display.
 - A window is seldom a whole number of cells: the room that the cells leave over goes to the right and the bottom, past the padding, so that the text stays where it is as the window's size changes.
 - The padding takes the background of the cells without a color of their own: a background that a program colors, such as a status line's, stops at the grid.
+
+### `background-opacity`
+
+The opacity of the window's background, from 0, clear, to 1, opaque: below 1, what is behind the window shows through it.
+
+| Values | Default |
+|---|---|
+| from `0` to `1` | `1` |
+
+- Only the default background lets it show, with the padding: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.
+- At `1` the window is opaque, as it is by default.
+
+### `background-blur`
+
+The radius of the blur of what shows through the background, in points.
+
+| Values | Default |
+|---|---|
+| from `0` to `100`, whole or not | `0`, no blur |
+
+- The blur shows only below a `background-opacity` of 1.
+- macOS has no public way to blur what is behind a window: Bolt asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
 
 ## `[keyboard]`
 

@@ -9,9 +9,9 @@
 
 #![forbid(unsafe_code)]
 
-/// An opaque color of the sRGB space, by its encoded components, from 0 to
-/// 1, as a theme gives them.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// A color of the sRGB space, by its encoded components, from 0 to 1, as a
+/// theme gives them, and its opacity; opaque black by default.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     /// Red.
     pub red: f32,
@@ -19,16 +19,35 @@ pub struct Color {
     pub green: f32,
     /// Blue.
     pub blue: f32,
+    /// The opacity, from 0, clear, to 1, opaque: what the color covers
+    /// shows through it.
+    pub alpha: f32,
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Self::BLACK
+    }
 }
 
 impl Color {
-    /// The color of 8-bit components, as `#rrggbb` writes them.
+    /// The opaque color of 8-bit components, as `#rrggbb` writes them.
     pub const fn from_rgb8(red: u8, green: u8, blue: u8) -> Self {
         Self {
             red: red as f32 / 255.0,
             green: green as f32 / 255.0,
             blue: blue as f32 / 255.0,
+            alpha: 1.0,
         }
+    }
+
+    /// Opaque black.
+    pub const BLACK: Self = Self::from_rgb8(0, 0, 0);
+
+    /// The color, with the opacity `alpha`.
+    #[must_use]
+    pub const fn with_alpha(self, alpha: f32) -> Self {
+        Self { alpha, ..self }
     }
 }
 
@@ -229,7 +248,8 @@ pub struct CellBatch {
     pub cell_width: u32,
     /// A cell's height, in pixels.
     pub cell_height: u32,
-    /// Each cell's background, row by row, `columns` a row.
+    /// Each cell's background, row by row, `columns` a row, over what is
+    /// under the grid: a clear one shows the list's background.
     pub backgrounds: Vec<Color>,
     /// The cells' glyphs.
     pub glyphs: Vec<CellGlyph>,
@@ -277,7 +297,8 @@ pub enum Item {
 /// A window's frame: its background, and what is drawn over it, in order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
-    /// The color of what nothing covers.
+    /// The color of what nothing covers, through which, when it is not
+    /// opaque, what is behind the window shows.
     pub background: Color,
     /// The drawings, from the first to the last, each over those before.
     pub items: Vec<Item>,
@@ -360,8 +381,10 @@ mod tests {
             Color {
                 red: 0.0,
                 green: 1.0,
-                blue: 0.2
+                blue: 0.2,
+                alpha: 1.0
             }
         );
+        assert_eq!(Color::from_rgb8(0, 0, 0).with_alpha(0.5).alpha, 0.5);
     }
 }

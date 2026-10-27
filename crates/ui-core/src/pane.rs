@@ -77,7 +77,10 @@ pub fn background(snapshot: &Snapshot) -> Color {
 ///
 /// A character that takes two columns has its glyph in the first, which
 /// spans the two; the second has only its background, as has a glyph
-/// without ink. Reverse video swaps the default colors; faint text mixes
+/// without ink. A cell of the default background is clear, and shows the
+/// display list's, [`background`], which can let what is behind the window
+/// show through; one whose background the program colors, or that is
+/// selected, is opaque. Reverse video swaps the default colors; faint text mixes
 /// its color halfway to its background; hidden text shows its background
 /// alone. The cursor covers both cells of a wide character, and the text
 /// under a block takes its cell's background.
@@ -118,6 +121,9 @@ pub fn cells(
             let chosen = selected(column, row);
             let style = line.style(cell_of.style());
             let (mut foreground, mut background) = style_colors(&style, colors, defaults);
+            if style.bg == page::Color::Default && !style.inverse {
+                background = background.with_alpha(0.0);
+            }
             let character = match cell_of.content() {
                 Content::Char(character) | Content::Grapheme(character) => character,
                 Content::BgPalette(index) => {
@@ -177,7 +183,7 @@ pub fn cells(
             let chosen = selected(column, row);
             batch
                 .backgrounds
-                .push(chosen.map_or(defaults.1, |chosen| chosen.background));
+                .push(chosen.map_or(defaults.1.with_alpha(0.0), |chosen| chosen.background));
         }
     }
     settle_cursor(&mut batch, snapshot);
@@ -222,7 +228,7 @@ fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     if cursor.shape == CursorShape::Block
         && let Some(glyph) = glyph
     {
-        glyph.color = background;
+        glyph.color = background.with_alpha(1.0);
     }
 }
 
@@ -297,7 +303,7 @@ pub fn preedit(
             .retain(|glyph| glyph.row != row || !covered.contains(&glyph.column));
         let first = usize::from(row) * usize::from(columns) + usize::from(column);
         for drawn in &mut batch.backgrounds[first..first + usize::from(width)] {
-            *drawn = background;
+            *drawn = background.with_alpha(0.0);
         }
         text.clear();
         text.push(character);
@@ -405,6 +411,7 @@ fn mix(a: Color, b: Color) -> Color {
         red: (a.red + b.red) / 2.0,
         green: (a.green + b.green) / 2.0,
         blue: (a.blue + b.blue) / 2.0,
+        alpha: a.alpha,
     }
 }
 
@@ -467,6 +474,11 @@ mod tests {
         }
     }
 
+    /// `color`, clear, as the cells of the default background are.
+    fn clear(color: Color) -> Color {
+        color.with_alpha(0.0)
+    }
+
     fn rgb(r: u8, g: u8, b: u8) -> Color {
         Color::from_rgb8(r, g, b)
     }
@@ -488,9 +500,11 @@ mod tests {
         assert_eq!((batch.cell_width, batch.cell_height), (8, 16));
         assert_eq!(batch.backgrounds.len(), 12);
         let colors = Colors::default();
-        let background = color(colors.background);
+        // The default background's cells are clear: the list's background
+        // shows through them.
+        let background = clear(color(colors.background));
         assert_eq!(batch.backgrounds[0], background);
-        // SGR 41 is the palette's red.
+        // SGR 41 is the palette's red, opaque.
         assert_eq!(batch.backgrounds[2], color(colors.palette[1]));
         assert!(batch.backgrounds[3..].iter().all(|&bg| bg == background));
         // The three characters, and nothing for the empty cells.
@@ -629,7 +643,7 @@ mod tests {
                 batch
                     .backgrounds
                     .iter()
-                    .all(|&bg| bg == color(variant.colors.background))
+                    .all(|&bg| bg == clear(color(variant.colors.background)))
             );
             assert_eq!(background(&snapshot), color(variant.colors.background));
         }
@@ -648,7 +662,7 @@ mod tests {
         let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         assert_eq!(batch.glyphs[0].color, rgb(0x11, 0x22, 0x33));
         assert_eq!(batch.glyphs[1].color, rgb(0x44, 0x55, 0x66));
-        assert_eq!(batch.backgrounds[3], rgb(0x77, 0x88, 0x99));
+        assert_eq!(batch.backgrounds[3], clear(rgb(0x77, 0x88, 0x99)));
         assert_eq!(background(&snapshot), rgb(0x77, 0x88, 0x99));
     }
 
@@ -661,9 +675,9 @@ mod tests {
         let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let colors = Colors::default();
         assert_eq!(batch.glyphs[0].color, color(colors.background));
-        assert_eq!(batch.backgrounds[0], color(colors.foreground));
+        assert_eq!(batch.backgrounds[0], clear(color(colors.foreground)));
         assert_eq!(batch.glyphs[1].color, color(colors.palette[1]));
-        assert_eq!(batch.backgrounds[3], color(colors.foreground));
+        assert_eq!(batch.backgrounds[3], clear(color(colors.foreground)));
         assert_eq!(background(&snapshot), color(colors.foreground));
     }
 
@@ -684,8 +698,8 @@ mod tests {
         let texts: Vec<&str> = asked.iter().map(|(text, ..)| text.as_str()).collect();
         assert_eq!(texts, ["a", "c"]);
         assert_eq!(batch.glyphs[0].color, Color::from_rgb8(100, 50, 50));
-        // The hidden cell keeps its background.
-        assert_eq!(batch.backgrounds[1], Color::from_rgb8(0, 0, 100));
+        // The hidden cell keeps its background, the default one, clear.
+        assert_eq!(batch.backgrounds[1], clear(Color::from_rgb8(0, 0, 100)));
     }
 
     /// The cursor that `cells` gives `snapshot` in `shape`, and the color
@@ -759,6 +773,23 @@ mod tests {
         // The other shapes leave the text's colors.
         let (_, glyphs) = cursor_of(&snapshot(4, 1, text), CursorShape::Hollow);
         assert_eq!(glyphs, [(0, ink), (1, ink), (2, ink)]);
+    }
+
+    #[test]
+    fn only_the_default_background_is_clear() {
+        // Inverse text with the default colors takes the default text's
+        // color as its background, opaque.
+        let snapshot = snapshot(4, 1, "\x1b[7ma\x1b[0mb\x1b[D");
+        let mut asked = Vec::new();
+        let batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let colors = Colors::default();
+        assert_eq!(batch.backgrounds[0], color(colors.foreground));
+        assert_eq!(batch.backgrounds[1], clear(color(colors.background)));
+        // A block on `b`'s clear cell gives its text the cell's color,
+        // opaque.
+        let (_, glyphs) = cursor_of(&snapshot, CursorShape::Block);
+        let block = color(colors.background);
+        assert!(glyphs.contains(&(1, block)), "{glyphs:?}");
     }
 
     #[test]
@@ -837,7 +868,7 @@ mod tests {
         // The input method's cursor, after `に`.
         assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(4));
         let colors = Colors::default();
-        assert_eq!(batch.backgrounds[2], color(colors.background));
+        assert_eq!(batch.backgrounds[2], clear(color(colors.background)));
     }
 
     /// The batch of `text` on a grid of `cols` by one row, with the cursor
@@ -1038,7 +1069,7 @@ mod tests {
                 red,
                 rgb(1, 2, 3),
                 rgb(1, 2, 3),
-                color(Colors::default().background)
+                clear(color(Colors::default().background))
             ]
         );
         assert!(batch.backgrounds[6..].iter().all(|&bg| bg == rgb(1, 2, 3)));

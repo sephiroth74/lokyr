@@ -308,4 +308,10 @@ impl Platform for Backend {
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta.set((left, right));
     }
+
+    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_translucent(blur);
+        }
+    }
 }

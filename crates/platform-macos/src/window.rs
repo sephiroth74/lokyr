@@ -13,7 +13,7 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSEvent, NSResponder, NSTextInputClient, NSView, NSWindow,
+    NSBackingStoreType, NSColor, NSEvent, NSResponder, NSTextInputClient, NSView, NSWindow,
     NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
 };
 use objc2_foundation::{
@@ -139,6 +139,52 @@ impl Window {
     pub(crate) fn set_text_area(&self, origin: Point, size: Size) {
         self.view.ivars().input.borrow_mut().area = (origin, size);
     }
+
+    /// Lets what is behind the window show through its content where the
+    /// renderer draws it clear, blurred by `blur` points; or, with `None`,
+    /// keeps it opaque. The window, its view and the view's layer turn
+    /// non-opaque together, as the window server composes the window with
+    /// what is behind it only then.
+    pub(crate) fn set_translucent(&self, blur: Option<f64>) {
+        let opaque = blur.is_none();
+        self.view.ivars().opaque.set(opaque);
+        if let Some(layer) = self.view.layer() {
+            layer.setOpaque(opaque);
+        }
+        self.ns_window.setOpaque(opaque);
+        let background = if opaque {
+            NSColor::windowBackgroundColor()
+        } else {
+            NSColor::clearColor()
+        };
+        self.ns_window.setBackgroundColor(Some(&background));
+        let radius = blur.map_or(0, |points| points.round() as isize);
+        // SAFETY: the window server's calls take its connection, a window's
+        // number and a radius; a window of the process, open, is its own.
+        // Each argument goes as a word, which the call reads whole or in its
+        // lower half, whichever its width.
+        unsafe {
+            CGSSetWindowBackgroundBlurRadius(
+                CGSMainConnectionID() as isize,
+                self.ns_window.windowNumber(),
+                radius,
+            );
+        }
+        // The shadow follows the window's new outline.
+        self.ns_window.invalidateShadow();
+    }
+}
+
+// The window server's calls of the blur behind a window, private ones of
+// Core Graphics, which the terminals of macOS that blur make too: there is
+// no public one.
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    /// The process's connection to the window server.
+    fn CGSMainConnectionID() -> i32;
+    /// Blurs what is behind the non-opaque parts of `window`, by a radius
+    /// of `radius` points; 0 for none.
+    fn CGSSetWindowBackgroundBlurRadius(connection: isize, window: isize, radius: isize) -> i32;
 }
 
 /// The size of a window's content, in points and in the pixels of its
@@ -176,6 +222,9 @@ pub(crate) struct ContentViewIvars {
     input: RefCell<TextInput>,
     /// Which Option keys act as Meta, as the app said for every window.
     option_as_meta: Rc<Cell<(bool, bool)>>,
+    /// Whether the view is opaque, as the window is unless the app made it
+    /// translucent.
+    opaque: Cell<bool>,
 }
 
 define_class!(
@@ -230,7 +279,7 @@ define_class!(
         // SAFETY: AppKit's signature.
         #[unsafe(method(isOpaque))]
         fn is_opaque(&self) -> bool {
-            true
+            self.ivars().opaque.get()
         }
     }
 
@@ -348,6 +397,7 @@ impl ContentView {
             id,
             input: RefCell::new(TextInput::default()),
             option_as_meta,
+            opaque: Cell::new(true),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };

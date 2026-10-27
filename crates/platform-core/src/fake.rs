@@ -29,6 +29,8 @@ pub struct FakeWindow {
     pub frame_requested: bool,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
+    /// The blur of what shows through it, when it is translucent.
+    pub translucent: Option<f64>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -253,6 +255,7 @@ impl Platform for Fake {
                 occluded: false,
                 frame_requested: false,
                 text_area: None,
+                translucent: None,
             },
         );
         Ok(id)
@@ -334,5 +337,11 @@ impl Platform for Fake {
 
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta = (left, right);
+    }
+
+    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.translucent = blur;
+        }
     }
 }

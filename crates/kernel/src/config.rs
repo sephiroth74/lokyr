@@ -15,6 +15,8 @@
 //! close-on-exit = "clean"   # clean | always | never
 //! padding-x = 4             # points, at the left and the right
 //! padding-y = 4             # points, at the top and the bottom
+//! background-opacity = 1    # from 0 to 1
+//! background-blur = 0       # points
 //!
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
@@ -103,8 +105,8 @@ impl OptionAsMeta {
     }
 }
 
-/// The `[window]` section: what a window does, and the room around its
-/// grid.
+/// The `[window]` section: what a window does, the room around its grid,
+/// and how much of what is behind it shows through.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
@@ -114,6 +116,82 @@ pub struct WindowConfig {
     pub padding_x: Padding,
     /// The room between the grid and the window's top and bottom edges.
     pub padding_y: Padding,
+    /// The opacity of the default background.
+    pub background_opacity: Opacity,
+    /// The blur of what shows through the default background.
+    pub background_blur: Blur,
+}
+
+/// The opacity of the window's default background, from 0, clear, to 1,
+/// opaque: what is behind the window shows through. The cells whose
+/// background a program colors stay opaque, as does the text.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(try_from = "f64")]
+pub struct Opacity(f32);
+
+impl Opacity {
+    /// The opacity, from 0 to 1.
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Whether the background lets what is behind it show.
+    pub fn is_translucent(self) -> bool {
+        self.0 < 1.0
+    }
+}
+
+impl Default for Opacity {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+impl TryFrom<f64> for Opacity {
+    type Error = String;
+
+    fn try_from(opacity: f64) -> Result<Self, Self::Error> {
+        if (0.0..=1.0).contains(&opacity) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(opacity as f32))
+        } else {
+            Err(format!(
+                "the window's background opacity is from 0 to 1, not {opacity}"
+            ))
+        }
+    }
+}
+
+/// The radius of the blur of what shows through the window's background,
+/// in points; 0 for none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+#[serde(try_from = "f64")]
+pub struct Blur(f32);
+
+impl Blur {
+    /// The most.
+    pub const MAX: f32 = 100.0;
+
+    /// The radius in points.
+    pub fn points(self) -> f32 {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for Blur {
+    type Error = String;
+
+    fn try_from(points: f64) -> Result<Self, Self::Error> {
+        if (0.0..=f64::from(Self::MAX)).contains(&points) {
+            // Within the range, the value fits an `f32`.
+            Ok(Self(points as f32))
+        } else {
+            Err(format!(
+                "the window's background blur, in points, is from 0 to {}, not {points}",
+                Self::MAX
+            ))
+        }
+    }
 }
 
 /// The room between the grid and two edges of the window, each, in points,
@@ -471,6 +549,8 @@ mod tests {
             close-on-exit = "never"
             padding-x = 10
             padding-y = 2.5
+            background-opacity = 0.85
+            background-blur = 20
 
             [keyboard]
             option-as-meta = "left"
@@ -480,6 +560,8 @@ mod tests {
         assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
         assert_eq!(config.window.padding_x.points(), 10.0);
         assert_eq!(config.window.padding_y.points(), 2.5);
+        assert_eq!(config.window.background_opacity.value(), 0.85);
+        assert_eq!(config.window.background_blur.points(), 20.0);
         assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
@@ -605,6 +687,30 @@ mod tests {
     }
 
     #[test]
+    fn the_background_s_opacity_and_blur_are_within_their_ranges() {
+        let window = Config::default().window;
+        assert_eq!(window.background_opacity.value(), 1.0);
+        assert!(!window.background_opacity.is_translucent());
+        assert_eq!(window.background_blur.points(), 0.0);
+        let config = parse("[window]\nbackground-opacity = 0\nbackground-blur = 100\n").unwrap();
+        assert!(config.window.background_opacity.is_translucent());
+        assert_eq!(config.window.background_blur.points(), 100.0);
+        assert_eq!(
+            error("[window]\nbackground-opacity = 1.5\n"),
+            (
+                Some((2, 22)),
+                "the window's background opacity is from 0 to 1, not 1.5".to_owned()
+            )
+        );
+        assert_eq!(
+            error("[window]\nbackground-blur = -2\n").1,
+            "the window's background blur, in points, is from 0 to 100, not -2"
+        );
+        assert!(Opacity::try_from(f64::NAN).is_err());
+        assert!(Blur::try_from(f64::NAN).is_err());
+    }
+
+    #[test]
     fn the_padding_is_in_points_within_its_range() {
         assert_eq!(Config::default().window.padding_x.points(), 4.0);
         let config = parse("[window]\npadding-x = 0\npadding-y = 100\n").unwrap();
@@ -714,7 +820,13 @@ mod tests {
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(
             keys::<WindowConfig>(),
-            ["close-on-exit", "padding-x", "padding-y"]
+            [
+                "close-on-exit",
+                "padding-x",
+                "padding-y",
+                "background-opacity",
+                "background-blur"
+            ]
         );
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();

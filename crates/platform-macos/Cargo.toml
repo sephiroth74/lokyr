@@ -25,6 +25,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSAppearance",
     "NSApplication",
     "NSButton",
+    "NSColor",
     "NSControl",
     "NSEvent",
     "NSGraphics",
@@ -104,6 +105,10 @@ harness = false
 
 [[test]]
 name = "input_sequences"
+harness = false
+
+[[test]]
+name = "translucency"
 harness = false
 
 [lints]

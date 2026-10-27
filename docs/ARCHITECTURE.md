@@ -93,6 +93,7 @@ Workspace
 - **Live resize**: `presentsWithTransaction = true` plus synchronous drawing, so the content follows the window edge without tearing.
 - **No partial present**: CAMetalLayer redraws the whole drawable every frame. Dirty-row tracking therefore saves CPU time (snapshot, shaping), not GPU time. GPU cost stays low thanks to instanced rendering.
 - **Drawables**: 2 per window (`maximumDrawableCount = 2`), BGRA8, `framebufferOnly = true`. We need to verify this does not block `nextDrawable` at 120 Hz, and switch to 3 if it does.
+- **Translucency**: the frame's colors are premultiplied by their opacity, and the cells of the default background are clear, over the frame's clear color, which takes `[window] background-opacity`. Below an opacity of 1 the window, its content view and the view's layer turn non-opaque; the blur behind the window takes `CGSSetWindowBackgroundBlurRadius`, a private call of the window server, the only one of the app, as macOS has no public one. The app ships with a Developer ID, outside the App Store, which private calls would keep it from.
 
 **Linux** (F7): the same scheme, using Wayland frame callbacks (`wl_surface.frame`) or the Present extension on X11, and `wp_presentation` for measurement.
 

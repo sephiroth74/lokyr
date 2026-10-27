@@ -17,9 +17,8 @@ use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2_core_foundation::CGSize;
 use objc2_core_graphics::{CGColorSpace, kCGColorSpaceSRGB};
 use objc2_metal::{
-    MTLClearColor, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue,
-    MTLCreateSystemDefaultDevice, MTLDevice, MTLLoadAction, MTLPixelFormat,
-    MTLRenderPassDescriptor, MTLStoreAction,
+    MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice,
+    MTLLoadAction, MTLPixelFormat, MTLRenderPassDescriptor, MTLStoreAction,
 };
 use objc2_quartz_core::{CALayer, CAMetalDrawable, CAMetalLayer};
 use raw_window_handle::{RawWindowHandle, WindowHandle};
@@ -140,12 +139,7 @@ impl Surface {
         attachment.setTexture(Some(&drawable.texture()));
         attachment.setLoadAction(MTLLoadAction::Clear);
         attachment.setStoreAction(MTLStoreAction::Store);
-        attachment.setClearColor(MTLClearColor {
-            red: f64::from(color.red),
-            green: f64::from(color.green),
-            blue: f64::from(color.blue),
-            alpha: 1.0,
-        });
+        attachment.setClearColor(renderer::clear_color(color));
         let buffer = self
             .queue
             .commandBuffer()

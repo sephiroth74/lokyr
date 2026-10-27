@@ -3,8 +3,10 @@
 // pixel. Every shape is an instance of a quad, whose four corners come from
 // the vertex's index, drawn as a strip.
 //
-// Colors are sRGB's encoded components, and the drawable's format keeps them
-// encoded: blending mixes them as they are, as macOS blends text.
+// Colors are sRGB's encoded components, premultiplied by their opacity, and
+// the drawable's format keeps them encoded: blending mixes them as they are,
+// as macOS blends text. A drawable that is not opaque lets what is behind
+// the window show through.
 
 #include <metal_stdlib>
 using namespace metal;
@@ -100,11 +102,11 @@ vertex Fragment glyph_vertex(uint vertex_id [[vertex_id]],
     return out;
 }
 
-// A glyph of coverage, filled with its color, premultiplied.
+// A glyph of coverage, filled with its color, which comes premultiplied.
 fragment float4 coverage_fragment(Fragment in [[stage_in]],
                                   texture2d<float, access::read> atlas [[texture(0)]]) {
     float coverage = atlas.read(in.atlas + uint2(in.local)).r;
-    return float4(in.color.rgb * coverage, coverage);
+    return in.color * coverage;
 }
 
 // A glyph of its own colors, premultiplied as the atlas holds it.

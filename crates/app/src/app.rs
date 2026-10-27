@@ -254,7 +254,9 @@ impl App {
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
+        let translucency = self.translucency();
         for &window in self.windows.keys() {
+            platform.set_translucent(window, translucency);
             platform.request_frame(window);
         }
     }
@@ -266,6 +268,7 @@ impl App {
         };
         match platform.create_window(&attributes) {
             Ok(window) => {
+                platform.set_translucent(window, self.translucency());
                 let surface = self.surface(platform, window);
                 let focused = platform.focused_window() == Some(window);
                 let size = platform
@@ -350,6 +353,17 @@ impl App {
             cell_width: pixels(width),
             cell_height: pixels(height),
         }
+    }
+
+    /// What the windows take of the config's background: the blur of what
+    /// shows through it, in points, when its opacity lets something show;
+    /// `None` when they are opaque.
+    fn translucency(&self) -> Option<f64> {
+        let window = &self.config.window;
+        window
+            .background_opacity
+            .is_translucent()
+            .then(|| f64::from(window.background_blur.points()))
     }
 
     /// The room between the grid and the window's edges, in pixels on a
@@ -480,8 +494,9 @@ impl App {
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, &mut glyph);
         }
+        let opacity = self.config.window.background_opacity.value();
         let list = DisplayList {
-            background: cells::background(snapshot),
+            background: cells::background(snapshot).with_alpha(opacity),
             items: vec![Item::Cells(batch)],
         };
         let updates = drawing.font.texture_updates();
@@ -1102,6 +1117,37 @@ mod tests {
         let snapshot = app.windows[&window].pane.snapshot();
         assert_eq!((snapshot.cols(), snapshot.rows()), (200, 62));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_translucent_background_makes_the_window_translucent() {
+        let (mut fake, mut reloaded, path) = with_file("translucent", "");
+        let window = fake.windows().next().unwrap();
+        assert_eq!(fake.window(window).unwrap().translucent, None);
+        std::fs::write(
+            &path,
+            "[window]\nbackground-opacity = 0.9\nbackground-blur = 20\n",
+        )
+        .unwrap();
+        change(&mut fake, &mut reloaded);
+        assert_eq!(fake.window(window).unwrap().translucent, Some(20.0));
+        // A blur alone, of an opaque background, leaves the window opaque.
+        std::fs::write(&path, "[window]\nbackground-blur = 20\n").unwrap();
+        change(&mut fake, &mut reloaded);
+        assert_eq!(fake.window(window).unwrap().translucent, None);
+        std::fs::write(&path, "[window]\nbackground-opacity = 0.5\n").unwrap();
+        change(&mut fake, &mut reloaded);
+        assert_eq!(fake.window(window).unwrap().translucent, Some(0.0));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        // A window opens as the config says.
+        let mut config = Config::default();
+        config.window.background_opacity = 0.8.try_into().unwrap();
+        config.window.background_blur = 12.0.try_into().unwrap();
+        let mut fake = Fake::default();
+        let mut app = app(config, quiet());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        assert_eq!(fake.window(window).unwrap().translucent, Some(12.0));
     }
 
     #[test]

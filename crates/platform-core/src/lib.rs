@@ -155,6 +155,11 @@ pub trait Platform {
     /// the input method places its candidates.
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size);
 
+    /// Lets what is behind `window` show through its content where what it
+    /// draws is not opaque, blurred by a radius of `blur` points, 0 for no
+    /// blur; or, with `None`, keeps the window opaque, as it opens.
+    fn set_translucent(&mut self, window: WindowId, blur: Option<f64>);
+
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a
     /// dead key that Option makes does not compose.

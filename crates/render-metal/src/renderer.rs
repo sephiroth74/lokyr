@@ -87,14 +87,13 @@ impl MetalRenderer {
         let library = device
             .newLibraryWithData_error(&data)
             .map_err(|error| Error::Shaders(error.to_string()))?;
-        let pipeline = |vertex: &str, fragment: &str, blend: bool| {
-            make_pipeline(&device, &library, vertex, fragment, blend)
-        };
+        let pipeline =
+            |vertex: &str, fragment: &str| make_pipeline(&device, &library, vertex, fragment);
         Ok(Self {
-            solid: pipeline("rect_vertex", "solid_fragment", false)?,
-            background: pipeline("background_vertex", "solid_fragment", false)?,
-            coverage_glyphs: pipeline("glyph_vertex", "coverage_fragment", true)?,
-            color_glyphs: pipeline("glyph_vertex", "color_fragment", true)?,
+            solid: pipeline("rect_vertex", "solid_fragment")?,
+            background: pipeline("background_vertex", "solid_fragment")?,
+            coverage_glyphs: pipeline("glyph_vertex", "coverage_fragment")?,
+            color_glyphs: pipeline("glyph_vertex", "color_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
             queue: gpu.queue.clone(),
@@ -278,13 +277,7 @@ impl Renderer for MetalRenderer {
         attachment.setTexture(Some(&output));
         attachment.setLoadAction(MTLLoadAction::Clear);
         attachment.setStoreAction(MTLStoreAction::Store);
-        let [red, green, blue, _] = rgba(list.background);
-        attachment.setClearColor(MTLClearColor {
-            red: f64::from(red),
-            green: f64::from(green),
-            blue: f64::from(blue),
-            alpha: 1.0,
-        });
+        attachment.setClearColor(clear_color(list.background));
         let buffer = self
             .queue
             .commandBuffer()
@@ -534,8 +527,27 @@ impl Frame<'_> {
     }
 }
 
+/// `color`'s components, premultiplied by its opacity, as the drawable
+/// and the window server take them.
 fn rgba(color: Color) -> [f32; 4] {
-    [color.red, color.green, color.blue, 1.0]
+    let alpha = color.alpha;
+    [
+        color.red * alpha,
+        color.green * alpha,
+        color.blue * alpha,
+        alpha,
+    ]
+}
+
+/// The color that a drawable clears to: `color`, premultiplied.
+pub(crate) fn clear_color(color: Color) -> MTLClearColor {
+    let [red, green, blue, alpha] = rgba(color);
+    MTLClearColor {
+        red: f64::from(red),
+        green: f64::from(green),
+        blue: f64::from(blue),
+        alpha: f64::from(alpha),
+    }
 }
 
 fn rect_instance(rect: &Rect, color: Color) -> RectInstance {
@@ -575,7 +587,6 @@ fn make_pipeline(
     library: &ProtocolObject<dyn MTLLibrary>,
     vertex: &str,
     fragment: &str,
-    blend: bool,
 ) -> Result<Pipeline, Error> {
     let function = |name: &str| {
         library
@@ -589,14 +600,13 @@ fn make_pipeline(
     // SAFETY: a pipeline has a first color attachment.
     let attachment = unsafe { descriptor.colorAttachments().objectAtIndexedSubscript(0) };
     attachment.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
-    if blend {
-        // The fragments are premultiplied.
-        attachment.setBlendingEnabled(true);
-        attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
-        attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
-        attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-        attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
-    }
+    // Every fragment is premultiplied, and goes over what is under it: a
+    // clear one leaves it as it is.
+    attachment.setBlendingEnabled(true);
+    attachment.setSourceRGBBlendFactor(MTLBlendFactor::One);
+    attachment.setSourceAlphaBlendFactor(MTLBlendFactor::One);
+    attachment.setDestinationRGBBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
+    attachment.setDestinationAlphaBlendFactor(MTLBlendFactor::OneMinusSourceAlpha);
     device
         .newRenderPipelineStateWithDescriptor_error(&descriptor)
         .map_err(|error| Error::Shaders(error.to_string()))
@@ -838,6 +848,18 @@ mod tests {
                 Item::PopClip,
             ],
         }
+    }
+
+    #[test]
+    fn colors_go_premultiplied() {
+        let half = Color::from_rgb8(255, 0, 51).with_alpha(0.5);
+        assert_eq!(rgba(half), [0.5, 0.0, 0.1, 0.5]);
+        assert_eq!(rgba(Color::from_rgb8(255, 255, 255)), [1.0; 4]);
+        let clear = clear_color(Color::from_rgb8(255, 255, 255).with_alpha(0.0));
+        assert_eq!(
+            (clear.red, clear.green, clear.blue, clear.alpha),
+            (0.0, 0.0, 0.0, 0.0)
+        );
     }
 
     #[test]
