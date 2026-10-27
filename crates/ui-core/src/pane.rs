@@ -590,11 +590,18 @@ pub fn preedit(
     });
     if let Some(drawn) = &mut batch.cursor {
         let at = cursor.unwrap_or(column).min(columns - 1);
-        // A block over a wide composed character covers it whole.
-        let width = placed
+        // A wide character under the cursor, composed or the grid's after
+        // the composition, takes it whole, from its first cell, as a
+        // composition cut at the right edge can leave the cursor on its
+        // second.
+        let (at, width) = match placed
             .iter()
-            .find(|&&(column, _)| column == at)
-            .map_or(1, |&(_, width)| width);
+            .find(|&&(first, width)| (first..first + width).contains(&at))
+        {
+            Some(&(first, width)) => (first, width),
+            None if width_at(at) == Some(Width::Wide) => (at, 2),
+            None => (at, 1),
+        };
         drawn.column = at;
         drawn.columns = width.min(columns - at);
     }
@@ -1418,6 +1425,58 @@ mod tests {
             glyph_color(&batch, 2),
             Some(color(Colors::default().foreground))
         );
+    }
+
+    #[test]
+    fn a_cursor_after_a_composition_covers_a_wide_character_whole() {
+        let look = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 2,
+        };
+        let compose = |columns: u16, text: &str, composed: &str, cursor: usize| {
+            let snapshot = snapshot(columns, 1, text);
+            let mut asked = Vec::new();
+            let mut batch = cells(
+                &snapshot,
+                &cell(),
+                0,
+                0,
+                None,
+                Some(look),
+                &mut atlas(&mut asked),
+            );
+            let composed = Preedit {
+                text: composed.to_owned(),
+                cursor,
+            };
+            preedit(
+                &mut batch,
+                &snapshot,
+                &cell(),
+                &composed,
+                &mut atlas(&mut asked),
+            );
+            let cursor = batch.cursor.unwrap();
+            (batch, (cursor.column, cursor.columns))
+        };
+        let background = color(Colors::default().background);
+        // `x` composed on the `b` of `ab日`: the cursor after it, on the
+        // first cell of `日`, covers both, and the block's text is the
+        // whole character in the background's color.
+        let (batch, cursor) = compose(8, "ab\u{65E5}\x1b[3D", "x", 1);
+        assert_eq!(cursor, (2, 2));
+        assert_eq!(glyph_color(&batch, 2), Some(background));
+        // Past a composition that covers the first cell of `日`, its second
+        // cell, which no longer shows it, alone.
+        let (_, cursor) = compose(8, "\u{65E5}b\x1b[3D", "x", 1);
+        assert_eq!(cursor, (1, 1));
+        // A composition cut at the right edge, with the cursor at its end or
+        // on the character left out: on the first cell of the last wide
+        // character shown.
+        for at in [3, 9] {
+            let (_, cursor) = compose(4, "ab", "日本語", at);
+            assert_eq!(cursor, (2, 2), "the cursor at byte {at}");
+        }
     }
 
     #[test]

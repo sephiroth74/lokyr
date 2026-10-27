@@ -104,9 +104,10 @@ pub(crate) enum Step {
 /// their order. A key that it typed as the key types it, as plain typing
 /// does, goes on as the key, so that the encoder sees every key that a
 /// program may report; so does a key that it turned into a command once
-/// it no longer composes, after the text that it typed with it. A key that
-/// it did nothing with goes on as the key, unless it composed before or
-/// after it, or it is a repeat, which press and hold keeps.
+/// it no longer composes, after the text that it typed with it, once
+/// however many commands the key binds, as Control-O's two. A key that it
+/// did nothing with goes on as the key, unless it composed before or after
+/// it, or it is a repeat, which press and hold keeps.
 pub(crate) fn events(
     key: KeyEvent,
     composing: bool,
@@ -128,6 +129,7 @@ pub(crate) fn events(
         _ => {}
     }
     let mut events = Vec::new();
+    let mut sent = false;
     for step in steps {
         match step {
             Step::Inserted { text, deleted } => {
@@ -137,8 +139,11 @@ pub(crate) fn events(
             Step::Marked { text, selection } => {
                 events.push(WindowEvent::Ime(Ime::Preedit { text, selection }));
             }
-            Step::Command { composing: false } => events.push(WindowEvent::Key(key.clone())),
-            Step::Command { composing: true } => {}
+            Step::Command { composing: false } if !sent => {
+                sent = true;
+                events.push(WindowEvent::Key(key.clone()));
+            }
+            Step::Command { .. } => {}
         }
     }
     events
@@ -314,6 +319,42 @@ mod tests {
         // A command while the input method still composes is its own.
         let steps = vec![Step::Command { composing: true }];
         assert_eq!(events(enter, true, steps, true), []);
+    }
+
+    #[test]
+    fn a_key_of_two_commands_goes_once() {
+        // Control-O moves back after its newline, and Option-Up to the
+        // paragraph's start after moving back, as AppKit's key bindings
+        // have them.
+        let command = Step::Command { composing: false };
+        let o = KeyEvent {
+            mods: Modifiers {
+                control: true,
+                ..Modifiers::NONE
+            },
+            ..key(KeyCode::KeyO, "\u{f}", KeyState::Pressed)
+        };
+        let up = KeyEvent {
+            mods: Modifiers {
+                left_alt: true,
+                ..Modifiers::NONE
+            },
+            ..key(KeyCode::ArrowUp, "\u{f700}", KeyState::Pressed)
+        };
+        for pressed in [o, up] {
+            let steps = vec![command.clone(), command.clone()];
+            assert_eq!(
+                events(pressed.clone(), false, steps, false),
+                [WindowEvent::Key(pressed.clone())]
+            );
+        }
+        // After a commit, the key comes once too.
+        let enter = key(KeyCode::Enter, "\r", KeyState::Pressed);
+        let steps = vec![inserted("한", 0), command.clone(), command];
+        assert_eq!(
+            events(enter.clone(), true, steps, false),
+            [commit("한"), WindowEvent::Key(enter)]
+        );
     }
 
     #[test]

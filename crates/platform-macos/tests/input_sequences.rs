@@ -1,9 +1,11 @@
 //! The view hands the events of a key to the app in the order that the
 //! input method makes them: a commit before the composition that the same
 //! key starts, the key itself after a commit when the input method turns it
-//! into a command, and nothing for what the input method keeps. A script
-//! takes the place of AppKit's `interpretKeyEvents:`, and calls the view as
-//! input methods do, so that the test needs no input method and no focus.
+//! into a command, once for a key that AppKit's key bindings give two
+//! commands, and nothing for what the input method keeps. Past the first
+//! keys, a script takes the place of AppKit's `interpretKeyEvents:`, and
+//! calls the view as input methods do, so that the test needs no input
+//! method and no focus.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -98,6 +100,18 @@ mod probe {
 
     /// Sends a key down to the window, which the script handles.
     fn press(code: u16, text: &str, repeat: bool, calls: &[Call]) {
+        press_with(code, (text, text), NSEventModifierFlags(0), repeat, calls);
+    }
+
+    /// Sends a key down to the window with `flags`, which types `text`, and
+    /// the second text without them, and which the script handles.
+    fn press_with(
+        code: u16,
+        (text, unmodified): (&str, &str),
+        flags: NSEventModifierFlags,
+        repeat: bool,
+        calls: &[Call],
+    ) {
         SCRIPT.with(|script| *script.borrow_mut() = calls.to_vec());
         let mtm = MainThreadMarker::new().expect("the main thread");
         let window = NSApplication::sharedApplication(mtm)
@@ -107,12 +121,12 @@ mod probe {
         let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
             NSEventType::KeyDown,
             NSPoint::ZERO,
-            NSEventModifierFlags(0),
+            flags,
             0.0,
             window.windowNumber(),
             None,
             &NSString::from_str(text),
-            &NSString::from_str(text),
+            &NSString::from_str(unmodified),
             repeat,
             code,
         )
@@ -151,6 +165,24 @@ mod probe {
                 return;
             }
             self.sent = true;
+            // Through AppKit's own key bindings, before the script takes
+            // their place: Control-O, a newline and a move back, and
+            // Option-Up, a move back and one to the paragraph's start.
+            press_with(
+                0x1F,
+                ("\u{f}", "o"),
+                NSEventModifierFlags::Control,
+                false,
+                &[],
+            );
+            let arrow = NSEventModifierFlags::NumericPad.0 | NSEventModifierFlags::Function.0;
+            press_with(
+                0x7E,
+                ("\u{f700}", "\u{f700}"),
+                NSEventModifierFlags(NSEventModifierFlags::Option.0 | arrow),
+                false,
+                &[],
+            );
             script_the_view();
             // Korean: a syllable composed, then typed as the next starts.
             press(0x0F, "r", false, &[Call::Mark("한")]);
@@ -208,6 +240,8 @@ mod probe {
         assert_eq!(
             *seen.borrow(),
             [
+                "key KeyO",
+                "key ArrowUp",
                 "preedit 한",
                 "commit 한",
                 "preedit ㄱ",
