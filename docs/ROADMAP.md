@@ -85,7 +85,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
 - **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
-- **Cursor options**: blink interval, smooth blinking, default shape and smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)).
+- **Cursor options**: smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
 
 **Exit**:
 - tabs: reorder, rename, drag;
