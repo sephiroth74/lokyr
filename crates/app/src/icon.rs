@@ -32,15 +32,10 @@ impl Icons {
     /// runs from its bundle; otherwise the source tree's, when the tree is
     /// where the app was built.
     pub(crate) fn find() -> Option<Self> {
-        let executable = std::env::current_exe().ok()?;
-        let binaries = executable.parent()?;
-        if binaries.file_name() == Some("MacOS".as_ref())
-            && let Some(contents) = binaries.parent()
+        if let Some(directory) = crate::environment::resources().map(|dir| dir.join("icons"))
+            && directory.is_dir()
         {
-            let directory = contents.join("Resources").join("icons");
-            if directory.is_dir() {
-                return Some(Self::new(directory, true));
-            }
+            return Some(Self::new(directory, true));
         }
         let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/icons");
         directory.is_dir().then(|| Self::new(directory, false))

@@ -106,6 +106,12 @@ pub trait Platform {
     /// The system's appearance.
     fn appearance(&self) -> Appearance;
 
+    /// The user's languages, each with a region, in the order of the
+    /// system's preferences, as the names of POSIX locales without their
+    /// encoding, as `it_IT` and `en_IT`: the system's language and region
+    /// first, then the other languages that the user prefers.
+    fn locales(&self) -> Vec<String>;
+
     /// Opens a window, in front of the others, where it takes the focus.
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error>;
 

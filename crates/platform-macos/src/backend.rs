@@ -16,7 +16,7 @@ use objc2_app_kit::{
     NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSImage, NSPasteboard,
     NSPasteboardTypeString,
 };
-use objc2_foundation::{NSPoint, NSString, NSTimer};
+use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
@@ -163,6 +163,28 @@ impl Platform for Backend {
 
     fn appearance(&self) -> Appearance {
         appearance::current(self.mtm)
+    }
+
+    fn locales(&self) -> Vec<String> {
+        let current = NSLocale::currentLocale();
+        // A language without a region takes the system's.
+        let region = current.regionCode();
+        let named = |locale: &NSLocale| {
+            let region = locale.regionCode().or_else(|| region.clone())?;
+            Some(format!("{}_{region}", locale.languageCode()))
+        };
+        let preferred = NSLocale::preferredLanguages();
+        let others = (0..preferred.count())
+            .map(|at| NSLocale::localeWithLocaleIdentifier(&preferred.objectAtIndex(at)));
+        let mut locales: Vec<String> = Vec::new();
+        for locale in std::iter::once(current.clone()).chain(others) {
+            if let Some(name) = named(&locale)
+                && !locales.contains(&name)
+            {
+                locales.push(name);
+            }
+        }
+        locales
     }
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {

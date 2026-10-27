@@ -11,6 +11,8 @@ use lokyr_vt_core::input::{KeyEvent, KeyOptions};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{self, Colors, KeyboardFlags, Snapshot, Terminal};
 
+use crate::environment::Environment;
+
 /// The `TERM` that programs take, which remote hosts know too.
 const TERM: &str = "xterm-256color";
 
@@ -98,13 +100,28 @@ impl std::fmt::Debug for Pane {
     }
 }
 
+/// The PTY's options for `program`, in `environment`, at the size of
+/// `grid`.
+fn pty_options(program: &Program, environment: &Environment, grid: Grid) -> lokyr_pty::Options {
+    let mut pty = lokyr_pty::Options::new(program.clone(), TERM);
+    pty.size = grid.size();
+    pty.resources_dir.clone_from(&environment.resources);
+    pty.fallback_locale.clone_from(&environment.locale);
+    pty
+}
+
 impl Pane {
     /// A pane that runs `program` in a terminal of `grid`, in `colors`,
     /// whose changes wake `waker`; or, when the program cannot start, a pane
     /// whose screen tells why.
-    pub(crate) fn spawn(program: &Program, grid: Grid, colors: &Colors, waker: Waker) -> Self {
-        let mut pty = lokyr_pty::Options::new(program.clone(), TERM);
-        pty.size = grid.size();
+    pub(crate) fn spawn(
+        program: &Program,
+        environment: &Environment,
+        grid: Grid,
+        colors: &Colors,
+        waker: Waker,
+    ) -> Self {
+        let pty = pty_options(program, environment, grid);
         let mut pane = Self {
             session: None,
             snapshot: Snapshot::default(),
@@ -310,6 +327,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_program_starts_in_the_app_s_environment() {
+        let environment = Environment {
+            resources: Some("/Applications/Lokyr.app/Contents/Resources".into()),
+            locale: "it_CH.UTF-8".to_owned(),
+        };
+        let grid = Grid {
+            columns: 80,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+        let options = pty_options(&Program::LoginShell, &environment, grid);
+        assert_eq!(options.resources_dir, environment.resources);
+        assert_eq!(options.fallback_locale, "it_CH.UTF-8");
+        assert_eq!(options.term, "xterm-256color");
+        assert_eq!(options.size, grid.size());
+    }
+
+    #[test]
     fn the_login_shell_s_status_is_the_one_that_it_told() {
         // `login`'s 0, and what the wrapper told.
         let login = Some(Exit::Code(0));
@@ -366,7 +402,13 @@ mod tests {
         // A program that writes a line at each SIGWINCH.
         let script = "trap 'echo W' WINCH; echo ready; while :; do sleep 0.01; done";
         let program = Program::command("/bin/sh", ["-c", script]);
-        let mut pane = Pane::spawn(&program, grid(80), &Colors::default(), Waker::new(|| {}));
+        let mut pane = Pane::spawn(
+            &program,
+            &Environment::default(),
+            grid(80),
+            &Colors::default(),
+            Waker::new(|| {}),
+        );
         wait_for(&mut pane, "ready", 1);
         // A step, told at once; then back and forth within the pace, to the
         // grid told, which the PTY's size cannot tell again.
@@ -394,7 +436,13 @@ mod tests {
             cell_height: 16,
         };
         let cat = Program::command("/bin/cat", [] as [&str; 0]);
-        let mut pane = Pane::spawn(&cat, grid(80), &Colors::default(), Waker::new(|| {}));
+        let mut pane = Pane::spawn(
+            &cat,
+            &Environment::default(),
+            grid(80),
+            &Colors::default(),
+            Waker::new(|| {}),
+        );
         // A second of steps, one every 8 ms, as a display of 120 Hz draws
         // them, with the timer that the app keeps for the pace.
         let start = Instant::now();

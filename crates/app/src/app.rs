@@ -24,6 +24,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 
+use crate::environment::{self, Environment};
 use crate::icon::Icons;
 use crate::keys;
 #[cfg(test)]
@@ -192,6 +193,9 @@ pub struct App {
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
     icon_shown: Option<String>,
+    /// The environment of the programs that the app starts, which the
+    /// start completes with the user's locale.
+    environment: Environment,
 }
 
 impl App {
@@ -216,6 +220,10 @@ impl App {
             resize_timer: None,
             icons: Icons::find(),
             icon_shown: None,
+            environment: Environment {
+                resources: environment::resources(),
+                ..Environment::default()
+            },
         }
     }
 
@@ -223,6 +231,13 @@ impl App {
     #[cfg(test)]
     fn with_program(mut self, program: Program) -> Self {
         self.program = program;
+        self
+    }
+
+    /// The app, whose programs find its resources in `resources`.
+    #[cfg(test)]
+    fn with_resources(mut self, resources: Option<PathBuf>) -> Self {
+        self.environment.resources = resources;
         self
     }
 
@@ -326,7 +341,13 @@ impl App {
                     .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
                 let grid = self.grid(size);
                 let colors = &self.colors(platform.appearance());
-                let pane = Pane::spawn(&self.program, grid, colors, platform.waker());
+                let pane = Pane::spawn(
+                    &self.program,
+                    &self.environment,
+                    grid,
+                    colors,
+                    platform.waker(),
+                );
                 self.windows
                     .insert(window, Window::new(surface, pane, focused, Instant::now()));
                 self.draw(platform, window, size);
@@ -612,6 +633,8 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
+        self.environment.locale =
+            environment::utf8_locale(&platform.locales(), &environment::system_locales());
         if let Some(file) = &mut self.config_file {
             if let Err(error) = crate::watch::make_directory(&file.path) {
                 eprintln!(
@@ -1296,6 +1319,24 @@ mod tests {
         // each edge, of cells of 8 by 16.
         let snapshot = app.windows[&window].pane.snapshot();
         assert_eq!((snapshot.cols(), snapshot.rows()), (198, 61));
+    }
+
+    #[test]
+    fn a_program_finds_the_bundle_s_resources_and_the_user_s_locale() {
+        let resources =
+            std::env::temp_dir().join(format!("lokyr-app-resources-{}", std::process::id()));
+        std::fs::create_dir_all(&resources).unwrap();
+        let mut fake = Fake::default();
+        // A region that the system has no locale of, then one that it has.
+        fake.set_locales(&["en_XX", "it_CH"]);
+        let script = "printf '%s' \"$LOKYR_RESOURCES_DIR\"; sleep 10";
+        let mut app = app(Config::default(), shell(script)).with_resources(Some(resources.clone()));
+        fake.start(&mut app);
+        assert_eq!(app.environment.locale, "it_CH.UTF-8");
+        let window = fake.windows().next().unwrap();
+        let shown = resources.display().to_string();
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == shown);
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     /// The config of a window without padding.

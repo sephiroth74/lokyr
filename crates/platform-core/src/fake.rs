@@ -63,6 +63,8 @@ pub struct Fake {
     option_as_meta: (bool, bool),
     /// The icons that the app showed, from the first.
     app_icons: Vec<Option<PathBuf>>,
+    /// The user's languages and regions, none unless a test sets them.
+    locales: Vec<String>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -89,6 +91,7 @@ impl Fake {
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
             app_icons: Vec::new(),
+            locales: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -224,6 +227,12 @@ impl Fake {
         self.option_as_meta
     }
 
+    /// Gives the user the languages and regions of `locales`, as
+    /// [`Platform::locales`] names them.
+    pub fn set_locales(&mut self, locales: &[&str]) {
+        self.locales = locales.iter().map(|&locale| locale.to_owned()).collect();
+    }
+
     /// The icons that the app showed, from the first: a file's, or `None`
     /// for the application's own.
     pub fn app_icons(&self) -> &[Option<PathBuf>] {
@@ -253,6 +262,10 @@ impl Platform for Fake {
 
     fn appearance(&self) -> Appearance {
         self.appearance
+    }
+
+    fn locales(&self) -> Vec<String> {
+        self.locales.clone()
     }
 
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error> {

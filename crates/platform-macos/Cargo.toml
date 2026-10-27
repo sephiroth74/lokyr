@@ -57,6 +57,7 @@ objc2-foundation = { workspace = true, features = [
     "NSDictionary",
     "NSGeometry",
     "NSKeyValueObserving",
+    "NSLocale",
     "NSNotification",
     "NSObjCRuntime",
     "NSObject",
@@ -110,6 +111,10 @@ harness = false
 
 [[test]]
 name = "app_icon"
+harness = false
+
+[[test]]
+name = "locales"
 harness = false
 
 [[test]]
