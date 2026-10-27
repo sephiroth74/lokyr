@@ -45,7 +45,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
 | iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
-| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md) | F3–F4 |
+| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
@@ -75,6 +75,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0016](adr/0016-new-names.md) | New names: Shard for the package manager; the terminal's still to choose, by the end of F2 | Superseded by 0018, never accepted |
 | [0017](adr/0017-mcp-and-agents.md) | An MCP server, and the AI agents that run in the terminal; phase F3b | Accepted |
 | [0018](adr/0018-names-lokyr-and-sleip.md) | Names: Lokyr for the terminal, Sleip for the package manager | Accepted |
+| [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted |
 
 ## Glossary
 

@@ -34,7 +34,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 
 ## Plugins
 
-- **Capabilities** are declared by the plugin, granted by the user, stored in `permissions.toml`, and revocable ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#capabilities)).
+- **Capabilities** are declared by the plugin, granted by the user, stored in `permissions.toml`, and revocable ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#capabilities)). So are the commands that a plugin runs, each of which needs the capabilities of its action, so that no command is a way around them; the environment's variables, the typing, the shell's history and the panes' processes have capabilities of their own ([ADR 0019](adr/0019-commands-errors-and-permissions.md)).
 - **Luau sandbox**: one VM per plugin, with only the libraries that compute, a memory limit and a deadline per call. A plugin that fails or misses its deadline is disabled.
 - **Sources only**: packages carry Luau sources, never bytecode, and the host compiles every script itself.
 - **Audit log**: capability requests and grants are recorded and can be reviewed.

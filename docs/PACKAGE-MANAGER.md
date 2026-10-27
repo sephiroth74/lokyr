@@ -71,6 +71,9 @@ on = ["command:search-plus.*"]
 terminal-read = true
 clipboard-write = true
 
+[uses]
+commands = ["pane.copy", "tabs.*"]   # the commands that the plugin runs
+
 [contributes]
 commands = [{ name = "search-plus.open", title = "Advanced search" }]
 keybindings = [{ key = "cmd+shift+f", command = "search-plus.open" }]
@@ -92,6 +95,7 @@ config-schema = "schema.json"
 | `plugin.platforms` | no | Restricts the OSes (e.g. `["macos"]`); all by default |
 | `activation.on` | for `luau` | Activation events |
 | `capabilities.*` | no | Requested capabilities |
+| `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) |
 | `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
 

@@ -155,16 +155,20 @@ type WindowId = number
 type TabId = number
 type PaneId = number
 
--- Command arguments: plain values, possibly nested.
-type Args = { [string]: any }
+-- Command arguments: named values of a flat schema, each a string, an
+-- integer, a number or a boolean.
+type Args = { [string]: string | number | boolean }
 
 -- Plugins should prefer theme tokens (e.g. "tab.active.bg") to literals.
 type Color = string | { r: number, g: number, b: number, a: number? }
 
 type Direction = "left" | "right" | "up" | "down"
 
+-- An error's code, whose hundreds tell its category: 1xx usage, 2xx
+-- failure, 3xx security, 4xx fault (ADR 0019).
 type Error = {
-    kind: "denied" | "not-found" | "invalid-args" | "failed",
+    code: number,
+    kind: "not-found" | "invalid-args" | "failed" | "denied" | "fault",
     message: string,
 }
 
@@ -280,7 +284,7 @@ type Plugin = {
 
 | Capability | Allows | Risk |
 |---|---|---|
-| *(none)* | Commands, keymap, events, UI, themes, config, storage, logging, timers | — |
+| *(none)* | Registering commands, and running those that the manifest declares; keymap, events, UI, themes, config, storage, logging, timers | — |
 | `terminal-read` | Reading screen and scrollback text, and the selection | High: the screen may show secrets |
 | `pty-write` | Sending input to the shell | Very high |
 | `clipboard-read` | Reading the clipboard | High |
@@ -291,9 +295,14 @@ type Plugin = {
 | `net:<host>` | HTTP requests to the listed hosts | High |
 | `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths | High |
 | `global-hotkey` | System-wide shortcuts | Medium |
+| `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
+| `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
+| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks | High: a password typed by mistake ends up there |
+| `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
 
+- **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or the palette, and the plugin's own need no declaration.
 - **Declaration and consent**:
-  - Capabilities are declared in the manifest. Sleip shows them at install time, and the app asks for confirmation on first use.
+  - Capabilities are declared in the manifest. Sleip shows them at install time, with the commands that the plugin runs, grouped by category, and the capabilities that those need; the app asks for confirmation on first use.
   - Decisions are stored in `~/.config/lokyr/permissions.toml`, which can be versioned with dotfiles and revoked at any time.
 - **Enforcement**:
   - Every host function exists in every plugin. Without the capability it returns a `denied` error, so a plugin can treat a capability as optional and request it at the moment it's needed.
