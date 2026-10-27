@@ -681,6 +681,7 @@ mod tests {
             _: crate::GlyphId,
             _: f32,
             _: Synthesis,
+            _: crate::Rendering,
         ) -> crate::Bitmap {
             crate::Bitmap::empty(crate::BitmapFormat::Gray)
         }

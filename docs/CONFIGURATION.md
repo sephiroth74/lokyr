@@ -43,6 +43,12 @@ cell-width = 1.0
 ligatures = false                    # true | false
 builtin-box-drawing = false          # true | false: box drawing, blocks and braille
 builtin-powerline = false            # true | false: the powerline symbols
+antialias = true                     # true | false
+thin-strokes = "retina-dark"         # never | always | retina | dark | retina-dark
+
+[text]
+bold = false                         # true | false: bold text in the bold face
+italic = false                       # true | false: italic text in the italic face
 
 [cursor]
 shape = "bar"                        # block | bar | underline | hollow
@@ -181,6 +187,50 @@ Whether Lokyr draws these characters itself, at the cell's size and to the pixel
 - Drawn by Lokyr, lines meet across cells without a gap, blocks tile, and the powerline symbols fill the cell's height, whatever the font and `line-height`.
 - `false` takes the font's glyphs, or those of the font that macOS gives for them; some fonts draw their own as a look of their own.
 - The other icons of Nerd Fonts always come from the font.
+
+### `antialias`
+
+<sub>Platforms: macOS</sub>
+
+Whether the edges of the glyphs are smoothed, as macOS draws text.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- `false` draws each pixel covered or not, as on old screens: crisp at small sizes on a display of a scale of 1, jagged otherwise. The glyphs that Lokyr draws itself follow it; emoji keep their smooth edges.
+- `thin-strokes` needs antialiasing, and does nothing without it.
+
+### `thin-strokes`
+
+<sub>Platforms: macOS</sub>
+
+Where the text is drawn of thinner strokes: without the darkening that macOS adds to the glyphs as it smooths fonts, which makes light text on a dark background look heavier.
+
+| Values | Default |
+|---|---|
+| `"never"`, `"always"`, `"retina"`, `"dark"`, `"retina-dark"` | `"never"` |
+
+- `"never"` draws the text as macOS does; `"always"` thin everywhere.
+- `"retina"` thin on a display of a scale of 2 or more, as the Mac's own; `"dark"` thin where a cell's background is darker than its text; `"retina-dark"` thin where both hold.
+- When font smoothing is off in macOS, as `defaults write -g AppleFontSmoothing -int 0` turns it off, every glyph is thin already.
+
+## `[text]`
+
+How the text's styles are drawn.
+
+### `bold`, `italic`
+
+<sub>Platforms: macOS</sub>
+
+Whether bold text takes the font's bold face, and italic text its italic face.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- `bold = false` draws bold text in the regular face: a program's bold then shows only by its color.
+- `italic = false` draws italic text upright.
 
 ## `[cursor]`
 

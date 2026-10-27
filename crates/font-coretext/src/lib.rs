@@ -11,7 +11,8 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 
 use lokyr_text_core::{
-    Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, ShapedGlyph, Synthesis,
+    Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, Rendering, ShapedGlyph,
+    Synthesis,
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
@@ -328,12 +329,13 @@ impl FontBackend for CoreText {
         glyph: GlyphId,
         size: f32,
         synthesis: Synthesis,
+        rendering: Rendering,
     ) -> Bitmap {
         let size = f64::from(size);
         let Some(font) = self.font_slanted(face, size, synthesis.italic) else {
             return Bitmap::empty(lokyr_text_core::BitmapFormat::Gray);
         };
-        raster::rasterize(&font, glyph, size, synthesis, self.smoothing)
+        raster::rasterize(&font, glyph, size, synthesis, self.smoothing, rendering)
     }
 }
 

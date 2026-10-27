@@ -6,12 +6,13 @@
 use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
-    FontBackend, FontConfig, GlyphId, Resolved, ShapedGlyph, Synthesis, choose_faces,
+    FontBackend, FontConfig, GlyphId, Rendering, Resolved, ShapedGlyph, Synthesis, choose_faces,
     resolve_faces, sprite,
 };
 use lokyr_vt_core::unicode;
 
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
+use crate::text::TextConfig;
 
 /// The face of the glyphs that the terminal draws itself, of box drawing
 /// and of the powerline symbols, whose glyph is their character's code.
@@ -76,6 +77,8 @@ pub struct GlyphKey {
     pub size: u32,
     /// What is drawn heavier or slanted.
     pub synthesis: Synthesis,
+    /// Whether it is drawn of thin strokes.
+    pub thin: bool,
 }
 
 /// The font of the text: the family and faces that the configuration names,
@@ -92,6 +95,10 @@ pub struct Font<B> {
     /// when it is not installed.
     missing_non_ascii: Option<String>,
     pixels: f32,
+    /// The display's scale.
+    scale: f32,
+    /// Which styles take their faces.
+    text: TextConfig,
     cell: CellMetrics,
     atlas: Atlas<GlyphKey>,
     glyphs: Glyphs,
@@ -261,6 +268,8 @@ impl<B: FontBackend> Font<B> {
             backend,
             config,
             pixels,
+            scale,
+            text: TextConfig::default(),
             cell,
             atlas: Atlas::new(),
             glyphs: Glyphs::new(&resolved.faces, non_ascii.as_ref()),
@@ -303,6 +312,7 @@ impl<B: FontBackend> Font<B> {
     /// glyphs of the other sizes left in the atlas, which they leave as it
     /// fills.
     pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
         let pixels = self.config.size.points() * scale;
         if pixels == self.pixels {
             return;
@@ -310,6 +320,27 @@ impl<B: FontBackend> Font<B> {
         self.pixels = pixels;
         let metrics = self.backend.metrics(self.resolved.faces.regular.id, pixels);
         self.cell = CellMetrics::new(&metrics, &self.config);
+    }
+
+    /// Takes `text`'s choice of which styles take their faces: bold text
+    /// without its face takes the regular one, and italic text without its
+    /// face is upright.
+    pub fn set_text(&mut self, text: TextConfig) {
+        self.text = text;
+    }
+
+    /// The style's index, bold its first bit and italic its second, as the
+    /// text's configuration takes them.
+    fn style_of(&self, style: &lokyr_vt_core::page::Style) -> usize {
+        usize::from(style.bold && self.text.bold)
+            | usize::from(style.italic && self.text.italic) << 1
+    }
+
+    /// Whether a glyph on a background darker than its text when `dark` is
+    /// drawn of thin strokes, as the configuration says for the display's
+    /// scale.
+    fn thin(&self, dark: bool) -> bool {
+        self.config.antialias && self.config.thin_strokes.thin(self.scale, dark)
     }
 
     /// The keys of the glyphs drawn, with their regions in the atlas.
@@ -333,11 +364,11 @@ impl<B: FontBackend> Font<B> {
     /// one glyph that the emoji face shapes it into. Drawn into the atlas the
     /// first time. `None` when no face draws its character.
     pub fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph> {
-        let style = style_of(shown.style);
+        let style = self.style_of(shown.style);
         let character = shown.text.chars().next()?;
         let found = self.find(style, character, Presentation::asked(shown.text))?;
         let found = self.sequence(found, shown.text);
-        self.draw(found)
+        self.draw(found, self.thin(shown.dark))
     }
 
     /// The glyph of `found`, an emoji, of the whole `cluster`, when the
@@ -369,13 +400,15 @@ impl<B: FontBackend> Font<B> {
         whole
     }
 
-    /// The glyph `found` in the atlas, drawn into it the first time.
-    fn draw(&mut self, found: Found) -> Option<AtlasGlyph> {
+    /// The glyph `found` in the atlas, of thin strokes when `thin`, drawn
+    /// into it the first time, antialiased as the configuration says.
+    fn draw(&mut self, found: Found, thin: bool) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
             size: self.pixels.to_bits(),
             synthesis: found.synthesis,
+            thin,
         };
         let placement = match self.atlas.get(&key) {
             Some(placement) => placement,
@@ -387,12 +420,26 @@ impl<B: FontBackend> Font<B> {
                 {
                     return None;
                 }
+                let antialias = self.config.antialias;
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
-                    sprite::draw(character, &self.cell)?
+                    let mut bitmap = sprite::draw(character, &self.cell)?;
+                    // Without antialiasing, a pixel is covered or not.
+                    if !antialias {
+                        for pixel in &mut bitmap.data {
+                            *pixel = if *pixel >= 128 { 255 } else { 0 };
+                        }
+                    }
+                    bitmap
                 } else {
-                    self.backend
-                        .rasterize(found.face, found.glyph, self.pixels, found.synthesis)
+                    let rendering = Rendering { antialias, thin };
+                    self.backend.rasterize(
+                        found.face,
+                        found.glyph,
+                        self.pixels,
+                        found.synthesis,
+                        rendering,
+                    )
                 };
                 let Some(placement) = self.atlas.insert(key, &bitmap) else {
                     // The refusals of long ago go, rather than pile up.
@@ -428,7 +475,8 @@ impl<B: FontBackend> Font<B> {
     /// an emoji alone. A cell alone, and text without ligatures of clusters
     /// of one character, takes each cell's glyph without shaping.
     fn lay_out(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
-        let style = style_of(run.style);
+        let style = self.style_of(run.style);
+        let thin = self.thin(run.dark);
         let mut cells = std::mem::take(&mut self.found);
         cells.clear();
         for index in 0..run.cells.len() {
@@ -453,7 +501,7 @@ impl<B: FontBackend> Font<B> {
             // An emoji, and a glyph that the terminal draws, alone.
             if found.emoji || found.face == SPRITES {
                 let found = self.sequence(found, run.cluster(index));
-                if let Some(glyph) = self.draw(found) {
+                if let Some(glyph) = self.draw(found, thin) {
                     out.push(RunGlyph {
                         cell: index,
                         glyph,
@@ -480,10 +528,10 @@ impl<B: FontBackend> Font<B> {
                 .map_or(run.text.len(), |cell| cell.start as usize);
             let text = &run.text[start..stop];
             if self.needs_shaping(text, end - index) {
-                self.shape_cells(run, index, end, found, text, out);
+                self.shape_cells(run, (index, end), found, text, thin, out);
             } else {
                 for (cell, found) in cells.iter().enumerate().take(end).skip(index) {
-                    if let Some(glyph) = found.and_then(|found| self.draw(found)) {
+                    if let Some(glyph) = found.and_then(|found| self.draw(found, thin)) {
                         out.push(RunGlyph {
                             cell,
                             glyph,
@@ -511,16 +559,17 @@ impl<B: FontBackend> Font<B> {
     }
 
     /// Shapes `text`, the clusters of the cells of `run` from `first` to
-    /// `end`, in `found`'s face, and appends its glyphs to `out`, each at
+    /// `end`, in `found`'s face, and appends its glyphs to `out`, of thin
+    /// strokes when `thin`, each at
     /// the cell where its cluster starts, moved from that cell's pen as the
     /// shaping moves it from the cluster's.
     fn shape_cells(
         &mut self,
         run: &Run<'_>,
-        first: usize,
-        end: usize,
+        (first, end): (usize, usize),
         found: Found,
         text: &str,
+        thin: bool,
         out: &mut Vec<RunGlyph>,
     ) {
         let features = Features {
@@ -552,7 +601,7 @@ impl<B: FontBackend> Font<B> {
                 glyph: glyph.glyph,
                 ..found
             };
-            if let Some(atlas) = self.draw(drawn) {
+            if let Some(atlas) = self.draw(drawn, thin) {
                 out.push(RunGlyph {
                     cell,
                     glyph: atlas,
@@ -755,11 +804,6 @@ impl<B: FontBackend> GlyphSource for Font<B> {
     }
 }
 
-/// The style's index: bold its first bit, italic its second.
-fn style_of(style: &lokyr_vt_core::page::Style) -> usize {
-    usize::from(style.bold) | usize::from(style.italic) << 1
-}
-
 /// The glyph of `character` in `face`, which the backend gives once.
 fn glyph_of<B: FontBackend>(
     ids: &mut FastMap<(FaceId, char), Option<GlyphId>>,
@@ -792,7 +836,7 @@ fn texture(format: BitmapFormat) -> Texture {
 mod tests {
     use std::collections::HashMap;
 
-    use lokyr_text_core::{Bitmap, FaceInfo, FaceMetrics, Features, ShapedGlyph};
+    use lokyr_text_core::{Bitmap, FaceInfo, FaceMetrics, Features, ShapedGlyph, ThinStrokes};
     use lokyr_vt_core::page::Style;
 
     use super::*;
@@ -820,6 +864,7 @@ mod tests {
         fallbacks: usize,
         asked: Vec<String>,
         shapings: usize,
+        rendered: Vec<(FaceId, u16, Rendering)>,
     }
 
     fn is_cjk(character: char) -> bool {
@@ -959,9 +1004,11 @@ mod tests {
             glyph: GlyphId,
             size: f32,
             synthesis: Synthesis,
+            rendering: Rendering,
         ) -> Bitmap {
             *self.drawn.entry((face, glyph.0)).or_default() += 1;
             self.synthesized.insert((face, glyph.0), synthesis);
+            self.rendered.push((face, glyph.0, rendering));
             let side = size as u32 / 2;
             Bitmap {
                 format: BitmapFormat::Gray,
@@ -979,6 +1026,7 @@ mod tests {
             text,
             style,
             wide: false,
+            dark: false,
         }
     }
 
@@ -1101,6 +1149,7 @@ mod tests {
             text: &text,
             cells: &cells,
             style: &Style::DEFAULT,
+            dark: false,
         };
         let mut out = Vec::new();
         font.lay_out(&run, &mut out);
@@ -1215,6 +1264,104 @@ mod tests {
         font.glyph(&shown("\u{E0B0}", &Style::DEFAULT)).unwrap();
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x2500)), Some(&1));
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE0B0)), Some(&1));
+    }
+
+    /// Whether the fake backend drew `glyph` of `face` thin, at its last
+    /// drawing.
+    fn drawn_thin(font: &Font<Squares>, face: FaceId, glyph: u16) -> Option<bool> {
+        font.backend
+            .rendered
+            .iter()
+            .rev()
+            .find(|&&(drawn, code, _)| (drawn, code) == (face, glyph))
+            .map(|&(.., rendering)| rendering.thin)
+    }
+
+    #[test]
+    fn thin_strokes_follow_the_scale_and_the_background() {
+        let config = |strokes| FontConfig {
+            thin_strokes: strokes,
+            ..FontConfig::default()
+        };
+        let dark = |text: &'static str| CellText {
+            text,
+            style: &Style::DEFAULT,
+            wide: false,
+            dark: true,
+        };
+        // On a Retina display only, whatever the background.
+        let mut font = Font::new(Squares::default(), config(ThinStrokes::Retina), 1.0).unwrap();
+        font.glyph(&dark("a")).unwrap();
+        assert_eq!(drawn_thin(&font, FaceId(0), 0x61), Some(false));
+        font.set_scale(2.0);
+        font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+        assert_eq!(drawn_thin(&font, FaceId(0), 0x61), Some(true));
+        // On a dark background only: the atlas keeps both forms of a glyph.
+        let mut font = Font::new(Squares::default(), config(ThinStrokes::Dark), 1.0).unwrap();
+        let light = font.glyph(&shown("b", &Style::DEFAULT)).unwrap();
+        let thin = font.glyph(&dark("b")).unwrap();
+        assert_ne!(light.region, thin.region);
+        assert_eq!(font.glyph(&dark("b")), Some(thin));
+        assert_eq!(font.backend.drawn[&(FaceId(0), 0x62)], 2);
+        // Never, by default.
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        font.glyph(&dark("c")).unwrap();
+        assert_eq!(drawn_thin(&font, FaceId(0), 0x63), Some(false));
+    }
+
+    #[test]
+    fn without_antialiasing_the_glyphs_and_the_sprites_are_covered_or_not() {
+        let config = FontConfig {
+            antialias: false,
+            thin_strokes: ThinStrokes::Always,
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 2.0).unwrap();
+        font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+        let (.., rendering) = font.backend.rendered[0];
+        // Thin strokes need antialiasing.
+        assert_eq!(
+            rendering,
+            Rendering {
+                antialias: false,
+                thin: false
+            }
+        );
+        // An arc, which the terminal draws with its edges antialiased.
+        font.glyph(&shown("\u{256D}", &Style::DEFAULT)).unwrap();
+        let uploads = font.texture_updates();
+        let arc = uploads
+            .iter()
+            .filter_map(|update| match update {
+                TextureUpdate::Upload { data, .. } => Some(data),
+                TextureUpdate::Grown { .. } => None,
+            })
+            .next_back()
+            .unwrap();
+        assert!(arc.contains(&255));
+        assert!(arc.iter().all(|&pixel| pixel == 0 || pixel == 255));
+    }
+
+    #[test]
+    fn bold_and_italic_without_their_faces_take_the_regular_one() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        font.set_text(TextConfig {
+            bold: false,
+            italic: false,
+        });
+        let styled = Style {
+            bold: true,
+            italic: true,
+            ..Style::DEFAULT
+        };
+        font.glyph(&shown("x", &styled)).unwrap();
+        // Mono's regular face, not its bold one, and not slanted.
+        assert_eq!(font.backend.drawn.get(&(FaceId(1), 0x78)), None);
+        assert!(!font.backend.synthesized[&(FaceId(0), 0x78)].italic);
+        // With them, the bold face slanted, as Mono has no italic.
+        font.set_text(TextConfig::default());
+        font.glyph(&shown("x", &styled)).unwrap();
+        assert!(font.backend.synthesized[&(FaceId(1), 0x78)].italic);
     }
 
     #[test]
@@ -1352,6 +1499,7 @@ mod system {
             text,
             style: &Style::DEFAULT,
             wide: false,
+            dark: false,
         };
         font.glyph(&shown).map(|glyph| glyph.region.texture)
     }
@@ -1396,6 +1544,7 @@ mod system {
             text: &text,
             cells: &cells,
             style: &Style::DEFAULT,
+            dark: false,
         };
         let mut out = Vec::new();
         font.lay_out(&run, &mut out);
@@ -1435,6 +1584,7 @@ mod system {
                 text,
                 style: &Style::DEFAULT,
                 wide: true,
+                dark: false,
             };
             font.glyph(&shown).map(|glyph| glyph.region)
         };

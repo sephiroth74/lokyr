@@ -499,6 +499,7 @@ impl App {
             return;
         }
         drawing.font.begin_frame();
+        drawing.font.set_text(self.config.text);
         let cell = *drawing.font.cell();
         let cursor = shape.map(|shape| CursorLook {
             shape,

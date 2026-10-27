@@ -180,7 +180,13 @@ fn draw(family: &str, points: f32, style: Option<&str>, scale: f32) -> Result<Im
                 let Some(glyph) = backend.glyph(face.id, character) else {
                     continue;
                 };
-                let bitmap = backend.rasterize(face.id, glyph, pixels, face.synthesis);
+                let bitmap = backend.rasterize(
+                    face.id,
+                    glyph,
+                    pixels,
+                    face.synthesis,
+                    lokyr_text_core::Rendering::default(),
+                );
                 if bitmap.format != BitmapFormat::Gray {
                     continue;
                 }

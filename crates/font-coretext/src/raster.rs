@@ -3,7 +3,7 @@
 
 use std::ptr::NonNull;
 
-use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Synthesis};
+use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Rendering, Synthesis};
 use objc2_core_foundation::{CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication};
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGImageAlphaInfo, CGImageByteOrderInfo,
@@ -48,14 +48,16 @@ fn bold_stroke(size: CGFloat) -> CGFloat {
 }
 
 /// `glyph` of `font`, drawn as `synthesis` says, into a bitmap: of coverage,
-/// smoothed when `smoothing` is on, or of color, when the font's glyphs have
-/// colors of their own.
+/// antialiased as `rendering` says and smoothed when `smoothing` is on but
+/// for a thin glyph, or of color, when the font's glyphs have colors of
+/// their own, which keep their antialiasing.
 pub(crate) fn rasterize(
     font: &CTFont,
     glyph: GlyphId,
     size: CGFloat,
     synthesis: Synthesis,
     smoothing: bool,
+    rendering: Rendering,
 ) -> Bitmap {
     // SAFETY: a font that CoreText made.
     let color = unsafe { font.symbolic_traits() }.contains(CTFontSymbolicTraits::TraitColorGlyphs);
@@ -121,9 +123,13 @@ pub(crate) fn rasterize(
         return Bitmap::empty(format);
     };
     let drawing = Some(&*context);
-    CGContext::set_should_antialias(drawing, true);
+    let antialias = rendering.antialias || color;
+    CGContext::set_should_antialias(drawing, antialias);
     CGContext::set_allows_font_smoothing(drawing, true);
-    CGContext::set_should_smooth_fonts(drawing, smoothing && !color);
+    CGContext::set_should_smooth_fonts(
+        drawing,
+        smoothing && antialias && !color && !rendering.thin,
+    );
     CGContext::set_gray_fill_color(drawing, 1.0, 1.0);
     if stroke > 0.0 {
         CGContext::set_text_drawing_mode(drawing, CGTextDrawingMode::FillStroke);

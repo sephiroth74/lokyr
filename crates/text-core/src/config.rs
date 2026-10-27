@@ -14,6 +14,8 @@
 //! ligatures = true
 //! builtin-box-drawing = true     # box drawing, blocks and braille drawn to the pixel
 //! builtin-powerline = true       # the powerline symbols drawn to the pixel
+//! antialias = true
+//! thin-strokes = "never"         # never | always | retina | dark | retina-dark
 //! ```
 //!
 //! A value out of its range is an error of the value, which the reader of
@@ -63,6 +65,44 @@ pub struct FontConfig {
     /// Whether the powerline symbols, U+E0B0 to U+E0BF, are drawn to the
     /// pixel at the cell's size, rather than taken from the font.
     pub builtin_powerline: bool,
+    /// Whether the glyphs' edges are antialiased.
+    pub antialias: bool,
+    /// Where the glyphs are drawn of thinner strokes, without the darkening
+    /// that the system's font smoothing adds.
+    pub thin_strokes: ThinStrokes,
+}
+
+/// Where the glyphs are drawn of thin strokes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThinStrokes {
+    /// Nowhere: as the system smooths fonts.
+    #[default]
+    Never,
+    /// Everywhere.
+    Always,
+    /// On a display of a scale of 2 or more.
+    Retina,
+    /// On a cell whose background is darker than its text.
+    Dark,
+    /// On a cell whose background is darker than its text, on a display of
+    /// a scale of 2 or more.
+    RetinaDark,
+}
+
+impl ThinStrokes {
+    /// Whether a glyph is thin on a display of `scale`, on a background
+    /// darker than its text when `dark`.
+    pub fn thin(self, scale: f32, dark: bool) -> bool {
+        let retina = scale >= 2.0;
+        match self {
+            Self::Never => false,
+            Self::Always => true,
+            Self::Retina => retina,
+            Self::Dark => dark,
+            Self::RetinaDark => retina && dark,
+        }
+    }
 }
 
 impl Default for FontConfig {
@@ -80,6 +120,8 @@ impl Default for FontConfig {
             ligatures: true,
             builtin_box_drawing: true,
             builtin_powerline: true,
+            antialias: true,
+            thin_strokes: ThinStrokes::Never,
         }
     }
 }
@@ -237,6 +279,8 @@ mod tests {
             ligatures = false
             builtin-box-drawing = false
             builtin-powerline = false
+            antialias = false
+            thin-strokes = "retina-dark"
             "#,
         )
         .unwrap();
@@ -256,8 +300,33 @@ mod tests {
                 ligatures: false,
                 builtin_box_drawing: false,
                 builtin_powerline: false,
+                antialias: false,
+                thin_strokes: ThinStrokes::RetinaDark,
             }
         );
+    }
+
+    #[test]
+    fn thin_strokes_choose_by_the_scale_and_the_background() {
+        let cases = [
+            (ThinStrokes::Never, [false, false, false, false]),
+            (ThinStrokes::Always, [true, true, true, true]),
+            (ThinStrokes::Retina, [false, false, true, true]),
+            (ThinStrokes::Dark, [false, true, false, true]),
+            (ThinStrokes::RetinaDark, [false, false, false, true]),
+        ];
+        for (strokes, thin) in cases {
+            let found = [(1.0, false), (1.0, true), (2.0, false), (2.0, true)]
+                .map(|(scale, dark)| strokes.thin(scale, dark));
+            assert_eq!(found, thin, "{strokes:?}");
+        }
+        assert_eq!(
+            read("[font]\nthin-strokes = \"dark\"")
+                .unwrap()
+                .thin_strokes,
+            ThinStrokes::Dark
+        );
+        assert!(read("[font]\nthin-strokes = \"thin\"").is_err());
     }
 
     #[test]

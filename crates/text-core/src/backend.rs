@@ -95,6 +95,26 @@ pub struct Synthesis {
     pub italic: bool,
 }
 
+/// How a glyph's coverage is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Rendering {
+    /// Whether its edges are antialiased: without, each pixel is covered or
+    /// not.
+    pub antialias: bool,
+    /// Whether it is drawn without the darkening that the system's font
+    /// smoothing adds, of thinner strokes.
+    pub thin: bool,
+}
+
+impl Default for Rendering {
+    fn default() -> Self {
+        Self {
+            antialias: true,
+            thin: false,
+        }
+    }
+}
+
 /// The pixels of a bitmap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BitmapFormat {
@@ -174,12 +194,14 @@ pub trait FontBackend {
     );
 
     /// Draws `glyph` of `face` at `size` pixels, made heavier or slanted as
-    /// `synthesis` says.
+    /// `synthesis` says, its coverage as `rendering` says; a glyph of its own
+    /// colors keeps its antialiasing.
     fn rasterize(
         &mut self,
         face: FaceId,
         glyph: GlyphId,
         size: f32,
         synthesis: Synthesis,
+        rendering: Rendering,
     ) -> Bitmap;
 }

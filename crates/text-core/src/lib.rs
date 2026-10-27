@@ -19,11 +19,11 @@ pub mod sprite;
 
 pub use atlas::{Atlas, COLOR_MAX, Change, GRAY_MAX, Placement, START};
 pub use backend::{
-    Bitmap, BitmapFormat, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId,
+    Bitmap, BitmapFormat, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, Rendering,
     ShapedGlyph, Synthesis,
 };
 pub use cell::CellMetrics;
-pub use config::{Factor, FontConfig, Name, Size};
+pub use config::{Factor, FontConfig, Name, Size, ThinStrokes};
 pub use faces::{
     Face, FaceError, Faces, Resolved, choose as choose_faces, resolve as resolve_faces,
 };

@@ -11,4 +11,5 @@
 pub mod cursor;
 pub mod font;
 pub mod pane;
+pub mod text;
 pub mod theme;

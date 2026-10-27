@@ -8,6 +8,9 @@
 //! style = "SemiBold"
 //! size = 22
 //!
+//! [text]
+//! bold = true
+//!
 //! [cursor]
 //! shape = "bar"
 //!
@@ -22,10 +25,10 @@
 //! option-as-meta = "none"   # none | left | right | both
 //! ```
 //!
-//! Each section documents its keys: `[font]` is [`FontConfig`], `[cursor]`
-//! [`CursorConfig`], `[window]` [`WindowConfig`], and `[keyboard]`
-//! [`KeyboardConfig`]. Every key
-//! and every section can be left out, for its default. An error, of the
+//! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
+//! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
+//! and `[keyboard]` [`KeyboardConfig`]. Every key and every section can be
+//! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
 
@@ -37,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::cursor::CursorConfig;
+use lokyr_ui_core::text::TextConfig;
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 use toml_edit::{Document, Item, TableLike};
@@ -60,6 +64,8 @@ pub struct Config {
     version: Version,
     /// The `[font]` section.
     pub font: FontConfig,
+    /// The `[text]` section.
+    pub text: TextConfig,
     /// The `[cursor]` section.
     pub cursor: CursorConfig,
     /// The `[window]` section.
@@ -383,9 +389,10 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 4] {
+fn sections() -> [(&'static str, &'static [&'static str]); 5] {
     [
         ("font", keys::<FontConfig>()),
+        ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
@@ -813,7 +820,14 @@ mod tests {
     fn the_sections_keys_are_serde_s() {
         assert_eq!(
             keys::<Config>(),
-            ["config_version", "font", "cursor", "window", "keyboard"]
+            [
+                "config_version",
+                "font",
+                "text",
+                "cursor",
+                "window",
+                "keyboard"
+            ]
         );
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
@@ -830,7 +844,8 @@ mod tests {
         );
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
-        assert_eq!(font.len(), 12);
+        assert_eq!(font.len(), 14);
+        assert_eq!(keys::<TextConfig>(), ["bold", "italic"]);
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
         assert!(font.contains(&"builtin-powerline"));

@@ -32,6 +32,8 @@ pub struct CellText<'a> {
     pub style: &'a Style,
     /// Whether it takes two columns.
     pub wide: bool,
+    /// Whether its background is darker than its text.
+    pub dark: bool,
 }
 
 /// A run of a row's cells of one face's style, which a font may shape
@@ -44,6 +46,8 @@ pub struct Run<'a> {
     pub cells: &'a [RunCell],
     /// Their style: bold and italic choose the face.
     pub style: &'a Style,
+    /// Whether their backgrounds are darker than their text.
+    pub dark: bool,
 }
 
 impl<'a> Run<'a> {
@@ -93,6 +97,7 @@ pub trait Glyphs {
                 text: run.cluster(index),
                 style: run.style,
                 wide: cell.wide,
+                dark: run.dark,
             };
             if let Some(glyph) = self.glyph(&shown) {
                 out.push(RunGlyph {
@@ -122,27 +127,34 @@ struct RunBuilder {
     columns: Vec<u16>,
     colors: Vec<Color>,
     style: Style,
+    dark: bool,
     glyphs: Vec<RunGlyph>,
 }
 
 impl RunBuilder {
-    /// Whether a cell of `style` goes on with the run: of the same face's
-    /// style, bold and italic alike.
-    fn takes(&self, style: &Style) -> bool {
-        self.cells.is_empty() || (self.style.bold, self.style.italic) == (style.bold, style.italic)
+    /// Whether a cell of `style`, of a background darker than its text when
+    /// `dark`, goes on with the run: of the same face's style, bold and
+    /// italic alike, and as dark.
+    fn takes(&self, style: &Style, dark: bool) -> bool {
+        self.cells.is_empty()
+            || ((self.style.bold, self.style.italic) == (style.bold, style.italic)
+                && self.dark == dark)
     }
 
-    /// Adds a cell, at `column`, of `cluster`, in `color`.
+    /// Adds a cell, at `column`, of `cluster`, of `style`, in `color`, on a
+    /// background darker than it when `dark`.
     fn push(
         &mut self,
         column: u16,
         cluster: impl Iterator<Item = char>,
         wide: bool,
         style: &Style,
+        dark: bool,
         color: Color,
     ) {
         if self.cells.is_empty() {
             self.style = *style;
+            self.dark = dark;
         }
         self.cells.push(RunCell {
             start: u32::try_from(self.text.len()).unwrap_or(u32::MAX),
@@ -169,6 +181,7 @@ impl RunBuilder {
             text: &self.text,
             cells: &self.cells,
             style: &self.style,
+            dark: self.dark,
         };
         glyphs.run(&run, &mut self.glyphs);
         let baseline = i32::try_from(cell.baseline).unwrap_or(i32::MAX);
@@ -328,11 +341,19 @@ pub fn cells(
             if style.faint {
                 foreground = mix(foreground, background);
             }
-            if !run.takes(&style) {
+            let dark = luma(background) < luma(foreground);
+            if !run.takes(&style, dark) {
                 run.flush(&mut batch, row, cell, glyphs);
             }
             let cluster = std::iter::once(character).chain(grapheme.iter().copied());
-            run.push(column, cluster, width == Width::Wide, &style, foreground);
+            run.push(
+                column,
+                cluster,
+                width == Width::Wide,
+                &style,
+                dark,
+                foreground,
+            );
             if at == Some((column, row)) {
                 run.flush(&mut batch, row, cell, glyphs);
             }
@@ -407,6 +428,13 @@ fn luminance(color: Color) -> f64 {
     0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
 }
 
+/// The brightness of `color`, of its encoded components as Rec. 709 weighs
+/// them, which orders a cell's two colors as their luminance does, at a cost
+/// that each cell of each frame can take.
+fn luma(color: Color) -> f32 {
+    0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
+}
+
 /// The contrast ratio of two colors, as WCAG 2 defines it: from 1 to 21.
 fn contrast(a: Color, b: Color) -> f64 {
     let (a, b) = (luminance(a), luminance(b));
@@ -472,6 +500,7 @@ pub fn preedit(
             text: &text,
             style: &Style::DEFAULT,
             wide: width == 2,
+            dark: luma(background) < luma(foreground),
         };
         if let Some(found) = glyphs.glyph(&shown).filter(|found| found.region.width > 0) {
             batch.glyphs.push(CellGlyph {
@@ -742,9 +771,10 @@ mod tests {
         assert!(batch.glyphs.is_empty() && asked.is_empty());
     }
 
-    /// The runs that a layout asks for, by their text.
+    /// The runs that a layout asks for, by their text, and whether each was
+    /// on a background darker than its text.
     #[derive(Default)]
-    struct Runs(Vec<String>);
+    struct Runs(Vec<String>, Vec<bool>);
 
     impl Glyphs for Runs {
         fn glyph(&mut self, _: &CellText<'_>) -> Option<AtlasGlyph> {
@@ -753,6 +783,7 @@ mod tests {
 
         fn run(&mut self, run: &Run<'_>, _: &mut Vec<RunGlyph>) {
             self.0.push(run.text.to_owned());
+            self.1.push(run.dark);
         }
     }
 
@@ -773,6 +804,15 @@ mod tests {
         let mut runs = Runs::default();
         cells(&under, &cell(), 0, 0, None, Some(look), &mut runs);
         assert_eq!(runs.0, ["a", "-", ">b"]);
+        // Light text on the default dark background, then inverse text, dark
+        // on light, each a run.
+        let inverse = snapshot(20, 1, "ab\x1b[7mcd");
+        let mut runs = Runs::default();
+        cells(&inverse, &cell(), 0, 0, None, None, &mut runs);
+        assert_eq!(
+            (runs.0, runs.1),
+            (vec!["ab".to_owned(), "cd".to_owned()], vec![true, false])
+        );
         // A wide character is one cell of its run.
         let wide = snapshot(20, 1, "a\u{65E5}b");
         let mut runs = Runs::default();

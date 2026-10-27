@@ -1,4 +1,6 @@
-use lokyr_text_core::{BitmapFormat, CellMetrics, FaceError, FontConfig, Name, resolve_faces};
+use lokyr_text_core::{
+    BitmapFormat, CellMetrics, FaceError, FontConfig, Name, Rendering, resolve_faces,
+};
 
 use super::*;
 
@@ -254,7 +256,13 @@ fn the_cascade_draws_what_a_face_lacks() {
     // The emoji's face draws in color.
     let emoji = backend.fallback(menlo, "🦀").unwrap();
     let glyph = backend.glyph(emoji, '🦀').unwrap();
-    let bitmap = backend.rasterize(emoji, glyph, 26.0, Synthesis::default());
+    let bitmap = backend.rasterize(
+        emoji,
+        glyph,
+        26.0,
+        Synthesis::default(),
+        Rendering::default(),
+    );
     assert_eq!(bitmap.format, BitmapFormat::Rgba);
     assert!(bitmap.width > 0);
     // VS16 asks for the emoji of a character that has a text one.
@@ -373,7 +381,7 @@ fn glyph(
     let glyph = backend
         .glyph(face, character)
         .expect("the face has the character");
-    backend.rasterize(face, glyph, pixels, synthesis)
+    backend.rasterize(face, glyph, pixels, synthesis, Rendering::default())
 }
 
 fn total(bitmap: &Bitmap) -> u64 {
@@ -701,7 +709,7 @@ fn a_synthesized_bold_keeps_its_corners_within_its_bitmap() {
     };
     for character in ['M', '^', 'W'] {
         let glyph = backend.glyph(face, character).unwrap();
-        let bitmap = backend.rasterize(face, glyph, 96.0, bold);
+        let bitmap = backend.rasterize(face, glyph, 96.0, bold, Rendering::default());
         let (width, height) = (bitmap.width as usize, bitmap.height as usize);
         let at = |x: usize, y: usize| bitmap.data[y * width + x];
         let edges = (0..width)
@@ -709,4 +717,39 @@ fn a_synthesized_bold_keeps_its_corners_within_its_bitmap() {
             .chain((0..height).flat_map(|y| [at(0, y), at(width - 1, y)]));
         assert!(edges.into_iter().all(|pixel| pixel == 0), "{character}");
     }
+}
+
+/// The coverage of Menlo's `m` at 26 pixels, smoothed as macOS smooths
+/// fonts, drawn as `rendering` says: its pixels.
+fn menlo_m(rendering: Rendering) -> Vec<u8> {
+    let mut backend = CoreText::with_font_smoothing(true);
+    let face = regular(&mut backend, "Menlo");
+    let glyph = backend.glyph(face, 'm').unwrap();
+    backend
+        .rasterize(face, glyph, 26.0, Synthesis::default(), rendering)
+        .data
+}
+
+#[test]
+fn without_antialiasing_each_pixel_is_covered_or_not() {
+    let aliased = menlo_m(Rendering {
+        antialias: false,
+        thin: false,
+    });
+    assert!(aliased.contains(&255));
+    assert!(aliased.iter().all(|&pixel| pixel == 0 || pixel == 255));
+    let smooth = menlo_m(Rendering::default());
+    assert!(smooth.iter().any(|&pixel| pixel != 0 && pixel != 255));
+}
+
+#[test]
+fn a_thin_glyph_covers_less_than_a_smoothed_one() {
+    let total = |pixels: Vec<u8>| pixels.iter().map(|&pixel| u32::from(pixel)).sum::<u32>();
+    let smoothed = total(menlo_m(Rendering::default()));
+    let thin = total(menlo_m(Rendering {
+        antialias: true,
+        thin: true,
+    }));
+    // Font smoothing adds about a third of coverage.
+    assert!(thin * 5 < smoothed * 4, "thin {thin}, smoothed {smoothed}");
 }
