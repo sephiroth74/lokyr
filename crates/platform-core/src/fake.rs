@@ -32,6 +32,8 @@ pub struct FakeWindow {
     pub text_area: Option<(Point, Size)>,
     /// Its backdrop, when it is translucent.
     pub translucent: Option<Backdrop>,
+    /// Whether the app asked for the pointer's moves without a button.
+    pub mouse_moves: bool,
 }
 
 /// An alert that is open, until a test answers it.
@@ -279,6 +281,7 @@ impl Platform for Fake {
                 frame_requested: false,
                 text_area: None,
                 translucent: None,
+                mouse_moves: false,
             },
         );
         Ok(id)
@@ -360,6 +363,12 @@ impl Platform for Fake {
 
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta = (left, right);
+    }
+
+    fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.mouse_moves = track;
+        }
     }
 
     /// Fails for a file that does not exist, as a backend fails to read it.

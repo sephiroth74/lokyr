@@ -1,7 +1,7 @@
 //! The platform's keys, as the terminal's encoder takes them.
 
 use lokyr_kernel::config::OptionAsMeta;
-use lokyr_platform_core::{KeyCode, KeyEvent, KeyState};
+use lokyr_platform_core::{KeyCode, KeyEvent, KeyState, Modifiers};
 use lokyr_vt_core::input::{self, Key, KeyAction, KeyOptions, Keypad, Media, ModifierKey, Mods};
 
 /// The key options of `option_as_meta`: which Option keys act as Meta.
@@ -23,19 +23,24 @@ pub(crate) fn terminal_key(event: &KeyEvent) -> Option<input::KeyEvent<'_>> {
             KeyState::Repeated => KeyAction::Repeat,
             KeyState::Released => KeyAction::Release,
         },
-        mods: Mods {
-            shift: event.mods.shift,
-            control: event.mods.control,
-            left_alt: event.mods.left_alt,
-            right_alt: event.mods.right_alt,
-            super_key: event.mods.super_key,
-            caps_lock: event.mods.caps_lock,
-            ..Mods::NONE
-        },
+        mods: mods(event.mods),
         text: &event.text,
         unmodified: &event.unmodified,
         base_layout: event.code.base_layout(),
     })
+}
+
+/// The platform's modifiers, as the encoder takes them.
+pub(crate) fn mods(mods: Modifiers) -> Mods {
+    Mods {
+        shift: mods.shift,
+        control: mods.control,
+        left_alt: mods.left_alt,
+        right_alt: mods.right_alt,
+        super_key: mods.super_key,
+        caps_lock: mods.caps_lock,
+        ..Mods::NONE
+    }
 }
 
 /// The encoder's key for `event`'s: a key that types a character takes the

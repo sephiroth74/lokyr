@@ -180,6 +180,11 @@ pub trait Platform {
     /// or, with `None`, keeps the window opaque, as it opens.
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>);
 
+    /// Whether the pointer's moves over `window` with no button held come
+    /// as [`WindowEvent::MouseMoved`]: not as it opens, as each move would
+    /// wake the app. Moves with a button held always come.
+    fn track_mouse_moves(&mut self, window: WindowId, track: bool);
+
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a
     /// dead key that Option makes does not compose.

@@ -11,9 +11,9 @@ use std::time::{Duration, Instant};
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::config::{AppConfig, Config};
 use lokyr_platform_core::{
-    AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform,
-    Point, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Modifiers,
+    MouseButton, Platform, Point, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TimerId,
+    WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
@@ -23,10 +23,13 @@ use lokyr_ui_core::cursor::{self, Blink};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
+use lokyr_vt_core::input::{MouseAction, MouseEvent, Wheel};
+use lokyr_vt_core::terminal::{MouseEncoding, MouseTracking, Scroll};
 
 use crate::environment::{self, Environment};
 use crate::icon::Icons;
 use crate::keys;
+use crate::mouse::{self, Mouse, Pointer};
 #[cfg(test)]
 use crate::pane::RESIZE_PACE;
 use crate::pane::{Exited, Grid, Pane};
@@ -152,6 +155,11 @@ struct Window {
     blinking: bool,
     /// The backdrop that the platform has for it, while it is translucent.
     backdrop: Option<Backdrop>,
+    /// The mouse over it.
+    mouse: Mouse,
+    /// Whether the platform tells the pointer's moves without a button, as
+    /// a program asked for them.
+    mouse_moves: bool,
 }
 
 impl Window {
@@ -164,6 +172,8 @@ impl Window {
             blink: Blink::new(now),
             blinking: false,
             backdrop: None,
+            mouse: Mouse::default(),
+            mouse_moves: false,
         }
     }
 }
@@ -288,6 +298,11 @@ impl App {
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
+        for state in self.windows.values() {
+            state
+                .pane
+                .set_scroll_on_output(self.config.scrollback.scroll_on_output);
+        }
         if icon_changed {
             self.show_icon(platform);
         }
@@ -327,6 +342,141 @@ impl App {
         }
     }
 
+    /// Where `position` is in the cells of `window`.
+    fn pointer(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<Pointer> {
+        let state = self.windows.get(&window)?;
+        let scale = platform.window_size(window)?.scale;
+        let padding = self.padding(scale);
+        Some(mouse::pointer(position, scale, padding, state.pane.grid()))
+    }
+
+    /// A button of the mouse went down or up over `window`: the program
+    /// learns of it, as its mouse modes have it. Shift keeps the mouse for
+    /// the terminal, which selects with it.
+    fn mouse_button(
+        &mut self,
+        platform: &dyn Platform,
+        window: WindowId,
+        button: MouseButton,
+        pressed: bool,
+        position: Point,
+        mods: Modifiers,
+    ) {
+        let Some(button) = mouse::button(button).filter(|_| !mods.shift) else {
+            return;
+        };
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if state.pane.is_kept() {
+            return;
+        }
+        let action = if pressed {
+            state.mouse.press(button);
+            MouseAction::Press(button)
+        } else if state.mouse.release(button) {
+            MouseAction::Release(button)
+        } else {
+            return;
+        };
+        state.mouse.moved(pointer, true);
+        state.pane.mouse(&mouse_event(action, mods, pointer));
+    }
+
+    /// The pointer moved over `window`: a program that asked learns of it,
+    /// once a cell, or a pixel for reports in pixels.
+    fn mouse_moved(
+        &mut self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+        mods: Modifiers,
+    ) {
+        if mods.shift {
+            return;
+        }
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(modes) = state.pane.input_modes().filter(|_| !state.pane.is_kept()) else {
+            return;
+        };
+        if modes.mouse_tracking == MouseTracking::None {
+            return;
+        }
+        let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
+        if state.mouse.moved(pointer, pixels) {
+            let action = MouseAction::Motion(state.mouse.held());
+            state.pane.mouse(&mouse_event(action, mods, pointer));
+        }
+    }
+
+    /// The wheel or the trackpad scrolled over `window`, by `scroll`'s delta
+    /// in its phase: each whole step goes to a program that takes the
+    /// wheel, as the cursor keys on the alternate screen; otherwise, and
+    /// with Shift, it moves the view through the scrollback.
+    fn scroll(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (delta, phase): (ScrollDelta, Option<ScrollPhase>),
+        position: Point,
+        mods: Modifiers,
+    ) {
+        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+            return;
+        };
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let row_points = f64::from(state.pane.grid().cell_height) / scale;
+        let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        let to_program = !mods.shift && !state.pane.is_kept();
+        let mut view: i64 = 0;
+        let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
+        for _ in 0..up.unsigned_abs() {
+            let event = mouse_event(MouseAction::Wheel(wheel), mods, pointer);
+            if !(to_program && state.pane.mouse(&event)) {
+                view += i64::from(up.signum());
+            }
+        }
+        if to_program {
+            let wheel = if across > 0 {
+                Wheel::Left
+            } else {
+                Wheel::Right
+            };
+            for _ in 0..across.unsigned_abs() {
+                state
+                    .pane
+                    .mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer));
+            }
+        }
+        if view != 0 {
+            let rows = usize::try_from(view.unsigned_abs()).unwrap_or(usize::MAX);
+            state.pane.scroll(if view > 0 {
+                Scroll::Up(rows)
+            } else {
+                Scroll::Down(rows)
+            });
+            platform.request_frame(window);
+        }
+    }
+
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let attributes = WindowAttributes {
             title: "Lokyr".to_owned(),
@@ -348,6 +498,7 @@ impl App {
                     colors,
                     platform.waker(),
                 );
+                pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
                 self.windows
                     .insert(window, Window::new(surface, pane, focused, Instant::now()));
                 self.draw(platform, window, size);
@@ -529,6 +680,16 @@ impl App {
         // Output starts the cursor blinking again, on, as a key does.
         if state.pane.update() {
             state.blink.restart(now);
+        }
+        // The pointer's moves without a button wake the app only for a
+        // program that asked for them all.
+        let moves = state
+            .pane
+            .input_modes()
+            .is_some_and(|modes| modes.mouse_tracking == MouseTracking::AnyEvent);
+        if moves != state.mouse_moves {
+            platform.track_mouse_moves(window, moves);
+            state.mouse_moves = moves;
         }
         // The input method's candidates go at the cursor's cell.
         let at = state.pane.snapshot().cursor().position;
@@ -801,9 +962,38 @@ impl Handler for App {
                 }
                 platform.request_frame(window);
             }
+            WindowEvent::MouseButton {
+                button,
+                pressed,
+                position,
+                mods,
+                ..
+            } => self.mouse_button(platform, window, button, pressed, position, mods),
+            WindowEvent::MouseMoved { position, mods } => {
+                self.mouse_moved(platform, window, position, mods);
+            }
+            WindowEvent::Scroll {
+                delta,
+                phase,
+                position,
+                mods,
+                ..
+            } => self.scroll(platform, window, (delta, phase), position, mods),
             WindowEvent::CloseRequested => self.close(platform, window),
             _ => {}
         }
+    }
+}
+
+/// The terminal's mouse event of `action`, with `mods`, at `pointer`.
+fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseEvent {
+    MouseEvent {
+        action,
+        mods: keys::mods(mods),
+        col: pointer.col,
+        row: pointer.row,
+        x: pointer.x,
+        y: pointer.y,
     }
 }
 
@@ -1337,6 +1527,193 @@ mod tests {
         let shown = resources.display().to_string();
         run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == shown);
         let _ = std::fs::remove_dir_all(resources);
+    }
+
+    /// The point inside the cell at `col` and `row` of a window without
+    /// padding, whose columns are 4 points wide and rows 8 high.
+    fn cell(col: u16, row: u16) -> Point {
+        Point {
+            x: 4.0 * f64::from(col) + 1.0,
+            y: 8.0 * f64::from(row) + 1.0,
+        }
+    }
+
+    fn press(button: MouseButton, pressed: bool, at: Point, mods: Modifiers) -> WindowEvent {
+        WindowEvent::MouseButton {
+            button,
+            pressed,
+            position: at,
+            mods,
+            clicks: 1,
+        }
+    }
+
+    fn wheel(delta: ScrollDelta, mods: Modifiers) -> WindowEvent {
+        WindowEvent::Scroll {
+            delta,
+            phase: None,
+            momentum: false,
+            position: cell(0, 0),
+            mods,
+        }
+    }
+
+    const SHIFT: Modifiers = Modifiers {
+        shift: true,
+        ..Modifiers::NONE
+    };
+
+    /// A program that turns the mouse's tracking on with `modes`, says
+    /// `ready`, and shows what it reads, in raw mode.
+    fn reader(modes: &str) -> Program {
+        shell(&format!(
+            "stty raw -echo; printf '{modes}'; echo ready; cat -v"
+        ))
+    }
+
+    /// The app without padding, its window running `program`, once it
+    /// shows `ready`.
+    fn started_with(program: Program) -> (Fake, App, WindowId) {
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window)
+                .iter()
+                .any(|line| line.contains("ready"))
+        });
+        (fake, app, window)
+    }
+
+    fn shows(app: &App, window: WindowId, text: &str) -> bool {
+        screen(app, window).iter().any(|line| line.contains(text))
+    }
+
+    #[test]
+    fn a_click_reaches_a_program_that_tracks_the_mouse_but_with_shift() {
+        let (mut fake, mut app, window) = started_with(reader("\\033[?1000h\\033[?1006h"));
+        // Shift keeps the click for the terminal.
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, true, cell(2, 1), SHIFT),
+        );
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, false, cell(2, 1), SHIFT),
+        );
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, true, cell(4, 2), Modifiers::NONE),
+        );
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, false, cell(4, 2), Modifiers::NONE),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[<0;5;3M^[[<0;5;3m")
+        });
+        assert!(!shows(&app, window, ";3;2"), "{:?}", screen(&app, window));
+    }
+
+    #[test]
+    fn the_wheel_moves_the_view_through_the_scrollback() {
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), shell("seq 1 100; echo ready; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        let offset = |app: &App| app.windows[&window].pane.snapshot().offset();
+        fake.send(
+            &mut app,
+            window,
+            wheel(ScrollDelta::Lines { x: 0.0, y: 3.0 }, Modifiers::NONE),
+        );
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 3);
+        // A trackpad's points, by rows of 8: a row and a half down, and the
+        // half that makes a row with the next.
+        let points = |y| wheel(ScrollDelta::Points { x: 0.0, y }, Modifiers::NONE);
+        fake.send(&mut app, window, points(-12.0));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 2);
+        fake.send(&mut app, window, points(-4.0));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 1);
+        // Shift turns a mouse's wheel sideways, which still scrolls the view.
+        fake.send(
+            &mut app,
+            window,
+            wheel(ScrollDelta::Lines { x: 2.0, y: 0.0 }, SHIFT),
+        );
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 3);
+    }
+
+    #[test]
+    fn the_wheel_goes_to_a_program_that_takes_it_but_with_shift() {
+        let (mut fake, mut app, window) = started_with(reader("\\033[?1000h\\033[?1006h"));
+        let up = ScrollDelta::Lines { x: 0.0, y: 1.0 };
+        fake.send(&mut app, window, wheel(up, Modifiers::NONE));
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[<64;1;1M")
+        });
+        // With Shift, the view moves, without the program.
+        fake.send(&mut app, window, wheel(up, SHIFT));
+        let offset = |app: &App| app.windows[&window].pane.snapshot().offset();
+        // The screen has no scrollback yet: the view stays, and the program
+        // learns nothing more, a while after.
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert_eq!(offset(&app), 0);
+        assert_eq!(
+            screen(&app, window).concat().matches("^[[<").count(),
+            1,
+            "{:?}",
+            screen(&app, window)
+        );
+    }
+
+    #[test]
+    fn the_wheel_sends_the_cursor_keys_on_the_alternate_screen() {
+        let (mut fake, mut app, window) = started_with(reader("\\033[?1049h"));
+        let down = ScrollDelta::Lines { x: 0.0, y: -2.0 };
+        fake.send(&mut app, window, wheel(down, Modifiers::NONE));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[B^[[B"));
+    }
+
+    #[test]
+    fn moves_come_for_a_program_that_asked_for_them_once_a_cell() {
+        let (mut fake, mut app, window) = started_with(reader("\\033[?1003h\\033[?1006h"));
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.window(window).unwrap().mouse_moves
+        });
+        for at in [cell(1, 0), Point { x: 6.0, y: 2.0 }, cell(3, 0)] {
+            let event = WindowEvent::MouseMoved {
+                position: at,
+                mods: Modifiers::NONE,
+            };
+            fake.send(&mut app, window, event);
+        }
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[<35;4;1M")
+        });
+        // The second move, in the first's cell, reported nothing.
+        let shown = screen(&app, window).concat();
+        assert_eq!(shown.matches("^[[<35;").count(), 2, "{shown:?}");
+        assert!(shown.contains("^[[<35;2;1M^[[<35;4;1M"), "{shown:?}");
+    }
+
+    #[test]
+    fn the_config_s_scroll_on_output_reaches_the_panes() {
+        let (mut fake, mut app, path) =
+            with_file("output", "[scrollback]\nscroll-on-output = true\n");
+        let window = fake.windows().next().unwrap();
+        assert!(app.windows[&window].pane.scroll_on_output());
+        std::fs::write(&path, "").unwrap();
+        change(&mut fake, &mut app);
+        assert!(!app.windows[&window].pane.scroll_on_output());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
     /// The config of a window without padding.

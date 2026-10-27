@@ -6329,3 +6329,19 @@ fn the_widest_screen_prints_inserts_and_scrolls_at_its_last_columns() {
     assert_eq!(term.terminal.snapshot(&mut snapshot), 3);
     assert_eq!(snapshot.line(0).grapheme(u16::MAX - 1), ['\u{301}']);
 }
+
+#[test]
+fn alternate_scroll_starts_as_the_options_say_and_again_after_a_full_reset() {
+    for on in [false, true] {
+        let options = Options {
+            alternate_scroll: on,
+            ..Options::default()
+        };
+        let mut term = Term::with(10, 4, options);
+        assert_eq!(term.terminal.input_modes().alternate_scroll, on);
+        term.feed(if on { "\x1b[?1007l" } else { "\x1b[?1007h" });
+        assert_eq!(term.terminal.input_modes().alternate_scroll, !on);
+        term.feed("\x1bc");
+        assert_eq!(term.terminal.input_modes().alternate_scroll, on, "RIS");
+    }
+}

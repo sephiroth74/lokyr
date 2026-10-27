@@ -65,6 +65,9 @@ padding-y = 4
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 
+[scrollback]
+scroll-on-output = true              # true | false: output brings the view back down
+
 [keyboard]
 option-as-meta = "left"              # none | left | right | both
 
@@ -384,6 +387,24 @@ The radius of the blur of what shows through the background, in points.
 
 - The blur shows only below a `background-opacity` of 1.
 - macOS has no public way to blur what is behind a window: Lokyr asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
+
+## `[scrollback]`
+
+The scrollback holds the rows that went up past the screen's top. The wheel and the trackpad scroll through it, and with Shift held they scroll it even when a program takes the mouse.
+
+### `scroll-on-output`
+
+<sub>Platforms: macOS</sub>
+
+Whether a program's output brings a view scrolled up into the scrollback back down to the screen.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- With `false`, the view stays on the rows you scrolled to while the program goes on writing, so that you can read what scrolled past.
+- Typing, pasting and the input method's text always bring the view back down, whatever the key says; a modifier alone, as Shift, does not.
+- A new value applies at once, to the windows that are open too.
 
 ## `[keyboard]`
 

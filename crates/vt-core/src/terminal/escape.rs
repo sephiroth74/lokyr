@@ -159,8 +159,8 @@ impl Terminal {
     /// programs set are measured against; the scrollback limits, the widths
     /// it was made with, the normalization, the `TERM`, the title and
     /// clipboard reports, the link schemes, the window's operations,
-    /// whether output scrolls the view to the screen, the cell size and the
-    /// theme. It keeps the working directory too, which
+    /// whether output scrolls the view to the screen, whether alternate
+    /// scroll starts on, the cell size and the theme. It keeps the working directory too, which
     /// describes the shell rather than the terminal, and what it knows of
     /// the window and the display.
     /// The bells that rang and the synchronized updates stay counted, and
@@ -184,6 +184,7 @@ impl Terminal {
             link_schemes: std::mem::take(&mut self.link_schemes),
             window_ops: self.window_ops,
             scroll_on_output: self.scroll_on_output,
+            alternate_scroll: self.configured_alternate_scroll,
         };
         let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,

@@ -21,6 +21,9 @@
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //!
+//! [scrollback]
+//! scroll-on-output = false  # whether output brings the view back down
+//!
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
 //!
@@ -30,7 +33,8 @@
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! `[keyboard]` [`KeyboardConfig`], and `[app]` [`AppConfig`]. Every key and every section can be
+//! `[scrollback]` [`ScrollbackConfig`], `[keyboard]` [`KeyboardConfig`],
+//! and `[app]` [`AppConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -73,6 +77,8 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
+    /// The `[scrollback]` section.
+    pub scrollback: ScrollbackConfig,
     /// The `[keyboard]` section.
     pub keyboard: KeyboardConfig,
     /// The `[app]` section.
@@ -100,6 +106,16 @@ impl Default for AppConfig {
             icon: Self::DEFAULT_ICON.to_owned(),
         }
     }
+}
+
+/// The `[scrollback]` section: the rows above the screen, and the view
+/// that scrolls through them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ScrollbackConfig {
+    /// Whether a program's output brings a view scrolled up back down to
+    /// the screen, as typing always does.
+    pub scroll_on_output: bool,
 }
 
 /// The `[keyboard]` section: how keys reach programs.
@@ -417,12 +433,13 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 6] {
+fn sections() -> [(&'static str, &'static [&'static str]); 7] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
+        ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
         ("app", keys::<AppConfig>()),
     ]
@@ -588,6 +605,9 @@ mod tests {
             background-opacity = 0.85
             background-blur = 20
 
+            [scrollback]
+            scroll-on-output = true
+
             [keyboard]
             option-as-meta = "left"
 
@@ -596,6 +616,8 @@ mod tests {
             "#,
         )
         .unwrap();
+        assert!(config.scrollback.scroll_on_output);
+        assert!(!Config::default().scrollback.scroll_on_output);
         assert_eq!(config.app.icon, "laguz");
         assert_eq!(Config::default().app.icon, AppConfig::DEFAULT_ICON);
         assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
@@ -860,10 +882,12 @@ mod tests {
                 "text",
                 "cursor",
                 "window",
+                "scrollback",
                 "keyboard",
                 "app"
             ]
         );
+        assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(keys::<AppConfig>(), ["icon"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));

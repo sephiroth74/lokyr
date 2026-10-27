@@ -14,6 +14,8 @@ mod icon;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
+mod mouse;
+#[cfg(target_os = "macos")]
 mod pane;
 #[cfg(target_os = "macos")]
 mod watch;

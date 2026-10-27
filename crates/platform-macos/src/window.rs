@@ -7,14 +7,16 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Ime, PixelSize, Point, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Backdrop, Ime, MouseButton, PixelSize, Point, ScrollDelta, ScrollPhase, Size, WindowAttributes,
+    WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSEvent, NSResponder, NSTextInputClient, NSTitlebarSeparatorStyle,
-    NSView, NSWindow, NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
+    NSBackingStoreType, NSColor, NSEvent, NSEventPhase, NSEventType, NSResponder,
+    NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSObject,
@@ -146,6 +148,11 @@ impl Window {
     /// keeps it opaque. The window, its view and the view's layer turn
     /// non-opaque together, as the window server composes the window with
     /// what is behind it only then.
+    /// Whether the pointer's moves without a button come to the view.
+    pub(crate) fn track_mouse_moves(&self, track: bool) {
+        self.ns_window.setAcceptsMouseMovedEvents(track);
+    }
+
     pub(crate) fn set_translucent(&self, backdrop: Option<Backdrop>) {
         let opaque = backdrop.is_none();
         self.view.ivars().opaque.set(opaque);
@@ -196,6 +203,21 @@ unsafe extern "C" {
     /// Blurs what is behind the non-opaque parts of `window`, by a radius
     /// of `radius` points; 0 for none.
     fn CGSSetWindowBackgroundBlurRadius(connection: isize, window: isize, radius: isize) -> i32;
+}
+
+/// Where a trackpad's gesture, or its momentum, is in `phase`; `None` for
+/// a wheel's step, which has no phase.
+fn scroll_phase(phase: NSEventPhase) -> Option<ScrollPhase> {
+    let has = |flag: NSEventPhase| phase.0 & flag.0 != 0;
+    if has(NSEventPhase::Began) || has(NSEventPhase::MayBegin) {
+        Some(ScrollPhase::Started)
+    } else if has(NSEventPhase::Changed) || has(NSEventPhase::Stationary) {
+        Some(ScrollPhase::Moved)
+    } else if has(NSEventPhase::Ended) || has(NSEventPhase::Cancelled) {
+        Some(ScrollPhase::Ended)
+    } else {
+        None
+    }
 }
 
 /// The size of a window's content, in points and in the pixels of its
@@ -270,6 +292,74 @@ define_class!(
         #[unsafe(method(flagsChanged:))]
         fn flags_changed(&self, event: &NSEvent) {
             self.post_key(event);
+        }
+
+        // SAFETY: AppKit's signature, for each of the mouse's buttons.
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: &NSEvent) {
+            self.post_button(event, true);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            self.post_button(event, false);
+        }
+
+        // SAFETY: AppKit's signature. The view takes the right button,
+        // which would otherwise open its contextual menu.
+        #[unsafe(method(rightMouseDown:))]
+        fn right_mouse_down(&self, event: &NSEvent) {
+            self.post_button(event, true);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(rightMouseUp:))]
+        fn right_mouse_up(&self, event: &NSEvent) {
+            self.post_button(event, false);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(otherMouseDown:))]
+        fn other_mouse_down(&self, event: &NSEvent) {
+            self.post_button(event, true);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(otherMouseUp:))]
+        fn other_mouse_up(&self, event: &NSEvent) {
+            self.post_button(event, false);
+        }
+
+        // SAFETY: AppKit's signature, for a move with no button held, which
+        // comes while the window accepts them.
+        #[unsafe(method(mouseMoved:))]
+        fn mouse_moved(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature, for each button held.
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(rightMouseDragged:))]
+        fn right_mouse_dragged(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(otherMouseDragged:))]
+        fn other_mouse_dragged(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature.
+        #[unsafe(method(scrollWheel:))]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            self.post_scroll(event);
         }
 
         // SAFETY: AppKit's signature: the layer that backs the view.
@@ -427,6 +517,67 @@ impl ContentView {
         if let Some(key) = keys::key_event(event) {
             self.post(WindowEvent::Key(key));
         }
+    }
+
+    /// Where `event` happened, from the top left corner of the view, in
+    /// points.
+    fn position(&self, event: &NSEvent) -> Point {
+        let local = self.convertPoint_fromView(event.locationInWindow(), None);
+        Point {
+            x: local.x,
+            // The view's own coordinates go up from its bottom edge.
+            y: self.bounds().size.height - local.y,
+        }
+    }
+
+    fn post_button(&self, event: &NSEvent, pressed: bool) {
+        // The left and the right buttons by the event's type, the others by
+        // their numbers, as the event's type names them all alike.
+        let button = match event.r#type() {
+            NSEventType::LeftMouseDown | NSEventType::LeftMouseUp => MouseButton::Left,
+            NSEventType::RightMouseDown | NSEventType::RightMouseUp => MouseButton::Right,
+            _ => match event.buttonNumber() {
+                2 => MouseButton::Middle,
+                3 => MouseButton::Back,
+                4 => MouseButton::Forward,
+                other => MouseButton::Other(u16::try_from(other).unwrap_or(u16::MAX)),
+            },
+        };
+        self.post(WindowEvent::MouseButton {
+            button,
+            pressed,
+            position: self.position(event),
+            mods: keys::modifiers(event.modifierFlags()),
+            clicks: u32::try_from(event.clickCount()).unwrap_or(0),
+        });
+    }
+
+    fn post_moved(&self, event: &NSEvent) {
+        self.post(WindowEvent::MouseMoved {
+            position: self.position(event),
+            mods: keys::modifiers(event.modifierFlags()),
+        });
+    }
+
+    fn post_scroll(&self, event: &NSEvent) {
+        // AppKit's deltas go toward the content's top and left edge when
+        // positive, natural scrolling applied.
+        let (x, y) = (event.scrollingDeltaX(), event.scrollingDeltaY());
+        let delta = if event.hasPreciseScrollingDeltas() {
+            ScrollDelta::Points { x, y }
+        } else {
+            ScrollDelta::Lines { x, y }
+        };
+        let momentum = event.momentumPhase();
+        let moving = momentum.0 != NSEventPhase::None.0;
+        let phase = scroll_phase(if moving { momentum } else { event.phase() });
+        self.post(WindowEvent::Scroll {
+            delta,
+            phase,
+            momentum: moving,
+            position: self.position(event),
+            mods: keys::modifiers(event.modifierFlags()),
+        });
     }
 
     /// The part `range` of the document that the input method reads, which
@@ -609,4 +760,22 @@ impl WindowDelegate {
 /// The window that a window's notification is about.
 fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
     notification.object()?.downcast::<NSWindow>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_gesture_s_phases_become_the_scroll_s() {
+        let phase = |flags: usize| scroll_phase(NSEventPhase(flags));
+        assert_eq!(phase(NSEventPhase::MayBegin.0), Some(ScrollPhase::Started));
+        assert_eq!(phase(NSEventPhase::Began.0), Some(ScrollPhase::Started));
+        assert_eq!(phase(NSEventPhase::Changed.0), Some(ScrollPhase::Moved));
+        assert_eq!(phase(NSEventPhase::Stationary.0), Some(ScrollPhase::Moved));
+        assert_eq!(phase(NSEventPhase::Ended.0), Some(ScrollPhase::Ended));
+        assert_eq!(phase(NSEventPhase::Cancelled.0), Some(ScrollPhase::Ended));
+        // A wheel's step has none.
+        assert_eq!(phase(NSEventPhase::None.0), None);
+    }
 }

@@ -7,9 +7,11 @@ use lokyr_kernel::config::CloseOnExit;
 use lokyr_platform_core::Waker;
 use lokyr_pty::{Exit, Program, Size};
 use lokyr_session::{Options, Session};
-use lokyr_vt_core::input::{KeyEvent, KeyOptions};
+use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{self, Colors, KeyboardFlags, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{
+    self, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
+};
 
 use crate::environment::Environment;
 
@@ -132,7 +134,11 @@ impl Pane {
             kept: false,
             through_login: matches!(program, Program::LoginShell),
         };
-        match Session::spawn(&Options::new(pty), move || waker.wake()) {
+        let mut options = Options::new(pty);
+        // The wheel scrolls programs of the alternate screen, as `less`, by
+        // the cursor keys, unless they say otherwise.
+        options.terminal.alternate_scroll = true;
+        match Session::spawn(&options, move || waker.wake()) {
             Ok(session) => {
                 {
                     let mut terminal = session.lock();
@@ -154,6 +160,11 @@ impl Pane {
             }
         }
         pane
+    }
+
+    /// The terminal's grid.
+    pub(crate) fn grid(&self) -> Grid {
+        self.grid
     }
 
     /// The screen, as the last frame copied it.
@@ -241,6 +252,45 @@ impl Pane {
     pub(crate) fn text(&self, text: &str) {
         if let Some(session) = &self.session {
             session.text(text);
+        }
+    }
+
+    /// Sends what the mouse's `event` sends, as the program's mouse modes
+    /// have it, and returns whether the program took it, rather than the
+    /// pane, which scrolls its view with the wheel.
+    pub(crate) fn mouse(&self, event: &MouseEvent) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.mouse(event))
+    }
+
+    /// The modes that the program set of what the mouse sends.
+    pub(crate) fn input_modes(&self) -> Option<InputModes> {
+        self.session
+            .as_ref()
+            .map(|session| session.lock().input_modes())
+    }
+
+    /// Scrolls the view, through the scrollback.
+    pub(crate) fn scroll(&self, scroll: Scroll) {
+        if let Some(session) = &self.session {
+            session.scroll(scroll);
+        }
+    }
+
+    /// Whether the program's output brings the view back to the screen.
+    #[cfg(test)]
+    pub(crate) fn scroll_on_output(&self) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.lock().scroll_on_output())
+    }
+
+    /// Sets whether the program's output brings the view back to the
+    /// screen.
+    pub(crate) fn set_scroll_on_output(&self, scroll: bool) {
+        if let Some(session) = &self.session {
+            session.lock().set_scroll_on_output(scroll);
         }
     }
 

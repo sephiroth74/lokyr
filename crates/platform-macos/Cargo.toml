@@ -118,6 +118,10 @@ name = "locales"
 harness = false
 
 [[test]]
+name = "mouse"
+harness = false
+
+[[test]]
 name = "translucency"
 harness = false
 

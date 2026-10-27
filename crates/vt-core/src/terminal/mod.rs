@@ -82,6 +82,10 @@ pub struct Options {
     /// scrollback, where input always does: off by default, so that the
     /// view stays where it was scrolled to.
     pub scroll_on_output: bool,
+    /// Whether alternate scroll (mode 1007) is on as the terminal starts,
+    /// and as a full reset makes it again: off by default, as xterm's
+    /// `alternateScroll` is.
+    pub alternate_scroll: bool,
 }
 
 impl Default for Options {
@@ -99,6 +103,7 @@ impl Default for Options {
                 .to_vec(),
             window_ops: false,
             scroll_on_output: false,
+            alternate_scroll: false,
         }
     }
 }
@@ -374,6 +379,8 @@ pub struct Terminal {
     /// The widths the terminal was made with, which RIS brings back after
     /// mode 2027 changed them.
     configured_widths: Widths,
+    /// Whether alternate scroll is on as the terminal starts.
+    configured_alternate_scroll: bool,
     /// What the terminal sends back to the program, such as replies to
     /// queries, for the embedder to write to the PTY.
     replies: Vec<u8>,
@@ -497,7 +504,10 @@ impl Terminal {
             origin: false,
             cursor_style: None,
             charsets: Charsets::default(),
-            input: InputModes::default(),
+            input: InputModes {
+                alternate_scroll: options.alternate_scroll,
+                ..InputModes::default()
+            },
             reverse_video: false,
             cursor_visible: true,
             cursor_blink: false,
@@ -513,6 +523,7 @@ impl Terminal {
             synchronized_output: false,
             synchronized_updates: 0,
             configured_widths: options.widths,
+            configured_alternate_scroll: options.alternate_scroll,
             replies: Vec::new(),
             reply_bytes: 0,
             term: options.term,

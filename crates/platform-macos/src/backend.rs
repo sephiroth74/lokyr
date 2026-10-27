@@ -332,6 +332,12 @@ impl Platform for Backend {
         self.option_as_meta.set((left, right));
     }
 
+    fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
+        if let Some(window) = self.windows.get(&window) {
+            window.track_mouse_moves(track);
+        }
+    }
+
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
         let image = match icon {
             Some(path) => {
