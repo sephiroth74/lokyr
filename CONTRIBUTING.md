@@ -37,7 +37,8 @@ Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you ne
 - `cargo deny`: the dependencies' licenses, advisories and sources;
 - `cargo xtask check-deps`: the [dependency rules](tools/xtask/deps-rules.toml), such as no networking in the app and no macOS crate in the platform-independent ones;
 - `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
-- `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve.
+- `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
+- `cargo xtask bundle`: the app's bundle, `target/Bolt.app`, signed ad hoc on a Mac without the project's Developer ID, or with the identity that `BOLT_SIGN_IDENTITY` names.
 
 ## The code
 

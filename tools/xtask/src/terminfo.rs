@@ -19,7 +19,7 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, Result, bail};
 
 /// The source, relative to the workspace root.
-const SOURCE: &str = "crates/vt-core/terminfo/xterm-bolt.terminfo";
+pub(crate) const SOURCE: &str = "crates/vt-core/terminfo/xterm-bolt.terminfo";
 
 /// The entry's name.
 const ENTRY: &str = "xterm-bolt";
@@ -59,7 +59,7 @@ fn workspace_root() -> PathBuf {
 /// directory already, so it compiles into a new directory, where the entry
 /// is checked, and the entry's files then move into `out`, past the other
 /// entries that `out` may hold.
-fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
+pub(crate) fn compile(source: &Path, out: &Path) -> Result<PathBuf> {
     fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
     remove_stale_staging(out);
     let staging = Staging(out.join(format!("{}{}", staging_prefix(), std::process::id())));

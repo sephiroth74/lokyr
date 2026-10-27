@@ -1,5 +1,6 @@
 //! Build automation for the Bolt workspace, run as `cargo xtask <task>`.
 
+mod bundle;
 mod check_comments;
 mod check_deps;
 mod check_links;
@@ -15,6 +16,7 @@ fn main() -> ExitCode {
             print_help();
             return ExitCode::SUCCESS;
         }
+        Some("bundle") => bundle::run(args),
         Some("check-comments") => check_comments::run(args),
         Some("check-deps") => check_deps::run(args),
         Some("check-links") => check_links::run(args),
@@ -36,6 +38,7 @@ fn print_help() {
     println!(
         "Usage: cargo xtask <task>\n\n\
          Tasks:\n  \
+         bundle                      build target/Bolt.app from the release binary, signed\n  \
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \

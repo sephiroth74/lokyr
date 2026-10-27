@@ -82,7 +82,11 @@ check-links:
     cargo xtask check-links
 
 # Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps check-comments check-links
+ci: lint build test check-linux deny check-deps check-comments check-links bundle
+
+# Build target/Bolt.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc.
+bundle:
+    cargo xtask bundle
 
 # Compile the terminfo entry xterm-bolt into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
@@ -389,7 +393,3 @@ _fuzz-run target seconds workers log flags:
 # Export the inputs of the parser's tests as fuzzing seeds.
 fuzz-seeds:
     BOLT_FUZZ_SEEDS="{{ justfile_directory() }}/fuzz/seeds/parser" cargo test --locked -p bolt-vt-core --lib parser::seeds::export_fuzz_seeds -- --ignored --exact
-
-# Build the signed app bundle (not implemented yet).
-bundle:
-    @echo "bundle: not implemented yet" >&2 && exit 1

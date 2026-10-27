@@ -40,6 +40,8 @@ jobs:
       - run: just clippy
       - run: just build
       - run: just test
+      # Signed ad hoc, as the runner has no Developer ID.
+      - run: just bundle
 
   linux:
     # Checks that give the same result on every platform, plus the tests of
