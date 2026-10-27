@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use lokyr_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
 use lokyr_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{self, ClipboardRequest, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{self, ClipboardRequest, Scroll, Snapshot, Terminal};
 
 use lock::FairMutex;
 use queue::Queue;
@@ -194,19 +194,28 @@ impl Session {
         self.pty.try_wait()
     }
 
-    /// Sends `bytes` to the program, as they are.
+    /// Sends `bytes` to the program, as they are, leaving the view where it
+    /// is.
     pub fn write(&self, bytes: impl Into<Vec<u8>>) {
         self.shared.queue.push(bytes.into());
     }
 
+    /// Scrolls the view of the terminal's primary screen, as
+    /// [`Terminal::scroll_viewport`] does.
+    pub fn scroll(&self, scroll: Scroll) {
+        self.lock().scroll_viewport(scroll);
+    }
+
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
-    /// have it, with the keyboard's `options`.
+    /// have it, with the keyboard's `options`. A key that sends something
+    /// brings the view back to the screen, as typing does.
     pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
         let mut bytes = Vec::new();
         {
-            let terminal = self.lock();
+            let mut terminal = self.lock();
             let flags = terminal.keyboard_flags();
             input::encode_key(event, &terminal.input_modes(), flags, options, &mut bytes);
+            typed(&mut terminal, &bytes);
         }
         self.write(bytes);
     }
@@ -243,18 +252,28 @@ impl Session {
     }
 
     /// Sends `text`, which an input method committed rather than a key
-    /// typed, as the kitty protocol's flags have it.
+    /// typed, as the kitty protocol's flags have it, and brings the view
+    /// back to the screen.
     pub fn text(&self, text: &str) {
         let mut bytes = Vec::new();
-        input::encode_text(text, self.lock().keyboard_flags(), &mut bytes);
+        {
+            let mut terminal = self.lock();
+            input::encode_text(text, terminal.keyboard_flags(), &mut bytes);
+            typed(&mut terminal, &bytes);
+        }
         self.write(bytes);
     }
 
     /// Pastes `text`, in one entry of the queue, so that no reply comes
-    /// between its brackets; the writer writes it in chunks.
+    /// between its brackets; the writer writes it in chunks. The view comes
+    /// back to the screen.
     pub fn paste(&self, text: &str) {
         let mut bytes = Vec::new();
-        input::encode_paste(text, &self.lock().input_modes(), &mut bytes);
+        {
+            let mut terminal = self.lock();
+            input::encode_paste(text, &terminal.input_modes(), &mut bytes);
+            typed(&mut terminal, &bytes);
+        }
         self.write(bytes);
     }
 
@@ -285,6 +304,15 @@ impl Session {
     #[cfg(test)]
     fn slices(&self) -> u64 {
         self.shared.slices.load(Ordering::Acquire)
+    }
+}
+
+/// Brings the view of `terminal` back to the screen for `bytes`, input
+/// that the user sent, if it sends anything: a modifier alone sends
+/// nothing, and leaves the view.
+fn typed(terminal: &mut Terminal, bytes: &[u8]) {
+    if !bytes.is_empty() {
+        terminal.scroll_viewport(Scroll::Bottom);
     }
 }
 
@@ -327,6 +355,9 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
         };
         let mut terminal = shared.terminal.lock_in_turn();
         parser.advance(&mut *terminal, &buffer[..n]);
+        if terminal.scroll_on_output() {
+            terminal.scroll_viewport(Scroll::Bottom);
+        }
         let replies = terminal.take_replies();
         let synchronized = terminal
             .synchronized_output()

@@ -158,8 +158,9 @@ impl Terminal {
     /// to 80; the width that the embedder gave, which the sizes that
     /// programs set are measured against; the scrollback limits, the widths
     /// it was made with, the normalization, the `TERM`, the title and
-    /// clipboard reports, the link schemes, the window's operations, the
-    /// cell size and the theme. It keeps the working directory too, which
+    /// clipboard reports, the link schemes, the window's operations,
+    /// whether output scrolls the view to the screen, the cell size and the
+    /// theme. It keeps the working directory too, which
     /// describes the shell rather than the terminal, and what it knows of
     /// the window and the display.
     /// The bells that rang and the synchronized updates stay counted, and
@@ -182,6 +183,7 @@ impl Terminal {
             rectangle_checksums: self.rectangle_checksums,
             link_schemes: std::mem::take(&mut self.link_schemes),
             window_ops: self.window_ops,
+            scroll_on_output: self.scroll_on_output,
         };
         let (bells, updates, replies, reply_bytes, cell_size) = (
             self.bells,

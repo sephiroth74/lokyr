@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
 
 use lokyr_pty::Program;
-use lokyr_vt_core::input::{Key, KeyAction, Mods};
+use lokyr_vt_core::input::{Key, KeyAction, ModifierKey, Mods};
 
 use super::*;
 use crate::queue::REPLY_BYTES;
@@ -209,6 +209,63 @@ fn keys_pastes_and_resizes_reach_the_program() {
     wait_for(&session, "the new size", |terminal| {
         shows(terminal, "size:30 100")
     });
+}
+
+/// A session whose program prints 60 lines, then `ready`, and waits for a
+/// line before it prints `more`; its terminal has 80 columns and 24 rows.
+fn scrolled_back(scroll_on_output: bool) -> Session {
+    let mut options = sh("seq 1 60; echo ready; read line; echo more; sleep 10");
+    options.terminal.scroll_on_output = scroll_on_output;
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
+    session.scroll(Scroll::Up(5));
+    assert_eq!(session.lock().viewport_offset(), 5);
+    session
+}
+
+#[test]
+fn input_brings_the_view_back_to_the_screen() {
+    let session = scrolled_back(false);
+    let key = |key, text| KeyEvent {
+        key,
+        action: KeyAction::Press,
+        mods: Mods::NONE,
+        text,
+        unmodified: text,
+        base_layout: None,
+    };
+    // A modifier alone sends nothing, and leaves the view.
+    session.key(
+        &key(Key::Modifier(ModifierKey::LeftShift), ""),
+        KeyOptions::default(),
+    );
+    assert_eq!(session.lock().viewport_offset(), 5);
+    session.key(&key(Key::Char('a'), "a"), KeyOptions::default());
+    assert_eq!(session.lock().viewport_offset(), 0);
+    session.scroll(Scroll::Up(5));
+    session.text("é");
+    assert_eq!(session.lock().viewport_offset(), 0);
+    session.scroll(Scroll::Up(5));
+    session.paste("x");
+    assert_eq!(session.lock().viewport_offset(), 0);
+}
+
+#[test]
+fn output_brings_the_view_back_only_when_the_option_says() {
+    for scroll_on_output in [false, true] {
+        let session = scrolled_back(scroll_on_output);
+        // A line that the program reads, written as it is, which leaves the
+        // view: the program's output, which it echoes too, comes next.
+        session.write(b"\n".to_vec());
+        wait_for(&session, "more", |terminal| shows(terminal, "more"));
+        let offset = session.lock().viewport_offset();
+        if scroll_on_output {
+            assert_eq!(offset, 0);
+        } else {
+            // The view keeps its rows, which the output pushed up.
+            assert!(offset > 5, "{offset}");
+        }
+    }
 }
 
 #[test]

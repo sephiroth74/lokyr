@@ -56,6 +56,11 @@ impl CompactPage {
         &self.page
     }
 
+    /// The page without its cells, to change its rows' metadata.
+    pub(crate) fn page_mut(&mut self) -> &mut Page {
+        &mut self.page
+    }
+
     /// The kept cells of row `y`: those up to its last that is not empty.
     pub(crate) fn cells(&self, y: u16) -> &[Cell] {
         let y = usize::from(y);

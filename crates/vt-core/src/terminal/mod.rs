@@ -20,6 +20,7 @@ mod reports;
 mod sgr;
 mod snapshot;
 mod terminfo;
+mod viewport;
 mod window;
 
 pub use charsets::{Charset, Charsets, Shift};
@@ -28,13 +29,14 @@ pub use colors::{Colors, SPECIAL_COLORS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use viewport::Scroll;
 pub use window::Window;
 
 use std::ops::Range;
 
 use crate::page::{
-    Cell, Content, Grow, PageList, Position, Rgb, RowFlag, Scrollback, Semantic, Style, StyleId,
-    Width,
+    Cell, Content, Grow, PageList, PinId, Position, Rgb, RowFlag, Scrollback, Semantic, Style,
+    StyleId, Width,
 };
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
@@ -76,6 +78,10 @@ pub struct Options {
     /// display, and ask where it is and how large the display is: off by
     /// default.
     pub window_ops: bool,
+    /// Whether output brings the view back to the screen from the
+    /// scrollback, where input always does: off by default, so that the
+    /// view stays where it was scrolled to.
+    pub scroll_on_output: bool,
 }
 
 impl Default for Options {
@@ -92,6 +98,7 @@ impl Default for Options {
                 .map(str::to_owned)
                 .to_vec(),
             window_ops: false,
+            scroll_on_output: false,
         }
     }
 }
@@ -443,6 +450,11 @@ pub struct Terminal {
     /// REP repeats.
     last_printed: Option<char>,
     bells: u64,
+    /// The first row of the primary screen's view, pinned, while the view
+    /// is above the screen; `None` while it shows the screen.
+    viewport: Option<PinId>,
+    /// Whether output brings the view back to the screen.
+    scroll_on_output: bool,
 }
 
 impl Terminal {
@@ -537,6 +549,8 @@ impl Terminal {
             cluster: None,
             last_printed: None,
             bells: 0,
+            viewport: None,
+            scroll_on_output: options.scroll_on_output,
         }
     }
 
@@ -594,6 +608,11 @@ impl Terminal {
     /// Makes the alternate screen, or the primary one, the active one. Each
     /// keeps its rows and its cursor.
     pub fn set_alternate_screen(&mut self, alternate: bool) {
+        // The alternate screen shows whole, and the view comes back to the
+        // primary one's screen with it.
+        if alternate {
+            self.set_viewport_offset(0);
+        }
         self.alternate_active = alternate;
         self.moved();
     }

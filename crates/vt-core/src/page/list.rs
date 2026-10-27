@@ -191,6 +191,11 @@ impl<'a> ListRow<'a> {
             _ => &[],
         }
     }
+    /// The row's page, warm or cold, and its cells as the page keeps them:
+    /// on a cold page, those up to its last that is not empty.
+    pub(crate) fn parts(self) -> (&'a Page, &'a [Cell]) {
+        (self.page, self.cells)
+    }
 }
 
 /// A slot of the slab.
@@ -444,6 +449,21 @@ impl PageList {
             }
             None
         })
+    }
+
+    /// Marks the row at `index` of the list as drawn, on a warm page or a
+    /// cold one: it is no longer [`RowFlag::Dirty`].
+    pub(crate) fn mark_drawn(&mut self, index: usize) {
+        let Some((node, row)) = self.node_at(index) else {
+            return;
+        };
+        let node = &mut self.nodes[node as usize];
+        let page = match (&mut node.page, &mut node.cold) {
+            (Some(page), _) => page,
+            (None, Some(cold)) => cold.page_mut(),
+            (None, None) => return,
+        };
+        page.row_mut(row).set(RowFlag::Dirty, false);
     }
 
     /// The node that holds the row at `index` of the list, and the row in
