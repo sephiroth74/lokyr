@@ -1416,6 +1416,107 @@ mod tests {
         assert!(app.windows[&window].blinking);
     }
 
+    /// A directory of the test's own, made empty.
+    fn directory(test: &str) -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("bolt-app-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    /// The startup lines of a shell whose prompt is as oh-my-posh draws it
+    /// with its shell integration: three lines of output above it, then a
+    /// first line computed once, as wide as the terminal, `left` and
+    /// `right` at its edges, and the input line, marked with OSC 133.
+    const PROMPT_OUTPUT: &str = "for n in 1 2 3; do echo \"output $n\"; done\n\
+        cols=$(stty size | cut -d' ' -f2)\n\
+        first=\"left$(printf '%*s' $((cols - 9)) '')right\"\n";
+
+    /// Drags the window of `app` through `widths`, in points, a step every
+    /// 8 ms, as a live resize does.
+    fn drag(fake: &mut Fake, app: &mut App, window: WindowId, widths: &[f64]) {
+        for pair in widths.windows(2) {
+            for step in 0..=20 {
+                let width = pair[0] + (pair[1] - pair[0]) * f64::from(step) / 20.0;
+                fake.send(app, window, WindowEvent::Resized(points(width, 500.0)));
+                let until = Instant::now() + Duration::from_millis(8);
+                run_until(fake, app, |_, _| Instant::now() > until);
+            }
+        }
+    }
+
+    /// Runs the shell that `command` starts through a drag from 200
+    /// columns to 75, 175 and 100, and waits for its screen to show
+    /// `expected`, its rows without their spaces at either end, and to keep
+    /// it a while.
+    fn prompt_through_a_drag(command: &str, expected: &[&str]) {
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), shell(command));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let trimmed = |app: &App| -> Vec<String> {
+            screen(app, window)
+                .iter()
+                .take(expected.len())
+                .map(|line| line.trim().to_owned())
+                .collect()
+        };
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window).iter().any(|line| line.starts_with('>'))
+        });
+        drag(&mut fake, &mut app, window, &[800.0, 300.0, 700.0, 400.0]);
+        run_until(&mut fake, &mut app, |_, app| trimmed(app) == expected);
+        let until = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > until);
+        assert_eq!(trimmed(&app), expected);
+    }
+
+    #[test]
+    fn a_zsh_prompt_draws_once_through_a_drag() {
+        let directory = directory("zsh-prompt");
+        let rc = format!(
+            r#"{PROMPT_OUTPUT}PROMPT=$'%{{\e]133;D;0\a\e]133;A\a%}}'"$first"$'\n> %{{\e]133;B\a%}}'
+preexec() {{ print -n '\e]133;C\a' }}
+print -z 'echo typed'
+"#
+        );
+        std::fs::write(directory.join(".zshrc"), rc).unwrap();
+        let zsh = format!("ZDOTDIR={} exec /bin/zsh -d -i", directory.display());
+        // The first line, of 200 columns, takes two rows at 100; zsh draws
+        // the prompt again, with what was typed, where the cleared one was.
+        let expected = [
+            "output 1",
+            "output 2",
+            "output 3",
+            "left",
+            "right",
+            "> echo typed",
+            "",
+        ];
+        prompt_through_a_drag(&zsh, &expected);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn a_bash_prompt_keeps_the_lines_that_bash_does_not_draw_again() {
+        let directory = directory("bash-prompt");
+        let rc = directory.join("rc");
+        let prompt = format!(
+            r#"{PROMPT_OUTPUT}PS1='\[\e]133;D;0\a\e]133;A;redraw=last\a\]'"$first"'\n> \[\e]133;B\a\]'
+"#
+        );
+        std::fs::write(&rc, prompt).unwrap();
+        let bash = format!(
+            "BASH_SILENCE_DEPRECATION_WARNING=1 exec /bin/bash --noprofile --rcfile {} -i",
+            rc.display()
+        );
+        // bash draws the last line again, and the first reflows.
+        let expected = ["output 1", "output 2", "output 3", "left", "right", ">", ""];
+        prompt_through_a_drag(&bash, &expected);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
     #[test]
     fn other_commands_do_nothing() {
         let (mut fake, mut app) = started();

@@ -33,7 +33,8 @@ pub use window::Window;
 use std::ops::Range;
 
 use crate::page::{
-    Cell, Content, Grow, PageList, Position, Rgb, Scrollback, Semantic, Style, StyleId, Width,
+    Cell, Content, Grow, PageList, Position, Rgb, RowFlag, Scrollback, Semantic, Style, StyleId,
+    Width,
 };
 use crate::parser::{Handler, Params, StringEnd};
 use crate::unicode::{Normalization, Segmenter, Widths};
@@ -108,6 +109,20 @@ pub struct Cursor {
     /// Printing reached the right margin: the cursor stays on the last
     /// column, and the next character goes to the next row first.
     pub pending_wrap: bool,
+}
+
+/// What a shell draws again of its prompt once the terminal's size
+/// changes, as `OSC 133 ; A`'s `redraw` option tells it: kitty's `0` and
+/// `1`, and Ghostty's `last`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Redraw {
+    /// The whole prompt, as zsh does: `redraw=1`, and the default.
+    #[default]
+    Whole,
+    /// Its last line alone, as bash does: `redraw=last`.
+    Last,
+    /// Nothing: `redraw=0`.
+    Nothing,
 }
 
 /// The shape of the cursor.
@@ -378,6 +393,8 @@ pub struct Terminal {
     link: osc::Link,
     /// The zone of the text printed next (OSC 133).
     zone: Semantic,
+    /// What the shell draws again of its prompt on a resize (OSC 133).
+    redraw: Redraw,
     /// The status of the last command that ended, as OSC 133's `D` tells
     /// it.
     command_status: Option<i32>,
@@ -496,6 +513,7 @@ impl Terminal {
             scrollback_limit,
             link: osc::Link::default(),
             zone: Semantic::Output,
+            redraw: Redraw::Whole,
             command_status: None,
             default_colors: Colors::default(),
             colors: Colors::default(),
@@ -634,10 +652,51 @@ impl Terminal {
         if (cols.max(2), rows.max(1)) == (self.cols, self.rows) {
             return;
         }
+        self.clear_prompt();
         self.resize_screens(cols, rows);
         self.given_cols = self.cols;
         let limit = self.scrollback_limit;
         self.primary.rows.set_scrollback_limit(limit);
+    }
+
+    /// Clears the prompt that the cursor is in, as semantic prompts mark it,
+    /// from the row where it starts to the bottom of the screen, before a
+    /// resize: the shell draws it again once it learns the new size, from
+    /// as many rows above the cursor as it took when the shell drew it,
+    /// which a reflow of the prompt would change, leaving the first rows of
+    /// a prompt that it made taller above the one drawn again. A shell that
+    /// draws the prompt's last line alone has the cursor's line cleared,
+    /// and one that draws nothing keeps its prompt, which reflows. Only the
+    /// primary screen's prompt, and one that starts on the screen, clears.
+    fn clear_prompt(&mut self) {
+        if self.alternate_active || self.zone == Semantic::Output {
+            return;
+        }
+        let start = {
+            let y = self.cursor().y;
+            let rows = &self.screen().rows;
+            let has = |y: u16, flag: RowFlag| {
+                let (page, row) = rows.screen_row(y);
+                page.row(row).has(flag)
+            };
+            match self.redraw {
+                Redraw::Whole => (0..=y).rev().find(|&y| has(y, RowFlag::PromptStart)),
+                // The first row of the cursor's line.
+                Redraw::Last => Some(
+                    (0..=y)
+                        .rev()
+                        .find(|&y| !has(y, RowFlag::Continuation))
+                        .unwrap_or(0),
+                ),
+                Redraw::Nothing => None,
+            }
+        };
+        let Some(start) = start else {
+            return;
+        };
+        for y in start..self.rows {
+            self.erase_in_row(y, 0..self.cols, false);
+        }
     }
 
     /// Sets the bytes that the primary screen's scrollback may take, as

@@ -3882,7 +3882,8 @@ fn reflow_moves_the_saved_cursor_and_pins_with_their_text() {
 #[test]
 fn reflow_keeps_the_prompt_mark_on_the_first_row_of_its_line() {
     let mut term = Term::new(6, 3);
-    term.feed("\x1b]133;A\x07$ abcdefgh");
+    // The command's output follows, so that the resize keeps the prompt.
+    term.feed("\x1b]133;A\x07$ abcdefgh\x1b]133;C\x07");
     term.terminal.resize(3, 3);
     let marks: Vec<_> = (0..3)
         .map(|y| term.row(y).has(RowFlag::PromptStart))
@@ -3892,6 +3893,81 @@ fn reflow_keeps_the_prompt_mark_on_the_first_row_of_its_line() {
     term.terminal.resize(12, 3);
     assert!(term.row(0).has(RowFlag::PromptStart));
     assert!(!term.row(1).has(RowFlag::PromptStart));
+}
+
+/// A terminal of 10 by 6 with a line of output, then a shell's prompt of
+/// two lines, the first as wide as the screen, marked with `a_mark`, and a
+/// command being typed.
+fn prompted(a_mark: &str) -> Term {
+    let mut term = Term::new(10, 6);
+    term.feed("out\r\n");
+    term.feed(format!(
+        "\x1b]133;{a_mark}\x07left-right\r\n> \x1b]133;B\x07ls"
+    ));
+    term
+}
+
+#[test]
+fn a_resize_clears_the_prompt_that_the_shell_draws_again() {
+    let mut term = prompted("A");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "", "", "", "", ""]);
+    // The cursor keeps its row, which the shell goes up from.
+    assert_eq!(term.cursor(), (4, 2, false));
+    assert!(term.row(1).has(RowFlag::PromptStart));
+    // The shell draws its prompt again, and a wider screen clears it again.
+    term.feed("\x1b[A\r\x1b[J\x1b]133;A\x07left-right\r\n> \x1b]133;B\x07ls");
+    assert_eq!(term.screen(), ["out", "left-", "right", "> ls", "", ""]);
+    term.terminal.resize(10, 6);
+    assert_eq!(term.screen(), ["out", "", "", "", "", ""]);
+    // Once the command runs, its output reflows as any does.
+    let mut term = prompted("A");
+    term.feed("\x1b]133;C\x07");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "left-", "right", "> ls", "", ""]);
+}
+
+#[test]
+fn the_redraw_option_tells_what_a_resize_clears() {
+    // Nothing, for a shell that draws nothing again.
+    let mut term = prompted("A;redraw=0");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "left-", "right", "> ls", "", ""]);
+    // The cursor's line alone, for a shell that draws its last line again.
+    let mut term = prompted("A;aid=7;redraw=last");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "left-", "right", "", "", ""]);
+    // An option holds until another `A` gives another, and an unknown one
+    // changes nothing.
+    let mut term = prompted("A;redraw=0");
+    term.feed("\x1b]133;C\x07\r\n\x1b]133;A;redraw=2\x07$ ");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "left-", "right", "> ls", "$", ""]);
+    term.feed("\x1b]133;A;redraw=1\x07$ ");
+    term.terminal.resize(10, 6);
+    assert_eq!(term.screen()[..4], ["out", "left-right", "> ls", ""]);
+    // A full reset forgets it.
+    let mut term = prompted("A;redraw=0");
+    term.feed("\x1bc\x1b]133;C\x07out\r\n\x1b]133;A\x07left-right\r\n> ");
+    term.terminal.resize(5, 6);
+    assert_eq!(term.screen(), ["out", "", "", "", "", ""]);
+}
+
+#[test]
+fn only_a_prompt_on_the_primary_screen_and_on_the_screen_clears() {
+    // The alternate screen's programs draw themselves again; the prompt
+    // under them reflows.
+    let mut term = prompted("A");
+    term.feed("\x1b[?1049h");
+    term.terminal.resize(5, 6);
+    term.feed("\x1b[?1049l");
+    assert_eq!(term.screen(), ["out", "left-", "right", "> ls", "", ""]);
+    // A prompt that starts in the scrollback stays, as the shell cannot
+    // go up to it.
+    let mut term = Term::new(10, 2);
+    term.feed("\x1b]133;A\x07one\r\ntwo\r\n> \x1b]133;B\x07ls");
+    term.terminal.resize(5, 2);
+    assert_eq!(term.screen(), ["two", "> ls"]);
 }
 
 #[test]

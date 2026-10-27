@@ -2,7 +2,7 @@
 //! embedder, besides text: titles, the working directory, notifications,
 //! progress and the tab's color.
 
-use super::{ClipboardRequest, ClipboardTarget, Terminal};
+use super::{ClipboardRequest, ClipboardTarget, Redraw, Terminal};
 use crate::page::{Rgb, RowFlag, Semantic};
 use crate::parser::StringEnd;
 
@@ -205,7 +205,10 @@ impl Terminal {
     /// OSC 133, FinalTerm's semantic prompts: `A` starts a prompt, which
     /// also marks its row, `B` the command that the user types, and `C`
     /// its output, as `D` ends the command, with its status when a number
-    /// follows. The text printed next is in that zone.
+    /// follows. The text printed next is in that zone. `A`'s `redraw`
+    /// option tells what the shell draws again of its prompt on a resize,
+    /// until another `A` tells otherwise: `1`, the whole prompt, as by
+    /// default; `last`, its last line; `0`, nothing.
     fn mark_prompt(&mut self, fields: &[u8]) {
         let mut fields = fields.split(|&byte| byte == b';');
         let kind = fields.next().unwrap_or_default();
@@ -219,6 +222,14 @@ impl Terminal {
         }
         self.zone = match kind {
             b"A" => {
+                for option in fields {
+                    self.redraw = match option.strip_prefix(b"redraw=") {
+                        Some(b"1") => Redraw::Whole,
+                        Some(b"last") => Redraw::Last,
+                        Some(b"0") => Redraw::Nothing,
+                        _ => continue,
+                    };
+                }
                 let y = self.cursor().y;
                 let (page, row) = self.screen_mut().rows.screen_row_mut(y);
                 page.row_mut(row).set(RowFlag::PromptStart, true);
