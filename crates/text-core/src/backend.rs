@@ -35,6 +35,9 @@ pub struct FaceInfo {
     /// `CaskaydiaCove NFM SemiBold` is of the SemiBold faces of CaskaydiaCove
     /// Nerd Font Mono. No face is when the name is the whole family's.
     pub in_group: bool,
+    /// Whether it is the face that the system gives for the family named
+    /// alone, which faces that tie for a style give way to.
+    pub preferred: bool,
 }
 
 /// What a face measures at a size, in pixels: the distances that go up from

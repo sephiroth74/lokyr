@@ -341,8 +341,9 @@ pub fn cells_with(
             .map(|selection| selection.colors)
     };
     // The cursor's cell is a run of its own, so that the text under it shows
-    // its own characters, as a ligature would not.
-    let at = batch.cursor.map(|cursor| (cursor.column, cursor.row));
+    // its own characters, as a ligature would not, in either phase of its
+    // blinking, so that the ligature does not join and split as it blinks.
+    let at = cursor_cell(snapshot).map(|(column, row, _)| (column, row));
     let mut run = RunBuilder::default();
     for row in 0..rows {
         let line = snapshot.line(row);
@@ -454,12 +455,22 @@ fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     let Some(&background) = batch.backgrounds.get(index) else {
         return;
     };
-    let glyph = batch
+    // The cell's glyphs, a base and its marks, come together, as its run
+    // laid them out; the cursor is most often low on the screen, near the
+    // end of the glyphs.
+    let under = |glyph: &CellGlyph| glyph.row == row && glyph.column == column;
+    let end = batch
         .glyphs
-        .iter_mut()
-        .find(|glyph| glyph.row == row && glyph.column == column);
-    let text = glyph
-        .as_ref()
+        .iter()
+        .rposition(under)
+        .map_or(0, |last| last + 1);
+    let start = batch.glyphs[..end]
+        .iter()
+        .rposition(|glyph| !under(glyph))
+        .map_or(0, |before| before + 1);
+    let glyphs = &mut batch.glyphs[start..end];
+    let text = glyphs
+        .first()
         .map_or(defaults(snapshot).0, |glyph| glyph.color);
     let own = color(snapshot.colors().cursor);
     cursor.color = if contrast(own, background) >= CURSOR_CONTRAST {
@@ -471,10 +482,10 @@ fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     } else {
         Color::from_rgb8(255, 255, 255)
     };
-    if cursor.shape == CursorShape::Block
-        && let Some(glyph) = glyph
-    {
-        glyph.color = background.with_alpha(1.0);
+    if cursor.shape == CursorShape::Block {
+        for glyph in glyphs {
+            glyph.color = background.with_alpha(1.0);
+        }
     }
 }
 
@@ -608,9 +619,10 @@ pub fn preedit(
     settle_cursor(batch, snapshot);
 }
 
-/// The cursor of `snapshot`, as `look` has it, where it shows: on a wide
-/// character, over its two cells, from either.
-fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Option<CellCursor> {
+/// The cell of `snapshot`'s cursor, its column and row, and whether it is
+/// a wide character's, when the program shows it in the view: a wide
+/// character's first, from either of its cells.
+fn cursor_cell(snapshot: &Snapshot) -> Option<(u16, u16, bool)> {
     let cursor = snapshot.cursor();
     let (mut column, row) = (cursor.position.x, cursor.position.y);
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
@@ -622,7 +634,14 @@ fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Op
     if column > 0 && width(column) == Some(Width::SpacerTail) {
         column -= 1;
     }
-    let wide = width(column) == Some(Width::Wide);
+    Some((column, row, width(column) == Some(Width::Wide)))
+}
+
+/// The cursor of `snapshot`, as `look` has it, where it shows: on a wide
+/// character, over its two cells, from either.
+fn place_cursor(snapshot: &Snapshot, look: CursorLook, cell: &CellMetrics) -> Option<CellCursor> {
+    let (column, row, wide) = cursor_cell(snapshot)?;
+    let columns = snapshot.cols();
     Some(CellCursor {
         column,
         row,
@@ -889,6 +908,15 @@ mod tests {
         let mut runs = Runs::default();
         cells(&under, &cell(), 0, 0, None, Some(look), &mut runs);
         assert_eq!(runs.0, ["a", "-", ">b"]);
+        // In either phase of its blinking, as when the blinking hides it.
+        let mut runs = Runs::default();
+        cells(&under, &cell(), 0, 0, None, None, &mut runs);
+        assert_eq!(runs.0, ["a", "-", ">b"]);
+        // A cursor that the program hides breaks no run.
+        let hidden = snapshot(20, 1, "a->b\x1b[3D\x1b[?25l");
+        let mut runs = Runs::default();
+        cells(&hidden, &cell(), 0, 0, None, Some(look), &mut runs);
+        assert_eq!(runs.0, ["a->b"]);
         // Light text on the default dark background, then inverse text, dark
         // on light, each a run.
         let inverse = snapshot(20, 1, "ab\x1b[7mcd");
@@ -1208,6 +1236,63 @@ mod tests {
         // The other shapes leave the text's colors.
         let (_, glyphs) = cursor_of(&snapshot(4, 1, text), CursorShape::Hollow);
         assert_eq!(glyphs, [(0, ink), (1, ink), (2, ink)]);
+    }
+
+    /// Glyphs of a character each, as a shaping lays out a base and its
+    /// marks in the base's cell.
+    struct Marks;
+
+    impl Glyphs for Marks {
+        fn glyph(&mut self, _: &CellText<'_>) -> Option<AtlasGlyph> {
+            None
+        }
+
+        fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
+            for cell in 0..run.cells.len() {
+                for character in run.cluster(cell).chars() {
+                    let region = AtlasRegion {
+                        texture: Texture::Coverage,
+                        x: character as u32,
+                        y: 0,
+                        width: 6,
+                        height: 10,
+                    };
+                    out.push(RunGlyph {
+                        cell,
+                        glyph: AtlasGlyph {
+                            region,
+                            left: 0,
+                            top: 10,
+                        },
+                        x: 0,
+                        y: 0,
+                    });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_block_gives_each_glyph_of_its_cell_the_cell_s_background() {
+        // `e` and two marks under the cursor, between `a` and `c`.
+        let snapshot = snapshot(4, 1, "ae\u{301}\u{323}c\x1b[2D");
+        let look = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 1,
+        };
+        let batch = cells(&snapshot, &cell(), 0, 0, None, Some(look), &mut Marks);
+        assert_eq!(batch.cursor.map(|cursor| cursor.column), Some(1));
+        let colors = Colors::default();
+        let (ink, block) = (color(colors.foreground), color(colors.background));
+        let glyphs: Vec<_> = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.color))
+            .collect();
+        assert_eq!(
+            glyphs,
+            [(0, ink), (1, block), (1, block), (1, block), (2, ink)]
+        );
     }
 
     #[test]

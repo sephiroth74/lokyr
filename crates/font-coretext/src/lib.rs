@@ -179,11 +179,13 @@ impl CoreText {
     }
 
     /// The faces of `descriptors`, of a family, those of `group` marked as
-    /// the style group's.
+    /// the style group's, and the one of the PostScript name `preferred` as
+    /// the family's own.
     fn faces_of(
         &mut self,
         descriptors: &[CFRetained<CTFontDescriptor>],
         group: &[FaceId],
+        preferred: Option<&str>,
     ) -> Vec<FaceInfo> {
         descriptors
             .iter()
@@ -194,6 +196,8 @@ impl CoreText {
                     CTFont::with_font_descriptor(descriptor, PROBE_SIZE, std::ptr::null())
                 };
                 let id = self.register(descriptor, &font);
+                // SAFETY: a font that CoreText made.
+                let name = unsafe { font.post_script_name() }.to_string();
                 let style = style_name(&font);
                 // SAFETY: Core Text's constant.
                 let width = trait_value(&font, unsafe { kCTFontWidthTrait });
@@ -207,6 +211,7 @@ impl CoreText {
                         .contains(CTFontSymbolicTraits::TraitItalic),
                     width: width as f32,
                     in_group: group.contains(&id),
+                    preferred: preferred == Some(name.as_str()),
                 }
             })
             .collect()
@@ -240,15 +245,18 @@ impl FontBackend for CoreText {
         // A name that some faces give their family, as the faces of a style
         // group do, takes the family that they belong to, whole, with the
         // group's faces marked.
-        let whole = match family_name(&descriptors[0]) {
+        let family = family_name(&descriptors[0]);
+        let preferred = preferred_face(family.as_deref().unwrap_or(name));
+        let preferred = preferred.as_deref();
+        let whole = match family {
             Some(family) if family != name => matching(&family),
             _ => None,
         };
         let Some(whole) = whole else {
-            return Some(self.faces_of(&descriptors, &[]));
+            return Some(self.faces_of(&descriptors, &[], preferred));
         };
         let mut group: Vec<FaceId> = self
-            .faces_of(&descriptors, &[])
+            .faces_of(&descriptors, &[], None)
             .into_iter()
             .map(|face| face.id)
             .collect();
@@ -257,7 +265,7 @@ impl FontBackend for CoreText {
         if group.len() == whole.len() {
             group.clear();
         }
-        Some(self.faces_of(&whole, &group))
+        Some(self.faces_of(&whole, &group, preferred))
     }
 
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics {
@@ -406,6 +414,23 @@ fn matching(name: &str) -> Option<Vec<CFRetained<CTFontDescriptor>>> {
     let found = unsafe { found.cast_unchecked::<CTFontDescriptor>() };
     let found = found.to_vec();
     (!found.is_empty()).then_some(found)
+}
+
+/// The PostScript name of the face that CoreText gives for the family
+/// `name` alone.
+fn preferred_face(name: &str) -> Option<String> {
+    // SAFETY: Core Text's constant.
+    let key = unsafe { kCTFontFamilyNameAttribute };
+    let family = CFString::from_str(name);
+    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[family.as_ref()]);
+    // SAFETY: a dictionary of descriptor attributes.
+    let descriptor = unsafe { CTFontDescriptor::with_attributes(attributes.as_opaque()) };
+    // SAFETY: a descriptor, at a size, without a matrix.
+    let font = unsafe { CTFont::with_font_descriptor(&descriptor, PROBE_SIZE, std::ptr::null()) };
+    // SAFETY: a font that CoreText made.
+    let (found, face) = unsafe { (font.family_name(), font.post_script_name()) };
+    // CoreText gives a font of another family for one that it lacks.
+    (found.to_string() == name).then(|| face.to_string())
 }
 
 /// The name of the family that `descriptor` gives as its face's.

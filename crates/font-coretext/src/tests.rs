@@ -149,6 +149,32 @@ fn a_style_group_s_name_takes_its_face_as_regular() {
     assert_eq!(regular_style(&mut backend, "avenir next"), "Regular");
 }
 
+#[test]
+fn faces_that_tie_take_the_regular_one() {
+    let mut backend = CoreText::new();
+    // Hoefler Text's Ornaments, of the regular's weight, width and slant,
+    // gives way to the face that CoreText gives for the family alone.
+    let faces = backend.family("Hoefler Text").unwrap();
+    let preferred: Vec<&str> = faces
+        .iter()
+        .filter(|face| face.preferred)
+        .map(|face| face.style.as_str())
+        .collect();
+    assert_eq!(preferred, ["Regular"]);
+    assert_eq!(regular_style(&mut backend, "Hoefler Text"), "Regular");
+    // 3270 Nerd Font's fonts tell no width, which the styles' names do;
+    // nothing is checked where it is not installed, as on CI.
+    if backend.family("3270 Nerd Font").is_none() {
+        eprintln!("3270 Nerd Font is not installed: the test checks no more");
+        return;
+    }
+    assert_eq!(regular_style(&mut backend, "3270 Nerd Font"), "Regular");
+    assert_eq!(
+        regular_style(&mut backend, "3270 Nerd Font Mono"),
+        "Regular"
+    );
+}
+
 /// The cells of `family`'s regular face at 11, 13 and 22 points, at scales
 /// of 1 and 2: width, height and baseline.
 fn cells(family: &str) -> Vec<(u32, u32, u32)> {

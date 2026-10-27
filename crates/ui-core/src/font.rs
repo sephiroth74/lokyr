@@ -527,14 +527,7 @@ impl<B: FontBackend> Font<B> {
                 let antialias = self.config.antialias;
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
-                    let mut bitmap = sprite::draw(character, &self.cell)?;
-                    // Without antialiasing, a pixel is covered or not.
-                    if !antialias {
-                        for pixel in &mut bitmap.data {
-                            *pixel = if *pixel >= 128 { 255 } else { 0 };
-                        }
-                    }
-                    bitmap
+                    sprite::draw(character, &self.cell, antialias)?
                 } else {
                     let rendering = Rendering { antialias, thin };
                     self.backend.rasterize(
@@ -1023,6 +1016,7 @@ mod tests {
                     oblique: false,
                     width: 0.0,
                     in_group: false,
+                    preferred: false,
                 }]);
             }
             (name == "Mono").then(|| {
@@ -1035,6 +1029,7 @@ mod tests {
                         oblique: false,
                         width: 0.0,
                         in_group: false,
+                        preferred: false,
                     },
                     FaceInfo {
                         id: FaceId(1),
@@ -1044,6 +1039,7 @@ mod tests {
                         oblique: false,
                         width: 0.0,
                         in_group: false,
+                        preferred: false,
                     },
                 ]
             })

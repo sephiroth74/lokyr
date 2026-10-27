@@ -133,7 +133,7 @@ The size is in points, so that the text takes the same room on a Retina display,
 
 The face of the text that has no style, by the name that the font gives it, such as `"SemiBold"` or `"Light"`.
 
-- **Default**: the family's regular face: its upright face nearest to the regular weight, of the normal width when the family has several, such as Condensed faces too.
+- **Default**: the family's regular face: its upright face nearest to the regular weight, of the normal width when the family has several, such as Condensed faces too. A face whose font tells no width takes the one that its name tells, as Condensed or Narrow. Of faces that still tie, as Hoefler Text's Regular and Ornaments, the one that macOS gives for the family alone.
 - The case, spaces, hyphens and underscores do not matter: `"semi-bold"` is `SemiBold`.
 - A style that the family does not have is an error, which lists the styles that it has.
 
@@ -213,7 +213,7 @@ Whether the edges of the glyphs are smoothed, as macOS draws text.
 |---|---|
 | `true`, `false` | `true` |
 
-- `false` draws each pixel covered or not, as on old screens: crisp at small sizes on a display of a scale of 1, jagged otherwise. The glyphs that Lokyr draws itself follow it; emoji keep their smooth edges.
+- `false` draws each pixel covered or not, as on old screens: crisp at small sizes on a display of a scale of 1, jagged otherwise. The glyphs that Lokyr draws itself follow it, and the shades, ░, ▒ and ▓, become patterns of a quarter, a half and three quarters of their pixels; emoji keep their smooth edges.
 - `thin-strokes` needs antialiasing, and does nothing without it.
 
 ### `thin-strokes`

@@ -59,7 +59,7 @@ fn the_glyphs_match_their_golden_images() {
         let cell = cell(width, height, thickness);
         let mut drawn = String::new();
         for character in GOLDEN.chars() {
-            let bitmap = sprite::draw(character, &cell).expect("a glyph drawn");
+            let bitmap = sprite::draw(character, &cell, true).expect("a glyph drawn");
             drawn.push_str(&format!("U+{:04X}\n", u32::from(character)));
             drawn.push_str(&art(&bitmap, width, height));
         }
@@ -100,7 +100,7 @@ fn edge(bitmap: &Bitmap, width: u32, height: u32, side: usize) -> Vec<u8> {
 fn blocks_tile_and_an_arrow_meets_its_segment() {
     for (name, width, height, thickness) in CELLS {
         let cell = cell(width, height, thickness);
-        let drawn = |character: char| sprite::draw(character, &cell).unwrap();
+        let drawn = |character: char| sprite::draw(character, &cell, true).unwrap();
         // A full block fills the cell; the halves tile it.
         let full = drawn('█');
         assert!(full.data.iter().all(|&pixel| pixel == 255), "{name}");
@@ -116,6 +116,57 @@ fn blocks_tile_and_an_arrow_meets_its_segment() {
         let flat = edge(&arrow, width, height, 3);
         let middle = &flat[height as usize / 8..height as usize * 7 / 8];
         assert!(middle.iter().all(|&pixel| pixel == 255), "{name}: {flat:?}");
+    }
+}
+
+#[test]
+fn without_antialiasing_the_shades_are_patterns() {
+    for (name, width, height, thickness) in CELLS {
+        let cell = cell(width, height, thickness);
+        let pixels = width * height;
+        for (shade, quarters) in [('░', 1), ('▒', 2), ('▓', 3)] {
+            let bitmap = sprite::draw(shade, &cell, false).unwrap();
+            assert!(
+                bitmap.data.iter().all(|&pixel| pixel == 0 || pixel == 255),
+                "{name} {shade}"
+            );
+            let covered = bitmap.data.iter().filter(|&&pixel| pixel == 255).count() as u32;
+            // A quarter of the pixels a quarter, within a row's rounding.
+            let wanted = pixels * quarters / 4;
+            assert!(
+                covered.abs_diff(wanted) <= height,
+                "{name} {shade}: {covered} of {pixels}"
+            );
+            // Spread over the cell: every row has pixels covered and not.
+            for y in 0..height {
+                let row = &bitmap.data[(y * width) as usize..((y + 1) * width) as usize];
+                assert!(
+                    row.contains(&255) && row.contains(&0),
+                    "{name} {shade}, row {y}"
+                );
+            }
+        }
+        // ▓ covers what ░ leaves, and ▒ alternates along a row.
+        let (light, medium, dark) = (
+            sprite::draw('░', &cell, false).unwrap(),
+            sprite::draw('▒', &cell, false).unwrap(),
+            sprite::draw('▓', &cell, false).unwrap(),
+        );
+        for at in 0..pixels as usize {
+            assert_ne!(light.data[at], dark.data[at], "{name}");
+            if (at + 1) % width as usize != 0 {
+                assert_ne!(medium.data[at], medium.data[at + 1], "{name}");
+            }
+        }
+        // Antialiased, their coverage is uniform.
+        let antialiased = sprite::draw('▒', &cell, true).unwrap();
+        assert!(antialiased.data.iter().all(|&pixel| pixel == 128), "{name}");
+        // Other glyphs without antialiasing are covered or not.
+        let arc = sprite::draw('╭', &cell, false).unwrap();
+        assert!(
+            arc.data.iter().all(|&pixel| pixel == 0 || pixel == 255),
+            "{name}"
+        );
     }
 }
 
@@ -136,8 +187,8 @@ fn the_sets_are_the_glyphs_that_the_terminal_draws() {
         '\u{24FF}', '\u{25A0}', '\u{27FF}', '\u{2900}', '\u{E0AF}', '\u{E0C0}', 'a',
     ] {
         assert!(!sprite::is_box_drawing(character) && !sprite::is_powerline(character));
-        assert!(sprite::draw(character, &cell).is_none());
+        assert!(sprite::draw(character, &cell, true).is_none());
     }
     // The blank braille pattern draws nothing.
-    assert_eq!(sprite::draw('\u{2800}', &cell).unwrap().width, 0);
+    assert_eq!(sprite::draw('\u{2800}', &cell, true).unwrap().width, 0);
 }

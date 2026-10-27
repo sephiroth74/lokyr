@@ -116,6 +116,37 @@ const REGULAR: f32 = 400.0;
 /// The lightest weight that bold takes, as CSS numbers it.
 const BOLD: f32 = 700.0;
 
+/// The widths that a style's name tells, as CoreText measures them, by the
+/// words of the name without case or spaces, those that contain another
+/// first.
+const NAMED_WIDTHS: [(&str, f32); 12] = [
+    ("ultracondensed", -0.4),
+    ("extracondensed", -0.3),
+    ("semicondensed", -0.1),
+    ("condensed", -0.2),
+    ("compressed", -0.3),
+    ("narrow", -0.2),
+    ("ultraexpanded", 0.4),
+    ("extraexpanded", 0.3),
+    ("semiexpanded", 0.1),
+    ("expanded", 0.2),
+    ("extended", 0.2),
+    ("wide", 0.2),
+];
+
+/// The width of `face`: its font's, or, where the font tells none, the one
+/// that its style's name tells, as `Condensed` or `Narrow`.
+fn width(face: &FaceInfo) -> f32 {
+    if face.width != 0.0 {
+        return face.width;
+    }
+    let style = normalize(&face.style);
+    NAMED_WIDTHS
+        .iter()
+        .find(|(word, _)| style.contains(word))
+        .map_or(0.0, |&(_, width)| width)
+}
+
 /// The faces that `faces`, a family's, give to the four styles of text, as
 /// `config` names them:
 /// - regular: the style that it names, or the face nearest to the regular
@@ -135,9 +166,12 @@ const BOLD: f32 = 700.0;
 /// The others are of the regular face's width, for a family of several. An
 /// italic is a true italic rather than an oblique when the family has both,
 /// and a bold italic the same; a family of italics alone takes its heavier
-/// italic as bold. Faces as near to a weight are told apart as CSS does,
-/// the heavier taken for a weight of 500 or more and the lighter below it,
-/// and then by their styles' names, whatever order the backend gives them.
+/// italic as bold. A face's width is its font's, or the one that its style's
+/// name tells where the font tells none. Faces as near to a weight are told
+/// apart as CSS does, the heavier taken for a weight of 500 or more and the
+/// lighter below it; then the one that the system gives for the family
+/// alone, as Hoefler Text's Regular rather than its Ornaments; then by
+/// their styles' names, whatever order the backend gives them.
 ///
 /// A style is named as the family names it, but for case, spaces, hyphens
 /// and underscores: `semi-bold` is `SemiBold`.
@@ -172,7 +206,7 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
     let normal = |italic: bool| {
         group()
             .filter(|face| face.italic == italic)
-            .map(|face| face.width)
+            .map(width)
             .min_by(|a, b| a.abs().total_cmp(&b.abs()))
     };
 
@@ -181,12 +215,12 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
         None => {
             let upright = normal(false);
             nearest(
-                group().filter(|face| !face.italic && Some(face.width) == upright),
+                group().filter(|face| !face.italic && Some(width(face)) == upright),
                 REGULAR,
             )
             .or_else(|| {
-                let width = normal(true);
-                nearest(group().filter(|face| Some(face.width) == width), REGULAR)
+                let italic = normal(true);
+                nearest(group().filter(|face| Some(width(face)) == italic), REGULAR)
             })
             .ok_or_else(|| FaceError::NoFace {
                 family: family.to_owned(),
@@ -195,7 +229,7 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
     };
     // The faces of the regular one's width; of its italics, the true ones
     // when the family has them.
-    let wide = |face: &&FaceInfo| face.width == regular.width;
+    let wide = |face: &&FaceInfo| width(face) == width(regular);
     let upright = || faces.iter().filter(wide).filter(|face| !face.italic);
     let true_italics = faces
         .iter()
@@ -289,7 +323,8 @@ pub fn choose(family: &str, faces: &[FaceInfo], config: &FontConfig) -> Result<F
 
 /// The face of `faces` whose weight is nearest to `weight`; of those as
 /// near, the heavier for a weight of 500 or more and the lighter below it,
-/// as CSS has it, and then the first by its style's name.
+/// as CSS has it, then the system's for the family alone, and then the
+/// first by its style's name.
 fn nearest<'a>(faces: impl Iterator<Item = &'a FaceInfo>, weight: f32) -> Option<&'a FaceInfo> {
     let side = |face: &FaceInfo| {
         if weight >= 500.0 {
@@ -303,6 +338,7 @@ fn nearest<'a>(faces: impl Iterator<Item = &'a FaceInfo>, weight: f32) -> Option
             .abs()
             .total_cmp(&(b.weight - weight).abs())
             .then(side(a).total_cmp(&side(b)))
+            .then(b.preferred.cmp(&a.preferred))
             .then_with(|| normalize(&a.style).cmp(&normalize(&b.style)))
     })
 }
@@ -338,6 +374,7 @@ mod tests {
                     0.0
                 },
                 in_group: false,
+                preferred: false,
             })
             .collect()
     }
@@ -539,6 +576,49 @@ mod tests {
                 "Condensed Bold +slant"
             ]
         );
+    }
+
+    #[test]
+    fn faces_that_tell_no_width_take_their_names_or_the_system_s_choice() {
+        // As 3270 Nerd Font's faces are, of one weight, whose fonts tell no
+        // width, and Hoefler Text's Ornaments, of the regular's weight.
+        let mut faces = family(&[
+            ("Condensed", 400.0, false),
+            ("SemiCondensed", 400.0, false),
+            ("Regular", 400.0, false),
+        ]);
+        for face in &mut faces {
+            face.width = 0.0;
+        }
+        let regular = |faces: &[FaceInfo]| {
+            let chosen = choose("Test", faces, &config(None)).unwrap();
+            style(faces, chosen.regular).0.to_owned()
+        };
+        assert_eq!(regular(&faces), "Regular");
+        // Of faces that tie, the system's for the family alone, before the
+        // order of their names.
+        let mut ornaments = family(&[("Regular", 400.0, false), ("Ornaments", 400.0, false)]);
+        assert_eq!(regular(&ornaments), "Ornaments");
+        ornaments[0].preferred = true;
+        assert_eq!(regular(&ornaments), "Regular");
+        ornaments.reverse();
+        assert_eq!(regular(&ornaments), "Regular");
+        // A name of a width, whatever its case and spaces.
+        for (style, wanted) in [
+            ("Semi Condensed", -0.1),
+            ("ExtraCondensed Bold", -0.3),
+            ("Narrow", -0.2),
+            ("Expanded", 0.2),
+            ("Book", 0.0),
+        ] {
+            let mut face = family(&[(style, 400.0, false)]).remove(0);
+            face.width = 0.0;
+            assert_eq!(width(&face), wanted, "{style}");
+        }
+        // The font's width, where it tells one, before the name's.
+        let mut face = family(&[("Condensed", 400.0, false)]).remove(0);
+        face.width = -0.35;
+        assert_eq!(width(&face), -0.35);
     }
 
     #[test]

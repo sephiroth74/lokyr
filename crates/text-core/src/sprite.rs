@@ -27,14 +27,23 @@ pub fn is_powerline(character: char) -> bool {
 /// The glyph of `character`, which [`is_box_drawing`] or [`is_powerline`]
 /// covers, drawn in a cell of `cell`: a bitmap of coverage of the cell's
 /// size, its top on the cell's top. `None` for another character.
-pub fn draw(character: char, cell: &CellMetrics) -> Option<Bitmap> {
-    let mut canvas = Canvas::new(cell);
+///
+/// Without `antialias`, each pixel is covered or not, and the shades, ░, ▒
+/// and ▓, are patterns of a quarter, a half and three quarters of the
+/// pixels, rather than the uniform coverage that they take otherwise.
+pub fn draw(character: char, cell: &CellMetrics, antialias: bool) -> Option<Bitmap> {
+    let mut canvas = Canvas::new(cell, antialias);
     match u32::from(character) {
         0x2500..=0x257F => canvas.box_drawing(character),
         0x2580..=0x259F => canvas.block(character),
         0x2800..=0x28FF => canvas.braille(character),
         0xE0B0..=0xE0BF => canvas.powerline(character),
         _ => return None,
+    }
+    if !antialias {
+        for pixel in &mut canvas.data {
+            *pixel = if *pixel >= 128 { 255 } else { 0 };
+        }
     }
     Some(canvas.into_bitmap(cell))
 }
@@ -199,16 +208,19 @@ struct Canvas {
     height: u32,
     /// A light line's thickness.
     light: u32,
+    /// Whether the edges are antialiased.
+    antialias: bool,
     data: Vec<u8>,
 }
 
 impl Canvas {
-    fn new(cell: &CellMetrics) -> Self {
+    fn new(cell: &CellMetrics, antialias: bool) -> Self {
         let (width, height) = (cell.width.max(1), cell.height.max(1));
         Self {
             width,
             height,
             light: cell.underline_thickness.max(1),
+            antialias,
             data: vec![0; width as usize * height as usize],
         }
     }
@@ -526,6 +538,7 @@ impl Canvas {
                 self.rect(0, 0, columns, height, 255);
             }
             0x2590 => self.rect(mid_x, 0, width, height, 255),
+            code @ 0x2591..=0x2593 if !self.antialias => self.shade(code - 0x2590),
             0x2591 => self.rect(0, 0, width, height, 64),
             0x2592 => self.rect(0, 0, width, height, 128),
             0x2593 => self.rect(0, 0, width, height, 191),
@@ -541,6 +554,26 @@ impl Canvas {
             0x259D => quadrants(self, false, true, false, false),
             0x259E => quadrants(self, false, true, true, false),
             _ => quadrants(self, false, true, true, true),
+        }
+    }
+
+    /// Covers `quarters` of the pixels, of 1 to 3, as a pattern: a quarter a
+    /// pixel of every four along a row, two apart from the row above's; a
+    /// half a checkerboard; three quarters all but a quarter's.
+    fn shade(&mut self, quarters: u32) {
+        let width = self.width as usize;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let quarter = (x + 2 * y) % 4 == 0;
+                let covered = match quarters {
+                    1 => quarter,
+                    2 => (x + y) % 2 == 0,
+                    _ => !quarter,
+                };
+                if covered {
+                    self.data[y as usize * width + x as usize] = 255;
+                }
+            }
         }
     }
 
@@ -637,7 +670,7 @@ mod tests {
     /// The coverage of one edge of the glyph of `character` in `cell`: its
     /// top row, right column, bottom row or left column, by the direction.
     fn edge(character: char, cell: &CellMetrics, direction: usize) -> Vec<u8> {
-        let bitmap = draw(character, cell).unwrap();
+        let bitmap = draw(character, cell, true).unwrap();
         let (width, height) = (cell.width, cell.height);
         let at = |x: u32, y: u32| {
             if bitmap.width == 0 {
