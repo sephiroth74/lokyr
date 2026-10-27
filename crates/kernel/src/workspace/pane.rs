@@ -1,10 +1,10 @@
-//! A window's pane: the program that runs in it, in a session, the screen
-//! that its frames draw, and what the window does once the program ends.
+//! A pane: the program that runs in it, in a session, the screen that its
+//! frames draw, and what its window does once the program ends.
 
 use std::time::{Duration, Instant};
 
-use lokyr_kernel::config::CloseOnExit;
-use lokyr_platform_core::Waker;
+use std::path::PathBuf;
+
 use lokyr_pty::{Exit, Program, Size};
 use lokyr_session::{Options, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
@@ -13,7 +13,8 @@ use lokyr_vt_core::terminal::{
     self, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
 };
 
-use crate::environment::Environment;
+use super::PaneId;
+use crate::config::CloseOnExit;
 
 /// The `TERM` that programs take, which remote hosts know too.
 const TERM: &str = "xterm-256color";
@@ -25,19 +26,19 @@ const EXIT_WAIT: Duration = Duration::from_secs(1);
 /// How often a pane tells its program a new size at most: a live resize
 /// changes the grid at each step, and the program, which redraws on each
 /// SIGWINCH, learns of the steps a few times a second, and of the last one.
-pub(crate) const RESIZE_PACE: Duration = Duration::from_millis(50);
+pub const RESIZE_PACE: Duration = Duration::from_millis(50);
 
 /// A pane's grid: its columns and rows, and the pixels of its cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Grid {
+pub struct Grid {
     /// Its columns.
-    pub(crate) columns: u16,
+    pub columns: u16,
     /// Its rows.
-    pub(crate) rows: u16,
+    pub rows: u16,
     /// A cell's width, in pixels.
-    pub(crate) cell_width: u16,
+    pub cell_width: u16,
     /// A cell's height, in pixels.
-    pub(crate) cell_height: u16,
+    pub cell_height: u16,
 }
 
 impl Grid {
@@ -54,7 +55,7 @@ impl Grid {
 
 /// What the window does once its program has ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Exited {
+pub enum Exited {
     /// It closes.
     Close,
     /// It keeps its screen, with a line that tells how the program ended,
@@ -62,9 +63,29 @@ pub(crate) enum Exited {
     Keep,
 }
 
-/// The program of a window, in its session, and the screen that its frames
+/// The environment of the programs that panes start, past what the PTY
+/// sets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Environment {
+    /// The app's resources, as its bundle has them, if it runs from one.
+    pub resources: Option<PathBuf>,
+    /// The locale that `LANG` takes when the environment sets none.
+    pub locale: String,
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self {
+            resources: None,
+            locale: "en_US.UTF-8".to_owned(),
+        }
+    }
+}
+
+/// The program of a pane, in its session, and the screen that its frames
 /// draw.
-pub(crate) struct Pane {
+pub struct Pane {
+    id: PaneId,
     /// The session, unless the program could not start.
     session: Option<Session>,
     /// The screen, as the last frame copied it.
@@ -88,11 +109,16 @@ pub(crate) struct Pane {
     /// macOS, hiding its status, which the shell's wrapper tells through
     /// the terminal instead.
     through_login: bool,
+    /// How many times the bell had rung when the workspace last looked.
+    bells: u64,
+    /// Whether the workspace told that the program's output ended.
+    ended_told: bool,
 }
 
 impl std::fmt::Debug for Pane {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Pane")
+            .field("id", &self.id)
             .field("running", &self.session.is_some())
             .field("grid", &self.grid)
             .field("told", &self.told)
@@ -112,19 +138,32 @@ fn pty_options(program: &Program, environment: &Environment, grid: Grid) -> loky
     pty
 }
 
+/// What a pane's session told since the workspace last looked.
+pub(super) struct Happened {
+    /// The terminal's events.
+    pub(super) events: Vec<terminal::Event>,
+    /// The terminal's title, when it changed.
+    pub(super) title: Option<String>,
+    /// Whether the bell rang.
+    pub(super) bell: bool,
+    /// Whether the program's output ended, told once.
+    pub(super) ended: bool,
+}
+
 impl Pane {
     /// A pane that runs `program` in a terminal of `grid`, in `colors`,
-    /// whose changes wake `waker`; or, when the program cannot start, a pane
-    /// whose screen tells why.
-    pub(crate) fn spawn(
+    /// whose changes call `wake`, from the session's threads; or, when the
+    /// program cannot start, a pane whose screen tells why.
+    pub fn spawn(
         program: &Program,
         environment: &Environment,
         grid: Grid,
         colors: &Colors,
-        waker: Waker,
+        wake: impl Fn() + Send + Sync + 'static,
     ) -> Self {
         let pty = pty_options(program, environment, grid);
         let mut pane = Self {
+            id: PaneId::new(),
             session: None,
             snapshot: Snapshot::default(),
             grid,
@@ -133,12 +172,14 @@ impl Pane {
             ended: None,
             kept: false,
             through_login: matches!(program, Program::LoginShell),
+            bells: 0,
+            ended_told: false,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
         // the cursor keys, unless they say otherwise.
         options.terminal.alternate_scroll = true;
-        match Session::spawn(&options, move || waker.wake()) {
+        match Session::spawn(&options, wake) {
             Ok(session) => {
                 {
                     let mut terminal = session.lock();
@@ -162,20 +203,48 @@ impl Pane {
         pane
     }
 
+    /// The pane's id.
+    pub fn id(&self) -> PaneId {
+        self.id
+    }
+
+    /// What the session told since the last look; `None` for a pane whose
+    /// program could not start.
+    pub(super) fn happened(&mut self) -> Option<Happened> {
+        let session = self.session.as_ref()?;
+        let (events, title, bells) = {
+            let mut terminal = session.lock();
+            let events = terminal.take_events();
+            let titled = events.contains(&terminal::Event::TitleChanged);
+            let title = titled.then(|| terminal.title().to_owned());
+            (events, title, terminal.bells())
+        };
+        let bell = bells != self.bells;
+        self.bells = bells;
+        let ended = !self.ended_told && session.has_ended();
+        self.ended_told |= ended;
+        Some(Happened {
+            events,
+            title,
+            bell,
+            ended,
+        })
+    }
+
     /// The terminal's grid.
-    pub(crate) fn grid(&self) -> Grid {
+    pub fn grid(&self) -> Grid {
         self.grid
     }
 
     /// The screen, as the last frame copied it.
-    pub(crate) fn snapshot(&self) -> &Snapshot {
+    pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
     }
 
     /// Brings the screen up to date with the session's, unless a
     /// synchronized update holds it, when it stays as it was. Returns
     /// whether the screen changed.
-    pub(crate) fn update(&mut self) -> bool {
+    pub fn update(&mut self) -> bool {
         self.session
             .as_ref()
             .and_then(|session| session.snapshot(&mut self.snapshot))
@@ -184,7 +253,7 @@ impl Pane {
 
     /// Gives the terminal `grid` at once, when it has another, reflowing
     /// its screen, and tells the program, as [`Pane::pace`] does.
-    pub(crate) fn resize(&mut self, grid: Grid, now: Instant) -> Option<Instant> {
+    pub fn resize(&mut self, grid: Grid, now: Instant) -> Option<Instant> {
         if grid != self.grid {
             self.grid = grid;
             self.changed = true;
@@ -202,7 +271,7 @@ impl Pane {
     /// within [`RESIZE_PACE`] before `now`: then returns when to tell it. A
     /// grid back at the one told is told by SIGWINCH alone, as the PTY's
     /// size, unchanged, would not signal it.
-    pub(crate) fn pace(&mut self, now: Instant) -> Option<Instant> {
+    pub fn pace(&mut self, now: Instant) -> Option<Instant> {
         let (told, at) = self.told;
         if !self.changed || self.kept {
             return None;
@@ -229,8 +298,7 @@ impl Pane {
     }
 
     /// The grid that the program was told last.
-    #[cfg(test)]
-    pub(crate) fn told(&self) -> Grid {
+    pub fn told(&self) -> Grid {
         self.told.0
     }
 
@@ -238,7 +306,7 @@ impl Pane {
     /// held, which the menus did not take, is the app's: it reaches the
     /// program only through the kitty protocol, which reports Super, as
     /// xterm's sequences have no Command.
-    pub(crate) fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
+    pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
         let Some(session) = &self.session else {
             return;
         };
@@ -249,7 +317,7 @@ impl Pane {
     }
 
     /// Sends `text`, which an input method committed.
-    pub(crate) fn text(&self, text: &str) {
+    pub fn text(&self, text: &str) {
         if let Some(session) = &self.session {
             session.text(text);
         }
@@ -258,29 +326,28 @@ impl Pane {
     /// Sends what the mouse's `event` sends, as the program's mouse modes
     /// have it, and returns whether the program took it, rather than the
     /// pane, which scrolls its view with the wheel.
-    pub(crate) fn mouse(&self, event: &MouseEvent) -> bool {
+    pub fn mouse(&self, event: &MouseEvent) -> bool {
         self.session
             .as_ref()
             .is_some_and(|session| session.mouse(event))
     }
 
     /// The modes that the program set of what the mouse sends.
-    pub(crate) fn input_modes(&self) -> Option<InputModes> {
+    pub fn input_modes(&self) -> Option<InputModes> {
         self.session
             .as_ref()
             .map(|session| session.lock().input_modes())
     }
 
     /// Scrolls the view, through the scrollback.
-    pub(crate) fn scroll(&self, scroll: Scroll) {
+    pub fn scroll(&self, scroll: Scroll) {
         if let Some(session) = &self.session {
             session.scroll(scroll);
         }
     }
 
     /// Whether the program's output brings the view back to the screen.
-    #[cfg(test)]
-    pub(crate) fn scroll_on_output(&self) -> bool {
+    pub fn scroll_on_output(&self) -> bool {
         self.session
             .as_ref()
             .is_some_and(|session| session.lock().scroll_on_output())
@@ -288,14 +355,14 @@ impl Pane {
 
     /// Sets whether the program's output brings the view back to the
     /// screen.
-    pub(crate) fn set_scroll_on_output(&self, scroll: bool) {
+    pub fn set_scroll_on_output(&self, scroll: bool) {
         if let Some(session) = &self.session {
             session.lock().set_scroll_on_output(scroll);
         }
     }
 
     /// Gives the terminal the theme's `colors`.
-    pub(crate) fn set_colors(&self, colors: &Colors) {
+    pub fn set_colors(&self, colors: &Colors) {
         if let Some(session) = &self.session {
             session.lock().set_default_colors(colors.clone());
         }
@@ -304,7 +371,7 @@ impl Pane {
     /// What the window does, as `close` says, once the program has ended:
     /// `None` while it runs, once the pane keeps its screen, and while its
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.
-    pub(crate) fn exited(&mut self, close: CloseOnExit, now: Instant) -> Option<Exited> {
+    pub fn exited(&mut self, close: CloseOnExit, now: Instant) -> Option<Exited> {
         if self.kept {
             return None;
         }
@@ -350,12 +417,12 @@ impl Pane {
 
     /// Whether the pane waits for the status of a program whose output
     /// ended.
-    pub(crate) fn is_waiting(&self) -> bool {
+    pub fn is_waiting(&self) -> bool {
         self.ended.is_some() && !self.kept
     }
 
     /// Whether the pane keeps the screen of a program that ended.
-    pub(crate) fn is_kept(&self) -> bool {
+    pub fn is_kept(&self) -> bool {
         self.kept
     }
 }
@@ -457,7 +524,7 @@ mod tests {
             &Environment::default(),
             grid(80),
             &Colors::default(),
-            Waker::new(|| {}),
+            || {},
         );
         wait_for(&mut pane, "ready", 1);
         // A step, told at once; then back and forth within the pace, to the
@@ -491,7 +558,7 @@ mod tests {
             &Environment::default(),
             grid(80),
             &Colors::default(),
-            Waker::new(|| {}),
+            || {},
         );
         // A second of steps, one every 8 ms, as a display of 120 Hz draws
         // them, with the timer that the app keeps for the pace.

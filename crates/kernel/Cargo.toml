@@ -12,10 +12,12 @@ publish = false
 [dependencies]
 lokyr-pkg-model.workspace = true
 lokyr-plugin-sdk.workspace = true
+lokyr-pty.workspace = true
 lokyr-search.workspace = true
 lokyr-session.workspace = true
 lokyr-text-core.workspace = true
 lokyr-ui-core.workspace = true
+lokyr-vt-core.workspace = true
 serde.workspace = true
 toml_edit.workspace = true
 

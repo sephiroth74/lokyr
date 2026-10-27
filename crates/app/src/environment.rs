@@ -15,24 +15,6 @@ const UTF8: &str = ".UTF-8";
 /// The locale when the system has none of the user's languages.
 const FALLBACK: &str = "en_US.UTF-8";
 
-/// The environment of the programs that the app starts.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Environment {
-    /// The bundle's resources, when the app runs from its bundle.
-    pub(crate) resources: Option<PathBuf>,
-    /// The locale that `LANG` takes when the environment sets none.
-    pub(crate) locale: String,
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Self {
-            resources: None,
-            locale: FALLBACK.to_owned(),
-        }
-    }
-}
-
 /// The bundle's resources, `Contents/Resources`, when the app's binary is
 /// in its bundle's `Contents/MacOS`.
 pub(crate) fn resources() -> Option<PathBuf> {

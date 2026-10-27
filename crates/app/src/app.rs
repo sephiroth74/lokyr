@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::config::{AppConfig, Config};
+#[cfg(test)]
+use lokyr_kernel::workspace::RESIZE_PACE;
+use lokyr_kernel::workspace::{self, Environment, Event, Exited, Grid, Pane, PaneId, Workspace};
 use lokyr_platform_core::{
     AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Modifiers,
     MouseButton, Platform, Point, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TimerId,
@@ -26,17 +29,18 @@ use lokyr_ui_core::theme::Theme;
 use lokyr_vt_core::input::{MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{MouseEncoding, MouseTracking, Scroll};
 
-use crate::environment::{self, Environment};
+use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
 use crate::mouse::{self, Mouse, Pointer};
-#[cfg(test)]
-use crate::pane::RESIZE_PACE;
-use crate::pane::{Exited, Grid, Pane};
+
 use crate::watch::Watcher;
 
 /// The command that quits.
 const QUIT: &str = "quit";
+
+/// The command that opens a window.
+const NEW_WINDOW: &str = "new-window";
 
 /// The size of a new window's content, in points.
 const WINDOW_SIZE: Size = Size {
@@ -143,8 +147,10 @@ impl ConfigFile {
 struct Window {
     /// What it draws into, once the app draws and the platform has a layer.
     surface: Option<Surface>,
-    /// Its program, and what it shows.
-    pane: Pane,
+    /// The workspace's window that it shows.
+    window: workspace::WindowId,
+    /// Its pane, which runs its program, and what that shows.
+    pane: PaneId,
     /// The text that the input method composes, shown at the cursor.
     preedit: Option<Preedit>,
     /// Whether it has the keyboard's focus.
@@ -163,9 +169,15 @@ struct Window {
 }
 
 impl Window {
-    fn new(surface: Option<Surface>, pane: Pane, focused: bool, now: Instant) -> Self {
+    fn new(
+        surface: Option<Surface>,
+        (window, pane): (workspace::WindowId, PaneId),
+        focused: bool,
+        now: Instant,
+    ) -> Self {
         Self {
             surface,
+            window,
             pane,
             preedit: None,
             focused,
@@ -190,6 +202,9 @@ pub struct App {
     config: Config,
     /// The file of the config, if it has one.
     config_file: Option<ConfigFile>,
+    /// The windows, their tabs and panes.
+    workspace: Workspace,
+    /// The platform's windows, each with what the app keeps of it.
     windows: BTreeMap<WindowId, Window>,
     /// The timer of the next change of a blinking cursor, and its time.
     blink_timer: Option<(TimerId, Instant)>,
@@ -224,6 +239,7 @@ impl App {
                 changed: Arc::new(AtomicBool::new(false)),
                 reading: None,
             }),
+            workspace: Workspace::new(),
             windows: BTreeMap::new(),
             blink_timer: None,
             exit_timer: None,
@@ -249,6 +265,13 @@ impl App {
     fn with_resources(mut self, resources: Option<PathBuf>) -> Self {
         self.environment.resources = resources;
         self
+    }
+
+    /// The pane of `window`.
+    #[cfg(test)]
+    fn pane(&self, window: WindowId) -> &Pane {
+        let pane = self.windows[&window].pane;
+        self.workspace.pane(pane).expect("the window's pane")
     }
 
     /// The app, whose icon's variants are `icons`.
@@ -298,10 +321,8 @@ impl App {
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
-        for state in self.windows.values() {
-            state
-                .pane
-                .set_scroll_on_output(self.config.scrollback.scroll_on_output);
+        for pane in self.workspace.panes() {
+            pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
         }
         if icon_changed {
             self.show_icon(platform);
@@ -349,10 +370,10 @@ impl App {
         window: WindowId,
         position: Point,
     ) -> Option<Pointer> {
-        let state = self.windows.get(&window)?;
+        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
         let scale = platform.window_size(window)?.scale;
         let padding = self.padding(scale);
-        Some(mouse::pointer(position, scale, padding, state.pane.grid()))
+        Some(mouse::pointer(position, scale, padding, pane.grid()))
     }
 
     /// A button of the mouse went down or up over `window`: the program
@@ -376,9 +397,13 @@ impl App {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        if state.pane.is_kept() {
+        let Some(pane) = self
+            .workspace
+            .pane(state.pane)
+            .filter(|pane| !pane.is_kept())
+        else {
             return;
-        }
+        };
         let action = if pressed {
             state.mouse.press(button);
             MouseAction::Press(button)
@@ -388,7 +413,7 @@ impl App {
             return;
         };
         state.mouse.moved(pointer, true);
-        state.pane.mouse(&mouse_event(action, mods, pointer));
+        pane.mouse(&mouse_event(action, mods, pointer));
     }
 
     /// The pointer moved over `window`: a program that asked learns of it,
@@ -409,7 +434,14 @@ impl App {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(modes) = state.pane.input_modes().filter(|_| !state.pane.is_kept()) else {
+        let Some(pane) = self
+            .workspace
+            .pane(state.pane)
+            .filter(|pane| !pane.is_kept())
+        else {
+            return;
+        };
+        let Some(modes) = pane.input_modes() else {
             return;
         };
         if modes.mouse_tracking == MouseTracking::None {
@@ -418,7 +450,7 @@ impl App {
         let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
         if state.mouse.moved(pointer, pixels) {
             let action = MouseAction::Motion(state.mouse.held());
-            state.pane.mouse(&mouse_event(action, mods, pointer));
+            pane.mouse(&mouse_event(action, mods, pointer));
         }
     }
 
@@ -443,14 +475,17 @@ impl App {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let row_points = f64::from(state.pane.grid().cell_height) / scale;
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let row_points = f64::from(pane.grid().cell_height) / scale;
         let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
-        let to_program = !mods.shift && !state.pane.is_kept();
+        let to_program = !mods.shift && !pane.is_kept();
         let mut view: i64 = 0;
         let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
         for _ in 0..up.unsigned_abs() {
             let event = mouse_event(MouseAction::Wheel(wheel), mods, pointer);
-            if !(to_program && state.pane.mouse(&event)) {
+            if !(to_program && pane.mouse(&event)) {
                 view += i64::from(up.signum());
             }
         }
@@ -461,14 +496,12 @@ impl App {
                 Wheel::Right
             };
             for _ in 0..across.unsigned_abs() {
-                state
-                    .pane
-                    .mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer));
+                pane.mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer));
             }
         }
         if view != 0 {
             let rows = usize::try_from(view.unsigned_abs()).unwrap_or(usize::MAX);
-            state.pane.scroll(if view > 0 {
+            pane.scroll(if view > 0 {
                 Scroll::Up(rows)
             } else {
                 Scroll::Down(rows)
@@ -491,16 +524,15 @@ impl App {
                     .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
                 let grid = self.grid(size);
                 let colors = &self.colors(platform.appearance());
-                let pane = Pane::spawn(
-                    &self.program,
-                    &self.environment,
-                    grid,
-                    colors,
-                    platform.waker(),
-                );
+                let waker = platform.waker();
+                let pane = Pane::spawn(&self.program, &self.environment, grid, colors, move || {
+                    waker.wake();
+                });
                 pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
+                let id = pane.id();
+                let ids = (self.workspace.open_window(pane), id);
                 self.windows
-                    .insert(window, Window::new(surface, pane, focused, Instant::now()));
+                    .insert(window, Window::new(surface, ids, focused, Instant::now()));
                 self.draw(platform, window, size);
             }
             Err(error) => {
@@ -515,7 +547,10 @@ impl App {
     /// Closes `window`, and quits with the last one.
     fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
         // The surface and the session go before the window.
-        self.windows.remove(&window);
+        if let Some(state) = self.windows.remove(&window) {
+            drop(state.surface);
+            self.workspace.close_window(state.window);
+        }
         platform.close_window(window);
         if self.windows.is_empty() {
             platform.quit();
@@ -530,11 +565,14 @@ impl App {
         let close = self.config.window.close_on_exit;
         let mut closing = Vec::new();
         let mut waiting = false;
-        for (&window, state) in &mut self.windows {
-            match state.pane.exited(close, now) {
+        for (&window, state) in &self.windows {
+            let Some(pane) = self.workspace.pane_mut(state.pane) else {
+                continue;
+            };
+            match pane.exited(close, now) {
                 Some(Exited::Close) => closing.push(window),
                 Some(Exited::Keep) => platform.request_frame(window),
-                None => waiting |= state.pane.is_waiting(),
+                None => waiting |= pane.is_waiting(),
             }
         }
         for window in closing {
@@ -542,6 +580,24 @@ impl App {
         }
         if waiting && self.exit_timer.is_none() {
             self.exit_timer = Some(platform.start_timer(now + EXIT_POLL));
+        }
+    }
+
+    /// Takes the workspace's events. The tabs keep their programs' titles
+    /// and colors, which the windows do not show; the bells and the
+    /// programs' writes to the clipboards go unanswered, and a program's
+    /// end waits for its status, which the exits take.
+    fn events(&mut self) {
+        for event in self.workspace.take_events() {
+            match event {
+                Event::WindowOpened(_)
+                | Event::WindowClosed(_)
+                | Event::TitleChanged(_)
+                | Event::Bell(_)
+                | Event::ClipboardWrite { .. }
+                | Event::Ended(_)
+                | Event::Terminal { .. } => {}
+            }
         }
     }
 
@@ -627,7 +683,7 @@ impl App {
         now: Instant,
     ) -> Option<CursorShape> {
         let state = self.windows.get_mut(&window)?;
-        let program = state.pane.snapshot().cursor();
+        let program = self.workspace.pane(state.pane)?.snapshot().cursor();
         let config = &self.config.cursor;
         let shape = cursor::shape(&program, config, state.focused);
         let (on, next) = if cursor::blinks(&program, config, state.focused) {
@@ -676,15 +732,17 @@ impl App {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let due = state.pane.resize(grid, now);
+        let Some(pane) = self.workspace.pane_mut(state.pane) else {
+            return;
+        };
+        let due = pane.resize(grid, now);
         // Output starts the cursor blinking again, on, as a key does.
-        if state.pane.update() {
+        if pane.update() {
             state.blink.restart(now);
         }
         // The pointer's moves without a button wake the app only for a
         // program that asked for them all.
-        let moves = state
-            .pane
+        let moves = pane
             .input_modes()
             .is_some_and(|modes| modes.mouse_tracking == MouseTracking::AnyEvent);
         if moves != state.mouse_moves {
@@ -692,7 +750,7 @@ impl App {
             state.mouse_moves = moves;
         }
         // The input method's candidates go at the cursor's cell.
-        let at = state.pane.snapshot().cursor().position;
+        let at = pane.snapshot().cursor().position;
         let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
         platform.set_text_area(
             window,
@@ -708,7 +766,7 @@ impl App {
         // A translucent window's backdrop is the terminal's default
         // background, under the whole window, the titlebar too, and follows
         // it, as the theme, the program or reverse video change it.
-        let background = cells::background(state.pane.snapshot());
+        let background = cells::background(pane.snapshot());
         let sent = state.backdrop;
         let backdrop = self.backdrop(background);
         if backdrop != sent {
@@ -727,8 +785,10 @@ impl App {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let blinking =
-            text.blink && state.focused && cells::has_blinking_text(state.pane.snapshot());
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let blinking = text.blink && state.focused && cells::has_blinking_text(pane.snapshot());
         let (blink_shown, next) = if blinking {
             state.blink.at(Instant::now())
         } else {
@@ -747,6 +807,9 @@ impl App {
         else {
             return;
         };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
         if state.surface.is_none() {
             return;
         }
@@ -757,7 +820,7 @@ impl App {
             shape,
             thickness: config.thickness(&cell, size.scale as f32),
         });
-        let snapshot = state.pane.snapshot();
+        let snapshot = pane.snapshot();
         let font = &mut drawing.font;
         let (x, y) = (
             i32::try_from(left).unwrap_or(i32::MAX),
@@ -811,10 +874,13 @@ impl Handler for App {
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
             AppEvent::Command(command) if command == QUIT => platform.quit(),
+            AppEvent::Command(command) if command == NEW_WINDOW => self.open_window(platform),
             AppEvent::QuitRequested => platform.quit(),
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
             AppEvent::Wake => {
+                self.workspace.collect();
+                self.events();
                 self.exits(platform);
                 // The reading waits for the changes to settle: each change
                 // puts it off.
@@ -851,9 +917,9 @@ impl Handler for App {
                 // The timer fires once its time has come, or later.
                 let now = Instant::now().max(at);
                 let next = self
-                    .windows
-                    .values_mut()
-                    .filter_map(|state| state.pane.pace(now))
+                    .workspace
+                    .panes_mut()
+                    .filter_map(|pane| pane.pace(now))
                     .min();
                 if let Some(next) = next {
                     self.pace_at(platform, next);
@@ -874,8 +940,8 @@ impl Handler for App {
             }
             AppEvent::AppearanceChanged(appearance) => {
                 let colors = self.colors(appearance);
-                for state in self.windows.values() {
-                    state.pane.set_colors(&colors);
+                for pane in self.workspace.panes() {
+                    pane.set_colors(&colors);
                 }
                 let windows: Vec<WindowId> = self.windows.keys().copied().collect();
                 for window in windows {
@@ -917,15 +983,18 @@ impl Handler for App {
                 let Some(state) = self.windows.get_mut(&window) else {
                     return;
                 };
+                let Some(pane) = self.workspace.pane(state.pane) else {
+                    return;
+                };
                 let pressed = key.state != KeyState::Released;
-                if state.pane.is_kept() {
+                if pane.is_kept() {
                     if pressed && closes(&key) {
                         self.close(platform, window);
                     }
                     return;
                 }
                 if let Some(event) = keys::terminal_key(&key) {
-                    state.pane.key(&event, options);
+                    pane.key(&event, options);
                 }
                 if pressed {
                     state.blink.restart(Instant::now());
@@ -938,10 +1007,13 @@ impl Handler for App {
                 let Some(state) = self.windows.get_mut(&window) else {
                     return;
                 };
+                let Some(pane) = self.workspace.pane(state.pane) else {
+                    return;
+                };
                 // On a window whose program ended, what the input method
                 // composes does not show, and its commit closes it, as a key
                 // does.
-                if state.pane.is_kept() {
+                if pane.is_kept() {
                     if matches!(ime, Ime::Commit(_)) {
                         self.close(platform, window);
                     }
@@ -956,7 +1028,7 @@ impl Handler for App {
                     }
                     Ime::Commit(text) => {
                         state.preedit = None;
-                        state.pane.text(&text);
+                        pane.text(&text);
                         state.blink.restart(Instant::now());
                     }
                 }
@@ -1016,17 +1088,30 @@ fn main_menu() -> MainMenu {
     MainMenu {
         menus: vec![Menu {
             title: "Lokyr".to_owned(),
-            items: vec![MenuItem::Command {
-                title: "Quit Lokyr".to_owned(),
-                command: QUIT.to_owned(),
-                shortcut: Some(Shortcut {
-                    key: ShortcutKey::Char('q'),
-                    command: true,
-                    shift: false,
-                    alt: false,
-                    control: false,
-                }),
-            }],
+            items: vec![
+                MenuItem::Command {
+                    title: "New Window".to_owned(),
+                    command: NEW_WINDOW.to_owned(),
+                    shortcut: Some(Shortcut {
+                        key: ShortcutKey::Char('n'),
+                        command: true,
+                        shift: false,
+                        alt: false,
+                        control: false,
+                    }),
+                },
+                MenuItem::Command {
+                    title: "Quit Lokyr".to_owned(),
+                    command: QUIT.to_owned(),
+                    shortcut: Some(Shortcut {
+                        key: ShortcutKey::Char('q'),
+                        command: true,
+                        shift: false,
+                        alt: false,
+                        control: false,
+                    }),
+                },
+            ],
         }],
     }
 }
@@ -1057,17 +1142,58 @@ mod tests {
     }
 
     #[test]
-    fn starting_opens_a_window_under_a_menu_with_quit() {
+    fn starting_opens_a_window_under_a_menu_with_new_window_and_quit() {
         let (fake, _) = started();
         let windows: Vec<_> = fake.windows().collect();
         assert_eq!(windows.len(), 1);
         assert_eq!(fake.window(windows[0]).unwrap().size.points, WINDOW_SIZE);
         let menu = fake.main_menu().unwrap();
-        assert!(matches!(
-            &menu.menus[0].items[0],
-            MenuItem::Command { command, shortcut: Some(Shortcut { key: ShortcutKey::Char('q'), command: true, .. }), .. }
-                if command == QUIT
-        ));
+        let shortcuts: Vec<(String, char)> = menu.menus[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command {
+                    command,
+                    shortcut:
+                        Some(Shortcut {
+                            key: ShortcutKey::Char(key),
+                            command: true,
+                            ..
+                        }),
+                    ..
+                } => Some((command.clone(), *key)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            shortcuts,
+            [(NEW_WINDOW.to_owned(), 'n'), (QUIT.to_owned(), 'q')]
+        );
+    }
+
+    #[test]
+    fn two_windows_run_two_shells() {
+        let mut fake = Fake::default();
+        let mut app = app(Config::default(), shell("echo pid:$$; sleep 10"));
+        fake.start(&mut app);
+        fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+        let windows: Vec<WindowId> = fake.windows().collect();
+        assert_eq!(windows.len(), 2);
+        assert_eq!(app.workspace.windows().count(), 2);
+        let pid = |app: &App, window| {
+            let line = row(app, window, 0);
+            line.strip_prefix("pid:").map(str::to_owned)
+        };
+        run_until(&mut fake, &mut app, |_, app| {
+            windows.iter().all(|&window| pid(app, window).is_some())
+        });
+        assert_ne!(pid(&app, windows[0]), pid(&app, windows[1]));
+        // Closing one leaves the other, with its pane.
+        fake.send(&mut app, windows[0], WindowEvent::CloseRequested);
+        assert_eq!(fake.windows().collect::<Vec<_>>(), [windows[1]]);
+        assert_eq!(app.workspace.windows().count(), 1);
+        assert_eq!(app.workspace.panes().count(), 1);
+        assert!(!fake.has_quit());
     }
 
     #[test]
@@ -1477,7 +1603,7 @@ mod tests {
 
     /// The text of row `row` of a window's screen.
     fn row(app: &App, window: WindowId, row: u16) -> String {
-        let snapshot = app.windows[&window].pane.snapshot();
+        let snapshot = app.pane(window).snapshot();
         let line = snapshot.line(row);
         line.cells()
             .iter()
@@ -1507,7 +1633,7 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "hello");
         // At the window's grid: 1600 by 1000 pixels, less 8 of padding at
         // each edge, of cells of 8 by 16.
-        let snapshot = app.windows[&window].pane.snapshot();
+        let snapshot = app.pane(window).snapshot();
         assert_eq!((snapshot.cols(), snapshot.rows()), (198, 61));
     }
 
@@ -1627,7 +1753,7 @@ mod tests {
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
-        let offset = |app: &App| app.windows[&window].pane.snapshot().offset();
+        let offset = |app: &App| app.pane(window).snapshot().offset();
         fake.send(
             &mut app,
             window,
@@ -1660,7 +1786,7 @@ mod tests {
         });
         // With Shift, the view moves, without the program.
         fake.send(&mut app, window, wheel(up, SHIFT));
-        let offset = |app: &App| app.windows[&window].pane.snapshot().offset();
+        let offset = |app: &App| app.pane(window).snapshot().offset();
         // The screen has no scrollback yet: the view stays, and the program
         // learns nothing more, a while after.
         let pause = Instant::now() + Duration::from_millis(300);
@@ -1709,10 +1835,10 @@ mod tests {
         let (mut fake, mut app, path) =
             with_file("output", "[scrollback]\nscroll-on-output = true\n");
         let window = fake.windows().next().unwrap();
-        assert!(app.windows[&window].pane.scroll_on_output());
+        assert!(app.pane(window).scroll_on_output());
         std::fs::write(&path, "").unwrap();
         change(&mut fake, &mut app);
-        assert!(!app.windows[&window].pane.scroll_on_output());
+        assert!(!app.pane(window).scroll_on_output());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -1732,7 +1858,7 @@ mod tests {
 
     /// The text of every row of a window's screen.
     fn screen(app: &App, window: WindowId) -> Vec<String> {
-        let rows = app.windows[&window].pane.snapshot().rows();
+        let rows = app.pane(window).snapshot().rows();
         (0..rows).map(|at| row(app, window, at)).collect()
     }
 
@@ -1757,7 +1883,7 @@ mod tests {
         change(&mut fake, &mut app);
         assert!(fake.window(window).unwrap().frame_requested);
         fake.send(&mut app, window, WindowEvent::Frame);
-        let snapshot = app.windows[&window].pane.snapshot();
+        let snapshot = app.pane(window).snapshot();
         assert_eq!((snapshot.cols(), snapshot.rows()), (200, 62));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -1836,7 +1962,7 @@ mod tests {
             .map(|step| {
                 let size = points(400.0 + f64::from(step) * 4.0, 300.0);
                 assert!(fake.send(&mut app, window, WindowEvent::Resized(size)));
-                told.push(app.windows[&window].pane.told());
+                told.push(app.pane(window).told());
                 app.grid(size)
             })
             .collect();
@@ -1845,7 +1971,7 @@ mod tests {
         assert_eq!((last.columns, last.rows), (149, 37));
         // The terminal takes each step at once, and the program the first,
         // then one every 50 ms at most.
-        let pane = &app.windows[&window].pane;
+        let pane = app.pane(window);
         assert_eq!(pane.snapshot().cols(), last.columns);
         assert_eq!(told[0], grids[0]);
         told.dedup();
@@ -1865,7 +1991,7 @@ mod tests {
             assert_eq!(fake.fire_timers(&mut app, at), 1);
         }
         assert_eq!(app.resize_timer, None);
-        assert_eq!(app.windows[&window].pane.told(), last);
+        assert_eq!(app.pane(window).told(), last);
         // The program saw few sizes, and the last one.
         run_until(&mut fake, &mut app, |_, app| {
             screen(app, window).iter().any(|line| line == "37 149")
@@ -1945,7 +2071,7 @@ mod tests {
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         run_until(&mut fake, &mut app, |fake, app| {
-            fake.windows().count() == 0 || app.windows[&window].pane.is_kept()
+            fake.windows().count() == 0 || app.pane(window).is_kept()
         });
         (fake, app, window)
     }
@@ -2059,7 +2185,7 @@ mod tests {
         assert_eq!(fake.windows().count(), 0);
         let (fake, app, window) = ended(CloseOnExit::Never, "exit 0");
         assert_eq!(fake.windows().count(), 1);
-        assert!(app.windows[&window].pane.is_kept());
+        assert!(app.pane(window).is_kept());
         // A program that a signal ends.
         let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "kill -9 $$");
         run_until(&mut fake, &mut app, |_, app| {

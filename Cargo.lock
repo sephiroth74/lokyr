@@ -647,10 +647,12 @@ version = "0.1.0"
 dependencies = [
  "lokyr-pkg-model",
  "lokyr-plugin-sdk",
+ "lokyr-pty",
  "lokyr-search",
  "lokyr-session",
  "lokyr-text-core",
  "lokyr-ui-core",
+ "lokyr-vt-core",
  "serde",
  "toml_edit",
 ]

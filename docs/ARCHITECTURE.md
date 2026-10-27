@@ -56,9 +56,10 @@ Workspace
                 └── Pane (id, profile, cwd) ──▶ Session (pty + process + VT state)
 ```
 
-- **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model.
+- **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a tree whose leaves are panes, a single leaf until splits come. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them.
+- **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model. Its types are plain data, apart from the sessions; they take serde's derives with the first that serializes them, IPC in F3b.
 - **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly.
-- **Identifiers** are opaque `u64` values, never reused during the life of the process.
+- **Identifiers** are opaque `u64` values, never reused during the life of the process: windows, tabs and panes take theirs from one counter of the process.
 - **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them: commands, dividers, mouse interaction. Without that plugin every tab has exactly one pane.
 
 ## Threads and data flow

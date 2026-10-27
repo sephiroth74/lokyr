@@ -2,10 +2,9 @@
 //! that the program learned were held, and the wheel's scroll, which adds up
 //! to whole steps.
 
+use lokyr_kernel::workspace::Grid;
 use lokyr_platform_core::{MouseButton as Button, Point, ScrollDelta, ScrollPhase};
 use lokyr_vt_core::input::MouseButton;
-
-use crate::pane::Grid;
 
 /// Where the pointer is in a grid: its cell, and its pixel from the cells'
 /// top left corner.
