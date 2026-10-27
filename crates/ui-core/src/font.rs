@@ -7,11 +7,15 @@ use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
     FontBackend, FontConfig, GlyphId, Resolved, ShapedGlyph, Synthesis, choose_faces,
-    resolve_faces,
+    resolve_faces, sprite,
 };
 use lokyr_vt_core::unicode;
 
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
+
+/// The face of the glyphs that the terminal draws itself, of box drawing
+/// and of the powerline symbols, whose glyph is their character's code.
+const SPRITES: FaceId = FaceId(u32::MAX);
 
 /// The runs that the cache of shaped runs keeps in each of its two
 /// generations: a screen's runs, and more.
@@ -363,9 +367,13 @@ impl<B: FontBackend> Font<B> {
         let placement = match self.atlas.get(&key) {
             Some(placement) => placement,
             None => {
-                let bitmap =
+                let bitmap = if found.face == SPRITES {
+                    let character = char::from_u32(u32::from(found.glyph.0))?;
+                    sprite::draw(character, &self.cell)?
+                } else {
                     self.backend
-                        .rasterize(found.face, found.glyph, self.pixels, found.synthesis);
+                        .rasterize(found.face, found.glyph, self.pixels, found.synthesis)
+                };
                 self.atlas.insert(key, &bitmap)?
             }
         };
@@ -415,7 +423,8 @@ impl<B: FontBackend> Font<B> {
                 index += 1;
                 continue;
             };
-            if found.emoji {
+            // An emoji, and a glyph that the terminal draws, alone.
+            if found.emoji || found.face == SPRITES {
                 let found = self.sequence(found, run.cluster(index));
                 if let Some(glyph) = self.draw(found) {
                     out.push(RunGlyph {
@@ -617,6 +626,18 @@ impl<B: FontBackend> Font<B> {
         character: char,
         presentation: Presentation,
     ) -> Option<Found> {
+        // The characters that the terminal draws itself, as the
+        // configuration has it.
+        let drawn = (self.config.builtin_box_drawing && sprite::is_box_drawing(character))
+            || (self.config.builtin_powerline && sprite::is_powerline(character));
+        if drawn && let Ok(code) = u16::try_from(u32::from(character)) {
+            return Some(Found {
+                face: SPRITES,
+                synthesis: Synthesis::default(),
+                glyph: GlyphId(code),
+                emoji: false,
+            });
+        }
         let family = face_of(&self.resolved.faces, style);
         let own = match &self.non_ascii {
             Some(non_ascii) if !character.is_ascii() => face_of(non_ascii, style),
@@ -751,7 +772,7 @@ mod tests {
 
     /// The face of the cascade of `Squares` that draws CJK.
     const CJK: FaceId = FaceId(9);
-    /// Its face of emoji, which lacks U+E0B0.
+    /// Its face of emoji, which lacks U+E000.
     const EMOJI: FaceId = FaceId(8);
     /// Its face of symbols as text, which lacks ⌚.
     const SYMBOLS: FaceId = FaceId(7);
@@ -826,7 +847,7 @@ mod tests {
             *self.looked_up.entry((face, character)).or_default() += 1;
             let has = match face {
                 CJK => is_cjk(character),
-                EMOJI => character != '\u{E0B0}',
+                EMOJI => character != '\u{E000}',
                 SYMBOLS => !is_cjk(character) && character != '\u{231A}',
                 WIDE => character != 'A' && character != '\u{E0A0}',
                 _ => !matches!(character, 'A' | '\u{2714}' | '\u{231A}') && !is_cjk(character),
@@ -1129,6 +1150,41 @@ mod tests {
     }
 
     #[test]
+    fn box_drawing_and_powerline_are_drawn_to_the_cell() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let cell = *font.cell();
+        for text in ["\u{2500}", "\u{2588}", "\u{28FF}", "\u{E0B0}"] {
+            let glyph = font.glyph(&shown(text, &Style::DEFAULT)).unwrap();
+            // The cell's whole size, on its top left corner.
+            assert_eq!(
+                (glyph.region.width, glyph.region.height),
+                (cell.width, cell.height)
+            );
+            assert_eq!((glyph.left, glyph.top), (0, cell.baseline as i32));
+        }
+        // Not the font's, and not shaped, in a run of them.
+        assert!(font.backend.drawn.is_empty(), "{:?}", font.backend.drawn);
+        let line = ["\u{2500}"; 4];
+        let laid = run(&mut font, &line);
+        assert_eq!(
+            laid.iter().map(|&(cell, ..)| cell).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        assert_eq!(font.backend.shapings, 0);
+        // With the keys off, the font's.
+        let config = FontConfig {
+            builtin_box_drawing: false,
+            builtin_powerline: false,
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 1.0).unwrap();
+        font.glyph(&shown("\u{2500}", &Style::DEFAULT)).unwrap();
+        font.glyph(&shown("\u{E0B0}", &Style::DEFAULT)).unwrap();
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x2500)), Some(&1));
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE0B0)), Some(&1));
+    }
+
+    #[test]
     fn a_keycap_leaves_its_digit_s_text_as_it_is() {
         // The keycap first, then the digit, and the other way round.
         for order in [["1\u{FE0F}\u{20E3}", "1"], ["1", "1\u{FE0F}\u{20E3}"]] {
@@ -1177,9 +1233,9 @@ mod tests {
             .unwrap();
         assert_eq!(font.backend.drawn.get(&(EMOJI, 0x231A)), Some(&1));
         // An emoji that its face lacks keeps the text's glyph.
-        font.glyph(&shown("\u{E0B0}\u{FE0F}", &Style::DEFAULT))
+        font.glyph(&shown("\u{E000}\u{FE0F}", &Style::DEFAULT))
             .unwrap();
-        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE0B0)), Some(&1));
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE000)), Some(&1));
     }
 
     #[test]
@@ -1361,10 +1417,13 @@ mod system {
             return;
         }
         let regular = font.resolved.faces.regular.id;
-        for icon in ['\u{F015}', '\u{E0A0}', '\u{E0B0}'] {
+        for icon in ['\u{F015}', '\u{E0A0}'] {
             let found = font.find(0, icon, None);
             assert_eq!(found.map(|found| found.face), Some(regular), "{icon:?}");
         }
+        // A powerline symbol is Lokyr's own.
+        let arrow = font.find(0, '\u{E0B0}', None).map(|found| found.face);
+        assert_eq!(arrow, Some(SPRITES));
         // Japanese takes the non-ASCII family.
         let japanese = font.find(0, '日', None).map(|found| found.face);
         assert_ne!(japanese, Some(regular));

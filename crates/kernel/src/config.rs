@@ -830,9 +830,10 @@ mod tests {
         );
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
         let font = keys::<FontConfig>();
-        assert_eq!(font.len(), 10);
+        assert_eq!(font.len(), 12);
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
+        assert!(font.contains(&"builtin-powerline"));
     }
 
     /// The complete example of the configuration's guide reads, and holds

@@ -15,6 +15,7 @@ mod cell;
 mod config;
 mod faces;
 mod hash;
+pub mod sprite;
 
 pub use atlas::{Atlas, COLOR_MAX, Change, GRAY_MAX, Placement, START};
 pub use backend::{

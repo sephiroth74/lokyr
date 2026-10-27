@@ -12,6 +12,8 @@
 //! line-height = 1.0              # the face's line height times this, 0.5 to 3
 //! cell-width = 1.0               # the face's advance times this, 0.5 to 3
 //! ligatures = true
+//! builtin-box-drawing = true     # box drawing, blocks and braille drawn to the pixel
+//! builtin-powerline = true       # the powerline symbols drawn to the pixel
 //! ```
 //!
 //! A value out of its range is an error of the value, which the reader of
@@ -54,6 +56,13 @@ pub struct FontConfig {
     /// Whether the glyphs that a font joins into ligatures, such as `->` or
     /// `!=`, are joined.
     pub ligatures: bool,
+    /// Whether the box drawing characters, the block elements and braille
+    /// are drawn to the pixel at the cell's size, rather than taken from the
+    /// font.
+    pub builtin_box_drawing: bool,
+    /// Whether the powerline symbols, U+E0B0 to U+E0BF, are drawn to the
+    /// pixel at the cell's size, rather than taken from the font.
+    pub builtin_powerline: bool,
 }
 
 impl Default for FontConfig {
@@ -69,6 +78,8 @@ impl Default for FontConfig {
             line_height: Factor::ONE,
             cell_width: Factor::ONE,
             ligatures: true,
+            builtin_box_drawing: true,
+            builtin_powerline: true,
         }
     }
 }
@@ -224,6 +235,8 @@ mod tests {
             line-height = 1.2
             cell-width = 0.95
             ligatures = false
+            builtin-box-drawing = false
+            builtin-powerline = false
             "#,
         )
         .unwrap();
@@ -241,6 +254,8 @@ mod tests {
                 line_height: Factor(1.2),
                 cell_width: Factor(0.95),
                 ligatures: false,
+                builtin_box_drawing: false,
+                builtin_powerline: false,
             }
         );
     }

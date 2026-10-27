@@ -41,6 +41,8 @@ non-ascii-family = "Hiragino Sans"   # the family of the text past ASCII
 line-height = 1.1                    # factors of the cell, from 0.5 to 3
 cell-width = 1.0
 ligatures = false                    # true | false
+builtin-box-drawing = false          # true | false: box drawing, blocks and braille
+builtin-powerline = false            # true | false: the powerline symbols
 
 [cursor]
 shape = "bar"                        # block | bar | underline | hollow
@@ -161,6 +163,23 @@ Whether the glyphs that a font joins into ligatures, such as `->` or `!=`, are j
 - The cell under the cursor shows its own character, so that a ligature splits where you edit it.
 - `false` turns off the font's ligatures, its contextual alternates too, which some fonts use for them.
 - Emoji sequences are drawn whole either way: a family joined by ZWJ, a flag, a keycap such as 1️⃣, or a skin tone.
+
+### `builtin-box-drawing`, `builtin-powerline`
+
+<sub>Platforms: macOS</sub>
+
+Whether Lokyr draws these characters itself, at the cell's size and to the pixel, rather than taking them from the font:
+
+- `builtin-box-drawing`: the box drawing characters, such as `─ │ ┌ ╋ ║ ╭`, the block elements, such as `▀ ▄ █ ░`, and braille, such as `⣿`;
+- `builtin-powerline`: the powerline symbols, U+E0B0 to U+E0BF, the arrows, half circles and triangles between the segments of a prompt.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Drawn by Lokyr, lines meet across cells without a gap, blocks tile, and the powerline symbols fill the cell's height, whatever the font and `line-height`.
+- `false` takes the font's glyphs, or those of the font that macOS gives for them; some fonts draw their own as a look of their own.
+- The other icons of Nerd Fonts always come from the font.
 
 ## `[cursor]`
 
