@@ -236,6 +236,9 @@ mod tests {
         fs::write(&path, "").unwrap();
         fs::create_dir_all(parent.join("other")).unwrap();
         let (_watcher, receiver) = watch(&path);
+        // FSEvents can tell the config's write of a moment before the watch
+        // started: it goes first.
+        while receiver.recv_timeout(Duration::from_millis(300)).is_ok() {}
         fs::write(parent.join("other").join("config.toml"), "").unwrap();
         assert!(receiver.recv_timeout(Duration::from_millis(500)).is_err());
         fs::write(&path, "[font]\n").unwrap();
