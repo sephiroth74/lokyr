@@ -23,11 +23,14 @@
 //!
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
+//!
+//! [app]
+//! icon = "jormungandr"      # the icon's variant
 //! ```
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! and `[keyboard]` [`KeyboardConfig`]. Every key and every section can be
+//! `[keyboard]` [`KeyboardConfig`], and `[app]` [`AppConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -72,6 +75,31 @@ pub struct Config {
     pub window: WindowConfig,
     /// The `[keyboard]` section.
     pub keyboard: KeyboardConfig,
+    /// The `[app]` section.
+    pub app: AppConfig,
+}
+
+/// The `[app]` section: the application's own looks.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct AppConfig {
+    /// The variant of the icon that shows while the app runs, by its name
+    /// without `lokyr-`, which the app looks for among its icons.
+    pub icon: String,
+}
+
+impl AppConfig {
+    /// The icon's variant that the app shows when the config names none,
+    /// which is the bundle's own.
+    pub const DEFAULT_ICON: &str = "jormungandr";
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            icon: Self::DEFAULT_ICON.to_owned(),
+        }
+    }
 }
 
 /// The `[keyboard]` section: how keys reach programs.
@@ -389,13 +417,14 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 5] {
+fn sections() -> [(&'static str, &'static [&'static str]); 6] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
+        ("app", keys::<AppConfig>()),
     ]
 }
 
@@ -561,9 +590,14 @@ mod tests {
 
             [keyboard]
             option-as-meta = "left"
+
+            [app]
+            icon = "laguz"
             "#,
         )
         .unwrap();
+        assert_eq!(config.app.icon, "laguz");
+        assert_eq!(Config::default().app.icon, AppConfig::DEFAULT_ICON);
         assert_eq!(config.window.close_on_exit, CloseOnExit::Never);
         assert_eq!(config.window.padding_x.points(), 10.0);
         assert_eq!(config.window.padding_y.points(), 2.5);
@@ -826,10 +860,12 @@ mod tests {
                 "text",
                 "cursor",
                 "window",
-                "keyboard"
+                "keyboard",
+                "app"
             ]
         );
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
+        assert_eq!(keys::<AppConfig>(), ["icon"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(

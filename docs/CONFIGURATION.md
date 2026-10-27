@@ -67,6 +67,9 @@ background-blur = 20                 # points, from 0 to 100
 
 [keyboard]
 option-as-meta = "left"              # none | left | right | both
+
+[app]
+icon = "laguz"                       # jormungandr | laguz
 ```
 
 ## `config_version`
@@ -398,3 +401,19 @@ Which Option keys act as Meta: they send an escape before the key, rather than t
 - `"left"` lets the right Option type those characters, and makes the left one Meta, for the shortcuts of shells and editors such as `Meta-b` and `Meta-f`.
 - An Option that acts as Meta does not compose either: its dead keys, such as Option and `e` on the US layout, send Meta and `e`.
 - With Meta, a key whose character is past ASCII sends the key in its place on the US layout: Meta and `ò` on the Italian layout send Meta and `;`.
+
+## `[app]`
+
+### `icon`
+
+<sub>Platforms: macOS</sub>
+
+The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app switcher, by its name.
+
+| Values | Default |
+|---|---|
+| `"jormungandr"`, `"laguz"` | `"jormungandr"` |
+
+- A new variant applies at once, as you save the file.
+- The Finder and Launchpad show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
+- A name that is not one of Lokyr's variants keeps the default, and the log names the variants; the rest of the file applies.

@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::path::Path;
 use std::time::Instant;
 
 mod event;
@@ -177,6 +178,13 @@ pub trait Platform {
     /// keys come as they are, never through the input method, so that a
     /// dead key that Option makes does not compose.
     fn set_option_as_meta(&mut self, left: bool, right: bool);
+
+    /// Shows the image of the file at `icon` as the application's icon
+    /// while it runs, where the system shows running applications, as the
+    /// Dock and the application switcher on the Mac; or, with `None`, the
+    /// application's own, as its bundle has it. What shows the application
+    /// while it does not run, as the Finder, keeps its own.
+    fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error>;
 }
 
 /// What the platform calls on the app, on the main thread.
@@ -206,4 +214,7 @@ pub enum Error {
     /// A window could not be opened.
     #[error("the window could not be opened: {0}")]
     Window(String),
+    /// An image could not be read as the application's icon.
+    #[error("the icon {0} could not be read")]
+    Icon(String),
 }

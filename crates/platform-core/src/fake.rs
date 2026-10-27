@@ -3,6 +3,7 @@
 //! applied what they change, as a backend would.
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -60,6 +61,8 @@ pub struct Fake {
     timers: BTreeMap<TimerId, Instant>,
     /// Which Option keys act as Meta.
     option_as_meta: (bool, bool),
+    /// The icons that the app showed, from the first.
+    app_icons: Vec<Option<PathBuf>>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -85,6 +88,7 @@ impl Fake {
             alerts: Vec::new(),
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
+            app_icons: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -220,6 +224,12 @@ impl Fake {
         self.option_as_meta
     }
 
+    /// The icons that the app showed, from the first: a file's, or `None`
+    /// for the application's own.
+    pub fn app_icons(&self) -> &[Option<PathBuf>] {
+        &self.app_icons
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -337,6 +347,17 @@ impl Platform for Fake {
 
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta = (left, right);
+    }
+
+    /// Fails for a file that does not exist, as a backend fails to read it.
+    fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
+        if let Some(path) = icon
+            && !path.is_file()
+        {
+            return Err(Error::Icon(path.display().to_string()));
+        }
+        self.app_icons.push(icon.map(Path::to_owned));
+        Ok(())
     }
 
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {

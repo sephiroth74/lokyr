@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
-use lokyr_kernel::config::Config;
+use lokyr_kernel::config::{AppConfig, Config};
 use lokyr_platform_core::{
     AppEvent, Appearance, Backdrop, Handler, Ime, KeyState, MainMenu, Menu, MenuItem, Platform,
     Point, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
@@ -24,6 +24,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 
+use crate::icon::Icons;
 use crate::keys;
 #[cfg(test)]
 use crate::pane::RESIZE_PACE;
@@ -187,6 +188,10 @@ pub struct App {
     /// The timer of the next size that a program learns, at its pace, and
     /// its time.
     resize_timer: Option<(TimerId, Instant)>,
+    /// The icon's variants, where the app finds them.
+    icons: Option<Icons>,
+    /// The variant that the app made the icon, once it made one.
+    icon_shown: Option<String>,
 }
 
 impl App {
@@ -209,6 +214,8 @@ impl App {
             blink_timer: None,
             exit_timer: None,
             resize_timer: None,
+            icons: Icons::find(),
+            icon_shown: None,
         }
     }
 
@@ -216,6 +223,13 @@ impl App {
     #[cfg(test)]
     fn with_program(mut self, program: Program) -> Self {
         self.program = program;
+        self
+    }
+
+    /// The app, whose icon's variants are `icons`.
+    #[cfg(test)]
+    fn with_icons(mut self, icons: Option<Icons>) -> Self {
+        self.icons = icons;
         self
     }
 
@@ -255,11 +269,46 @@ impl App {
             eprintln!("lokyr: none of the config applies, and the one in force stays");
             return;
         }
+        let icon_changed = config.app.icon != self.config.app.icon;
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
+        if icon_changed {
+            self.show_icon(platform);
+        }
         for &window in self.windows.keys() {
             platform.request_frame(window);
+        }
+    }
+
+    /// Shows the icon's variant that the config names, or the default one
+    /// for a name that is no variant's, as the log tells; nothing when that
+    /// variant shows already, as the bundle's own does at the start.
+    fn show_icon(&mut self, platform: &mut dyn Platform) {
+        let Some(icons) = &self.icons else {
+            return;
+        };
+        let variants = icons.variants();
+        let wanted = &self.config.app.icon;
+        let variant = if variants.contains(wanted) {
+            wanted.as_str()
+        } else {
+            eprintln!(
+                "lokyr: the icon `{wanted}` is not one of Lokyr's: {}; the default one shows",
+                variants.join(", ")
+            );
+            AppConfig::DEFAULT_ICON
+        };
+        let shown = self
+            .icon_shown
+            .as_deref()
+            .or_else(|| icons.bundled().then_some(AppConfig::DEFAULT_ICON));
+        if shown == Some(variant) {
+            return;
+        }
+        match platform.set_app_icon(icons.file(variant).as_deref()) {
+            Ok(()) => self.icon_shown = Some(variant.to_owned()),
+            Err(error) => eprintln!("lokyr: {error}"),
         }
     }
 
@@ -562,6 +611,7 @@ impl Handler for App {
         platform.set_main_menu(&main_menu());
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
+        self.show_icon(platform);
         if let Some(file) = &mut self.config_file {
             if let Err(error) = crate::watch::make_directory(&file.path) {
                 eprintln!(
@@ -1006,6 +1056,76 @@ mod tests {
             app.config.cursor.shape == cursor::Shape::Underline
         });
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// A directory of its own for `test`, with two icon's variants: the
+    /// default one and `laguz`.
+    fn icons(test: &str) -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-app-icons-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        for variant in [AppConfig::DEFAULT_ICON, "laguz"] {
+            std::fs::write(directory.join(format!("lokyr-{variant}.icns")), "").unwrap();
+        }
+        directory
+    }
+
+    /// The default config, with the icon's variant `icon`.
+    fn with_icon(icon: &str) -> Config {
+        let mut config = Config::default();
+        config.app.icon = icon.to_owned();
+        config
+    }
+
+    #[test]
+    fn the_config_s_icon_shows_as_it_applies() {
+        let directory = icons("bundled");
+        let mut fake = Fake::default();
+        let mut app =
+            app(Config::default(), quiet()).with_icons(Some(Icons::new(directory.clone(), true)));
+        fake.start(&mut app);
+        // The bundle's own icon is the default variant's.
+        assert_eq!(fake.app_icons(), []);
+        let laguz = Some(directory.join("lokyr-laguz.icns"));
+        app.apply(&mut fake, with_icon("laguz"));
+        assert_eq!(fake.app_icons(), std::slice::from_ref(&laguz));
+        // Another key leaves it.
+        let mut other = with_icon("laguz");
+        other.cursor.blink = false;
+        app.apply(&mut fake, other);
+        assert_eq!(fake.app_icons().len(), 1);
+        // A name that is no variant's gives the default, the bundle's own.
+        app.apply(&mut fake, with_icon("lagus"));
+        assert_eq!(fake.app_icons(), [laguz.clone(), None]);
+        // The default, which shows already, changes nothing.
+        app.apply(&mut fake, with_icon(AppConfig::DEFAULT_ICON));
+        assert_eq!(fake.app_icons().len(), 2);
+        // A variant whose file cannot be read keeps the icon that shows.
+        std::os::unix::fs::symlink(directory.join("gone"), directory.join("lokyr-broken.icns"))
+            .unwrap();
+        app.apply(&mut fake, with_icon("broken"));
+        assert_eq!(fake.app_icons().len(), 2);
+        app.apply(&mut fake, with_icon("laguz"));
+        assert_eq!(fake.app_icons(), [laguz.clone(), None, laguz]);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn outside_the_bundle_the_icon_shows_from_its_file_at_the_start() {
+        let directory = icons("tree");
+        for (config, variant) in [
+            (Config::default(), AppConfig::DEFAULT_ICON),
+            (with_icon("laguz"), "laguz"),
+        ] {
+            let mut fake = Fake::default();
+            let mut app =
+                app(config, quiet()).with_icons(Some(Icons::new(directory.clone(), false)));
+            fake.start(&mut app);
+            let file = directory.join(format!("lokyr-{variant}.icns"));
+            assert_eq!(fake.app_icons(), [Some(file)]);
+        }
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]

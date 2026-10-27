@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
@@ -9,10 +10,10 @@ use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
-use objc2::MainThreadMarker;
 use objc2::rc::Retained;
+use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSPasteboard,
+    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSImage, NSPasteboard,
     NSPasteboardTypeString,
 };
 use objc2_foundation::{NSPoint, NSString, NSTimer};
@@ -307,6 +308,24 @@ impl Platform for Backend {
 
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta.set((left, right));
+    }
+
+    fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {
+        let image = match icon {
+            Some(path) => {
+                let file = NSString::from_str(&path.to_string_lossy());
+                let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &file)
+                    .filter(|image| image.isValid())
+                    .ok_or_else(|| Error::Icon(path.display().to_string()))?;
+                Some(image)
+            }
+            None => None,
+        };
+        let app = NSApplication::sharedApplication(self.mtm);
+        // SAFETY: AppKit takes an image, or nil, which gives the bundle's
+        // own icon back, as its documentation says.
+        unsafe { app.setApplicationIconImage(image.as_deref()) };
+        Ok(())
     }
 
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {
