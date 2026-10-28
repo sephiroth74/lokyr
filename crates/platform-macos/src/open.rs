@@ -1,45 +1,35 @@
 //! Opening URLs and paths with the system's handlers, through
 //! `NSWorkspace`: a file that would run rather than open shows in the
-//! Finder, selected.
+//! Finder, selected. A path's symbolic links and the Finder's aliases are
+//! resolved first, so that what is checked is what opens.
 
-use std::ffi::OsStr;
-use std::fs::{self, Metadata};
-use std::os::unix::fs::PermissionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use lokyr_platform_core::{Error, TargetKind};
+use lokyr_platform_core::{Error, TargetKind, runs_by_itself};
 use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
 use objc2_app_kit::NSWorkspace;
-use objc2_foundation::{NSArray, NSBundle, NSString, NSURL};
+use objc2_foundation::{
+    NSArray, NSBundle, NSDictionary, NSString, NSURL, NSURLBookmarkResolutionOptions,
+};
 
-/// The extensions of the files and the bundles that macOS runs, installs or
-/// follows elsewhere, rather than opens: applications, Java archives,
-/// Automator's workflows and actions, installers, preference panes, screen
-/// savers, configuration profiles, and the Finder's locations, whose URL
-/// can be of any scheme.
-const RUNS: [&str; 15] = [
-    "app",
-    "command",
-    "tool",
-    "terminal",
-    "jar",
-    "workflow",
-    "action",
-    "pkg",
-    "mpkg",
-    "prefpane",
-    "saver",
-    "mobileconfig",
-    "fileloc",
-    "webloc",
-    "inetloc",
+/// The applications that run, or install, the documents that they open:
+/// Java archives, installers' packages, Automator's workflows, and Python's
+/// scripts. The applications that declare a shell's role for documents,
+/// as terminals do for scripts, run theirs too.
+const RUNNERS: [&str; 4] = [
+    "com.apple.JavaLauncher",
+    "com.apple.installer",
+    "com.apple.AutomatorInstaller",
+    "org.python.PythonLauncher",
 ];
 
-/// The bundle identifier of the system's terminal, which runs what it opens.
-const TERMINAL: &str = "com.apple.Terminal";
+/// How many aliases a path can lead through, each to the next.
+const ALIASES: usize = 8;
 
-/// A target that opens: a URL of another scheme than `file`, or a path of
-/// this machine, with its kind.
+/// A target that opens: a URL of another scheme than `file`, or the file
+/// that a path of this machine leads to, with its kind.
 enum Resolved {
     Url(Retained<NSURL>),
     Path(Retained<NSURL>, TargetKind),
@@ -68,14 +58,14 @@ fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
         let path = url.path().ok_or_else(|| failed("it has no path"))?;
         PathBuf::from(path.to_string())
     };
+    let path = resolved(&path).map_err(|why| failed(&why))?;
     let metadata = fs::metadata(&path).map_err(|error| failed(&error.to_string()))?;
-    let file = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+    let file = file_url(&path);
     let opener = workspace
         .URLForApplicationToOpenURL(&file)
-        .and_then(|application| NSBundle::bundleWithURL(&application))
-        .and_then(|bundle| bundle.bundleIdentifier())
-        .map(|identifier| identifier.to_string());
-    let kind = if runs(&path, &metadata, opener.as_deref()) {
+        .and_then(|application| NSBundle::bundleWithURL(&application));
+    let kind = if runs_by_itself(&path, &metadata) || opener.as_deref().is_some_and(runs_documents)
+    {
         TargetKind::Program
     } else if metadata.is_dir() {
         TargetKind::Directory
@@ -83,6 +73,61 @@ fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
         TargetKind::File
     };
     Ok(Resolved::Path(file, kind))
+}
+
+/// `path` with its symbolic links and the Finder's aliases resolved, each
+/// in turn, as the system resolves them as it opens a file: Foundation's
+/// resolution of an alias follows the links too.
+fn resolved(path: &Path) -> Result<PathBuf, String> {
+    let mut path = path.to_path_buf();
+    for _ in 0..ALIASES {
+        let options = NSURLBookmarkResolutionOptions::WithoutUI
+            | NSURLBookmarkResolutionOptions::WithoutMounting;
+        let target = NSURL::URLByResolvingAliasFileAtURL_options_error(&file_url(&path), options)
+            .map_err(|error| {
+            format!("its alias leads nowhere: {}", error.localizedDescription())
+        })?;
+        let target = target
+            .path()
+            .map(|target| PathBuf::from(target.to_string()))
+            .ok_or("its alias leads to no path")?;
+        if target == path {
+            return Ok(path);
+        }
+        path = target;
+    }
+    Err("its aliases lead to aliases".to_owned())
+}
+
+/// The `file` URL of `path`.
+fn file_url(path: &Path) -> Retained<NSURL> {
+    NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
+}
+
+/// Whether the application of `bundle` runs the documents that it opens:
+/// one of [`RUNNERS`], or one that declares a shell's role for a type of
+/// document.
+fn runs_documents(bundle: &NSBundle) -> bool {
+    if bundle
+        .bundleIdentifier()
+        .is_some_and(|identifier| RUNNERS.contains(&identifier.to_string().as_str()))
+    {
+        return true;
+    }
+    let types = bundle
+        .objectForInfoDictionaryKey(&NSString::from_str("CFBundleDocumentTypes"))
+        .and_then(|types| types.downcast::<NSArray>().ok());
+    let role = NSString::from_str("CFBundleTypeRole");
+    types.is_some_and(|types| {
+        (0..types.count()).any(|index| {
+            let kind: Retained<AnyObject> = types.objectAtIndex(index);
+            kind.downcast::<NSDictionary>()
+                .ok()
+                .and_then(|kind| kind.objectForKey(&role))
+                .and_then(|role| role.downcast::<NSString>().ok())
+                .is_some_and(|role| role.to_string() == "Shell")
+        })
+    })
 }
 
 /// What `target` is, as
@@ -96,7 +141,7 @@ pub(crate) fn kind(target: &str) -> Result<TargetKind, Error> {
 }
 
 /// Opens `target`, as [`Platform::open`](lokyr_platform_core::Platform::open)
-/// does.
+/// does: the file that its links and aliases lead to.
 pub(crate) fn open(target: &str) -> Result<(), Error> {
     let workspace = NSWorkspace::sharedWorkspace();
     let url = match resolve(&workspace, target)? {
@@ -117,7 +162,8 @@ pub(crate) fn open(target: &str) -> Result<(), Error> {
 }
 
 /// Shows `target` in the Finder, as
-/// [`Platform::reveal`](lokyr_platform_core::Platform::reveal) does.
+/// [`Platform::reveal`](lokyr_platform_core::Platform::reveal) does: the
+/// file that its links and aliases lead to.
 pub(crate) fn reveal(target: &str) -> Result<(), Error> {
     let workspace = NSWorkspace::sharedWorkspace();
     match resolve(&workspace, target)? {
@@ -127,21 +173,6 @@ pub(crate) fn reveal(target: &str) -> Result<(), Error> {
         }
         Resolved::Url(_) => Err(Error::Open(target.to_owned(), "it is no file".to_owned())),
     }
-}
-
-/// Whether opening `path`, of `metadata`, which the application of the
-/// bundle identifier `opener` would open, runs it: a program, or a file of
-/// one of [`RUNS`]' extensions, or one that the system's terminal opens; a
-/// directory of one of those extensions, or a bundle with a program.
-fn runs(path: &Path, metadata: &Metadata, opener: Option<&str>) -> bool {
-    let extension = path
-        .extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|extension| RUNS.iter().any(|runs| runs.eq_ignore_ascii_case(extension)));
-    if metadata.is_dir() {
-        return extension || path.join("Contents/MacOS").is_dir();
-    }
-    extension || metadata.permissions().mode() & 0o111 != 0 || opener == Some(TERMINAL)
 }
 
 /// Whether `host`, of a `file` URL, is this machine, whose name is `name`:
@@ -178,38 +209,130 @@ fn host_name() -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_file_that_would_run_shows_in_the_finder() {
-        let directory = std::env::temp_dir().join(format!("lokyr-open-{}", std::process::id()));
+    /// A directory of the test's own, made afresh.
+    fn directory(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("lokyr-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(directory.join("Tool.bundle/Contents/MacOS")).unwrap();
-        fs::create_dir_all(directory.join("Some.App")).unwrap();
-        fs::create_dir_all(directory.join("notes")).unwrap();
-        for file in ["a.txt", "b.command", "c.JAR", "d.webloc", "program", "e.sh"] {
-            fs::write(directory.join(file), "").unwrap();
+        fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    /// Makes `alias` a Finder's alias of `original`.
+    fn make_alias(original: &Path, alias: &Path) {
+        let bookmark = file_url(original)
+            .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
+                objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile,
+                None,
+                None,
+            )
+            .unwrap();
+        NSURL::writeBookmarkData_toURL_options_error(
+            &bookmark,
+            &file_url(alias),
+            objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile.0,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_link_or_an_alias_to_a_program_leads_to_the_finder() {
+        use std::os::unix::fs::symlink;
+
+        let directory = directory("links");
+        for name in ["x.jar", "x.pkg", "x.fileloc", "notes.txt"] {
+            fs::write(directory.join(name), "").unwrap();
         }
-        fs::set_permissions(directory.join("program"), fs::Permissions::from_mode(0o755)).unwrap();
-        let runs = |name: &str, opener: Option<&str>| {
-            let path = directory.join(name);
-            runs(&path, &fs::metadata(&path).unwrap(), opener)
-        };
-        for name in [
-            "Tool.bundle",
-            "Some.App",
-            "b.command",
-            "c.JAR",
-            "d.webloc",
-            "program",
+        // An application of its own, which opens itself.
+        fs::create_dir_all(directory.join("Tool.app/Contents/MacOS")).unwrap();
+        let path = |name: &str| directory.join(name).to_str().unwrap().to_owned();
+        for (link, original) in [
+            ("a.txt", "x.jar"),
+            ("b.txt", "x.pkg"),
+            ("c.txt", "x.fileloc"),
+            ("d.txt", "notes.txt"),
         ] {
-            assert!(runs(name, None), "{name}");
+            symlink(directory.join(original), directory.join(link)).unwrap();
         }
-        for name in ["notes", "a.txt", "e.sh"] {
-            assert!(!runs(name, None), "{name}");
+        make_alias(&directory.join("x.jar"), &directory.join("alias.txt"));
+        make_alias(&directory.join("Tool.app"), &directory.join("tool-alias"));
+        make_alias(&directory.join("notes.txt"), &directory.join("note-alias"));
+        for name in ["a.txt", "b.txt", "c.txt", "alias.txt", "tool-alias"] {
+            assert_eq!(kind(&path(name)).ok(), Some(TargetKind::Program), "{name}");
         }
-        // A file that the system's terminal opens runs in it.
-        assert!(runs("e.sh", Some(TERMINAL)));
-        assert!(!runs("e.sh", Some("com.apple.TextEdit")));
+        for name in ["d.txt", "note-alias", "notes.txt"] {
+            assert_eq!(kind(&path(name)).ok(), Some(TargetKind::File), "{name}");
+        }
+        // A link that leads nowhere does not open.
+        symlink(directory.join("none"), directory.join("e.txt")).unwrap();
+        assert!(kind(&path("e.txt")).is_err());
         fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_a_runner_opens_by_its_own_choice_leads_to_the_finder() {
+        let directory = directory("opener");
+        let file = directory.join("ow.txt");
+        fs::write(&file, "").unwrap();
+        assert_eq!(kind(file.to_str().unwrap()).ok(), Some(TargetKind::File));
+        // The file's own choice of Jar Launcher, as the Finder's "Open
+        // With" keeps it, a binary property list.
+        let xml = directory.join("openwith.plist");
+        fs::write(
+            &xml,
+            concat!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                "<plist version=\"1.0\"><dict>",
+                "<key>bundleidentifier</key><string>com.apple.JavaLauncher</string>",
+                "<key>path</key><string>/System/Library/CoreServices/JavaLauncher.app</string>",
+                "<key>version</key><integer>0</integer>",
+                "</dict></plist>",
+            ),
+        )
+        .unwrap();
+        let converted = std::process::Command::new("plutil")
+            .args(["-convert", "binary1"])
+            .arg(&xml)
+            .status()
+            .unwrap();
+        assert!(converted.success());
+        let value = fs::read(&xml).unwrap();
+        let name = c"com.apple.LaunchServices.OpenWith";
+        let path = std::ffi::CString::new(file.to_str().unwrap()).unwrap();
+        // SAFETY: the name and the path are terminated strings, and the value
+        // is as long as the length given.
+        let set = unsafe {
+            libc::setxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        assert_eq!(set, 0);
+        if Path::new("/System/Library/CoreServices/JavaLauncher.app").exists() {
+            assert_eq!(kind(file.to_str().unwrap()).ok(), Some(TargetKind::Program));
+        }
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn terminals_and_the_runners_run_their_documents() {
+        let bundle = |path: &str| {
+            NSBundle::bundleWithURL(&NSURL::fileURLWithPath(&NSString::from_str(path)))
+        };
+        for (path, runs) in [
+            ("/System/Applications/Utilities/Terminal.app", true),
+            ("/System/Library/CoreServices/Installer.app", true),
+            ("/System/Applications/TextEdit.app", false),
+            ("/System/Applications/Preview.app", false),
+            ("/System/Library/CoreServices/Finder.app", false),
+        ] {
+            if let Some(bundle) = bundle(path) {
+                assert_eq!(runs_documents(&bundle), runs, "{path}");
+            }
+        }
     }
 
     #[test]

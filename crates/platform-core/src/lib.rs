@@ -21,6 +21,7 @@ pub mod fake;
 mod geometry;
 mod input;
 mod menu;
+mod runs;
 #[cfg(test)]
 mod tests;
 mod waker;
@@ -33,6 +34,7 @@ pub use input::{
 };
 pub use menu::{Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, Shortcut, ShortcutKey};
 pub use raw_window_handle::WindowHandle;
+pub use runs::{RUNS, runs_by_itself};
 pub use waker::Waker;
 
 /// A window, which no other window of the process takes, even once it is

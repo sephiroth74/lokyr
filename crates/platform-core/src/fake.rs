@@ -508,19 +508,23 @@ impl Platform for Fake {
         }
     }
 
-    /// A URL, unless of `file`; a directory, a program, as a file that its
-    /// mode lets run, or a file; a path that does not exist fails.
+    /// A URL, unless of `file`; a directory, a program, as the shared rule
+    /// tells of the file that the target's links lead to, or a file; a
+    /// path that does not exist, a `file` URL of another machine and a text
+    /// that is no URL fail, as a backend's do.
     fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
-        use std::os::unix::fs::PermissionsExt;
-        let Some(path) = fake_path(target) else {
-            return Ok(TargetKind::Url);
+        let failed = |why: String| Error::Open(target.to_owned(), why);
+        let path = match fake_path(target) {
+            Target::Url => return Ok(TargetKind::Url),
+            Target::Path(path) => path,
+            Target::Neither(why) => return Err(failed(why.to_owned())),
         };
-        let metadata = std::fs::metadata(path)
-            .map_err(|error| Error::Open(target.to_owned(), error.to_string()))?;
-        Ok(if metadata.is_dir() {
-            TargetKind::Directory
-        } else if metadata.permissions().mode() & 0o111 != 0 {
+        let path = std::fs::canonicalize(path).map_err(|error| failed(error.to_string()))?;
+        let metadata = std::fs::metadata(&path).map_err(|error| failed(error.to_string()))?;
+        Ok(if crate::runs_by_itself(&path, &metadata) {
             TargetKind::Program
+        } else if metadata.is_dir() {
+            TargetKind::Directory
         } else {
             TargetKind::File
         })
@@ -546,11 +550,65 @@ impl Platform for Fake {
     }
 }
 
-/// The path of `target`, an absolute path or a `file` URL of no host;
-/// `None` for another URL.
-fn fake_path(target: &str) -> Option<&str> {
+/// What a target is, as the fake reads it.
+enum Target {
+    /// A URL of another scheme than `file`.
+    Url,
+    /// The path of an absolute path, or of a `file` URL of this machine.
+    Path(PathBuf),
+    /// Neither, for the reason.
+    Neither(&'static str),
+}
+
+/// What `target` is: an absolute path; a `file` URL, of any case, with no
+/// host or `localhost`, its escapes decoded; or another URL, of a scheme
+/// that starts with a letter.
+fn fake_path(target: &str) -> Target {
     if target.starts_with('/') {
-        return Some(target);
+        return Target::Path(PathBuf::from(target));
     }
-    target.strip_prefix("file://")
+    let Some((scheme, rest)) = target.split_once(':') else {
+        return Target::Neither("it is not a URL");
+    };
+    let scheme_ok = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c));
+    if !scheme_ok {
+        return Target::Neither("it is not a URL");
+    }
+    if !scheme.eq_ignore_ascii_case("file") {
+        return Target::Url;
+    }
+    let path = match rest.strip_prefix("//") {
+        Some(rest) => {
+            let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+            if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
+                return Target::Neither("it is on another machine");
+            }
+            path
+        }
+        None => rest,
+    };
+    match decoded(path) {
+        Some(path) if path.starts_with('/') => Target::Path(PathBuf::from(path)),
+        _ => Target::Neither("it has no path"),
+    }
+}
+
+/// `text` with its `%` escapes decoded, if they are escapes of UTF-8.
+fn decoded(text: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
+    while let Some((&byte, after)) = rest.split_first() {
+        if byte == b'%' {
+            let hex = std::str::from_utf8(after.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = &after[2..];
+        } else {
+            bytes.push(byte);
+            rest = after;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }

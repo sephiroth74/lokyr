@@ -478,3 +478,43 @@ fn a_size_in_pixels_rounds_to_the_nearest() {
         }
     );
 }
+
+#[test]
+fn the_fake_tells_targets_apart_as_a_backend_does() {
+    let directory = std::env::temp_dir().join(format!("lokyr-fake-targets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("my notes.txt"), "").unwrap();
+    std::fs::write(directory.join("x.jar"), "").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(directory.join("x.jar"), directory.join("link.txt")).unwrap();
+    let path = directory.display().to_string();
+    let fake = Fake::default();
+    for (target, kind) in [
+        ("https://lokyr.dev".to_owned(), TargetKind::Url),
+        ("mailto:me@lokyr.dev".to_owned(), TargetKind::Url),
+        (path.clone(), TargetKind::Directory),
+        (format!("{path}/my notes.txt"), TargetKind::File),
+        (
+            format!("FILE://localhost{path}/my%20notes.txt"),
+            TargetKind::File,
+        ),
+        (format!("file://{path}/x.jar"), TargetKind::Program),
+    ] {
+        assert_eq!(fake.target_kind(&target).ok(), Some(kind), "{target}");
+    }
+    #[cfg(unix)]
+    assert_eq!(
+        fake.target_kind(&format!("{path}/link.txt")).ok(),
+        Some(TargetKind::Program)
+    );
+    for target in [
+        "not a url".to_owned(),
+        format!("file://elsewhere{path}/my%20notes.txt"),
+        format!("{path}/none"),
+        "file://localhost/%ZZ".to_owned(),
+    ] {
+        assert!(fake.target_kind(&target).is_err(), "{target}");
+    }
+    std::fs::remove_dir_all(&directory).unwrap();
+}

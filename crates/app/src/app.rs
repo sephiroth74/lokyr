@@ -288,6 +288,48 @@ struct Window {
     selecting: Option<Selecting>,
 }
 
+/// `target` as a question shows it: each character that shows nothing,
+/// or that turns the text's direction, as `\u{202E}`, so that the target
+/// reads as it is.
+fn shown(target: &str) -> String {
+    let mut shown = String::with_capacity(target.len());
+    for c in target.chars() {
+        if invisible(c) {
+            shown.push_str(&format!("\\u{{{:X}}}", u32::from(c)));
+        } else {
+            shown.push(c);
+        }
+    }
+    shown
+}
+
+/// Whether `c` shows nothing, or turns the text's direction: the controls,
+/// the separators of lines and paragraphs, and Unicode's characters that
+/// are ignorable by default, as the bidirectional overrides and isolates,
+/// the zero-width ones, the variation selectors and the tags.
+fn invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            u32::from(c),
+            0xAD | 0x34F
+                | 0x61C
+                | 0x115F..=0x1160
+                | 0x17B4..=0x17B5
+                | 0x180B..=0x180F
+                | 0x200B..=0x200F
+                | 0x2028..=0x202E
+                | 0x2060..=0x206F
+                | 0x3164
+                | 0xFE00..=0xFE0F
+                | 0xFEFF
+                | 0xFFA0
+                | 0xFFF9..=0xFFFB
+                | 0x1BCA0..=0x1BCA3
+                | 0x1D173..=0x1D17A
+                | 0xE0000..=0xE0FFF
+        )
+}
+
 /// What the user chose that links do, as the config writes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Chosen {
@@ -1636,7 +1678,7 @@ impl App {
         let alert = Alert {
             style: AlertStyle::Informational,
             message: self.texts.text(message),
-            detail: target.clone(),
+            detail: shown(&target),
             buttons,
             suppression: Some(self.texts.text(dont_ask)),
         };
@@ -5084,6 +5126,28 @@ mod tests {
         assert_eq!(fake.opened().last().map(String::as_str), Some("/etc/hosts"));
         assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
         assert!(app.links_chosen == (None, None));
+    }
+
+    #[test]
+    fn a_link_s_question_shows_its_invisible_characters_escaped() {
+        assert_eq!(
+            shown("https://lokyr.dev/\u{202E}gpj.exe\u{200B}x\u{7}é"),
+            "https://lokyr.dev/\\u{202E}gpj.exe\\u{200B}x\\u{7}é"
+        );
+        assert_eq!(shown("/Users/x/日本 文書.txt"), "/Users/x/日本 文書.txt");
+        for c in [
+            '\u{2066}',
+            '\u{2069}',
+            '\u{2028}',
+            '\u{FEFF}',
+            '\u{E0041}',
+            '\u{FE0F}',
+        ] {
+            assert!(invisible(c), "{c:?}");
+        }
+        for c in ['a', ' ', '/', 'é', '日', '😀'] {
+            assert!(!invisible(c), "{c:?}");
+        }
     }
 
     #[test]
