@@ -47,7 +47,15 @@ impl Terminal {
                     self.erase_in_row(y, 0..cols, keep);
                 }
             }
-            3 if !selective => self.screen_mut().rows.clear_scrollback(),
+            3 if !selective => {
+                self.screen_mut().rows.clear_scrollback();
+                // The view's rows went: it follows the screen at once, so
+                // that output does not leave it on the scrollback's next
+                // rows.
+                if !self.alternate_active {
+                    self.set_viewport_offset(0);
+                }
+            }
             _ => {}
         }
     }

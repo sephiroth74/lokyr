@@ -18,7 +18,14 @@ const FALLBACK: &str = "en_US.UTF-8";
 /// The bundle's resources, `Contents/Resources`, when the app's binary is
 /// in its bundle's `Contents/MacOS`.
 pub(crate) fn resources() -> Option<PathBuf> {
-    let executable = std::env::current_exe().ok()?;
+    resources_of(&std::env::current_exe().ok()?)
+}
+
+/// The resources of the bundle of the binary `executable`, by its real
+/// path, as a link to it, as a Homebrew cask's in its `bin`, starts it by
+/// the link's.
+fn resources_of(executable: &Path) -> Option<PathBuf> {
+    let executable = fs::canonicalize(executable).ok()?;
     let binaries = executable.parent()?;
     if binaries.file_name() != Some("MacOS".as_ref()) {
         return None;
@@ -40,27 +47,44 @@ pub(crate) fn system_locales() -> Vec<String> {
     names
 }
 
+/// The language of `locale`, as `it` of `it_CH`.
+fn language_of(locale: &str) -> &str {
+    locale
+        .split_once('_')
+        .map_or(locale, |(language, _)| language)
+}
+
 /// The UTF-8 locale for the user's `locales`, languages with regions in the
-/// order of their preferences, among the system's `available` ones: the
-/// first that the system has; otherwise a language's own region, as
-/// `it_IT` for `it_CH`, or the first region of the language that the
-/// system has, as `ja_JP` for `ja_CH`; otherwise `en_US.UTF-8`, which
-/// English takes too, as its regions come in no order of use.
+/// order of their preferences, among the system's `available` ones: of the
+/// first language that the system has a locale of, the first of the user's
+/// regions of it that the system has, as `en_GB` of `en_CH` and `en_GB`;
+/// otherwise the language's own region, as `it_IT` for `it_CH`, and
+/// `en_US` for English; otherwise the first region of it that the system
+/// has, as `ja_JP` for `ja_CH`. A later language comes only after: `en_CH`
+/// and `it_CH` give `en_US`. Without any, `en_US.UTF-8`.
 pub(crate) fn utf8_locale(locales: &[String], available: &[String]) -> String {
     let has = |name: &str| available.iter().any(|available| available == name);
-    if let Some(locale) = locales
-        .iter()
-        .map(|locale| format!("{locale}{UTF8}"))
-        .find(|name| has(name))
-    {
-        return locale;
-    }
-    for language in locales.iter().filter_map(|locale| locale.split_once('_')) {
-        let language = language.0;
-        if language == "en" {
-            continue;
+    let mut languages: Vec<&str> = Vec::new();
+    for locale in locales {
+        let language = language_of(locale);
+        if !languages.contains(&language) {
+            languages.push(language);
         }
-        let own = format!("{language}_{}{UTF8}", language.to_uppercase());
+    }
+    for language in languages {
+        if let Some(locale) = locales
+            .iter()
+            .filter(|locale| language_of(locale) == language)
+            .map(|locale| format!("{locale}{UTF8}"))
+            .find(|name| has(name))
+        {
+            return locale;
+        }
+        let own = if language == "en" {
+            FALLBACK.to_owned()
+        } else {
+            format!("{language}_{}{UTF8}", language.to_uppercase())
+        };
         if has(&own) {
             return own;
         }
@@ -103,6 +127,53 @@ mod tests {
         assert_eq!(chosen(&["en_CH"]), "en_US.UTF-8");
         assert_eq!(chosen(&["xx_YY"]), "en_US.UTF-8");
         assert_eq!(chosen(&[]), "en_US.UTF-8");
+    }
+
+    #[test]
+    fn the_first_language_wins_over_a_later_one_s_exact_region() {
+        let available = names(&[
+            "en_GB.UTF-8",
+            "en_US.UTF-8",
+            "it_CH.UTF-8",
+            "it_IT.UTF-8",
+            "ja_JP.UTF-8",
+        ]);
+        let chosen = |locales: &[&str]| utf8_locale(&names(locales), &available);
+        // English first, though the system lacks its region and has the
+        // Italian one's.
+        assert_eq!(chosen(&["en_CH", "it_CH"]), "en_US.UTF-8");
+        // Another of the user's regions of the language, before its own.
+        assert_eq!(chosen(&["en_CH", "en_GB", "it_CH"]), "en_GB.UTF-8");
+        assert_eq!(chosen(&["it_US", "en_GB", "it_CH"]), "it_CH.UTF-8");
+        // A language that the system lacks gives way to the next.
+        assert_eq!(chosen(&["xx_YY", "it_CH"]), "it_CH.UTF-8");
+        assert_eq!(chosen(&["ja_CH", "it_CH"]), "ja_JP.UTF-8");
+        // A language without its region.
+        assert_eq!(chosen(&["it"]), "it_IT.UTF-8");
+    }
+
+    #[test]
+    fn the_bundle_s_resources_are_found_through_a_link_to_its_binary() {
+        let root = std::env::temp_dir().join(format!("lokyr-bundle-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let contents = root.join("Lokyr.app").join("Contents");
+        fs::create_dir_all(contents.join("MacOS")).unwrap();
+        fs::create_dir_all(contents.join("Resources")).unwrap();
+        let binary = contents.join("MacOS").join("lokyr");
+        fs::write(&binary, "").unwrap();
+        let resources = fs::canonicalize(contents.join("Resources")).unwrap();
+        assert_eq!(resources_of(&binary), Some(resources.clone()));
+        // As a cask links it from Homebrew's `bin`.
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("lokyr");
+        std::os::unix::fs::symlink(&binary, &link).unwrap();
+        assert_eq!(resources_of(&link), Some(resources));
+        // A binary outside a bundle has none.
+        let loose = bin.join("other");
+        fs::write(&loose, "").unwrap();
+        assert_eq!(resources_of(&loose), None);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

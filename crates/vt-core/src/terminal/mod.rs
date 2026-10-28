@@ -687,6 +687,9 @@ impl Terminal {
         self.given_cols = self.cols;
         let limit = self.scrollback_limit;
         self.primary.rows.set_scrollback_limit(limit);
+        // A taller screen that took the view's first row brings the view to
+        // the screen, which it follows from now on.
+        self.settle_viewport();
     }
 
     /// Clears the prompt that the cursor is in, as semantic prompts mark it,

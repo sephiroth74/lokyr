@@ -401,9 +401,14 @@ impl App {
 
     /// Shows the icon's variant that the config names, or the default one
     /// for a name that is no variant's, as the log tells; nothing when that
-    /// variant shows already, as the bundle's own does at the start.
+    /// variant shows already, as the bundle's own does at the start, or
+    /// when the app found no variants, which the log tells too.
     fn show_icon(&mut self, platform: &mut dyn Platform) {
         let Some(icons) = &self.icons else {
+            eprintln!(
+                "lokyr: no icon's variants found, neither in the bundle nor in the source tree; the icon `{}` cannot show",
+                self.config.app.icon
+            );
             return;
         };
         let variants = icons.variants();
@@ -2128,8 +2133,8 @@ mod tests {
             std::env::temp_dir().join(format!("lokyr-app-resources-{}", std::process::id()));
         std::fs::create_dir_all(&resources).unwrap();
         let mut fake = Fake::default();
-        // A region that the system has no locale of, then one that it has.
-        fake.set_locales(&["en_XX", "it_CH"]);
+        // A language that the system has no locale of, then one that it has.
+        fake.set_locales(&["xx_XX", "it_CH"]);
         let script = "printf '%s' \"$LOKYR_RESOURCES_DIR\"; sleep 10";
         let mut app = app(Config::default(), shell(script)).with_resources(Some(resources.clone()));
         fake.start(&mut app);

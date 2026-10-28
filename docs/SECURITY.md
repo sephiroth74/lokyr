@@ -86,7 +86,7 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
 
 ## macOS environment
 
-- **Locale**: when the app is launched from the Dock, `LANG` is not set. In that case we set a UTF-8 locale that matches the system preferences: the first of the user's languages, each with its region, in the order of the preferences, that macOS has as a UTF-8 locale, as `it_CH.UTF-8`; then a language's own region, as `it_IT`, or its first that macOS has, as `ja_JP` for Japanese in Switzerland; otherwise `en_US.UTF-8`, which English in a region that macOS lacks takes too.
+- **Locale**: when the app is launched from the Dock, `LANG` is not set. In that case we set a UTF-8 locale that matches the system preferences, of the first of the user's languages that macOS has a UTF-8 locale of: the first of the user's regions of it that macOS has, as `it_CH.UTF-8`; otherwise the language's own region, as `it_IT`, and `en_US` for English; otherwise its first region that macOS has, as `ja_JP` for Japanese in Switzerland. A later language comes only after: English in Switzerland, then Italian in Switzerland, gives `en_US.UTF-8`, and English in Switzerland, then in the United Kingdom, `en_GB.UTF-8`. Without any, `en_US.UTF-8`.
 - **Login shell**: started the way Terminal.app does, through `login` (`/usr/bin/login -flp $USER /bin/bash --noprofile --norc -c "exec -l -a <name> <shell>"`).
 - **TCC**:
   - Permissions requested by child processes (microphone, camera, Apple Events, protected folders, …) are attributed to the terminal.

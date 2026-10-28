@@ -610,6 +610,16 @@ mod tests {
         terminal.snapshot(&mut snapshot);
         assert_eq!(firsts(&snapshot), "qrst");
         assert_same(&snapshot, &copy_of(&terminal));
+        // ED 3 and output in one feed, as `clear` and a program's output
+        // after it: the view follows the screen.
+        feed(&mut terminal, &mut parser, "\r\nu\r\nv\r\nw");
+        terminal.scroll_viewport(Scroll::Up(2));
+        assert_eq!(terminal.viewport_offset(), 2);
+        feed(&mut terminal, &mut parser, "\x1b[3J\r\nx\r\ny");
+        assert_eq!(terminal.viewport_offset(), 0);
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(firsts(&snapshot), "vwxy");
+        assert_eq!(terminal.screen_rows().pins(), 0);
     }
 
     #[test]
@@ -625,11 +635,24 @@ mod tests {
         // A taller screen that takes the view's first row shows the screen,
         // which the view follows from then on.
         terminal.resize(6, 8);
+        assert_eq!(terminal.screen_rows().pins(), 0, "let go at once");
         terminal.snapshot(&mut snapshot);
         assert_eq!(terminal.viewport_offset(), 0);
         assert_eq!(firsts(&snapshot), "mnopqrst");
         assert_eq!(terminal.screen_rows().pins(), 0);
         assert_same(&snapshot, &copy_of(&terminal));
+    }
+
+    #[test]
+    fn output_after_a_resize_that_takes_the_view_leaves_it_at_the_screen() {
+        let (mut terminal, mut parser, mut snapshot) = lettered();
+        terminal.scroll_viewport(Scroll::Up(2));
+        // A taller screen, and output before the next snapshot.
+        terminal.resize(10, 8);
+        feed(&mut terminal, &mut parser, "\r\nu\r\nv\r\nw\r\nx");
+        assert_eq!(terminal.viewport_offset(), 0);
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(firsts(&snapshot), "qrstuvwx");
     }
 
     #[test]
