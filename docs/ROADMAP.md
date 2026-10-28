@@ -235,7 +235,6 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 | Question | When to decide |
 |---|---|
-| Default font bundled with the app (e.g. JetBrains Mono, OFL license) | F2 ([F2-51](tasks/F2-macos-single-pane.md#f2-51--the-default-font)) |
 | Which themes to bundle, after checking their licenses | F3 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
 | How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
