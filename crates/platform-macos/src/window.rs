@@ -399,6 +399,19 @@ define_class!(
         }
 
         // SAFETY: AppKit's signature.
+        #[unsafe(method(viewDidChangeBackingProperties))]
+        fn view_did_change_backing_properties(&self) {
+            // SAFETY: `NSView`'s method, of this signature.
+            let () = unsafe { msg_send![super(self), viewDidChangeBackingProperties] };
+            // AppKit leaves the scale of the layer that the view made to the
+            // view: it takes the window's, as the view joins a window and as
+            // the window's display changes.
+            if let (Some(window), Some(layer)) = (self.window(), self.layer()) {
+                layer.setContentsScale(window.backingScaleFactor());
+            }
+        }
+
+        // SAFETY: AppKit's signature.
         #[unsafe(method(isOpaque))]
         fn is_opaque(&self) -> bool {
             self.ivars().opaque.get()
