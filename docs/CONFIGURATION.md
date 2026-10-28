@@ -74,6 +74,12 @@ option-as-meta = "left"              # none | left | right | both
 [clipboard]
 read = "ask"                         # never | ask: a program's read of the clipboard
 
+[bell]
+sound = true                         # true | false: the system's alert sound
+flash = false                        # true | false: a flash of the window that has the focus
+bounce = false                       # true | false: the Dock's icon, for a window in the background
+mark-title = false                   # true | false: 🔔 in its title until it takes the focus
+
 [app]
 icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
@@ -449,6 +455,50 @@ Whether a program can read the clipboard, with OSC 52.
 - `"never"` answers nothing: a program that runs elsewhere, over ssh, could otherwise read what you copied, such as a password.
 - `"ask"` asks you with an alert at each read, on the program's window, whose default button refuses; the program gets the clipboard's text only if you allow it.
 - It applies as you save the file, to the windows that are open too.
+
+## `[bell]`
+
+What a program's bell does, the character BEL that it prints, as `printf '\a'`, or as the agents that run in the terminal ring it when they wait for you. Each kind takes its own key; they apply as you save the file. Bells that come within a fifth of a second of the last one in the window do nothing more.
+
+### `sound`
+
+<sub>Platforms: macOS</sub>
+
+Whether the bell plays the system's alert sound, the one that System Settings chooses on macOS, in Sound.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+### `flash`
+
+<sub>Platforms: macOS</sub>
+
+Whether the window flashes, for a tenth of a second, when its bell rings while it has the focus.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+### `bounce`
+
+<sub>Platforms: macOS</sub>
+
+Whether the Dock's icon bounces once when the bell of a window without the focus rings, while Lokyr is not the active application.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+### `mark-title`
+
+<sub>Platforms: macOS</sub>
+
+Whether a window without the focus whose bell rang shows 🔔 before its title, until it takes the focus.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
 
 ## `[app]`
 

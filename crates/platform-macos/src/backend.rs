@@ -13,8 +13,8 @@ use lokyr_platform_core::{
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSImage, NSPasteboard,
-    NSPasteboardTypeString,
+    NSAlert, NSApplication, NSBeep, NSEvent, NSEventModifierFlags, NSEventType, NSImage,
+    NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
 };
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
@@ -336,6 +336,18 @@ impl Platform for Backend {
         if let Some(window) = self.windows.get(&window) {
             window.track_mouse_moves(track);
         }
+    }
+
+    fn request_attention(&mut self) {
+        let app = NSApplication::sharedApplication(self.mtm);
+        // AppKit asks for this only while the application is not active.
+        if !app.isActive() {
+            app.requestUserAttention(NSRequestUserAttentionType::InformationalRequest);
+        }
+    }
+
+    fn play_alert_sound(&mut self) {
+        NSBeep();
     }
 
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {

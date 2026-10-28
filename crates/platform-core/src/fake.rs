@@ -67,6 +67,10 @@ pub struct Fake {
     app_icons: Vec<Option<PathBuf>>,
     /// The user's languages and regions, none unless a test sets them.
     locales: Vec<String>,
+    /// How many times the app asked for the user's attention, and played
+    /// the alert sound.
+    attention_requests: usize,
+    alert_sounds: usize,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -94,6 +98,8 @@ impl Fake {
             option_as_meta: (false, false),
             app_icons: Vec::new(),
             locales: Vec::new(),
+            attention_requests: 0,
+            alert_sounds: 0,
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -241,6 +247,16 @@ impl Fake {
         &self.app_icons
     }
 
+    /// How many times the app asked for the user's attention.
+    pub fn attention_requests(&self) -> usize {
+        self.attention_requests
+    }
+
+    /// How many times the app played the alert sound.
+    pub fn alert_sounds(&self) -> usize {
+        self.alert_sounds
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -380,6 +396,14 @@ impl Platform for Fake {
         }
         self.app_icons.push(icon.map(Path::to_owned));
         Ok(())
+    }
+
+    fn request_attention(&mut self) {
+        self.attention_requests += 1;
+    }
+
+    fn play_alert_sound(&mut self) {
+        self.alert_sounds += 1;
     }
 
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {

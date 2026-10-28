@@ -25,7 +25,7 @@ use lokyr_platform_core::{
     WindowSize,
 };
 use lokyr_pty::Program;
-use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
+use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Rect, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::cursor::{self, Blink};
@@ -73,6 +73,21 @@ const EXIT_POLL: Duration = Duration::from_millis(20);
 
 /// The cell of a window that the app does not draw, in pixels.
 const UNDRAWN_CELL: (u32, u32) = (8, 16);
+
+/// How long a window's flash for its bell lasts.
+const FLASH: Duration = Duration::from_millis(100);
+
+/// The opacity of the default text's color over a window as it flashes.
+const FLASH_OPACITY: f32 = 0.2;
+
+/// How long after a bell that acted another in the same window does
+/// nothing, as a program can ring many at once.
+const BELL_PAUSE: Duration = Duration::from_millis(200);
+
+/// The title of a window whose program gives none, and what stands before
+/// the title of a window whose bell rang in the background.
+const TITLE: &str = "Lokyr";
+const BELL_MARK: &str = "🔔 ";
 
 /// What draws the windows: the GPU, its renderer, and the font of the text.
 #[derive(Debug)]
@@ -174,6 +189,12 @@ struct Window {
     blink: Blink,
     /// Whether its cursor blinked at its last frame.
     blinking: bool,
+    /// Until when it flashes for its bell.
+    flash_until: Option<Instant>,
+    /// When its last bell acted.
+    rang_at: Option<Instant>,
+    /// Whether its title shows that its bell rang while it had no focus.
+    bell_marked: bool,
     /// The backdrop that the platform has for it, while it is translucent.
     backdrop: Option<Backdrop>,
     /// The mouse over it.
@@ -206,6 +227,9 @@ impl Window {
             focused,
             blink: Blink::new(now),
             blinking: false,
+            flash_until: None,
+            rang_at: None,
+            bell_marked: false,
             backdrop: None,
             mouse: Mouse::default(),
             mouse_moves: false,
@@ -268,6 +292,8 @@ pub struct App {
     /// The timer of the next size that a program learns, at its pace, and
     /// its time.
     resize_timer: Option<(TimerId, Instant)>,
+    /// The timer of the end of the windows' flashes.
+    flash_timer: Option<TimerId>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -306,6 +332,7 @@ impl App {
             blink_timer: None,
             exit_timer: None,
             resize_timer: None,
+            flash_timer: None,
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -633,7 +660,7 @@ impl App {
 
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let attributes = WindowAttributes {
-            title: "Lokyr".to_owned(),
+            title: TITLE.to_owned(),
             size: WINDOW_SIZE,
         };
         match platform.create_window(&attributes) {
@@ -803,9 +830,10 @@ impl App {
     /// Takes the workspace's events. A program's write to the clipboard
     /// puts its text there, and the primary selection, which macOS lacks,
     /// takes nothing; its read asks the user, once at a time for each pane.
-    /// The tabs keep their programs' titles and colors, which the windows do
-    /// not show; the bells go unanswered, and a program's end waits for its
-    /// status, which the exits take.
+    /// A window takes the title of its active tab, which its program's
+    /// gives; a bell does what `[bell]` says. The tabs keep their programs'
+    /// colors, which the windows do not show, and a program's end waits for
+    /// its status, which the exits take.
     fn events(&mut self, platform: &mut dyn Platform) {
         for event in self.workspace.take_events() {
             match event {
@@ -818,13 +846,83 @@ impl App {
                     pane,
                     event: vt::Event::ClipboardRead(request),
                 } => self.ask_clipboard_read(platform, pane, request),
+                Event::TitleChanged(pane) => {
+                    if let Some(window) = self.window_of(pane) {
+                        self.show_title(platform, window);
+                    }
+                }
+                Event::Bell(pane) => self.ring(platform, pane),
                 Event::WindowOpened(_)
                 | Event::WindowClosed(_)
-                | Event::TitleChanged(_)
-                | Event::Bell(_)
                 | Event::Ended(_)
                 | Event::Terminal { .. } => {}
             }
+        }
+    }
+
+    /// The platform's window that shows `pane`.
+    fn window_of(&self, pane: PaneId) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|(_, state)| state.pane == pane)
+            .map(|(&window, _)| window)
+    }
+
+    /// Gives `window` the title of its active tab, or Lokyr's when its
+    /// program gives none, after 🔔 when its bell rang while it had no
+    /// focus.
+    fn show_title(&self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let title = self
+            .workspace
+            .window(state.window)
+            .and_then(|shown| self.workspace.tab(shown.active_tab()))
+            .map(workspace::Tab::title)
+            .filter(|title| !title.is_empty())
+            .unwrap_or(TITLE);
+        let mark = if state.bell_marked { BELL_MARK } else { "" };
+        platform.set_title(window, &format!("{mark}{title}"));
+    }
+
+    /// Rings `pane`'s bell, as `[bell]` says: the system's sound; a flash
+    /// of its window with the focus; for one without, a bounce of the
+    /// Dock's icon and 🔔 in its title. A bell within [`BELL_PAUSE`] of the
+    /// last that acted in the window does nothing.
+    fn ring(&mut self, platform: &mut dyn Platform, pane: PaneId) {
+        let Some(window) = self.window_of(pane) else {
+            return;
+        };
+        let bell = self.config.bell;
+        let now = Instant::now();
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if state.rang_at.is_some_and(|at| now < at + BELL_PAUSE) {
+            return;
+        }
+        state.rang_at = Some(now);
+        if bell.sound {
+            platform.play_alert_sound();
+        }
+        if state.focused {
+            if bell.flash {
+                state.flash_until = Some(now + FLASH);
+                if let Some(timer) = self.flash_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+                self.flash_timer = Some(platform.start_timer(now + FLASH));
+                platform.request_frame(window);
+            }
+            return;
+        }
+        if bell.bounce {
+            platform.request_attention();
+        }
+        if bell.mark_title && !state.bell_marked {
+            state.bell_marked = true;
+            self.show_title(platform, window);
         }
     }
 
@@ -1092,9 +1190,26 @@ impl App {
         }
         // Over a backdrop, what the cells leave shows it.
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
+        let mut items = vec![Item::Cells(batch)];
+        // A flash of the bell, the default text's color over the window.
+        if state
+            .flash_until
+            .is_some_and(|until| Instant::now() < until)
+        {
+            let text = snapshot.colors().foreground;
+            items.push(Item::Rect {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.pixels.width,
+                    height: size.pixels.height,
+                },
+                color: Color::from_rgb8(text.r, text.g, text.b).with_alpha(FLASH_OPACITY),
+            });
+        }
         let list = DisplayList {
             background: background.with_alpha(opacity),
-            items: vec![Item::Cells(batch)],
+            items,
         };
         let updates = drawing.font.texture_updates();
         let Some(surface) = &state.surface else {
@@ -1187,6 +1302,15 @@ impl Handler for App {
                     self.pace_at(platform, next);
                 }
             }
+            // The windows' flashes end.
+            AppEvent::Timer(timer) if self.flash_timer == Some(timer) => {
+                self.flash_timer = None;
+                for (&window, state) in &mut self.windows {
+                    if state.flash_until.take().is_some() {
+                        platform.request_frame(window);
+                    }
+                }
+            }
             AppEvent::Timer(timer) if self.exit_timer == Some(timer) => {
                 self.exit_timer = None;
                 self.exits(platform);
@@ -1239,6 +1363,7 @@ impl Handler for App {
             // The focus, and a key, start the cursor blinking again, on.
             // A window that loses the focus forgets the keys that the keymap
             // took, whose releases go elsewhere.
+            // A window that takes the focus loses its bell's mark.
             WindowEvent::Focused(focused) => {
                 if let Some(state) = self.windows.get_mut(&window) {
                     state.focused = focused;
@@ -1247,7 +1372,11 @@ impl Handler for App {
                     } else {
                         state.taken.clear();
                     }
+                    let marked = focused && std::mem::take(&mut state.bell_marked);
                     platform.request_frame(window);
+                    if marked {
+                        self.show_title(platform, window);
+                    }
                 }
             }
             // A key goes to the program, and starts the cursor blinking
@@ -2495,6 +2624,93 @@ mod tests {
         // A window that closes takes its ask with it.
         fake.send(&mut app, window, WindowEvent::CloseRequested);
         assert!(app.clipboard_asks.is_empty());
+    }
+
+    /// The app without padding, of the config `text`, its window running
+    /// `program`, once it shows `ready`.
+    fn configured(text: &str, program: Program) -> (Fake, App, WindowId) {
+        let mut config = Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+        config.window = unpadded().window;
+        let mut fake = Fake::default();
+        let mut app = app(config, program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn a_window_takes_its_program_s_title() {
+        let program = shell(
+            "stty raw -echo; printf '\\033]2;x\\a'; echo ready; head -c 1 >/dev/null; printf '\\033]2;\\a'; sleep 10",
+        );
+        let (mut fake, mut app, window) = configured("", program);
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        run_until(&mut fake, &mut app, |fake, _| title(fake) == "x");
+        // A title of nothing gives Lokyr's.
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| title(fake) == "Lokyr");
+    }
+
+    /// A program that rings its bell at each key, twice the second time
+    /// within a fifth of a second.
+    fn ringer() -> Program {
+        shell(
+            "stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\a'; sleep 0.05; printf '\\a'; done",
+        )
+    }
+
+    #[test]
+    fn a_bell_flashes_a_window_with_the_focus_and_marks_one_without() {
+        let (mut fake, mut app, window) = configured("", ringer());
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |_, app| {
+            app.windows[&window].flash_until.is_some()
+        });
+        // The flash ends with its timer.
+        run_until(&mut fake, &mut app, |_, app| {
+            app.windows[&window].flash_until.is_none()
+        });
+        assert_eq!((fake.alert_sounds(), fake.attention_requests()), (0, 0));
+        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+        // Without the focus: a bounce and the mark, once for the two bells,
+        // until the window takes the focus. The bells of the first key are
+        // a fifth of a second behind.
+        let pause = Instant::now() + Duration::from_millis(250);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.window(window).unwrap().title == "🔔 Lokyr"
+        });
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert_eq!(fake.attention_requests(), 1);
+        assert!(app.windows[&window].flash_until.is_none());
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+    }
+
+    #[test]
+    fn the_bell_s_config_chooses_what_it_does() {
+        let config = "[bell]\nsound = true\nflash = false\nbounce = false\nmark-title = false\n";
+        let (mut fake, mut app, window) = configured(config, ringer());
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| fake.alert_sounds() == 1);
+        assert!(app.windows[&window].flash_until.is_none());
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        let pause = Instant::now() + Duration::from_millis(250);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| fake.alert_sounds() == 2);
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert_eq!(fake.alert_sounds(), 2, "one sound for the two bells");
+        assert_eq!(fake.attention_requests(), 0);
+        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+        assert!(app.windows[&window].flash_until.is_none());
     }
 
     #[test]

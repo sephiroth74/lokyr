@@ -30,6 +30,12 @@
 //! [clipboard]
 //! read = "never"            # never | ask: a program's read of the clipboard
 //!
+//! [bell]
+//! sound = false             # the system's alert sound
+//! flash = true              # a short flash of the window that has the focus
+//! bounce = true             # the Dock's icon bounces for one in the background
+//! mark-title = true         # 🔔 in its title, until it takes the focus
+//!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
 //!
@@ -42,8 +48,8 @@
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
 //! `[scrollback]` [`ScrollbackConfig`], `[keyboard]` [`KeyboardConfig`],
-//! `[clipboard]` [`ClipboardConfig`], `[app]` [`AppConfig`], and `[keys]`
-//! [`KeysConfig`]. Every key and every section can be
+//! `[clipboard]` [`ClipboardConfig`], `[bell]` [`BellConfig`], `[app]`
+//! [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -93,6 +99,8 @@ pub struct Config {
     pub keyboard: KeyboardConfig,
     /// The `[clipboard]` section.
     pub clipboard: ClipboardConfig,
+    /// The `[bell]` section.
+    pub bell: BellConfig,
     /// The `[app]` section.
     pub app: AppConfig,
     /// The `[keys]` section.
@@ -217,6 +225,34 @@ pub enum ClipboardRead {
     Never,
     /// Each read asks the user first.
     Ask,
+}
+
+/// The `[bell]` section: what a program's bell does, BEL, as the agents
+/// that run in the terminal ring it when they wait for the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct BellConfig {
+    /// Whether it plays the system's alert sound.
+    pub sound: bool,
+    /// Whether the window, when it has the focus, flashes.
+    pub flash: bool,
+    /// Whether the Dock's icon bounces once, for a window without the
+    /// focus, while Lokyr is not the active application.
+    pub bounce: bool,
+    /// Whether a window without the focus shows 🔔 before its title, until
+    /// it takes the focus.
+    pub mark_title: bool,
+}
+
+impl Default for BellConfig {
+    fn default() -> Self {
+        Self {
+            sound: false,
+            flash: true,
+            bounce: true,
+            mark_title: true,
+        }
+    }
 }
 
 /// Which Option keys act as Meta.
@@ -526,7 +562,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 8] {
+fn sections() -> [(&'static str, &'static [&'static str]); 9] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -535,6 +571,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 8] {
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
         ("clipboard", keys::<ClipboardConfig>()),
+        ("bell", keys::<BellConfig>()),
         ("app", keys::<AppConfig>()),
     ]
 }
@@ -830,6 +867,10 @@ mod tests {
             [clipboard]
             read = "ask"
 
+            [bell]
+            sound = true
+            mark-title = false
+
             [app]
             icon = "laguz"
             language = "it"
@@ -837,6 +878,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.clipboard.read, ClipboardRead::Ask);
+        assert_eq!(
+            config.bell,
+            BellConfig {
+                sound: true,
+                flash: true,
+                bounce: true,
+                mark_title: false,
+            }
+        );
+        let bell = Config::default().bell;
+        assert!(!bell.sound && bell.flash && bell.bounce && bell.mark_title);
         assert_eq!(Config::default().clipboard.read, ClipboardRead::Never);
         assert_eq!(config.app.language, "it");
         assert_eq!(Config::default().app.language, "system");
@@ -1238,12 +1290,17 @@ mod tests {
                 "scrollback",
                 "keyboard",
                 "clipboard",
+                "bell",
                 "app",
                 "keys"
             ]
         );
         assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);
         assert_eq!(keys::<ClipboardConfig>(), ["read"]);
+        assert_eq!(
+            keys::<BellConfig>(),
+            ["sound", "flash", "bounce", "mark-title"]
+        );
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(keys::<AppConfig>(), ["icon", "language"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));

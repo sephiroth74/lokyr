@@ -196,6 +196,14 @@ pub trait Platform {
     /// application's own, as its bundle has it. What shows the application
     /// while it does not run, as the Finder, keeps its own.
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error>;
+
+    /// Asks for the user's attention while the application is not the
+    /// active one, as the Dock's icon bounces once on the Mac; nothing
+    /// while it is.
+    fn request_attention(&mut self);
+
+    /// Plays the system's alert sound, as the user chose it.
+    fn play_alert_sound(&mut self);
 }
 
 /// What the platform calls on the app, on the main thread.
