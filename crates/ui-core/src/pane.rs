@@ -396,7 +396,10 @@ pub fn cells_with(
             // character's second cell take too.
             let decorated =
                 style.underline != page::Underline::None || style.strikethrough || style.overline;
-            if decorated && !hidden {
+            // A cell of the style of the one before, both selected or not,
+            // goes on with its lines.
+            let same = (cell_of.style(), chosen.is_some());
+            if decorated && !hidden && !decorations.goes_on(row, column, same) {
                 let shade = if style.faint {
                     mix(foreground, background)
                 } else {
@@ -408,6 +411,7 @@ pub fn cells_with(
                     .then(|| resolved(style.underline_color, colors))
                     .flatten();
                 decorations.cell(&mut batch, (column, row), &style, (shade, own), cell);
+                decorations.last = Some((row, column, same));
             }
             let width = cell_of.width();
             // A wide character's second cell goes on with its run.
@@ -463,9 +467,30 @@ pub fn cells_with(
 #[derive(Default)]
 struct Decorations {
     open: [Option<CellLine>; 3],
+    /// The last cell that took lines: its row and column, and its style's
+    /// id in its row's page, and whether it was selected, which its lines'
+    /// colors follow.
+    last: Option<(u16, u16, (page::StyleId, bool))>,
 }
 
 impl Decorations {
+    /// Whether the cell at `column` of `row`, of the style and selection
+    /// of `same`, goes on with the lines of the cell before it, which are
+    /// its own, as the cell before has its style and selection: the open
+    /// lines take it.
+    fn goes_on(&mut self, row: u16, column: u16, same: (page::StyleId, bool)) -> bool {
+        let follows = self.last == Some((row, column.wrapping_sub(1), same));
+        if follows {
+            for open in self.open.iter_mut().flatten() {
+                if open.row == row && open.column + open.columns == column {
+                    open.columns += 1;
+                }
+            }
+            self.last = Some((row, column, same));
+        }
+        follows
+    }
+
     /// Takes the lines of the cell at `at`, of `style`, in `color`, the
     /// text's, and `own`, an underline's own color, if it has one. Out of
     /// the loop over the cells, which most cells skip it.

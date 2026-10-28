@@ -1,6 +1,7 @@
 //! The time that a frame's cells take to lay out, with the system's fonts:
-//! a full screen of text, and one of spaces, whose glyphs are all in the
-//! atlas already, as most frames find them; and a screen of words that
+//! a full screen of text, the same text underlined whole, and with waves of
+//! a color of their own, and a screen of spaces, whose glyphs are all in
+//! the atlas already, as most frames find them; and a screen of words that
 //! differ, of a family with ligatures where one is installed, whose runs
 //! the shaping's cache keeps.
 
@@ -21,9 +22,15 @@ mod cells {
 
     /// A screen whose every row is `line`, repeated to its width.
     fn screen(line: &str) -> Snapshot {
+        styled("", line)
+    }
+
+    /// A screen of `line` as [`screen`] makes it, after `pen`, a style
+    /// that every cell takes, but where `line` changes it.
+    fn styled(pen: &str, line: &str) -> Snapshot {
         let mut terminal = Terminal::new(COLUMNS, ROWS, Options::default());
         let row: String = line.chars().cycle().take(usize::from(COLUMNS)).collect();
-        let text = vec![row; usize::from(ROWS)].join("\r\n");
+        let text = pen.to_owned() + &vec![row; usize::from(ROWS)].join("\r\n");
         Parser::new().advance(&mut terminal, text.as_bytes());
         let mut snapshot = Snapshot::default();
         terminal.snapshot(&mut snapshot);
@@ -88,13 +95,11 @@ mod cells {
         let cell = *font.cell();
         let mut group = c.benchmark_group("cells");
         group.throughput(Throughput::Elements(u64::from(COLUMNS) * u64::from(ROWS)));
+        let text = "fn main() { \x1b[1mlet\x1b[22m x = \x1b[32m\"hello\"\x1b[39m; } // 0123456789 ";
         let screens = [
-            (
-                "text",
-                screen(
-                    "fn main() { \x1b[1mlet\x1b[m x = \x1b[32m\"hello\"\x1b[m; } // 0123456789 ",
-                ),
-            ),
+            ("text", screen(text)),
+            ("underlined text", styled("\x1b[4m", text)),
+            ("waved text", styled("\x1b[4:3;58;5;1m", text)),
             ("spaces", screen(" ")),
         ];
         for (name, snapshot) in &screens {
