@@ -28,7 +28,8 @@ mod waker;
 pub use event::{AppEvent, Appearance, WindowEvent};
 pub use geometry::{PixelSize, Point, Size, WindowSize};
 pub use input::{
-    Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, ScrollDelta, ScrollPhase,
+    Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerShape, ScrollDelta,
+    ScrollPhase,
 };
 pub use menu::{Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, Shortcut, ShortcutKey};
 pub use raw_window_handle::WindowHandle;
@@ -191,6 +192,10 @@ pub trait Platform {
     /// as [`WindowEvent::MouseMoved`]: not as it opens, as each move would
     /// wake the app. Moves with a button held always come.
     fn track_mouse_moves(&mut self, window: WindowId, track: bool);
+
+    /// Gives the pointer over `window`'s content `shape`; the arrow until
+    /// the app asks for another.
+    fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape);
 
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a

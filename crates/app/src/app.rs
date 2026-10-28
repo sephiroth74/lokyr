@@ -24,9 +24,9 @@ use lokyr_kernel::workspace::{
 };
 use lokyr_platform_core::{
     Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
-    KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, ScrollDelta,
-    ScrollPhase, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, PointerShape,
+    ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Rect, Renderer};
@@ -271,6 +271,8 @@ struct Window {
     /// Whether the platform tells the pointer's moves without a button, as
     /// a program asked for them.
     mouse_moves: bool,
+    /// How the pointer looks over it, as the platform has it.
+    pointer: PointerShape,
     /// The sequence of keys under way, as the keymap resolves it.
     resolver: Resolver,
     /// The keys of the sequence under way, which go to the program if the
@@ -322,6 +324,7 @@ impl Window {
             backdrop: None,
             mouse: Mouse::default(),
             mouse_moves: false,
+            pointer: PointerShape::Arrow,
             resolver: Resolver::new(),
             held_back: Vec::new(),
             taken: Vec::new(),
@@ -1759,6 +1762,21 @@ impl App {
         if moves != state.mouse_moves {
             platform.track_mouse_moves(window, moves);
             state.mouse_moves = moves;
+        }
+        // The pointer is the text's I-beam, as the text selects; the arrow
+        // over a program that takes the mouse's clicks.
+        let takes_clicks = !pane.is_kept()
+            && pane
+                .input_modes()
+                .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None);
+        let pointer = if takes_clicks {
+            PointerShape::Arrow
+        } else {
+            PointerShape::Text
+        };
+        if pointer != state.pointer {
+            platform.set_pointer_shape(window, pointer);
+            state.pointer = pointer;
         }
         // The input method's candidates go at the cursor's cell.
         let at = pane.snapshot().cursor().position;
@@ -3326,6 +3344,29 @@ mod tests {
         let window = fake.windows().next().unwrap();
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
         (fake, app, window)
+    }
+
+    #[test]
+    fn the_pointer_is_the_text_s_but_over_a_program_that_takes_the_mouse() {
+        // A program that takes the mouse's clicks at a key, and gives them
+        // back at the next.
+        let (mut fake, mut app, window) = started_with(shell(concat!(
+            "stty raw -echo; echo ready; head -c1 >/dev/null; ",
+            "printf '\\033[?1000h'; head -c1 >/dev/null; printf '\\033[?1000l'; cat"
+        )));
+        let pointer = |fake: &Fake| fake.window(window).unwrap().pointer;
+        run_until(&mut fake, &mut app, |fake, _| {
+            pointer(fake) == PointerShape::Text
+        });
+        let a = key_event(KeyCode::KeyA, "a", Modifiers::NONE, true);
+        fake.send(&mut app, window, a.clone());
+        run_until(&mut fake, &mut app, |fake, _| {
+            pointer(fake) == PointerShape::Arrow
+        });
+        fake.send(&mut app, window, a);
+        run_until(&mut fake, &mut app, |fake, _| {
+            pointer(fake) == PointerShape::Text
+        });
     }
 
     #[test]

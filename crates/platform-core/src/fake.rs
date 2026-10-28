@@ -10,7 +10,8 @@ use std::time::Instant;
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, Error, Handler, MainMenu, Platform, Point,
-    Size, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    PointerShape, Size, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
+    WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -34,6 +35,8 @@ pub struct FakeWindow {
     pub translucent: Option<Backdrop>,
     /// Whether the app asked for the pointer's moves without a button.
     pub mouse_moves: bool,
+    /// How the pointer looks over its content, as the app asked.
+    pub pointer: PointerShape,
 }
 
 /// An alert that is open, until a test answers it.
@@ -358,6 +361,7 @@ impl Platform for Fake {
                 text_area: None,
                 translucent: None,
                 mouse_moves: false,
+                pointer: PointerShape::Arrow,
             },
         );
         Ok(id)
@@ -446,6 +450,12 @@ impl Platform for Fake {
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.mouse_moves = track;
+        }
+    }
+
+    fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.pointer = shape;
         }
     }
 

@@ -340,3 +340,13 @@ pub enum ScrollPhase {
     /// stopped.
     Ended,
 }
+
+/// How the pointer looks over a window's content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PointerShape {
+    /// The arrow, as over a program that takes the mouse's clicks.
+    #[default]
+    Arrow,
+    /// The text's I-beam, as over text to select.
+    Text,
+}

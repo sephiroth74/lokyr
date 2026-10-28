@@ -7,14 +7,14 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Ime, MouseButton, PixelSize, Point, ScrollDelta, ScrollPhase, Size, WindowAttributes,
-    WindowEvent, WindowId, WindowSize,
+    Backdrop, Ime, MouseButton, PixelSize, Point, PointerShape, ScrollDelta, ScrollPhase, Size,
+    WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSEvent, NSEventPhase, NSEventType, NSResponder,
+    NSBackingStoreType, NSColor, NSCursor, NSEvent, NSEventPhase, NSEventType, NSResponder,
     NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
     NSWindowOcclusionState, NSWindowStyleMask,
 };
@@ -147,6 +147,14 @@ impl Window {
         self.ns_window.setAcceptsMouseMovedEvents(track);
     }
 
+    /// Gives the pointer over the content `shape`, through the view's
+    /// cursor rectangle, which AppKit asks for again.
+    pub(crate) fn set_pointer_shape(&self, shape: PointerShape) {
+        if self.view.ivars().pointer.replace(shape) != shape {
+            self.ns_window.invalidateCursorRectsForView(&self.view);
+        }
+    }
+
     /// Makes the window translucent over `backdrop`, its background, which
     /// fills its whole shape, the titlebar and the rounded corners too,
     /// under the content that the renderer draws clear; or, with `None`,
@@ -258,6 +266,8 @@ pub(crate) struct ContentViewIvars {
     /// Whether the view is opaque, as the window is unless the app made it
     /// translucent.
     opaque: Cell<bool>,
+    /// How the pointer looks over the view.
+    pointer: Cell<PointerShape>,
 }
 
 define_class!(
@@ -273,6 +283,17 @@ define_class!(
         #[unsafe(method(acceptsFirstResponder))]
         fn accepts_first_responder(&self) -> bool {
             true
+        }
+
+        // SAFETY: AppKit's signature. AppKit shows the cursor of the
+        // rectangle that the pointer is in, in the key window.
+        #[unsafe(method(resetCursorRects))]
+        fn reset_cursor_rects(&self) {
+            let cursor = match self.ivars().pointer.get() {
+                PointerShape::Arrow => NSCursor::arrowCursor(),
+                PointerShape::Text => NSCursor::IBeamCursor(),
+            };
+            self.addCursorRect_cursor(self.bounds(), &cursor);
         }
 
         // SAFETY: AppKit's signature. The keys that the menus' shortcuts
@@ -499,6 +520,7 @@ impl ContentView {
             input: RefCell::new(TextInput::default()),
             option_as_meta,
             opaque: Cell::new(true),
+            pointer: Cell::new(PointerShape::Arrow),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };

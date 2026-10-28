@@ -593,7 +593,7 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 
 - With `false`, ⌘C copies the selection, as other Mac apps do.
 - You select by dragging, the cells between where you press and where the pointer is; a double click takes a word, a triple click a line, and dragging after them goes on by words or lines; Option makes a rectangle; Shift's click extends the last selection; dragging past the window's top or bottom scrolls, the faster the farther. A click takes the selection away.
-- A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection.
+- A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection. The pointer over the window is the text's I-beam, and the arrow while a program takes the clicks.
 - It applies as you save the file.
 
 ## `[bell]`

@@ -7,8 +7,8 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, Size, TimerId, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, PointerShape, Size,
+    TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -359,6 +359,12 @@ impl Platform for Backend {
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(window) = self.windows.get(&window) {
             window.track_mouse_moves(track);
+        }
+    }
+
+    fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_pointer_shape(shape);
         }
     }
 
