@@ -484,6 +484,36 @@ const EREDRIVEOPEN: i32 = -6;
 /// How many times to open again when the kernel gives [`EREDRIVEOPEN`].
 const REDRIVE_TRIES: usize = 1000;
 
+/// How many times to open again, a millisecond apart, a device that the
+/// system says is not configured, as a terminal's slave can be for a
+/// moment while several processes open terminals at once.
+const NOT_READY_TRIES: usize = 200;
+
+/// The descriptor that `attempt` opens, trying again while the kernel asks
+/// to, [`EREDRIVEOPEN`], at once, and while the device is not configured
+/// yet, `ENXIO`, a millisecond later, each a bounded number of times; any
+/// other error at once.
+fn opened(mut attempt: impl FnMut() -> std::io::Result<OwnedFd>) -> std::io::Result<OwnedFd> {
+    let (mut redrives, mut not_ready) = (0, 0);
+    loop {
+        let error = match attempt() {
+            Ok(fd) => return Ok(fd),
+            Err(error) => error,
+        };
+        match error.raw_os_error() {
+            Some(EREDRIVEOPEN) if redrives < REDRIVE_TRIES => {
+                redrives += 1;
+                std::thread::yield_now();
+            }
+            Some(libc::ENXIO) if not_ready < NOT_READY_TRIES => {
+                not_ready += 1;
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            _ => return Err(error),
+        }
+    }
+}
+
 /// Opens a pseudo-terminal of `size`, and returns its master, its slave,
 /// neither inherited across exec, and the slave's path. The master does not
 /// block, for its readers and writers to wait on it with `poll`; the slave
@@ -491,26 +521,21 @@ const REDRIVE_TRIES: usize = 1000;
 ///
 /// `openpty` would do it in one call, but it closes the descriptors on exec
 /// only after opening them, so that a fork elsewhere in the meantime can
-/// inherit them, and it gives up on [`EREDRIVEOPEN`]. Each step here is
-/// safe to run on several threads at once.
+/// inherit them, and it gives up on [`EREDRIVEOPEN`] and on a slave that is
+/// not ready. Each step here is safe to run on several threads at once.
 fn open(size: Size) -> std::io::Result<(OwnedFd, OwnedFd, PathBuf)> {
     let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
     let open = |path: &CStr, more: libc::c_int| {
-        for _ in 0..REDRIVE_TRIES {
+        opened(|| {
             // SAFETY: `path` is a terminated string.
             let fd = unsafe { libc::open(path.as_ptr(), flags | more) };
-            if fd != -1 {
-                // SAFETY: `open` returned a descriptor that belongs to no
-                // one else.
-                return Ok(unsafe { OwnedFd::from_raw_fd(fd) });
+            if fd == -1 {
+                return Err(IoError::last_os_error());
             }
-            let error = IoError::last_os_error();
-            if error.raw_os_error() != Some(EREDRIVEOPEN) {
-                return Err(error);
-            }
-            std::thread::yield_now();
-        }
-        Err(IoError::from_raw_os_error(EREDRIVEOPEN))
+            // SAFETY: `open` returned a descriptor that belongs to no one
+            // else.
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        })
     };
     let master = open(c"/dev/ptmx", libc::O_NONBLOCK)?;
     // SAFETY: both act on the master, which `master` owns.
@@ -1071,6 +1096,44 @@ fn environment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An attempt that fails with each of `errors`, then opens `/dev/null`,
+    /// and counts its calls.
+    fn failing(
+        errors: Vec<i32>,
+        calls: &std::cell::Cell<usize>,
+    ) -> impl FnMut() -> std::io::Result<OwnedFd> + '_ {
+        let mut errors = errors.into_iter();
+        move || {
+            calls.set(calls.get() + 1);
+            match errors.next() {
+                Some(code) => Err(IoError::from_raw_os_error(code)),
+                None => Ok(std::fs::File::open("/dev/null")?.into()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_device_not_ready_or_redriven_opens_again_a_bounded_number_of_times() {
+        let calls = std::cell::Cell::new(0);
+        // Not configured, and asked again, then opened.
+        let errors = vec![libc::ENXIO, EREDRIVEOPEN, libc::ENXIO];
+        assert!(opened(failing(errors, &calls)).is_ok());
+        assert_eq!(calls.get(), 4);
+        // Another error at once.
+        calls.set(0);
+        let error = opened(failing(vec![libc::EACCES], &calls)).unwrap_err();
+        assert_eq!((error.raw_os_error(), calls.get()), (Some(libc::EACCES), 1));
+        // A device never ready, after its tries, and a redrive without end.
+        for (code, tries) in [
+            (libc::ENXIO, NOT_READY_TRIES),
+            (EREDRIVEOPEN, REDRIVE_TRIES),
+        ] {
+            calls.set(0);
+            let error = opened(failing(vec![code; tries + 5], &calls)).unwrap_err();
+            assert_eq!((error.raw_os_error(), calls.get()), (Some(code), tries + 1));
+        }
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
