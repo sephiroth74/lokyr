@@ -462,8 +462,9 @@ pub struct App {
     /// config could not keep it: until the app quits.
     pastes_unconfirmed: bool,
     /// The links that the user is asked about before they open, by their
-    /// alerts: the URL or the path, and what it is.
-    open_asks: BTreeMap<AlertId, (String, TargetKind)>,
+    /// alerts: the window that the question is on, the URL or the path,
+    /// and what it is.
+    open_asks: BTreeMap<AlertId, (Option<WindowId>, (String, TargetKind))>,
     /// What the user chose that links do, where the config could not keep
     /// it: until the app quits.
     links_chosen: (Option<OpenUrl>, Option<OpenFile>),
@@ -850,6 +851,8 @@ impl App {
                     _ => SelectionUnit::Cell,
                 };
                 let rectangle = (mods.left_alt || mods.right_alt) && unit == SelectionUnit::Cell;
+                // The terminal keeps the anchor, which moves with its text.
+                pane.anchor_selection((spot.col, spot.row + pane.view_offset() as i64));
                 *slot = Some(Selecting {
                     anchor: spot,
                     last: spot,
@@ -864,7 +867,7 @@ impl App {
                 });
             }
         }
-        if let Some(selecting) = &state.selecting {
+        if let Some(selecting) = &mut state.selecting {
             show_selection(pane, selecting);
         }
         platform.request_frame(window);
@@ -1152,6 +1155,8 @@ impl App {
             self.clipboard_asks
                 .retain(|_, (pane, _)| *pane != state.pane);
             self.paste_asks.retain(|_, (pane, _)| *pane != state.pane);
+            self.open_asks
+                .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.workspace.close_window(state.window);
         }
@@ -1682,8 +1687,9 @@ impl App {
             buttons,
             suppression: Some(self.texts.text(dont_ask)),
         };
-        let alert = platform.show_alert(platform.focused_window(), &alert);
-        self.open_asks.insert(alert, (target, kind));
+        let window = platform.focused_window();
+        let alert = platform.show_alert(window, &alert);
+        self.open_asks.insert(alert, (window, (target, kind)));
     }
 
     /// The user answered the question before opening `target`, of `kind`,
@@ -2289,7 +2295,7 @@ impl Handler for App {
                         platform.refuse_quit();
                     }
                 }
-                if let Some(asked) = self.open_asks.remove(&alert) {
+                if let Some((_, asked)) = self.open_asks.remove(&alert) {
                     self.answer_open(platform, asked, button, suppressed);
                 }
                 // Paste, as one line, or cancel.
@@ -2464,9 +2470,23 @@ impl Handler for App {
 }
 
 /// Shows `selecting`'s selection in `pane`: the cells between its spots,
-/// or the words or the lines that they are in; none, as after a click.
-fn show_selection(pane: &Pane, selecting: &Selecting) {
+/// or the words or the lines that they are in; none, as after a click. Its
+/// anchor is where the terminal keeps it, which output moves with its text.
+fn show_selection(pane: &Pane, selecting: &mut Selecting) {
     let offset = pane.view_offset() as i64;
+    // The anchor where its text is now, which output, or a reflow, can
+    // have moved; its side of its cell kept.
+    if let Some((col, row)) = pane.selection_anchor() {
+        let side = selecting
+            .anchor
+            .boundary
+            .saturating_sub(selecting.anchor.col);
+        selecting.anchor = Spot {
+            row: row - offset,
+            col,
+            boundary: col + side,
+        };
+    }
     let (anchor, last) = (selecting.anchor, selecting.last);
     let cells = match (selecting.shape, selecting.unit) {
         (SelectionShape::Rectangle, _) => mouse::rectangle_cells(anchor, last),
@@ -3759,6 +3779,95 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "[<0;1;1M"));
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 0)), SHIFT);
         assert_eq!(selected_text(&app, window).as_deref(), Some("hello"));
+    }
+
+    /// The app without padding, its window running `seq 1 100`, which
+    /// prints `101` to `103` at each Return: and the screen's row of `90`.
+    fn numbers() -> (Fake, App, WindowId, u16) {
+        let program = shell(concat!(
+            "seq 1 100; echo ready; stty -echo; ",
+            "read line; seq 101 103; read line; seq 104 106; read line"
+        ));
+        let (fake, app, window) = started_with(program);
+        let rows = app.pane(window).grid().rows;
+        let ninety = (0..rows)
+            .find(|&r| row(&app, window, r) == "90")
+            .expect("90 on the screen");
+        (fake, app, window, ninety)
+    }
+
+    /// Return, for the program's next numbers, and their drawing.
+    fn more_output(fake: &mut Fake, app: &mut App, window: WindowId, last: &str) {
+        fake.send(app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(fake, app, |_, app| shows(app, window, last));
+    }
+
+    #[test]
+    fn output_during_a_drag_leaves_its_anchor_on_its_text() {
+        let (mut fake, mut app, window, ninety) = numbers();
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(0, ninety), none, 1));
+        fake.send(&mut app, window, moved(cell(2, ninety), none));
+        assert_eq!(selected_text(&app, window).as_deref(), Some("90"));
+        // Three lines scroll `90` up; the pointer, on the same row of the
+        // screen, now over `93`.
+        more_output(&mut fake, &mut app, window, "103");
+        fake.send(&mut app, window, moved(cell(2, ninety), none));
+        assert_eq!(
+            selected_text(&app, window).as_deref(),
+            Some("90\n91\n92\n93")
+        );
+        fake.send(&mut app, window, click(false, cell(2, ninety), none, 1));
+        // Shift's click after more output extends from `90` too.
+        more_output(&mut fake, &mut app, window, "106");
+        fake.send(&mut app, window, click(true, cell(2, ninety), SHIFT, 1));
+        fake.send(&mut app, window, click(false, cell(2, ninety), SHIFT, 1));
+        let text = selected_text(&app, window).unwrap();
+        assert!(
+            text.starts_with("90\n91") && text.ends_with("\n96"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn a_drag_past_the_bottom_scrolls_the_view_down_and_a_release_stops_it() {
+        let mut fake = Fake::default();
+        let mut app = app(
+            unpadded(),
+            shell("seq 1 200; echo ready; stty raw -echo; cat -v"),
+        );
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        app.pane(window).scroll(Scroll::Up(10));
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(3, 2), none, 1));
+        // Two rows below the window's bottom.
+        let rows = f64::from(app.pane(window).grid().rows);
+        let below = Point {
+            x: 1.0,
+            y: 8.0 * (rows + 2.0),
+        };
+        fake.send(&mut app, window, moved(below, none));
+        assert!(app.scroll_timer.is_some());
+        fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL);
+        assert!(app.pane(window).view_offset() < 10);
+        // The release, past the edge, stops it.
+        fake.send(&mut app, window, click(false, below, none, 1));
+        fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL);
+        assert!(app.scroll_timer.is_none());
+        let offset = app.pane(window).view_offset();
+        fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL * 2);
+        assert_eq!(app.pane(window).view_offset(), offset);
+    }
+
+    #[test]
+    fn a_double_click_copies_its_word_on_select() {
+        let (mut fake, mut app, window) = selecting("copy-on-select = true\n", "");
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(7, 0), none, 2));
+        fake.send(&mut app, window, click(false, cell(7, 0), none, 2));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("world"));
     }
 
     #[test]
@@ -5150,6 +5259,18 @@ mod tests {
         assert_eq!(fake.opened().last().map(String::as_str), Some("/etc/hosts"));
         assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
         assert!(app.links_chosen == (None, None));
+    }
+
+    #[test]
+    fn a_window_that_closes_drops_its_link_s_question() {
+        let (mut fake, mut app, window, _) = pasting("link-close", "", links());
+        cmd_click(&mut fake, &mut app, window, 2);
+        assert_eq!(app.open_asks.len(), 1);
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        fake.send(&mut app, window, WindowEvent::CloseRequested);
+        let close = fake.alerts().last().unwrap().id;
+        fake.answer_alert(&mut app, close, 0);
+        assert!(app.open_asks.is_empty());
     }
 
     #[test]

@@ -93,6 +93,14 @@ pub(super) struct Selection {
     hashes: Vec<u64>,
 }
 
+/// The cell that a selection by the mouse grows from: a pin, which moves
+/// with its text, and whether it is the alternate screen's.
+#[derive(Debug)]
+pub(super) struct Anchor {
+    pin: PinId,
+    alternate: bool,
+}
+
 impl Selection {
     /// Where the selection's first and last cells are now, if neither
     /// left the list, and the last does not come before the first, as a
@@ -554,6 +562,57 @@ impl Terminal {
         self.take_selection(((0, 0), last), SelectionShape::Cells);
     }
 
+    /// Anchors the selection that the mouse makes at the view's cell `at`,
+    /// its column and its row from the view's first, which can be above
+    /// the view: a pin, which output moves with its text, as it scrolls the
+    /// text into the scrollback, and a resize as it reflows it. A row past
+    /// the list's ends takes the nearest end's. The anchor that was there
+    /// goes.
+    pub fn anchor_selection(&mut self, at: (u16, i64)) {
+        self.drop_selection_anchor();
+        let top = self.view_top() as i64;
+        let alternate = self.alternate_active;
+        let rows = &mut self.screen_mut().rows;
+        let (cols, last) = (rows.cols(), rows.total_rows() as i64 - 1);
+        // Within the list's rows, which a `usize` holds.
+        let index = (top + at.1).clamp(0, last) as usize;
+        let Some((page, row)) = rows.row_at(index) else {
+            return;
+        };
+        let col = at.0.min(cols - 1);
+        if let Some(pin) = rows.pin(Position { page, row, col }) {
+            self.selection_anchor = Some(Anchor { pin, alternate });
+        }
+    }
+
+    /// The cell that the selection by the mouse grows from, by its column
+    /// and its row from the view's first, while its text is in the list
+    /// and its screen is the active one.
+    pub fn selection_anchor(&self) -> Option<(u16, i64)> {
+        let anchor = self.selection_anchor.as_ref()?;
+        if anchor.alternate != self.alternate_active {
+            return None;
+        }
+        let rows = &self.screen().rows;
+        let position = rows.pin_position(anchor.pin)?;
+        let index = rows.row_index(position.page, position.row)?;
+        // Fewer rows than an `i64` holds.
+        Some((position.col, index as i64 - self.view_top() as i64))
+    }
+
+    /// Lets the selection's anchor go, if there is one.
+    fn drop_selection_anchor(&mut self) {
+        let Some(anchor) = self.selection_anchor.take() else {
+            return;
+        };
+        let rows = if anchor.alternate {
+            &mut self.alternate.rows
+        } else {
+            &mut self.primary.rows
+        };
+        rows.unpin(anchor.pin);
+    }
+
     /// Lets the selection go, if there is one.
     pub fn clear_selection(&mut self) {
         let Some(selection) = self.selection.take() else {
@@ -919,6 +978,53 @@ mod tests {
         let (text, cells) = fed(4, 4, "abc日").line_text(0).unwrap();
         assert_eq!(text, "abc日  ");
         assert_eq!(cells[2..4], [(2, 0), (0, 1)]);
+    }
+
+    #[test]
+    fn a_selection_s_anchor_moves_with_its_text() {
+        let mut terminal = fed(10, 4, "a\r\nb\r\nc\r\nd");
+        assert_eq!(terminal.selection_anchor(), None);
+        let pins = terminal.screen().rows.pins();
+        terminal.anchor_selection((0, 1));
+        assert_eq!(terminal.selection_anchor(), Some((0, 1)));
+        // Anchored again, the first one's pin goes.
+        terminal.anchor_selection((0, 1));
+        assert_eq!(terminal.screen().rows.pins(), pins + 1);
+        // Output scrolls `b` above the screen: the anchor goes with it.
+        Parser::new().advance(&mut terminal, b"\r\ne\r\nf");
+        assert_eq!(terminal.selection_anchor(), Some((0, -1)));
+        // A view scrolled up shows it a row lower.
+        terminal.scroll_viewport(Scroll::Up(1));
+        assert_eq!(terminal.selection_anchor(), Some((0, 0)));
+        terminal.scroll_viewport(Scroll::Bottom);
+        // On the other screen, none, whatever that screen pins; back on its
+        // own, again.
+        Parser::new().advance(&mut terminal, b"\x1b[?1049hx");
+        terminal.select_all();
+        assert_eq!(terminal.selection_anchor(), None);
+        Parser::new().advance(&mut terminal, b"\x1b[?1049l");
+        assert_eq!(terminal.selection_anchor(), Some((0, -1)));
+        // A new anchor takes its place, a cell past the row's or the
+        // list's end at the nearest one.
+        terminal.anchor_selection((30, 99));
+        assert_eq!(terminal.selection_anchor(), Some((9, 3)));
+        // A clear of the scrollback takes the anchor's text away.
+        terminal.anchor_selection((0, -1));
+        Parser::new().advance(&mut terminal, b"\x1b[3J");
+        assert_eq!(terminal.selection_anchor(), None);
+    }
+
+    #[test]
+    fn a_selection_s_anchor_is_its_own_screen_s() {
+        // The anchor, the primary screen's first pin, and the alternate
+        // screen's own first pins, of the same numbers.
+        let mut terminal = fed(10, 4, "a\r\nb");
+        terminal.anchor_selection((0, 1));
+        Parser::new().advance(&mut terminal, b"\x1b[?1049hx\r\ny");
+        terminal.select_all();
+        assert_eq!(terminal.selection_anchor(), None);
+        Parser::new().advance(&mut terminal, b"\x1b[?1049l");
+        assert_eq!(terminal.selection_anchor(), Some((0, 1)));
     }
 
     #[test]

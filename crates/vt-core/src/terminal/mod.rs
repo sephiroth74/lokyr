@@ -466,6 +466,9 @@ pub struct Terminal {
     scroll_on_output: bool,
     /// The selection, if there is one.
     selection: Option<selection::Selection>,
+    /// The cell that a selection by the mouse grows from, if one was
+    /// anchored.
+    selection_anchor: Option<selection::Anchor>,
 }
 
 impl Terminal {
@@ -567,6 +570,7 @@ impl Terminal {
             viewport: None,
             scroll_on_output: options.scroll_on_output,
             selection: None,
+            selection_anchor: None,
         }
     }
 

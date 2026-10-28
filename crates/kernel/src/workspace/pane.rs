@@ -409,6 +409,22 @@ impl Pane {
         }
     }
 
+    /// Anchors the selection that the mouse makes at the view's cell `at`,
+    /// its column and its row from the view's first, as
+    /// [`Terminal::anchor_selection`] does: the anchor moves with its text.
+    pub fn anchor_selection(&self, at: (u16, i64)) {
+        if let Some(session) = &self.session {
+            session.lock().anchor_selection(at);
+        }
+    }
+
+    /// The cell that the selection by the mouse grows from, now, by its
+    /// column and its row from the view's first, as
+    /// [`Terminal::selection_anchor`] tells it.
+    pub fn selection_anchor(&self) -> Option<(u16, i64)> {
+        self.session.as_ref()?.lock().selection_anchor()
+    }
+
     /// How many rows the view is above the screen's top, as the terminal
     /// has it now, which the snapshot learns at its next update.
     pub fn view_offset(&self) -> usize {
