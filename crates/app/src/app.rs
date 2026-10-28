@@ -2857,7 +2857,7 @@ mod tests {
     #[test]
     fn two_windows_run_two_shells() {
         let mut fake = Fake::default();
-        let mut app = app(Config::default(), shell("echo pid:$$; sleep 10"));
+        let mut app = app(Config::default(), shell("echo pid:$$; read line"));
         fake.start(&mut app);
         fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
         let windows: Vec<WindowId> = fake.windows().collect();
@@ -2947,6 +2947,24 @@ mod tests {
         fake.answer_alert(&mut app, id, 0);
         assert_eq!(fake.windows().count(), 0);
         assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn closing_a_window_asks_for_a_job_behind_the_shell() {
+        // A job in the background, behind a shell that reads, as at its
+        // prompt.
+        let (mut fake, mut app, window) =
+            started_running(shell("sleep 30 & echo ready; read line"));
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(window).running().as_deref() == Some("sleep")
+        });
+        fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
+        assert_eq!(fake.alerts().len(), 1);
+        assert_eq!(
+            fake.alerts()[0].alert.detail,
+            app.texts
+                .text_with("close-running-detail", &[("program", Arg::Text("sleep"))])
+        );
     }
 
     #[test]
@@ -4043,8 +4061,11 @@ mod tests {
         app.apply(&mut fake, asking);
         fake.send(&mut app, window, key());
         run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-        // A window that closes takes its ask with it.
+        // A window that closes takes its ask with it, once its program's
+        // question, as `cat` runs, is answered.
         fake.send(&mut app, window, WindowEvent::CloseRequested);
+        let close = fake.alerts().last().unwrap().id;
+        fake.answer_alert(&mut app, close, 0);
         assert!(app.clipboard_asks.is_empty());
     }
 
@@ -4983,6 +5004,9 @@ mod tests {
         app.run(&mut fake, NEW_WINDOW, Args::new());
         assert_eq!(fake.windows().count(), 2);
         app.run(&mut fake, "test.close", Args::new());
+        // Its program, `cat`, runs: the question, answered.
+        let close = fake.alerts().last().unwrap().id;
+        fake.answer_alert(&mut app, close, 0);
         assert_eq!(fake.windows().collect::<Vec<_>>().len(), 1);
         assert!(!fake.windows().any(|shown| shown == window));
         // A command that runs itself stops, its first run and as many
@@ -5366,7 +5390,10 @@ mod tests {
         paste_key(&mut fake, &mut app, window, "a\nb");
         let id = fake.alerts()[0].id;
         app.run(&mut fake, NEW_WINDOW, Args::new());
+        // Its program, `cat`, runs: the question, answered.
         fake.send(&mut app, window, WindowEvent::CloseRequested);
+        let close = fake.alerts().last().unwrap().id;
+        fake.answer_alert(&mut app, close, 0);
         assert!(app.paste_asks.is_empty());
         // A late answer reaches nothing.
         fake.answer_alert(&mut app, id, 0);

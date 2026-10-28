@@ -391,9 +391,10 @@ fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
 
 #[test]
 fn the_program_in_the_foreground_has_its_name() {
-    // The shell itself, without job control.
+    // The shell itself, without job control, reading, which a shell that
+    // runs its last command in its own place, as dash, does not leave.
     let pty = spawn(&Options::new(
-        sh("stty -echo; echo ready; sleep 30"),
+        sh("stty -echo; echo ready; read line"),
         "xterm-256color",
     ))
     .unwrap();
@@ -430,19 +431,26 @@ fn the_program_in_the_foreground_has_its_name() {
 
 #[test]
 fn the_program_in_the_foreground_has_its_directory() {
-    // The shell, and then a job of its own group, in another directory.
+    // The shell, and then, after a line, a job of its own group, in
+    // another directory.
     let bash = Program::command(
         "/bin/bash",
         [
             "-c",
-            "cd /usr; stty -echo; echo ready; set -m; (cd /tmp && sleep 30)",
+            "cd /usr; stty -echo; echo ready; read line; set -m; (cd /tmp && sleep 30)",
         ],
     );
     let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
     let mut output = Output::new(pty.reader().unwrap());
     output.until("ready");
-    let start = std::time::Instant::now();
     let real = |path: &str| std::fs::canonicalize(path).unwrap();
+    assert_eq!(
+        pty.foreground_directory()
+            .map(|dir| std::fs::canonicalize(dir).unwrap()),
+        Some(real("/usr"))
+    );
+    pty.writer().unwrap().write_all(b"\n").unwrap();
+    let start = std::time::Instant::now();
     while pty
         .foreground_directory()
         .map(|dir| std::fs::canonicalize(dir).unwrap())
@@ -704,4 +712,40 @@ fn a_wait_for_either_tells_output_and_room() {
     drop(pty);
     let ready = reader.wait_either(&writer, soon()).unwrap();
     assert!(ready.room && ready.output, "{ready:?}");
+}
+
+/// Waits until `pty`'s processes are `wanted`, for ten seconds at most.
+fn programs_until(pty: &lokyr_pty::Pty, wanted: impl Fn(&[String]) -> bool) -> Vec<String> {
+    let start = std::time::Instant::now();
+    loop {
+        let programs = pty.programs();
+        if wanted(&programs) {
+            return programs;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "{programs:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_terminal_s_processes_are_its_program_s_and_its_jobs() {
+    // A job in the background, and one stopped, behind a shell that reads.
+    let script = "set -m; sleep 30 & sleep 31 & kill -STOP $!; stty -echo; echo ready; read line";
+    let bash = Program::command("/bin/bash", ["-c", script]);
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    let programs = programs_until(&pty, |programs| programs.len() == 3);
+    // The foreground's first: the shell, which reads.
+    assert_eq!(programs, ["bash", "sleep", "sleep"]);
+    // A job in the foreground comes before the shell and an older job.
+    let bash = Program::command("/bin/bash", ["-c", "set -m; sleep 30 & cat"]);
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let _idle = pty.reader().unwrap();
+    programs_until(&pty, |programs| programs == ["cat", "bash", "sleep"]);
+    // A process that ended, whose parent does not look at it, is left out.
+    let bash = Program::command("/bin/bash", ["-c", "(exit 0) & exec cat"]);
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let _idle = pty.reader().unwrap();
+    programs_until(&pty, |programs| programs == ["cat"]);
 }

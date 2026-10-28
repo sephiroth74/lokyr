@@ -227,12 +227,153 @@ impl Pty {
         program_name(self.foreground_process_group()?)
     }
 
+    /// The names of the processes whose terminal this is, as the program's
+    /// and the jobs' that it started, in the foreground, stopped or in the
+    /// background: the foreground's group first, then by their ids. A name
+    /// that cannot be read, as another user's, is empty; a process that
+    /// ended, whose parent has not looked at it yet, is left out.
+    pub fn programs(&self) -> Vec<String> {
+        let foreground = self.foreground_process_group();
+        let mut processes = terminal_processes(&self.tty);
+        // A process whose group cannot be read leads its group when its id
+        // is the group's.
+        processes.sort_by_key(|process| {
+            let leads = Some(process.group) == foreground || Some(process.id) == foreground;
+            (!leads, process.id)
+        });
+        processes.into_iter().map(|process| process.name).collect()
+    }
+
     /// The working directory of the program in the terminal's foreground:
     /// its process group's first process's, as a shell's at its prompt,
     /// or a job's that it runs; none as [`Pty::foreground_program`] has none.
     pub fn foreground_directory(&self) -> Option<PathBuf> {
         working_directory(self.foreground_process_group()?)
     }
+}
+
+/// A process of a terminal: its id, its group's and its name.
+struct Process {
+    id: u32,
+    group: u32,
+    name: String,
+}
+
+/// `proc_listpids`'s choice of the processes whose controlling terminal is
+/// a device, which libc lacks: `PROC_TTY_ONLY` of `<sys/proc_info.h>`.
+#[cfg(target_os = "macos")]
+const PROC_TTY_ONLY: u32 = 3;
+
+/// The most processes that a terminal's list takes.
+const MOST_PROCESSES: usize = 4096;
+
+/// The processes whose controlling terminal is `tty`, but those that
+/// ended; none if the terminal is gone.
+#[cfg(target_os = "macos")]
+fn terminal_processes(tty: &Path) -> Vec<Process> {
+    use std::os::unix::fs::MetadataExt;
+
+    let Some(device) = std::fs::metadata(tty)
+        .ok()
+        .and_then(|metadata| u32::try_from(metadata.rdev()).ok())
+    else {
+        return Vec::new();
+    };
+    let mut ids: Vec<libc::c_int> = vec![0; 64];
+    loop {
+        let Ok(size) = libc::c_int::try_from(ids.len() * std::mem::size_of::<libc::c_int>()) else {
+            return Vec::new();
+        };
+        // SAFETY: `proc_listpids` writes at most `size` bytes into `ids`,
+        // a buffer of that size, and returns how many it wrote.
+        let written =
+            unsafe { libc::proc_listpids(PROC_TTY_ONLY, device, ids.as_mut_ptr().cast(), size) };
+        let Ok(written) = usize::try_from(written) else {
+            return Vec::new();
+        };
+        let count = written / std::mem::size_of::<libc::c_int>();
+        // A full buffer may have left some out: a larger one, then.
+        if count < ids.len() || ids.len() >= MOST_PROCESSES {
+            ids.truncate(count);
+            break;
+        }
+        ids.resize(ids.len() * 2, 0);
+    }
+    ids.into_iter()
+        .filter_map(|id| u32::try_from(id).ok().filter(|&id| id != 0))
+        .filter_map(|id| {
+            // Another user's process tells its path alone; one that ended,
+            // whose parent has not looked at it yet, tells neither.
+            let (info, name) = (bsd_info(id), program_name(id));
+            if info.is_none() && name.is_none() {
+                return None;
+            }
+            Some(Process {
+                id,
+                group: info.map_or(0, |info| info.pbi_pgid),
+                name: name.unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// The BSD information of the process `pid`, as its group: none for
+/// another user's process, or one that ended.
+#[cfg(target_os = "macos")]
+fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
+    let pid = libc::c_int::try_from(pid).ok()?;
+    // SAFETY: the struct is plain data, which zeros make valid.
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>();
+    // SAFETY: `proc_pidinfo` writes at most `size` bytes into `info`, a
+    // struct of that size, and returns how many it wrote.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            (&raw mut info).cast(),
+            libc::c_int::try_from(size).ok()?,
+        )
+    };
+    (usize::try_from(written).ok()? >= size).then_some(info)
+}
+
+/// The processes whose controlling terminal is `tty`, but those that
+/// ended, from `/proc`; none if the terminal is gone.
+#[cfg(not(target_os = "macos"))]
+fn terminal_processes(tty: &Path) -> Vec<Process> {
+    use std::os::unix::fs::MetadataExt;
+
+    let Ok(metadata) = std::fs::metadata(tty) else {
+        return Vec::new();
+    };
+    // The terminal's device as `/proc/<pid>/stat` writes it, as the kernel
+    // encodes a device's number.
+    let (major, minor) = (libc::major(metadata.rdev()), libc::minor(metadata.rdev()));
+    let device =
+        u64::from(minor & 0xff) | (u64::from(major) << 8) | (u64::from(minor & !0xff) << 12);
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .filter_map(|id| {
+            let stat = std::fs::read_to_string(format!("/proc/{id}/stat")).ok()?;
+            // The fields after the name, which can hold spaces and brackets.
+            let fields: Vec<&str> = stat[stat.rfind(')')? + 1..].split_whitespace().collect();
+            let (state, group, tty) = (fields.first()?, fields.get(2)?, fields.get(4)?);
+            if *state == "Z" || tty.parse::<u64>().ok()? != device {
+                return None;
+            }
+            Some(Process {
+                id,
+                group: group.parse().ok()?,
+                name: program_name(id).unwrap_or_default(),
+            })
+        })
+        .take(MOST_PROCESSES)
+        .collect()
 }
 
 /// The working directory of the process `pid`.
@@ -287,11 +428,13 @@ fn program_name(pid: u32) -> Option<String> {
     Some(path.file_name()?.to_string_lossy().into_owned())
 }
 
-/// The file name of the executable of the process `pid`.
+/// The name of the process `pid`, as the kernel keeps it: its executable's
+/// file name, cut to 15 bytes, which an upgrade of the executable leaves as
+/// it was.
 #[cfg(not(target_os = "macos"))]
 fn program_name(pid: u32) -> Option<String> {
-    let path = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
-    Some(path.file_name()?.to_string_lossy().into_owned())
+    let name = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    Some(name.trim_end_matches('\n').to_owned())
 }
 
 impl Drop for Pty {

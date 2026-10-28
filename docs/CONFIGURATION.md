@@ -772,7 +772,7 @@ The defaults:
 | Keys | Command | What it does |
 |---|---|---|
 | `cmd+n` | `window.new` | Opens a window |
-| `cmd+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program. tmux and screen, whose sessions go on, do not ask |
+| `cmd+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |

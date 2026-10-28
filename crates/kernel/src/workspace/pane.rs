@@ -640,28 +640,37 @@ impl Pane {
         self.kept
     }
 
-    /// The program that runs in the terminal's foreground, when it is no
-    /// shell, nor tmux or screen, whose sessions outlive the window: what
-    /// closing the pane would end, by its name, as `vim`, or empty when its
-    /// name cannot be read, as another user's. `None` once the program
-    /// ended, as at a shell's prompt.
+    /// What closing the pane would end, by its name, as `vim`, or empty
+    /// when its name cannot be read: the first process of its terminal, the
+    /// foreground's first, that is no shell, nor tmux or screen, whose
+    /// sessions outlive the window. A job that the shell runs counts,
+    /// stopped or in the background too, and a program that started a
+    /// shell, as vim's `:sh`. `None` at a shell's prompt without a job, or
+    /// once the program ended.
     pub fn running(&self) -> Option<String> {
         let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
         if session.has_ended() {
             return None;
         }
-        match session.foreground_program() {
-            Some(name) if SHELLS.contains(&name.trim_start_matches('-')) => None,
-            Some(name) => Some(name),
-            None => Some(String::new()),
+        let is_shell = |name: &str| SHELLS.contains(&name.trim_start_matches('-'));
+        let programs = session.programs();
+        if programs.is_empty() {
+            // Without a list of the processes, the foreground tells.
+            return match session.foreground_program() {
+                Some(name) if is_shell(&name) => None,
+                Some(name) => Some(name),
+                None => Some(String::new()),
+            };
         }
+        programs.into_iter().find(|name| !is_shell(name))
     }
 }
 
 /// The programs that closing a pane does not ask about: shells at their
 /// prompt, and tmux and screen, whose sessions go on without the pane.
-const SHELLS: [&str; 12] = [
-    "login", "sh", "bash", "zsh", "fish", "ksh", "tcsh", "csh", "dash", "nu", "tmux", "screen",
+const SHELLS: [&str; 19] = [
+    "login", "sh", "bash", "zsh", "fish", "ksh", "mksh", "tcsh", "csh", "dash", "yash", "nu",
+    "pwsh", "elvish", "xonsh", "osh", "ysh", "tmux", "screen",
 ];
 
 /// The status of a program that ended: its own, which `exit` gives; or, for

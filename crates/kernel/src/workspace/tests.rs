@@ -227,6 +227,36 @@ fn a_pane_tells_the_program_that_runs_but_a_shell() {
     assert_eq!(idle.running(), None);
 }
 
+/// Waits until `pane` runs `wanted`, for ten seconds at most.
+fn running_until(pane: &Pane, wanted: Option<&str>) {
+    let start = Instant::now();
+    while pane.running().as_deref() != wanted {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            pane.running()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_pane_tells_the_jobs_behind_the_shell() {
+    // A job in the background, and one stopped, at a shell that reads.
+    running_until(&pane("sleep 30 & read line"), Some("sleep"));
+    // Stopped once it is `sleep`, rather than the shell's copy that
+    // becomes it.
+    running_until(
+        &pane("sleep 30 & sleep 0.3; kill -STOP $!; read line"),
+        Some("sleep"),
+    );
+    // A program that started a shell, which reads.
+    running_until(
+        &pane("awk 'BEGIN { system(\"sh -c \\\"read line\\\"\") }'"),
+        Some("awk"),
+    );
+}
+
 #[test]
 fn a_pane_tells_its_contexts() {
     let pane = pane("printf 'ready'; sleep 10");

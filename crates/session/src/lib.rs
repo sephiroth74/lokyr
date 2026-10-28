@@ -195,6 +195,12 @@ impl Session {
         self.pty.foreground_program()
     }
 
+    /// The names of the processes of the terminal, the program's and its
+    /// jobs', as [`Pty::programs`] gives them.
+    pub fn programs(&self) -> Vec<String> {
+        self.pty.programs()
+    }
+
     /// The working directory of the program in the terminal's foreground,
     /// as [`Pty::foreground_directory`] gives it.
     pub fn foreground_directory(&self) -> Option<std::path::PathBuf> {
