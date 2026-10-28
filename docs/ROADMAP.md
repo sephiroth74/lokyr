@@ -154,6 +154,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F5c — Graphics and kitty protocols
 
 - **Images**: kitty graphics (with Unicode placeholders for tmux), sixel and iTerm2 images (OSC 1337 `File=`), all under a memory quota.
+- **Choosing a font**, as the user asked on 28 October 2026: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, lists the system's families and their styles as `[font]` names them, each drawn in its own face with a line of samples, as images that the terminal shows; `--monospace` keeps the fixed-pitch families, and a family's name shows its styles alone. The `lokyr` of the bundle is on the panes' `PATH`.
 - **Links and selection**, in the `links` plugin, which opens links, URLs and paths with ⌘-click since F2:
   - hints;
   - semantic history: ⌘-click on `file:line` opens the editor;
