@@ -39,7 +39,7 @@ pub const SCROLLBACK_BUDGET_BYTES: usize = 100 * 1024 * 1024;
 /// gives back its own scrollback first, until the budget is met again.
 #[derive(Debug)]
 pub struct Budget {
-    limit: usize,
+    limit: AtomicUsize,
     used: AtomicUsize,
 }
 
@@ -47,14 +47,20 @@ impl Budget {
     /// A budget of `limit` bytes, none of them used.
     pub fn new(limit: usize) -> Self {
         Self {
-            limit,
+            limit: AtomicUsize::new(limit),
             used: AtomicUsize::new(0),
         }
     }
 
     /// The bytes that the lists may take together.
     pub fn limit(&self) -> usize {
-        self.limit
+        self.limit.load(Ordering::Relaxed)
+    }
+
+    /// Sets the bytes that the lists may take together: a list that passes
+    /// a smaller one gives back its oldest pages as it adds its next.
+    pub fn set_limit(&self, limit: usize) {
+        self.limit.store(limit, Ordering::Relaxed);
     }
 
     /// The bytes that the lists take now.
@@ -66,7 +72,8 @@ impl Budget {
     fn try_take(&self, bytes: usize) -> bool {
         self.used
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
-                used.checked_add(bytes).filter(|&total| total <= self.limit)
+                used.checked_add(bytes)
+                    .filter(|&total| total <= self.limit())
             })
             .is_ok()
     }
@@ -81,7 +88,7 @@ impl Budget {
     }
 
     fn is_over(&self) -> bool {
-        self.used() > self.limit
+        self.used() > self.limit()
     }
 }
 
@@ -3171,6 +3178,25 @@ mod tests {
         assert_eq!(numbers(&idle).last(), Some(&Some(999)));
         drop(busy);
         assert_eq!(budget.used(), idle.memory());
+    }
+
+    #[test]
+    fn a_smaller_budget_takes_the_scrollback_down_as_rows_come() {
+        let page = Capacity::standard(80).bytes();
+        let budget = Arc::new(Budget::new(8 * page));
+        let shared = Scrollback {
+            budget: Some(Arc::clone(&budget)),
+            ..Scrollback::default()
+        };
+        let mut list = PageList::new(80, 24, shared);
+        let page_rows = u32::from(Capacity::standard(80).rows);
+        scroll(&mut list, 0, 6 * page_rows);
+        assert!(budget.used() > 3 * page);
+        budget.set_limit(3 * page);
+        assert_eq!(budget.limit(), 3 * page);
+        scroll(&mut list, 6 * page_rows, page_rows);
+        assert!(budget.used() <= 3 * page, "{} bytes", budget.used());
+        assert_eq!(budget.used(), list.memory());
     }
 
     #[test]

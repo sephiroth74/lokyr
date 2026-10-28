@@ -41,7 +41,7 @@ use crate::page::{
     StyleId, Width,
 };
 use crate::parser::{Handler, Params, StringEnd};
-use crate::unicode::{Normalization, Segmenter, Widths};
+use crate::unicode::{Normalization, Segmenter, Tables, Widths};
 
 /// The reply to DA: a VT220 with ANSI colors.
 const DA1: &[u8] = b"\x1b[?62;22c";
@@ -645,6 +645,17 @@ impl Terminal {
     /// The normal form that printed text takes.
     pub fn normalization(&self) -> Normalization {
         self.normalization
+    }
+
+    /// Sets the width tables that the terminal counts text by, and whether
+    /// East Asian Ambiguous characters take two cells, from the next
+    /// character on, and as a full reset brings the widths back; the mode
+    /// that a program set, by clusters or by codepoints, stays.
+    pub fn set_width_tables(&mut self, tables: Tables, ambiguous_wide: bool) {
+        for widths in [&mut self.widths, &mut self.configured_widths] {
+            widths.tables = tables;
+            widths.ambiguous_wide = ambiguous_wide;
+        }
     }
 
     /// Sets the normal form that printed text takes, from the next

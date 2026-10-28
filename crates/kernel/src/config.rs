@@ -21,8 +21,16 @@
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //!
+//! [terminal]
+//! term = "xterm-256color"   # the TERM that programs see
+//! unicode-widths = "current" # current | 8
+//! ambiguous-width = 1       # 1 | 2
+//! normalization = "none"    # none | nfc | nfd | hfs+
+//!
 //! [scrollback]
 //! scroll-on-output = false  # whether output brings the view back down
+//! limit = 10                # MiB of a window's scrollback
+//! budget = 100              # MiB that the windows' scrollbacks share
 //!
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
@@ -47,7 +55,8 @@
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! `[scrollback]` [`ScrollbackConfig`], `[keyboard]` [`KeyboardConfig`],
+//! `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
+//! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[bell]` [`BellConfig`], `[app]`
 //! [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
@@ -64,6 +73,7 @@ use std::path::{Path, PathBuf};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::cursor::CursorConfig;
 use lokyr_ui_core::text::TextConfig;
+use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use serde::Deserialize;
 use serde::de::{self, Visitor};
 use toml_edit::{Document, Item, TableLike};
@@ -93,6 +103,8 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
+    /// The `[terminal]` section.
+    pub terminal: TerminalConfig,
     /// The `[scrollback]` section.
     pub scrollback: ScrollbackConfig,
     /// The `[keyboard]` section.
@@ -187,15 +199,210 @@ impl Default for AppConfig {
     }
 }
 
-/// The `[scrollback]` section: the rows above the screen, and the view
-/// that scrolls through them.
+/// The `[terminal]` section: what programs are told of the terminal, and
+/// how it counts and keeps their text, which must match how they count it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct TerminalConfig {
+    /// The `TERM` that programs see, which changes only what they are
+    /// told, never the emulation, which stays xterm's.
+    pub term: Term,
+    /// Which width tables the terminal counts characters by.
+    pub unicode_widths: UnicodeWidths,
+    /// The cells of an East Asian Ambiguous character.
+    pub ambiguous_width: AmbiguousWidth,
+    /// The normal form that printed text takes.
+    pub normalization: TextNormalization,
+}
+
+impl TerminalConfig {
+    /// The terminal's widths, by clusters as programs start with.
+    pub fn widths(&self) -> Widths {
+        Widths {
+            tables: self.unicode_widths.tables(),
+            ambiguous_wide: self.ambiguous_width.is_wide(),
+            ..Widths::default()
+        }
+    }
+}
+
+/// A `TERM`: letters, digits, `.`, `_`, `+` and `-`, 64 at most, as
+/// terminfo names entries.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Term(String);
+
+impl Term {
+    /// The name.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for Term {
+    fn default() -> Self {
+        Self("xterm-256color".to_owned())
+    }
+}
+
+impl TryFrom<String> for Term {
+    type Error = String;
+
+    fn try_from(term: String) -> Result<Self, Self::Error> {
+        let named =
+            |character: char| character.is_ascii_alphanumeric() || "._+-".contains(character);
+        if (1..=64).contains(&term.len()) && term.chars().all(named) {
+            Ok(Self(term))
+        } else {
+            Err(format!(
+                "`{term}` is no TERM: letters, digits, `.`, `_`, `+` and `-`, 64 at most"
+            ))
+        }
+    }
+}
+
+/// Which width tables the terminal counts characters by.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum UnicodeWidths {
+    /// Those of the Unicode version of the terminal's tables.
+    #[default]
+    #[serde(rename = "current")]
+    Current,
+    /// Those of Unicode 8, for programs that predate Unicode 9, which gave
+    /// most emoji two cells.
+    #[serde(rename = "8")]
+    Unicode8,
+}
+
+impl UnicodeWidths {
+    /// The terminal's tables.
+    pub fn tables(self) -> Tables {
+        match self {
+            Self::Current => Tables::Current,
+            Self::Unicode8 => Tables::Unicode8,
+        }
+    }
+}
+
+/// The cells of an East Asian Ambiguous character, as `α` and `→`: 1, as
+/// most programs count them, or 2, as some fonts and locales of East Asia
+/// draw them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "i64")]
+pub struct AmbiguousWidth(u8);
+
+impl AmbiguousWidth {
+    /// Whether they take two cells.
+    pub fn is_wide(self) -> bool {
+        self.0 == 2
+    }
+}
+
+impl Default for AmbiguousWidth {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl TryFrom<i64> for AmbiguousWidth {
+    type Error = String;
+
+    fn try_from(cells: i64) -> Result<Self, Self::Error> {
+        match cells {
+            1 => Ok(Self(1)),
+            2 => Ok(Self(2)),
+            _ => Err(format!(
+                "an ambiguous character takes 1 or 2 cells, not {cells}"
+            )),
+        }
+    }
+}
+
+/// The normal form that printed text takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+pub enum TextNormalization {
+    /// As programs write it.
+    #[default]
+    #[serde(rename = "none")]
+    None,
+    /// Composed: `e` and U+0301 become `é`.
+    #[serde(rename = "nfc")]
+    Nfc,
+    /// Decomposed, the reverse.
+    #[serde(rename = "nfd")]
+    Nfd,
+    /// Decomposed as Apple's HFS+ keeps file names.
+    #[serde(rename = "hfs+")]
+    HfsPlus,
+}
+
+impl TextNormalization {
+    /// The terminal's form.
+    pub fn form(self) -> Normalization {
+        match self {
+            Self::None => Normalization::None,
+            Self::Nfc => Normalization::Nfc,
+            Self::Nfd => Normalization::Nfd,
+            Self::HfsPlus => Normalization::HfsPlus,
+        }
+    }
+}
+
+/// The `[scrollback]` section: the rows above the screen, the view that
+/// scrolls through them, and the memory that they take.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct ScrollbackConfig {
     /// Whether a program's output brings a view scrolled up back down to
     /// the screen, as typing always does.
     pub scroll_on_output: bool,
+    /// The memory of a window's scrollback, its screen's included.
+    pub limit: Memory<10>,
+    /// The memory that the windows' scrollbacks share: a window that needs
+    /// more gives back its own oldest rows.
+    pub budget: Memory<100>,
 }
+
+/// An amount of memory, in MiB, from 1 to 16,384, whole or not, by default
+/// `DEFAULT`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "f64")]
+pub struct Memory<const DEFAULT: u32>(usize);
+
+impl<const DEFAULT: u32> Memory<DEFAULT> {
+    /// The most, in MiB.
+    pub const MAX: f64 = 16_384.0;
+
+    /// The memory in bytes.
+    pub fn bytes(self) -> usize {
+        self.0
+    }
+}
+
+impl<const DEFAULT: u32> Default for Memory<DEFAULT> {
+    fn default() -> Self {
+        Self(DEFAULT as usize * MIB)
+    }
+}
+
+impl<const DEFAULT: u32> TryFrom<f64> for Memory<DEFAULT> {
+    type Error = String;
+
+    fn try_from(mebibytes: f64) -> Result<Self, Self::Error> {
+        if (1.0..=Self::MAX).contains(&mebibytes) {
+            // Within the range, the bytes fit a `usize`.
+            Ok(Self((mebibytes * MIB as f64) as usize))
+        } else {
+            Err(format!(
+                "a scrollback's memory, in MiB, is from 1 to {}, not {mebibytes}",
+                Self::MAX
+            ))
+        }
+    }
+}
+
+/// The bytes of a MiB.
+const MIB: usize = 1024 * 1024;
 
 /// The `[keyboard]` section: how keys reach programs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -562,12 +769,13 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 9] {
+fn sections() -> [(&'static str, &'static [&'static str]); 10] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
+        ("terminal", keys::<TerminalConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
         ("clipboard", keys::<ClipboardConfig>()),
@@ -858,8 +1066,16 @@ mod tests {
             background-opacity = 0.85
             background-blur = 20
 
+            [terminal]
+            term = "xterm-lokyr"
+            unicode-widths = "8"
+            ambiguous-width = 2
+            normalization = "hfs+"
+
             [scrollback]
             scroll-on-output = true
+            limit = 2.5
+            budget = 64
 
             [keyboard]
             option-as-meta = "left"
@@ -878,6 +1094,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.clipboard.read, ClipboardRead::Ask);
+        let terminal = &config.terminal;
+        assert_eq!(terminal.term.as_str(), "xterm-lokyr");
+        assert_eq!(
+            (terminal.widths().tables, terminal.widths().ambiguous_wide),
+            (Tables::Unicode8, true)
+        );
+        assert_eq!(terminal.normalization.form(), Normalization::HfsPlus);
+        assert_eq!(config.scrollback.limit.bytes(), 5 * MIB / 2);
+        assert_eq!(config.scrollback.budget.bytes(), 64 * MIB);
+        let defaults = Config::default();
+        assert_eq!(defaults.terminal.term.as_str(), "xterm-256color");
+        assert_eq!(defaults.terminal.widths(), Widths::default());
+        assert_eq!(defaults.terminal.normalization.form(), Normalization::None);
+        assert_eq!(
+            (
+                defaults.scrollback.limit.bytes(),
+                defaults.scrollback.budget.bytes()
+            ),
+            (10 * MIB, 100 * MIB)
+        );
         assert_eq!(
             config.bell,
             BellConfig {
@@ -1179,6 +1415,30 @@ mod tests {
     }
 
     #[test]
+    fn the_terminal_s_values_are_within_their_ranges() {
+        for (text, message) in [
+            ("[terminal]\nterm = \"\"\n", "is no TERM"),
+            ("[terminal]\nterm = \"xterm 256\"\n", "is no TERM"),
+            ("[terminal]\nterm = \"a/b\"\n", "is no TERM"),
+            ("[terminal]\nunicode-widths = \"9\"\n", "unknown variant"),
+            ("[terminal]\nambiguous-width = 3\n", "1 or 2 cells, not 3"),
+            ("[terminal]\nnormalization = \"nfkc\"\n", "unknown variant"),
+            ("[scrollback]\nlimit = 0.5\n", "from 1 to 16384, not 0.5"),
+            (
+                "[scrollback]\nbudget = 20000\n",
+                "from 1 to 16384, not 20000",
+            ),
+        ] {
+            let (position, error) = error(text);
+            assert_eq!(position.map(|(line, _)| line), Some(2), "{text}");
+            assert!(error.contains(message), "{text}: {error}");
+        }
+        assert!(Term::try_from("x".repeat(65)).is_err());
+        assert!(Term::try_from("xterm-256color".to_owned()).is_ok());
+        assert!(Memory::<1>::try_from(f64::NAN).is_err());
+    }
+
+    #[test]
     fn the_padding_is_in_points_within_its_range() {
         assert_eq!(Config::default().window.padding_x.points(), 4.0);
         let config = parse("[window]\npadding-x = 0\npadding-y = 100\n").unwrap();
@@ -1287,6 +1547,7 @@ mod tests {
                 "text",
                 "cursor",
                 "window",
+                "terminal",
                 "scrollback",
                 "keyboard",
                 "clipboard",
@@ -1295,7 +1556,14 @@ mod tests {
                 "keys"
             ]
         );
-        assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);
+        assert_eq!(
+            keys::<ScrollbackConfig>(),
+            ["scroll-on-output", "limit", "budget"]
+        );
+        assert_eq!(
+            keys::<TerminalConfig>(),
+            ["term", "unicode-widths", "ambiguous-width", "normalization"]
+        );
         assert_eq!(keys::<ClipboardConfig>(), ["read"]);
         assert_eq!(
             keys::<BellConfig>(),

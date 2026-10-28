@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
-pub use pane::{Environment, Exited, Grid, Pane, RESIZE_PACE};
+pub use pane::{Environment, Exited, Grid, Pane, RESIZE_PACE, Settings};
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);

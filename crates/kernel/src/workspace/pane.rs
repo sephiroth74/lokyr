@@ -8,17 +8,16 @@ use std::path::PathBuf;
 use lokyr_pty::{Exit, Program, Size};
 use lokyr_session::{Options, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
+use lokyr_vt_core::page::Scrollback;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
     self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
 };
+use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
 use super::PaneId;
 use crate::config::CloseOnExit;
 use crate::l10n::{Arg, Texts};
-
-/// The `TERM` that programs take, which remote hosts know too.
-const TERM: &str = "xterm-256color";
 
 /// How long a pane waits for the status of a program whose output ended,
 /// before it tells that the program ended, without its status.
@@ -83,6 +82,32 @@ impl Default for Environment {
     }
 }
 
+/// What a pane's terminal is made with, as the config has it.
+#[derive(Clone, Debug)]
+pub struct Settings {
+    /// The `TERM` that its programs see: `xterm-256color` by default, which
+    /// remote hosts know too.
+    pub term: String,
+    /// How it counts the cells of text.
+    pub widths: Widths,
+    /// The normal form that printed text takes.
+    pub normalization: Normalization,
+    /// The limits of its scrollback, the budget that the panes share
+    /// among them.
+    pub scrollback: Scrollback,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            term: "xterm-256color".to_owned(),
+            widths: Widths::default(),
+            normalization: Normalization::default(),
+            scrollback: Scrollback::default(),
+        }
+    }
+}
+
 /// The program of a pane, in its session, and the screen that its frames
 /// draw.
 pub struct Pane {
@@ -129,10 +154,15 @@ impl std::fmt::Debug for Pane {
     }
 }
 
-/// The PTY's options for `program`, in `environment`, at the size of
-/// `grid`.
-fn pty_options(program: &Program, environment: &Environment, grid: Grid) -> lokyr_pty::Options {
-    let mut pty = lokyr_pty::Options::new(program.clone(), TERM);
+/// The PTY's options for `program`, in `environment`, with `term`, at the
+/// size of `grid`.
+fn pty_options(
+    program: &Program,
+    environment: &Environment,
+    term: &str,
+    grid: Grid,
+) -> lokyr_pty::Options {
+    let mut pty = lokyr_pty::Options::new(program.clone(), term);
     pty.size = grid.size();
     pty.resources_dir.clone_from(&environment.resources);
     pty.fallback_locale.clone_from(&environment.locale);
@@ -152,18 +182,20 @@ pub(super) struct Happened {
 }
 
 impl Pane {
-    /// A pane that runs `program` in a terminal of `grid`, in `colors`,
-    /// whose changes call `wake`, from the session's threads; or, when the
-    /// program cannot start, a pane whose screen tells why, in `texts`.
+    /// A pane that runs `program` in a terminal of `settings` and `grid`,
+    /// in `colors`, whose changes call `wake`, from the session's threads;
+    /// or, when the program cannot start, a pane whose screen tells why, in
+    /// `texts`.
     pub fn spawn(
         program: &Program,
         environment: &Environment,
+        settings: &Settings,
         grid: Grid,
         colors: &Colors,
         texts: &Texts,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Self {
-        let pty = pty_options(program, environment, grid);
+        let pty = pty_options(program, environment, &settings.term, grid);
         let mut pane = Self {
             id: PaneId::new(),
             session: None,
@@ -181,6 +213,10 @@ impl Pane {
         // The wheel scrolls programs of the alternate screen, as `less`, by
         // the cursor keys, unless they say otherwise.
         options.terminal.alternate_scroll = true;
+        settings.term.clone_into(&mut options.terminal.term);
+        options.terminal.widths = settings.widths;
+        options.terminal.normalization = settings.normalization;
+        options.terminal.scrollback = settings.scrollback.clone();
         match Session::spawn(&options, wake) {
             Ok(session) => {
                 {
@@ -381,6 +417,29 @@ impl Pane {
         }
     }
 
+    /// Sets the width tables of the text to come, and whether East Asian
+    /// Ambiguous characters take two cells.
+    pub fn set_width_tables(&self, tables: Tables, ambiguous_wide: bool) {
+        if let Some(session) = &self.session {
+            session.lock().set_width_tables(tables, ambiguous_wide);
+        }
+    }
+
+    /// Sets the normal form of the text to come.
+    pub fn set_normalization(&self, normalization: Normalization) {
+        if let Some(session) = &self.session {
+            session.lock().set_normalization(normalization);
+        }
+    }
+
+    /// Sets the bytes that the scrollback may take, which its oldest rows
+    /// give back as they pass them.
+    pub fn set_scrollback_limit(&self, limit: usize) {
+        if let Some(session) = &self.session {
+            session.lock().set_scrollback_limit(limit);
+        }
+    }
+
     /// Gives the terminal the theme's `colors`.
     pub fn set_colors(&self, colors: &Colors) {
         if let Some(session) = &self.session {
@@ -487,10 +546,11 @@ mod tests {
             cell_width: 8,
             cell_height: 16,
         };
-        let options = pty_options(&Program::LoginShell, &environment, grid);
+        let options = pty_options(&Program::LoginShell, &environment, "xterm-lokyr", grid);
         assert_eq!(options.resources_dir, environment.resources);
         assert_eq!(options.fallback_locale, "it_CH.UTF-8");
-        assert_eq!(options.term, "xterm-256color");
+        assert_eq!(options.term, "xterm-lokyr");
+        assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
     }
 
@@ -554,6 +614,7 @@ mod tests {
         let mut pane = Pane::spawn(
             &program,
             &Environment::default(),
+            &Settings::default(),
             grid(80),
             &Colors::default(),
             &Texts::new("en", &KERNEL),
@@ -589,6 +650,7 @@ mod tests {
         let mut pane = Pane::spawn(
             &cat,
             &Environment::default(),
+            &Settings::default(),
             grid(80),
             &Colors::default(),
             &Texts::new("en", &KERNEL),

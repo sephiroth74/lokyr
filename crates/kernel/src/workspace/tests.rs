@@ -23,6 +23,7 @@ fn pane(script: &str) -> Pane {
     Pane::spawn(
         &program,
         &Environment::default(),
+        &Settings::default(),
         grid(),
         &Colors::default(),
         &Texts::new("en", &crate::l10n::KERNEL),
@@ -138,6 +139,7 @@ fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
     let mut pane = Pane::spawn(
         &program,
         &Environment::default(),
+        &Settings::default(),
         grid(),
         &Colors::default(),
         &texts,
@@ -181,6 +183,7 @@ fn a_pane_that_cannot_start_tells_nothing() {
     let pane = Pane::spawn(
         &program,
         &Environment::default(),
+        &Settings::default(),
         grid(),
         &Colors::default(),
         &Texts::new("en", &crate::l10n::KERNEL),

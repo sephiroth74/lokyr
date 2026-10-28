@@ -2657,6 +2657,26 @@ fn decrqss_does_not_echo_what_it_does_not_know() {
 }
 
 #[test]
+fn the_width_tables_change_for_the_text_to_come_and_stay_through_a_reset() {
+    let mut term = Term::new(20, 2);
+    // An emoji, two cells by today's tables, and an ambiguous α, one.
+    term.feed("\u{1F600}\u{3B1}");
+    assert_eq!(term.cursor().0, 3);
+    term.terminal.set_width_tables(Tables::Unicode8, true);
+    term.feed("\r\n\u{1F600}\u{3B1}");
+    assert_eq!(term.cursor().0, 3, "one cell, then two");
+    assert_eq!(term.screen()[0], "\u{1F600}\u{3B1}");
+    // A program's mode stays its own; a full reset keeps the tables.
+    term.feed("\x1b[?2027l\x1bc\u{3B1}");
+    let widths = term.terminal.widths();
+    assert_eq!(
+        (widths.tables, widths.ambiguous_wide),
+        (Tables::Unicode8, true)
+    );
+    assert_eq!(term.cursor().0, 2);
+}
+
+#[test]
 fn xtgettcap_reports_capabilities_by_name() {
     let options = Options {
         term: "xterm-lokyr".to_owned(),

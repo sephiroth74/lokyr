@@ -65,8 +65,16 @@ padding-y = 4
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 
+[terminal]
+term = "xterm-lokyr"                 # the TERM that programs see
+unicode-widths = "8"                 # current | 8: the width tables
+ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
+normalization = "nfc"                # none | nfc | nfd | hfs+
+
 [scrollback]
 scroll-on-output = true              # true | false: output brings the view back down
+limit = 20                           # MiB of a window's scrollback, from 1 to 16384
+budget = 200                         # MiB that the windows' scrollbacks share
 
 [keyboard]
 option-as-meta = "left"              # none | left | right | both
@@ -403,6 +411,66 @@ The radius of the blur of what shows through the background, in points.
 - The blur shows only below a `background-opacity` of 1.
 - macOS has no public way to blur what is behind a window: Lokyr asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
 
+## `[terminal]`
+
+What programs are told of the terminal, and how it counts and keeps their text. The widths must match how the programs count characters, or their lines go wrong; the defaults suit most of them.
+
+### `term`
+
+<sub>Platforms: macOS</sub>
+
+The `TERM` that programs see, which tells them what the terminal can do: letters, digits, `.`, `_`, `+` and `-`, 64 at most.
+
+| Values | Default |
+|---|---|
+| a terminfo name, as `"xterm-256color"`, `"xterm-lokyr"`, `"xterm"`, `"vt220"` | `"xterm-256color"` |
+
+- It changes only what programs are told, never the terminal, which does all that xterm does whatever the name.
+- `"xterm-lokyr"` describes Lokyr itself, with the capabilities past xterm's, as undercurls and the kitty keyboard; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior.
+- It applies to the windows that open after the change: the programs of a window keep the `TERM` that they started with.
+
+### `unicode-widths`
+
+<sub>Platforms: macOS</sub>
+
+Which width tables the terminal counts characters by, to place them in their cells.
+
+| Values | Default |
+|---|---|
+| `"current"`, `"8"` | `"current"` |
+
+- `"current"` follows the tables of the Unicode version that Lokyr knows, as current programs do: most emoji take two cells.
+- `"8"` follows those of Unicode 8, for old programs that count emoji as one cell.
+- It applies to the text that comes after the change, in the open windows too.
+
+### `ambiguous-width`
+
+<sub>Platforms: macOS</sub>
+
+The cells of an East Asian Ambiguous character, as `α`, `→` and `○`.
+
+| Values | Default |
+|---|---|
+| `1`, `2` | `1` |
+
+- `2` suits programs and fonts that draw them wide, as some of China, Japan and Korea do; most programs count them as 1.
+- It applies to the text that comes after the change, in the open windows too.
+
+### `normalization`
+
+<sub>Platforms: macOS</sub>
+
+The normal form that printed text takes, which changes how a character and its accents are kept, and what a selection copies of them.
+
+| Values | Default |
+|---|---|
+| `"none"`, `"nfc"`, `"nfd"`, `"hfs+"` | `"none"` |
+
+- `"none"` keeps the text as programs write it.
+- `"nfc"` composes it: `e` and a combining acute accent become `é`.
+- `"nfd"` decomposes it, the other way round; `"hfs+"` decomposes it as the file names of Apple's former file system, HFS+, are.
+- It applies to the text that comes after the change, in the open windows too.
+
 ## `[scrollback]`
 
 The scrollback holds the rows that went up past the screen's top. The wheel and the trackpad scroll through it, and with Shift held they scroll it even when a program takes the mouse.
@@ -419,6 +487,33 @@ Whether a program's output brings a view scrolled up into the scrollback back do
 
 - With `false`, the view stays on the rows you scrolled to while the program goes on writing, so that you can read what scrolled past.
 - Typing, pasting and the input method's text always bring the view back down, whatever the key says; a modifier alone, as Shift, does not.
+- A new value applies at once, to the windows that are open too.
+
+### `limit`
+
+<sub>Platforms: macOS</sub>
+
+The memory that a window's scrollback takes, its screen's included, in MiB, whole or not.
+
+| Values | Default |
+|---|---|
+| from `1` to `16384` | `10` |
+
+- The oldest rows go as new ones pass it; 10 MiB keep about 10,000 rows of 120 columns, whatever their length.
+- A smaller value applies to the open windows too, which give back their oldest rows as their next ones come.
+
+### `budget`
+
+<sub>Platforms: macOS</sub>
+
+The memory that the scrollbacks of all the windows share, in MiB, whole or not.
+
+| Values | Default |
+|---|---|
+| from `1` to `16384` | `100` |
+
+- A window that needs more than the budget leaves gives back its own oldest rows, never another's: a busy window does not take the scrollback of a quiet one.
+- A window's screen always has its rows, past the budget too.
 - A new value applies at once, to the windows that are open too.
 
 ## `[keyboard]`

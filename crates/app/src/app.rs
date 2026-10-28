@@ -17,7 +17,9 @@ use lokyr_kernel::keymap::{
 use lokyr_kernel::l10n::{self, Texts};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
-use lokyr_kernel::workspace::{self, Environment, Event, Exited, Grid, Pane, PaneId, Workspace};
+use lokyr_kernel::workspace::{
+    self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
+};
 use lokyr_platform_core::{
     Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
     KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, ScrollDelta,
@@ -33,6 +35,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
+use lokyr_vt_core::page::{Budget, Scrollback};
 use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, MouseEncoding, MouseTracking, Scroll};
 
 use crate::environment;
@@ -315,6 +318,9 @@ pub struct App {
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
+    /// The memory that the windows' scrollbacks share, which the config
+    /// sizes.
+    budget: Arc<Budget>,
 }
 
 impl App {
@@ -323,6 +329,7 @@ impl App {
     /// file, when that changes.
     pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
         let keymap = Keymap::with_config(default_bindings(), &config.keys);
+        let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
             drawing,
             theme: Theme::builtin(),
@@ -351,6 +358,7 @@ impl App {
                 resources: environment::resources(),
                 ..Environment::default()
             },
+            budget,
         }
     }
 
@@ -426,9 +434,17 @@ impl App {
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
+        // The open windows take the settings for their output to come;
+        // their programs keep the `TERM` that they started with.
+        let terminal = &self.config.terminal;
+        let widths = terminal.widths();
+        self.budget.set_limit(self.config.scrollback.budget.bytes());
         for pane in self.workspace.panes() {
             pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
             pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
+            pane.set_width_tables(widths.tables, widths.ambiguous_wide);
+            pane.set_normalization(terminal.normalization.form());
+            pane.set_scrollback_limit(self.config.scrollback.limit.bytes());
         }
         if icon_changed {
             self.show_icon(platform);
@@ -687,6 +703,7 @@ impl App {
                 let pane = Pane::spawn(
                     &self.program,
                     &self.environment,
+                    &self.settings(),
                     grid,
                     colors,
                     &self.texts,
@@ -873,6 +890,22 @@ impl App {
                 | Event::Ended(_)
                 | Event::Terminal { .. } => {}
             }
+        }
+    }
+
+    /// What a new window's terminal takes of the config: its `TERM`, its
+    /// widths and normal form, and its scrollback's limit, within the
+    /// budget that the windows share.
+    fn settings(&self) -> Settings {
+        let terminal = &self.config.terminal;
+        Settings {
+            term: terminal.term.as_str().to_owned(),
+            widths: terminal.widths(),
+            normalization: terminal.normalization.form(),
+            scrollback: Scrollback {
+                limit: self.config.scrollback.limit.bytes(),
+                budget: Some(Arc::clone(&self.budget)),
+            },
         }
     }
 
@@ -2832,6 +2865,131 @@ mod tests {
             (shown.title.chars().count(), shown.body.chars().count()),
             (NOTIFICATION_TITLE, NOTIFICATION_BODY)
         );
+    }
+
+    /// The characters of the view's row `row` of `window`, each by its
+    /// column, and whether it is a cluster of several codepoints.
+    fn cells_of(app: &App, window: WindowId, row: u16) -> Vec<(u16, char, bool)> {
+        use lokyr_vt_core::page::Content;
+
+        let snapshot = app.pane(window).snapshot();
+        (0..)
+            .zip(snapshot.line(row).cells())
+            .filter_map(|(col, cell)| match cell.content() {
+                Content::Char(character) if character != '\0' => Some((col, character, false)),
+                Content::Grapheme(character) => Some((col, character, true)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A program that prints its `TERM`, then an emoji, an ambiguous `α`
+    /// and an accent that combines, each before a letter, at the start and
+    /// at each key, a row each time.
+    fn printer() -> Program {
+        shell(
+            "stty raw -echo; printf '%s\\r\\nready\\r\\n' \"$TERM\"; while :; do printf '\\360\\237\\230\\200x\\316\\261ye\\314\\201z\\r\\n'; head -c 1 >/dev/null; done",
+        )
+    }
+
+    /// The columns of `x`, `y` and `z` on the view's row `row`, and whether
+    /// the accent's character before `z` is a cluster.
+    fn placed(app: &App, window: WindowId, row: u16) -> Option<(u16, u16, u16, bool)> {
+        let cells = cells_of(app, window, row);
+        let at = |wanted: char| {
+            cells
+                .iter()
+                .find(|&&(_, c, _)| c == wanted)
+                .map(|&(col, ..)| col)
+        };
+        let z = at('z')?;
+        let accent = cells.iter().rev().find(|&&(col, ..)| col < z)?.2;
+        Some((at('x')?, at('y')?, z, accent))
+    }
+
+    #[test]
+    fn a_new_window_takes_the_terminal_s_settings() {
+        let (mut fake, mut app, window) = configured("", printer());
+        run_until(&mut fake, &mut app, |_, app| {
+            placed(app, window, 2).is_some()
+        });
+        assert_eq!(row(&app, window, 0).trim(), "xterm-256color");
+        // An emoji of two cells, `α` of one, and the accent kept apart.
+        assert_eq!(placed(&app, window, 2), Some((2, 4, 6, true)));
+        let config = "[terminal]\nterm = \"vt220\"\nunicode-widths = \"8\"\nambiguous-width = 2\nnormalization = \"nfc\"\n";
+        let (mut fake, mut app, window) = configured(config, printer());
+        run_until(&mut fake, &mut app, |_, app| {
+            placed(app, window, 2).is_some()
+        });
+        assert_eq!(row(&app, window, 0).trim(), "vt220");
+        // The emoji of one cell, `α` of two, and `é` composed, of two too,
+        // as it is ambiguous.
+        assert_eq!(placed(&app, window, 2), Some((1, 4, 7, false)));
+        // XTGETTCAP tells the same name, in hex.
+        let asking =
+            shell("stty raw -echo; printf '\\033P+q544E\\033\\\\'; printf 'ready\\r\\n'; cat -v");
+        let (mut fake, mut app, window) = configured(config, asking);
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "+r544E=7674323230")
+        });
+    }
+
+    #[test]
+    fn a_reloaded_config_s_settings_apply_to_the_text_to_come() {
+        let (mut fake, mut app, window) = configured("", printer());
+        let mut changed = app.config.clone();
+        changed.terminal = Config::parse(
+            "[terminal]\nterm = \"vt220\"\nunicode-widths = \"8\"\nambiguous-width = 2\nnormalization = \"nfc\"\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap()
+        .terminal;
+        app.apply(&mut fake, changed);
+        run_until(&mut fake, &mut app, |_, app| {
+            placed(app, window, 2).is_some()
+        });
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |_, app| {
+            placed(app, window, 3).is_some()
+        });
+        // The row before keeps its cells; the new one takes the settings,
+        // and the program keeps its `TERM`.
+        assert_eq!(placed(&app, window, 2), Some((2, 4, 6, true)));
+        assert_eq!(placed(&app, window, 3), Some((1, 4, 7, false)));
+        assert_eq!(row(&app, window, 0).trim(), "xterm-256color");
+    }
+
+    #[test]
+    fn the_scrollback_keeps_within_its_limit_and_the_budget_follows_the_config() {
+        let program = shell(
+            "stty raw -echo; seq 1 20000; printf 'ready\\r\\n'; head -c 1 >/dev/null; seq 1 20000; printf 'done\\r\\n'; sleep 10",
+        );
+        let (mut fake, mut app, window) =
+            configured("[scrollback]\nlimit = 2\nbudget = 50\n", program);
+        assert_eq!(app.budget.limit(), 50 * 1024 * 1024);
+        let kept = |fake: &mut Fake, app: &mut App| {
+            app.pane(window).scroll(Scroll::Top);
+            fake.send(app, window, WindowEvent::Frame);
+            app.pane(window).snapshot().offset()
+        };
+        // Two MiB keep a thousand rows or so of these columns, short of the
+        // 20,000.
+        let two = kept(&mut fake, &mut app);
+        assert!((500..4000).contains(&two), "{two} rows kept");
+        // Smaller, for the output to come, and a larger budget.
+        let changed = Config::parse(
+            "[scrollback]\nlimit = 1\nbudget = 200\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        let mut config = app.config.clone();
+        config.scrollback = changed.scrollback;
+        app.apply(&mut fake, config);
+        assert_eq!(app.budget.limit(), 200 * 1024 * 1024);
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+        let one = kept(&mut fake, &mut app);
+        assert!(one < two * 3 / 4, "{one} rows kept, from {two}");
     }
 
     #[test]
