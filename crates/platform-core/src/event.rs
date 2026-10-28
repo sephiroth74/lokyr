@@ -2,7 +2,7 @@
 
 use crate::{
     AlertId, Ime, KeyEvent, Modifiers, MouseButton, Point, ScrollDelta, ScrollPhase, TimerId,
-    WindowSize,
+    WindowId, WindowSize,
 };
 
 /// Something that happened to a window, or in it.
@@ -87,6 +87,9 @@ pub enum AppEvent {
     QuitRequested,
     /// A timer that the app started fired.
     Timer(TimerId),
+    /// The user clicked a notification that the app showed for a window,
+    /// with [`Platform::notify`](crate::Platform::notify).
+    NotificationClicked(WindowId),
 }
 
 /// The system's appearance.

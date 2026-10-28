@@ -20,6 +20,7 @@ use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
+use crate::notify::Notifier;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
 use crate::{alert, appearance, menu, timer};
@@ -47,6 +48,9 @@ pub(crate) struct Backend {
     last_id: u64,
     quit: bool,
     stopped: bool,
+    /// The notifications, once the app shows one: `None` before, and
+    /// outside a bundle.
+    notifier: Option<Option<Notifier>>,
 }
 
 impl Backend {
@@ -63,6 +67,7 @@ impl Backend {
             last_id: 0,
             quit: false,
             stopped: false,
+            notifier: None,
         }
     }
 
@@ -348,6 +353,13 @@ impl Platform for Backend {
 
     fn play_alert_sound(&mut self) {
         NSBeep();
+    }
+
+    fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+        let waker = self.waker.clone();
+        if let Some(notifier) = self.notifier.get_or_insert_with(|| Notifier::new(waker)) {
+            notifier.notify(window, title, body);
+        }
     }
 
     fn set_app_icon(&mut self, icon: Option<&Path>) -> Result<(), Error> {

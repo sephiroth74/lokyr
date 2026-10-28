@@ -179,7 +179,7 @@ Versions and maturity must be rechecked when coding starts.
 
 | Subsystem | Crates | Notes |
 |---|---|---|
-| macOS | `objc2`, `objc2-app-kit`, `objc2-metal`, `objc2-quartz-core`, `objc2-core-text` | The `metal` crate is deprecated. objc2 changes often, and AccessKit's macOS adapter can trail it: it then builds on its own versions of `objc2`, in one module of `platform-macos` that hands it the view as a raw pointer, until it catches up |
+| macOS | `objc2`, `objc2-app-kit`, `objc2-metal`, `objc2-quartz-core`, `objc2-core-text`, `objc2-user-notifications` | The `metal` crate is deprecated. objc2 changes often, and AccessKit's macOS adapter can trail it: it then builds on its own versions of `objc2`, in one module of `platform-macos` that hands it the view as a raw pointer, until it catches up |
 | Wayland / X11 (F7) | `smithay-client-toolkit` + `calloop`; `x11rb` + `xkbcommon` + `xim` | |
 | GPU on Linux (F7) | `glow` + `khronos-egl` | |
 | Text | CoreText on macOS (discovery, fallback, shaping, rasterization); `harfrust` + `fontconfig` + `freetype-rs` on Linux (F7) | HarfRust is young: benchmark it against `harfbuzz-sys` before adopting it |

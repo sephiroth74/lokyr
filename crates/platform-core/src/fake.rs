@@ -47,6 +47,17 @@ pub struct FakeAlert {
     pub alert: Alert,
 }
 
+/// A notification that the app showed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FakeNotification {
+    /// The window that it is for.
+    pub window: WindowId,
+    /// Its title.
+    pub title: String,
+    /// Its text.
+    pub body: String,
+}
+
 /// The fake platform. Its focus moves only with the
 /// [`WindowEvent::Focused`] events that a test sends, as a backend tells
 /// the focus through them.
@@ -71,6 +82,10 @@ pub struct Fake {
     /// the alert sound.
     attention_requests: usize,
     alert_sounds: usize,
+    /// The notifications that the app showed, from the first.
+    notifications: Vec<FakeNotification>,
+    /// The windows that the app asked to bring forward, from the first.
+    focus_requests: Vec<WindowId>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -100,6 +115,8 @@ impl Fake {
             locales: Vec::new(),
             attention_requests: 0,
             alert_sounds: 0,
+            notifications: Vec::new(),
+            focus_requests: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -257,6 +274,17 @@ impl Fake {
         self.alert_sounds
     }
 
+    /// The notifications that the app showed, from the first.
+    pub fn notifications(&self) -> &[FakeNotification] {
+        &self.notifications
+    }
+
+    /// The windows that the app asked to bring forward, from the first,
+    /// which take no focus until a test sends it.
+    pub fn focus_requests(&self) -> &[WindowId] {
+        &self.focus_requests
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -333,7 +361,9 @@ impl Platform for Fake {
         }
     }
 
-    fn focus_window(&mut self, _window: WindowId) {}
+    fn focus_window(&mut self, window: WindowId) {
+        self.focus_requests.push(window);
+    }
 
     fn focused_window(&self) -> Option<WindowId> {
         self.focused
@@ -404,6 +434,14 @@ impl Platform for Fake {
 
     fn play_alert_sound(&mut self) {
         self.alert_sounds += 1;
+    }
+
+    fn notify(&mut self, window: WindowId, title: &str, body: &str) {
+        self.notifications.push(FakeNotification {
+            window,
+            title: title.to_owned(),
+            body: body.to_owned(),
+        });
     }
 
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {

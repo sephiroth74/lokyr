@@ -84,6 +84,14 @@ const FLASH_OPACITY: f32 = 0.2;
 /// nothing, as a program can ring many at once.
 const BELL_PAUSE: Duration = Duration::from_millis(200);
 
+/// How long after a notification that showed another of the same window
+/// shows nothing, as a program can send many at once.
+const NOTIFICATION_PAUSE: Duration = Duration::from_secs(2);
+
+/// The characters of a notification's title and of its text that show.
+const NOTIFICATION_TITLE: usize = 256;
+const NOTIFICATION_BODY: usize = 2048;
+
 /// The title of a window whose program gives none, and what stands before
 /// the title of a window whose bell rang in the background.
 const TITLE: &str = "Lokyr";
@@ -193,6 +201,8 @@ struct Window {
     flash_until: Option<Instant>,
     /// When its last bell acted.
     rang_at: Option<Instant>,
+    /// When its program's last notification showed.
+    notified_at: Option<Instant>,
     /// Whether its title shows that its bell rang while it had no focus.
     bell_marked: bool,
     /// The backdrop that the platform has for it, while it is translucent.
@@ -229,6 +239,7 @@ impl Window {
             blinking: false,
             flash_until: None,
             rang_at: None,
+            notified_at: None,
             bell_marked: false,
             backdrop: None,
             mouse: Mouse::default(),
@@ -831,9 +842,10 @@ impl App {
     /// puts its text there, and the primary selection, which macOS lacks,
     /// takes nothing; its read asks the user, once at a time for each pane.
     /// A window takes the title of its active tab, which its program's
-    /// gives; a bell does what `[bell]` says. The tabs keep their programs'
-    /// colors, which the windows do not show, and a program's end waits for
-    /// its status, which the exits take.
+    /// gives; a bell does what `[bell]` says, and a program's notification
+    /// shows as the system's. The tabs keep their programs' colors, which
+    /// the windows do not show, and a program's end waits for its status,
+    /// which the exits take.
     fn events(&mut self, platform: &mut dyn Platform) {
         for event in self.workspace.take_events() {
             match event {
@@ -852,6 +864,10 @@ impl App {
                     }
                 }
                 Event::Bell(pane) => self.ring(platform, pane),
+                Event::Terminal {
+                    pane,
+                    event: vt::Event::Notification { title, body },
+                } => self.notify(platform, pane, &title, &body),
                 Event::WindowOpened(_)
                 | Event::WindowClosed(_)
                 | Event::Ended(_)
@@ -875,15 +891,21 @@ impl App {
         let Some(state) = self.windows.get(&window) else {
             return;
         };
-        let title = self
-            .workspace
-            .window(state.window)
+        let mark = if state.bell_marked { BELL_MARK } else { "" };
+        platform.set_title(window, &format!("{mark}{}", self.title_of(window)));
+    }
+
+    /// The title of `window`'s active tab, or Lokyr's when its program
+    /// gives none.
+    fn title_of(&self, window: WindowId) -> String {
+        self.windows
+            .get(&window)
+            .and_then(|state| self.workspace.window(state.window))
             .and_then(|shown| self.workspace.tab(shown.active_tab()))
             .map(workspace::Tab::title)
             .filter(|title| !title.is_empty())
-            .unwrap_or(TITLE);
-        let mark = if state.bell_marked { BELL_MARK } else { "" };
-        platform.set_title(window, &format!("{mark}{title}"));
+            .unwrap_or(TITLE)
+            .to_owned()
     }
 
     /// Rings `pane`'s bell, as `[bell]` says: the system's sound; a flash
@@ -924,6 +946,37 @@ impl App {
             state.bell_marked = true;
             self.show_title(platform, window);
         }
+    }
+
+    /// Shows `pane`'s program's notification, of `title`, or of its
+    /// window's title when that is empty, and `body`, as the system's,
+    /// while its window has no focus: one within [`NOTIFICATION_PAUSE`] of
+    /// the last of the window shows nothing, and a long title or text shows
+    /// its start.
+    fn notify(&mut self, platform: &mut dyn Platform, pane: PaneId, title: &str, body: &str) {
+        let Some(window) = self.window_of(pane) else {
+            return;
+        };
+        let now = Instant::now();
+        let title = if title.is_empty() {
+            self.title_of(window)
+        } else {
+            title.to_owned()
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if state.focused
+            || state
+                .notified_at
+                .is_some_and(|at| now < at + NOTIFICATION_PAUSE)
+        {
+            return;
+        }
+        state.notified_at = Some(now);
+        let title: String = title.chars().take(NOTIFICATION_TITLE).collect();
+        let body: String = body.chars().take(NOTIFICATION_BODY).collect();
+        platform.notify(window, &title, &body);
     }
 
     /// Asks the user, with an alert on its window, whether `pane`'s
@@ -1322,6 +1375,12 @@ impl Handler for App {
                     if state.blinking {
                         platform.request_frame(window);
                     }
+                }
+            }
+            // A click on a program's notification brings its window forward.
+            AppEvent::NotificationClicked(window) => {
+                if self.windows.contains_key(&window) {
+                    platform.focus_window(window);
                 }
             }
             // The user answered a program's read of the clipboard: its
@@ -2711,6 +2770,68 @@ mod tests {
         assert_eq!(fake.attention_requests(), 0);
         assert_eq!(fake.window(window).unwrap().title, "Lokyr");
         assert!(app.windows[&window].flash_until.is_none());
+    }
+
+    /// A program that sends a notification of OSC 9 and one of OSC 777 at
+    /// each key.
+    fn notifier() -> Program {
+        shell(
+            "stty raw -echo; printf '\\033]2;agent\\a'; echo ready; while :; do head -c 1 >/dev/null; printf '\\033]9;waiting\\a'; printf '\\033]777;notify;Done;all tests pass\\a'; done",
+        )
+    }
+
+    #[test]
+    fn a_notification_shows_for_a_window_without_the_focus() {
+        let (mut fake, mut app, window) = configured("", notifier());
+        // Not while the window has the focus.
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, key());
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert!(fake.notifications().is_empty());
+        // Without it, the first of the two, its title the window's, as
+        // OSC 9 gives none; the second within the pause shows nothing.
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| {
+            !fake.notifications().is_empty()
+        });
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        let shown = fake.notifications();
+        assert_eq!(shown.len(), 1, "{shown:?}");
+        assert_eq!(
+            (
+                shown[0].window,
+                shown[0].title.as_str(),
+                shown[0].body.as_str()
+            ),
+            (window, "agent", "waiting")
+        );
+        // A click brings the window forward.
+        fake.send_app(&mut app, AppEvent::NotificationClicked(window));
+        assert_eq!(fake.focus_requests(), [window]);
+        // A window that closed is not asked for.
+        fake.send_app(&mut app, AppEvent::NotificationClicked(WindowId::new(999)));
+        assert_eq!(fake.focus_requests(), [window]);
+    }
+
+    #[test]
+    fn a_notification_s_title_and_text_show_their_start() {
+        let long = "x".repeat(5000);
+        let program = shell(&format!(
+            "stty raw -echo; echo ready; head -c 1 >/dev/null; printf '\\033]777;notify;{long};{long}\\a'; sleep 10"
+        ));
+        let (mut fake, mut app, window) = configured("", program);
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| {
+            !fake.notifications().is_empty()
+        });
+        let shown = &fake.notifications()[0];
+        assert_eq!(
+            (shown.title.chars().count(), shown.body.chars().count()),
+            (NOTIFICATION_TITLE, NOTIFICATION_BODY)
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ mod backend;
 mod frame;
 mod keys;
 mod menu;
+mod notify;
 mod shared;
 mod text_input;
 mod timer;

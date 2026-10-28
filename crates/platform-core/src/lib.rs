@@ -204,6 +204,13 @@ pub trait Platform {
 
     /// Plays the system's alert sound, as the user chose it.
     fn play_alert_sound(&mut self);
+
+    /// Shows a notification of the system's, of `title` and `body`, for
+    /// `window`: a click on it comes as [`AppEvent::NotificationClicked`].
+    /// The first asks the user for the permission to show them, which the
+    /// system keeps; without it, nothing shows. On the Mac, the application
+    /// needs its bundle's identifier: from outside its bundle, nothing shows.
+    fn notify(&mut self, window: WindowId, title: &str, body: &str);
 }
 
 /// What the platform calls on the app, on the main thread.

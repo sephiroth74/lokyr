@@ -28,7 +28,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 | Pasted text | Control characters stripped, ESC and the rest of C0, DEL and C1, except tab and line breaks, with or without bracketed paste | Stops a paste from ending bracketed paste from the inside (`\e[201~`), or from sending ESC to an editor |
 | Multi-line paste without bracketed paste | Asks for confirmation | Avoids running commands by accident |
 | OSC 8 hyperlinks | `http`, `https`, `mailto` and `file` only (configurable); the target is shown on hover; opened with ⌘-click or Ctrl-click | No schemes that launch other apps |
-| Notifications from sequences (OSC 9, 777, 99) | Only when the window is not focused, rate-limited | Avoids spam |
+| Notifications from sequences (OSC 9, 777, 99) | Only when the window is not focused, one every 2 seconds for each window at most, their title and text cut at 256 and 2,048 characters | Avoids spam |
 | OSC/DCS/APC payloads | Size limits per type, 64 KiB, and per OSC command where one needs more, 1 MiB for OSC 52; a memory quota for images (F5c) | Avoids memory exhaustion |
 | Secure Keyboard Entry (macOS) | Automatic when the PTY has ECHO off (password prompts), plus a manual command; a visible indicator | Stops other apps from reading keystrokes |
 

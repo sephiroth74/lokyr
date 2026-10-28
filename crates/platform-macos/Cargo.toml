@@ -53,6 +53,8 @@ objc2-foundation = { workspace = true, features = [
     "block2",
     "NSArray",
     "NSAttributedString",
+    "NSBundle",
+    "NSError",
     "NSDate",
     "NSDictionary",
     "NSGeometry",
@@ -65,6 +67,16 @@ objc2-foundation = { workspace = true, features = [
     "NSRunLoop",
     "NSString",
     "NSTimer",
+] }
+objc2-user-notifications = { workspace = true, features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
 ] }
 
 # The run loop needs the process's main thread, which the test harness keeps
