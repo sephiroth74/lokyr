@@ -11,7 +11,9 @@
 //! keychain has it, so that macOS keeps the permissions that it gave the
 //! app from one build to the next, or with the identity that
 //! `LOKYR_SIGN_IDENTITY` names; otherwise, as on a machine without it,
-//! ad hoc. It is not notarized.
+//! ad hoc; with the hardened runtime, and the entitlements of the resources
+//! that the programs in the terminal ask for, without which the runtime
+//! refuses them without a prompt. It is not notarized.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -68,6 +70,21 @@ const USAGES: [&str; 16] = [
     "NSSpeechRecognitionUsageDescription",
 ];
 
+/// The entitlements of the hardened runtime that let a program started in
+/// the terminal ask for what macOS guards, which it asks on the terminal's
+/// behalf: Apple Events, the microphone, the camera, the contacts, the
+/// calendars, the location and the photos. Without them, the runtime
+/// refuses each without the prompt that its usage string tells.
+const ENTITLEMENTS: [&str; 7] = [
+    "com.apple.security.automation.apple-events",
+    "com.apple.security.device.audio-input",
+    "com.apple.security.device.camera",
+    "com.apple.security.personal-information.addressbook",
+    "com.apple.security.personal-information.calendars",
+    "com.apple.security.personal-information.location",
+    "com.apple.security.personal-information.photos-library",
+];
+
 /// The app's catalogs, a directory each language, relative to the workspace
 /// root.
 const LOCALES: &str = "crates/app/resources/locales";
@@ -120,7 +137,9 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )
     .context("writing the Info.plist")?;
     let identity = identity()?;
-    sign(&app, &identity)?;
+    let entitlements = root.join("target").join(format!("{NAME}.entitlements"));
+    fs::write(&entitlements, entitlements_plist()).context("writing the entitlements")?;
+    sign(&app, &identity, &entitlements)?;
     println!(
         "bundle: {} signed {}",
         app.display(),
@@ -319,12 +338,30 @@ fn developer_id(listing: &str) -> Option<String> {
     })
 }
 
-/// Signs `app` with `identity`, with the hardened runtime, and checks the
-/// signature as Gatekeeper does.
-fn sign(app: &Path, identity: &str) -> Result<()> {
+/// The plist of [`ENTITLEMENTS`], each granted.
+fn entitlements_plist() -> String {
+    let mut plist = String::from(concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
+        "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+        "<plist version=\"1.0\">\n<dict>\n",
+    ));
+    for key in ENTITLEMENTS {
+        plist.push_str(&format!("\t<key>{key}</key>\n\t<true/>\n"));
+    }
+    plist.push_str("</dict>\n</plist>\n");
+    plist
+}
+
+/// Signs `app` with `identity`, with the hardened runtime and the
+/// entitlements of the file `entitlements`, and checks the signature as
+/// Gatekeeper does.
+fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
     run_command(
         Command::new("codesign")
             .args(["--force", "--options", "runtime", "--sign", identity])
+            .arg("--entitlements")
+            .arg(entitlements)
             .arg(app),
         "signing the bundle",
     )?;
@@ -412,6 +449,46 @@ mod tests {
         assert!(plist.contains(
             "<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>en</string>\n\t\t<string>it</string>\n\t</array>"
         ));
+    }
+
+    /// A binary signed as the bundle is has the entitlements, as `codesign`
+    /// reads them back.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_signature_grants_the_entitlements() {
+        let directory = std::env::temp_dir().join(format!("lokyr-sign-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let binary = directory.join("true");
+        fs::copy("/usr/bin/true", &binary).unwrap();
+        let entitlements = directory.join("test.entitlements");
+        fs::write(&entitlements, entitlements_plist()).unwrap();
+        sign(&binary, "-", &entitlements).unwrap();
+        let read = Command::new("codesign")
+            .args(["-d", "--entitlements", "-", "--xml"])
+            .arg(&binary)
+            .output()
+            .unwrap();
+        assert!(read.status.success());
+        let granted = String::from_utf8_lossy(&read.stdout);
+        for key in ENTITLEMENTS {
+            assert!(
+                granted.contains(&format!("<key>{key}</key><true/>")),
+                "{key}: {granted}"
+            );
+        }
+        let flags = Command::new("codesign")
+            .args(["-d", "--verbose=2"])
+            .arg(&binary)
+            .output()
+            .unwrap();
+        let flags = String::from_utf8_lossy(&flags.stderr);
+        // The hardened runtime, among the code directory's flags.
+        let runtime = flags
+            .lines()
+            .any(|line| line.contains("flags=") && line.contains("runtime"));
+        assert!(runtime, "{flags}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     /// The plist reads back as macOS reads it, whole, with each key's value.

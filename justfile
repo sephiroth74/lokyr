@@ -161,7 +161,7 @@ vtebench:
         echo {{ vtebench_commit }} > "$dir/.commit"
     fi
 
-# Count the instructions of vtebench's scenarios and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. When `base` has no counts to take, the commit is counted twice, the second time against the first; without `base`, once.
+# Count the instructions of vtebench's scenarios and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. When `base` has no counts to take, as a base without the package `lokyr-differential`, from before the rename, the commit is counted twice, the second time against the first, with a warning; without `base`, once.
 instructions base="": _valgrind vtebench
     #!/usr/bin/env bash
     set -euo pipefail
@@ -196,7 +196,10 @@ instructions base="": _valgrind vtebench
     trap 'rmdir "$tree"' EXIT
     git worktree add --quiet --detach "$tree" "$base"
     trap 'git worktree remove --force "$tree"' EXIT
-    if [ -f "$tree/tools/differential/benches/instructions.rs" ]; then
+    # A base from before the rename has the benchmark under another
+    # package's name, which `count` does not take.
+    if [ -f "$tree/tools/differential/benches/instructions.rs" ] \
+        && grep -qx 'name = "lokyr-differential"' "$tree/tools/differential/Cargo.toml"; then
         # The base builds apart: cargo tells whether a crate is fresh from
         # its sources' mtimes, and would take the commit under test, checked
         # out before the base, for built already. It builds with its own
@@ -216,7 +219,7 @@ instructions base="": _valgrind vtebench
         )
     else
         # The comparison runs all the same, and the counts must not move.
-        echo "$base has no instruction counts: the commit is counted twice, the second time against the first."
+        warn "$base has no instruction counts of lokyr-differential: the commit is counted twice, the second time against the first."
         count --save-baseline=base
     fi
     count --baseline=base --callgrind-limits='ir=3%'

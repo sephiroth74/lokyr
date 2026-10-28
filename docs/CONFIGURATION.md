@@ -25,7 +25,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 
 ### A complete example
 
-Every key that Lokyr reads, each with a value other than its default where it has one, and its other values in the comment:
+Every key that Lokyr reads, with the values that it takes in the comment. Most show a value other than their default; `cell-width`, `antialias` and `padding-y` show theirs:
 
 ```toml
 config_version = 1
@@ -78,7 +78,7 @@ language = "it"                      # system | en | it
 [keys]
 "cmd+shift+n" = "window.new"         # keys, and the command that they run
 "ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
-"cmd+q" = false                      # takes a default away
+"cmd+q" = false                      # takes the binding away; the menu's Command-Q stays, for now
 ```
 
 ## `config_version`
@@ -169,7 +169,7 @@ The height and the width of the grid's cells, as factors of the face's line heig
 |---|---|
 | from `0.5` to `3` | `1` |
 
-A factor below one makes a closer grid, but a cell is never smaller than the glyphs of the face.
+A factor below one makes a closer grid, and can make a cell smaller than the glyphs of the face, which then overlap their neighbours' cells, or are cut where the window ends; a factor above one leaves room around them.
 
 ### `ligatures`
 
@@ -442,7 +442,7 @@ The variant of Lokyr's icon that shows while Lokyr runs, in the Dock and the app
 | `"jormungandr"`, `"laguz"` | `"jormungandr"` |
 
 - A new variant applies at once, as you save the file.
-- The Finder and Launchpad show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
+- The Finder and the Apps launcher show `"jormungandr"` whatever the key says, as do the Dock and the app switcher while Lokyr does not run: they show the app's own icon, which an app cannot change without changing the app itself.
 - A name that is not one of Lokyr's variants keeps the default, and the log names the variants; the rest of the file applies.
 
 ### `language`
