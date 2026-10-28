@@ -384,6 +384,35 @@ impl Pane {
             .map(|session| session.lock().input_modes())
     }
 
+    /// The text of the selection, if there is one.
+    pub fn selection_text(&self) -> Option<String> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().selection_text())
+    }
+
+    /// Selects the scrollback and the screen, whole.
+    pub fn select_all(&self) {
+        if let Some(session) = &self.session {
+            session.lock().select_all();
+        }
+    }
+
+    /// Clears the scrollback.
+    pub fn clear_scrollback(&self) {
+        if let Some(session) = &self.session {
+            session.lock().clear_scrollback();
+        }
+    }
+
+    /// Pastes `text`, bracketed when the program asks, without its control
+    /// characters but tab and the line breaks.
+    pub fn paste(&self, text: &str) {
+        if let Some(session) = &self.session {
+            session.paste(text);
+        }
+    }
+
     /// Scrolls the view, through the scrollback.
     pub fn scroll(&self, scroll: Scroll) {
         if let Some(session) = &self.session {

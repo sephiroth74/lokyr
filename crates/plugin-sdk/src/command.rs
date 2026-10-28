@@ -190,6 +190,8 @@ pub enum Code {
     /// 107: a schema whose parameters repeat a name, or whose default is of
     /// another kind than its parameter.
     InvalidSchema,
+    /// 108: a binding whose keys, command or context is not one.
+    InvalidBinding,
     /// 201: the command ran, and failed.
     Failed,
     /// 301: a command that the plugin did not declare it runs.
@@ -211,6 +213,7 @@ impl Code {
             Self::InvalidName => 105,
             Self::AlreadyRegistered => 106,
             Self::InvalidSchema => 107,
+            Self::InvalidBinding => 108,
             Self::Failed => 201,
             Self::Undeclared => 301,
             Self::MissingCapability => 302,
@@ -223,7 +226,10 @@ impl Code {
         match self {
             Self::NotFound => "not-found",
             Self::UnknownArgument | Self::MissingArgument | Self::WrongKind => "invalid-args",
-            Self::InvalidName | Self::AlreadyRegistered | Self::InvalidSchema => "invalid",
+            Self::InvalidName
+            | Self::AlreadyRegistered
+            | Self::InvalidSchema
+            | Self::InvalidBinding => "invalid",
             Self::Failed => "failed",
             Self::Undeclared | Self::MissingCapability => "denied",
             Self::Fault => "fault",
@@ -327,6 +333,7 @@ mod tests {
                 ErrorCategory::Usage,
             ),
             (Code::InvalidSchema, 107, "invalid", ErrorCategory::Usage),
+            (Code::InvalidBinding, 108, "invalid", ErrorCategory::Usage),
             (Code::Failed, 201, "failed", ErrorCategory::Failure),
             (Code::Undeclared, 301, "denied", ErrorCategory::Security),
             (

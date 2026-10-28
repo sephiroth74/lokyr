@@ -117,6 +117,12 @@ impl Registry {
         self.commands.get(name)
     }
 
+    /// Takes the command `name` away, which a plugin that is disabled
+    /// registered.
+    pub fn unregister(&mut self, name: &str) -> Option<Command> {
+        self.commands.remove(name)
+    }
+
     /// The commands, by name.
     pub fn commands(&self) -> impl Iterator<Item = &Command> {
         self.commands.values()

@@ -5,3 +5,11 @@
 //! only on the plugin SDK.
 
 #![forbid(unsafe_code)]
+
+use lokyr_plugin_sdk::plugin::Plugin;
+
+/// The plugin of the basic terminal actions.
+#[derive(Debug, Default)]
+pub struct CoreActions;
+
+impl Plugin for CoreActions {}

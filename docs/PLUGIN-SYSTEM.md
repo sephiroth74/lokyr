@@ -65,19 +65,37 @@ The API is defined once, in Rust: the `HostApi` trait and its types live in `plu
 **Rust**, for first-party plugins:
 
 ```rust
-use lokyr_plugin_sdk::{prelude::*, types::*};
+use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error};
+use lokyr_plugin_sdk::host::Binding;
+use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
 #[derive(Default)]
 struct Search { query: String }
 
 impl Plugin for Search {
-    fn activate(&mut self, cx: &mut Cx) -> Result<()> {
-        cx.commands().register("search.open", Self::open)?;
-        cx.keymap().bind("cmd+f", "search.open", When::PaneFocused)?;
-        Ok(())
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "search.open".to_owned(),
+            title: "Find".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+        })?;
+        cx.bind(Binding {
+            keys: "cmd+f".to_owned(),
+            command: "search.open".to_owned(),
+            args: Args::new(),
+            when: Some("pane.focused".to_owned()),
+        })
     }
-    fn on_event(&mut self, cx: &mut Cx, ev: Event) { /* results, pane closed, … */ }
-    fn render(&mut self, cx: &mut Cx, slot: Slot) -> View { /* the find bar */ }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
+        match name {
+            "search.open" => { /* the find bar */ Ok(()) }
+            _ => Err(Error::new(Code::NotFound, format!("no command `{name}`"))),
+        }
+    }
+    // Later: on_event, for results and panes that close, and render, for the find bar.
 }
 
 export_plugin!(Search); // a registration function, which gen-dist wires into the app
@@ -113,6 +131,10 @@ return Search
 ```
 
 - **Rust front end**: `Cx` calls `&mut dyn HostApi`, an object-safe trait. `export_plugin!(T)` generates a registration function, which `xtask gen-dist` wires into the app.
+  - The host's API and the `Plugin` trait come with `plugin-sdk`'s `unstable` feature while they grow.
+  - A command's calls come to the plugin's `on_command`, by the command's name, as in Luau: only data crosses the boundary, never code or references into the kernel's state. A table of handlers, one a command, can come later inside the SDK, over `on_command`, without changing the host.
+  - What changes the app, as opening or closing a window, quitting, the font's size or running another command, comes once the plugin's call returns; a command that runs commands goes 16 deep at most.
+  - The plugins' bindings come after the app's and before the user's `[keys]`, which win over them.
 - **Luau front end**:
   - `plugin-host-luau` binds the same `HostApi` to Luau.
   - The bindings and the Luau type definitions are generated from the Rust types where possible.
@@ -296,6 +318,7 @@ type Plugin = {
   | 105 | `invalid` | Usage | A command's or a parameter's name that is not one |
   | 106 | `invalid` | Usage | A command registered already |
   | 107 | `invalid` | Usage | A schema that repeats a parameter, or whose default is of another kind |
+  | 108 | `invalid` | Usage | A binding whose keys, command or context is not one |
   | 201 | `failed` | Failure | The command ran, and failed |
   | 301 | `denied` | Security | A command that the plugin's manifest does not declare |
   | 302 | `denied` | Security | A capability that the command needs, which the plugin lacks |

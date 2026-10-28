@@ -9,5 +9,9 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# The host's API and the plugins' trait, which may change in a minor release.
+unstable = []
+
 [lints]
 workspace = true

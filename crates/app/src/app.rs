@@ -15,6 +15,7 @@ use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
 use lokyr_kernel::l10n::{self, Texts};
+use lokyr_kernel::plugins::{self, Plugins, Request};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
 use lokyr_kernel::workspace::{
@@ -50,6 +51,11 @@ const QUIT: &str = "app.quit";
 
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
+
+/// How deep the commands that plugins run from their commands go, past
+/// which the next does not run, as a plugin that runs its own command
+/// would go on forever.
+const COMMANDS_DEEP: usize = 16;
 
 /// The catalogs of the texts that the app shows, the kernel's and its own,
 /// by language.
@@ -321,10 +327,16 @@ pub struct App {
     texts: Texts,
     /// The user's languages, as the system has them, from the first.
     preferred: Vec<String>,
-    /// The commands, which the app runs.
+    /// The commands, which the app and the plugins run.
     commands: Registry,
-    /// The bindings of keys to commands: the defaults, and the config's.
+    /// The built-in plugins.
+    plugins: Plugins,
+    /// The bindings of keys to commands: the app's, the plugins', and the
+    /// config's.
     keymap: Keymap,
+    /// The size of the text that a plugin gave, in points, in place of the
+    /// config's.
+    font_size: Option<f32>,
     /// The windows, their tabs and panes.
     workspace: Workspace,
     /// The platform's windows, each with what the app keeps of it.
@@ -359,7 +371,9 @@ impl App {
     /// without it, with `config`, which it reads again from `path`, its
     /// file, when that changes.
     pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
-        let keymap = Keymap::with_config(default_bindings(), &config.keys);
+        let mut plugins = Plugins::new();
+        plugins.add("core-actions", Box::new(lokyr_core_actions::CoreActions));
+        let keymap = Keymap::with_config(bindings(&plugins), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
             drawing,
@@ -372,10 +386,12 @@ impl App {
                 changed: Arc::new(AtomicBool::new(false)),
                 reading: None,
             }),
-            commands: commands(&Texts::new(l10n::SOURCE, &CATALOGS)),
+            commands: commands(&Texts::new(l10n::SOURCE, &CATALOGS), &plugins),
             texts: Texts::new(l10n::SOURCE, &CATALOGS),
             preferred: Vec::new(),
+            plugins,
             keymap,
+            font_size: None,
             workspace: Workspace::new(),
             windows: BTreeMap::new(),
             blink_timer: None,
@@ -395,6 +411,13 @@ impl App {
             },
             budget,
         }
+    }
+
+    /// The app, with `plugin`, by its `name`, after the built-in ones.
+    #[cfg(test)]
+    fn with_plugin(mut self, name: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
+        self.plugins.add(name, plugin);
+        self
     }
 
     /// The app, whose windows run `program` rather than the login shell.
@@ -455,7 +478,7 @@ impl App {
         }
         if config.font != self.config.font
             && let Some(drawing) = &mut self.drawing
-            && let Err(error) = drawing.set_font(config.font.clone())
+            && let Err(error) = drawing.set_font(sized(&config.font, self.font_size))
         {
             eprintln!("lokyr: {error}");
             eprintln!("lokyr: none of the config applies, and the one in force stays");
@@ -464,7 +487,7 @@ impl App {
         let icon_changed = config.app.icon != self.config.app.icon;
         let language_changed = config.app.language != self.config.app.language;
         if config.keys != self.config.keys {
-            self.keymap = Keymap::with_config(default_bindings(), &config.keys);
+            self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
         self.config = config;
         let (left, right) = self.config.keyboard.option_as_meta.sides();
@@ -486,7 +509,7 @@ impl App {
         }
         if language_changed {
             self.texts = texts(&self.config.app.language, &self.preferred);
-            self.commands = commands(&self.texts);
+            self.commands = commands(&self.texts, &self.plugins);
             platform.set_main_menu(&main_menu(&self.commands));
         }
         for &window in self.windows.keys() {
@@ -859,24 +882,128 @@ impl App {
     }
 
     /// Runs the command `name` with `args`, as the menus and the keys ask,
-    /// once the registry took them; an error goes to the log.
+    /// once the registry took them: in the plugin that registered it, or
+    /// in the app; an error goes to the log.
     fn run(&mut self, platform: &mut dyn Platform, name: &str, args: Args) {
-        let ran = self.commands.check(name, args).and_then(|_| match name {
-            QUIT => {
-                platform.quit();
-                Ok(())
+        self.run_deep(platform, name, args, 0);
+    }
+
+    /// Runs `name`, which commands of plugins `depth` deep ran.
+    fn run_deep(&mut self, platform: &mut dyn Platform, name: &str, args: Args, depth: usize) {
+        let ran = match self.commands.check(name, args) {
+            Err(error) => Err(error),
+            Ok(args) if self.plugins.owns(name) => {
+                let ran = self.with_plugins(platform, |plugins, context| {
+                    plugins.run(name, args, context)
+                });
+                self.after_plugins(platform, depth);
+                ran
             }
-            NEW_WINDOW => {
-                self.open_window(platform);
-                Ok(())
-            }
-            _ => Err(Error::new(
-                Code::Failed,
-                format!("`{name}` has no action in the app"),
-            )),
-        });
+            Ok(_) => match name {
+                QUIT => {
+                    platform.quit();
+                    Ok(())
+                }
+                NEW_WINDOW => {
+                    self.open_window(platform);
+                    Ok(())
+                }
+                _ => Err(Error::new(
+                    Code::Failed,
+                    format!("`{name}` has no action in the app"),
+                )),
+            },
+        };
         if let Err(error) = ran {
             eprintln!("lokyr: {error}");
+        }
+    }
+
+    /// Activates the plugins, which register their commands and bind their
+    /// keys; one that fails is disabled, as the log tells.
+    fn activate_plugins(&mut self, platform: &mut dyn Platform) {
+        let errors = self.with_plugins(platform, Plugins::activate);
+        for error in errors {
+            eprintln!("lokyr: {error}");
+        }
+        self.after_plugins(platform, 0);
+    }
+
+    /// Calls `call` with the plugins and what their host reaches of the
+    /// app: the registry, the workspace, the platform's clipboard, the
+    /// focused window and the text's size.
+    fn with_plugins<T>(
+        &mut self,
+        platform: &mut dyn Platform,
+        call: impl FnOnce(&mut Plugins, &mut plugins::Context<'_>) -> T,
+    ) -> T {
+        let focused = platform
+            .focused_window()
+            .and_then(|window| self.windows.get(&window))
+            .map(|state| state.window);
+        let font_size = self.font_size.unwrap_or(self.config.font.size.points());
+        let mut clipboard = PlatformClipboard(platform);
+        let mut context = plugins::Context {
+            registry: &mut self.commands,
+            workspace: &mut self.workspace,
+            clipboard: &mut clipboard,
+            focused,
+            font_size,
+        };
+        call(&mut self.plugins, &mut context)
+    }
+
+    /// Takes what the plugins' calls changed and asked, once they
+    /// returned: their bindings into the keymap, and their requests, of
+    /// which a command runs `depth` deep; the windows draw again, as a
+    /// call can change what a pane shows.
+    fn after_plugins(&mut self, platform: &mut dyn Platform, depth: usize) {
+        if self.plugins.take_bindings_changed() {
+            self.keymap = Keymap::with_config(bindings(&self.plugins), &self.config.keys);
+        }
+        for request in self.plugins.take_requests() {
+            match request {
+                Request::Run(invocation) if depth < COMMANDS_DEEP => {
+                    self.run_deep(platform, &invocation.command, invocation.args, depth + 1);
+                }
+                Request::Run(invocation) => eprintln!(
+                    "lokyr: `{}` does not run, as commands that ran commands took it {COMMANDS_DEEP} deep",
+                    invocation.command
+                ),
+                Request::OpenWindow => self.open_window(platform),
+                Request::CloseWindow(window) => {
+                    let shown = self
+                        .windows
+                        .iter()
+                        .find(|(_, state)| state.window == window)
+                        .map(|(&shown, _)| shown);
+                    if let Some(shown) = shown {
+                        self.close(platform, shown);
+                    }
+                }
+                Request::Quit => platform.quit(),
+                Request::FontSize(size) => self.set_font_size(platform, size),
+            }
+        }
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
+        }
+    }
+
+    /// Gives the text `size`, in points, or the config's with `None`, in
+    /// every window; a font that fails leaves the one in force, as the log
+    /// tells.
+    fn set_font_size(&mut self, platform: &mut dyn Platform, size: Option<f32>) {
+        let font = sized(&self.config.font, size);
+        if let Some(drawing) = &mut self.drawing
+            && let Err(error) = drawing.set_font(font)
+        {
+            eprintln!("lokyr: {error}");
+            return;
+        }
+        self.font_size = size;
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
         }
     }
 
@@ -1351,7 +1478,8 @@ impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
         self.preferred = platform.locales();
         self.texts = texts(&self.config.app.language, &self.preferred);
-        self.commands = commands(&self.texts);
+        self.commands = commands(&self.texts, &self.plugins);
+        self.activate_plugins(platform);
         platform.set_main_menu(&main_menu(&self.commands));
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
@@ -1691,6 +1819,35 @@ fn context(pane: Option<&Pane>) -> Context {
     Context::new(names)
 }
 
+/// The clipboard of the platform, for the plugins' host.
+struct PlatformClipboard<'a>(&'a mut dyn Platform);
+
+impl plugins::Clipboard for PlatformClipboard<'_> {
+    fn text(&self) -> Option<String> {
+        self.0.clipboard_text()
+    }
+
+    fn set_text(&mut self, text: &str) {
+        self.0.set_clipboard_text(text);
+    }
+}
+
+/// `font`, at `size` in points when it is one, rather than its own.
+fn sized(font: &FontConfig, size: Option<f32>) -> FontConfig {
+    let size = size.and_then(|size| lokyr_text_core::Size::try_from(f64::from(size)).ok());
+    FontConfig {
+        size: size.unwrap_or(font.size),
+        ..font.clone()
+    }
+}
+
+/// The default bindings: the app's, then the active plugins'.
+fn bindings(plugins: &Plugins) -> Vec<Binding> {
+    let mut bindings = default_bindings();
+    bindings.extend(plugins.bindings().cloned());
+    bindings
+}
+
 /// The default bindings of the app's commands.
 fn default_bindings() -> Vec<Binding> {
     [("cmd+n", NEW_WINDOW), ("cmd+q", QUIT)]
@@ -1723,8 +1880,9 @@ fn texts(chosen: &str, preferred: &[String]) -> Texts {
     Texts::new(&language, &CATALOGS)
 }
 
-/// The app's commands, which it runs itself, with their titles in `texts`.
-fn commands(texts: &Texts) -> Registry {
+/// The app's commands, which it runs itself, with their titles in `texts`,
+/// and the active plugins'.
+fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
         (NEW_WINDOW, "command-window-new", Category::Windows),
@@ -1739,6 +1897,11 @@ fn commands(texts: &Texts) -> Registry {
             params: Vec::new(),
         };
         if let Err(error) = registry.register(command) {
+            eprintln!("lokyr: {error}");
+        }
+    }
+    for command in plugins.commands() {
+        if let Err(error) = registry.register(command.clone()) {
             eprintln!("lokyr: {error}");
         }
     }
@@ -1841,7 +2004,7 @@ mod tests {
 
     #[test]
     fn the_app_s_commands_register_with_their_categories_and_titles() {
-        let registry = commands(&Texts::new("en", &CATALOGS));
+        let registry = commands(&Texts::new("en", &CATALOGS), &Plugins::new());
         let registered: Vec<(&str, &str, Category)> = registry
             .commands()
             .map(|command| {
@@ -1944,7 +2107,7 @@ mod tests {
         }
         // Every command's title is a message of the catalogs.
         let texts = Texts::new("it", &CATALOGS);
-        for command in commands(&texts).commands() {
+        for command in commands(&texts, &Plugins::new()).commands() {
             assert!(!command.title.starts_with("command-"), "{}", command.title);
         }
     }
@@ -3508,6 +3671,152 @@ mod tests {
         let shown = screen(&app, window).concat();
         assert_eq!(shown.matches("^A").count(), 1, "{shown:?}");
         assert!(!shown.contains('n'), "{shown:?}");
+    }
+
+    /// A plugin of the tests: `test.copy`, on Control-T, puts the first
+    /// line of the focused pane's text on the clipboard, and opens a
+    /// window through `window.new`; `test.boom`, on Control-B, panics;
+    /// `test.size` gives the text 18 points; `test.close` closes the
+    /// focused window; and `test.again` runs itself, counting its runs.
+    struct Tester {
+        runs: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl plugins::Plugin for Tester {
+        fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+            let names = [
+                "test.copy",
+                "test.boom",
+                "test.size",
+                "test.close",
+                "test.again",
+            ];
+            for name in names {
+                cx.register_command(Command {
+                    name: name.to_owned(),
+                    title: name.to_owned(),
+                    category: Category::View,
+                    capabilities: Vec::new(),
+                    params: Vec::new(),
+                })?;
+            }
+            for (keys, command) in [("ctrl+t", "test.copy"), ("ctrl+b", "test.boom")] {
+                cx.bind(plugins::host::Binding {
+                    keys: keys.to_owned(),
+                    command: command.to_owned(),
+                    args: Args::new(),
+                    when: Some("pane.focused".to_owned()),
+                })?;
+            }
+            Ok(())
+        }
+
+        fn on_command(
+            &mut self,
+            cx: &mut plugins::Cx<'_>,
+            name: &str,
+            _args: Args,
+        ) -> Result<(), Error> {
+            match name {
+                "test.boom" => panic!("on purpose"),
+                "test.size" => cx.set_font_size(Some(18.0)),
+                "test.close" => {
+                    let window = cx.focused_window().expect("a window");
+                    cx.close_window(window)
+                }
+                "test.again" => {
+                    self.runs.set(self.runs.get() + 1);
+                    cx.run_command("test.again", Args::new())
+                }
+                _ => {
+                    let pane = cx.focused_pane().expect("a focused pane");
+                    cx.select_all(pane)?;
+                    let text = cx.selection_text(pane)?.unwrap_or_default();
+                    cx.set_clipboard_text(text.lines().next().unwrap_or_default())?;
+                    cx.run_command(NEW_WINDOW, Args::new())
+                }
+            }
+        }
+    }
+
+    /// The app with the tests' plugin, whose runs of `test.again` the
+    /// counter counts, its window running `reader`, focused, once it shows
+    /// `ready`.
+    fn with_tester() -> (Fake, App, WindowId, std::rc::Rc<std::cell::Cell<usize>>) {
+        let runs = std::rc::Rc::default();
+        let tester = Tester {
+            runs: std::rc::Rc::clone(&runs),
+        };
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), reader("")).with_plugin("tester", Box::new(tester));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        (fake, app, window, runs)
+    }
+
+    #[test]
+    fn a_plugin_s_binding_runs_its_command_and_what_it_asks() {
+        let (mut fake, mut app, window, _) = with_tester();
+        // The plugins started with the app, the built-in one too.
+        assert_eq!(
+            app.plugins.status("core-actions"),
+            Some(plugins::Status::Active)
+        );
+        assert!(app.commands.get("test.copy").is_some());
+        fake.send(&mut app, window, key_event(KeyCode::KeyT, "t", CTRL, true));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("ready"));
+        // The window that its command asked for, once the call returned.
+        assert_eq!(fake.windows().count(), 2);
+        // The key went nowhere else.
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert!(!shows(&app, window, "^T"));
+        // Another language makes the registry anew, with the plugins'
+        // commands.
+        let mut config = app.config.clone();
+        config.app.language = "it".to_owned();
+        app.apply(&mut fake, config);
+        assert!(app.commands.get("test.copy").is_some());
+        fake.send(&mut app, window, key_event(KeyCode::KeyT, "t", CTRL, true));
+        assert_eq!(fake.windows().count(), 3);
+    }
+
+    #[test]
+    fn a_plugin_that_panics_is_disabled_and_its_keys_go_to_the_program() {
+        let (mut fake, mut app, window, _) = with_tester();
+        fake.send(&mut app, window, key_event(KeyCode::KeyB, "b", CTRL, true));
+        assert_eq!(
+            app.plugins.status("tester"),
+            Some(plugins::Status::Disabled)
+        );
+        assert!(app.commands.get("test.copy").is_none());
+        // Its bindings went with it: its keys are the program's, and the
+        // app goes on.
+        fake.send(&mut app, window, key_event(KeyCode::KeyT, "t", CTRL, true));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^T"));
+        assert_eq!(fake.clipboard_text(), None);
+        assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn a_plugin_s_requests_change_the_app_after_its_call() {
+        let (mut fake, mut app, window, runs) = with_tester();
+        app.run(&mut fake, "test.size", Args::new());
+        assert_eq!(app.font_size, Some(18.0));
+        assert_eq!(sized(&app.config.font, app.font_size).size.points(), 18.0);
+        assert_eq!(sized(&app.config.font, None).size.points(), 13.0);
+        // The focused window closes; the other stays.
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        assert_eq!(fake.windows().count(), 2);
+        app.run(&mut fake, "test.close", Args::new());
+        assert_eq!(fake.windows().collect::<Vec<_>>().len(), 1);
+        assert!(!fake.windows().any(|shown| shown == window));
+        // A command that runs itself stops, its first run and as many
+        // again as the depth allows.
+        app.run(&mut fake, "test.again", Args::new());
+        assert_eq!(runs.get(), COMMANDS_DEEP + 1);
     }
 
     /// `event`, a key's press, as the system repeats it.

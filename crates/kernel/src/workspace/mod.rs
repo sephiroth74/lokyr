@@ -68,6 +68,22 @@ id!(
     PaneId
 );
 
+impl WindowId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no window's.
+    pub(crate) fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl PaneId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no pane's.
+    pub(crate) fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
 /// A window: its tabs, in their order, and the one that it shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Window {

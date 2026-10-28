@@ -13,7 +13,7 @@ publish = false
 fluent-bundle.workspace = true
 fluent-syntax.workspace = true
 lokyr-pkg-model.workspace = true
-lokyr-plugin-sdk.workspace = true
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 lokyr-pty.workspace = true
 lokyr-search.workspace = true
 lokyr-session.workspace = true
