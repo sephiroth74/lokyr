@@ -35,9 +35,14 @@ const POINTS: f64 = 13.0;
 /// releases of macOS.
 const CHANNEL: u8 = 24;
 
-/// The share of an image's pixels that can differ: a glyph moved by a
-/// pixel changes many more.
+/// The share of an image's pixels that can differ, in a scene of text: a
+/// glyph moved by a pixel changes many more.
 const SHARE: f64 = 0.002;
+
+/// The pixels that can differ, at a scale of 1, in a scene of the shapes
+/// that the renderer draws itself, without text, as a cursor or a dotted
+/// line: as many times the scale's square at another.
+const SHAPES: usize = 2;
 
 /// What a scene draws: a screen's columns and rows, what a program writes
 /// to it, the cursor's shape where it shows, and the cells that are
@@ -49,6 +54,9 @@ struct Scene {
     text: String,
     cursor: Option<CursorShape>,
     selection: Option<((u16, i64), (u16, i64))>,
+    /// Whether it draws shapes alone, without text, which the GPU draws
+    /// the same wherever it runs.
+    shapes: bool,
 }
 
 /// The GPU, its renderer and a font of `POINTS` at `scale`, as a window of
@@ -169,6 +177,7 @@ fn text() -> Vec<Scene> {
         .to_owned(),
         cursor: None,
         selection: None,
+        shapes: false,
     }]
 }
 
@@ -204,6 +213,7 @@ fn colors() -> Vec<Scene> {
         text,
         cursor: None,
         selection: None,
+        shapes: false,
     }]
 }
 
@@ -223,6 +233,7 @@ fn decorations() -> Vec<Scene> {
         .to_owned(),
         cursor: None,
         selection: None,
+        shapes: false,
     }]
 }
 
@@ -244,6 +255,7 @@ fn cursors() -> Vec<Scene> {
         text: text.to_owned(),
         cursor: Some(shape),
         selection: None,
+        shapes: false,
     })
     .collect()
 }
@@ -258,7 +270,46 @@ fn selection() -> Vec<Scene> {
             .to_owned(),
         cursor: None,
         selection: Some(((2, 0), (5, 1))),
+        shapes: false,
     }]
+}
+
+/// The shapes that the renderer draws itself, without text: the cursor's
+/// four shapes on empty cells, and every line on spaces, each style of
+/// underline, the strike and the overline.
+fn shapes() -> Vec<Scene> {
+    let mut scenes: Vec<Scene> = [
+        CursorShape::Block,
+        CursorShape::Bar,
+        CursorShape::Underline,
+        CursorShape::Hollow,
+    ]
+    .into_iter()
+    .map(|shape| Scene {
+        name: "shapes",
+        columns: 8,
+        // A row of its own, and an empty one after it, which keeps it apart
+        // from the next.
+        rows: 2,
+        text: "  \x1b[D".to_owned(),
+        cursor: Some(shape),
+        selection: None,
+        shapes: true,
+    })
+    .collect();
+    let lines = ["4", "4:2", "4:3", "4:4", "4:5", "9", "53"]
+        .map(|style| format!("\x1b[{style}m{}\x1b[0m\r\n", " ".repeat(12)))
+        .concat();
+    scenes.push(Scene {
+        name: "shapes",
+        columns: 12,
+        rows: 7,
+        text: lines.trim_end_matches("\r\n").to_owned(),
+        cursor: None,
+        selection: None,
+        shapes: true,
+    });
+    scenes
 }
 
 /// The directory of the golden images.
@@ -350,7 +401,11 @@ fn check(scenes: &[Scene], scale: u32) {
         );
     }
     let (count, map) = differences(&expected, &pixels);
-    let most = (f64::from(width * height) * SHARE) as usize;
+    let most = if scenes[0].shapes {
+        SHAPES * (scale * scale) as usize
+    } else {
+        (f64::from(width * height) * SHARE) as usize
+    };
     if count > most {
         write_png(&actual, width, height, &pixels);
         let map_path = failed.join(format!("{name}-differences.png"));
@@ -390,6 +445,13 @@ fn decorations_draw_as_their_golden_image() {
 fn the_cursor_s_shapes_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&cursors(), scale);
+    }
+}
+
+#[test]
+fn the_shapes_draw_as_their_golden_image() {
+    for scale in [1, 2] {
+        check(&shapes(), scale);
     }
 }
 

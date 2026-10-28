@@ -322,6 +322,13 @@ pub fn cells_with(
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
     let colors = snapshot.colors();
     let defaults = defaults(snapshot);
+    // The last color of selected text that kept the text's own, by its
+    // bits, and what it showed on the selection's background, which every
+    // selected cell has: cells next to each other most often have the same,
+    // and a contrast is dear for each cell of a large selection.
+    // No color has the bits of a NaN, which start it.
+    let mut readables = [([u32::MAX; 4], Color::default()); 4];
+    let mut readable_next = 0;
     let area = usize::from(columns) * usize::from(rows);
     let mut batch = CellBatch {
         x,
@@ -385,9 +392,21 @@ pub fn cells_with(
             };
             if let Some(chosen) = chosen {
                 background = chosen.background;
-                foreground = chosen
-                    .foreground
-                    .unwrap_or_else(|| readable(foreground, background, defaults));
+                foreground = match chosen.foreground {
+                    Some(own) => own,
+                    None => {
+                        let key = bits(foreground);
+                        match readables.iter().find(|(known, _)| *known == key) {
+                            Some(&(_, shown)) => shown,
+                            None => {
+                                let shown = readable(foreground, background, defaults);
+                                readables[readable_next] = (key, shown);
+                                readable_next = (readable_next + 1) % readables.len();
+                                shown
+                            }
+                        }
+                    }
+                };
             }
             batch.backgrounds.push(background);
             // Text that blinks shows half of the time.
@@ -614,7 +633,8 @@ const CURSOR_CONTRAST: f64 = 1.5;
 /// xterm keeps the cursor's color apart from the background's: the
 /// cursor's own color, or, when that is too near, as on inverse text or in
 /// reverse video, the color of the cell's text, or else black or white,
-/// whichever stands farther; a block's text takes the cell's background.
+/// whichever stands farther; a block's text, and the lines that cross it,
+/// take the cell's background.
 fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     let Some(cursor) = &mut batch.cursor else {
         return;
@@ -654,6 +674,33 @@ fn settle_cursor(batch: &mut CellBatch, snapshot: &Snapshot) {
     if cursor.shape == CursorShape::Block {
         for glyph in glyphs {
             glyph.color = background.with_alpha(1.0);
+        }
+        // The lines that cross the block, as an underline, take the cell's
+        // background over it too, as its text does: a piece of each.
+        let columns = cursor.column..cursor.column + cursor.columns;
+        let crossing: Vec<CellLine> = batch
+            .lines
+            .iter()
+            .filter(|line| {
+                line.row == row
+                    && line.column < columns.end
+                    && line.column + line.columns > columns.start
+            })
+            .copied()
+            .collect();
+        if crossing.is_empty() {
+            return;
+        }
+        cut_lines(batch, row, columns.clone());
+        for line in crossing {
+            let start = line.column.max(columns.start);
+            let end = (line.column + line.columns).min(columns.end);
+            batch.lines.push(CellLine {
+                column: start,
+                columns: end - start,
+                color: background.with_alpha(1.0),
+                ..line
+            });
         }
     }
 }
@@ -695,6 +742,16 @@ fn readable(text: Color, background: Color, (fg, bg): (Color, Color)) -> Color {
     } else {
         bg
     }
+}
+
+/// The bits of `color`'s components, which compare as one.
+fn bits(color: Color) -> [u32; 4] {
+    [
+        color.red.to_bits(),
+        color.green.to_bits(),
+        color.blue.to_bits(),
+        color.alpha.to_bits(),
+    ]
 }
 
 /// The contrast ratio of two colors, as WCAG 2 defines it: from 1 to 21.
@@ -1650,6 +1707,64 @@ mod tests {
         let gray = "\x1b[38;2;229;229;229;48;2;229;229;229mx\x1b[D";
         let batch = with_cursor(4, gray, CursorShape::Block);
         assert_eq!(batch.cursor.unwrap().color, Color::from_rgb8(0, 0, 0));
+    }
+
+    #[test]
+    fn a_block_cursor_s_lines_take_its_cell_s_background() {
+        let look = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 2,
+        };
+        let snapshot = snapshot(8, 1, "\x1b[4;9mabcd\x1b[2D");
+        let mut asked = Vec::new();
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            Some(look),
+            &mut atlas(&mut asked),
+        );
+        let background = color(Colors::default().background);
+        let text = color(Colors::default().foreground);
+        // The underline and the strike, each cut around the cursor's cell,
+        // `c`, whose piece takes its background.
+        let mut pieces: Vec<(u16, u16, bool)> = batch
+            .lines
+            .iter()
+            .map(|line| {
+                assert!(line.color == background || line.color == text);
+                (line.column, line.columns, line.color == background)
+            })
+            .collect();
+        pieces.sort_unstable();
+        assert_eq!(
+            pieces,
+            [
+                (0, 2, false),
+                (0, 2, false),
+                (2, 1, true),
+                (2, 1, true),
+                (3, 1, false),
+                (3, 1, false)
+            ]
+        );
+        // A bar leaves them whole.
+        let look = CursorLook {
+            shape: CursorShape::Bar,
+            ..look
+        };
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            Some(look),
+            &mut atlas(&mut asked),
+        );
+        assert!(batch.lines.iter().all(|line| line.columns == 4));
     }
 
     #[test]

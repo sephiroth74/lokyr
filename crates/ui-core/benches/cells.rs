@@ -1,9 +1,10 @@
 //! The time that a frame's cells take to lay out, with the system's fonts:
 //! a full screen of text, the same text underlined whole, and with waves of
 //! a color of their own, and a screen of spaces, whose glyphs are all in
-//! the atlas already, as most frames find them; and a screen of words that
-//! differ, of a family with ligatures where one is installed, whose runs
-//! the shaping's cache keeps.
+//! the atlas already, as most frames find them; the text and the spaces
+//! selected whole, in the built-in theme's colors, which keep the text's;
+//! and a screen of words that differ, of a family with ligatures where one
+//! is installed, whose runs the shaping's cache keeps.
 
 #[cfg(target_os = "macos")]
 mod cells {
@@ -13,7 +14,8 @@ mod cells {
     use lokyr_font_coretext::CoreText;
     use lokyr_text_core::FontConfig;
     use lokyr_ui_core::font::Font;
-    use lokyr_ui_core::pane;
+    use lokyr_ui_core::pane::{self, Selection};
+    use lokyr_ui_core::theme::Theme;
     use lokyr_vt_core::parser::Parser;
     use lokyr_vt_core::terminal::{Options, Snapshot, Terminal};
 
@@ -102,15 +104,32 @@ mod cells {
             ("waved text", styled("\x1b[4:3;58;5;1m", text)),
             ("spaces", screen(" ")),
         ];
-        for (name, snapshot) in &screens {
+        let everything = |_: u16, _: u16| true;
+        let selection = Selection {
+            colors: Theme::builtin().variant(true).selection,
+            contains: &everything,
+        };
+        let selected = [
+            ("text selected", &screens[0].1),
+            ("spaces selected", &screens[3].1),
+        ];
+        let runs = screens
+            .iter()
+            .map(|(name, snapshot)| (*name, snapshot, None))
+            .chain(
+                selected
+                    .into_iter()
+                    .map(|(name, snapshot)| (name, snapshot, Some(&selection))),
+            );
+        for (name, snapshot, selection) in runs {
             // The first frame draws the glyphs into the atlas.
             font.begin_frame();
-            pane::cells(snapshot, &cell, 0, 0, None, None, &mut font);
-            group.bench_function(*name, |b| {
+            pane::cells(snapshot, &cell, 0, 0, selection, None, &mut font);
+            group.bench_function(name, |b| {
                 b.iter(|| {
                     font.begin_frame();
                     let batch =
-                        pane::cells(black_box(snapshot), &cell, 0, 0, None, None, &mut font);
+                        pane::cells(black_box(snapshot), &cell, 0, 0, selection, None, &mut font);
                     black_box(batch)
                 });
             });
