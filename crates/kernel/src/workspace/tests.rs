@@ -226,3 +226,29 @@ fn a_pane_tells_the_program_that_runs_but_a_shell() {
     }
     assert_eq!(idle.running(), None);
 }
+
+#[test]
+fn a_pane_tells_its_contexts() {
+    let pane = pane("printf 'ready'; sleep 10");
+    assert!(pane.contexts().is_empty());
+    // Once the program shows something to select.
+    let start = Instant::now();
+    loop {
+        pane.select_all();
+        if pane.selection_text().is_some() {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pane.contexts(), ["selection"]);
+    pane.clear_selection();
+    assert!(pane.contexts().is_empty());
+    let alternate = self::pane("printf '\\033[?1049h'; sleep 10");
+    let start = Instant::now();
+    while alternate.contexts().is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(alternate.contexts(), ["alternate-screen"]);
+}

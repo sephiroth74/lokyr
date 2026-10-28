@@ -617,6 +617,24 @@ impl Pane {
             .is_some_and(|session| session.lock().is_alternate_screen())
     }
 
+    /// The keymap's contexts that the pane holds, as a binding's `when`
+    /// names them: `alternate-screen` while its program shows a screen of
+    /// its own, and `selection` while it has a selection.
+    pub fn contexts(&self) -> Vec<&'static str> {
+        let Some(session) = &self.session else {
+            return Vec::new();
+        };
+        let mut terminal = session.lock();
+        let mut names = Vec::new();
+        if terminal.is_alternate_screen() {
+            names.push("alternate-screen");
+        }
+        if terminal.selection().is_some() {
+            names.push("selection");
+        }
+        names
+    }
+
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept

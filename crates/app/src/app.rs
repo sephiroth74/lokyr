@@ -2507,9 +2507,7 @@ fn binding_mods(mods: Modifiers) -> keymap::Mods {
 /// keyboard, and its program may show the alternate screen.
 fn context(pane: Option<&Pane>) -> Context {
     let mut names = vec!["pane.focused"];
-    if pane.is_some_and(Pane::is_alternate_screen) {
-        names.push("alternate-screen");
-    }
+    names.extend(pane.map(Pane::contexts).unwrap_or_default());
     Context::new(names)
 }
 
@@ -5475,6 +5473,25 @@ mod tests {
         assert_eq!(fake.windows().count(), 1);
         fake.send(&mut app, window, key_event(KeyCode::KeyO, "o", CTRL, true));
         assert_eq!(fake.windows().count(), 2);
+    }
+
+    #[test]
+    fn a_binding_holds_with_a_selection_or_without() {
+        let keys = concat!(
+            "\"cmd+e\" = [\n",
+            "  { command = \"pane.send-text\", args = { text = \"S\" }, when = \"selection\" },\n",
+            "  { command = \"pane.send-text\", args = { text = \"N\" }, when = \"!selection\" },\n",
+            "]\n",
+        );
+        let (mut fake, mut app, window) = bound(keys, reader(""));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let cmd_e = || key_event(KeyCode::KeyE, "e", CMD, true);
+        fake.send(&mut app, window, cmd_e());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "N"));
+        // Command-A selects everything.
+        fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
+        fake.send(&mut app, window, cmd_e());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "NS"));
     }
 
     #[test]
