@@ -26,8 +26,8 @@ Under each key's name, a small line tells the platforms where the key applies: m
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
   - A file with an error prints nothing but the error.
-- **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's family and styles too.
-  - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A language or an icon that Lokyr lacks only warns, as the rest of the file applies.
+- **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's styles too.
+  - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A family that is not installed, or a language or an icon that Lokyr lacks, only warns, as Lokyr takes the file with its default in their place.
   - Without a config file, the defaults apply, and the check passes; a file that you name must exist.
   - In the app's bundle, the command is `Lokyr.app/Contents/MacOS/Lokyr`, as `/Applications/Lokyr.app/Contents/MacOS/Lokyr +validate-config`.
 
@@ -435,8 +435,8 @@ The `TERM` that programs see, which tells them what the terminal can do: letters
 |---|---|
 | a terminfo name, as `"xterm-256color"`, `"xterm-lokyr"`, `"xterm"`, `"vt220"` | `"xterm-256color"` |
 
-- It changes only what programs are told, never the terminal, which does all that xterm does whatever the name.
-- `"xterm-lokyr"` describes Lokyr itself, with the capabilities past xterm's, as undercurls and the kitty keyboard; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
+- It changes only what programs are told, never what the terminal does, which is the same whatever the name.
+- `"xterm-lokyr"` describes Lokyr itself, with the capabilities that the plain names lack, as undercurls and the keyboard protocol that reports every key; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
 - It applies to the windows that open after the change: the programs of a window keep the `TERM` that they started with.
 
 ### `unicode-widths`
@@ -657,9 +657,9 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 ```
 
 - **The keys**: modifiers, each followed by `+`, and the key: `cmd+shift+n`.
-  - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`.
-  - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
-  - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. A letter or a digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
+  - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`; `command` and `super` are `cmd` too, `control` is `ctrl`, and `option` is `alt`.
+  - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape` or `esc`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
+  - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. An ASCII letter or digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
   - Two entries of the same keys, written two ways, as `alt+x` and `opt+x`, or `cmd+shift+n` and `shift+cmd+n`, are an error.
 - **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel makes no sequence.
 - **The value**:
