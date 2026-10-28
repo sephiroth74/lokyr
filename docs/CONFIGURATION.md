@@ -603,7 +603,7 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 
 ## `[links]`
 
-What a link does as you open it, with [`cmd+click`](#bindings), or as a plugin opens one. A folder always opens in the Finder, without asking. A file that would run rather than open, as a program, an application, an installer or a script of macOS's Terminal, never runs: it shows in the Finder, selected.
+What a link does as you open it, with [`cmd+click`](#bindings), or as a plugin opens one. A folder always opens in the Finder, without asking. A file that would run rather than open, as a program, an application, an installer or a script that macOS would run in a terminal, never runs: it shows in the Finder, selected.
 
 ### `urls`
 

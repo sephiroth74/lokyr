@@ -2188,10 +2188,11 @@ impl Handler for App {
                     self.pace_at(platform, next);
                 }
             }
-            // The windows' flashes end.
+            // A selection dragged past a window's edge scrolls its view.
             AppEvent::Timer(timer) if self.scroll_timer == Some(timer) => {
                 self.scroll_selections(platform);
             }
+            // The windows' flashes end.
             AppEvent::Timer(timer) if self.flash_timer == Some(timer) => {
                 self.flash_timer = None;
                 for (&window, state) in &mut self.windows {
@@ -2504,7 +2505,8 @@ fn binding_mods(mods: Modifiers) -> keymap::Mods {
 }
 
 /// The context of the keys in a window of `pane`: its pane has the
-/// keyboard, and its program may show the alternate screen.
+/// keyboard, and holds the pane's contexts, the alternate screen and the
+/// selection.
 fn context(pane: Option<&Pane>) -> Context {
     let mut names = vec!["pane.focused"];
     names.extend(pane.map(Pane::contexts).unwrap_or_default());

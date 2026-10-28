@@ -128,8 +128,10 @@ pub trait HostApi {
 
     /// Pastes `text` into `pane`, as the user pastes: bracketed when its
     /// program asks, without its control characters but tab and the line
-    /// breaks. Into a program that does not ask, a text with a line break,
-    /// which reaches it as Return, waits for the user to confirm it.
+    /// breaks. Into a program that does not ask, a text of several lines,
+    /// whose line breaks reach it as Return, waits for the user to confirm
+    /// it, and a single line pastes without the line break after it; the
+    /// user's config can ask always, or never.
     fn paste(&mut self, pane: PaneId, text: &str) -> Result<(), Error>;
 
     /// Sends `text` to `pane`'s program as it is, its control characters
