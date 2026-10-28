@@ -2,13 +2,14 @@
 //! to another in reading order or as a rectangle, grown to words or to
 //! logical lines, and held by two pins, so that it keeps its cells as output
 //! scrolls them up. Output that writes over its cells on the screen clears
-//! it, as does a switch to the other screen.
+//! it, though it scrolls them into the scrollback before the next look, as
+//! does a switch to the other screen.
 
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use super::Terminal;
-use crate::page::{Content, ListRow, PageList, PinId, Position, RowFlag, Width};
+use crate::page::{Content, ListRow, PageList, PinId, Position, RowFlag, StyleId, Width};
 
 /// The characters that end a word, besides spaces, by default: quotes,
 /// brackets and the punctuation that separates fields, so that a path or a
@@ -94,13 +95,20 @@ pub(super) struct Selection {
 
 impl Selection {
     /// Where the selection's first and last cells are now, if neither
-    /// left the list.
+    /// left the list, and the last does not come before the first, as a
+    /// scroll within left and right margins, which moves the cells between
+    /// them alone, can move their pins.
     fn bounds(&self, rows: &PageList) -> Option<(At, At)> {
         let at = |pin: PinId| {
             let position = rows.pin_position(pin)?;
             Some((rows.row_index(position.page, position.row)?, position.col))
         };
-        Some((at(self.start)?, at(self.end)?))
+        let (start, end) = (at(self.start)?, at(self.end)?);
+        let ordered = match self.shape {
+            SelectionShape::Cells => start <= end,
+            SelectionShape::Rectangle => start.0 <= end.0 && start.1 <= end.1,
+        };
+        ordered.then_some((start, end))
     }
 
     /// The selected columns of the row at `index`, between `start` and
@@ -141,8 +149,13 @@ impl Selection {
     /// row and which rows of the view a snapshot copied, only those rows
     /// are looked at, as the others did not change since the last look:
     /// a row that output writes over is copied as it comes into the view.
+    ///
+    /// The rows that output scrolled into the scrollback since the last
+    /// look are looked at whatever the snapshot copied, as output could
+    /// write over them before, and once: nothing writes over them there,
+    /// and their hashes go.
     fn unwritten(
-        &self,
+        &mut self,
         rows: &PageList,
         bounds: (At, At),
         copied: Option<(usize, &[bool])>,
@@ -150,6 +163,24 @@ impl Selection {
         let (start, end) = bounds;
         if end.0 - start.0 + 1 != self.rows {
             return false;
+        }
+        let hashed = start.0 + self.first_hashed;
+        let gone = rows
+            .scrollback_rows()
+            .saturating_sub(hashed)
+            .min(self.hashes.len());
+        if gone > 0 {
+            let same = (hashed..hashed + gone)
+                .zip(rows.rows_from(hashed))
+                .zip(&self.hashes)
+                .all(|((index, row), &then)| {
+                    then == hash(row, self.columns(index, bounds, rows.cols()))
+                });
+            if !same {
+                return false;
+            }
+            self.hashes.drain(..gone);
+            self.first_hashed += gone;
         }
         let first = start.0.max(rows.scrollback_rows());
         (first..=end.0)
@@ -203,12 +234,25 @@ impl Hasher for Mix {
 }
 
 /// The hash of the cells of `row` in `columns`, with their clusters'
-/// codepoints.
+/// codepoints, and their styles by their values: a page gives a style
+/// another id as a row is written again, or moves to another page. A
+/// style's fields go in where the style changes, as a row's cells come in
+/// runs of one: a row's page gives equal styles one id.
 fn hash(row: ListRow<'_>, columns: Range<u16>) -> u64 {
+    let (page, _) = row.parts();
     let mut hasher = Mix::default();
+    // The last cell's style; the default's fields pack to 0.
+    let mut id = StyleId::DEFAULT;
     for x in columns {
         let cell = row.cell(x);
-        cell.hash(&mut hasher);
+        cell.with_style(StyleId::DEFAULT).hash(&mut hasher);
+        if cell.style() != id {
+            id = cell.style();
+            let bits = page.styles().get(id).bits();
+            // The 89 bits, in two words.
+            hasher.write_u64(bits as u64);
+            hasher.write_u64((bits >> 64) as u64);
+        }
         if let Content::Grapheme(_) = cell.content() {
             row.grapheme(x).hash(&mut hasher);
         }
@@ -499,15 +543,17 @@ impl Terminal {
     /// With `copied`, the rows that a snapshot copied of the view whose
     /// first row is at that index of the list, only those are looked at.
     fn settle_selection(&mut self, copied: Option<(usize, &[bool])>) -> Option<(At, At)> {
-        let selection = self.selection.as_ref()?;
-        let bounds = (selection.alternate == self.alternate_active)
-            .then(|| {
-                let rows = &self.screen().rows;
-                selection
-                    .bounds(rows)
-                    .filter(|&bounds| selection.unwritten(rows, bounds, copied))
-            })
-            .flatten();
+        let alternate = self.alternate_active;
+        let rows = if alternate {
+            &self.alternate.rows
+        } else {
+            &self.primary.rows
+        };
+        let selection = self.selection.as_mut()?;
+        let bounds = (selection.alternate == alternate)
+            .then(|| selection.bounds(rows))
+            .flatten()
+            .filter(|&bounds| selection.unwritten(rows, bounds, copied));
         if bounds.is_none() {
             self.clear_selection();
         }
@@ -776,6 +822,98 @@ mod tests {
         assert_eq!(word_at(&mut terminal, (1, 1)), "qux");
         feed(&mut terminal, "\x1b[2;1H\x1b[K");
         assert_eq!(terminal.selection_text(), None);
+    }
+
+    #[test]
+    fn the_same_styled_text_written_again_keeps_it() {
+        // A repaint, as vim's Ctrl-L or `less -R` give one, which takes
+        // the styles anew.
+        let line = "\x1b[31mfoo \x1b[32mbar\x1b[0m baz";
+        let mut terminal = fed(20, 3, line);
+        assert_eq!(word_at(&mut terminal, (5, 0)), "bar");
+        feed(&mut terminal, &format!("\r\x1b[K{line}"));
+        assert_eq!(terminal.selection_text().as_deref(), Some("bar"));
+        // Another color is other text.
+        feed(&mut terminal, "\r\x1b[K\x1b[31mfoo \x1b[33mbar");
+        assert_eq!(terminal.selection_text(), None);
+    }
+
+    #[test]
+    fn a_colored_row_that_a_region_moves_to_another_page_keeps_it() {
+        let mut terminal = fed(80, 10, "\x1b[33m1\x1b[34m2\x1b[35m3\x1b[0m");
+        // Lines until the page's end falls between the screen's rows 4
+        // and 5, the first page's styles in use above.
+        let mut lines = 0;
+        while terminal.screen_rows().screen_row_id(4).0 == terminal.screen_rows().screen_row_id(5).0
+        {
+            feed(&mut terminal, "\r\nline");
+            lines += 1;
+            assert!(lines < 5000, "no page's end on the screen");
+        }
+        feed(&mut terminal, "\x1b[6;1H\x1b[2K\x1b[31mred\x1b[0m");
+        assert_eq!(word_at(&mut terminal, (0, 5)), "red");
+        // The region of rows 2 to 9 scrolls a row: `red` goes up a row,
+        // into the other page.
+        feed(&mut terminal, "\x1b[2;9r\x1b[9;1H\n");
+        assert_eq!(terminal.selection().unwrap().start, (0, 4));
+        assert_eq!(terminal.selection_text().as_deref(), Some("red"));
+    }
+
+    #[test]
+    fn text_written_over_then_scrolled_away_clears_it() {
+        let mut terminal = fed(20, 4, "Downloading 10%");
+        selected(&mut terminal, (0, 0), (0, 0), SelectionUnit::Line);
+        // The last update of a progress line, and output after it, in one
+        // feed.
+        feed(&mut terminal, "\rDownloading 99%\r\n\r\n\r\n\r\n");
+        assert_eq!(terminal.selection_text(), None);
+        // Through the snapshot, which copies no row of the scrollback.
+        let mut terminal = fed(20, 4, "Downloading 10%");
+        let mut snapshot = crate::terminal::Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        selected(&mut terminal, (0, 0), (0, 0), SelectionUnit::Line);
+        terminal.snapshot(&mut snapshot);
+        feed(&mut terminal, "\rDownloading 99%\r\n\r\n\r\n\r\n");
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(snapshot.selection(), None);
+        // The same text, scrolled away, keeps it, as more output does.
+        let mut terminal = fed(20, 4, "Downloading 10%\r\nnext");
+        selected(&mut terminal, (0, 0), (0, 1), SelectionUnit::Line);
+        feed(
+            &mut terminal,
+            "\x1b[1;1HDownloading 10%\x1b[2;1Hnext\r\n\r\n\r\n\r\n",
+        );
+        assert_eq!(
+            terminal.selection_text().as_deref(),
+            Some("Downloading 10%\nnext")
+        );
+        // The rows in the scrollback were looked at once, and keep no
+        // hashes.
+        let selection = terminal.selection.as_ref().unwrap();
+        assert_eq!((selection.first_hashed, selection.hashes.len()), (2, 0));
+        feed(&mut terminal, "\r\nmore\r\nmore");
+        assert_eq!(
+            terminal.selection_text().as_deref(),
+            Some("Downloading 10%\nnext")
+        );
+    }
+
+    #[test]
+    fn a_selection_whose_pins_a_scroll_within_margins_reverses_is_lost() {
+        let mut terminal = fed(40, 10, "\x1b[6;1Hsixth row\x1b[7;1Hseventh row");
+        terminal.select(
+            (30, 5),
+            (5, 6),
+            SelectionShape::Cells,
+            SelectionUnit::Cell,
+            WORD_SEPARATORS,
+        );
+        // Margins of columns 1 to 20, and a scroll of two rows within
+        // them: the last cell's pin goes up, the first's stays.
+        feed(&mut terminal, "\x1b[?69h\x1b[1;20s\x1b[2S");
+        assert_eq!(terminal.selection_text(), None);
+        assert_eq!(terminal.selection(), None);
+        assert_eq!(terminal.screen_rows().pins(), 0);
     }
 
     #[test]

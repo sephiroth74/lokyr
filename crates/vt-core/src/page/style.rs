@@ -100,7 +100,7 @@ impl Style {
     };
 
     /// Every field of the style, packed in 89 bits, for hashing.
-    fn bits(&self) -> u128 {
+    pub(crate) fn bits(&self) -> u128 {
         let color = |color: Color| -> u128 {
             match color {
                 Color::Default => 0,
@@ -374,6 +374,8 @@ mod tests {
         assert_eq!(table.get(StyleId::DEFAULT), &Style::DEFAULT);
         assert_eq!(table.references(StyleId::DEFAULT), 0);
         assert!(table.is_empty());
+        // Its fields pack to nothing, which a hash of cells takes for it.
+        assert_eq!(Style::DEFAULT.bits(), 0);
     }
 
     #[test]
