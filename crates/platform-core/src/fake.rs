@@ -190,11 +190,31 @@ impl Fake {
         alert: AlertId,
         button: usize,
     ) -> bool {
+        self.answer_alert_with(handler, alert, button, false)
+    }
+
+    /// Closes `alert` with `button` as [`Fake::answer_alert`] does, its
+    /// checkbox ticked when `suppressed`, if it has one.
+    pub fn answer_alert_with(
+        &mut self,
+        handler: &mut dyn Handler,
+        alert: AlertId,
+        button: usize,
+        suppressed: bool,
+    ) -> bool {
         let Some(index) = self.alerts.iter().position(|open| open.id == alert) else {
             return false;
         };
-        self.alerts.remove(index);
-        self.send_app(handler, AppEvent::AlertClosed { alert, button })
+        let open = self.alerts.remove(index);
+        let suppressed = suppressed && open.alert.suppression.is_some();
+        self.send_app(
+            handler,
+            AppEvent::AlertClosed {
+                alert,
+                button,
+                suppressed,
+            },
+        )
     }
 
     /// Fires the timers whose time has come by `now`, from the earliest,

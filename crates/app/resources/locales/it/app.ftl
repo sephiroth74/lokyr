@@ -14,4 +14,6 @@ paste-lines-message = { $lines ->
 }
 paste-lines-detail = Il programma in questa finestra riceve il testo incollato come se fosse digitato: ogni a capo gli arriva come Invio, che può eseguire un comando.
 paste-lines-paste = Incolla
+paste-lines-one-line = Incolla su una riga
 paste-lines-cancel = Annulla
+paste-lines-dont-ask = Non chiedere più

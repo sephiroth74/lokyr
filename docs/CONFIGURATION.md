@@ -89,6 +89,7 @@ option-as-meta = "left"              # none | left | right | both
 
 [clipboard]
 read = "ask"                         # never | ask: a program's read of the clipboard
+confirm-paste = "always"             # auto | always | never: a paste with line breaks asks first
 
 [bell]
 sound = true                         # true | false: the system's alert sound
@@ -562,6 +563,22 @@ Whether a program can read the clipboard, with OSC 52.
 - `"ask"` asks you with an alert at each read, on the program's window, whose default button refuses; the program gets the clipboard's text only if you allow it.
 - It applies as you save the file, to the windows that are open too.
 
+### `confirm-paste`
+
+<sub>Platforms: macOS</sub>
+
+When a paste with line breaks asks you first: a program that does not ask for bracketed paste, as `cat` or a plain `sh`, takes each line break as Return, which can run a command.
+
+| Values | Default |
+|---|---|
+| `"auto"`, `"always"`, `"never"` | `"auto"` |
+
+- `"auto"` asks when the program does not ask for bracketed paste and the text has several lines. A single line with a line break after it, as a command copied with its line's end, pastes without the line break, so that the command waits for your Return. A shell that asks for bracketed paste, as zsh, fish and recent versions of bash do, takes any paste as typed text, which runs nothing: it is never asked about.
+- `"always"` asks whenever the text has a line break, into any program.
+- `"never"` pastes as it is.
+- The question shows the text's first lines, as the program would get them, and three buttons: Paste, the default one; Paste as One Line, which puts a space for each line break and leaves out the last one; and Cancel. Its checkbox, Don't ask again, sets this key to `"never"` in your config file as you paste, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits.
+- It applies as you save the file.
+
 ## `[bell]`
 
 What a program's bell does, the character BEL that it prints, as `printf '\a'`, or as the agents that run in the terminal ring it when they wait for you. Each kind takes its own key; they apply as you save the file. Bells that come within a fifth of a second of the last one in the window do nothing more.
@@ -680,6 +697,6 @@ The defaults:
 | `cmd+n` | `window.new` | Opens a window |
 | `cmd+q` | `app.quit` | Quits Lokyr |
 | `cmd+c` | `pane.copy` | Copies the selection |
-| `cmd+v` | `pane.paste` | Pastes the clipboard's text: a text with a line break, into a program that does not ask for bracketed paste, asks you first, as each line break would reach the program as Return |
+| `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |
 | `cmd+a` | `pane.select-all` | Selects the scrollback and the screen, to the last row that shows something |
 | `cmd+k` | `pane.clear` | Clears the scrollback and the screen but the prompt, which goes to the top; on the screen of a program such as vim, it does nothing |

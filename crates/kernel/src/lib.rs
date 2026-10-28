@@ -11,5 +11,6 @@ pub mod commands;
 pub mod config;
 pub mod keymap;
 pub mod l10n;
+pub mod paste;
 pub mod plugins;
 pub mod workspace;

@@ -10,11 +10,12 @@ use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
-use lokyr_kernel::config::{AppConfig, ClipboardRead, Config};
+use lokyr_kernel::config::{self, AppConfig, ClipboardRead, Config, ConfirmPaste};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
 use lokyr_kernel::l10n::{self, Arg, Texts};
+use lokyr_kernel::paste;
 use lokyr_kernel::plugins::{self, Plugins, Request};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
@@ -364,6 +365,9 @@ pub struct App {
     clipboard_asks: BTreeMap<AlertId, (PaneId, ClipboardRequest)>,
     /// The pastes that the user is asked to confirm, by their alerts.
     paste_asks: BTreeMap<AlertId, (PaneId, String)>,
+    /// Whether the user asked that pastes be not confirmed, where the
+    /// config could not keep it: until the app quits.
+    pastes_unconfirmed: bool,
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
@@ -408,6 +412,7 @@ impl App {
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
             paste_asks: BTreeMap::new(),
+            pastes_unconfirmed: false,
             environment: {
                 let resources = environment::resources();
                 Environment {
@@ -950,6 +955,11 @@ impl App {
             .and_then(|window| self.windows.get(&window))
             .map(|state| state.window);
         let font_size = self.font_size.unwrap_or(self.config.font.size.points());
+        let confirm_paste = if self.pastes_unconfirmed {
+            ConfirmPaste::Never
+        } else {
+            self.config.clipboard.confirm_paste
+        };
         let mut clipboard = PlatformClipboard(platform);
         let mut context = plugins::Context {
             registry: &mut self.commands,
@@ -957,6 +967,7 @@ impl App {
             clipboard: &mut clipboard,
             focused,
             font_size,
+            confirm_paste,
         };
         call(&mut self.plugins, &mut context)
     }
@@ -1211,6 +1222,7 @@ impl App {
                 self.texts.text("clipboard-read-deny"),
                 self.texts.text("clipboard-read-allow"),
             ],
+            suppression: None,
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.clipboard_asks.insert(alert, (pane, request));
@@ -1227,7 +1239,8 @@ impl App {
         let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
             return;
         };
-        let lines = i64::try_from(lines_of(&text)).unwrap_or(i64::MAX);
+        let lines = i64::try_from(paste::lines(&text)).unwrap_or(i64::MAX);
+        let (most, width) = PREVIEW;
         let alert = Alert {
             style: AlertStyle::Warning,
             message: self
@@ -1236,15 +1249,34 @@ impl App {
             detail: format!(
                 "{}\n\n{}",
                 self.texts.text("paste-lines-detail"),
-                preview(&text)
+                paste::preview(&text, most, width)
             ),
             buttons: vec![
                 self.texts.text("paste-lines-paste"),
+                self.texts.text("paste-lines-one-line"),
                 self.texts.text("paste-lines-cancel"),
             ],
+            suppression: Some(self.texts.text("paste-lines-dont-ask")),
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.paste_asks.insert(alert, (pane, text));
+    }
+
+    /// Pastes no longer ask, as the user said with the question's
+    /// checkbox: the config file takes `confirm-paste = "never"`, or, if it
+    /// cannot, as the log tells, the app keeps it until it quits.
+    fn stop_confirming_pastes(&mut self) {
+        self.config.clipboard.confirm_paste = ConfirmPaste::Never;
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "clipboard", "confirm-paste", "never")
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file, without a home directory".to_owned()),
+        };
+        if let Err(error) = written {
+            eprintln!("lokyr: {error}");
+            eprintln!("lokyr: pastes are not confirmed until Lokyr quits");
+            self.pastes_unconfirmed = true;
+        }
     }
 
     /// The theme's colors in `appearance`.
@@ -1621,18 +1653,30 @@ impl Handler for App {
             }
             // The user answered a program's read of the clipboard: its
             // second button allows it.
-            AppEvent::AlertClosed { alert, button } => {
+            AppEvent::AlertClosed {
+                alert,
+                button,
+                suppressed,
+            } => {
                 if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
                     && button == 1
                     && let Some(pane) = self.workspace.pane(pane)
                 {
                     pane.reply_clipboard(request, &platform.clipboard_text().unwrap_or_default());
                 }
+                // Paste, as one line, or cancel.
                 if let Some((pane, text)) = self.paste_asks.remove(&alert)
-                    && button == 0
-                    && let Some(pane) = self.workspace.pane(pane)
+                    && button < 2
                 {
-                    pane.paste(&text);
+                    if let Some(pane) = self.workspace.pane(pane) {
+                        match button {
+                            0 => pane.paste(&text),
+                            _ => pane.paste(&paste::one_line(&text)),
+                        }
+                    }
+                    if suppressed {
+                        self.stop_confirming_pastes();
+                    }
                 }
             }
             AppEvent::AppearanceChanged(appearance) => {
@@ -1876,41 +1920,6 @@ impl plugins::Clipboard for PlatformClipboard<'_> {
     fn set_text(&mut self, text: &str) {
         self.0.set_clipboard_text(text);
     }
-}
-
-/// How many lines `text` has: its line breaks, CR LF as one, and the line
-/// after the last, if it is not empty.
-fn lines_of(text: &str) -> usize {
-    let breaks =
-        text.matches('\n').count() + text.matches('\r').count() - text.matches("\r\n").count();
-    breaks + usize::from(!text.ends_with(['\n', '\r']))
-}
-
-/// The first lines of `text` as they would reach a program, without the
-/// control characters that a paste drops, cut to `PREVIEW`'s length, with
-/// `…` for what is left out.
-fn preview(text: &str) -> String {
-    let (most, width) = PREVIEW;
-    let mut lines: Vec<String> = text
-        .split(['\n', '\r'])
-        .filter(|line| !line.is_empty())
-        .take(most + 1)
-        .map(|line| {
-            let kept: String = line
-                .chars()
-                .filter(|&c| c == '\t' || !c.is_control())
-                .collect();
-            match kept.char_indices().nth(width) {
-                Some((at, _)) => format!("{}…", &kept[..at]),
-                None => kept,
-            }
-        })
-        .collect();
-    if lines.len() > most {
-        lines.truncate(most);
-        lines.push("…".to_owned());
-    }
-    lines.join("\n")
 }
 
 /// `font`, at `size` in points when it is one, rather than its own.
@@ -3913,34 +3922,60 @@ mod tests {
         (fake, app, window)
     }
 
+    /// The app without padding, of the config file `text`, its window
+    /// running `program`, focused, once it shows `ready`; a file that does
+    /// not read gives the defaults.
+    fn pasting(test: &str, text: &str, program: Program) -> (Fake, App, WindowId, PathBuf) {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-paste-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("config.toml");
+        std::fs::write(&path, text).unwrap();
+        let mut config = Config::read(&path).unwrap_or_default();
+        config.window = unpadded().window;
+        let mut fake = Fake::default();
+        let mut app = App::new(None, config, Some(path.clone())).with_program(program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        (fake, app, window, path)
+    }
+
+    /// Pastes `text` with Command-V into `window`.
+    fn paste_key(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) {
+        fake.set_clipboard_text(text);
+        fake.send(app, window, command_key(KeyCode::KeyV, "v"));
+    }
+
     #[test]
-    fn copy_and_paste_go_through_the_clipboard_and_a_line_break_asks() {
+    fn copy_and_paste_go_through_the_clipboard_and_several_lines_ask() {
         let (mut fake, mut app, window) = focused_with(reader(""));
         // The pane's text, to its cursor's row.
         fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
         fake.send(&mut app, window, command_key(KeyCode::KeyC, "c"));
         assert_eq!(fake.clipboard_text().as_deref(), Some("ready\n"));
-        // A text without a line break pastes at once.
-        fake.set_clipboard_text("hello");
-        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
-        run_until(&mut fake, &mut app, |_, app| shows(app, window, "hello"));
+        // A line pastes at once, and a line with its line break without it.
+        paste_key(&mut fake, &mut app, window, "hello");
+        paste_key(&mut fake, &mut app, window, "ls\n");
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "hellols"));
         assert!(fake.alerts().is_empty());
-        // One with a line break asks first, once at a time: cancelled, then
-        // confirmed.
-        fake.set_clipboard_text("ls\n");
-        for confirmed in [false, true] {
-            fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
-            fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        // Several lines ask first, once at a time: cancelled, pasted, and
+        // pasted as one line.
+        for button in [2, 0, 1] {
+            paste_key(&mut fake, &mut app, window, "a\nb\n");
+            paste_key(&mut fake, &mut app, window, "a\nb\n");
             assert_eq!(fake.alerts().len(), 1);
             let open = &fake.alerts()[0];
             assert_eq!(open.window, Some(window));
             assert_eq!(
                 open.alert.message,
                 app.texts
-                    .text_with("paste-lines-message", &[("lines", Arg::Number(1))])
+                    .text_with("paste-lines-message", &[("lines", Arg::Number(2))])
             );
             assert!(
-                open.alert.detail.ends_with("\n\nls"),
+                open.alert.detail.ends_with("\n\na\nb"),
                 "{}",
                 open.alert.detail
             );
@@ -3948,37 +3983,111 @@ mod tests {
                 open.alert.buttons,
                 [
                     app.texts.text("paste-lines-paste"),
+                    app.texts.text("paste-lines-one-line"),
                     app.texts.text("paste-lines-cancel")
                 ]
             );
+            assert_eq!(
+                open.alert.suppression,
+                Some(app.texts.text("paste-lines-dont-ask"))
+            );
             let id = open.id;
-            fake.answer_alert(&mut app, id, usize::from(!confirmed));
-            if !confirmed {
+            fake.answer_alert(&mut app, id, button);
+            if button == 2 {
                 let pause = Instant::now() + Duration::from_millis(300);
                 run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-                assert!(!shows(&app, window, "ls"), "{:?}", screen(&app, window));
+                assert!(
+                    !shows(&app, window, "hellolsa"),
+                    "{:?}",
+                    screen(&app, window)
+                );
             }
         }
-        // The line break reaches the program as Return.
+        // The line breaks reach the program as Return; as one line, a
+        // space for each, but the last.
         run_until(&mut fake, &mut app, |_, app| {
-            shows(app, window, "hellols^M")
+            shows(app, window, "hellolsa^Mb^Ma b")
         });
+        // The question asked nothing of the config.
+        assert_eq!(app.config.clipboard.confirm_paste, ConfirmPaste::Auto);
     }
 
     #[test]
-    fn a_program_that_asks_for_bracketed_paste_takes_a_line_break_at_once() {
+    fn a_program_that_asks_for_bracketed_paste_takes_line_breaks_at_once() {
         let (mut fake, mut app, window) = focused_with(reader("\\033[?2004h"));
-        fake.set_clipboard_text("a\nb");
-        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        paste_key(&mut fake, &mut app, window, "a\nb");
         assert!(fake.alerts().is_empty());
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[200~a"));
+        // Always asks, there too, and for a line with its line break.
+        let (mut fake, mut app, window, _) = pasting(
+            "always",
+            "[clipboard]\nconfirm-paste = \"always\"\n",
+            reader("\\033[?2004h"),
+        );
+        paste_key(&mut fake, &mut app, window, "ls\n");
+        assert_eq!(fake.alerts().len(), 1);
+        // Never asks nothing.
+        let (mut fake, mut app, window, _) = pasting(
+            "never",
+            "[clipboard]\nconfirm-paste = \"never\"\n",
+            reader(""),
+        );
+        paste_key(&mut fake, &mut app, window, "a\nb");
+        assert!(fake.alerts().is_empty());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "a^Mb"));
+    }
+
+    #[test]
+    fn don_t_ask_again_writes_the_config() {
+        let (mut fake, mut app, window, path) =
+            pasting("again", "# mine\n[font]\nsize = 14\n", reader(""));
+        paste_key(&mut fake, &mut app, window, "a\nb");
+        let id = fake.alerts()[0].id;
+        // Ticked, but cancelled: nothing changes.
+        fake.answer_alert_with(&mut app, id, 2, true);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# mine\n[font]\nsize = 14\n"
+        );
+        paste_key(&mut fake, &mut app, window, "a\nb");
+        let id = fake.alerts()[0].id;
+        fake.answer_alert_with(&mut app, id, 0, true);
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            written.starts_with("# mine\n[font]\nsize = 14\n"),
+            "{written}"
+        );
+        assert_eq!(
+            Config::read(&path).unwrap().clipboard.confirm_paste,
+            ConfirmPaste::Never
+        );
+        // The next paste pastes, before the file's reload too.
+        paste_key(&mut fake, &mut app, window, "c\nd");
+        assert!(fake.alerts().is_empty());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "a^Mbc^Md"));
+        assert!(!app.pastes_unconfirmed);
+    }
+
+    #[test]
+    fn don_t_ask_again_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
+        let text = "[font]\nsise = 14\n";
+        let (mut fake, mut app, window, path) = pasting("bad", text, reader(""));
+        paste_key(&mut fake, &mut app, window, "a\nb");
+        let id = fake.alerts()[0].id;
+        fake.answer_alert_with(&mut app, id, 1, true);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(app.pastes_unconfirmed);
+        // A reload of the file does not bring the question back.
+        app.apply(&mut fake, Config::default());
+        paste_key(&mut fake, &mut app, window, "c\nd");
+        assert!(fake.alerts().is_empty());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "a bc^Md"));
     }
 
     #[test]
     fn a_window_that_closes_drops_its_paste_s_question() {
         let (mut fake, mut app, window) = focused_with(reader(""));
-        fake.set_clipboard_text("ls\n");
-        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        paste_key(&mut fake, &mut app, window, "a\nb");
         let id = fake.alerts()[0].id;
         app.run(&mut fake, NEW_WINDOW, Args::new());
         fake.send(&mut app, window, WindowEvent::CloseRequested);
@@ -4011,28 +4120,6 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| {
             row(app, window, 0) == "ready$x"
         });
-    }
-
-    #[test]
-    fn a_paste_s_lines_and_its_preview() {
-        for (text, lines) in [
-            ("ls\n", 1),
-            ("a\nb", 2),
-            ("a\r\nb\r\n", 2),
-            ("a\rb", 2),
-            ("\n", 1),
-            ("a\n\n", 2),
-        ] {
-            assert_eq!(lines_of(text), lines, "{text:?}");
-        }
-        // What the program would get: no escape, the tab kept.
-        assert_eq!(preview("a\x1b[31mb\tc\nd\n"), "a[31mb\tc\nd");
-        // Long lines cut, at a character's boundary, and lines past the
-        // third left out.
-        let long = "é".repeat(70);
-        assert_eq!(preview(&long), format!("{}…", "é".repeat(60)));
-        assert_eq!(preview("1\n2\n3\n4\n5"), "1\n2\n3\n…");
-        assert_eq!(preview("1\n2\n3\n"), "1\n2\n3");
     }
 
     /// `event`, a key's press, as the system repeats it.

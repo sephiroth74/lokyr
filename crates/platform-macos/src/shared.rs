@@ -160,9 +160,14 @@ impl Shared {
             }
             Pending::AlertResponse(alert, response) => {
                 // An alert that closed with its window is not answered.
-                if let Some(buttons) = backend.take_alert(alert) {
+                if let Some((buttons, suppressed)) = backend.take_alert(alert) {
                     let button = alert::button(response, buttons);
-                    handler.app_event(backend, AppEvent::AlertClosed { alert, button });
+                    let event = AppEvent::AlertClosed {
+                        alert,
+                        button,
+                        suppressed,
+                    };
+                    handler.app_event(backend, event);
                 }
             }
             Pending::Timer(timer) => {

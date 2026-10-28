@@ -75,6 +75,9 @@ pub struct Alert {
     /// Its buttons, from the default one, which Return chooses. The
     /// platform gives an alert without buttons an OK button.
     pub buttons: Vec<String>,
+    /// The title of a checkbox under the detail, as "Don't ask again",
+    /// whose state the answer tells; `None` for none.
+    pub suppression: Option<String>,
 }
 
 /// How serious an alert is.

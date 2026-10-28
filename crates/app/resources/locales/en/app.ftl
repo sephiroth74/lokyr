@@ -20,4 +20,6 @@ paste-lines-message = { $lines ->
 }
 paste-lines-detail = The program in this window takes pasted text as typed: each line break reaches it as Return, which can run a command.
 paste-lines-paste = Paste
+paste-lines-one-line = Paste as One Line
 paste-lines-cancel = Cancel
+paste-lines-dont-ask = Don't ask again

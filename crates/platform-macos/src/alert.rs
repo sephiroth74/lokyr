@@ -6,7 +6,10 @@ use block2::RcBlock;
 use lokyr_platform_core::{Alert, AlertId, AlertStyle};
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSModalResponse, NSWindow};
+use objc2_app_kit::{
+    NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSControlStateValueOn, NSModalResponse,
+    NSWindow,
+};
 use objc2_foundation::NSString;
 
 use crate::shared::{Pending, Shared};
@@ -24,7 +27,22 @@ pub(crate) fn new(mtm: MainThreadMarker, alert: &Alert) -> Retained<NSAlert> {
     for title in &alert.buttons {
         ns_alert.addButtonWithTitle(&NSString::from_str(title));
     }
+    if let Some(title) = &alert.suppression {
+        ns_alert.setShowsSuppressionButton(true);
+        if let Some(checkbox) = ns_alert.suppressionButton() {
+            checkbox.setTitle(&NSString::from_str(title));
+        }
+    }
     ns_alert
+}
+
+/// Whether the checkbox of `ns_alert`, once it closed, was ticked: `false`
+/// for one that shows none.
+pub(crate) fn suppressed(ns_alert: &NSAlert) -> bool {
+    ns_alert.showsSuppressionButton()
+        && ns_alert
+            .suppressionButton()
+            .is_some_and(|checkbox| checkbox.state() == NSControlStateValueOn)
 }
 
 /// Shows `ns_alert` as a sheet of `window`, whose answer comes to the

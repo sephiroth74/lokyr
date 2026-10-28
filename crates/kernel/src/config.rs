@@ -77,7 +77,7 @@ use lokyr_ui_core::text::TextConfig;
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
-use toml_edit::{Document, Item, TableLike};
+use toml_edit::{Document, DocumentMut, Item, TableLike};
 
 mod written;
 
@@ -436,13 +436,30 @@ pub struct KeyboardConfig {
     pub option_as_meta: OptionAsMeta,
 }
 
-/// The `[clipboard]` section: what programs do with the clipboard. Their
-/// writes, with OSC 52, always reach it.
+/// The `[clipboard]` section: what programs do with the clipboard, whose
+/// writes, with OSC 52, always reach it, and when a paste asks first.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct ClipboardConfig {
     /// Whether a program can read the clipboard, with OSC 52.
     pub read: ClipboardRead,
+    /// When a paste with line breaks asks the user first.
+    pub confirm_paste: ConfirmPaste,
+}
+
+/// When a paste with line breaks, which a program that does not ask for
+/// bracketed paste takes as Return, asks the user first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfirmPaste {
+    /// When the program does not ask for bracketed paste and the text has
+    /// several lines; a line with a line break after it pastes without it.
+    #[default]
+    Auto,
+    /// Whenever the text has a line break.
+    Always,
+    /// Never.
+    Never,
 }
 
 /// Whether a program can read the clipboard.
@@ -765,6 +782,56 @@ fn path_in(config_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathB
         .filter(absolute)
         .or_else(|| home.filter(absolute).map(|home| home.join(".config")))?;
     Some(base.join(DIRECTORY).join(FILE))
+}
+
+/// Sets the key `key` of the section `[section]` of the config file at
+/// `path` to the string `value`, keeping the rest of the file, its
+/// comments too: in the file that a link points to, which stays a link, or
+/// in a new file, with its directory, when there is none. A file that does
+/// not read as a config is left as it is, and its error returned.
+pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<(), Error> {
+    let failed = |path: &Path, message: String| Error {
+        path: path.to_owned(),
+        position: None,
+        message,
+    };
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let text = match fs::read_to_string(&target) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            format!("config_version = {VERSION}\n")
+        }
+        Err(error) => return Err(failed(&target, format!("it cannot be read: {error}"))),
+    };
+    Config::parse(&text, &target)?;
+    let mut document: DocumentMut = text
+        .parse()
+        .map_err(|error: toml_edit::TomlError| failed(&target, error.message().to_owned()))?;
+    let table = document
+        .entry(section)
+        .or_insert_with(toml_edit::table)
+        .as_table_like_mut()
+        .ok_or_else(|| failed(&target, format!("`{section}` is a section, not a value")))?;
+    table.insert(key, toml_edit::value(value));
+    write_whole(&target, &document.to_string())
+        .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// Writes `text` to `path` whole: into a file of its own beside it, with
+/// its permissions, renamed over it, so that a reader never sees half of
+/// it.
+fn write_whole(path: &Path, text: &str) -> io::Result<()> {
+    let directory = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(directory)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let temporary = directory.join(format!(".{name}.{}.new", std::process::id()));
+    fs::write(&temporary, text)?;
+    if let Ok(metadata) = fs::metadata(path) {
+        fs::set_permissions(&temporary, metadata.permissions())?;
+    }
+    fs::rename(&temporary, path).inspect_err(|_| {
+        let _ = fs::remove_file(&temporary);
+    })
 }
 
 /// An error of the config file, at its place in the file when it has one.
@@ -1611,7 +1678,7 @@ mod tests {
             keys::<TerminalConfig>(),
             ["term", "unicode-widths", "ambiguous-width", "normalization"]
         );
-        assert_eq!(keys::<ClipboardConfig>(), ["read"]);
+        assert_eq!(keys::<ClipboardConfig>(), ["read", "confirm-paste"]);
         assert_eq!(
             keys::<BellConfig>(),
             ["sound", "flash", "bounce", "mark-title"]
@@ -1669,6 +1736,121 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_key_set_in_the_file_keeps_the_rest_of_it() {
+        let root = std::env::temp_dir().join(format!("lokyr-set-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        // Into a section that the file has, its comments kept.
+        let file = root.join("config.toml");
+        let text = "# mine\n[clipboard]\nread = \"ask\"   # asks\n\n[font]\nsize = 14\n";
+        fs::write(&file, text).unwrap();
+        set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
+        let written = fs::read_to_string(&file).unwrap();
+        assert!(
+            written.starts_with("# mine\n[clipboard]\nread = \"ask\"   # asks\n"),
+            "{written}"
+        );
+        let config = Config::read(&file).unwrap();
+        assert_eq!(config.clipboard.confirm_paste, ConfirmPaste::Never);
+        assert_eq!(config.font.size.points(), 14.0);
+        // Again, in place.
+        set_string(&file, "clipboard", "confirm-paste", "always").unwrap();
+        assert_eq!(
+            fs::read_to_string(&file)
+                .unwrap()
+                .matches("confirm-paste")
+                .count(),
+            1
+        );
+        // Into a section that it lacks, and an inline one.
+        fs::write(&file, "[font]\nsize = 14\n").unwrap();
+        set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
+        assert!(
+            fs::read_to_string(&file)
+                .unwrap()
+                .ends_with("[clipboard]\nconfirm-paste = \"never\"\n")
+        );
+        fs::write(&file, "clipboard = { read = \"ask\" }\n").unwrap();
+        set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
+        let config = Config::read(&file).unwrap();
+        assert_eq!(
+            (config.clipboard.read, config.clipboard.confirm_paste),
+            (ClipboardRead::Ask, ConfirmPaste::Never)
+        );
+        // A file that is not there, with its directory.
+        let new = root.join("dir").join("config.toml");
+        set_string(&new, "clipboard", "confirm-paste", "never").unwrap();
+        assert_eq!(
+            fs::read_to_string(&new).unwrap(),
+            "config_version = 1\n\n[clipboard]\nconfirm-paste = \"never\"\n"
+        );
+        // Through a link, which stays one.
+        let target = root.join("dotfiles.toml");
+        fs::write(&target, "[font]\nsize = 14\n").unwrap();
+        let link = root.join("linked.toml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        set_string(&link, "clipboard", "confirm-paste", "never").unwrap();
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::read_to_string(&target)
+                .unwrap()
+                .contains("confirm-paste")
+        );
+        // The permissions of the file are kept.
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        set_string(&link, "clipboard", "read", "ask").unwrap();
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // A file with an error is left as it is.
+        fs::write(&file, "[font]\nsise = 14\n").unwrap();
+        let error = set_string(&file, "clipboard", "confirm-paste", "never").unwrap_err();
+        assert_eq!(error.position, Some(Position { line: 2, column: 1 }));
+        assert_eq!(fs::read_to_string(&file).unwrap(), "[font]\nsise = 14\n");
+        // And no file of its own is left beside it.
+        let left: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|entry| {
+                let name = entry.ok()?.file_name().into_string().ok()?;
+                name.ends_with(".new").then_some(name)
+            })
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn confirm_paste_reads_its_three_values() {
+        for (value, confirm) in [
+            ("auto", ConfirmPaste::Auto),
+            ("always", ConfirmPaste::Always),
+            ("never", ConfirmPaste::Never),
+        ] {
+            let config = parse(&format!("[clipboard]\nconfirm-paste = \"{value}\"\n")).unwrap();
+            assert_eq!(config.clipboard.confirm_paste, confirm);
+        }
+        assert_eq!(
+            Config::default().clipboard.confirm_paste,
+            ConfirmPaste::Auto
+        );
+        let error = parse("[clipboard]\nconfirm-paste = \"ask\"\n").unwrap_err();
+        assert_eq!(
+            error.position,
+            Some(Position {
+                line: 2,
+                column: 17
+            })
+        );
     }
 
     #[test]

@@ -34,5 +34,6 @@ pub fn alert() -> Alert {
         message: "A test's alert".to_owned(),
         detail: "It closes by itself.".to_owned(),
         buttons: vec!["OK".to_owned(), "Cancel".to_owned()],
+        suppression: None,
     }
 }

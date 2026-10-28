@@ -79,6 +79,9 @@ pub enum AppEvent {
         alert: AlertId,
         /// Its button, by its index in [`Alert::buttons`](crate::Alert::buttons).
         button: usize,
+        /// Whether its checkbox, [`Alert::suppression`](crate::Alert::suppression),
+        /// was ticked; `false` without one.
+        suppressed: bool,
     },
     /// The system's appearance changed.
     AppearanceChanged(Appearance),

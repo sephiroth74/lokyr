@@ -77,6 +77,7 @@ impl Handler for App {
                         message: "Close the window?".to_owned(),
                         detail: "vim is running.".to_owned(),
                         buttons: vec!["Close".to_owned(), "Cancel".to_owned()],
+                        suppression: None,
                     };
                     self.alert = Some(platform.show_alert(self.windows.first().copied(), &alert));
                 }
@@ -333,10 +334,45 @@ fn an_alert_closes_with_the_button_chosen() {
     assert!(fake.alerts().is_empty());
     assert_eq!(
         app.app_events.last(),
-        Some(&AppEvent::AlertClosed { alert, button: 1 })
+        Some(&AppEvent::AlertClosed {
+            alert,
+            button: 1,
+            suppressed: false
+        })
     );
     // An alert closes once.
     assert!(!fake.answer_alert(&mut app, alert, 0));
+    // A ticked checkbox counts only on an alert that has one.
+    fake.send_app(&mut app, command("confirm"));
+    let alert = app.alert.unwrap();
+    fake.answer_alert_with(&mut app, alert, 0, true);
+    assert_eq!(
+        app.app_events.last(),
+        Some(&AppEvent::AlertClosed {
+            alert,
+            button: 0,
+            suppressed: false
+        })
+    );
+    let checked = fake.show_alert(
+        Some(window),
+        &Alert {
+            style: AlertStyle::Warning,
+            message: "Paste 2 lines?".to_owned(),
+            detail: String::new(),
+            buttons: vec!["Paste".to_owned(), "Cancel".to_owned()],
+            suppression: Some("Don't ask again".to_owned()),
+        },
+    );
+    fake.answer_alert_with(&mut app, checked, 0, true);
+    assert_eq!(
+        app.app_events.last(),
+        Some(&AppEvent::AlertClosed {
+            alert: checked,
+            button: 0,
+            suppressed: true
+        })
+    );
 }
 
 #[test]

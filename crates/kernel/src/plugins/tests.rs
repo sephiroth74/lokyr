@@ -96,6 +96,7 @@ impl App {
             clipboard: &mut self.clipboard,
             focused: self.focused,
             font_size: 13.0,
+            confirm_paste: crate::config::ConfirmPaste::Auto,
         }
     }
 }
@@ -474,7 +475,7 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
                         // A line, its escape left out, then a line break,
                         // which the user is to confirm.
                         cx.paste(pane, &format!("{text}\x1b[A"))?;
-                        cx.paste(pane, "two\n")?;
+                        cx.paste(pane, "two\nthree")?;
                         // A carriage return alone is a line break too.
                         cx.paste(pane, "x\ry")?;
                         let missing = host::PaneId(u64::MAX);
@@ -512,7 +513,7 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
     };
     assert_eq!(
         (*asked, text.as_str(), other.as_str()),
-        (pane, "two\n", "x\ry")
+        (pane, "two\nthree", "x\ry")
     );
     assert!(!text_once(&app, pane, "hello").contains("got:"));
     app.workspace.pane(pane).unwrap().paste(text);

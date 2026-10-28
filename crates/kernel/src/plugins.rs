@@ -17,7 +17,9 @@ use lokyr_text_core::Size;
 use lokyr_vt_core::terminal::Scroll;
 
 use crate::commands::{self, Args, Code, Command, Error, Registry};
+use crate::config::ConfirmPaste;
 use crate::keymap::{self, Binding, Invocation, When};
+use crate::paste::{self, Paste};
 use crate::workspace::{Pane, PaneId, WindowId, Workspace};
 
 /// What a plugin asks of the app, which the app does once the plugin's
@@ -65,6 +67,8 @@ pub struct Context<'a> {
     pub focused: Option<WindowId>,
     /// The text's size, in points.
     pub font_size: f32,
+    /// When a paste with line breaks asks the user first.
+    pub confirm_paste: ConfirmPaste,
 }
 
 /// Where a plugin is in its life.
@@ -413,13 +417,12 @@ impl HostApi for Host<'_, '_> {
         let bracketed = found
             .input_modes()
             .is_some_and(|modes| modes.bracketed_paste);
-        if bracketed || !text.contains(['\n', '\r']) {
-            found.paste(text);
-        } else {
-            self.requests.push(Request::ConfirmPaste {
+        match paste::decide(text, bracketed, self.context.confirm_paste) {
+            Paste::Now(text) => found.paste(&text),
+            Paste::Ask => self.requests.push(Request::ConfirmPaste {
                 pane: PaneId::of(pane.0),
                 text: text.to_owned(),
-            });
+            }),
         }
         Ok(())
     }
