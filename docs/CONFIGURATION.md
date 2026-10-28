@@ -679,3 +679,7 @@ The defaults:
 |---|---|---|
 | `cmd+n` | `window.new` | Opens a window |
 | `cmd+q` | `app.quit` | Quits Lokyr |
+| `cmd+c` | `pane.copy` | Copies the selection |
+| `cmd+v` | `pane.paste` | Pastes the clipboard's text: a text with a line break, into a program that does not ask for bracketed paste, asks you first, as each line break would reach the program as Return |
+| `cmd+a` | `pane.select-all` | Selects the scrollback and the screen, to the last row that shows something |
+| `cmd+k` | `pane.clear` | Clears the scrollback and the screen but the prompt, which goes to the top; on the screen of a program such as vim, it does nothing |

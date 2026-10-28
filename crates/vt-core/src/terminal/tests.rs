@@ -3948,6 +3948,70 @@ fn a_resize_clears_the_prompt_that_the_shell_draws_again() {
 }
 
 #[test]
+fn clearing_to_the_prompt_keeps_the_cursor_s_line_at_the_top() {
+    // Without marks: the cursor's line, as it wraps, with its cursor.
+    let mut term = Term::new(10, 6);
+    term.feed("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n$ abcdefghijk");
+    term.feed("\x1b[D\x1b[D");
+    assert!(term.terminal.screen_rows().scrollback_rows() > 0);
+    // The cursor in the line's second row, which the first goes on into.
+    assert_eq!(term.cursor(), (1, 5, false));
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.screen(), ["$ abcdefgh", "ijk", "", "", "", ""]);
+    assert_eq!(term.cursor(), (1, 1, false));
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    assert!(term.row(0).has(RowFlag::SoftWrapped));
+    assert!(!term.row(1).has(RowFlag::SoftWrapped));
+    // Typing goes on where it was.
+    term.feed("X");
+    assert_eq!(term.screen()[1], "iXk");
+    // The cursor in the line's first row: the rows that it wraps into stay.
+    term.feed("\x1b[A");
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.screen(), ["$ abcdefgh", "iXk", "", "", "", ""]);
+    assert_eq!(term.cursor(), (2, 0, false));
+    // A prompt of two lines, which the shell marks, and the rows below the
+    // line, as a menu of completions, go.
+    let mut term = Term::new(20, 6);
+    term.feed("out\r\n\x1b]133;A\x07~/src main\r\n> \x1b]133;B\x07ls");
+    term.feed("\r\n  menu\x1b[A\r\x1b[4C");
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.screen(), ["~/src main", "> ls", "", "", "", ""]);
+    assert_eq!(term.cursor(), (4, 1, false));
+    // While a command runs, its output is no prompt: the cursor's line
+    // alone stays.
+    let mut term = Term::new(20, 6);
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07make\r\n\x1b]133;C\x07one\r\ntwo");
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.screen(), ["two", "", "", "", "", ""]);
+    // A prompt on the first row moves nothing; the scrollback goes.
+    let mut term = Term::new(20, 3);
+    term.feed("a\r\nb\r\nc\r\n$ ");
+    term.feed("\x1b[2;1H\x1b[1J\x1b[1;1H");
+    let before = term.terminal.screen_rows().scrollback_rows();
+    assert!(before > 0);
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.terminal.screen_rows().scrollback_rows(), 0);
+    assert_eq!(term.cursor(), (0, 0, false));
+}
+
+#[test]
+fn clearing_to_the_prompt_leaves_the_alternate_screen_and_a_view_above() {
+    let mut term = Term::new(10, 3);
+    term.feed("a\r\nb\r\nc\r\nd\x1b[?1049h\x1b[Hvim\r\nfile");
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.screen(), ["vim", "file", ""]);
+    term.feed("\x1b[?1049l");
+    assert!(term.terminal.screen_rows().scrollback_rows() > 0);
+    // A view up the scrollback comes down to the screen.
+    term.terminal.scroll_viewport(Scroll::Up(1));
+    assert_eq!(term.terminal.viewport_offset(), 1);
+    term.terminal.clear_to_prompt();
+    assert_eq!(term.terminal.viewport_offset(), 0);
+    assert_eq!(term.screen(), ["d", "", ""]);
+}
+
+#[test]
 fn a_cleared_prompt_keeps_its_cursor_s_row_and_the_default_background() {
     // A prompt of two lines, and a command typed past the narrower width.
     let mut term = Term::new(30, 6);

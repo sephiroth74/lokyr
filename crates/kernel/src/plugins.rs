@@ -34,6 +34,14 @@ pub enum Request {
     Quit,
     /// Give the text a size, in points; with `None`, the config's.
     FontSize(Option<f32>),
+    /// Ask the user to confirm a paste of `text` into `pane`, whose
+    /// program takes its line breaks as Return.
+    ConfirmPaste {
+        /// The pane.
+        pane: PaneId,
+        /// What to paste.
+        text: String,
+    },
 }
 
 /// The clipboard, which the app reaches through its platform.
@@ -395,8 +403,24 @@ impl HostApi for Host<'_, '_> {
         Ok(())
     }
 
+    fn clear(&mut self, pane: host::PaneId) -> Result<(), Error> {
+        self.pane(pane)?.clear();
+        Ok(())
+    }
+
     fn paste(&mut self, pane: host::PaneId, text: &str) -> Result<(), Error> {
-        self.pane(pane)?.paste(text);
+        let found = self.pane(pane)?;
+        let bracketed = found
+            .input_modes()
+            .is_some_and(|modes| modes.bracketed_paste);
+        if bracketed || !text.contains(['\n', '\r']) {
+            found.paste(text);
+        } else {
+            self.requests.push(Request::ConfirmPaste {
+                pane: PaneId::of(pane.0),
+                text: text.to_owned(),
+            });
+        }
         Ok(())
     }
 

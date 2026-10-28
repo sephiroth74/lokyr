@@ -479,11 +479,20 @@ impl Terminal {
         self.take_selection((start, end), shape);
     }
 
-    /// Selects every cell of the active screen and of its scrollback.
+    /// Selects every cell of the active screen and of its scrollback, to
+    /// the last row that shows something, or the cursor's, which is later:
+    /// the empty rows below them are left out.
     pub fn select_all(&mut self) {
         self.clear_selection();
+        let cursor = self.screen().rows.scrollback_rows() + usize::from(self.cursor().y);
         let rows = &self.screen().rows;
-        let last = (rows.total_rows() - 1, rows.cols() - 1);
+        let total = rows.total_rows();
+        let shown = (cursor + 1..total)
+            .rev()
+            .zip(rows.rows_before(total))
+            .find(|&(_, row)| !blank_from(row, 0))
+            .map_or(cursor, |(index, _)| index);
+        let last = (shown, rows.cols() - 1);
         self.take_selection(((0, 0), last), SelectionShape::Cells);
     }
 
@@ -804,6 +813,24 @@ mod tests {
         let selected = terminal.selection().unwrap();
         assert_eq!(selected.start, (0, 3 - 995));
         assert!(!selected.contains(0, 0));
+    }
+
+    #[test]
+    fn select_all_stops_at_the_last_row_shown_or_the_cursor_s() {
+        let mut terminal = fed(20, 6, "one\r\ntwo\r\n");
+        terminal.select_all();
+        assert_eq!(terminal.selection_text().as_deref(), Some("one\ntwo\n"));
+        // A row shown below the cursor counts.
+        feed(&mut terminal, "\x1b[5;1Hfive\x1b[3;1H");
+        terminal.select_all();
+        assert_eq!(
+            terminal.selection_text().as_deref(),
+            Some("one\ntwo\n\n\nfive")
+        );
+        // With the scrollback, from its first row.
+        let mut terminal = fed(10, 2, "a\r\nb\r\nc");
+        terminal.select_all();
+        assert_eq!(terminal.selection_text().as_deref(), Some("a\nb\nc"));
     }
 
     #[test]

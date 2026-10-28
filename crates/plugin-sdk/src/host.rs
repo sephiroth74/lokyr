@@ -90,9 +90,14 @@ pub trait HostApi {
     /// Clears `pane`'s scrollback.
     fn clear_scrollback(&mut self, pane: PaneId) -> Result<(), Error>;
 
+    /// Clears `pane`'s scrollback, and its screen but the prompt that the
+    /// cursor is in, which goes to the top; the program is told nothing.
+    fn clear(&mut self, pane: PaneId) -> Result<(), Error>;
+
     /// Pastes `text` into `pane`, as the user pastes: bracketed when its
     /// program asks, without its control characters but tab and the line
-    /// breaks.
+    /// breaks. Into a program that does not ask, a text with a line break,
+    /// which reaches it as Return, waits for the user to confirm it.
     fn paste(&mut self, pane: PaneId, text: &str) -> Result<(), Error>;
 
     /// Scrolls `pane`'s view.

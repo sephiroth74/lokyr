@@ -14,7 +14,7 @@ use lokyr_kernel::config::{AppConfig, ClipboardRead, Config};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
-use lokyr_kernel::l10n::{self, Texts};
+use lokyr_kernel::l10n::{self, Arg, Texts};
 use lokyr_kernel::plugins::{self, Plugins, Request};
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
@@ -51,6 +51,10 @@ const QUIT: &str = "app.quit";
 
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
+
+/// The lines of a pasted text that its confirmation shows, and the
+/// characters of each.
+const PREVIEW: (usize, usize) = (3, 60);
 
 /// How deep the commands that plugins run from their commands go, past
 /// which the next does not run, as a plugin that runs its own command
@@ -358,6 +362,8 @@ pub struct App {
     /// The programs' reads of the clipboard that the user is asked about,
     /// by their alerts.
     clipboard_asks: BTreeMap<AlertId, (PaneId, ClipboardRequest)>,
+    /// The pastes that the user is asked to confirm, by their alerts.
+    paste_asks: BTreeMap<AlertId, (PaneId, String)>,
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
@@ -401,6 +407,7 @@ impl App {
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
+            paste_asks: BTreeMap::new(),
             environment: {
                 let resources = environment::resources();
                 Environment {
@@ -784,6 +791,7 @@ impl App {
             drop(state.surface);
             self.clipboard_asks
                 .retain(|_, (pane, _)| *pane != state.pane);
+            self.paste_asks.retain(|_, (pane, _)| *pane != state.pane);
             self.workspace.close_window(state.window);
         }
         platform.close_window(window);
@@ -983,6 +991,7 @@ impl App {
                 }
                 Request::Quit => platform.quit(),
                 Request::FontSize(size) => self.set_font_size(platform, size),
+                Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
             }
         }
         for &window in self.windows.keys() {
@@ -1205,6 +1214,37 @@ impl App {
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.clipboard_asks.insert(alert, (pane, request));
+    }
+
+    /// Asks the user to confirm a paste of `text` into `pane`, whose
+    /// program takes its line breaks as Return: an alert in its window,
+    /// with the text's first lines as they would reach the program. A
+    /// paste while one waits for its answer goes.
+    fn ask_paste(&mut self, platform: &mut dyn Platform, pane: PaneId, text: String) {
+        if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
+            return;
+        }
+        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+            return;
+        };
+        let lines = i64::try_from(lines_of(&text)).unwrap_or(i64::MAX);
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self
+                .texts
+                .text_with("paste-lines-message", &[("lines", Arg::Number(lines))]),
+            detail: format!(
+                "{}\n\n{}",
+                self.texts.text("paste-lines-detail"),
+                preview(&text)
+            ),
+            buttons: vec![
+                self.texts.text("paste-lines-paste"),
+                self.texts.text("paste-lines-cancel"),
+            ],
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.paste_asks.insert(alert, (pane, text));
     }
 
     /// The theme's colors in `appearance`.
@@ -1588,6 +1628,12 @@ impl Handler for App {
                 {
                     pane.reply_clipboard(request, &platform.clipboard_text().unwrap_or_default());
                 }
+                if let Some((pane, text)) = self.paste_asks.remove(&alert)
+                    && button == 0
+                    && let Some(pane) = self.workspace.pane(pane)
+                {
+                    pane.paste(&text);
+                }
             }
             AppEvent::AppearanceChanged(appearance) => {
                 let colors = self.colors(appearance);
@@ -1830,6 +1876,41 @@ impl plugins::Clipboard for PlatformClipboard<'_> {
     fn set_text(&mut self, text: &str) {
         self.0.set_clipboard_text(text);
     }
+}
+
+/// How many lines `text` has: its line breaks, CR LF as one, and the line
+/// after the last, if it is not empty.
+fn lines_of(text: &str) -> usize {
+    let breaks =
+        text.matches('\n').count() + text.matches('\r').count() - text.matches("\r\n").count();
+    breaks + usize::from(!text.ends_with(['\n', '\r']))
+}
+
+/// The first lines of `text` as they would reach a program, without the
+/// control characters that a paste drops, cut to `PREVIEW`'s length, with
+/// `…` for what is left out.
+fn preview(text: &str) -> String {
+    let (most, width) = PREVIEW;
+    let mut lines: Vec<String> = text
+        .split(['\n', '\r'])
+        .filter(|line| !line.is_empty())
+        .take(most + 1)
+        .map(|line| {
+            let kept: String = line
+                .chars()
+                .filter(|&c| c == '\t' || !c.is_control())
+                .collect();
+            match kept.char_indices().nth(width) {
+                Some((at, _)) => format!("{}…", &kept[..at]),
+                None => kept,
+            }
+        })
+        .collect();
+    if lines.len() > most {
+        lines.truncate(most);
+        lines.push("…".to_owned());
+    }
+    lines.join("\n")
 }
 
 /// `font`, at `size` in points when it is one, rather than its own.
@@ -3817,6 +3898,141 @@ mod tests {
         // again as the depth allows.
         app.run(&mut fake, "test.again", Args::new());
         assert_eq!(runs.get(), COMMANDS_DEEP + 1);
+    }
+
+    /// The press of Command and the key of `letter`.
+    fn command_key(code: KeyCode, letter: &str) -> WindowEvent {
+        key_event(code, letter, CMD, true)
+    }
+
+    /// The app without padding, its window running `program`, focused, once
+    /// it shows `ready`.
+    fn focused_with(program: Program) -> (Fake, App, WindowId) {
+        let (mut fake, mut app, window) = started_with(program);
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn copy_and_paste_go_through_the_clipboard_and_a_line_break_asks() {
+        let (mut fake, mut app, window) = focused_with(reader(""));
+        // The pane's text, to its cursor's row.
+        fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
+        fake.send(&mut app, window, command_key(KeyCode::KeyC, "c"));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("ready\n"));
+        // A text without a line break pastes at once.
+        fake.set_clipboard_text("hello");
+        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "hello"));
+        assert!(fake.alerts().is_empty());
+        // One with a line break asks first, once at a time: cancelled, then
+        // confirmed.
+        fake.set_clipboard_text("ls\n");
+        for confirmed in [false, true] {
+            fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+            fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+            assert_eq!(fake.alerts().len(), 1);
+            let open = &fake.alerts()[0];
+            assert_eq!(open.window, Some(window));
+            assert_eq!(
+                open.alert.message,
+                app.texts
+                    .text_with("paste-lines-message", &[("lines", Arg::Number(1))])
+            );
+            assert!(
+                open.alert.detail.ends_with("\n\nls"),
+                "{}",
+                open.alert.detail
+            );
+            assert_eq!(
+                open.alert.buttons,
+                [
+                    app.texts.text("paste-lines-paste"),
+                    app.texts.text("paste-lines-cancel")
+                ]
+            );
+            let id = open.id;
+            fake.answer_alert(&mut app, id, usize::from(!confirmed));
+            if !confirmed {
+                let pause = Instant::now() + Duration::from_millis(300);
+                run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+                assert!(!shows(&app, window, "ls"), "{:?}", screen(&app, window));
+            }
+        }
+        // The line break reaches the program as Return.
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "hellols^M")
+        });
+    }
+
+    #[test]
+    fn a_program_that_asks_for_bracketed_paste_takes_a_line_break_at_once() {
+        let (mut fake, mut app, window) = focused_with(reader("\\033[?2004h"));
+        fake.set_clipboard_text("a\nb");
+        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        assert!(fake.alerts().is_empty());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[200~a"));
+    }
+
+    #[test]
+    fn a_window_that_closes_drops_its_paste_s_question() {
+        let (mut fake, mut app, window) = focused_with(reader(""));
+        fake.set_clipboard_text("ls\n");
+        fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+        let id = fake.alerts()[0].id;
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        fake.send(&mut app, window, WindowEvent::CloseRequested);
+        assert!(app.paste_asks.is_empty());
+        // A late answer reaches nothing.
+        fake.answer_alert(&mut app, id, 0);
+        assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn clearing_keeps_the_prompt_at_the_top() {
+        let (mut fake, mut app, window) =
+            focused_with(shell("seq 1 60; printf 'ready$'; stty raw -echo; cat -v"));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready$"));
+        fake.send(&mut app, window, command_key(KeyCode::KeyK, "k"));
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 0) == "ready$"
+        });
+        let shown = screen(&app, window);
+        assert!(shown[1..].iter().all(String::is_empty), "{shown:?}");
+        // Nothing is left above it either, and typing goes on at the prompt.
+        fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
+        fake.send(&mut app, window, command_key(KeyCode::KeyC, "c"));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("ready$"));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyX, "x", Modifiers::NONE, true),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 0) == "ready$x"
+        });
+    }
+
+    #[test]
+    fn a_paste_s_lines_and_its_preview() {
+        for (text, lines) in [
+            ("ls\n", 1),
+            ("a\nb", 2),
+            ("a\r\nb\r\n", 2),
+            ("a\rb", 2),
+            ("\n", 1),
+            ("a\n\n", 2),
+        ] {
+            assert_eq!(lines_of(text), lines, "{text:?}");
+        }
+        // What the program would get: no escape, the tab kept.
+        assert_eq!(preview("a\x1b[31mb\tc\nd\n"), "a[31mb\tc\nd");
+        // Long lines cut, at a character's boundary, and lines past the
+        // third left out.
+        let long = "é".repeat(70);
+        assert_eq!(preview(&long), format!("{}…", "é".repeat(60)));
+        assert_eq!(preview("1\n2\n3\n4\n5"), "1\n2\n3\n…");
+        assert_eq!(preview("1\n2\n3\n"), "1\n2\n3");
     }
 
     /// `event`, a key's press, as the system repeats it.

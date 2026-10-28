@@ -774,6 +774,52 @@ impl Terminal {
         }
     }
 
+    /// Clears the scrollback, and the screen but the prompt that the cursor
+    /// is in, which goes to the top: from the row where the shell's
+    /// semantic prompt starts, while no command runs, or else from the
+    /// first row of the cursor's line, to the last row of that line, as
+    /// it wraps on. The program is told nothing: a shell that draws its
+    /// line from the cursor goes on where it is. The alternate screen,
+    /// which has no scrollback, keeps what it shows.
+    pub fn clear_to_prompt(&mut self) {
+        if self.alternate_active {
+            return;
+        }
+        let y = self.cursor().y;
+        let (start, end) = {
+            let rows = &self.screen().rows;
+            let has = |y: u16, flag: RowFlag| {
+                let (page, row) = rows.screen_row(y);
+                page.row(row).has(flag)
+            };
+            let prompt = (self.zone != Semantic::Output)
+                .then(|| (0..=y).rev().find(|&y| has(y, RowFlag::PromptStart)))
+                .flatten();
+            let line = (0..=y)
+                .rev()
+                .find(|&y| !has(y, RowFlag::Continuation))
+                .unwrap_or(0);
+            let end = (y..self.rows)
+                .find(|&y| !has(y, RowFlag::SoftWrapped))
+                .unwrap_or(self.rows - 1);
+            (prompt.unwrap_or(line), end)
+        };
+        for y in end + 1..self.rows {
+            let width = self.cols;
+            let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+            page.erase(row, 0..width, Cell::EMPTY, false);
+        }
+        if start > 0 {
+            // The row above no longer goes on into the prompt, as output
+            // without a final newline does.
+            self.end_soft_wrap(start - 1);
+            let bottom = self.rows - 1;
+            self.screen_mut().rows.shift_rows_up(0, bottom, start);
+        }
+        self.clear_scrollback();
+        self.screen_mut().cursor.y -= start;
+    }
+
     /// Sets the bytes that the primary screen's scrollback may take, as
     /// [`Scrollback::limit`] says, and drops the oldest rows that pass
     /// them. Past the width that the embedder gave, a program's, the

@@ -405,6 +405,14 @@ impl Pane {
         }
     }
 
+    /// Clears the scrollback, and the screen but the prompt that the cursor
+    /// is in, which goes to the top.
+    pub fn clear(&self) {
+        if let Some(session) = &self.session {
+            session.lock().clear_to_prompt();
+        }
+    }
+
     /// Pastes `text`, bracketed when the program asks, without its control
     /// characters but tab and the line breaks.
     pub fn paste(&self, text: &str) {

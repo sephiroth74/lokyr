@@ -471,8 +471,12 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
                     }
                     _ => {
                         let text = cx.clipboard_text()?.unwrap();
-                        // A line, its escape left out.
-                        cx.paste(pane, &format!("{text}\x1b[A\r"))?;
+                        // A line, its escape left out, then a line break,
+                        // which the user is to confirm.
+                        cx.paste(pane, &format!("{text}\x1b[A"))?;
+                        cx.paste(pane, "two\n")?;
+                        // A carriage return alone is a line break too.
+                        cx.paste(pane, "x\ry")?;
                         let missing = host::PaneId(u64::MAX);
                         seen.borrow_mut()
                             .push(cx.selection_text(missing).unwrap_err().code);
@@ -495,8 +499,81 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
     plugins
         .run("copier.paste", Args::new(), &mut app.context())
         .unwrap();
-    assert!(text_once(&app, pane, "got:").contains("got:hello[A\n"));
     assert_eq!(*log.borrow(), [Code::Failed, Code::Failed]);
+    // The line break waits for the user, as the app asks: confirmed, its
+    // line ends.
+    let requests = plugins.take_requests();
+    let [
+        Request::ConfirmPaste { pane: asked, text },
+        Request::ConfirmPaste { text: other, .. },
+    ] = &requests[..]
+    else {
+        panic!("two pastes to confirm: {requests:?}");
+    };
+    assert_eq!(
+        (*asked, text.as_str(), other.as_str()),
+        (pane, "two\n", "x\ry")
+    );
+    assert!(!text_once(&app, pane, "hello").contains("got:"));
+    app.workspace.pane(pane).unwrap().paste(text);
+    assert!(text_once(&app, pane, "got:").contains("got:hello[Atwo\n"));
+}
+
+#[test]
+fn a_program_that_asks_for_bracketed_paste_takes_line_breaks_at_once() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "stty raw -echo; printf '\\033[?2004hready\\r\\n'; cat -v",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    text_once(&app, pane, "ready");
+    let mut plugins = Plugins::new();
+    plugins.add(
+        "paster",
+        scripted(
+            |cx| cx.register_command(command("paster.paste")),
+            |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                cx.paste(pane, "a\nb")
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("paster.paste", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_requests().is_empty());
+    assert!(text_once(&app, pane, "201~").contains("^[[200~a"));
+}
+
+#[test]
+fn clearing_a_pane_keeps_its_prompt_at_the_top() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do echo line$n; done; printf '$ '; sleep 10",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    // The text's lines end without their spaces.
+    text_once(&app, pane, "line30\n$");
+    let mut plugins = Plugins::new();
+    plugins.add(
+        "clearer",
+        scripted(
+            |cx| cx.register_command(command("clearer.clear")),
+            |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                cx.clear(pane)
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("clearer.clear", Args::new(), &mut app.context())
+        .unwrap();
+    // The prompt's row at the top, the other rows empty.
+    assert_eq!(text_once(&app, pane, "$").trim_end(), "$");
 }
 
 #[test]
