@@ -162,6 +162,30 @@ pub struct CellLine {
     pub color: Color,
 }
 
+impl CellLine {
+    /// The rows of pixels that the line's pattern takes, from the cell's
+    /// top edge, in a cell of `height` rows: its first, and how many. A
+    /// single, dotted or dashed line takes its thickness; a double one two
+    /// strokes of it with a gap of it between, down from its top; a wave
+    /// swings about the line's middle, by its thickness and at least a
+    /// pixel and a half, so that a thin one still reads as a wave. Each
+    /// keeps within the cell.
+    pub fn band(&self, height: u32) -> (u32, u32) {
+        let height = height.max(1);
+        let thickness = self.thickness.clamp(1, height);
+        let (top, rows) = match self.style {
+            LineStyle::Single | LineStyle::Dotted | LineStyle::Dashed => (self.top, thickness),
+            LineStyle::Double => (self.top, thickness * 3),
+            LineStyle::Curly => {
+                let rows = (thickness * 3).max(4);
+                ((self.top + thickness / 2).saturating_sub(rows / 2), rows)
+            }
+        };
+        let rows = rows.min(height);
+        (top.min(height - rows), rows)
+    }
+}
+
 /// The shape of a grid's cursor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CursorShape {
@@ -342,6 +366,38 @@ mod tests {
             thickness: 2,
             color: Color::default(),
         }
+    }
+
+    fn line(style: LineStyle, top: u32, thickness: u32) -> CellLine {
+        CellLine {
+            column: 0,
+            row: 0,
+            columns: 4,
+            style,
+            top,
+            thickness,
+            color: Color::default(),
+        }
+    }
+
+    #[test]
+    fn a_line_s_pattern_takes_its_rows_within_the_cell() {
+        // A cell of 16 rows, whose underline takes row 13.
+        assert_eq!(line(LineStyle::Single, 13, 1).band(16), (13, 1));
+        assert_eq!(line(LineStyle::Dotted, 13, 1).band(16), (13, 1));
+        assert_eq!(line(LineStyle::Dashed, 13, 2).band(16), (13, 2));
+        // Two strokes and their gap, moved up to keep within the cell.
+        assert_eq!(line(LineStyle::Double, 12, 1).band(16), (12, 3));
+        assert_eq!(line(LineStyle::Double, 14, 1).band(16), (13, 3));
+        // A wave about the line's middle, of four rows at least.
+        assert_eq!(line(LineStyle::Curly, 13, 1).band(16), (11, 4));
+        assert_eq!(line(LineStyle::Curly, 26, 2).band(34), (24, 6));
+        assert_eq!(line(LineStyle::Curly, 15, 1).band(16), (12, 4));
+        // A cell smaller than the pattern takes it whole; a thickness of 0
+        // takes a row.
+        assert_eq!(line(LineStyle::Double, 0, 2).band(4), (0, 4));
+        assert_eq!(line(LineStyle::Single, 3, 0).band(4), (3, 1));
+        assert_eq!(line(LineStyle::Single, 9, 1).band(0), (0, 1));
     }
 
     fn rect(x: i32, y: i32, width: u32, height: u32) -> Rect {

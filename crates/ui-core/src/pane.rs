@@ -345,6 +345,7 @@ pub fn cells_with(
     // blinking, so that the ligature does not join and split as it blinks.
     let at = cursor_cell(snapshot).map(|(column, row, _)| (column, row));
     let mut run = RunBuilder::default();
+    let mut decorations = Decorations::default();
     for row in 0..rows {
         let line = snapshot.line(row);
         for (column, &cell_of) in (0..columns).zip(line.cells()) {
@@ -387,6 +388,27 @@ pub fn cells_with(
                 foreground = chosen.foreground.unwrap_or(foreground);
             }
             batch.backgrounds.push(background);
+            // Text that blinks shows half of the time.
+            let blinking = style.blink && text.config.blink;
+            let hidden = style.invisible || (blinking && !text.blink_shown);
+            // The lines that decorate the text, as faint as it, and of its
+            // color but for an underline's own, which spaces and a wide
+            // character's second cell take too.
+            let decorated =
+                style.underline != page::Underline::None || style.strikethrough || style.overline;
+            if decorated && !hidden {
+                let shade = if style.faint {
+                    mix(foreground, background)
+                } else {
+                    foreground
+                };
+                let own = text
+                    .config
+                    .ansi_colors
+                    .then(|| resolved(style.underline_color, colors))
+                    .flatten();
+                decorations.cell(&mut batch, (column, row), &style, (shade, own), cell);
+            }
             let width = cell_of.width();
             // A wide character's second cell goes on with its run.
             if width == Width::SpacerTail {
@@ -396,9 +418,6 @@ pub fn cells_with(
             // one: most of a screen is spaces.
             let grapheme = line.grapheme(column);
             let blank = character == '\0' || (character == ' ' && grapheme.is_empty());
-            // Text that blinks shows half of the time.
-            let blinking = style.blink && text.config.blink;
-            let hidden = style.invisible || (blinking && !text.blink_shown);
             if blank || hidden || width == Width::SpacerHead {
                 run.flush(&mut batch, row, cell, glyphs);
                 continue;
@@ -424,6 +443,7 @@ pub fn cells_with(
             }
         }
         run.flush(&mut batch, row, cell, glyphs);
+        decorations.flush(&mut batch);
         // A line shorter than the screen, as after a resize, has the
         // default background past its end.
         for column in u16::try_from(line.cells().len()).unwrap_or(u16::MAX)..columns {
@@ -435,6 +455,128 @@ pub fn cells_with(
     }
     settle_cursor(&mut batch, snapshot);
     batch
+}
+
+/// The lines that decorate a row's text, as its cells come: each kind's,
+/// underline, strikeout and overline, joined while the next cell goes on
+/// with the same line, so that a wave or dashes go on across them.
+#[derive(Default)]
+struct Decorations {
+    open: [Option<CellLine>; 3],
+}
+
+impl Decorations {
+    /// Takes the lines of the cell at `at`, of `style`, in `color`, the
+    /// text's, and `own`, an underline's own color, if it has one. Out of
+    /// the loop over the cells, which most cells skip it.
+    #[inline(never)]
+    fn cell(
+        &mut self,
+        batch: &mut CellBatch,
+        (column, row): (u16, u16),
+        style: &Style,
+        (color, own): (Color, Option<Color>),
+        cell: &CellMetrics,
+    ) {
+        let line = |style: LineStyle, top: u32, thickness: u32, color: Color| CellLine {
+            column,
+            row,
+            columns: 1,
+            style,
+            top,
+            thickness,
+            color,
+        };
+        let underline = match style.underline {
+            page::Underline::None => None,
+            page::Underline::Single => Some(LineStyle::Single),
+            page::Underline::Double => Some(LineStyle::Double),
+            page::Underline::Curly => Some(LineStyle::Curly),
+            page::Underline::Dotted => Some(LineStyle::Dotted),
+            page::Underline::Dashed => Some(LineStyle::Dashed),
+        };
+        let (top, thickness) = (cell.underline_top, cell.underline_thickness);
+        if let Some(underline) = underline {
+            self.push(
+                batch,
+                0,
+                line(underline, top, thickness, own.unwrap_or(color)),
+            );
+        }
+        if style.strikethrough {
+            let (top, thickness) = (cell.strikeout_top, cell.strikeout_thickness);
+            self.push(batch, 1, line(LineStyle::Single, top, thickness, color));
+        }
+        if style.overline {
+            self.push(batch, 2, line(LineStyle::Single, 0, thickness, color));
+        }
+    }
+
+    /// Takes `line`, of the kind `kind`: the open line of the kind goes on
+    /// with it when it is the same line in the next cell; otherwise it
+    /// goes into `batch`, and `line` opens.
+    fn push(&mut self, batch: &mut CellBatch, kind: usize, line: CellLine) {
+        match &mut self.open[kind] {
+            Some(open)
+                if open.row == line.row
+                    && open.column + open.columns == line.column
+                    && (open.style, open.top, open.thickness, open.color)
+                        == (line.style, line.top, line.thickness, line.color) =>
+            {
+                open.columns += line.columns;
+            }
+            slot => {
+                if let Some(done) = slot.replace(line) {
+                    batch.lines.push(done);
+                }
+            }
+        }
+    }
+
+    /// Puts the open lines into `batch`.
+    fn flush(&mut self, batch: &mut CellBatch) {
+        for slot in &mut self.open {
+            if let Some(done) = slot.take() {
+                batch.lines.push(done);
+            }
+        }
+    }
+}
+
+/// The color that `which` names, of `colors`' palette; `None` for the
+/// default, the text's.
+fn resolved(which: page::Color, colors: &Colors) -> Option<Color> {
+    match which {
+        page::Color::Default => None,
+        page::Color::Palette(index) => Some(color(colors.palette[usize::from(index)])),
+        page::Color::Rgb(rgb) => Some(color(rgb)),
+    }
+}
+
+/// Takes the cells of `columns` on `row` out of `batch`'s lines: those
+/// that a composition covers, whose text it hides.
+fn cut_lines(batch: &mut CellBatch, row: u16, columns: std::ops::Range<u16>) {
+    let lines = std::mem::take(&mut batch.lines);
+    for line in lines {
+        let end = line.column + line.columns;
+        if line.row != row || end <= columns.start || line.column >= columns.end {
+            batch.lines.push(line);
+            continue;
+        }
+        if line.column < columns.start {
+            batch.lines.push(CellLine {
+                columns: columns.start - line.column,
+                ..line
+            });
+        }
+        if end > columns.end {
+            batch.lines.push(CellLine {
+                column: columns.end,
+                columns: end - columns.end,
+                ..line
+            });
+        }
+    }
 }
 
 /// The least contrast, as WCAG measures it, of a cursor on its cell's
@@ -590,6 +732,7 @@ pub fn preedit(
         placed.push((column, width));
         column += width;
     }
+    cut_lines(batch, row, start..column);
     batch.lines.push(CellLine {
         column: start,
         row,
@@ -1608,6 +1751,235 @@ mod tests {
         let line = batch.lines.last().unwrap();
         assert_eq!((line.column, line.columns), (2, 2));
         assert_eq!(batch.glyphs.len(), 3);
+    }
+
+    /// A cell of 8 by 16 pixels whose underline, strikeout and their
+    /// thicknesses differ, as a face's do.
+    fn lined() -> CellMetrics {
+        CellMetrics::new(
+            &FaceMetrics {
+                ascent: 12.07,
+                descent: 3.07,
+                advance: 7.83,
+                underline_position: -1.5,
+                underline_thickness: 1.0,
+                strikeout_position: 4.0,
+                strikeout_thickness: 2.0,
+                ..FaceMetrics::default()
+            },
+            &FontConfig::default(),
+        )
+    }
+
+    /// The lines of `batch`: each one's column, columns, style and top.
+    fn lines_of(batch: &CellBatch) -> Vec<(u16, u16, u16, LineStyle, u32)> {
+        batch
+            .lines
+            .iter()
+            .map(|line| (line.row, line.column, line.columns, line.style, line.top))
+            .collect()
+    }
+
+    #[test]
+    fn the_styles_decorate_their_cells_with_lines() {
+        use LineStyle::{Curly, Dashed, Dotted, Double, Single};
+        // Underlines of each kind, one of its own color, then a strikeout
+        // and an overline, after a space.
+        let text = "\x1b[4mab\x1b[21mc\x1b[4:3md\x1b[4:4me\x1b[4:5mf\x1b[58;5;1mg\x1b[0m \x1b[9mh\x1b[29;53mi";
+        let styled = snapshot(20, 2, text);
+        let batch = cells(
+            &styled,
+            &lined(),
+            0,
+            0,
+            None,
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        let (under, strike) = (lined().underline_top, lined().strikeout_top);
+        assert_ne!(under, strike);
+        assert_eq!(
+            lines_of(&batch),
+            [
+                (0, 0, 2, Single, under),
+                (0, 2, 1, Double, under),
+                (0, 3, 1, Curly, under),
+                (0, 4, 1, Dotted, under),
+                (0, 5, 1, Dashed, under),
+                (0, 6, 1, Dashed, under),
+                (0, 8, 1, Single, strike),
+                (0, 9, 1, Single, 0),
+            ]
+        );
+        let colors = Colors::default();
+        let text_color = color(colors.foreground);
+        assert_eq!(batch.lines[4].color, text_color);
+        assert_eq!(batch.lines[5].color, color(colors.palette[1]));
+        assert_eq!(
+            (
+                batch.lines[0].thickness,
+                batch.lines[6].thickness,
+                batch.lines[7].thickness
+            ),
+            (1, 2, 1)
+        );
+        // Spaces and a wide character's two cells take one line; the lines
+        // of another row are its own, and a cell without one parts two.
+        let wrapped = snapshot(10, 3, "\x1b[4ma b\r\n日本\x1b[0mx\x1b[4my");
+        let batch = cells(
+            &wrapped,
+            &lined(),
+            0,
+            0,
+            None,
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        assert_eq!(
+            lines_of(&batch),
+            [
+                (0, 0, 3, Single, under),
+                (1, 0, 4, Single, under),
+                (1, 5, 1, Single, under)
+            ]
+        );
+    }
+
+    #[test]
+    fn hidden_text_has_no_lines_and_faint_text_faint_ones() {
+        let snapshot = snapshot(10, 2, "\x1b[8;4mx\x1b[0m\x1b[2;4my\x1b[0m\x1b[5;9mz");
+        let colors = Colors::default();
+        let (foreground, background) = (color(colors.foreground), color(colors.background));
+        let mut look = TextLook {
+            blink_shown: false,
+            ..TextLook::default()
+        };
+        let batch = cells_with(
+            &snapshot,
+            &cell(),
+            (0, 0),
+            None,
+            None,
+            look,
+            &mut atlas(&mut Vec::new()),
+        );
+        // The hidden `x` and the blinking `z`, in its hidden phase, have
+        // none; the faint `y`'s takes its faint color.
+        assert_eq!(
+            lines_of(&batch),
+            [(0, 1, 1, LineStyle::Single, cell().underline_top)]
+        );
+        assert_eq!(
+            batch.lines[0].color,
+            mix(foreground, background.with_alpha(0.0))
+        );
+        // Shown, the blinking `z` has its strikeout.
+        look.blink_shown = true;
+        let batch = cells_with(
+            &snapshot,
+            &cell(),
+            (0, 0),
+            None,
+            None,
+            look,
+            &mut atlas(&mut Vec::new()),
+        );
+        assert_eq!(batch.lines.len(), 2);
+    }
+
+    #[test]
+    fn an_underline_s_own_color_needs_the_programs_colors() {
+        let snapshot = snapshot(10, 2, "\x1b[4;58;2;10;20;30mx");
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        assert_eq!(batch.lines[0].color, rgb(10, 20, 30));
+        let mut look = TextLook::default();
+        look.config.ansi_colors = false;
+        let batch = cells_with(
+            &snapshot,
+            &cell(),
+            (0, 0),
+            None,
+            None,
+            look,
+            &mut atlas(&mut Vec::new()),
+        );
+        assert_eq!(batch.lines[0].color, color(Colors::default().foreground));
+    }
+
+    #[test]
+    fn selected_text_s_lines_take_its_color() {
+        let snapshot = snapshot(10, 2, "\x1b[4mabcd\x1b[58;5;2mef");
+        let colors = SelectionColors {
+            background: rgb(1, 2, 3),
+            foreground: Some(rgb(4, 5, 6)),
+        };
+        let contains = |column: u16, row: u16| row == 0 && (1..5).contains(&column);
+        let selection = Selection {
+            colors,
+            contains: &contains,
+        };
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            Some(&selection),
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        let text = color(Colors::default().foreground);
+        let colored: Vec<(u16, u16, Color)> = batch
+            .lines
+            .iter()
+            .map(|line| (line.column, line.columns, line.color))
+            .collect();
+        // The text's color, the selection's, and an underline's own, which
+        // stays its own.
+        let green = color(Colors::default().palette[2]);
+        assert_eq!(colored, [(0, 1, text), (1, 3, rgb(4, 5, 6)), (4, 2, green)]);
+    }
+
+    #[test]
+    fn a_composition_cuts_the_lines_under_it() {
+        let snapshot = snapshot(10, 2, "\x1b[4mabcdefgh\x1b[0m\x1b[1;3H");
+        let mut batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            None,
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        let composed = Preedit {
+            text: "xy".to_owned(),
+            cursor: 2,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut Vec::new()),
+        );
+        let under = cell().underline_top;
+        // The text's line before and after it, and the composition's own.
+        assert_eq!(
+            lines_of(&batch),
+            [
+                (0, 0, 2, LineStyle::Single, under),
+                (0, 4, 4, LineStyle::Single, under),
+                (0, 2, 2, LineStyle::Single, under),
+            ]
+        );
     }
 
     #[test]

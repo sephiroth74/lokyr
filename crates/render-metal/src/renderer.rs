@@ -7,8 +7,8 @@ use std::ptr::NonNull;
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Texture,
-    TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, Item, LineStyle, Rect, Renderer,
+    Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -51,6 +51,21 @@ struct GlyphInstance {
     color: [f32; 4],
 }
 
+/// A line across cells, as the shaders take it: its band, its color, its
+/// style, the thickness of its strokes, and its pattern's period and
+/// origin.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LineInstance {
+    position: [f32; 2],
+    size: [f32; 2],
+    color: [f32; 4],
+    style: u32,
+    thickness: f32,
+    period: f32,
+    origin: f32,
+}
+
 /// A grid, as the shaders take it.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -71,6 +86,7 @@ pub struct MetalRenderer {
     queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
     solid: Pipeline,
     background: Pipeline,
+    lines: Pipeline,
     coverage_glyphs: Pipeline,
     color_glyphs: Pipeline,
     coverage: MetalTexture,
@@ -97,6 +113,7 @@ impl MetalRenderer {
         Ok(Self {
             solid: pipeline("rect_vertex", "solid_fragment")?,
             background: pipeline("background_vertex", "solid_fragment")?,
+            lines: pipeline("line_vertex", "line_fragment")?,
             coverage_glyphs: pipeline("glyph_vertex", "coverage_fragment")?,
             color_glyphs: pipeline("glyph_vertex", "color_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
@@ -275,12 +292,32 @@ impl Renderer for MetalRenderer {
         let Some(drawable) = target.layer.nextDrawable() else {
             return Ok(false);
         };
-        let output = drawable.texture();
+        let buffer = self.encode(&drawable.texture(), list)?;
+        buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
+        buffer.commit();
+        self.drawing.push_back((list.frame, buffer));
+        self.drop_finished();
+        Ok(true)
+    }
+
+    fn drawing_from(&mut self) -> Option<u64> {
+        self.drop_finished();
+        self.drawing.front().map(|&(frame, _)| frame)
+    }
+}
+
+impl MetalRenderer {
+    /// The commands that draw `list` into `output`, to commit.
+    fn encode(
+        &self,
+        output: &ProtocolObject<dyn MTLTexture>,
+        list: &DisplayList,
+    ) -> Result<Retained<ProtocolObject<dyn MTLCommandBuffer>>, Error> {
         let viewport = [output.width() as f32, output.height() as f32];
         let pass = MTLRenderPassDescriptor::new();
         // SAFETY: a render pass has a first color attachment.
         let attachment = unsafe { pass.colorAttachments().objectAtIndexedSubscript(0) };
-        attachment.setTexture(Some(&output));
+        attachment.setTexture(Some(output));
         attachment.setLoadAction(MTLLoadAction::Clear);
         attachment.setStoreAction(MTLStoreAction::Store);
         attachment.setClearColor(clear_color(list.background));
@@ -301,20 +338,9 @@ impl Renderer for MetalRenderer {
             frame.item(item);
         }
         encoder.endEncoding();
-        buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
-        buffer.commit();
-        self.drawing.push_back((list.frame, buffer));
-        self.drop_finished();
-        Ok(true)
+        Ok(buffer)
     }
 
-    fn drawing_from(&mut self) -> Option<u64> {
-        self.drop_finished();
-        self.drawing.front().map(|&(frame, _)| frame)
-    }
-}
-
-impl MetalRenderer {
     /// Forgets the frames that the GPU finished, from the oldest: a queue's
     /// commands finish in their order.
     fn drop_finished(&mut self) {
@@ -415,6 +441,27 @@ impl Frame<'_> {
         }
     }
 
+    fn lines(&self, lines: &[LineInstance]) {
+        let Some(buffer) = self.renderer.buffer(lines) else {
+            return;
+        };
+        self.encoder.setRenderPipelineState(&self.renderer.lines);
+        // SAFETY: the buffers and bytes that the lines' shaders take, at
+        // their indices.
+        unsafe {
+            self.encoder
+                .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+            self.set_viewport();
+            self.encoder
+                .drawPrimitives_vertexStart_vertexCount_instanceCount(
+                    MTLPrimitiveType::TriangleStrip,
+                    0,
+                    QUAD,
+                    lines.len(),
+                );
+        }
+    }
+
     fn cells(&self, batch: &CellBatch) {
         let colors: Vec<[f32; 4]> = batch.backgrounds.iter().map(|&color| rgba(color)).collect();
         if let Some(buffer) = self.renderer.buffer(&colors) {
@@ -471,18 +518,30 @@ impl Frame<'_> {
                 batch.y + i32::from(row) * cell_height,
             )
         };
-        let lines: Vec<RectInstance> = batch
+        let lines: Vec<LineInstance> = batch
             .lines
             .iter()
             .map(|line| {
                 let (x, y) = cell_origin(line.column, line.row);
-                let rect = Rect {
-                    x,
-                    y: y + line.top as i32,
-                    width: u32::from(line.columns) * batch.cell_width,
-                    height: line.thickness,
-                };
-                rect_instance(&rect, line.color)
+                let (top, rows) = line.band(batch.cell_height);
+                LineInstance {
+                    position: [x as f32, (y + top as i32) as f32],
+                    size: [
+                        (u32::from(line.columns) * batch.cell_width) as f32,
+                        rows as f32,
+                    ],
+                    color: rgba(line.color),
+                    style: match line.style {
+                        LineStyle::Single => 0,
+                        LineStyle::Double => 1,
+                        LineStyle::Curly => 2,
+                        LineStyle::Dotted => 3,
+                        LineStyle::Dashed => 4,
+                    },
+                    thickness: line.thickness.max(1) as f32,
+                    period: batch.cell_width.max(1) as f32,
+                    origin: batch.x as f32,
+                }
             })
             .collect();
         let glyphs: Vec<(Texture, GlyphInstance)> = batch
@@ -498,7 +557,7 @@ impl Frame<'_> {
             })
             .collect();
         self.glyphs(&glyphs);
-        self.rects(&lines);
+        self.lines(&lines);
         if !block {
             self.rects(&cursor);
         }
@@ -923,6 +982,175 @@ mod tests {
         last.waitUntilCompleted();
         assert_eq!(renderer.drawing_from(), None);
         assert!(renderer.drawing.is_empty());
+    }
+
+    /// `list` drawn into a texture of `width` by `height` pixels, read
+    /// back, a row of pixels at a time, four bytes a pixel: blue, green,
+    /// red and opacity.
+    fn drawn(
+        renderer: &MetalRenderer,
+        list: &DisplayList,
+        width: usize,
+        height: usize,
+    ) -> Vec<Vec<u8>> {
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                false,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::RenderTarget | MTLTextureUsage::ShaderRead);
+        descriptor.setStorageMode(MTLStorageMode::Shared);
+        let output = renderer
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .unwrap();
+        let buffer = renderer.encode(&output, list).unwrap();
+        buffer.commit();
+        buffer.waitUntilCompleted();
+        (0..height).map(|y| read(&output, 0, y, width, 4)).collect()
+    }
+
+    /// The decorations of a row each, white on black, in cells of `width`
+    /// by `height` pixels, four columns wide, whose underline and
+    /// strikeout are at `underline` and `strikeout`, of `thickness`: a
+    /// single, a double, a curly, a dotted and a dashed underline, and a
+    /// strikeout with an overline. Returns each pixel's red, by row.
+    fn decorations(
+        renderer: &MetalRenderer,
+        (width, height): (u32, u32),
+        (underline, strikeout, thickness): (u32, u32, u32),
+    ) -> Vec<Vec<u8>> {
+        let white = Color::from_rgb8(255, 255, 255);
+        let line = |row: u16, style: LineStyle, top: u32| CellLine {
+            column: 0,
+            row,
+            columns: 4,
+            style,
+            top,
+            thickness,
+            color: white,
+        };
+        let lines = vec![
+            line(0, LineStyle::Single, underline),
+            line(1, LineStyle::Double, underline),
+            line(2, LineStyle::Curly, underline),
+            line(3, LineStyle::Dotted, underline),
+            line(4, LineStyle::Dashed, underline),
+            line(5, LineStyle::Single, strikeout),
+            line(5, LineStyle::Single, 0),
+        ];
+        let list = DisplayList {
+            background: Color::from_rgb8(0, 0, 0),
+            items: vec![Item::Cells(CellBatch {
+                x: 0,
+                y: 0,
+                columns: 4,
+                rows: 6,
+                cell_width: width,
+                cell_height: height,
+                backgrounds: vec![Color::default(); 24],
+                glyphs: Vec::new(),
+                lines,
+                cursor: None,
+            })],
+            frame: 1,
+        };
+        let pixels = drawn(renderer, &list, 4 * width as usize, 6 * height as usize);
+        pixels
+            .into_iter()
+            .map(|row| row.chunks(4).map(|pixel| pixel[2]).collect())
+            .collect()
+    }
+
+    #[test]
+    fn every_decoration_draws_its_pattern_at_two_sizes() {
+        let Some((_gpu, renderer)) = renderer() else {
+            return;
+        };
+        // Cells of a scale of 1 and of 2, with their underline and
+        // strikeout where a face of their size puts them.
+        for (cell, lines) in [
+            ((8_u32, 16_u32), (13_u32, 8_u32, 1_u32)),
+            ((16, 34), (28, 17, 2)),
+        ] {
+            let (width, height) = cell;
+            let (underline, strikeout, t) = lines;
+            let red = decorations(&renderer, cell, lines);
+            let lit = |row: u32, y: u32, x: u32| red[(row * height + y) as usize][x as usize] > 127;
+            let any = |row: u32, y: u32, x: u32| red[(row * height + y) as usize][x as usize] > 0;
+            let columns = 4 * width;
+            // The rows of a cell that a row's pattern lights, at any column.
+            let rows_lit = |row: u32| -> Vec<u32> {
+                (0..height)
+                    .filter(|&y| (0..columns).any(|x| any(row, y, x)))
+                    .collect()
+            };
+            // Single: the underline's rows, across every column.
+            assert_eq!(
+                rows_lit(0),
+                (underline..underline + t).collect::<Vec<_>>(),
+                "{cell:?}"
+            );
+            assert!((0..columns).all(|x| lit(0, underline, x)));
+            // Double: two strokes, and the gap of a stroke between.
+            let double: Vec<u32> = (underline..underline + t)
+                .chain(underline + 2 * t..underline + 3 * t)
+                .collect();
+            assert_eq!(rows_lit(1), double, "{cell:?}");
+            assert!((0..columns).all(|x| lit(1, underline + 2 * t, x)));
+            // Curly: every column lit, high at a quarter of each cell and
+            // low at three quarters, within its band.
+            let (top, rows) = CellLine {
+                style: LineStyle::Curly,
+                top: underline,
+                thickness: t,
+                column: 0,
+                row: 0,
+                columns: 4,
+                color: Color::default(),
+            }
+            .band(height);
+            assert!(
+                rows_lit(2).iter().all(|y| (top..top + rows).contains(y)),
+                "{cell:?}"
+            );
+            let brightest = |x: u32| {
+                (0..height)
+                    .max_by_key(|&y| red[(2 * height + y) as usize][x as usize])
+                    .unwrap()
+            };
+            for cell_start in (0..columns).step_by(width as usize) {
+                assert!(
+                    (cell_start..cell_start + width).all(|x| (0..height).any(|y| any(2, y, x)))
+                );
+                let (high, low) = (cell_start + width / 4, cell_start + 3 * width / 4);
+                assert!(brightest(high) < brightest(low), "{cell:?} at {cell_start}");
+            }
+            // Dotted: dots of the thickness, as far apart.
+            for x in 0..columns {
+                assert_eq!(lit(3, underline, x), (x / t) % 2 == 0, "{cell:?} at {x}");
+            }
+            assert_eq!(rows_lit(3), (underline..underline + t).collect::<Vec<_>>());
+            // Dashed: a dash in the middle of each cell, of three fifths.
+            let dash = (width as f32 * 0.6).round() as u32;
+            let start = (width - dash) / 2;
+            for x in 0..columns {
+                let within = x % width;
+                assert_eq!(
+                    lit(4, underline, x),
+                    within >= start && within < start + dash,
+                    "{cell:?} at {x}"
+                );
+            }
+            // The strikeout and the overline.
+            let mut both: Vec<u32> = (0..t).chain(strikeout..strikeout + t).collect();
+            both.dedup();
+            assert_eq!(rows_lit(5), both, "{cell:?}");
+        }
     }
 
     #[test]

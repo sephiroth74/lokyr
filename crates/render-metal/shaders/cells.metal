@@ -1,6 +1,6 @@
-// The shaders of a frame: rectangles, the backgrounds of a grid's cells, and
+// The shaders of a frame: rectangles, the backgrounds of a grid's cells,
 // glyphs, of coverage or of their own colors, read from the atlas a pixel a
-// pixel. Every shape is an instance of a quad, whose four corners come from
+// pixel, and the lines that decorate text, of their patterns. Every shape is an instance of a quad, whose four corners come from
 // the vertex's index, drawn as a strip.
 //
 // Colors are sRGB's encoded components, premultiplied by their opacity, and
@@ -113,4 +113,86 @@ fragment float4 coverage_fragment(Fragment in [[stage_in]],
 fragment float4 color_fragment(Fragment in [[stage_in]],
                                texture2d<float, access::read> atlas [[texture(0)]]) {
     return atlas.read(in.atlas + uint2(in.local));
+}
+
+// A line across cells: the band of pixels that its pattern takes; its
+// color; how it is drawn, as `LineStyle` numbers it from 0, single, double,
+// curly, dotted and dashed; the thickness of its strokes; and the period of
+// a wave and of dashes, a cell's width, from `origin`, the grid's left edge,
+// so that a pattern goes on across the cells and the lines of a row.
+struct Line {
+    float2 position;
+    float2 size;
+    float4 color;
+    uint style;
+    float thickness;
+    float period;
+    float origin;
+};
+
+struct LineFragment {
+    float4 position [[position]];
+    float4 color [[flat]];
+    uint style [[flat]];
+    float thickness [[flat]];
+    float period [[flat]];
+    float origin [[flat]];
+    float2 size [[flat]];
+    // The pixel within the band, at its centre.
+    float2 local;
+};
+
+vertex LineFragment line_vertex(uint vertex_id [[vertex_id]],
+                                uint instance [[instance_id]],
+                                constant Line *lines [[buffer(0)]],
+                                constant Viewport &viewport [[buffer(1)]]) {
+    Line line = lines[instance];
+    float2 local = corner(vertex_id) * line.size;
+    LineFragment out;
+    out.position = clip_space(line.position + local, viewport.size);
+    out.color = line.color;
+    out.style = line.style;
+    out.thickness = line.thickness;
+    out.period = line.period;
+    out.origin = line.origin;
+    out.size = line.size;
+    out.local = local;
+    return out;
+}
+
+// How much of a pixel a line's pattern covers.
+static float line_coverage(LineFragment in) {
+    float t = max(in.thickness, 1.0);
+    // The pixel's column from the grid's left edge, whole.
+    float x = floor(in.position.x - in.origin);
+    switch (in.style) {
+        // Double: a stroke at the band's top and one at its bottom.
+        case 1:
+            return (in.local.y < t || in.local.y >= in.size.y - t) ? 1.0 : 0.0;
+        // Curly: a wave a cell long, of the stroke's thickness, smoothed.
+        case 2: {
+            float amplitude = max((in.size.y - t) / 2.0, 0.0);
+            float phase = 2.0 * M_PI_F * (in.position.x - in.origin) / in.period;
+            float middle = in.size.y / 2.0 - amplitude * sin(phase);
+            float slope = amplitude * 2.0 * M_PI_F / in.period * cos(phase);
+            float distance = abs(in.local.y - middle) / sqrt(1.0 + slope * slope);
+            return clamp(t / 2.0 + 0.5 - distance, 0.0, 1.0);
+        }
+        // Dotted: dots of the thickness, as far apart.
+        case 3:
+            return fmod(floor(x / t), 2.0) == 0.0 ? 1.0 : 0.0;
+        // Dashed: a dash in the middle of each cell, of three fifths of it.
+        case 4: {
+            float within = fmod(x, in.period);
+            float dash = round(in.period * 0.6);
+            float start = floor((in.period - dash) / 2.0);
+            return (within >= start && within < start + dash) ? 1.0 : 0.0;
+        }
+        default:
+            return 1.0;
+    }
+}
+
+fragment float4 line_fragment(LineFragment in [[stage_in]]) {
+    return in.color * line_coverage(in);
 }

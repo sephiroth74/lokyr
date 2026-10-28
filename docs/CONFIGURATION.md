@@ -283,7 +283,7 @@ Whether the colors that programs give the text and its background show.
 |---|---|
 | `true`, `false` | `true` |
 
-- `false` draws all the text in the default colors, the theme's: the sixteen colors of the palette, the 256 and the RGB ones that programs set, for the text and its background, take the default text's and background's.
+- `false` draws all the text in the default colors, the theme's: the sixteen colors of the palette, the 256 and the RGB ones that programs set, for the text and its background, take the default text's and background's. An underline's own color, which programs set with SGR 58, as Neovim does for its diagnostics, takes the text's.
 - Inverse text still swaps its colors, and the selection and the cursor keep theirs.
 
 ### `bold-is-bright`
