@@ -25,7 +25,9 @@ use anyhow::{Context, Result, bail};
 /// The bundle's identifier, which follows the terminal's name.
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
 
-/// The bundle's name, and the app's in the Finder and the Dock.
+/// The bundle's name, and the app's in the Finder and the Dock, and its
+/// binary's in the bundle, which names its process, as Activity Monitor
+/// shows it.
 const NAME: &str = "Lokyr";
 
 /// The binary, as the app's crate names it.
@@ -115,8 +117,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         fs::create_dir_all(directory).with_context(|| format!("making {}", directory.display()))?;
     }
     let binary = root.join("target/release").join(EXECUTABLE);
-    fs::copy(&binary, macos.join(EXECUTABLE))
-        .with_context(|| format!("copying {}", binary.display()))?;
+    fs::copy(&binary, macos.join(NAME)).with_context(|| format!("copying {}", binary.display()))?;
     crate::terminfo::compile(
         &root.join(crate::terminfo::SOURCE),
         &resources.join("terminfo"),
@@ -127,7 +128,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         let directory = resources.join(format!("{language}.lproj"));
         fs::create_dir_all(&directory)
             .with_context(|| format!("making {}", directory.display()))?;
-        fs::write(directory.join("InfoPlist.strings"), plist(usages, false))
+        fs::write(directory.join("InfoPlist.strings"), localized_plist(usages))
             .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
     }
     let version = env!("CARGO_PKG_VERSION");
@@ -241,7 +242,7 @@ fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>)
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
-        ("CFBundleExecutable", EXECUTABLE.to_owned()),
+        ("CFBundleExecutable", NAME.to_owned()),
         ("CFBundleIdentifier", IDENTIFIER.to_owned()),
         ("CFBundleInfoDictionaryVersion", "6.0".to_owned()),
         ("CFBundleName", NAME.to_owned()),
@@ -308,6 +309,18 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
     fs::copy(&default, resources.join("AppIcon.icns"))
         .with_context(|| format!("copying {}", default.display()))?;
     Ok(())
+}
+
+/// A language's `InfoPlist.strings`: its usage strings, `usages`, and the
+/// app's name, the same in every language, which the Finder, the Dock and
+/// the menu bar take from the language's strings once the bundle has them.
+fn localized_plist(usages: &[(String, String)]) -> String {
+    let mut pairs = vec![
+        ("CFBundleDisplayName".to_owned(), NAME.to_owned()),
+        ("CFBundleName".to_owned(), NAME.to_owned()),
+    ];
+    pairs.extend(usages.iter().cloned());
+    plist(&pairs, false)
 }
 
 /// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
@@ -431,7 +444,7 @@ mod tests {
         let plist = info_plist("1.2.3", &catalogs()).unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
-            ("CFBundleExecutable", "lokyr"),
+            ("CFBundleExecutable", "Lokyr"),
             ("CFBundleShortVersionString", "1.2.3"),
             ("LSMinimumSystemVersion", "26.0"),
             ("CFBundleIconFile", "AppIcon"),
@@ -489,6 +502,23 @@ mod tests {
             .any(|line| line.contains("flags=") && line.contains("runtime"));
         assert!(runtime, "{flags}");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Each language's strings name the app as the bundle does.
+    #[test]
+    fn a_language_s_strings_name_the_app() {
+        let usages = vec![(
+            "NSCameraUsageDescription".to_owned(),
+            "Un programma vuole la fotocamera.".to_owned(),
+        )];
+        let strings = localized_plist(&usages);
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            assert!(
+                strings.contains(&format!("<key>{key}</key>\n\t<string>Lokyr</string>")),
+                "{strings}"
+            );
+        }
+        assert!(strings.contains("Un programma vuole la fotocamera."));
     }
 
     /// The plist reads back as macOS reads it, whole, with each key's value.
