@@ -458,6 +458,7 @@ Which width tables the terminal counts characters by, to place them in their cel
 
 - `"current"` follows the tables of the Unicode version that Lokyr knows, as current programs do: most emoji take two cells.
 - `"8"` follows those of Unicode 8, for old programs that count emoji as one cell.
+- vim counts a character that the emoji's variation selector makes wide, as ❤️ or ✔️, as one cell: as it writes the next character on the emoji's second cell, the emoji goes, and vim shows nothing in its place. With `"8"` the two count alike, but every emoji takes one cell, everywhere.
 - It applies to the text that comes after the change, in the open windows too.
 
 ### `ambiguous-width`
