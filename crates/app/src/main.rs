@@ -134,9 +134,22 @@ fn check(_: &Config) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs the application until it quits.
+/// Runs the application until it quits: started through a link to its
+/// bundle's binary, from the binary's own path, as its bundle.
 #[cfg(target_os = "macos")]
 fn run() -> ExitCode {
+    use std::os::unix::process::CommandExt;
+
+    if let Some(executable) = environment::bundle_executable() {
+        // Returns only if the binary does not start.
+        let error = std::process::Command::new(&executable)
+            .args(std::env::args_os().skip(1))
+            .exec();
+        eprintln!(
+            "lokyr: {} does not start, {error}; the app runs outside its bundle",
+            executable.display()
+        );
+    }
     let (mut config, path) = config();
     let drawing = match app::Drawing::new(config.font.clone()) {
         Ok(drawing) => Some(drawing),

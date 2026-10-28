@@ -34,6 +34,40 @@ fn resources_of(executable: &Path) -> Option<PathBuf> {
     resources.is_dir().then_some(resources)
 }
 
+/// The bundle's executable that the app's binary is a link to, when the
+/// path that started the app is not in a bundle itself, as a package
+/// manager's link in its `bin`: macOS takes the main bundle, and the
+/// identifier that the notifications need, from that path, so that the app
+/// runs as its bundle only from the bundle's own.
+pub(crate) fn bundle_executable() -> Option<PathBuf> {
+    linked_bundle_executable(&std::env::current_exe().ok()?)
+}
+
+/// The real path of `executable` when it is a bundle's, and `executable`,
+/// the path that started the app, is not.
+fn linked_bundle_executable(executable: &Path) -> Option<PathBuf> {
+    if in_bundle(executable) {
+        return None;
+    }
+    let real = fs::canonicalize(executable).ok()?;
+    in_bundle(&real).then_some(real)
+}
+
+/// Whether `executable` is a bundle's: in the `Contents/MacOS` of a
+/// directory named `.app`, whose `Contents` has its `Info.plist`.
+fn in_bundle(executable: &Path) -> bool {
+    let Some(binaries) = executable.parent() else {
+        return false;
+    };
+    let Some(contents) = binaries.parent() else {
+        return false;
+    };
+    binaries.file_name() == Some("MacOS".as_ref())
+        && contents.file_name() == Some("Contents".as_ref())
+        && contents.parent().and_then(Path::extension) == Some("app".as_ref())
+        && contents.join("Info.plist").is_file()
+}
+
 /// The directory of the terminal's own terminfo entry, `xterm-lokyr`: the
 /// bundle's, in its `resources`, or, outside a bundle, as `cargo run`
 /// starts the app, the source tree's, which `cargo xtask terminfo`
@@ -199,6 +233,67 @@ mod tests {
         let loose = bin.join("other");
         fs::write(&loose, "").unwrap();
         assert_eq!(resources_of(&loose), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_link_to_the_bundle_s_binary_gives_the_binary_s_own_path() {
+        let root = std::env::temp_dir().join(format!("lokyr-linked-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let contents = root.join("Lokyr.app").join("Contents");
+        fs::create_dir_all(contents.join("MacOS")).unwrap();
+        fs::write(contents.join("Info.plist"), "").unwrap();
+        let binary = contents.join("MacOS").join("Lokyr");
+        fs::write(&binary, "").unwrap();
+        // Started from the bundle, it stays.
+        assert_eq!(linked_bundle_executable(&binary), None);
+        // Through a link from a package manager's `bin`, the bundle's.
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let link = bin.join("lokyr");
+        std::os::unix::fs::symlink(&binary, &link).unwrap();
+        let real = fs::canonicalize(&binary).unwrap();
+        assert_eq!(linked_bundle_executable(&link), Some(real));
+        // Through a link to a directory above the bundle, the path is the
+        // bundle's already.
+        let apps = root.join("apps");
+        std::os::unix::fs::symlink(&root, &apps).unwrap();
+        let through = apps.join("Lokyr.app/Contents/MacOS/Lokyr");
+        assert_eq!(linked_bundle_executable(&through), None);
+        // A binary outside a bundle, and a link to one, have none.
+        let loose = bin.join("other");
+        fs::write(&loose, "").unwrap();
+        std::os::unix::fs::symlink(&loose, bin.join("other-link")).unwrap();
+        assert_eq!(linked_bundle_executable(&loose), None);
+        assert_eq!(linked_bundle_executable(&bin.join("other-link")), None);
+        // Nor does a link into what is no bundle: a binary of a directory
+        // without its `Info.plist`, not named `.app`, or out of the
+        // bundle's `Contents/MacOS`.
+        let layouts = [
+            ("Bare.app/Contents/MacOS", None),
+            ("Lokyr.bundle/Contents/MacOS", Some("Lokyr.bundle/Contents")),
+            (
+                "Resources.app/Contents/Resources",
+                Some("Resources.app/Contents"),
+            ),
+            ("Other.app/Other/MacOS", Some("Other.app/Other")),
+        ];
+        for (binaries, plist) in layouts {
+            let binaries = root.join(binaries);
+            fs::create_dir_all(&binaries).unwrap();
+            if let Some(plist) = plist {
+                fs::write(root.join(plist).join("Info.plist"), "").unwrap();
+            }
+            fs::write(binaries.join("Lokyr"), "").unwrap();
+            let link = bin.join(binaries.to_string_lossy().replace('/', "-"));
+            std::os::unix::fs::symlink(binaries.join("Lokyr"), &link).unwrap();
+            assert_eq!(
+                linked_bundle_executable(&link),
+                None,
+                "{}",
+                binaries.display()
+            );
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
