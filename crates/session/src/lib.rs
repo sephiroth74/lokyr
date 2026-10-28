@@ -195,6 +195,12 @@ impl Session {
         self.pty.foreground_program()
     }
 
+    /// The working directory of the program in the terminal's foreground,
+    /// as [`Pty::foreground_directory`] gives it.
+    pub fn foreground_directory(&self) -> Option<std::path::PathBuf> {
+        self.pty.foreground_directory()
+    }
+
     /// How the program ended, if it has.
     pub fn exit(&mut self) -> io::Result<Option<Exit>> {
         self.pty.try_wait()

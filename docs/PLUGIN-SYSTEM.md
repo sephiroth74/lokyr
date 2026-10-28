@@ -278,6 +278,18 @@ type Cx = {
     terminal: {
         -- Requires `terminal-read`; returns a `denied` error without it.
         read_lines: (pane: PaneId, start: number, count: number) -> ({ Line }?, Error?),
+        -- The logical line of a view's row, its wrapped rows joined, with each character's cell.
+        line_text: (pane: PaneId, row: number) -> (LineText?, Error?),
+        -- The target of the OSC 8 link at a view's cell.
+        link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
+    },
+    process: {
+        -- Requires `process-read`: the directory of the program in the pane's foreground.
+        working_directory: (pane: PaneId) -> (string?, Error?),
+    },
+    system: {
+        -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, or a path from `/` or `~`.
+        open: (target: string) -> (boolean, Error?),
     },
     search: {
         -- Runs in the background: results arrive as `search-progress` events.
@@ -399,6 +411,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | Plugin | Role | Phase |
 |---|---|---|
 | `core-actions` | Copy, paste, select all, scrolling, font size, new windows | F2 |
+| `links` | ⌘-click opens a link, a URL or a path of the text; later hints, `file:line` in the editor and smart selection | F2, F5c |
 | `tabs` | iTerm2-style tab bar and tab commands | F3 |
 | `splits` | Split commands, dividers and interaction | F3 |
 | `search` | Find bar and search commands | F3 |
@@ -410,7 +423,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
 | `shell-integration`, `blocks` | Prompt marks, command + output blocks | F5a |
 | `tmux-cc`, `quick-terminal`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
-| `hints`, `images` | Hints, URLs, inline images | F5c |
+| `images` | Inline images | F5c |
 
 **Rules** (details in [ARCHITECTURE.md](ARCHITECTURE.md#dependency-rules)):
 - depend only on `plugin-sdk`;
@@ -428,6 +441,7 @@ name = "default"
 
 [plugins]
 core-actions    = { path = "../plugins/core-actions" }
+links           = { path = "../plugins/links" }
 tabs            = { path = "../plugins/tabs" }
 splits          = { path = "../plugins/splits" }
 search          = { path = "../plugins/search" }

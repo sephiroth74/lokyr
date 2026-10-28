@@ -206,6 +206,18 @@ impl<'a> ListRow<'a> {
             _ => &[],
         }
     }
+    /// The target of the link, OSC 8's, that the cell at column `x` is part
+    /// of, if it is one's: by the cell's own mark, as a cold page keeps no
+    /// cells of its own.
+    pub fn link(self, x: u16) -> Option<&'a [u8]> {
+        if x >= self.page.cols() || !self.cell(x).has_hyperlink() {
+            return None;
+        }
+        let key = Page::key(self.page.cell_index(self.row, x));
+        let id = self.page.hyperlinks.cell(key)?;
+        Some(self.page.hyperlinks.get(id).uri)
+    }
+
     /// The row's page, warm or cold, and its cells as the page keeps them:
     /// on a cold page, those up to its last that is not empty.
     pub(crate) fn parts(self) -> (&'a Page, &'a [Cell]) {

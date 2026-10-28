@@ -33,6 +33,17 @@ pub struct Binding {
     pub when: Option<String>,
 }
 
+/// The text of a logical line of a pane's view, its rows that soft-wrap
+/// joined, with the cell of each of its characters.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LineText {
+    /// The text: a cell without a character is a space.
+    pub text: String,
+    /// The cell of each of the text's characters, in order: its column,
+    /// and its row from the view's first, which can be above the view.
+    pub cells: Vec<(u16, i64)>,
+}
+
 /// How a pane's view scrolls through its scrollback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scroll {
@@ -83,6 +94,24 @@ pub trait HostApi {
 
     /// The text of `pane`'s selection, if it has one.
     fn selection_text(&mut self, pane: PaneId) -> Result<Option<String>, Error>;
+
+    /// The text of the logical line that `pane`'s view row `row` is in,
+    /// with each character's cell; `None` past the rows.
+    fn line_text(&mut self, pane: PaneId, row: u16) -> Result<Option<LineText>, Error>;
+
+    /// The target of the OSC 8 link that `pane`'s view cell at `column` of
+    /// `row` is part of, if it is one's.
+    fn link_at(&mut self, pane: PaneId, column: u16, row: u16) -> Result<Option<String>, Error>;
+
+    /// The working directory of the program in `pane`'s foreground, as a
+    /// shell's at its prompt.
+    fn working_directory(&mut self, pane: PaneId) -> Result<Option<String>, Error>;
+
+    /// Opens `target`, once this call returns, with the system's handler:
+    /// a URL of `http`, `https`, `mailto` or `file`, or a path, absolute or
+    /// from `~`, a file in its application and a directory in the file
+    /// manager. Another scheme, or a relative path, fails.
+    fn open(&mut self, target: &str) -> Result<(), Error>;
 
     /// Selects everything of `pane`: its scrollback and its screen.
     fn select_all(&mut self, pane: PaneId) -> Result<(), Error>;

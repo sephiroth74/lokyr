@@ -21,6 +21,7 @@ luau-plugins = ["dep:lokyr-plugin-host-luau"]
 [dependencies]
 lokyr-core-actions.workspace = true
 lokyr-kernel.workspace = true
+lokyr-links.workspace = true
 lokyr-platform-core.workspace = true
 lokyr-plugin-host-luau = { workspace = true, optional = true }
 lokyr-pty.workspace = true

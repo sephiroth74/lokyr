@@ -424,6 +424,29 @@ impl Pane {
         }
     }
 
+    /// The text of the logical line that the view's row `row` is in, with
+    /// each character's cell, as [`Terminal::line_text`] gives it.
+    pub fn line_text(&self, row: u16) -> Option<(String, Vec<(u16, i64)>)> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().line_text(row))
+    }
+
+    /// The target of the OSC 8 link of the view's cell at `column` of
+    /// `row`.
+    pub fn link_at(&self, column: u16, row: u16) -> Option<String> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().link_at(column, row))
+    }
+
+    /// The working directory of the program in the terminal's foreground,
+    /// once the program runs.
+    pub fn working_directory(&self) -> Option<PathBuf> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        session.foreground_directory()
+    }
+
     /// Selects the scrollback and the screen, whole.
     pub fn select_all(&self) {
         if let Some(session) = &self.session {

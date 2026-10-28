@@ -6,7 +6,8 @@
 //! them, as `ctrl+a>c`. A combination names its modifiers, `cmd`, `ctrl`,
 //! `alt` or `opt`, and `shift`, and its key: the character that the key
 //! types without any modifier, Shift neither, as `]` in `cmd+shift+]`; a
-//! named key, as `enter` or `f5`; or a step of the wheel, `wheel-up`, alone.
+//! named key, as `enter` or `f5`; or a step of the wheel, `wheel-up`, or the
+//! left button's click, `click`, alone.
 //! A key matches a binding of its layout's character, or else of the US
 //! layout's character at its place, so that the bindings reach the keys of
 //! any layout.
@@ -41,6 +42,9 @@ pub enum Press {
     Named(Named),
     /// A step of the wheel.
     Wheel(Direction),
+    /// The left button's click, whose command takes the cell's `column`
+    /// and `row`.
+    Click,
 }
 
 /// A key that types no character, or whose character is a name.
@@ -122,6 +126,9 @@ const NAMES: [(&str, Named); 16] = [
     ("esc", Named::Escape),
 ];
 
+/// The left button's click, as bindings write it.
+const CLICK: &str = "click";
+
 /// The steps of the wheel, as bindings write them.
 const WHEELS: [(&str, Direction); 4] = [
     ("wheel-up", Direction::Up),
@@ -181,6 +188,9 @@ fn press(key: &str) -> Option<Press> {
     if let Some(&(_, direction)) = WHEELS.iter().find(|(name, _)| *name == lower) {
         return Some(Press::Wheel(direction));
     }
+    if lower == CLICK {
+        return Some(Press::Click);
+    }
     let number: u8 = lower.strip_prefix('f')?.parse().ok()?;
     (1..=35)
         .contains(&number)
@@ -217,12 +227,14 @@ impl fmt::Display for Combo {
                     .map_or("", |(name, _)| *name);
                 f.write_str(name)
             }
+            Press::Click => f.write_str(CLICK),
         }
     }
 }
 
 /// The keys of a binding: a combination, or a sequence of them, each
-/// pressed after the one before; a step of the wheel only alone.
+/// pressed after the one before; a step of the wheel and a click only
+/// alone.
 pub fn parse_keys(text: &str) -> Result<Vec<Combo>, String> {
     // A `>` key, as in `shift+>`, ends a part rather than parting two.
     let mut parts = Vec::new();
@@ -246,6 +258,10 @@ pub fn parse_keys(text: &str) -> Result<Vec<Combo>, String> {
         return Err(format!(
             "a step of the wheel takes no sequence, in `{text}`"
         ));
+    }
+    let click = combos.iter().any(|combo| combo.press == Press::Click);
+    if click && combos.len() > 1 {
+        return Err(format!("a click takes no sequence, in `{text}`"));
     }
     Ok(combos)
 }
@@ -607,6 +623,15 @@ impl Pressed {
             .map(|character| Press::Char(character.to_lowercase().next().unwrap_or(character)))
             .filter(|&us| us != press);
         Some(Self { mods, press, us })
+    }
+
+    /// The left button's click with `mods`.
+    pub fn click(mods: Mods) -> Self {
+        Self {
+            mods,
+            press: Press::Click,
+            us: None,
+        }
     }
 
     /// A step of the wheel `wheel`, with `mods`.

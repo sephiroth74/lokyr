@@ -226,6 +226,52 @@ impl Pty {
     pub fn foreground_program(&self) -> Option<String> {
         program_name(self.foreground_process_group()?)
     }
+
+    /// The working directory of the program in the terminal's foreground:
+    /// its process group's first process's, as a shell's at its prompt,
+    /// or a job's that it runs; none as [`Pty::foreground_program`] has none.
+    pub fn foreground_directory(&self) -> Option<PathBuf> {
+        working_directory(self.foreground_process_group()?)
+    }
+}
+
+/// The working directory of the process `pid`.
+#[cfg(target_os = "macos")]
+fn working_directory(pid: u32) -> Option<PathBuf> {
+    let pid = libc::c_int::try_from(pid).ok()?;
+    // SAFETY: the struct is plain data, which zeros make valid.
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>();
+    // SAFETY: `proc_pidinfo` writes at most `size` bytes into `info`, a
+    // struct of that size, and returns how many it wrote.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            (&raw mut info).cast(),
+            libc::c_int::try_from(size).ok()?,
+        )
+    };
+    if usize::try_from(written).ok()? < size {
+        return None;
+    }
+    // The path, which ends at its first nul, in the rows that libc gives it.
+    let path: Vec<u8> = info
+        .pvi_cdir
+        .vip_path
+        .iter()
+        .flatten()
+        .map(|&byte| byte as u8)
+        .take_while(|&byte| byte != 0)
+        .collect();
+    (!path.is_empty()).then(|| PathBuf::from(OsString::from_vec(path)))
+}
+
+/// The working directory of the process `pid`.
+#[cfg(not(target_os = "macos"))]
+fn working_directory(pid: u32) -> Option<PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
 }
 
 /// The file name of the executable of the process `pid`.

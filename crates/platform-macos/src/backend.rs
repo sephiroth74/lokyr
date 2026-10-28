@@ -23,7 +23,7 @@ use crate::menu::MenuTarget;
 use crate::notify::Notifier;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
-use crate::{alert, appearance, menu, timer};
+use crate::{alert, appearance, menu, open, timer};
 
 /// An alert that is open.
 struct OpenAlert {
@@ -378,6 +378,10 @@ impl Platform for Backend {
 
     fn play_alert_sound(&mut self) {
         NSBeep();
+    }
+
+    fn open(&mut self, target: &str) -> Result<(), Error> {
+        open::open(target)
     }
 
     fn notify(&mut self, window: WindowId, title: &str, body: &str) {

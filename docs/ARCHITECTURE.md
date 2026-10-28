@@ -125,9 +125,9 @@ lokyr/
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: kernel + backends for the target + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
-│   ├── core-actions/ tabs/ splits/ search/ themes/ theme-iterm2/
+│   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/
 │   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
-│   └── (F5) shell-integration/ blocks/ tmux-cc/ quick-terminal/ triggers/ hints/ images/ …
+│   └── (F5) shell-integration/ blocks/ tmux-cc/ quick-terminal/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml
 ├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
 ├── registry/              registry-server (v1) + index specification

@@ -351,3 +351,41 @@ fn the_wheel_takes_its_bindings() {
         Resolved::Program { before: 0 }
     );
 }
+
+#[test]
+fn a_click_binds_alone_with_its_modifiers() {
+    let combos = parse_keys("cmd+click").unwrap();
+    assert_eq!(combos.len(), 1);
+    assert_eq!(combos[0].press, Press::Click);
+    assert_eq!(combos[0].to_string(), "cmd+click");
+    assert_eq!(parse_keys("CLICK").unwrap()[0].press, Press::Click);
+    assert!(
+        parse_keys("ctrl+a>click")
+            .unwrap_err()
+            .contains("a click takes no sequence")
+    );
+    assert!(parse_keys("cmd+click>a").is_err());
+    // It runs from the keymap, with its modifiers only.
+    let keymap = Keymap::new(vec![Binding {
+        keys: parse_keys("cmd+click").unwrap(),
+        invocation: Invocation {
+            command: "links.open".to_owned(),
+            args: Args::new(),
+        },
+        when: None,
+    }]);
+    let mut resolver = Resolver::new();
+    let cmd = Mods {
+        cmd: true,
+        ..Mods::default()
+    };
+    let context = Context::new([]);
+    assert!(matches!(
+        resolver.press(&keymap, Pressed::click(cmd), &context),
+        Resolved::Run(invocation) if invocation.command == "links.open"
+    ));
+    assert!(matches!(
+        resolver.press(&keymap, Pressed::click(Mods::default()), &context),
+        Resolved::Program { .. }
+    ));
+}

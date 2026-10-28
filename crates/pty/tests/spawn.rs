@@ -429,6 +429,35 @@ fn the_program_in_the_foreground_has_its_name() {
 }
 
 #[test]
+fn the_program_in_the_foreground_has_its_directory() {
+    // The shell, and then a job of its own group, in another directory.
+    let bash = Program::command(
+        "/bin/bash",
+        [
+            "-c",
+            "cd /usr; stty -echo; echo ready; set -m; (cd /tmp && sleep 30)",
+        ],
+    );
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    let start = std::time::Instant::now();
+    let real = |path: &str| std::fs::canonicalize(path).unwrap();
+    while pty
+        .foreground_directory()
+        .map(|dir| std::fs::canonicalize(dir).unwrap())
+        != Some(real("/tmp"))
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            pty.foreground_directory()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
 fn dropping_the_terminal_ends_its_readers_and_writers() {
     // A program that ignores SIGHUP and reads nothing, so that its input
     // fills up.

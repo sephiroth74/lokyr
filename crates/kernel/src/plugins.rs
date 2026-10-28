@@ -36,6 +36,8 @@ pub enum Request {
     Quit,
     /// Give the text a size, in points; with `None`, the config's.
     FontSize(Option<f32>),
+    /// Open a URL, or an absolute path, with the system's handler.
+    Open(String),
     /// Ask the user to confirm a paste of `text` into `pane`, whose
     /// program takes its line breaks as Return.
     ConfirmPaste {
@@ -311,6 +313,43 @@ fn disable(state: &mut State, registry: &mut Registry, bindings_changed: &mut bo
     }
 }
 
+/// The schemes of the URLs that a plugin can open: none that starts another
+/// application on the user's behalf.
+const SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
+
+/// What opening `target` opens: a URL of one of [`SCHEMES`], or a path,
+/// absolute or from `~`, which becomes the home directory.
+fn opening(target: &str) -> Result<String, String> {
+    if target.starts_with('/') {
+        return Ok(target.to_owned());
+    }
+    if target == "~" || target.starts_with("~/") {
+        let home = std::env::home_dir().ok_or("there is no home directory")?;
+        return Ok(format!("{}{}", home.to_string_lossy(), &target[1..]));
+    }
+    let scheme = target
+        .split_once(':')
+        .map(|(scheme, _)| scheme)
+        .filter(|scheme| {
+            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        });
+    match scheme {
+        Some(scheme) if SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) => {
+            Ok(target.to_owned())
+        }
+        Some(scheme) => Err(format!(
+            "`{scheme}:` does not open: only {}",
+            SCHEMES.join(", ")
+        )),
+        None => Err(format!(
+            "`{target}` is neither a URL nor a path that is absolute or from `~`"
+        )),
+    }
+}
+
 /// The host of one plugin's call.
 struct Host<'h, 'c> {
     state: &'h mut State,
@@ -395,6 +434,35 @@ impl HostApi for Host<'_, '_> {
 
     fn selection_text(&mut self, pane: host::PaneId) -> Result<Option<String>, Error> {
         Ok(self.pane(pane)?.selection_text())
+    }
+
+    fn line_text(&mut self, pane: host::PaneId, row: u16) -> Result<Option<host::LineText>, Error> {
+        Ok(self
+            .pane(pane)?
+            .line_text(row)
+            .map(|(text, cells)| host::LineText { text, cells }))
+    }
+
+    fn link_at(
+        &mut self,
+        pane: host::PaneId,
+        column: u16,
+        row: u16,
+    ) -> Result<Option<String>, Error> {
+        Ok(self.pane(pane)?.link_at(column, row))
+    }
+
+    fn working_directory(&mut self, pane: host::PaneId) -> Result<Option<String>, Error> {
+        Ok(self
+            .pane(pane)?
+            .working_directory()
+            .map(|directory| directory.to_string_lossy().into_owned()))
+    }
+
+    fn open(&mut self, target: &str) -> Result<(), Error> {
+        let target = opening(target).map_err(|message| Error::new(Code::Failed, message))?;
+        self.requests.push(Request::Open(target));
+        Ok(())
     }
 
     fn select_all(&mut self, pane: host::PaneId) -> Result<(), Error> {

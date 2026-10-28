@@ -1,0 +1,16 @@
+[package]
+name = "lokyr-links"
+description = "Built-in plugin that opens the links, the URLs and the paths of a pane's text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+
+[lints]
+workspace = true

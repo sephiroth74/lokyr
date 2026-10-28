@@ -1,6 +1,6 @@
 //! The plugin against a host of the tests', which records what it asks.
 
-use lokyr_plugin_sdk::host::{HostApi, PaneId, Scroll, WindowId};
+use lokyr_plugin_sdk::host::{HostApi, LineText, PaneId, Scroll, WindowId};
 
 use super::*;
 
@@ -52,6 +52,23 @@ impl HostApi for Host {
 
     fn selection_text(&mut self, _: PaneId) -> Result<Option<String>, Error> {
         Ok(self.selection.clone())
+    }
+
+    fn line_text(&mut self, _: PaneId, _: u16) -> Result<Option<LineText>, Error> {
+        Ok(None)
+    }
+
+    fn link_at(&mut self, _: PaneId, _: u16, _: u16) -> Result<Option<String>, Error> {
+        Ok(None)
+    }
+
+    fn working_directory(&mut self, _: PaneId) -> Result<Option<String>, Error> {
+        Ok(None)
+    }
+
+    fn open(&mut self, target: &str) -> Result<(), Error> {
+        self.calls.push(format!("open {target}"));
+        Ok(())
     }
 
     fn select_all(&mut self, pane: PaneId) -> Result<(), Error> {

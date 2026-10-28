@@ -89,6 +89,8 @@ pub struct Fake {
     notifications: Vec<FakeNotification>,
     /// The windows that the app asked to bring forward, from the first.
     focus_requests: Vec<WindowId>,
+    /// The URLs and the paths that the app opened, from the first.
+    opened: Vec<String>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -122,6 +124,7 @@ impl Fake {
             alert_sounds: 0,
             notifications: Vec::new(),
             focus_requests: Vec::new(),
+            opened: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -311,6 +314,11 @@ impl Fake {
         &self.focus_requests
     }
 
+    /// The URLs and the paths that the app opened, from the first.
+    pub fn opened(&self) -> &[String] {
+        &self.opened
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -490,5 +498,15 @@ impl Platform for Fake {
         if let Some(state) = self.windows.get_mut(&window) {
             state.translucent = backdrop;
         }
+    }
+
+    /// Opens nothing, and records `target`: a path that does not exist
+    /// fails, as a backend's does.
+    fn open(&mut self, target: &str) -> Result<(), Error> {
+        if target.starts_with('/') && !Path::new(target).exists() {
+            return Err(Error::Open(target.to_owned(), "no such file".to_owned()));
+        }
+        self.opened.push(target.to_owned());
+        Ok(())
     }
 }

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
-use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
+use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry, Value};
 use lokyr_kernel::config::{self, AppConfig, ClipboardRead, Config, ConfirmPaste};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
@@ -430,6 +430,7 @@ impl App {
     pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
         let mut plugins = Plugins::new();
         plugins.add("core-actions", Box::new(lokyr_core_actions::CoreActions));
+        plugins.add("links", Box::new(lokyr_links::Links));
         let keymap = Keymap::with_config(bindings(&plugins), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
@@ -636,6 +637,15 @@ impl App {
         let Some(button) = mouse::button(button) else {
             return;
         };
+        // A press that a binding takes starts no selection, and reaches no
+        // program, which then learns of no release.
+        if button == lokyr_vt_core::input::MouseButton::Left
+            && pressed
+            && clicks <= 1
+            && self.click(platform, window, position, mods)
+        {
+            return;
+        }
         if button == lokyr_vt_core::input::MouseButton::Left && self.selects(window, pressed, mods)
         {
             if pressed {
@@ -676,6 +686,47 @@ impl App {
             state.mouse.moved(pointer, true);
             pane.mouse(&mouse_event(MouseAction::Release(button), mods, pointer));
         }
+    }
+
+    /// Runs the command that the keymap binds the left button's click with
+    /// `mods` to, as it goes down at `position` over `window`, which has the
+    /// focus, before the selection and the program: the column and the row
+    /// of the cell under the pointer, in the view, become its `column` and
+    /// `row` arguments, if it takes them. Whether a command was bound.
+    fn click(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+        mods: Modifiers,
+    ) -> bool {
+        if platform.focused_window() != Some(window) {
+            return false;
+        }
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return false;
+        };
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        let context = context(self.workspace.pane(state.pane));
+        let Resolved::Run(mut invocation) =
+            Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
+        else {
+            return false;
+        };
+        if let Some(command) = self.commands.get(&invocation.command) {
+            for (name, value) in [("column", pointer.col), ("row", pointer.row)] {
+                if command.params.iter().any(|param| param.name == name) {
+                    invocation
+                        .args
+                        .entry(name.to_owned())
+                        .or_insert(Value::Integer(i64::from(value)));
+                }
+            }
+        }
+        self.run(platform, &invocation.command, invocation.args);
+        true
     }
 
     /// Whether the left button's press, `pressed`, or its release, with
@@ -1253,6 +1304,11 @@ impl App {
                 Request::Quit => self.ask_quit(platform, false),
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
+                Request::Open(target) => {
+                    if let Err(error) = platform.open(&target) {
+                        eprintln!("lokyr: {error}");
+                    }
+                }
             }
         }
         for &window in self.windows.keys() {
@@ -4765,6 +4821,62 @@ mod tests {
         let (mut fake, mut app, window) = started_with(program);
         fake.send(&mut app, window, WindowEvent::Focused(true));
         (fake, app, window)
+    }
+
+    #[test]
+    fn a_cmd_click_opens_the_link_under_it_rather_than_selecting() {
+        let (mut fake, mut app, window) = focused_with(shell(concat!(
+            "stty raw -echo; cd /usr; printf 'https://lokyr.dev/x bin/\\r\\n",
+            "\\033]8;;https://lokyr.dev/osc\\033\\\\here\\033]8;;\\033\\\\\\r\\n'; ",
+            "echo ready; cat -v"
+        )));
+        let cmd_click = |fake: &mut Fake, app: &mut App, col, row| {
+            fake.send(app, window, click(true, cell(col, row), CMD, 1));
+            fake.send(app, window, click(false, cell(col, row), CMD, 1));
+        };
+        // A URL, a path from the program's directory, an OSC 8 link, and
+        // nothing on a space.
+        for (col, row) in [(2, 0), (21, 0), (1, 1), (10, 2)] {
+            cmd_click(&mut fake, &mut app, col, row);
+        }
+        assert_eq!(
+            fake.opened(),
+            ["https://lokyr.dev/x", "/usr/bin", "https://lokyr.dev/osc"]
+        );
+        assert_eq!(selected_text(&app, window), None);
+        assert!(app.windows[&window].selecting.is_none());
+        // A window without the focus takes the click as a click.
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        cmd_click(&mut fake, &mut app, 2, 0);
+        assert_eq!(fake.opened().len(), 3);
+        assert!(app.windows[&window].selecting.is_some());
+    }
+
+    #[test]
+    fn a_click_runs_the_command_that_the_config_binds_it_to() {
+        let mut config = Config::parse(
+            "[keys]\n\"alt+click\" = \"window.new\"\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        config.window = unpadded().window;
+        let mut fake = Fake::default();
+        let mut app = app(config, shell("echo ready; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let alt = Modifiers {
+            left_alt: true,
+            ..Modifiers::NONE
+        };
+        // Without the arguments that it does not take; a double click is
+        // not one.
+        fake.send(&mut app, window, click(true, cell(1, 0), alt, 1));
+        assert_eq!(fake.windows().count(), 2);
+        fake.send(&mut app, window, click(false, cell(1, 0), alt, 1));
+        fake.send(&mut app, window, click(true, cell(1, 0), alt, 2));
+        fake.send(&mut app, window, click(false, cell(1, 0), alt, 2));
+        assert_eq!(fake.windows().count(), 2);
     }
 
     /// The app without padding, of the config file `text`, its window

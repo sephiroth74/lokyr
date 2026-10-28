@@ -481,6 +481,62 @@ impl Terminal {
         self.take_selection((start, end), shape);
     }
 
+    /// The text of the logical line that the view's row `row` is in, its
+    /// rows that soft-wrap joined, with the cell of each of its characters,
+    /// by its column and its row from the view's first: a wide character's
+    /// first cell, each of a cluster's characters its cell's, and a cell
+    /// without a character a space. `None` past the list.
+    pub fn line_text(&self, row: u16) -> Option<(String, Vec<(u16, i64)>)> {
+        let top = self.view_top();
+        let rows = &self.screen().rows;
+        let index = top + usize::from(row);
+        if index >= rows.total_rows() {
+            return None;
+        }
+        let (first, last) = line(rows, index);
+        let (mut text, mut cells) = (String::new(), Vec::new());
+        for (at, list_row) in (first..=last).zip(rows.rows_from(first)) {
+            // Fewer rows than an `i64` holds.
+            let view_row = at as i64 - top as i64;
+            let end = list_row.cols() - 1;
+            for x in 0..list_row.cols() {
+                let cell = list_row.cell(x);
+                match cell.width() {
+                    Width::SpacerTail => continue,
+                    Width::SpacerHead if x == end => continue,
+                    _ => {}
+                }
+                match cell.content() {
+                    Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
+                        text.push(' ');
+                        cells.push((x, view_row));
+                    }
+                    Content::Char(character) => {
+                        text.push(character);
+                        cells.push((x, view_row));
+                    }
+                    Content::Grapheme(character) => {
+                        for &character in std::iter::once(&character).chain(list_row.grapheme(x)) {
+                            text.push(character);
+                            cells.push((x, view_row));
+                        }
+                    }
+                }
+            }
+        }
+        Some((text, cells))
+    }
+
+    /// The target of the OSC 8 link that the view's cell at `column` of
+    /// `row` is part of, if it is one's.
+    pub fn link_at(&self, column: u16, row: u16) -> Option<String> {
+        let rows = &self.screen().rows;
+        let list_row = row_at(rows, self.view_top() + usize::from(row))?;
+        list_row
+            .link(column)
+            .map(|uri| String::from_utf8_lossy(uri).into_owned())
+    }
+
     /// Selects every cell of the active screen and of its scrollback, to
     /// the last row that shows something, or the cursor's, which is later:
     /// the empty rows below them are left out.
@@ -833,6 +889,55 @@ mod tests {
                 .count(),
             8
         );
+    }
+
+    #[test]
+    fn a_line_s_text_joins_its_wraps_with_each_character_s_cell() {
+        // `ab日cd` and an `e` with its accent, wrapped in rows of 4.
+        let terminal = fed(4, 4, "ab日cde\u{301}\r\nnext");
+        let (text, cells) = terminal.line_text(1).unwrap();
+        // The second row's last cell is empty.
+        assert_eq!(text, "ab日cde\u{301} ");
+        assert_eq!(
+            cells,
+            [
+                (0, 0),
+                (1, 0),
+                (2, 0),
+                (0, 1),
+                (1, 1),
+                (2, 1),
+                (2, 1),
+                (3, 1)
+            ]
+        );
+        // The row on its own, and past the list.
+        assert_eq!(terminal.line_text(2).unwrap().0, "next");
+        assert_eq!(terminal.line_text(9), None);
+        // A wide character that did not fit at a row's end leaves nothing
+        // there.
+        let (text, cells) = fed(4, 4, "abc日").line_text(0).unwrap();
+        assert_eq!(text, "abc日  ");
+        assert_eq!(cells[2..4], [(2, 0), (0, 1)]);
+    }
+
+    #[test]
+    fn a_cell_tells_its_link_s_target() {
+        let terminal = fed(
+            20,
+            3,
+            "go \x1b]8;;https://lokyr.dev\x07here\x1b]8;;\x07 日\x1b]8;;file:///tmp\x07本\x1b]8;;\x07",
+        );
+        assert_eq!(terminal.link_at(3, 0).as_deref(), Some("https://lokyr.dev"));
+        assert_eq!(terminal.link_at(6, 0).as_deref(), Some("https://lokyr.dev"));
+        assert_eq!(terminal.link_at(2, 0), None);
+        assert_eq!(terminal.link_at(7, 0), None);
+        // Both halves of a wide character.
+        assert_eq!(terminal.link_at(10, 0).as_deref(), Some("file:///tmp"));
+        assert_eq!(terminal.link_at(11, 0).as_deref(), Some("file:///tmp"));
+        // Past the row and the list.
+        assert_eq!(terminal.link_at(40, 0), None);
+        assert_eq!(terminal.link_at(0, 9), None);
     }
 
     #[test]

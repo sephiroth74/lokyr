@@ -15,6 +15,7 @@ raw-window-handle.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2.workspace = true
+libc.workspace = true
 objc2.workspace = true
 objc2-app-kit = { workspace = true, features = [
     "std",
@@ -41,6 +42,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSRunningApplication",
     "NSView",
     "NSWindow",
+    "NSWorkspace",
 ] }
 objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
@@ -69,6 +71,7 @@ objc2-foundation = { workspace = true, features = [
     "NSRunLoop",
     "NSString",
     "NSTimer",
+    "NSURL",
 ] }
 objc2-user-notifications = { workspace = true, features = [
     "std",

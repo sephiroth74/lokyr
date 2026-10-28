@@ -223,6 +223,14 @@ pub trait Platform {
     /// system keeps; without it, nothing shows. On the Mac, the application
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
     fn notify(&mut self, window: WindowId, title: &str, body: &str);
+
+    /// Opens `target`, a URL or an absolute path, with the system's handler:
+    /// a URL in its application, as the browser; a file in its
+    /// application, and a directory in the file manager. A file that would
+    /// run rather than open, as a program, an application or a script that
+    /// a terminal runs, shows in the file manager, selected, and does not
+    /// run. A `file` URL opens its path, if it names this machine.
+    fn open(&mut self, target: &str) -> Result<(), Error>;
 }
 
 /// What the platform calls on the app, on the main thread.
@@ -255,4 +263,7 @@ pub enum Error {
     /// An image could not be read as the application's icon.
     #[error("the icon {0} could not be read")]
     Icon(String),
+    /// A URL or a path could not be opened.
+    #[error("{0} could not be opened: {1}")]
+    Open(String, String),
 }

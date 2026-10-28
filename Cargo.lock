@@ -652,6 +652,7 @@ dependencies = [
  "lokyr-core-actions",
  "lokyr-font-coretext",
  "lokyr-kernel",
+ "lokyr-links",
  "lokyr-platform-core",
  "lokyr-platform-macos",
  "lokyr-plugin-host-luau",
@@ -726,6 +727,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lokyr-links"
+version = "0.1.0"
+dependencies = [
+ "lokyr-plugin-sdk",
+]
+
+[[package]]
 name = "lokyr-pkg-model"
 version = "0.1.0"
 
@@ -742,6 +750,7 @@ name = "lokyr-platform-macos"
 version = "0.1.0"
 dependencies = [
  "block2",
+ "libc",
  "lokyr-platform-core",
  "objc2",
  "objc2-app-kit",

@@ -76,6 +76,7 @@ sleip-resolver = { path = "sleip/resolver" }
 lokyr-core-actions = { path = "plugins/core-actions" }
 lokyr-font-coretext = { path = "crates/font-coretext" }
 lokyr-kernel = { path = "crates/kernel" }
+lokyr-links = { path = "plugins/links" }
 lokyr-pkg-model = { path = "crates/pkg-model" }
 lokyr-platform-core = { path = "crates/platform-core" }
 lokyr-platform-macos = { path = "crates/platform-macos" }

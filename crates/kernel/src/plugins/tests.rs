@@ -578,6 +578,110 @@ fn clearing_a_pane_keeps_its_prompt_at_the_top() {
 }
 
 #[test]
+fn the_host_reads_a_line_its_links_and_the_directory_and_opens() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "cd /usr; printf '\\033]8;;https://lokyr.dev/a\\033\\\\site\\033]8;;\\033\\\\ and /etc/hosts\\n'; sleep 10",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    text_once(&app, pane, "hosts");
+    let mut plugins = Plugins::new();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let log = Rc::clone(&seen);
+    plugins.add(
+        "reader",
+        scripted(
+            |cx| cx.register_command(command("reader.read")),
+            move |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                let line = cx.line_text(pane, 0)?.unwrap();
+                let mut log = log.borrow_mut();
+                log.push(line.text.trim_end().to_owned());
+                log.push(format!("{:?}", &line.cells[..2]));
+                log.push(format!("{:?}", cx.link_at(pane, 3, 0)?));
+                log.push(format!("{:?}", cx.link_at(pane, 5, 0)?));
+                log.push(format!("{:?}", cx.working_directory(pane)?));
+                log.push(format!("{:?}", cx.line_text(pane, 24)?));
+                for target in ["https://lokyr.dev", "/etc/hosts", "~/x"] {
+                    cx.open(target)?;
+                }
+                let refused = cx.open("javascript:alert(1)").unwrap_err();
+                log.push(format!("{} {}", refused.code.number(), refused.message));
+                let missing = host::PaneId(u64::MAX);
+                log.push(format!(
+                    "{:?}",
+                    cx.working_directory(missing).unwrap_err().code
+                ));
+                Ok(())
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *seen.borrow(),
+        [
+            "site and /etc/hosts",
+            "[(0, 0), (1, 0)]",
+            "Some(\"https://lokyr.dev/a\")",
+            "None",
+            "Some(\"/usr\")",
+            "None",
+            "201 `javascript:` does not open: only http, https, mailto, file",
+            "Failed",
+        ]
+    );
+    // The home directory in full.
+    let home = std::env::home_dir().unwrap();
+    assert_eq!(
+        plugins.take_requests(),
+        [
+            "https://lokyr.dev".to_owned(),
+            "/etc/hosts".to_owned(),
+            format!("{}/x", home.display()),
+        ]
+        .map(Request::Open)
+    );
+}
+
+#[test]
+fn only_urls_of_the_schemes_and_paths_from_the_root_or_home_open() {
+    for target in [
+        "http://a",
+        "HTTPS://a/b?c#d",
+        "mailto:me@lokyr.dev",
+        "file:///etc/hosts",
+        "/",
+        "/usr/bin",
+    ] {
+        assert_eq!(opening(target).as_deref(), Ok(target), "{target}");
+    }
+    let home = std::env::home_dir().unwrap().display().to_string();
+    assert_eq!(opening("~"), Ok(home.clone()));
+    assert_eq!(opening("~/notes.txt"), Ok(format!("{home}/notes.txt")));
+    for target in [
+        "javascript:alert(1)",
+        "x-apple-systempreferences:",
+        "ssh://host",
+        "tel:123",
+        "src/main.rs",
+        "~user/x",
+        "",
+        "1:2",
+        ":a",
+    ] {
+        assert!(opening(target).is_err(), "{target}");
+    }
+    // A text before a `:` that is no scheme is no URL.
+    for target in ["1:2", "src/main.rs:42"] {
+        assert!(opening(target).unwrap_err().contains("neither"), "{target}");
+    }
+}
+
+#[test]
 fn the_host_s_api_is_a_trait_object() {
     fn takes(_: &mut dyn HostApi) {}
     let mut app = App::default();

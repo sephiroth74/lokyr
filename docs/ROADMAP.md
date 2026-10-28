@@ -82,7 +82,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Full kernel**: workspace, layout tree, events, search and decoration services.
 - **Plugin plumbing**: the `HostApi` draft, `plugin-sdk` with the Rust front end, `export_plugin!`, `xtask gen-dist`.
 - **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
-- **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`.
+- **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`; `links`, which comes in F2, underlines the link under the pointer while ⌘ is held, with the API's events and decorations.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
 - **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **Cursor options**: smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
@@ -154,8 +154,8 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F5c — Graphics and kitty protocols
 
 - **Images**: kitty graphics (with Unicode placeholders for tmux), sixel and iTerm2 images (OSC 1337 `File=`), all under a memory quota.
-- **Links and selection**:
-  - hints and clickable URLs;
+- **Links and selection**, in the `links` plugin, which opens links, URLs and paths with ⌘-click since F2:
+  - hints;
   - semantic history: ⌘-click on `file:line` opens the editor;
   - smart selection.
 

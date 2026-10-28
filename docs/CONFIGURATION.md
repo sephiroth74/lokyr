@@ -592,7 +592,7 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 | `true`, `false` | `false` |
 
 - With `false`, ⌘C copies the selection, as other Mac apps do.
-- You select by dragging, the cells between where you press and where the pointer is; a double click takes a word, a triple click a line, and dragging after them goes on by words or lines; Option makes a rectangle; Shift's click extends the last selection; dragging past the window's top or bottom scrolls, the faster the farther. A click takes the selection away.
+- You select by dragging, the cells between where you press and where the pointer is; a double click takes a word, a triple click a line, and dragging after them goes on by words or lines; Option makes a rectangle; Shift's click extends the last selection, and Command's opens a link, as [`cmd+click`](#bindings) does; dragging past the window's top or bottom scrolls, the faster the farther. A click takes the selection away.
 - A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection. The pointer over the window is the text's I-beam, and the arrow while a program takes the clicks.
 - It applies as you save the file.
 
@@ -675,7 +675,7 @@ The language of what Lokyr shows: its menus, the titles of its commands, and the
 
 ## `[keys]`
 
-The bindings of keys, and of the wheel, to Lokyr's commands, over the defaults. A key that a binding takes runs its command, and never reaches the program; the others go to the program, as they always do.
+The bindings of keys, of the wheel and of the mouse's click, to Lokyr's commands, over the defaults. A key that a binding takes runs its command, and never reaches the program; the others go to the program, as they always do.
 
 ### Bindings
 
@@ -692,10 +692,10 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 
 - **The keys**: modifiers, each followed by `+`, and the key: `cmd+shift+n`.
   - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`; `command` and `super` are `cmd` too, `control` is `ctrl`, and `option` is `alt`.
-  - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape` or `esc`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
+  - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape` or `esc`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row; or the left button's click, `click`, as `cmd+click`.
   - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. An ASCII letter or digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
   - Two entries of the same keys, written two ways, as `alt+x` and `opt+x`, or `cmd+shift+n` and `shift+cmd+n`, are an error.
-- **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel makes no sequence.
+- **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel, or a click, makes no sequence.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;
@@ -704,6 +704,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. `alternate-screen` holds while a program such as vim or less shows its own screen. A binding without `when` holds everywhere. An expression nests 32 levels deep at most.
 - **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
+- A click that a binding takes, a single one in the window that has the focus, runs its command before the selection and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer, from the view's top left one, `0` and `0`.
 - For now, the keys of the menus' items, Command-N and Command-Q, stay theirs: the menus take them before the bindings see them.
 - A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
 
@@ -745,3 +746,4 @@ The defaults:
 | `cmd+up`, `cmd+down` | `pane.scroll-line-up`, `pane.scroll-line-down` | Scrolls the view a line up or down |
 | `cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-up`, `pane.scroll-page-down` | Scrolls the view a page up or down |
 | `cmd+home`, `cmd+end` | `pane.scroll-top`, `pane.scroll-bottom` | Scrolls the view to the scrollback's first row, or back to the screen |
+| `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`. A file opens in its application and a folder in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run |
