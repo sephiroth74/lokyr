@@ -511,22 +511,35 @@ fn sections() -> [(&'static str, &'static [&'static str]); 7] {
     ]
 }
 
-/// Fails at the first binding of `[keys]` that is not one: keys that are not
-/// a combination or a sequence, a command's name that is not one, `true`, a
-/// binding without its command or with another field, arguments that are
-/// not plain values, and a `when` that is not an expression of the
-/// contexts.
-fn check_bindings(root: &dyn TableLike) -> Result<(), (Option<std::ops::Range<usize>>, String)> {
+/// A span of the config's text, which tells an error's line.
+type Span = Option<std::ops::Range<usize>>;
+
+/// Fails at the first binding of `[keys]` that is not one, at its own line:
+/// keys that are not a combination or a sequence, or that another entry
+/// names otherwise, as `opt+x` and `alt+x`; a command's name that is not
+/// one, `true`, a binding without its command or with another field,
+/// arguments that are not plain values, and a `when` that is not an
+/// expression of the contexts.
+fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
     let Some(item) = root.get("keys") else {
         return Ok(());
     };
     let Some(table) = item.as_table_like() else {
         return Err((item.span(), "`keys` is a section, not a value".to_owned()));
     };
+    let mut named: Vec<(Vec<crate::keymap::Combo>, &str)> = Vec::new();
     for (keys, value) in table.iter() {
         let span = table.key(keys).and_then(toml_edit::Key::span);
-        crate::keymap::parse_keys(keys).map_err(|message| (span.clone(), message))?;
-        let fail = |message: String| (value.span().or(span.clone()), message);
+        let combos = crate::keymap::parse_keys(keys).map_err(|message| (span.clone(), message))?;
+        if let Some((_, other)) = named.iter().find(|(named, _)| *named == combos) {
+            return Err((
+                span,
+                format!("`{keys}` and `{other}` are the same keys, which one entry binds"),
+            ));
+        }
+        named.push((combos, keys));
+        let at = value.span().or(span.clone());
+        let fail = |message: String| (at.clone(), message);
         if let Some(command) = value.as_str() {
             check_command(command).map_err(fail)?;
         } else if let Some(bound) = value.as_bool() {
@@ -536,17 +549,18 @@ fn check_bindings(root: &dyn TableLike) -> Result<(), (Option<std::ops::Range<us
                 )));
             }
         } else if let Some(binding) = value.as_table_like() {
-            check_binding(binding).map_err(fail)?;
+            check_binding(binding, at)?;
         } else if let Some(bindings) = value.as_array() {
             for binding in bindings {
                 let Some(binding) = binding.as_inline_table() else {
-                    return Err(fail(format!("the bindings of `{keys}` are tables")));
+                    let at = binding.span().or(at);
+                    return Err((at, format!("the bindings of `{keys}` are tables")));
                 };
-                check_binding(binding).map_err(fail)?;
+                check_binding(binding, binding.span().or(at.clone()))?;
             }
         } else if let Some(bindings) = value.as_array_of_tables() {
             for binding in bindings {
-                check_binding(binding).map_err(fail)?;
+                check_binding(binding, binding.span().or(at.clone()))?;
             }
         } else {
             return Err(fail(format!(
@@ -569,47 +583,54 @@ fn check_command(command: &str) -> Result<(), String> {
 }
 
 /// Fails for a binding without its command, with another field, with
-/// arguments that are not plain values, or with a `when` that is not one.
-fn check_binding(binding: &dyn TableLike) -> Result<(), String> {
+/// arguments that are not plain values, or with a `when` that is not one:
+/// at the field's line, or at `at`, the binding's.
+fn check_binding(binding: &dyn TableLike, at: Span) -> Result<(), (Span, String)> {
     for (field, value) in binding.iter() {
-        match field {
-            "command" => match value.as_str() {
-                Some(command) => check_command(command)?,
-                None => return Err("a binding's `command` is a command's name".to_owned()),
-            },
-            "args" => {
-                let Some(args) = value.as_table_like() else {
-                    return Err("a binding's `args` are a table".to_owned());
-                };
-                for (name, value) in args.iter() {
-                    let plain = value.as_str().is_some()
-                        || value.as_integer().is_some()
-                        || value.as_float().is_some()
-                        || value.as_bool().is_some();
-                    if !plain {
-                        return Err(format!(
-                            "the argument `{name}` is a string, an integer, a number or a boolean"
-                        ));
-                    }
-                }
-            }
-            "when" => match value.as_str() {
-                Some(when) => {
-                    crate::keymap::When::parse(when)?;
-                }
-                None => return Err("a binding's `when` is an expression, in a string".to_owned()),
-            },
-            other => {
-                return Err(format!(
-                    "a binding has `command`, `args` and `when`, not `{other}`"
-                ));
-            }
-        }
+        let here = value
+            .span()
+            .or_else(|| binding.key(field).and_then(toml_edit::Key::span))
+            .or(at.clone());
+        check_field(field, value).map_err(|message| (here, message))?;
     }
     if binding.get("command").is_none() {
-        return Err("a binding needs its `command`".to_owned());
+        return Err((at, "a binding needs its `command`".to_owned()));
     }
     Ok(())
+}
+
+/// Fails for a field of a binding that is not one.
+fn check_field(field: &str, value: &toml_edit::Item) -> Result<(), String> {
+    match field {
+        "command" => match value.as_str() {
+            Some(command) => check_command(command),
+            None => Err("a binding's `command` is a command's name".to_owned()),
+        },
+        "args" => {
+            let Some(args) = value.as_table_like() else {
+                return Err("a binding's `args` are a table".to_owned());
+            };
+            for (name, value) in args.iter() {
+                let plain = value.as_str().is_some()
+                    || value.as_integer().is_some()
+                    || value.as_float().is_some()
+                    || value.as_bool().is_some();
+                if !plain {
+                    return Err(format!(
+                        "the argument `{name}` is a string, an integer, a number or a boolean"
+                    ));
+                }
+            }
+            Ok(())
+        }
+        "when" => match value.as_str() {
+            Some(when) => crate::keymap::When::parse(when).map(|_| ()),
+            None => Err("a binding's `when` is an expression, in a string".to_owned()),
+        },
+        other => Err(format!(
+            "a binding has `command`, `args` and `when`, not `{other}`"
+        )),
+    }
 }
 
 /// Fails at the first key that the file's sections do not have, with the
@@ -890,6 +911,50 @@ mod tests {
                 "takes no sequence",
             ),
             ("keys = 3\n", 1, "is a section"),
+            // A binding over several lines tells the line of what is wrong
+            // in it: an array's element, a field of a table of its own, of
+            // dotted keys, and of an array of tables.
+            (
+                "[keys]\n\"cmd+d\" = [\n  { command = \"pane.split\" },\n  { command = \"split\" },\n]\n",
+                4,
+                "not a command's name",
+            ),
+            (
+                "[keys]\n\"cmd+d\" = [\n  \"pane.split\",\n]\n",
+                3,
+                "are tables",
+            ),
+            (
+                "[keys]\n\"cmd+d\" = [\n  { command = \"pane.split\" },\n  { when = \"selection\" },\n]\n",
+                4,
+                "needs its `command`",
+            ),
+            (
+                "[keys.\"cmd+d\"]\ncommand = \"pane.split\"\nwhen = \"focus\"\n",
+                3,
+                "no context",
+            ),
+            (
+                "[keys]\n\"cmd+d\".command = \"pane.split\"\n\"cmd+d\".args = { a = [1] }\n",
+                3,
+                "the argument `a`",
+            ),
+            (
+                "[[keys.\"cmd+d\"]]\ncommand = \"pane.split\"\n[[keys.\"cmd+d\"]]\nwhen = \"selection\"\n",
+                3,
+                "needs its `command`",
+            ),
+            // The same keys in two spellings.
+            (
+                "[keys]\n\"alt+x\" = \"tabs.new\"\n\"opt+x\" = \"tabs.next\"\n",
+                3,
+                "the same keys",
+            ),
+            (
+                "[keys]\n\"cmd+shift+n\" = \"tabs.new\"\n\"shift+cmd+n\" = false\n",
+                3,
+                "the same keys",
+            ),
         ];
         for (text, line, message) in cases {
             let (position, error) = error(text);

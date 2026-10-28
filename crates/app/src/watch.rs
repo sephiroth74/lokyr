@@ -1,10 +1,11 @@
 //! Watching the config file: its directory rather than the file, as editors
 //! save by writing another file and renaming it over the config; the file
-//! that a symbolic link of it points to, as dotfiles managers make; and the
-//! directory's parent, which tells when the directory goes, and, while it
-//! does not exist, when it comes. FSEvents watches a directory with all
-//! that it holds, so that the home directory, whose `Library` never rests,
-//! is never watched.
+//! that a symbolic link of it points to, as dotfiles managers make, while it
+//! exists and after it goes, as a checkout of the dotfiles removes it and
+//! writes it again; and the directory's parent, which tells when the
+//! directory goes, and, while it does not exist, when it comes. FSEvents
+//! watches a directory with all that it holds, so that the home directory,
+//! whose `Library` never rests, is never watched.
 
 use std::ffi::OsString;
 use std::fs;
@@ -42,8 +43,9 @@ impl Watcher {
     /// Watches the config file at `path`, and calls `changed`, from the
     /// watch's thread, when the file, its link's target or its directory
     /// changes: an entry of a watched directory, by its directory and its
-    /// name, as FSEvents tells the real paths, and the changes deeper in the
-    /// directories that it watches count for nothing.
+    /// name, as FSEvents tells the real paths, or a watched directory that
+    /// goes; the changes deeper in the directories that it watches count
+    /// for nothing.
     pub fn new(path: &Path, changed: impl Fn() + Send + 'static) -> Result<Self, Error> {
         let error = |message: String| Error {
             path: path.to_owned(),
@@ -63,10 +65,12 @@ impl Watcher {
                 let Ok(event) = event else {
                     return;
                 };
+                let removed = matches!(event.kind, EventKind::Remove(_));
                 let named = event.paths.iter().any(|path| {
                     entries.iter().any(|(directory, name)| {
-                        path.parent() == Some(directory.as_path())
-                            && path.file_name() == Some(name.as_os_str())
+                        (path.parent() == Some(directory.as_path())
+                            && path.file_name() == Some(name.as_os_str()))
+                            || (removed && path == directory)
                     })
                 });
                 if named && !matches!(event.kind, EventKind::Access(_)) {
@@ -106,9 +110,10 @@ pub(crate) fn make_directory(path: &Path) -> std::io::Result<()> {
 
 /// The directories to watch for the config at `path`, and the entries of
 /// them that count: the file's directory and its name, with its link's
-/// target's, and the directory's parent and its name; or, while that
-/// directory does not exist, its parent alone. The home directory is never
-/// one of them.
+/// target's, or the parent of the target's directory and its name while
+/// that does not exist; and the directory's parent and its name; or, while
+/// that directory does not exist, its parent alone. The home directory is
+/// never one of them.
 fn targets(path: &Path) -> Targets {
     let (Some(directory), Some(name)) = (path.parent(), path.file_name()) else {
         return Targets {
@@ -127,13 +132,18 @@ fn targets(path: &Path) -> Targets {
     if watchable(directory) {
         watched.push(directory.to_owned());
         names.push(name.to_owned());
-        let linked = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
-        if linked
-            && let Ok(target) = fs::canonicalize(path)
+        if let Some(target) = link_target(path)
             && let (Some(directory), Some(name)) = (target.parent(), target.file_name())
         {
-            watched.push(directory.to_owned());
-            names.push(name.to_owned());
+            if watchable(directory) {
+                watched.push(directory.to_owned());
+                names.push(name.to_owned());
+            } else if let (Some(parent), Some(name)) = (directory.parent(), directory.file_name())
+                && watchable(parent)
+            {
+                watched.push(parent.to_owned());
+                names.push(name.to_owned());
+            }
         }
     }
     if let Some((parent, name)) = parent {
@@ -151,6 +161,22 @@ fn targets(path: &Path) -> Targets {
         })
         .collect();
     Targets { watched, entries }
+}
+
+/// The file that the link at `path` points to, if `path` is a link, whether
+/// the file exists or not: by its real path, or by its directory's and its
+/// name when it went.
+fn link_target(path: &Path) -> Option<PathBuf> {
+    if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink()) {
+        return None;
+    }
+    if let Ok(target) = fs::canonicalize(path) {
+        return Some(target);
+    }
+    // Where the link points, from its own directory.
+    let target = path.parent()?.join(fs::read_link(path).ok()?);
+    let (directory, name) = (target.parent()?, target.file_name()?);
+    Some(fs::canonicalize(directory).map_or_else(|_| target.clone(), |real| real.join(name)))
 }
 
 #[cfg(test)]
@@ -239,6 +265,44 @@ mod tests {
         std::os::unix::fs::symlink(&target, &path).unwrap();
         let (_watcher, receiver) = watch(&path);
         fs::write(&target, "[cursor]\nshape = \"bar\"\n").unwrap();
+        assert!(changed(&receiver));
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_link_s_target_that_goes_and_comes_back_is_watched_still() {
+        let home = scratch("checkout");
+        let dotfiles = home.join("dotfiles");
+        let config = home.join("config");
+        fs::create_dir_all(&dotfiles).unwrap();
+        fs::create_dir_all(&config).unwrap();
+        let target = dotfiles.join("lokyr.toml");
+        fs::write(&target, "").unwrap();
+        let path = config.join("config.toml");
+        // A link relative to its directory, as GNU Stow makes them.
+        std::os::unix::fs::symlink("../dotfiles/lokyr.toml", &path).unwrap();
+        let (watcher, receiver) = watch(&path);
+        // As a checkout removes the file and writes it again.
+        fs::remove_file(&target).unwrap();
+        assert!(changed(&receiver));
+        assert!(
+            !watcher.is_stale(&path),
+            "the target's directory stays watched"
+        );
+        fs::write(&target, "[cursor]\nshape = \"bar\"\n").unwrap();
+        assert!(changed(&receiver));
+        // Its directory too: its parent tells when it comes back.
+        fs::remove_dir_all(&dotfiles).unwrap();
+        assert!(changed(&receiver));
+        assert!(watcher.is_stale(&path));
+        drop(watcher);
+        let (watcher, receiver) = watch(&path);
+        fs::create_dir_all(&dotfiles).unwrap();
+        assert!(changed(&receiver));
+        assert!(watcher.is_stale(&path));
+        drop(watcher);
+        let (_watcher, receiver) = watch(&path);
+        fs::write(&target, "").unwrap();
         assert!(changed(&receiver));
         fs::remove_dir_all(home).unwrap();
     }

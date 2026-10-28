@@ -1922,6 +1922,37 @@ mod tests {
     }
 
     #[test]
+    fn a_link_s_target_that_goes_and_comes_back_reloads() {
+        use std::os::unix::fs::symlink;
+
+        let home = std::env::temp_dir().join(format!("lokyr-app-checkout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let (dotfiles, directory) = (home.join("dotfiles"), home.join("lokyr"));
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = dotfiles.join("lokyr.toml");
+        std::fs::write(&target, "[cursor]\nshape = \"bar\"\n").unwrap();
+        let path = directory.join("config.toml");
+        symlink(&target, &path).unwrap();
+        let config = Config::read(&path).unwrap();
+        let mut fake = Fake::default();
+        let mut app = App::new(None, config, Some(path.clone())).with_program(quiet());
+        fake.start(&mut app);
+        assert_eq!(app.config.cursor.shape, cursor::Shape::Bar);
+        // As a checkout of the dotfiles removes the file, and writes it
+        // again, changed.
+        std::fs::remove_file(&target).unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            app.config.cursor.shape == cursor::Shape::Block
+        });
+        std::fs::write(&target, "[cursor]\nshape = \"underline\"\n").unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            app.config.cursor.shape == cursor::Shape::Underline
+        });
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
     fn a_link_pointed_elsewhere_reloads_at_its_new_target() {
         use std::os::unix::fs::symlink;
 

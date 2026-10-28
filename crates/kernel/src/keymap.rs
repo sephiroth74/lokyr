@@ -267,13 +267,18 @@ pub enum When {
 /// The names that a `when` can use.
 pub const CONTEXTS: [&str; 3] = ["pane.focused", "selection", "alternate-screen"];
 
+/// The levels that a `when` nests at most: of `!`, of parentheses, and of
+/// the operands of `&&` and `||`, so that its parsing and its evaluation,
+/// which recurse, never take more stack than that.
+const DEEPEST: usize = 32;
+
 impl When {
     /// The expression of `text`: names, `!`, `&&`, `||` and parentheses,
-    /// `&&` binding tighter than `||`.
+    /// `&&` binding tighter than `||`, nested 32 levels deep at most.
     pub fn parse(text: &str) -> Result<Self, String> {
         let tokens = tokens(text)?;
         let mut at = 0;
-        let when = or(&tokens, &mut at)?;
+        let when = or(&tokens, &mut at, 0)?;
         if at < tokens.len() {
             return Err(format!("`{}` is out of place, in `{text}`", tokens[at]));
         }
@@ -336,33 +341,43 @@ fn tokens(text: &str) -> Result<Vec<String>, String> {
     Ok(tokens)
 }
 
-fn or(tokens: &[String], at: &mut usize) -> Result<When, String> {
-    let mut when = and(tokens, at)?;
+/// Fails at a level deeper than [`DEEPEST`].
+fn deeper(depth: usize) -> Result<usize, String> {
+    if depth >= DEEPEST {
+        return Err(format!("the expression nests deeper than {DEEPEST} levels"));
+    }
+    Ok(depth + 1)
+}
+
+fn or(tokens: &[String], at: &mut usize, mut depth: usize) -> Result<When, String> {
+    let mut when = and(tokens, at, depth)?;
     while tokens.get(*at).is_some_and(|token| token == "||") {
         *at += 1;
-        when = When::Or(Box::new(when), Box::new(and(tokens, at)?));
+        depth = deeper(depth)?;
+        when = When::Or(Box::new(when), Box::new(and(tokens, at, depth)?));
     }
     Ok(when)
 }
 
-fn and(tokens: &[String], at: &mut usize) -> Result<When, String> {
-    let mut when = not(tokens, at)?;
+fn and(tokens: &[String], at: &mut usize, mut depth: usize) -> Result<When, String> {
+    let mut when = not(tokens, at, depth)?;
     while tokens.get(*at).is_some_and(|token| token == "&&") {
         *at += 1;
-        when = When::And(Box::new(when), Box::new(not(tokens, at)?));
+        depth = deeper(depth)?;
+        when = When::And(Box::new(when), Box::new(not(tokens, at, depth)?));
     }
     Ok(when)
 }
 
-fn not(tokens: &[String], at: &mut usize) -> Result<When, String> {
+fn not(tokens: &[String], at: &mut usize, depth: usize) -> Result<When, String> {
     match tokens.get(*at).map(String::as_str) {
         Some("!") => {
             *at += 1;
-            Ok(When::Not(Box::new(not(tokens, at)?)))
+            Ok(When::Not(Box::new(not(tokens, at, deeper(depth)?)?)))
         }
         Some("(") => {
             *at += 1;
-            let when = or(tokens, at)?;
+            let when = or(tokens, at, deeper(depth)?)?;
             if tokens.get(*at).map(String::as_str) != Some(")") {
                 return Err("a `(` is never closed".to_owned());
             }
@@ -552,6 +567,14 @@ impl Pressed {
     /// The key `key`, as the encoder names it, of `mods`, whose place on
     /// the US layout types `us`: `None` for a modifier or a lock, which no
     /// binding takes.
+    ///
+    /// The US layout's character stands in for a character past ASCII, as
+    /// the Italian layout's `è` for `[` and the Russian one's `й` for `q`,
+    /// and for ASCII's punctuation, as the Italian `+` for `]`, unless it
+    /// is a letter or a digit; never for an ASCII letter or digit. A key
+    /// that types one of them is the user's, wherever the layout puts it,
+    /// so that AZERTY's `a`, at the US layout's `q`, and Dvorak's `'`, are
+    /// no `q`.
     pub fn key(key: Key, mods: Mods, us: Option<char>) -> Option<Self> {
         let press = match key {
             Key::Char(' ') => Press::Named(Named::Space),
@@ -576,6 +599,11 @@ impl Pressed {
             _ => return None,
         };
         let us = us
+            .filter(|us| match press {
+                Press::Char(own) if own.is_ascii_alphanumeric() => false,
+                Press::Char(own) if own.is_ascii() => !us.is_ascii_alphanumeric(),
+                _ => true,
+            })
             .map(|character| Press::Char(character.to_lowercase().next().unwrap_or(character)))
             .filter(|&us| us != press);
         Some(Self { mods, press, us })

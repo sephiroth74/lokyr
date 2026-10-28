@@ -11,7 +11,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 - **Where it is**: `~/.config/lokyr/config.toml`, on macOS too, so that it can live with your dotfiles. When `XDG_CONFIG_HOME` is set to an absolute path, the file is `$XDG_CONFIG_HOME/lokyr/config.toml` instead.
   - A variable that your shell's startup files set, such as `XDG_CONFIG_HOME` in `~/.zshrc`, reaches Lokyr only when you start it from that shell: started from the Finder or the Dock, Lokyr reads `~/.config/lokyr/config.toml`.
   - When the file's directory does not exist, Lokyr makes it, empty, as it starts, so that a config that you write there later applies at once.
-- **Links**: the file, or its directory, can be a symbolic link, as dotfiles managers such as GNU Stow make it. Lokyr watches the file the link points to as well, and follows a link that is pointed elsewhere: the edits of its new target apply too.
+- **Links**: the file, or its directory, can be a symbolic link, as dotfiles managers such as GNU Stow make it. Lokyr watches the file the link points to as well, and follows a link that is pointed elsewhere: the edits of its new target apply too. A target that goes, as a checkout of the dotfiles removes and writes it, applies again as it comes back; while it is gone, the defaults apply.
 - **Reloading**: Lokyr applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor. Removing the file, or its directory, brings the defaults back.
 - **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults.
 - **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Lokyr does not know, it names the nearest key that it knows:
@@ -482,14 +482,15 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - **The keys**: modifiers, each followed by `+`, and the key: `cmd+shift+n`.
   - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`.
   - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
-  - Your keyboard layout gives the characters: a key whose character no binding takes runs the binding of the character at its place on the US layout, so that `cmd+]` works on a layout where `]` takes Option.
+  - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. A letter or a digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
+  - Two entries of the same keys, written two ways, as `alt+x` and `opt+x`, or `cmd+shift+n` and `shift+cmd+n`, are an error.
 - **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel makes no sequence.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;
   - an array of such tables, for the keys in several contexts;
   - `false`, which takes away the defaults of the keys.
-- **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. `alternate-screen` holds while a program such as vim or less shows its own screen. A binding without `when` holds everywhere.
+- **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. `alternate-screen` holds while a program such as vim or less shows its own screen. A binding without `when` holds everywhere. An expression nests 32 levels deep at most.
 - **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
 - For now, the keys of the menus' items, Command-N and Command-Q, stay theirs: the menus take them before the bindings see them.

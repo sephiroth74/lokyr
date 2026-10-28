@@ -160,6 +160,26 @@ fn a_when_holds_in_its_contexts() {
 }
 
 #[test]
+fn a_when_nests_32_levels_at_most() {
+    let nested = |levels: usize, open: &str, close: &str| {
+        format!("{}selection{}", open.repeat(levels), close.repeat(levels))
+    };
+    for (open, close) in [("!", ""), ("(", ")"), ("!(", ")")] {
+        assert!(When::parse(&nested(16, open, close)).is_ok(), "{open}");
+        let error = When::parse(&nested(100_000, open, close)).unwrap_err();
+        assert!(error.contains("deeper than 32"), "{error}");
+    }
+    assert!(When::parse(&nested(32, "!", "")).is_ok());
+    assert!(When::parse(&nested(33, "!", "")).is_err());
+    // A chain of operands nests too.
+    let chain = |count: usize| vec!["selection"; count].join(" && ");
+    assert!(When::parse(&chain(32)).is_ok());
+    assert!(When::parse(&chain(100_000)).is_err());
+    let either = vec!["selection"; 100_000].join(" || ");
+    assert!(When::parse(&either).is_err());
+}
+
+#[test]
 fn the_last_binding_that_holds_wins() {
     let mut keymap = Keymap::new(vec![
         binding("cmd+k", "view.clear", None),
@@ -266,6 +286,51 @@ fn a_key_takes_the_us_layout_s_binding_when_its_own_has_none() {
         Pressed::key(Key::Modifier(ModifierKey::LeftShift), NONE, None),
         None
     );
+}
+
+#[test]
+fn a_letter_or_a_digit_takes_no_binding_of_the_us_layout_s_key_at_its_place() {
+    let keymap = Keymap::new(vec![
+        binding("cmd+q", "app.quit", None),
+        binding("cmd+w", "window.close", None),
+        binding("cmd+1", "tabs.goto", None),
+        binding("cmd+[", "tabs.prev", None),
+        binding("cmd+]", "tabs.next", None),
+        binding("cmd+;", "view.clear", None),
+    ]);
+    let mut resolver = Resolver::new();
+    let context = Context::default();
+    let program = Resolved::Program { before: 0 };
+    // AZERTY's `a` and `z`, at the US layout's `q` and `w`; Dvorak's `x` at
+    // `b`, and its `s` at `;`; Colemak's `f` at `e`; Dvorak's `'` and
+    // AZERTY's `&`, punctuation at a letter's and a digit's places.
+    for (own, us) in [
+        ('a', 'q'),
+        ('z', 'w'),
+        ('x', 'b'),
+        ('s', ';'),
+        ('f', 'e'),
+        ('\'', 'q'),
+        ('&', '1'),
+    ] {
+        let pressed = Pressed::key(Key::Char(own), CMD, Some(us)).unwrap();
+        assert_eq!(pressed.us, None, "{own}");
+        assert_eq!(resolver.press(&keymap, pressed, &context), program, "{own}");
+    }
+    // The Italian layout's `è`, at the US layout's `[`, its `+`, at `]`, and
+    // the Russian one's `й`, at `q`, take the US layout's.
+    for (own, us, command) in [
+        ('è', '[', "tabs.prev"),
+        ('+', ']', "tabs.next"),
+        ('й', 'q', "app.quit"),
+    ] {
+        let pressed = Pressed::key(Key::Char(own), CMD, Some(us)).unwrap();
+        assert_eq!(
+            resolver.press(&keymap, pressed, &context),
+            run(command),
+            "{own}"
+        );
+    }
 }
 
 #[test]
