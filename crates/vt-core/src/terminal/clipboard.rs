@@ -95,6 +95,18 @@ impl Terminal {
         }
     }
 
+    /// Whether a program's read of the clipboard becomes an event, which
+    /// the embedder answers, or gets no reply.
+    pub fn clipboard_reads(&self) -> bool {
+        self.clipboard_reads
+    }
+
+    /// Sets whether a program's read of the clipboard becomes an event,
+    /// from the next read on.
+    pub fn set_clipboard_reads(&mut self, reads: bool) {
+        self.clipboard_reads = reads;
+    }
+
     /// Answers `request` with `data`, what the clipboard holds, for an
     /// embedder that takes the replies and writes them itself: the answer
     /// waits with the replies, past their limit, as the user allowed it,

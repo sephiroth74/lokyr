@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
-use lokyr_kernel::config::{AppConfig, Config};
+use lokyr_kernel::config::{AppConfig, ClipboardRead, Config};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
@@ -19,9 +19,10 @@ use lokyr_kernel::l10n::{self, Texts};
 use lokyr_kernel::workspace::RESIZE_PACE;
 use lokyr_kernel::workspace::{self, Environment, Event, Exited, Grid, Pane, PaneId, Workspace};
 use lokyr_platform_core::{
-    AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu,
-    MenuItem, Modifiers, MouseButton, Platform, Point, ScrollDelta, ScrollPhase, Shortcut,
-    ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
+    KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, ScrollDelta,
+    ScrollPhase, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Renderer};
@@ -32,7 +33,7 @@ use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
-use lokyr_vt_core::terminal::{MouseEncoding, MouseTracking, Scroll};
+use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, MouseEncoding, MouseTracking, Scroll};
 
 use crate::environment;
 use crate::icon::Icons;
@@ -271,6 +272,9 @@ pub struct App {
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
     icon_shown: Option<String>,
+    /// The programs' reads of the clipboard that the user is asked about,
+    /// by their alerts.
+    clipboard_asks: BTreeMap<AlertId, (PaneId, ClipboardRequest)>,
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
@@ -304,6 +308,7 @@ impl App {
             resize_timer: None,
             icons: Icons::find(),
             icon_shown: None,
+            clipboard_asks: BTreeMap::new(),
             environment: Environment {
                 resources: environment::resources(),
                 ..Environment::default()
@@ -385,6 +390,7 @@ impl App {
         platform.set_option_as_meta(left, right);
         for pane in self.workspace.panes() {
             pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
+            pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
         }
         if icon_changed {
             self.show_icon(platform);
@@ -651,6 +657,7 @@ impl App {
                     },
                 );
                 pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
+                pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
                 self.windows
@@ -668,9 +675,12 @@ impl App {
 
     /// Closes `window`, and quits with the last one.
     fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        // The surface and the session go before the window.
+        // The surface and the session go before the window, and the asks of
+        // its program's reads with it.
         if let Some(state) = self.windows.remove(&window) {
             drop(state.surface);
+            self.clipboard_asks
+                .retain(|_, (pane, _)| *pane != state.pane);
             self.workspace.close_window(state.window);
         }
         platform.close_window(window);
@@ -790,22 +800,65 @@ impl App {
         }
     }
 
-    /// Takes the workspace's events. The tabs keep their programs' titles
-    /// and colors, which the windows do not show; the bells and the
-    /// programs' writes to the clipboards go unanswered, and a program's
-    /// end waits for its status, which the exits take.
-    fn events(&mut self) {
+    /// Takes the workspace's events. A program's write to the clipboard
+    /// puts its text there, and the primary selection, which macOS lacks,
+    /// takes nothing; its read asks the user, once at a time for each pane.
+    /// The tabs keep their programs' titles and colors, which the windows do
+    /// not show; the bells go unanswered, and a program's end waits for its
+    /// status, which the exits take.
+    fn events(&mut self, platform: &mut dyn Platform) {
         for event in self.workspace.take_events() {
             match event {
+                Event::ClipboardWrite { target, data, .. } => {
+                    if target.clipboard {
+                        platform.set_clipboard_text(&String::from_utf8_lossy(&data));
+                    }
+                }
+                Event::Terminal {
+                    pane,
+                    event: vt::Event::ClipboardRead(request),
+                } => self.ask_clipboard_read(platform, pane, request),
                 Event::WindowOpened(_)
                 | Event::WindowClosed(_)
                 | Event::TitleChanged(_)
                 | Event::Bell(_)
-                | Event::ClipboardWrite { .. }
                 | Event::Ended(_)
                 | Event::Terminal { .. } => {}
             }
         }
+    }
+
+    /// Asks the user, with an alert on its window, whether `pane`'s
+    /// program can read the clipboard, as `request` asks: the default
+    /// button refuses. A read that comes while the pane's ask is open gets
+    /// no answer.
+    fn ask_clipboard_read(
+        &mut self,
+        platform: &mut dyn Platform,
+        pane: PaneId,
+        request: ClipboardRequest,
+    ) {
+        if self
+            .clipboard_asks
+            .values()
+            .any(|(asking, _)| *asking == pane)
+        {
+            return;
+        }
+        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+            return;
+        };
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("clipboard-read-message"),
+            detail: self.texts.text("clipboard-read-detail"),
+            buttons: vec![
+                self.texts.text("clipboard-read-deny"),
+                self.texts.text("clipboard-read-allow"),
+            ],
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.clipboard_asks.insert(alert, (pane, request));
     }
 
     /// The theme's colors in `appearance`.
@@ -1089,7 +1142,7 @@ impl Handler for App {
             // its program, or changed the config file.
             AppEvent::Wake => {
                 self.workspace.collect();
-                self.events();
+                self.events(platform);
                 self.exits(platform);
                 // The reading waits for the changes to settle: each change
                 // puts it off.
@@ -1145,6 +1198,16 @@ impl Handler for App {
                     if state.blinking {
                         platform.request_frame(window);
                     }
+                }
+            }
+            // The user answered a program's read of the clipboard: its
+            // second button allows it.
+            AppEvent::AlertClosed { alert, button } => {
+                if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
+                    && button == 1
+                    && let Some(pane) = self.workspace.pane(pane)
+                {
+                    pane.reply_clipboard(request, &platform.clipboard_text().unwrap_or_default());
                 }
             }
             AppEvent::AppearanceChanged(appearance) => {
@@ -2333,6 +2396,105 @@ mod tests {
         };
         fake.send(&mut app, window, WindowEvent::Ime(composing));
         run_until(&mut fake, &mut app, |_, app| offset(app) == 0);
+    }
+
+    /// The app without padding, of a config whose `[clipboard]` reads
+    /// `read`, its window running `program`, once it shows `ready`.
+    fn with_clipboard(read: &str, program: Program) -> (Fake, App, WindowId) {
+        let mut config = Config::parse(
+            &format!("[clipboard]\nread = \"{read}\"\n"),
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        config.window = unpadded().window;
+        let mut fake = Fake::default();
+        let mut app = app(config, program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn a_program_s_write_reaches_the_clipboard() {
+        // `hello` to the clipboard, then `other` to the primary selection
+        // alone, which macOS lacks.
+        let program = shell(
+            "printf '\\033]52;c;aGVsbG8=\\a'; printf '\\033]52;p;b3RoZXI=\\a'; echo ready; sleep 10",
+        );
+        let (mut fake, mut app, _) = with_clipboard("never", program);
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.clipboard_text().as_deref() == Some("hello")
+        });
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert_eq!(fake.clipboard_text().as_deref(), Some("hello"));
+    }
+
+    /// A program that reads the clipboard once it reads a byte, and shows
+    /// the answer.
+    fn clipboard_reader() -> Program {
+        shell(
+            "stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\033]52;c;?\\a'; done & cat -v",
+        )
+    }
+
+    #[test]
+    fn a_read_gets_no_answer_unless_the_user_allows_it() {
+        // Off by default: no alert, no answer.
+        let (mut fake, mut app, window) = with_clipboard("never", clipboard_reader());
+        fake.set_clipboard_text("secret");
+        fake.send(&mut app, window, key());
+        let pause = Instant::now() + Duration::from_millis(400);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert!(fake.alerts().is_empty());
+        assert!(!shows(&app, window, "52;"), "{:?}", screen(&app, window));
+        // Asked: refused, then allowed; a read while the alert is open asks
+        // nothing more.
+        let (mut fake, mut app, window) = with_clipboard("ask", clipboard_reader());
+        fake.set_clipboard_text("secret");
+        for allowed in [false, true] {
+            fake.send(&mut app, window, key());
+            run_until(&mut fake, &mut app, |fake, _| !fake.alerts().is_empty());
+            fake.send(&mut app, window, key());
+            let pause = Instant::now() + Duration::from_millis(300);
+            run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+            assert_eq!(fake.alerts().len(), 1);
+            let open = &fake.alerts()[0];
+            assert_eq!(open.window, Some(window));
+            assert_eq!(
+                open.alert.buttons,
+                [
+                    app.texts.text("clipboard-read-deny"),
+                    app.texts.text("clipboard-read-allow")
+                ]
+            );
+            let id = open.id;
+            fake.answer_alert(&mut app, id, usize::from(allowed));
+            if !allowed {
+                let pause = Instant::now() + Duration::from_millis(300);
+                run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+                assert!(!shows(&app, window, "52;"), "{:?}", screen(&app, window));
+            }
+        }
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[]52;c;c2VjcmV0^G")
+        });
+        let shown = screen(&app, window).concat();
+        assert_eq!(shown.matches("52;").count(), 1, "{shown:?}");
+    }
+
+    #[test]
+    fn a_config_that_asks_applies_to_the_open_windows() {
+        let (mut fake, mut app, window) = with_clipboard("never", clipboard_reader());
+        let mut asking = app.config.clone();
+        asking.clipboard.read = ClipboardRead::Ask;
+        app.apply(&mut fake, asking);
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
+        // A window that closes takes its ask with it.
+        fake.send(&mut app, window, WindowEvent::CloseRequested);
+        assert!(app.clipboard_asks.is_empty());
     }
 
     #[test]

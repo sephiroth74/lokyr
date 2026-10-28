@@ -19,7 +19,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 
 | Feature | Default | Why |
 |---|---|---|
-| Clipboard read (OSC 52 with `?`) | Off; can be enabled with confirmation | A remote program could read the clipboard |
+| Clipboard read (OSC 52 with `?`) | Off; `[clipboard] read = "ask"` asks with an alert at each read, whose default button refuses | A remote program could read the clipboard |
 | Clipboard write (OSC 52) | On, up to 1 MiB | tmux, Neovim and similar tools need it over ssh |
 | Title report (CSI 21 t) | Off | The classic way to inject text into the shell's input |
 | Rectangle checksums (DECRQCRA) | Off; test suites such as esctest turn them on, as iTerm2 asks | A program could read, a cell at a time, what others showed on the screen |

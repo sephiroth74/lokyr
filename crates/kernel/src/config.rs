@@ -27,6 +27,9 @@
 //! [keyboard]
 //! option-as-meta = "none"   # none | left | right | both
 //!
+//! [clipboard]
+//! read = "never"            # never | ask: a program's read of the clipboard
+//!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
 //!
@@ -39,7 +42,8 @@
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
 //! `[scrollback]` [`ScrollbackConfig`], `[keyboard]` [`KeyboardConfig`],
-//! `[app]` [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
+//! `[clipboard]` [`ClipboardConfig`], `[app]` [`AppConfig`], and `[keys]`
+//! [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -87,6 +91,8 @@ pub struct Config {
     pub scrollback: ScrollbackConfig,
     /// The `[keyboard]` section.
     pub keyboard: KeyboardConfig,
+    /// The `[clipboard]` section.
+    pub clipboard: ClipboardConfig,
     /// The `[app]` section.
     pub app: AppConfig,
     /// The `[keys]` section.
@@ -190,6 +196,27 @@ pub struct KeyboardConfig {
     /// Which Option keys act as Meta, sending an escape before the key,
     /// rather than typing the characters that the layout gives them.
     pub option_as_meta: OptionAsMeta,
+}
+
+/// The `[clipboard]` section: what programs do with the clipboard. Their
+/// writes, with OSC 52, always reach it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ClipboardConfig {
+    /// Whether a program can read the clipboard, with OSC 52.
+    pub read: ClipboardRead,
+}
+
+/// Whether a program can read the clipboard.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClipboardRead {
+    /// Never: a read gets no answer, as a program that runs elsewhere, over
+    /// ssh, could read what the user copied.
+    #[default]
+    Never,
+    /// Each read asks the user first.
+    Ask,
 }
 
 /// Which Option keys act as Meta.
@@ -499,7 +526,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 7] {
+fn sections() -> [(&'static str, &'static [&'static str]); 8] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -507,6 +534,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 7] {
         ("window", keys::<WindowConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
+        ("clipboard", keys::<ClipboardConfig>()),
         ("app", keys::<AppConfig>()),
     ]
 }
@@ -799,12 +827,17 @@ mod tests {
             [keyboard]
             option-as-meta = "left"
 
+            [clipboard]
+            read = "ask"
+
             [app]
             icon = "laguz"
             language = "it"
             "#,
         )
         .unwrap();
+        assert_eq!(config.clipboard.read, ClipboardRead::Ask);
+        assert_eq!(Config::default().clipboard.read, ClipboardRead::Never);
         assert_eq!(config.app.language, "it");
         assert_eq!(Config::default().app.language, "system");
         assert!(config.scrollback.scroll_on_output);
@@ -1204,11 +1237,13 @@ mod tests {
                 "window",
                 "scrollback",
                 "keyboard",
+                "clipboard",
                 "app",
                 "keys"
             ]
         );
         assert_eq!(keys::<ScrollbackConfig>(), ["scroll-on-output"]);
+        assert_eq!(keys::<ClipboardConfig>(), ["read"]);
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
         assert_eq!(keys::<AppConfig>(), ["icon", "language"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));

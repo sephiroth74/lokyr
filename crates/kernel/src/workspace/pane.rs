@@ -10,7 +10,7 @@ use lokyr_session::{Options, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
 };
 
 use super::PaneId;
@@ -362,6 +362,22 @@ impl Pane {
     pub fn set_scroll_on_output(&self, scroll: bool) {
         if let Some(session) = &self.session {
             session.lock().set_scroll_on_output(scroll);
+        }
+    }
+
+    /// Sets whether the program's reads of the clipboard come as events,
+    /// for the embedder to answer, or get no reply.
+    pub fn set_clipboard_reads(&self, reads: bool) {
+        if let Some(session) = &self.session {
+            session.lock().set_clipboard_reads(reads);
+        }
+    }
+
+    /// Answers the program's read of the clipboard, `request`, with
+    /// `text`, what the clipboard holds.
+    pub fn reply_clipboard(&self, request: ClipboardRequest, text: &str) {
+        if let Some(session) = &self.session {
+            session.reply_clipboard(request, text.as_bytes());
         }
     }
 

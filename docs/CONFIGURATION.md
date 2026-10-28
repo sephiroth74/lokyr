@@ -71,6 +71,9 @@ scroll-on-output = true              # true | false: output brings the view back
 [keyboard]
 option-as-meta = "left"              # none | left | right | both
 
+[clipboard]
+read = "ask"                         # never | ask: a program's read of the clipboard
+
 [app]
 icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
@@ -428,6 +431,24 @@ Which Option keys act as Meta: they send an escape before the key, rather than t
 - `"left"` lets the right Option type those characters, and makes the left one Meta, for the shortcuts of shells and editors such as `Meta-b` and `Meta-f`.
 - An Option that acts as Meta does not compose either: its dead keys, such as Option and `e` on the US layout, send Meta and `e`.
 - With Meta, a key whose character is past ASCII sends the key in its place on the US layout: Meta and `ò` on the Italian layout send Meta and `;`.
+
+## `[clipboard]`
+
+What programs do with the clipboard. A program writes to it with the escape sequence OSC 52, as tmux and Neovim copy over ssh: the write always reaches it, up to 1 MiB of text, while the primary selection, which macOS lacks, takes nothing.
+
+### `read`
+
+<sub>Platforms: macOS</sub>
+
+Whether a program can read the clipboard, with OSC 52.
+
+| Values | Default |
+|---|---|
+| `"never"`, `"ask"` | `"never"` |
+
+- `"never"` answers nothing: a program that runs elsewhere, over ssh, could otherwise read what you copied, such as a password.
+- `"ask"` asks you with an alert at each read, on the program's window, whose default button refuses; the program gets the clipboard's text only if you allow it.
+- It applies as you save the file, to the windows that are open too.
 
 ## `[app]`
 
