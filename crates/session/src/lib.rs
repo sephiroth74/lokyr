@@ -189,6 +189,12 @@ impl Session {
         self.shared.ended.load(Ordering::Acquire)
     }
 
+    /// The name of the program in the terminal's foreground, as
+    /// [`Pty::foreground_program`] gives it.
+    pub fn foreground_program(&self) -> Option<String> {
+        self.pty.foreground_program()
+    }
+
     /// How the program ended, if it has.
     pub fn exit(&mut self) -> io::Result<Option<Exit>> {
         self.pty.try_wait()

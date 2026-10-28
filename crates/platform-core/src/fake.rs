@@ -89,6 +89,8 @@ pub struct Fake {
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
+    /// How many requests to quit the app refused.
+    quit_refusals: usize,
 }
 
 impl Default for Fake {
@@ -120,6 +122,7 @@ impl Fake {
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
+            quit_refusals: 0,
         }
     }
 
@@ -310,6 +313,11 @@ impl Fake {
         self.quit
     }
 
+    /// How many of the system's requests to quit the app refused.
+    pub fn quit_refusals(&self) -> usize {
+        self.quit_refusals
+    }
+
     fn next_id(&mut self) -> u64 {
         self.last_id += 1;
         self.last_id
@@ -324,6 +332,10 @@ impl Platform for Fake {
 
     fn quit(&mut self) {
         self.quit = true;
+    }
+
+    fn refuse_quit(&mut self) {
+        self.quit_refusals += 1;
     }
 
     fn appearance(&self) -> Appearance {

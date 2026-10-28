@@ -101,7 +101,14 @@ pub trait Platform {
 
     /// Ends the application once the current call of the [`Handler`]
     /// returns: no event comes after it, and the backend's `run` returns.
+    /// After the system's request, [`AppEvent::QuitRequested`], it
+    /// accepts it, and the system may end the process at once.
     fn quit(&mut self);
+
+    /// Declines the system's request to quit, [`AppEvent::QuitRequested`],
+    /// as the user cancelled it: what asked, as a logout, gives up. It does
+    /// nothing without a request.
+    fn refuse_quit(&mut self);
 
     /// The system's appearance.
     fn appearance(&self) -> Appearance;

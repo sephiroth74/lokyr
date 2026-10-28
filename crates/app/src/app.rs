@@ -53,6 +53,9 @@ const QUIT: &str = "app.quit";
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
 
+/// The command that closes the focused window.
+const CLOSE_WINDOW: &str = "window.close";
+
 /// The lines of a pasted text that its confirmation shows, and the
 /// characters of each.
 const PREVIEW: (usize, usize) = (3, 60);
@@ -368,6 +371,13 @@ pub struct App {
     /// Whether the user asked that pastes be not confirmed, where the
     /// config could not keep it: until the app quits.
     pastes_unconfirmed: bool,
+    /// The windows whose closing the user is asked to confirm, by their
+    /// alerts.
+    close_asks: BTreeMap<AlertId, WindowId>,
+    /// The question before quitting, while it waits for its answer.
+    quit_ask: Option<AlertId>,
+    /// Whether the system asked to quit, and waits for the answer.
+    system_quit: bool,
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
@@ -413,6 +423,9 @@ impl App {
             clipboard_asks: BTreeMap::new(),
             paste_asks: BTreeMap::new(),
             pastes_unconfirmed: false,
+            close_asks: BTreeMap::new(),
+            quit_ask: None,
+            system_quit: false,
             environment: {
                 let resources = environment::resources();
                 Environment {
@@ -797,6 +810,7 @@ impl App {
             self.clipboard_asks
                 .retain(|_, (pane, _)| *pane != state.pane);
             self.paste_asks.retain(|_, (pane, _)| *pane != state.pane);
+            self.close_asks.retain(|_, asked| *asked != window);
             self.workspace.close_window(state.window);
         }
         platform.close_window(window);
@@ -914,11 +928,17 @@ impl App {
             }
             Ok(_) => match name {
                 QUIT => {
-                    platform.quit();
+                    self.ask_quit(platform, false);
                     Ok(())
                 }
                 NEW_WINDOW => {
                     self.open_window(platform);
+                    Ok(())
+                }
+                CLOSE_WINDOW => {
+                    if let Some(window) = platform.focused_window() {
+                        self.ask_close(platform, window);
+                    }
                     Ok(())
                 }
                 _ => Err(Error::new(
@@ -997,10 +1017,10 @@ impl App {
                         .find(|(_, state)| state.window == window)
                         .map(|(&shown, _)| shown);
                     if let Some(shown) = shown {
-                        self.close(platform, shown);
+                        self.ask_close(platform, shown);
                     }
                 }
-                Request::Quit => platform.quit(),
+                Request::Quit => self.ask_quit(platform, false),
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
             }
@@ -1262,6 +1282,92 @@ impl App {
         self.paste_asks.insert(alert, (pane, text));
     }
 
+    /// Closes `window`, once the user confirms it while a program other
+    /// than a shell runs in it, which closing ends; a window that waits for
+    /// the answer asks nothing more.
+    fn ask_close(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        if self.close_asks.values().any(|&asked| asked == window) {
+            return;
+        }
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) else {
+            self.close(platform, window);
+            return;
+        };
+        let program = self.program_name(program);
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("close-running-message"),
+            detail: self
+                .texts
+                .text_with("close-running-detail", &[("program", Arg::Text(&program))]),
+            buttons: vec![
+                self.texts.text("close-running-close"),
+                self.texts.text("close-running-cancel"),
+            ],
+            suppression: None,
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.close_asks.insert(alert, window);
+    }
+
+    /// Quits, once the user confirms it while programs other than shells
+    /// run, which quitting ends: the system's request, when `system`, waits
+    /// for the answer, and gives up when the user cancels. A question that
+    /// waits for its answer takes the request too.
+    fn ask_quit(&mut self, platform: &mut dyn Platform, system: bool) {
+        self.system_quit |= system;
+        if self.quit_ask.is_some() {
+            return;
+        }
+        let mut programs = Vec::new();
+        let mut windows = 0;
+        for state in self.windows.values() {
+            if let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) {
+                windows += 1;
+                let program = self.program_name(program);
+                if !programs.contains(&program) {
+                    programs.push(program);
+                }
+            }
+        }
+        if windows == 0 {
+            self.system_quit = false;
+            platform.quit();
+            return;
+        }
+        let programs = programs.join(", ");
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("quit-running-message"),
+            detail: self.texts.text_with(
+                "quit-running-detail",
+                &[
+                    ("windows", Arg::Number(windows)),
+                    ("programs", Arg::Text(&programs)),
+                ],
+            ),
+            buttons: vec![
+                self.texts.text("quit-running-quit"),
+                self.texts.text("quit-running-cancel"),
+            ],
+            suppression: None,
+        };
+        self.quit_ask = Some(platform.show_alert(None, &alert));
+    }
+
+    /// The name of a program that runs, or "a program" for one whose name
+    /// could not be read.
+    fn program_name(&self, program: String) -> String {
+        if program.is_empty() {
+            self.texts.text("program-unknown")
+        } else {
+            program
+        }
+    }
+
     /// Pastes no longer ask, as the user said with the question's
     /// checkbox: the config file takes `confirm-paste = "never"`, or, if it
     /// cannot, as the log tells, the app keeps it until it quits.
@@ -1491,6 +1597,10 @@ impl App {
         if state.surface.is_none() {
             return;
         }
+        // The glyphs of the frames that the GPU still draws, of any window,
+        // stay in the atlas.
+        let oldest = drawing.renderer.drawing_from();
+        drawing.font.set_drawing(oldest);
         drawing.font.begin_frame();
         drawing.font.set_text(self.config.text);
         let cell = *drawing.font.cell();
@@ -1530,6 +1640,7 @@ impl App {
         let list = DisplayList {
             background: background.with_alpha(opacity),
             items,
+            frame: drawing.font.atlas_frame(),
         };
         let updates = drawing.font.texture_updates();
         let Some(surface) = &state.surface else {
@@ -1573,7 +1684,7 @@ impl Handler for App {
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
             AppEvent::Command(command) => self.run(platform, &command, Args::new()),
-            AppEvent::QuitRequested => platform.quit(),
+            AppEvent::QuitRequested => self.ask_quit(platform, true),
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
             AppEvent::Wake => {
@@ -1663,6 +1774,20 @@ impl Handler for App {
                     && let Some(pane) = self.workspace.pane(pane)
                 {
                     pane.reply_clipboard(request, &platform.clipboard_text().unwrap_or_default());
+                }
+                if let Some(window) = self.close_asks.remove(&alert)
+                    && button == 0
+                {
+                    self.close(platform, window);
+                }
+                if self.quit_ask == Some(alert) {
+                    self.quit_ask = None;
+                    let system = std::mem::take(&mut self.system_quit);
+                    if button == 0 {
+                        platform.quit();
+                    } else if system {
+                        platform.refuse_quit();
+                    }
                 }
                 // Paste, as one line, or cancel.
                 if let Some((pane, text)) = self.paste_asks.remove(&alert)
@@ -1829,7 +1954,7 @@ impl Handler for App {
                 mods,
                 ..
             } => self.scroll(platform, window, (delta, phase), position, mods),
-            WindowEvent::CloseRequested => self.close(platform, window),
+            WindowEvent::CloseRequested => self.ask_close(platform, window),
             _ => {}
         }
     }
@@ -1940,19 +2065,23 @@ fn bindings(plugins: &Plugins) -> Vec<Binding> {
 
 /// The default bindings of the app's commands.
 fn default_bindings() -> Vec<Binding> {
-    [("cmd+n", NEW_WINDOW), ("cmd+q", QUIT)]
-        .into_iter()
-        .filter_map(|(keys, command)| {
-            Some(Binding {
-                keys: keymap::parse_keys(keys).ok()?,
-                invocation: Invocation {
-                    command: command.to_owned(),
-                    args: Args::new(),
-                },
-                when: None,
-            })
+    [
+        ("cmd+n", NEW_WINDOW),
+        ("cmd+w", CLOSE_WINDOW),
+        ("cmd+q", QUIT),
+    ]
+    .into_iter()
+    .filter_map(|(keys, command)| {
+        Some(Binding {
+            keys: keymap::parse_keys(keys).ok()?,
+            invocation: Invocation {
+                command: command.to_owned(),
+                args: Args::new(),
+            },
+            when: None,
         })
-        .collect()
+    })
+    .collect()
 }
 
 /// The texts of the language `chosen`, as the config names it, or of the
@@ -1976,6 +2105,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
         (NEW_WINDOW, "command-window-new", Category::Windows),
+        (CLOSE_WINDOW, "command-window-close", Category::Windows),
         (QUIT, "command-app-quit", Category::App),
     ];
     for (name, title, category) in commands {
@@ -2109,6 +2239,7 @@ mod tests {
             registered,
             [
                 ("app.quit", "Quit Lokyr", Category::App),
+                ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
             ]
         );
@@ -2130,7 +2261,7 @@ mod tests {
         );
         let error = registry.check(QUIT, args.clone()).unwrap_err();
         assert_eq!(error.code.number(), 102);
-        let (mut fake, mut app) = started();
+        let (mut fake, mut app, _) = started_running(idle());
         app.run(&mut fake, QUIT, args);
         assert!(!fake.has_quit());
         app.run(&mut fake, QUIT, Args::new());
@@ -2227,24 +2358,163 @@ mod tests {
         assert!(!fake.has_quit());
     }
 
+    /// A shell that waits for a line, as at its prompt: no program runs.
+    fn idle() -> Program {
+        shell("echo ready; read line")
+    }
+
+    /// The app started, its window running `program`, once it shows
+    /// `ready`, focused.
+    fn started_running(program: Program) -> (Fake, App, WindowId) {
+        let (mut fake, mut app, window) = started_with(program);
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        (fake, app, window)
+    }
+
     #[test]
     fn quit_from_the_menu_or_from_the_system_quits() {
-        let (mut fake, mut app) = started();
+        let (mut fake, mut app, _) = started_running(idle());
         fake.send_app(&mut app, AppEvent::Command(QUIT.to_owned()));
         assert!(fake.has_quit());
+        assert!(fake.alerts().is_empty());
 
-        let (mut fake, mut app) = started();
+        let (mut fake, mut app, _) = started_running(idle());
         fake.send_app(&mut app, AppEvent::QuitRequested);
         assert!(fake.has_quit());
+        assert_eq!(fake.quit_refusals(), 0);
     }
 
     #[test]
     fn closing_the_last_window_quits() {
-        let (mut fake, mut app) = started();
-        let window = fake.windows().next().unwrap();
+        let (mut fake, mut app, window) = started_running(idle());
         fake.send(&mut app, window, WindowEvent::CloseRequested);
         assert_eq!(fake.windows().count(), 0);
         assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn closing_a_window_whose_program_runs_asks_first() {
+        let (mut fake, mut app, window) = started_running(shell("echo ready; exec sleep 30"));
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(window).running().as_deref() == Some("sleep")
+        });
+        // The close button, then ⌘W: one question, cancelled.
+        fake.send(&mut app, window, WindowEvent::CloseRequested);
+        fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
+        assert_eq!(fake.alerts().len(), 1);
+        let open = &fake.alerts()[0];
+        assert_eq!(open.window, Some(window));
+        assert_eq!(open.alert.message, app.texts.text("close-running-message"));
+        assert_eq!(
+            open.alert.detail,
+            app.texts
+                .text_with("close-running-detail", &[("program", Arg::Text("sleep"))])
+        );
+        assert_eq!(
+            open.alert.buttons,
+            [
+                app.texts.text("close-running-close"),
+                app.texts.text("close-running-cancel")
+            ]
+        );
+        let id = open.id;
+        fake.answer_alert(&mut app, id, 1);
+        assert_eq!(fake.windows().count(), 1);
+        // Confirmed, it closes, and the app quits with its last window.
+        fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
+        let id = fake.alerts()[0].id;
+        fake.answer_alert(&mut app, id, 0);
+        assert_eq!(fake.windows().count(), 0);
+        assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn quitting_while_programs_run_asks_and_the_system_waits_for_the_answer() {
+        let (mut fake, mut app, busy) = started_running(shell("echo ready; exec sleep 30"));
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(busy).running().as_deref() == Some("sleep")
+        });
+        // Another window, whose shell waits: it runs nothing.
+        app.program = idle();
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        // ⌘Q: a question without a window, cancelled.
+        fake.send(&mut app, busy, command_key(KeyCode::KeyQ, "q"));
+        assert_eq!(fake.alerts().len(), 1);
+        let open = &fake.alerts()[0];
+        assert_eq!(open.window, None);
+        assert_eq!(
+            open.alert.detail,
+            app.texts.text_with(
+                "quit-running-detail",
+                &[
+                    ("windows", Arg::Number(1)),
+                    ("programs", Arg::Text("sleep"))
+                ]
+            )
+        );
+        let id = open.id;
+        fake.answer_alert(&mut app, id, 1);
+        assert!(!fake.has_quit());
+        assert_eq!(fake.quit_refusals(), 0);
+        // The system's request: cancelled, it is refused; a second one
+        // while the question is open waits for the same answer.
+        fake.send_app(&mut app, AppEvent::QuitRequested);
+        fake.send_app(&mut app, AppEvent::QuitRequested);
+        assert_eq!(fake.alerts().len(), 1);
+        let id = fake.alerts()[0].id;
+        fake.answer_alert(&mut app, id, 1);
+        assert_eq!(fake.quit_refusals(), 1);
+        assert!(!fake.has_quit());
+        // The system's request while ⌘Q's question is open takes its
+        // answer.
+        fake.send(&mut app, busy, command_key(KeyCode::KeyQ, "q"));
+        fake.send_app(&mut app, AppEvent::QuitRequested);
+        assert_eq!(fake.alerts().len(), 1);
+        let id = fake.alerts()[0].id;
+        fake.answer_alert(&mut app, id, 1);
+        assert_eq!(fake.quit_refusals(), 2);
+        // Confirmed, the app quits.
+        fake.send_app(&mut app, AppEvent::QuitRequested);
+        let id = fake.alerts()[0].id;
+        fake.answer_alert(&mut app, id, 0);
+        assert!(fake.has_quit());
+        assert_eq!(fake.quit_refusals(), 2);
+    }
+
+    #[test]
+    fn programs_of_several_windows_take_one_question() {
+        let (mut fake, mut app, first) = started_running(shell("echo ready; exec sleep 30"));
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        app.program = shell("echo ready; exec cat");
+        app.run(&mut fake, NEW_WINDOW, Args::new());
+        run_until(&mut fake, &mut app, |_, app| {
+            app.windows
+                .values()
+                .filter(|state| {
+                    app.workspace
+                        .pane(state.pane)
+                        .and_then(Pane::running)
+                        .is_some()
+                })
+                .count()
+                == 3
+        });
+        fake.send(&mut app, first, command_key(KeyCode::KeyQ, "q"));
+        assert_eq!(
+            fake.alerts()[0].alert.detail,
+            app.texts.text_with(
+                "quit-running-detail",
+                &[
+                    ("windows", Arg::Number(3)),
+                    ("programs", Arg::Text("sleep, cat"))
+                ]
+            )
+        );
+        // A program whose name is not known is "a program".
+        assert_eq!(
+            app.program_name(String::new()),
+            app.texts.text("program-unknown")
+        );
     }
 
     #[test]
@@ -4095,6 +4365,29 @@ mod tests {
         // A late answer reaches nothing.
         fake.answer_alert(&mut app, id, 0);
         assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn the_font_s_size_and_the_view_take_their_keys() {
+        // More lines than the window's rows, for a scrollback.
+        let (mut fake, mut app, window) =
+            focused_with(shell("seq 1 200; echo ready; stty raw -echo; cat -v"));
+        let named = |code, plain: &str, mods| key_event(code, plain, mods, true);
+        fake.send(&mut app, window, named(KeyCode::Equal, "=", CMD));
+        assert_eq!(app.font_size, Some(14.0));
+        fake.send(&mut app, window, named(KeyCode::Minus, "-", CMD));
+        fake.send(&mut app, window, named(KeyCode::Minus, "-", CMD));
+        assert_eq!(app.font_size, Some(12.0));
+        fake.send(&mut app, window, named(KeyCode::Digit0, "0", CMD));
+        assert_eq!(app.font_size, None);
+        // A line up, a page down, to the top.
+        let offset = |app: &App| app.pane(window).snapshot().offset();
+        fake.send(&mut app, window, named(KeyCode::ArrowUp, "", CMD));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 1);
+        fake.send(&mut app, window, named(KeyCode::PageDown, "", SHIFT));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 0);
+        fake.send(&mut app, window, named(KeyCode::Home, "", CMD));
+        run_until(&mut fake, &mut app, |_, app| offset(app) > 1);
     }
 
     #[test]

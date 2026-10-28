@@ -218,6 +218,34 @@ impl Pty {
         let group = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
         u32::try_from(group).ok().filter(|&group| group != 0)
     }
+
+    /// The name of the program in the terminal's foreground, as `vim`: the
+    /// file name of the executable of its process group's first process;
+    /// none without a group, or when that process has ended or cannot be
+    /// looked at, as another user's.
+    pub fn foreground_program(&self) -> Option<String> {
+        program_name(self.foreground_process_group()?)
+    }
+}
+
+/// The file name of the executable of the process `pid`.
+#[cfg(target_os = "macos")]
+fn program_name(pid: u32) -> Option<String> {
+    let mut path = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    let pid = libc::c_int::try_from(pid).ok()?;
+    // SAFETY: `proc_pidpath` writes at most the buffer's size into it, and
+    // returns how many bytes it wrote, or 0 on failure.
+    let length = unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
+    path.truncate(usize::try_from(length).ok().filter(|&length| length > 0)?);
+    let path = PathBuf::from(OsString::from_vec(path));
+    Some(path.file_name()?.to_string_lossy().into_owned())
+}
+
+/// The file name of the executable of the process `pid`.
+#[cfg(not(target_os = "macos"))]
+fn program_name(pid: u32) -> Option<String> {
+    let path = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+    Some(path.file_name()?.to_string_lossy().into_owned())
 }
 
 impl Drop for Pty {

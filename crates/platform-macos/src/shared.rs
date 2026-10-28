@@ -55,6 +55,9 @@ pub(crate) struct Shared {
     /// Whether the innermost of those loops was asked to end, for the
     /// application to stop once it has.
     modal_aborted: Cell<bool>,
+    /// Whether the system asked the application to quit and waits for its
+    /// answer, as AppKit's `NSTerminateLater` has it.
+    terminating: Cell<bool>,
 }
 
 impl Shared {
@@ -66,6 +69,7 @@ impl Shared {
             backend: RefCell::new(Backend::new(mtm, shared.clone(), waker)),
             panic: RefCell::new(None),
             modals: Cell::new(0),
+            terminating: Cell::new(false),
             modal_aborted: Cell::new(false),
         })
     }
@@ -122,13 +126,32 @@ impl Shared {
         self.dispatching.set(false);
     }
 
-    /// Stops the application once the app has quit. Within an alert's
+    /// Notes that the system asked the application to quit, and waits for
+    /// its answer.
+    pub(crate) fn begin_terminating(&self) {
+        self.terminating.set(true);
+    }
+
+    /// Takes the note of the system's request to quit: whether one waits
+    /// for its answer.
+    pub(crate) fn end_terminating(&self) -> bool {
+        self.terminating.replace(false)
+    }
+
+    /// Stops the application once the app has quit: after the system's
+    /// request, by answering it, which ends the process. Within an alert's
     /// loop, where `stop` would end the alert's loop rather than the
     /// application's, it ends the alert's loop first, and the application
     /// stops once that loop has returned.
     fn stop_if_quit(&self) {
         let mut backend = self.backend.borrow_mut();
         if !backend.has_quit() || backend.is_stopped() {
+            return;
+        }
+        if self.end_terminating() {
+            // AppKit takes the answer and ends the process: the system,
+            // as a logout, goes on.
+            backend.answer_termination(true);
             return;
         }
         if self.modals.get() == 0 {

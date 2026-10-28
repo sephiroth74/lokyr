@@ -14,6 +14,7 @@ struct Host {
     commands: Vec<Command>,
     bindings: Vec<Binding>,
     calls: Vec<String>,
+    font: f32,
 }
 
 impl HostApi for Host {
@@ -73,15 +74,17 @@ impl HostApi for Host {
         Ok(())
     }
 
-    fn scroll(&mut self, _: PaneId, _: Scroll) -> Result<(), Error> {
+    fn scroll(&mut self, pane: PaneId, scroll: Scroll) -> Result<(), Error> {
+        self.calls.push(format!("scroll {} {scroll:?}", pane.0));
         Ok(())
     }
 
     fn font_size(&self) -> f32 {
-        13.0
+        self.font
     }
 
-    fn set_font_size(&mut self, _: Option<f32>) -> Result<(), Error> {
+    fn set_font_size(&mut self, size: Option<f32>) -> Result<(), Error> {
+        self.calls.push(format!("font {size:?}"));
         Ok(())
     }
 
@@ -121,21 +124,32 @@ fn the_commands_register_with_their_keys() {
         })
         .collect();
     let names = |names: &[&str]| -> Vec<String> { names.iter().map(|&n| n.to_owned()).collect() };
+    let clipboard = Category::Clipboard;
+    let view = |name| (name, Category::View, Vec::new());
     assert_eq!(
         registered,
         [
             (
                 "pane.copy",
-                Category::Clipboard,
+                clipboard,
                 names(&["terminal-read", "clipboard-write"])
             ),
             (
                 "pane.paste",
-                Category::Clipboard,
+                clipboard,
                 names(&["clipboard-read", "pty-write"])
             ),
-            ("pane.select-all", Category::View, Vec::new()),
-            ("pane.clear", Category::View, Vec::new()),
+            view("pane.select-all"),
+            view("pane.clear"),
+            view("font.bigger"),
+            view("font.smaller"),
+            view("font.reset"),
+            view("pane.scroll-line-up"),
+            view("pane.scroll-line-down"),
+            view("pane.scroll-page-up"),
+            view("pane.scroll-page-down"),
+            view("pane.scroll-top"),
+            view("pane.scroll-bottom"),
         ]
     );
     let bound: Vec<(&str, &str)> = host
@@ -153,6 +167,19 @@ fn the_commands_register_with_their_keys() {
             ("cmd+v", "pane.paste"),
             ("cmd+a", "pane.select-all"),
             ("cmd+k", "pane.clear"),
+            ("cmd+=", "font.bigger"),
+            ("cmd+shift+=", "font.bigger"),
+            ("cmd++", "font.bigger"),
+            ("cmd+-", "font.smaller"),
+            ("cmd+0", "font.reset"),
+            ("cmd+up", "pane.scroll-line-up"),
+            ("cmd+down", "pane.scroll-line-down"),
+            ("cmd+pageup", "pane.scroll-page-up"),
+            ("shift+pageup", "pane.scroll-page-up"),
+            ("cmd+pagedown", "pane.scroll-page-down"),
+            ("shift+pagedown", "pane.scroll-page-down"),
+            ("cmd+home", "pane.scroll-top"),
+            ("cmd+end", "pane.scroll-bottom"),
         ]
     );
 }
@@ -206,4 +233,73 @@ fn select_all_and_clear_act_on_the_focused_pane() {
         run(&mut host, "pane.other").unwrap_err().code,
         Code::NotFound
     );
+}
+
+#[test]
+fn the_font_grows_and_shrinks_a_point_within_its_sizes() {
+    let mut host = Host {
+        font: 13.0,
+        ..Host::default()
+    };
+    for name in [FONT_BIGGER, FONT_SMALLER, FONT_RESET] {
+        run(&mut host, name).unwrap();
+    }
+    // A size between points goes to the next whole one.
+    host.font = 13.5;
+    run(&mut host, FONT_BIGGER).unwrap();
+    run(&mut host, FONT_SMALLER).unwrap();
+    // At the ends, nothing more; past them, back within.
+    host.font = 200.0;
+    run(&mut host, FONT_BIGGER).unwrap();
+    host.font = 4.0;
+    run(&mut host, FONT_SMALLER).unwrap();
+    host.font = 199.5;
+    run(&mut host, FONT_BIGGER).unwrap();
+    host.font = 4.5;
+    run(&mut host, FONT_SMALLER).unwrap();
+    assert_eq!(
+        host.calls,
+        [
+            "font Some(14.0)",
+            "font Some(12.0)",
+            "font None",
+            "font Some(14.0)",
+            "font Some(13.0)",
+            "font Some(200.0)",
+            "font Some(4.0)",
+        ]
+    );
+}
+
+#[test]
+fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
+    let mut host = Host {
+        pane: Some(PaneId(5)),
+        ..Host::default()
+    };
+    for name in [
+        SCROLL_LINE_UP,
+        SCROLL_LINE_DOWN,
+        SCROLL_PAGE_UP,
+        SCROLL_PAGE_DOWN,
+        SCROLL_TOP,
+        SCROLL_BOTTOM,
+    ] {
+        run(&mut host, name).unwrap();
+    }
+    assert_eq!(
+        host.calls,
+        [
+            "scroll 5 Up(1)",
+            "scroll 5 Down(1)",
+            "scroll 5 PageUp",
+            "scroll 5 PageDown",
+            "scroll 5 Top",
+            "scroll 5 Bottom",
+        ]
+    );
+    // Without a focused pane, nothing.
+    let mut host = Host::default();
+    run(&mut host, SCROLL_TOP).unwrap();
+    assert!(host.calls.is_empty());
 }

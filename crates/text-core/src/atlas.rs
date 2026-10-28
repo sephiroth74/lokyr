@@ -7,7 +7,8 @@
 //! every glyph where it was: the renderer copies the old texture into the
 //! corner of the new one. Past its largest size, it evicts the shelf least
 //! recently used, but never one that the frame in progress uses, nor the
-//! frame before it, which the GPU may still be drawing.
+//! frames that the GPU may still be drawing, as the renderer tells: until it
+//! tells, the frame before the one in progress.
 
 use std::hash::Hash;
 
@@ -84,7 +85,21 @@ pub struct Atlas<K> {
     color: Page<K>,
     /// The frame in progress, which marks what it uses.
     frame: u64,
+    /// The frames that the GPU may still draw.
+    drawing: Drawing,
     changes: Vec<Change>,
+}
+
+/// The frames that the GPU may still draw, whose glyphs stay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Drawing {
+    /// As the renderer has not told: the frame before the one in progress,
+    /// as the GPU draws a frame while the next is made.
+    Unknown,
+    /// The frames from this one on.
+    From(u64),
+    /// None.
+    Nothing,
 }
 
 impl<K: Hash + Eq + Clone> Default for Atlas<K> {
@@ -107,6 +122,7 @@ impl<K: Hash + Eq + Clone> Atlas<K> {
             gray: Page::new(BitmapFormat::Gray, start.min(gray_max), gray_max),
             color: Page::new(BitmapFormat::Rgba, start.min(color_max), color_max),
             frame: 1,
+            drawing: Drawing::Unknown,
             changes: Vec::new(),
         }
     }
@@ -114,6 +130,31 @@ impl<K: Hash + Eq + Clone> Atlas<K> {
     /// Starts a frame: what it uses, it keeps from eviction.
     pub fn begin_frame(&mut self) {
         self.frame += 1;
+    }
+
+    /// The number of the frame in progress, which a renderer tells back as
+    /// the GPU draws it.
+    pub fn frame(&self) -> u64 {
+        self.frame
+    }
+
+    /// Tells the oldest frame that the GPU may still be drawing, by its
+    /// number, as the renderer's commands tell, or `None` once it draws
+    /// none: the glyphs of that frame and of those after it stay. With
+    /// several windows, the frames that the GPU draws are of each, and the
+    /// frame before the one in progress may be another window's.
+    pub fn set_drawing(&mut self, oldest: Option<u64>) {
+        self.drawing = oldest.map_or(Drawing::Nothing, Drawing::From);
+    }
+
+    /// The first frame whose glyphs stay: the GPU's oldest, or the one in
+    /// progress.
+    fn kept_from(&self) -> u64 {
+        match self.drawing {
+            Drawing::Unknown => self.frame - 1,
+            Drawing::From(oldest) => oldest.min(self.frame),
+            Drawing::Nothing => self.frame,
+        }
     }
 
     /// Where the glyph of `key` is, if the atlas has it, which marks it as
@@ -128,14 +169,14 @@ impl<K: Hash + Eq + Clone> Atlas<K> {
     /// Puts `bitmap` in the atlas as the glyph of `key`, and queues its
     /// pixels for the renderer. Returns where it went; `None` when it is
     /// larger than the texture's largest side, or when the frame in progress
-    /// and the one before already use all of the texture.
+    /// and those that the GPU may still draw already use all of the texture.
     pub fn insert(&mut self, key: K, bitmap: &Bitmap) -> Option<Placement> {
-        let frame = self.frame;
+        let (frame, kept) = (self.frame, self.kept_from());
         let page = match bitmap.format {
             BitmapFormat::Gray => &mut self.gray,
             BitmapFormat::Rgba => &mut self.color,
         };
-        page.insert(key, bitmap, frame, &mut self.changes)
+        page.insert(key, bitmap, (frame, kept), &mut self.changes)
     }
 
     /// The changes since the last take, in order.
@@ -229,13 +270,16 @@ impl<K: Hash + Eq + Clone> Page<K> {
         Some(entry.placement)
     }
 
+    /// Puts `bitmap` in the page as `key`'s, for the frame of `frames`'
+    /// first, the second the first frame whose glyphs stay.
     fn insert(
         &mut self,
         key: K,
         bitmap: &Bitmap,
-        frame: u64,
+        frames: (u64, u64),
         changes: &mut Vec<Change>,
     ) -> Option<Placement> {
+        let (frame, _) = frames;
         if let Some(placement) = self.get(&key, frame) {
             return Some(placement);
         }
@@ -264,7 +308,7 @@ impl<K: Hash + Eq + Clone> Page<K> {
         if width > self.max || height > self.max {
             return None;
         }
-        let shelf = self.room(width, height, frame, changes)?;
+        let shelf = self.room(width, height, frames, changes)?;
         let room = &mut self.shelves[shelf];
         placement.x = room.next;
         placement.y = room.y;
@@ -288,7 +332,7 @@ impl<K: Hash + Eq + Clone> Page<K> {
         &mut self,
         width: u32,
         height: u32,
-        frame: u64,
+        (frame, kept): (u64, u64),
         changes: &mut Vec<Change>,
     ) -> Option<usize> {
         loop {
@@ -323,19 +367,19 @@ impl<K: Hash + Eq + Clone> Page<K> {
                 });
                 continue;
             }
-            return self.evict(height, frame);
+            return self.evict(height, (frame, kept));
         }
     }
 
     /// Empties the shelves least recently used, one after another down the
-    /// texture, whose rows together take `height`, that neither the frame in
-    /// progress nor the one before uses, for their rows to take new glyphs:
-    /// the GPU may still draw the frame before while the renderer writes the
-    /// new glyphs' pixels. The shelves join into one, of the height that the
+    /// texture, whose rows together take `height`, that no frame from
+    /// `kept` uses, for their rows to take new glyphs of the frame in
+    /// progress, `frame`: the GPU may still draw those frames while the
+    /// renderer writes the new glyphs' pixels. The shelves join into one, of the height that the
     /// glyph needs, so that a texture of short shelves makes room for a tall
     /// glyph; the rows past it make an empty shelf of their own.
-    fn evict(&mut self, height: u32, frame: u64) -> Option<usize> {
-        let free = |shelf: &Shelf| shelf.used + 1 < frame;
+    fn evict(&mut self, height: u32, (frame, kept): (u64, u64)) -> Option<usize> {
+        let free = |shelf: &Shelf| shelf.used < kept;
         // The run of free shelves, from `start` to `end`, that takes the
         // height and was used least lately, and of the fewest rows.
         let mut best: Option<(usize, usize, (u64, u32))> = None;
@@ -645,6 +689,47 @@ mod tests {
         assert!(atlas.insert(1000, &gray(11, 11)).is_none());
         atlas.begin_frame();
         assert!(atlas.insert(1000, &gray(11, 11)).is_some());
+    }
+
+    #[test]
+    fn the_frames_that_the_gpu_draws_keep_their_glyphs() {
+        // Two windows, whose frames come in turns: the first's glyphs fill
+        // the texture.
+        let mut atlas = Atlas::with_sizes(64, 64, 64);
+        atlas.begin_frame();
+        let first = atlas.frame();
+        for key in 0..25_u32 {
+            assert!(atlas.insert(key, &gray(11, 11)).is_some());
+        }
+        // The second window's frame, then the first's again, while the GPU
+        // still draws the first's frame: its glyphs stay.
+        atlas.begin_frame();
+        atlas.begin_frame();
+        atlas.set_drawing(Some(first));
+        assert!(atlas.insert(1000, &gray(11, 11)).is_none());
+        // Once the GPU finished it, they can go, even right after.
+        atlas.set_drawing(Some(first + 1));
+        assert!(atlas.insert(1000, &gray(11, 11)).is_some());
+        // With nothing on the GPU, only the frame in progress keeps its
+        // glyphs, the frame before too.
+        let mut atlas = Atlas::with_sizes(64, 64, 64);
+        atlas.begin_frame();
+        for key in 0..25_u32 {
+            atlas.insert(key, &gray(11, 11));
+        }
+        atlas.begin_frame();
+        atlas.set_drawing(None);
+        assert!(atlas.insert(1000, &gray(11, 11)).is_some());
+        // An oldest frame past the one in progress keeps that one.
+        atlas.set_drawing(Some(u64::MAX));
+        let kept = atlas.frame();
+        for key in 2000..2100_u32 {
+            atlas.insert(key, &gray(11, 11));
+        }
+        assert!(
+            atlas.get(&1000).is_some(),
+            "the frame in progress {kept} keeps its glyph"
+        );
     }
 
     #[test]

@@ -76,10 +76,14 @@ define_class!(
 
         #[unsafe(method(applicationShouldTerminate:))]
         fn application_should_terminate(&self, _sender: &NSApplication) -> NSApplicationTerminateReply {
-            // The app decides, and quits by itself, which makes `run`
-            // return: AppKit's termination would end the process before.
-            self.post(Pending::App(AppEvent::QuitRequested));
-            NSApplicationTerminateReply::TerminateCancel
+            // The app decides, as its user may answer a question first:
+            // AppKit waits, and the system with it, as a logout does,
+            // until the app quits or refuses.
+            if let Some(shared) = self.ivars().upgrade() {
+                shared.begin_terminating();
+                shared.post(Pending::App(AppEvent::QuitRequested));
+            }
+            NSApplicationTerminateReply::TerminateLater
         }
     }
 );

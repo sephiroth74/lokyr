@@ -557,7 +557,30 @@ impl Pane {
     pub fn is_kept(&self) -> bool {
         self.kept
     }
+
+    /// The program that runs in the terminal's foreground, when it is no
+    /// shell, nor tmux or screen, whose sessions outlive the window: what
+    /// closing the pane would end, by its name, as `vim`, or empty when its
+    /// name cannot be read, as another user's. `None` once the program
+    /// ended, as at a shell's prompt.
+    pub fn running(&self) -> Option<String> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        if session.has_ended() {
+            return None;
+        }
+        match session.foreground_program() {
+            Some(name) if SHELLS.contains(&name.trim_start_matches('-')) => None,
+            Some(name) => Some(name),
+            None => Some(String::new()),
+        }
+    }
 }
+
+/// The programs that closing a pane does not ask about: shells at their
+/// prompt, and tmux and screen, whose sessions go on without the pane.
+const SHELLS: [&str; 12] = [
+    "login", "sh", "bash", "zsh", "fish", "ksh", "tcsh", "csh", "dash", "nu", "tmux", "screen",
+];
 
 /// The status of a program that ended: its own, which `exit` gives; or, for
 /// the login shell that `login` starts, whose own status is `login`'s, the

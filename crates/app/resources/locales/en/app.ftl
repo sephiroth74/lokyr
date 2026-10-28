@@ -2,6 +2,7 @@
 
 # The titles of the app's commands, which its menus show.
 command-window-new = New Window
+command-window-close = Close Window
 command-app-quit = Quit Lokyr
 
 # The alert of a program's read of the clipboard, and its buttons, the
@@ -23,3 +24,19 @@ paste-lines-paste = Paste
 paste-lines-one-line = Paste as One Line
 paste-lines-cancel = Cancel
 paste-lines-dont-ask = Don't ask again
+
+# The questions before closing a window, or quitting, while a program other
+# than a shell runs, which that ends, and their buttons, the default one
+# first. A program whose name cannot be read is "a program".
+close-running-message = Close this window?
+close-running-detail = This window is running { $program }, and closing the window ends it.
+close-running-close = Close
+close-running-cancel = Cancel
+quit-running-message = Quit Lokyr?
+quit-running-detail = { $windows ->
+    [one] A window is running { $programs }, and quitting ends it.
+   *[other] { $windows } windows are running programs: { $programs }. Quitting ends them.
+}
+quit-running-quit = Quit
+quit-running-cancel = Cancel
+program-unknown = a program

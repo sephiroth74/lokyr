@@ -1,6 +1,7 @@
 # I testi dell'app, in italiano.
 
 command-window-new = Nuova finestra
+command-window-close = Chiudi finestra
 command-app-quit = Esci da Lokyr
 
 clipboard-read-message = Un programma in questa finestra vuole leggere gli appunti.
@@ -17,3 +18,16 @@ paste-lines-paste = Incolla
 paste-lines-one-line = Incolla su una riga
 paste-lines-cancel = Annulla
 paste-lines-dont-ask = Non chiedere più
+
+close-running-message = Chiudere questa finestra?
+close-running-detail = In questa finestra è in esecuzione { $program }: chiuderla lo termina.
+close-running-close = Chiudi
+close-running-cancel = Annulla
+quit-running-message = Uscire da Lokyr?
+quit-running-detail = { $windows ->
+    [one] In una finestra è in esecuzione { $programs }: uscire lo termina.
+   *[other] In { $windows } finestre sono in esecuzione dei programmi: { $programs }. Uscire li termina.
+}
+quit-running-quit = Esci
+quit-running-cancel = Annulla
+program-unknown = un programma

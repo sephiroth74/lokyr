@@ -302,6 +302,10 @@ pub struct DisplayList {
     pub background: Color,
     /// The drawings, from the first to the last, each over those before.
     pub items: Vec<Item>,
+    /// The number of the atlas's frame that it draws, which the renderer
+    /// tells back until the GPU has drawn it, so that the atlas keeps its
+    /// glyphs.
+    pub frame: u64,
 }
 
 /// A GPU's backend: it keeps the atlas's textures, and draws display lists
@@ -319,6 +323,10 @@ pub trait Renderer {
     /// it drew: not when the target has no drawable to give, as while its
     /// window is minimized.
     fn draw(&mut self, target: &Self::Target, list: &DisplayList) -> Result<bool, Self::Error>;
+
+    /// The oldest frame, by its list's `frame`, that the GPU may still be
+    /// drawing; `None` once it finished every one that it took.
+    fn drawing_from(&mut self) -> Option<u64>;
 }
 
 #[cfg(test)]

@@ -695,8 +695,15 @@ The defaults:
 | Keys | Command | What it does |
 |---|---|---|
 | `cmd+n` | `window.new` | Opens a window |
-| `cmd+q` | `app.quit` | Quits Lokyr |
+| `cmd+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program. tmux and screen, whose sessions go on, do not ask |
+| `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |
 | `cmd+a` | `pane.select-all` | Selects the scrollback and the screen, to the last row that shows something |
 | `cmd+k` | `pane.clear` | Clears the scrollback and the screen but the prompt, which goes to the top; on the screen of a program such as vim, it does nothing |
+| `cmd+=`, `cmd+shift+=`, `cmd++` | `font.bigger` | Makes the text a point larger, in every window, up to 200 |
+| `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
+| `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
+| `cmd+up`, `cmd+down` | `pane.scroll-line-up`, `pane.scroll-line-down` | Scrolls the view a line up or down |
+| `cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-up`, `pane.scroll-page-down` | Scrolls the view a page up or down |
+| `cmd+home`, `cmd+end` | `pane.scroll-top`, `pane.scroll-bottom` | Scrolls the view to the scrollback's first row, or back to the screen |

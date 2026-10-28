@@ -1,6 +1,7 @@
 //! The renderer of Metal: the atlas's textures, the pipelines of the shaders,
 //! and a frame drawn from a display list.
 
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
@@ -14,10 +15,11 @@ use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::{
     MTLBlendFactor, MTLBlitCommandEncoder, MTLBuffer, MTLClearColor, MTLCommandBuffer,
-    MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLLibrary, MTLLoadAction, MTLOrigin,
-    MTLPixelFormat, MTLPrimitiveType, MTLRenderCommandEncoder, MTLRenderPassDescriptor,
-    MTLRenderPipelineDescriptor, MTLRenderPipelineState, MTLResourceOptions, MTLScissorRect,
-    MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture, MTLTextureDescriptor, MTLTextureUsage,
+    MTLCommandBufferStatus, MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLLibrary,
+    MTLLoadAction, MTLOrigin, MTLPixelFormat, MTLPrimitiveType, MTLRenderCommandEncoder,
+    MTLRenderPassDescriptor, MTLRenderPipelineDescriptor, MTLRenderPipelineState,
+    MTLResourceOptions, MTLScissorRect, MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture,
+    MTLTextureDescriptor, MTLTextureUsage,
 };
 use objc2_quartz_core::CAMetalDrawable;
 
@@ -73,6 +75,9 @@ pub struct MetalRenderer {
     color_glyphs: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
+    /// The commands of the frames that the GPU may still draw, by their
+    /// lists' frames, from the oldest.
+    drawing: VecDeque<(u64, Retained<ProtocolObject<dyn MTLCommandBuffer>>)>,
     /// The commands of the last uploads, which the tests wait for.
     #[cfg(test)]
     uploaded: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
@@ -98,6 +103,7 @@ impl MetalRenderer {
             color: make_texture(&device, Texture::Color, color)?,
             queue: gpu.queue.clone(),
             device,
+            drawing: VecDeque::new(),
             #[cfg(test)]
             uploaded: None,
         })
@@ -297,7 +303,29 @@ impl Renderer for MetalRenderer {
         encoder.endEncoding();
         buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
         buffer.commit();
+        self.drawing.push_back((list.frame, buffer));
+        self.drop_finished();
         Ok(true)
+    }
+
+    fn drawing_from(&mut self) -> Option<u64> {
+        self.drop_finished();
+        self.drawing.front().map(|&(frame, _)| frame)
+    }
+}
+
+impl MetalRenderer {
+    /// Forgets the frames that the GPU finished, from the oldest: a queue's
+    /// commands finish in their order.
+    fn drop_finished(&mut self) {
+        while self.drawing.front().is_some_and(|(_, buffer)| {
+            matches!(
+                buffer.status(),
+                MTLCommandBufferStatus::Completed | MTLCommandBufferStatus::Error
+            )
+        }) {
+            self.drawing.pop_front();
+        }
     }
 }
 
@@ -770,6 +798,7 @@ mod tests {
     fn list() -> DisplayList {
         let white = Color::from_rgb8(255, 255, 255);
         DisplayList {
+            frame: 1,
             background: Color::from_rgb8(30, 30, 32),
             items: vec![
                 Item::Rect {
@@ -870,6 +899,30 @@ mod tests {
         let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
         surface.resize(64, 32, 1.0);
         assert!(renderer.draw(&surface, &list()).unwrap());
+    }
+
+    #[test]
+    fn the_frames_that_the_gpu_draws_are_told_until_it_finishes() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        assert_eq!(renderer.drawing_from(), None);
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(64, 32, 1.0);
+        for frame in [7, 8] {
+            let list = DisplayList { frame, ..list() };
+            assert!(renderer.draw(&surface, &list).unwrap());
+        }
+        // The oldest that the GPU has not finished, if it has not.
+        assert!(matches!(renderer.drawing_from(), None | Some(7 | 8)));
+        let (_, last) = renderer
+            .drawing
+            .back()
+            .cloned()
+            .expect("a frame on the GPU");
+        last.waitUntilCompleted();
+        assert_eq!(renderer.drawing_from(), None);
+        assert!(renderer.drawing.is_empty());
     }
 
     #[test]

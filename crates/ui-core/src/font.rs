@@ -451,6 +451,18 @@ impl<B: FontBackend> Font<B> {
         self.drawn.iter().map(|&(region, key)| (key, region))
     }
 
+    /// The number of the atlas's frame in progress, which a renderer tells
+    /// back as the GPU draws it.
+    pub fn atlas_frame(&self) -> u64 {
+        self.atlas.frame()
+    }
+
+    /// Tells the atlas the oldest frame that the GPU may still be drawing,
+    /// as a renderer tells it, whose glyphs stay; `None` once it draws none.
+    pub fn set_drawing(&mut self, oldest: Option<u64>) {
+        self.atlas.set_drawing(oldest);
+    }
+
     /// Starts a frame: the glyphs that it uses stay in the atlas.
     pub fn begin_frame(&mut self) {
         self.frame += 1;

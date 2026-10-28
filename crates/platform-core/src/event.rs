@@ -85,8 +85,10 @@ pub enum AppEvent {
     },
     /// The system's appearance changed.
     AppearanceChanged(Appearance),
-    /// The system asked the application to quit, as when the user logs out;
-    /// it goes on until the app calls [`Platform::quit`](crate::Platform::quit).
+    /// The system asked the application to quit, as when the user logs out
+    /// or chooses Quit in the Dock; the system waits until the app calls
+    /// [`Platform::quit`](crate::Platform::quit), or declines with
+    /// [`Platform::refuse_quit`](crate::Platform::refuse_quit).
     QuitRequested,
     /// A timer that the app started fired.
     Timer(TimerId),

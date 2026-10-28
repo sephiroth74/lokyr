@@ -95,6 +95,10 @@ name = "quit_with_sheet"
 harness = false
 
 [[test]]
+name = "terminate_later"
+harness = false
+
+[[test]]
 name = "panic_in_modal"
 harness = false
 

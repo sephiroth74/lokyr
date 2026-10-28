@@ -122,6 +122,12 @@ impl Backend {
         self.stopped
     }
 
+    /// Answers the system's request to quit, which AppKit waits for: with
+    /// `quit`, AppKit ends the process.
+    pub(crate) fn answer_termination(&self, quit: bool) {
+        NSApplication::sharedApplication(self.mtm).replyToApplicationShouldTerminate(quit);
+    }
+
     /// Stops the application's loop, which makes `run` return.
     pub(crate) fn stop(&mut self) {
         self.stopped = true;
@@ -167,6 +173,16 @@ impl Platform for Backend {
 
     fn quit(&mut self) {
         self.quit = true;
+    }
+
+    fn refuse_quit(&mut self) {
+        if self
+            .shared
+            .upgrade()
+            .is_some_and(|shared| shared.end_terminating())
+        {
+            self.answer_termination(false);
+        }
     }
 
     fn appearance(&self) -> Appearance {

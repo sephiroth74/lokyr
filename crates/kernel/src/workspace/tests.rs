@@ -196,3 +196,33 @@ fn a_pane_that_cannot_start_tells_nothing() {
     workspace.collect();
     assert_eq!(workspace.take_events(), []);
 }
+
+#[test]
+fn a_pane_tells_the_program_that_runs_but_a_shell() {
+    // A program that the shell became.
+    let busy = pane("exec sleep 30");
+    let start = Instant::now();
+    while busy.running().as_deref() != Some("sleep") {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            busy.running()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // A shell at its prompt, here waiting for a line, runs nothing.
+    let idle = pane("printf ready; read line");
+    let start = Instant::now();
+    loop {
+        idle.select_all();
+        if idle
+            .selection_text()
+            .is_some_and(|text| text.contains("ready"))
+        {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(idle.running(), None);
+}

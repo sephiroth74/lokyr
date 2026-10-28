@@ -390,6 +390,45 @@ fn dropping_the_terminal_hangs_up_the_job_in_its_foreground() {
 }
 
 #[test]
+fn the_program_in_the_foreground_has_its_name() {
+    // The shell itself, without job control.
+    let pty = spawn(&Options::new(
+        sh("stty -echo; echo ready; sleep 30"),
+        "xterm-256color",
+    ))
+    .unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    output.until("ready");
+    // macOS's `/bin/sh` runs bash, or the shell that it is set to.
+    let name = pty.foreground_program().unwrap();
+    assert!(
+        ["sh", "bash", "dash", "zsh"].contains(&name.as_str()),
+        "{name}"
+    );
+    // A job in the foreground, of its own group.
+    let bash = Program::command("/bin/bash", ["-c", "set -m; sleep 30"]);
+    let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
+    let _idle = pty.reader().unwrap();
+    let start = std::time::Instant::now();
+    while pty.foreground_program().as_deref() != Some("sleep") {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            pty.foreground_program()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // A program that the shell became.
+    let pty = spawn(&Options::new(sh("exec cat"), "xterm-256color")).unwrap();
+    let _idle = pty.reader().unwrap();
+    let start = std::time::Instant::now();
+    while pty.foreground_program().as_deref() != Some("cat") {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
 fn dropping_the_terminal_ends_its_readers_and_writers() {
     // A program that ignores SIGHUP and reads nothing, so that its input
     // fills up.
