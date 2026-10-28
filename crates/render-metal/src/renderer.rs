@@ -16,7 +16,7 @@ use objc2_foundation::NSString;
 use objc2_metal::{
     MTLBlendFactor, MTLBlitCommandEncoder, MTLBuffer, MTLClearColor, MTLCommandBuffer,
     MTLCommandBufferStatus, MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLLibrary,
-    MTLLoadAction, MTLOrigin, MTLPixelFormat, MTLPrimitiveType, MTLRenderCommandEncoder,
+    MTLLoadAction, MTLOrigin, MTLPixelFormat, MTLPrimitiveType, MTLRegion, MTLRenderCommandEncoder,
     MTLRenderPassDescriptor, MTLRenderPipelineDescriptor, MTLRenderPipelineState,
     MTLResourceOptions, MTLScissorRect, MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture,
     MTLTextureDescriptor, MTLTextureUsage,
@@ -307,6 +307,60 @@ impl Renderer for MetalRenderer {
 }
 
 impl MetalRenderer {
+    /// Draws `list` into a texture of its own, `width` by `height` pixels,
+    /// as a window's surface would show it, waits for the GPU, and reads
+    /// its pixels back: RGBA, 8 bits a component in sRGB, a row after the
+    /// other from the top, as tests compare them with images.
+    pub fn draw_offscreen(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>, Error> {
+        let (width, height) = (width.max(1) as usize, height.max(1) as usize);
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                false,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::RenderTarget);
+        descriptor.setStorageMode(MTLStorageMode::Shared);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .ok_or(Error::Device("texture"))?;
+        let buffer = self.encode(&texture, list)?;
+        buffer.commit();
+        buffer.waitUntilCompleted();
+        let mut pixels = vec![0_u8; width * height * 4];
+        let region = MTLRegion {
+            origin: MTLOrigin { x: 0, y: 0, z: 0 },
+            size: MTLSize {
+                width,
+                height,
+                depth: 1,
+            },
+        };
+        // SAFETY: room for the whole texture, of four bytes a pixel.
+        unsafe {
+            texture.getBytes_bytesPerRow_fromRegion_mipmapLevel(
+                NonNull::new_unchecked(pixels.as_mut_ptr().cast()),
+                width * 4,
+                region,
+                0,
+            );
+        }
+        // BGRA to RGBA.
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        Ok(pixels)
+    }
+
     /// The commands that draw `list` into `output`, to commit.
     fn encode(
         &self,
@@ -725,7 +779,6 @@ fn make_texture(
 #[cfg(test)]
 mod tests {
     use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
-    use objc2_metal::MTLRegion;
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -961,6 +1014,36 @@ mod tests {
     }
 
     #[test]
+    fn a_list_drawn_offscreen_reads_back_as_rgba() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let red = Color::from_rgb8(255, 0, 0);
+        let list = DisplayList {
+            frame: 1,
+            background: Color::from_rgb8(0, 0, 255),
+            items: vec![Item::Rect {
+                rect: Rect {
+                    x: 1,
+                    y: 2,
+                    width: 2,
+                    height: 1,
+                },
+                color: red,
+            }],
+        };
+        let pixels = renderer.draw_offscreen(&list, 4, 3).unwrap();
+        let pixel = |x: usize, y: usize| &pixels[(y * 4 + x) * 4..][..4];
+        assert_eq!(pixels.len(), 4 * 3 * 4);
+        assert_eq!(pixel(0, 0), [0, 0, 255, 255]);
+        assert_eq!(pixel(1, 2), [255, 0, 0, 255]);
+        assert_eq!(pixel(2, 2), [255, 0, 0, 255]);
+        assert_eq!(pixel(3, 2), [0, 0, 255, 255]);
+        // A size of nothing is a pixel.
+        assert_eq!(renderer.draw_offscreen(&list, 0, 0).unwrap().len(), 4);
+    }
+
+    #[test]
     fn the_frames_that_the_gpu_draws_are_told_until_it_finishes() {
         let Some((gpu, mut renderer)) = renderer() else {
             return;
@@ -985,33 +1068,19 @@ mod tests {
     }
 
     /// `list` drawn into a texture of `width` by `height` pixels, read
-    /// back, a row of pixels at a time, four bytes a pixel: blue, green,
-    /// red and opacity.
+    /// back, a row of pixels at a time, four bytes a pixel: red, green,
+    /// blue and opacity.
     fn drawn(
-        renderer: &MetalRenderer,
+        renderer: &mut MetalRenderer,
         list: &DisplayList,
         width: usize,
         height: usize,
     ) -> Vec<Vec<u8>> {
-        // SAFETY: a two-dimensional texture of a valid format and size.
-        let descriptor = unsafe {
-            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-                MTLPixelFormat::BGRA8Unorm,
-                width,
-                height,
-                false,
-            )
-        };
-        descriptor.setUsage(MTLTextureUsage::RenderTarget | MTLTextureUsage::ShaderRead);
-        descriptor.setStorageMode(MTLStorageMode::Shared);
-        let output = renderer
-            .device
-            .newTextureWithDescriptor(&descriptor)
+        let pixels = renderer
+            .draw_offscreen(list, width as u32, height as u32)
             .unwrap();
-        let buffer = renderer.encode(&output, list).unwrap();
-        buffer.commit();
-        buffer.waitUntilCompleted();
-        (0..height).map(|y| read(&output, 0, y, width, 4)).collect()
+        assert_eq!(pixels.len(), width * height * 4);
+        pixels.chunks(width * 4).map(<[u8]>::to_vec).collect()
     }
 
     /// The decorations of a row each, white on black, in cells of `width`
@@ -1020,7 +1089,7 @@ mod tests {
     /// single, a double, a curly, a dotted and a dashed underline, and a
     /// strikeout with an overline. Returns each pixel's red, by row.
     fn decorations(
-        renderer: &MetalRenderer,
+        renderer: &mut MetalRenderer,
         (width, height): (u32, u32),
         (underline, strikeout, thickness): (u32, u32, u32),
     ) -> Vec<Vec<u8>> {
@@ -1062,13 +1131,13 @@ mod tests {
         let pixels = drawn(renderer, &list, 4 * width as usize, 6 * height as usize);
         pixels
             .into_iter()
-            .map(|row| row.chunks(4).map(|pixel| pixel[2]).collect())
+            .map(|row| row.chunks(4).map(|pixel| pixel[0]).collect())
             .collect()
     }
 
     #[test]
     fn every_decoration_draws_its_pattern_at_two_sizes() {
-        let Some((_gpu, renderer)) = renderer() else {
+        let Some((_gpu, mut renderer)) = renderer() else {
             return;
         };
         // Cells of a scale of 1 and of 2, with their underline and
@@ -1079,7 +1148,7 @@ mod tests {
         ] {
             let (width, height) = cell;
             let (underline, strikeout, t) = lines;
-            let red = decorations(&renderer, cell, lines);
+            let red = decorations(&mut renderer, cell, lines);
             let lit = |row: u32, y: u32, x: u32| red[(row * height + y) as usize][x as usize] > 127;
             let any = |row: u32, y: u32, x: u32| red[(row * height + y) as usize][x as usize] > 0;
             let columns = 4 * width;

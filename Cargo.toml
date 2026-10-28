@@ -35,6 +35,8 @@ insta = { version = "1.49.0", default-features = false }
 libc = "0.2.190"
 # Literal search over the grid's text.
 memchr = "2.8.3"
+# The golden images of the renderer's tests.
+png = "0.18.1"
 # Regex search over the grid's text.
 regex = "1.13.1"
 regex-automata = "0.4.18"

@@ -40,5 +40,8 @@ lokyr-render-metal.workspace = true
 [dev-dependencies]
 lokyr-platform-core = { workspace = true, features = ["fake"] }
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+png.workspace = true
+
 [lints]
 workspace = true
