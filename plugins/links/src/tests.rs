@@ -297,7 +297,9 @@ fn a_path_loses_its_dots_and_its_empty_parts() {
         ("/a/../../b", "/b"),
         ("~/x/../y", "~/y"),
         ("~", "~"),
-        ("~/..", "~/"),
+        ("~/..", "~/.."),
+        ("~/../Shared", "~/../Shared"),
+        ("~/a/../..", "~/.."),
         ("a/./b", "a/b"),
     ] {
         assert_eq!(super::normal(path), normal, "{path}");

@@ -107,7 +107,7 @@ impl Plugin for Links {
 }
 
 /// `path` without its `.` and `..` parts, nor its empty ones: a `..` takes
-/// the part before it away, but none of the root or of `~`.
+/// the part before it away, but none of the root; above `~`, it stays.
 fn normal(path: &str) -> String {
     let (root, rest) = if let Some(rest) = path.strip_prefix('/') {
         ("/", rest)
@@ -122,6 +122,11 @@ fn normal(path: &str) -> String {
     for part in rest.split('/') {
         match part {
             "" | "." => {}
+            // Above the home directory, which only the host knows, `..`
+            // stays.
+            ".." if root == "~/" && parts.last().is_none_or(|last| *last == "..") => {
+                parts.push("..");
+            }
             ".." => {
                 parts.pop();
             }
