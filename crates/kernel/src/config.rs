@@ -843,7 +843,7 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
         position: None,
         message,
     };
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let target = link_target(path);
     let text = match fs::read_to_string(&target) {
         Ok(text) => text,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -877,26 +877,70 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
         .or_insert_with(toml_edit::table)
         .as_table_like_mut()
         .ok_or_else(|| failed(&target, format!("`{section}` is a section, not a value")))?;
-    table.insert(key, toml_edit::value(value));
+    // A key that the file has keeps its comments, those above its line,
+    // which are the key's, and the one after its value, which is the
+    // value's.
+    match table.get_mut(key) {
+        Some(toml_edit::Item::Value(old)) => {
+            let decor = old.decor().clone();
+            *old = toml_edit::Value::from(value);
+            *old.decor_mut() = decor;
+        }
+        _ => {
+            table.insert(key, toml_edit::value(value));
+        }
+    }
     write_whole(&target, &document.to_string())
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
 }
 
+/// How many links a config's path can lead through, each to the next.
+const LINKS: usize = 32;
+
+/// The file that `path` leads to, through its symbolic links: its target
+/// when it is one that exists, and otherwise the last link's target, which
+/// a write makes, so that a link stays a link.
+fn link_target(path: &Path) -> PathBuf {
+    if let Ok(target) = fs::canonicalize(path) {
+        return target;
+    }
+    let mut path = path.to_owned();
+    for _ in 0..LINKS {
+        let Ok(target) = fs::read_link(&path) else {
+            break;
+        };
+        // A relative target is the link's directory's.
+        path = match path.parent() {
+            Some(directory) => directory.join(target),
+            None => target,
+        };
+    }
+    path
+}
+
 /// Writes `text` to `path` whole: into a file of its own beside it, with
-/// its permissions, renamed over it, so that a reader never sees half of
-/// it.
+/// its permissions, on the disk, renamed over it, so that a reader never
+/// sees half of it; a failure leaves no file of its own behind.
 fn write_whole(path: &Path, text: &str) -> io::Result<()> {
+    use std::io::Write;
+
     let directory = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(directory)?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let temporary = directory.join(format!(".{name}.{}.new", std::process::id()));
-    fs::write(&temporary, text)?;
-    if let Ok(metadata) = fs::metadata(path) {
-        fs::set_permissions(&temporary, metadata.permissions())?;
-    }
-    fs::rename(&temporary, path).inspect_err(|_| {
+    let written = (|| {
+        let mut file = fs::File::create(&temporary)?;
+        file.write_all(text.as_bytes())?;
+        if let Ok(metadata) = fs::metadata(path) {
+            file.set_permissions(metadata.permissions())?;
+        }
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if written.is_err() {
         let _ = fs::remove_file(&temporary);
-    })
+    }
+    written
 }
 
 /// An error of the config file, at its place in the file when it has one.
@@ -1914,6 +1958,86 @@ mod tests {
             })
             .collect();
         assert!(left.is_empty(), "{left:?}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_key_set_again_keeps_its_comments() {
+        let root = std::env::temp_dir().join(format!("lokyr-set-kept-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        // The comments above the key, and the one after its value, as the
+        // guide's example and the written config's documents have them.
+        let text = concat!(
+            "[clipboard]\n",
+            "# Whether a paste with line breaks asks first.\n",
+            "# auto | always | never\n",
+            "confirm-paste = \"always\"   # I want to see them\n",
+            "read = \"ask\"\n",
+        );
+        fs::write(&file, text).unwrap();
+        set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            text.replace("\"always\"", "\"never\"")
+        );
+        // In an inline table too.
+        fs::write(
+            &file,
+            "clipboard = { read = \"ask\", confirm-paste = \"auto\" }\n",
+        )
+        .unwrap();
+        set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "clipboard = { read = \"ask\", confirm-paste = \"never\" }\n"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_link_to_a_config_not_there_yet_stays_a_link() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("lokyr-set-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        // An absolute link, and a relative one, to a file of a directory
+        // that does not exist yet, as dotfiles not cloned yet.
+        let absolute = root.join("absolute.toml");
+        symlink(root.join("dotfiles/lokyr/config.toml"), &absolute).unwrap();
+        let relative = root.join("relative.toml");
+        symlink("other/config.toml", &relative).unwrap();
+        for (link, target) in [
+            (&absolute, root.join("dotfiles/lokyr/config.toml")),
+            (&relative, root.join("other/config.toml")),
+        ] {
+            set_string(link, "links", "urls", "open").unwrap();
+            assert!(fs::symlink_metadata(link).unwrap().file_type().is_symlink());
+            assert!(
+                fs::read_to_string(&target)
+                    .unwrap()
+                    .contains("urls = \"open\"")
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_write_that_fails_leaves_no_file_of_its_own() {
+        let root = std::env::temp_dir().join(format!("lokyr-set-fail-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // A directory with a file in it, which no file can be renamed
+        // over.
+        fs::create_dir_all(root.join("config.toml")).unwrap();
+        fs::write(root.join("config.toml/inside"), "").unwrap();
+        assert!(write_whole(&root.join("config.toml"), "x").is_err());
+        let names: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["config.toml"]);
         fs::remove_dir_all(root).unwrap();
     }
 
