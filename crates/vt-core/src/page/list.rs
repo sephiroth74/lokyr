@@ -174,6 +174,14 @@ impl<'a> ListRow<'a> {
         self.page.cols()
     }
 
+    /// The cell at column `x`, empty past the row's end.
+    pub fn cell(self, x: u16) -> Cell {
+        self.cells
+            .get(usize::from(x))
+            .copied()
+            .unwrap_or(Cell::EMPTY)
+    }
+
     /// The row's cells, one for each column.
     pub fn cells(self) -> impl Iterator<Item = Cell> + 'a {
         let empty = usize::from(self.page.cols()) - self.cells.len();

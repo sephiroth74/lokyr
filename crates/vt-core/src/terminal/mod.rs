@@ -17,6 +17,7 @@ mod osc;
 mod print;
 mod rectangles;
 mod reports;
+mod selection;
 mod sgr;
 mod snapshot;
 mod terminfo;
@@ -28,6 +29,7 @@ pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
+pub use selection::{Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
 pub use viewport::Scroll;
 pub use window::Window;
@@ -462,6 +464,8 @@ pub struct Terminal {
     viewport: Option<PinId>,
     /// Whether output brings the view back to the screen.
     scroll_on_output: bool,
+    /// The selection, if there is one.
+    selection: Option<selection::Selection>,
 }
 
 impl Terminal {
@@ -562,6 +566,7 @@ impl Terminal {
             bells: 0,
             viewport: None,
             scroll_on_output: options.scroll_on_output,
+            selection: None,
         }
     }
 
@@ -623,6 +628,10 @@ impl Terminal {
         // primary one's screen with it.
         if alternate {
             self.set_viewport_offset(0);
+        }
+        // The selection is the other screen's.
+        if alternate != self.alternate_active {
+            self.clear_selection();
         }
         self.alternate_active = alternate;
         self.moved();
@@ -690,6 +699,7 @@ impl Terminal {
         // A taller screen that took the view's first row brings the view to
         // the screen, which it follows from now on.
         self.settle_viewport();
+        self.resized_selection();
     }
 
     /// Clears the prompt that the cursor is in, as semantic prompts mark it,

@@ -1,7 +1,7 @@
 //! Snapshots: what a renderer draws, copied from the terminal under the
 //! lock, so that it can draw without the lock.
 
-use super::{Colors, Cursor, CursorStyle, Terminal};
+use super::{Colors, Cursor, CursorStyle, Selected, Terminal};
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
 /// The view as a renderer draws it: its rows, the screen's or, when the
@@ -34,6 +34,8 @@ pub struct Snapshot {
     reverse_video: bool,
     smooth_scroll: bool,
     colors: Colors,
+    /// The selection, as the view shows it.
+    selection: Option<Selected>,
 }
 
 /// The cursor, as a renderer draws it.
@@ -86,6 +88,11 @@ impl Snapshot {
     /// [`Terminal::viewport_offset`] tells: 0 when it shows the screen.
     pub fn offset(&self) -> usize {
         self.offset
+    }
+
+    /// The selection, as the view shows it, if there is one.
+    pub fn selection(&self) -> Option<Selected> {
+        self.selection
     }
 
     /// Whether the last update copied row `y`, which the renderer then has
@@ -336,6 +343,7 @@ impl Terminal {
                 copied += 1;
             }
         }
+        snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
         copied
     }
 }
@@ -377,6 +385,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         reverse_video: terminal.reverse_video(),
         smooth_scroll: terminal.smooth_scroll(),
         colors: terminal.colors().clone(),
+        selection: None,
     }
 }
 

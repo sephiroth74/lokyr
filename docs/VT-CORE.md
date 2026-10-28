@@ -195,6 +195,14 @@ The metadata fits in one byte.
 - **Alternate screen**: resized without reflow, as xterm does.
 - **Cost and correctness**: cost is linear in the scrollback size, about 0.3 µs per row of 120 columns ([throughput-F1-133.md](bench/throughput-F1-133.md#reflow)). A property test checks that shrinking and then widening again, through other sizes on the way, loses no content, wherever the cursor is and whatever edits moved the rows: every line keeps its cells, with their styles, graphemes and links.
 
+### Selection
+
+- **What it holds**: two pins of the active screen's rows, its first and last cells, in one of two shapes: the cells from the first to the last in reading order, or a rectangle of the columns between them on each row between them. `Terminal::select` takes two cells of the view and grows a selection of cells to the words or the logical lines that they are in; `select_all` takes the whole scrollback and screen.
+- **Words**: the cells around a cell that are neither spaces nor separators, across soft wraps and the spacer head that a wide character left at a row's end; on a space, the run of spaces; on a separator, the separator alone. The separators are the caller's, `WORD_SEPARATORS` by default: quotes, brackets, `|`, `:`, `;`, `,` and the box drawing's vertical line, so that a path or a name with dots and dashes is one word.
+- **Lines**: the rows that soft-wrap into each other, whole, as a row that soft-wraps goes on into the next only when the next is its continuation.
+- **Its text**, `Terminal::selection_text`: soft-wrapped rows joined; the spaces that end a line dropped, and those that end the selection where the rest of its row shows nothing; clusters whole, a wide character once, from either of its halves; a rectangle's rows each a line.
+- **What clears it**: output that writes over its cells, other text or another style, which a hash of its cells on the screen tells, the same text written again leaving it; a move of its rows that drops some or brings others in, as a scroll region's; its first or last cell leaving the list, with the scrollback's oldest rows or ED 3; and a switch to the other screen. A resize keeps a selection of cells, whose pins follow their text through the reflow, and drops a rectangle. A snapshot carries the selection as the view shows it, and looks only at the rows that it copies, so that a frame of an unchanged screen costs nothing more for it.
+
 ## Unicode
 
 - **Tables generated from the UCD** by `cargo xtask ucd`, for Unicode 18.0.0, pinned in the repo. They cover:
