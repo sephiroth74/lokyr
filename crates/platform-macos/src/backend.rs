@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, PointerShape, Size,
-    TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -380,8 +380,16 @@ impl Platform for Backend {
         NSBeep();
     }
 
+    fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
+        open::kind(target)
+    }
+
     fn open(&mut self, target: &str) -> Result<(), Error> {
         open::open(target)
+    }
+
+    fn reveal(&mut self, target: &str) -> Result<(), Error> {
+        open::reveal(target)
     }
 
     fn notify(&mut self, window: WindowId, title: &str, body: &str) {

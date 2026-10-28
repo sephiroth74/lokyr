@@ -110,7 +110,10 @@ pub trait HostApi {
     /// Opens `target`, once this call returns, with the system's handler:
     /// a URL of `http`, `https`, `mailto` or `file`, or a path, absolute or
     /// from `~`, a file in its application and a directory in the file
-    /// manager. Another scheme, or a relative path, fails.
+    /// manager. Another scheme, or a relative path, fails. As the user's
+    /// config says, a URL or a file asks the user first, showing it, and a
+    /// file can show in the file manager instead; a file that would run
+    /// never does.
     fn open(&mut self, target: &str) -> Result<(), Error>;
 
     /// Selects everything of `pane`: its scrollback and its screen.

@@ -7,7 +7,8 @@ use std::fs::{self, Metadata};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use lokyr_platform_core::Error;
+use lokyr_platform_core::{Error, TargetKind};
+use objc2::rc::Retained;
 use objc2_app_kit::NSWorkspace;
 use objc2_foundation::{NSArray, NSBundle, NSString, NSURL};
 
@@ -37,22 +38,27 @@ const RUNS: [&str; 15] = [
 /// The bundle identifier of the system's terminal, which runs what it opens.
 const TERMINAL: &str = "com.apple.Terminal";
 
-/// Opens `target`, a URL or an absolute path, as
-/// [`Platform::open`](lokyr_platform_core::Platform::open) does.
-pub(crate) fn open(target: &str) -> Result<(), Error> {
+/// A target that opens: a URL of another scheme than `file`, or a path of
+/// this machine, with its kind.
+enum Resolved {
+    Url(Retained<NSURL>),
+    Path(Retained<NSURL>, TargetKind),
+}
+
+/// What `target`, a URL or an absolute path, is, as
+/// [`Platform::target_kind`](lokyr_platform_core::Platform::target_kind)
+/// tells.
+fn resolve(workspace: &NSWorkspace, target: &str) -> Result<Resolved, Error> {
     let failed = |why: &str| Error::Open(target.to_owned(), why.to_owned());
-    let workspace = NSWorkspace::sharedWorkspace();
     let path = if target.starts_with('/') {
         PathBuf::from(target)
     } else {
+        // Foundation takes a text without a scheme as a relative URL.
         let url = NSURL::URLWithString(&NSString::from_str(target))
+            .filter(|url| url.scheme().is_some())
             .ok_or_else(|| failed("it is not a URL"))?;
         if !url.isFileURL() {
-            return if workspace.openURL(&url) {
-                Ok(())
-            } else {
-                Err(failed("no application opens it"))
-            };
+            return Ok(Resolved::Url(url));
         }
         if let Some(host) = url.host()
             && !is_local(&host.to_string(), &host_name())
@@ -69,13 +75,57 @@ pub(crate) fn open(target: &str) -> Result<(), Error> {
         .and_then(|application| NSBundle::bundleWithURL(&application))
         .and_then(|bundle| bundle.bundleIdentifier())
         .map(|identifier| identifier.to_string());
-    if runs(&path, &metadata, opener.as_deref()) {
-        workspace.activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
-        Ok(())
-    } else if workspace.openURL(&file) {
+    let kind = if runs(&path, &metadata, opener.as_deref()) {
+        TargetKind::Program
+    } else if metadata.is_dir() {
+        TargetKind::Directory
+    } else {
+        TargetKind::File
+    };
+    Ok(Resolved::Path(file, kind))
+}
+
+/// What `target` is, as
+/// [`Platform::target_kind`](lokyr_platform_core::Platform::target_kind)
+/// tells.
+pub(crate) fn kind(target: &str) -> Result<TargetKind, Error> {
+    Ok(match resolve(&NSWorkspace::sharedWorkspace(), target)? {
+        Resolved::Url(_) => TargetKind::Url,
+        Resolved::Path(_, kind) => kind,
+    })
+}
+
+/// Opens `target`, as [`Platform::open`](lokyr_platform_core::Platform::open)
+/// does.
+pub(crate) fn open(target: &str) -> Result<(), Error> {
+    let workspace = NSWorkspace::sharedWorkspace();
+    let url = match resolve(&workspace, target)? {
+        Resolved::Path(file, TargetKind::Program) => {
+            workspace.activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
+            return Ok(());
+        }
+        Resolved::Url(url) | Resolved::Path(url, _) => url,
+    };
+    if workspace.openURL(&url) {
         Ok(())
     } else {
-        Err(failed("no application opens it"))
+        Err(Error::Open(
+            target.to_owned(),
+            "no application opens it".to_owned(),
+        ))
+    }
+}
+
+/// Shows `target` in the Finder, as
+/// [`Platform::reveal`](lokyr_platform_core::Platform::reveal) does.
+pub(crate) fn reveal(target: &str) -> Result<(), Error> {
+    let workspace = NSWorkspace::sharedWorkspace();
+    match resolve(&workspace, target)? {
+        Resolved::Path(file, _) => {
+            workspace.activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
+            Ok(())
+        }
+        Resolved::Url(_) => Err(Error::Open(target.to_owned(), "it is no file".to_owned())),
     }
 }
 
@@ -159,6 +209,37 @@ mod tests {
         // A file that the system's terminal opens runs in it.
         assert!(runs("e.sh", Some(TERMINAL)));
         assert!(!runs("e.sh", Some("com.apple.TextEdit")));
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_target_is_a_url_a_directory_a_file_or_a_program() {
+        let directory = std::env::temp_dir().join(format!("lokyr-kind-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let (file, program) = (directory.join("a.txt"), directory.join("b.command"));
+        fs::write(&file, "").unwrap();
+        fs::write(&program, "").unwrap();
+        let path = |path: &Path| path.to_str().unwrap().to_owned();
+        for (target, wanted) in [
+            ("https://lokyr.dev".to_owned(), TargetKind::Url),
+            ("mailto:me@lokyr.dev".to_owned(), TargetKind::Url),
+            (path(&directory), TargetKind::Directory),
+            (path(&file), TargetKind::File),
+            (format!("file://{}", path(&file)), TargetKind::File),
+            (format!("file://localhost{}", path(&file)), TargetKind::File),
+            (path(&program), TargetKind::Program),
+        ] {
+            assert_eq!(kind(&target).ok(), Some(wanted), "{target}");
+        }
+        for target in [
+            path(&directory.join("none")),
+            format!("file://elsewhere.example{}", path(&file)),
+            "not a url".to_owned(),
+        ] {
+            assert!(kind(&target).is_err(), "{target}");
+        }
+        assert!(reveal("https://lokyr.dev").is_err());
         fs::remove_dir_all(&directory).unwrap();
     }
 

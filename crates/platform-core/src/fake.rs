@@ -10,8 +10,8 @@ use std::time::Instant;
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, Error, Handler, MainMenu, Platform, Point,
-    PointerShape, Size, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -89,8 +89,10 @@ pub struct Fake {
     notifications: Vec<FakeNotification>,
     /// The windows that the app asked to bring forward, from the first.
     focus_requests: Vec<WindowId>,
-    /// The URLs and the paths that the app opened, from the first.
+    /// The URLs and the paths that the app opened, and those that it
+    /// showed in the file manager, from the first.
     opened: Vec<String>,
+    revealed: Vec<String>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -125,6 +127,7 @@ impl Fake {
             notifications: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
+            revealed: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -319,6 +322,11 @@ impl Fake {
         &self.opened
     }
 
+    /// The paths that the app showed in the file manager, from the first.
+    pub fn revealed(&self) -> &[String] {
+        &self.revealed
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -500,13 +508,49 @@ impl Platform for Fake {
         }
     }
 
-    /// Opens nothing, and records `target`: a path that does not exist
-    /// fails, as a backend's does.
+    /// A URL, unless of `file`; a directory, a program, as a file that its
+    /// mode lets run, or a file; a path that does not exist fails.
+    fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(path) = fake_path(target) else {
+            return Ok(TargetKind::Url);
+        };
+        let metadata = std::fs::metadata(path)
+            .map_err(|error| Error::Open(target.to_owned(), error.to_string()))?;
+        Ok(if metadata.is_dir() {
+            TargetKind::Directory
+        } else if metadata.permissions().mode() & 0o111 != 0 {
+            TargetKind::Program
+        } else {
+            TargetKind::File
+        })
+    }
+
+    /// Opens nothing, and records `target`, or, for a program, reveals it.
     fn open(&mut self, target: &str) -> Result<(), Error> {
-        if target.starts_with('/') && !Path::new(target).exists() {
-            return Err(Error::Open(target.to_owned(), "no such file".to_owned()));
+        if self.target_kind(target)? == TargetKind::Program {
+            return self.reveal(target);
         }
         self.opened.push(target.to_owned());
         Ok(())
     }
+
+    /// Shows nothing, and records `target`; a URL that is not of `file`
+    /// fails.
+    fn reveal(&mut self, target: &str) -> Result<(), Error> {
+        if self.target_kind(target)? == TargetKind::Url {
+            return Err(Error::Open(target.to_owned(), "not a file".to_owned()));
+        }
+        self.revealed.push(target.to_owned());
+        Ok(())
+    }
+}
+
+/// The path of `target`, an absolute path or a `file` URL of no host;
+/// `None` for another URL.
+fn fake_path(target: &str) -> Option<&str> {
+    if target.starts_with('/') {
+        return Some(target);
+    }
+    target.strip_prefix("file://")
 }

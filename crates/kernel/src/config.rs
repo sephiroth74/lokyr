@@ -38,6 +38,10 @@
 //! [clipboard]
 //! read = "never"            # never | ask: a program's read of the clipboard
 //!
+//! [links]
+//! urls = "ask"              # ask | open: a URL that a click opens
+//! files = "ask"             # ask | open | reveal: a file that a click opens
+//!
 //! [bell]
 //! sound = false             # the system's alert sound
 //! flash = true              # a short flash of the window that has the focus
@@ -57,7 +61,8 @@
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
 //! `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
-//! `[clipboard]` [`ClipboardConfig`], `[bell]` [`BellConfig`], `[app]`
+//! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
+//! [`BellConfig`], `[app]`
 //! [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
@@ -114,6 +119,8 @@ pub struct Config {
     pub keyboard: KeyboardConfig,
     /// The `[clipboard]` section.
     pub clipboard: ClipboardConfig,
+    /// The `[links]` section.
+    pub links: LinksConfig,
     /// The `[bell]` section.
     pub bell: BellConfig,
     /// The `[app]` section.
@@ -464,6 +471,43 @@ pub enum ConfirmPaste {
     Never,
 }
 
+/// The `[links]` section: what a click on a link does, as the links'
+/// plugin opens it, or another plugin; a directory always opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct LinksConfig {
+    /// What a URL does.
+    pub urls: OpenUrl,
+    /// What a file does.
+    pub files: OpenFile,
+}
+
+/// What opening a URL does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenUrl {
+    /// It asks the user first, showing the URL.
+    #[default]
+    Ask,
+    /// It opens.
+    Open,
+}
+
+/// What opening a file does; a file that would run, rather than open,
+/// shows in the file manager.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenFile {
+    /// It asks the user first, showing the path, whether to open the file
+    /// or show it in the file manager.
+    #[default]
+    Ask,
+    /// It opens in its application.
+    Open,
+    /// It shows in the file manager, selected.
+    Reveal,
+}
+
 /// Whether a program can read the clipboard.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -789,8 +833,10 @@ fn path_in(config_home: Option<OsString>, home: Option<PathBuf>) -> Option<PathB
 /// Sets the key `key` of the section `[section]` of the config file at
 /// `path` to the string `value`, keeping the rest of the file, its
 /// comments too: in the file that a link points to, which stays a link, or
-/// in a new file, with its directory, when there is none. A file that does
-/// not read as a config is left as it is, and its error returned.
+/// in a new file, with its directory, when there is none. A section that
+/// the file lacks goes at its end, after its last comments, as those of a
+/// file whose keys are all commented out. A file that does not read as a
+/// config is left as it is, and its error returned.
 pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<(), Error> {
     let failed = |path: &Path, message: String| Error {
         path: path.to_owned(),
@@ -809,6 +855,23 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
     let mut document: DocumentMut = text
         .parse()
         .map_err(|error: toml_edit::TomlError| failed(&target, error.message().to_owned()))?;
+    // The comments and the blank lines after the last section are the
+    // document's, which a new section would come before.
+    let after = (!document.contains_key(section))
+        .then(|| document.trailing().as_str().map(str::to_owned))
+        .flatten()
+        .filter(|after| !after.is_empty());
+    if let Some(after) = after {
+        document.set_trailing("");
+        let comments = after.trim_end();
+        let mut table = toml_edit::Table::new();
+        table.decor_mut().set_prefix(if comments.is_empty() {
+            "\n".to_owned()
+        } else {
+            format!("{comments}\n\n")
+        });
+        document.insert(section, toml_edit::Item::Table(table));
+    }
     let table = document
         .entry(section)
         .or_insert_with(toml_edit::table)
@@ -885,7 +948,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 10] {
+fn sections() -> [(&'static str, &'static [&'static str]); 11] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -895,6 +958,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 10] {
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
         ("clipboard", keys::<ClipboardConfig>()),
+        ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
         ("app", keys::<AppConfig>()),
     ]
@@ -1667,11 +1731,13 @@ mod tests {
                 "scrollback",
                 "keyboard",
                 "clipboard",
+                "links",
                 "bell",
                 "app",
                 "keys"
             ]
         );
+        assert_eq!(keys::<LinksConfig>(), ["urls", "files"]);
         assert_eq!(
             keys::<ScrollbackConfig>(),
             ["scroll-on-output", "limit", "budget"]
@@ -1770,7 +1836,24 @@ mod tests {
                 .count(),
             1
         );
-        // Into a section that it lacks, and an inline one.
+        // Into a section that it lacks, after the comments at its end, and
+        // an inline one.
+        for (text, written) in [
+            ("# mine\n", "# mine\n\n[links]\nurls = \"open\"\n"),
+            (
+                "[font]\nsize = 14\n\n# [bell]\n# sound = true\n",
+                "[font]\nsize = 14\n\n# [bell]\n# sound = true\n\n[links]\nurls = \"open\"\n",
+            ),
+            ("\n\n", "\n[links]\nurls = \"open\"\n"),
+            (
+                "[font]\nsize = 14\n\n\n",
+                "[font]\nsize = 14\n\n[links]\nurls = \"open\"\n",
+            ),
+        ] {
+            fs::write(&file, text).unwrap();
+            set_string(&file, "links", "urls", "open").unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
+        }
         fs::write(&file, "[font]\nsize = 14\n").unwrap();
         set_string(&file, "clipboard", "confirm-paste", "never").unwrap();
         assert!(
@@ -1832,6 +1915,27 @@ mod tests {
             .collect();
         assert!(left.is_empty(), "{left:?}");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn links_read_what_a_url_and_a_file_do() {
+        for (urls, url) in [("ask", OpenUrl::Ask), ("open", OpenUrl::Open)] {
+            for (files, file) in [
+                ("ask", OpenFile::Ask),
+                ("open", OpenFile::Open),
+                ("reveal", OpenFile::Reveal),
+            ] {
+                let config = parse(&format!(
+                    "[links]\nurls = \"{urls}\"\nfiles = \"{files}\"\n"
+                ))
+                .unwrap();
+                assert_eq!((config.links.urls, config.links.files), (url, file));
+            }
+        }
+        let links = Config::default().links;
+        assert_eq!((links.urls, links.files), (OpenUrl::Ask, OpenFile::Ask));
+        let error = parse("[links]\nurls = \"reveal\"\n").unwrap_err();
+        assert_eq!(error.position, Some(Position { line: 2, column: 8 }));
     }
 
     #[test]

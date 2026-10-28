@@ -31,3 +31,11 @@ quit-running-detail = { $windows ->
 quit-running-quit = Esci
 quit-running-cancel = Annulla
 program-unknown = un programma
+
+open-url-message = Aprire questo link?
+open-file-message = Aprire questo file?
+open-open = Apri
+open-reveal = Mostra nel Finder
+open-cancel = Annulla
+open-url-dont-ask = Non chiedere più per i link
+open-file-dont-ask = Non chiedere più per i file

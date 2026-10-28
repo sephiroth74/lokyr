@@ -92,6 +92,21 @@ pub struct Backdrop {
     pub blur: f64,
 }
 
+/// What a target that opens is, as [`Platform::open`] takes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    /// A URL of another scheme than `file`, which its application opens.
+    Url,
+    /// A directory, which the file manager opens.
+    Directory,
+    /// A file, which its application opens.
+    File,
+    /// A file that would run rather than open, as a program, an
+    /// application or a script that a terminal runs, which the file manager
+    /// shows instead.
+    Program,
+}
+
 /// What the app asks of the platform, from the main thread.
 ///
 /// A window that is closed, or that never was, takes nothing: what is done
@@ -224,13 +239,21 @@ pub trait Platform {
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
     fn notify(&mut self, window: WindowId, title: &str, body: &str);
 
+    /// What `target`, a URL or an absolute path, is, as [`Platform::open`]
+    /// takes it: a `file` URL is its path's, if it names this machine; a
+    /// path that does not exist fails.
+    fn target_kind(&self, target: &str) -> Result<TargetKind, Error>;
+
     /// Opens `target`, a URL or an absolute path, with the system's handler:
     /// a URL in its application, as the browser; a file in its
     /// application, and a directory in the file manager. A file that would
-    /// run rather than open, as a program, an application or a script that
-    /// a terminal runs, shows in the file manager, selected, and does not
-    /// run. A `file` URL opens its path, if it names this machine.
+    /// run rather than open, a [`TargetKind::Program`], shows in the file
+    /// manager, selected, and does not run.
     fn open(&mut self, target: &str) -> Result<(), Error>;
+
+    /// Shows `target`, an absolute path or a `file` URL, in the file
+    /// manager, selected; another URL fails.
+    fn reveal(&mut self, target: &str) -> Result<(), Error>;
 }
 
 /// What the platform calls on the app, on the main thread.

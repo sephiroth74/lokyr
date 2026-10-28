@@ -40,3 +40,14 @@ quit-running-detail = { $windows ->
 quit-running-quit = Quit
 quit-running-cancel = Cancel
 program-unknown = a program
+
+# The question before opening a link, a URL or a file, with the URL or the
+# path in full under it, and its buttons, the default one first; a file can
+# show in the Finder instead.
+open-url-message = Open this link?
+open-file-message = Open this file?
+open-open = Open
+open-reveal = Show in Finder
+open-cancel = Cancel
+open-url-dont-ask = Don't ask again for links
+open-file-dont-ask = Don't ask again for files

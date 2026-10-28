@@ -92,6 +92,10 @@ read = "ask"                         # never | ask: a program's read of the clip
 confirm-paste = "always"             # auto | always | never: a paste with line breaks asks first
 copy-on-select = true                # a selection by the mouse copies its text as it ends
 
+[links]
+urls = "open"                        # ask | open: a URL that ⌘-click opens
+files = "reveal"                     # ask | open | reveal: a file that ⌘-click opens
+
 [bell]
 sound = true                         # true | false: the system's alert sound
 flash = false                        # true | false: a flash of the window that has the focus
@@ -596,6 +600,39 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 - A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection. The pointer over the window is the text's I-beam, and the arrow while a program takes the clicks.
 - It applies as you save the file.
 
+## `[links]`
+
+What a link does as you open it, with [`cmd+click`](#bindings), or as a plugin opens one. A folder always opens in the Finder, without asking. A file that would run rather than open, as a program, an application, an installer or a script of macOS's Terminal, never runs: it shows in the Finder, selected.
+
+### `urls`
+
+<sub>Platforms: macOS</sub>
+
+What a URL does: one of `http`, `https` or `mailto`, as the text writes it, or as a program's link leads to it, whose text can say something else.
+
+| Values | Default |
+|---|---|
+| `"ask"`, `"open"` | `"ask"` |
+
+- `"ask"` asks you first, showing the URL in full, with two buttons: Open, the default one, and Cancel. Its checkbox, Don't ask again for links, sets this key to `"open"` in your config file as the URL opens, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits.
+- `"open"` opens it in its application, as your browser or your mail.
+- It applies as you save the file.
+
+### `files`
+
+<sub>Platforms: macOS</sub>
+
+What a file does: a path, or a `file` URL.
+
+| Values | Default |
+|---|---|
+| `"ask"`, `"open"`, `"reveal"` | `"ask"` |
+
+- `"ask"` asks you first, showing the path in full, with three buttons: Open, the default one, Show in Finder, and Cancel. Its checkbox, Don't ask again for files, sets this key to the button that you choose, `"open"` or `"reveal"`, in your config file, as [`urls`](#urls) does.
+- `"open"` opens it in its application, as the Finder would.
+- `"reveal"` shows it in the Finder, selected.
+- It applies as you save the file.
+
 ## `[bell]`
 
 What a program's bell does, the character BEL that it prints, as `printf '\a'`, or as the agents that run in the terminal ring it when they wait for you. Each kind takes its own key; they apply as you save the file. Bells that come within a fifth of a second of the last one in the window do nothing more.
@@ -746,4 +783,4 @@ The defaults:
 | `cmd+up`, `cmd+down` | `pane.scroll-line-up`, `pane.scroll-line-down` | Scrolls the view a line up or down |
 | `cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-up`, `pane.scroll-page-down` | Scrolls the view a page up or down |
 | `cmd+home`, `cmd+end` | `pane.scroll-top`, `pane.scroll-bottom` | Scrolls the view to the scrollback's first row, or back to the screen |
-| `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`. A file opens in its application and a folder in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run |
+| `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`. A URL or a file asks you first, as [`[links]`](#links) says; a folder opens in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run |

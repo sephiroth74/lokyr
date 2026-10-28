@@ -10,7 +10,9 @@ use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry, Value};
-use lokyr_kernel::config::{self, AppConfig, ClipboardRead, Config, ConfirmPaste};
+use lokyr_kernel::config::{
+    self, AppConfig, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile, OpenUrl,
+};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
 };
@@ -25,8 +27,8 @@ use lokyr_kernel::workspace::{
 use lokyr_platform_core::{
     Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
     KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, PointerShape,
-    ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TimerId, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TargetKind, TimerId, WindowAttributes,
+    WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Rect, Renderer};
@@ -286,6 +288,15 @@ struct Window {
     selecting: Option<Selecting>,
 }
 
+/// What the user chose that links do, as the config writes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Chosen {
+    /// What a URL does.
+    Url(OpenUrl),
+    /// What a file does.
+    File(OpenFile),
+}
+
 /// A selection that the mouse's left button makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Selecting {
@@ -408,6 +419,12 @@ pub struct App {
     /// Whether the user asked that pastes be not confirmed, where the
     /// config could not keep it: until the app quits.
     pastes_unconfirmed: bool,
+    /// The links that the user is asked about before they open, by their
+    /// alerts: the URL or the path, and what it is.
+    open_asks: BTreeMap<AlertId, (String, TargetKind)>,
+    /// What the user chose that links do, where the config could not keep
+    /// it: until the app quits.
+    links_chosen: (Option<OpenUrl>, Option<OpenFile>),
     /// The windows whose closing the user is asked to confirm, by their
     /// alerts.
     close_asks: BTreeMap<AlertId, WindowId>,
@@ -462,6 +479,8 @@ impl App {
             clipboard_asks: BTreeMap::new(),
             paste_asks: BTreeMap::new(),
             pastes_unconfirmed: false,
+            open_asks: BTreeMap::new(),
+            links_chosen: (None, None),
             close_asks: BTreeMap::new(),
             quit_ask: None,
             system_quit: false,
@@ -1304,11 +1323,7 @@ impl App {
                 Request::Quit => self.ask_quit(platform, false),
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
-                Request::Open(target) => {
-                    if let Err(error) = platform.open(&target) {
-                        eprintln!("lokyr: {error}");
-                    }
-                }
+                Request::Open(target) => self.open_target(platform, target),
             }
         }
         for &window in self.windows.keys() {
@@ -1566,6 +1581,127 @@ impl App {
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.paste_asks.insert(alert, (pane, text));
+    }
+
+    /// Opens `target`, a URL or an absolute path, as a plugin asked, and as
+    /// `[links]` says: a URL or a file asks the user first, by default,
+    /// showing it in full; a directory opens, and a program shows in the
+    /// file manager, never running.
+    fn open_target(&mut self, platform: &mut dyn Platform, target: String) {
+        let links = self.links();
+        let opened = match platform.target_kind(&target) {
+            Ok(kind @ TargetKind::Url) if links.urls == OpenUrl::Ask => {
+                self.ask_open(platform, target, kind);
+                return;
+            }
+            Ok(kind @ TargetKind::File) if links.files == OpenFile::Ask => {
+                self.ask_open(platform, target, kind);
+                return;
+            }
+            Ok(TargetKind::File) if links.files == OpenFile::Reveal => platform.reveal(&target),
+            // A program shows in the file manager.
+            Ok(_) => platform.open(&target),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = opened {
+            eprintln!("lokyr: {error}");
+        }
+    }
+
+    /// What links do: the config's `[links]`, or what the user chose where
+    /// the config could not keep it.
+    fn links(&self) -> LinksConfig {
+        let (urls, files) = self.links_chosen;
+        LinksConfig {
+            urls: urls.unwrap_or(self.config.links.urls),
+            files: files.unwrap_or(self.config.links.files),
+        }
+    }
+
+    /// Asks the user whether to open `target`, a URL or a file, of `kind`,
+    /// on the window that has the focus: a file can show in the file
+    /// manager instead.
+    fn ask_open(&mut self, platform: &mut dyn Platform, target: String, kind: TargetKind) {
+        let file = kind == TargetKind::File;
+        let (message, dont_ask) = if file {
+            ("open-file-message", "open-file-dont-ask")
+        } else {
+            ("open-url-message", "open-url-dont-ask")
+        };
+        let mut buttons = vec![self.texts.text("open-open")];
+        if file {
+            buttons.push(self.texts.text("open-reveal"));
+        }
+        buttons.push(self.texts.text("open-cancel"));
+        let alert = Alert {
+            style: AlertStyle::Informational,
+            message: self.texts.text(message),
+            detail: target.clone(),
+            buttons,
+            suppression: Some(self.texts.text(dont_ask)),
+        };
+        let alert = platform.show_alert(platform.focused_window(), &alert);
+        self.open_asks.insert(alert, (target, kind));
+    }
+
+    /// The user answered the question before opening `target`, of `kind`,
+    /// with `button`, its checkbox ticked when `suppressed`: it opens, or
+    /// shows in the file manager, and, ticked, the config keeps the answer.
+    fn answer_open(
+        &mut self,
+        platform: &mut dyn Platform,
+        (target, kind): (String, TargetKind),
+        button: usize,
+        suppressed: bool,
+    ) {
+        let (done, chosen) = match (kind, button) {
+            (TargetKind::File, 0) => (platform.open(&target), Chosen::File(OpenFile::Open)),
+            (TargetKind::File, 1) => (platform.reveal(&target), Chosen::File(OpenFile::Reveal)),
+            (_, 0) => (platform.open(&target), Chosen::Url(OpenUrl::Open)),
+            _ => return,
+        };
+        if let Err(error) = done {
+            eprintln!("lokyr: {error}");
+        }
+        if suppressed {
+            self.remember_opening(chosen);
+        }
+    }
+
+    /// Keeps `chosen`, what links do, as the user answered without wanting
+    /// to be asked again: the config file takes it, or, if it cannot, it
+    /// lasts until the app quits.
+    fn remember_opening(&mut self, chosen: Chosen) {
+        let (key, value) = match chosen {
+            Chosen::Url(urls) => {
+                self.config.links.urls = urls;
+                ("urls", "open")
+            }
+            Chosen::File(files) => {
+                self.config.links.files = files;
+                (
+                    "files",
+                    if files == OpenFile::Reveal {
+                        "reveal"
+                    } else {
+                        "open"
+                    },
+                )
+            }
+        };
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "links", key, value)
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file, without a home directory".to_owned()),
+        };
+        if let Err(error) = written {
+            eprintln!("lokyr: {error}");
+            eprintln!("lokyr: links {key} {value} until Lokyr quits");
+            match chosen {
+                Chosen::Url(urls) => self.links_chosen.0 = Some(urls),
+                Chosen::File(files) => self.links_chosen.1 = Some(files),
+            }
+        }
     }
 
     /// Closes `window`, once the user confirms it while a program other
@@ -2109,6 +2245,9 @@ impl Handler for App {
                     } else if system {
                         platform.refuse_quit();
                     }
+                }
+                if let Some(asked) = self.open_asks.remove(&alert) {
+                    self.answer_open(platform, asked, button, suppressed);
                 }
                 // Paste, as one line, or cancel.
                 if let Some((pane, text)) = self.paste_asks.remove(&alert)
@@ -4825,11 +4964,15 @@ mod tests {
 
     #[test]
     fn a_cmd_click_opens_the_link_under_it_rather_than_selecting() {
-        let (mut fake, mut app, window) = focused_with(shell(concat!(
-            "stty raw -echo; cd /usr; printf 'https://lokyr.dev/x bin/\\r\\n",
-            "\\033]8;;https://lokyr.dev/osc\\033\\\\here\\033]8;;\\033\\\\\\r\\n'; ",
-            "echo ready; cat -v"
-        )));
+        let (mut fake, mut app, window, _) = pasting(
+            "click",
+            "[links]\nurls = \"open\"\n",
+            shell(concat!(
+                "stty raw -echo; cd /usr; printf 'https://lokyr.dev/x bin/\\r\\n",
+                "\\033]8;;https://lokyr.dev/osc\\033\\\\here\\033]8;;\\033\\\\\\r\\n'; ",
+                "echo ready; cat -v"
+            )),
+        );
         let cmd_click = |fake: &mut Fake, app: &mut App, col, row| {
             fake.send(app, window, click(true, cell(col, row), CMD, 1));
             fake.send(app, window, click(false, cell(col, row), CMD, 1));
@@ -4850,6 +4993,118 @@ mod tests {
         cmd_click(&mut fake, &mut app, 2, 0);
         assert_eq!(fake.opened().len(), 3);
         assert!(app.windows[&window].selecting.is_some());
+    }
+
+    /// Opens with Command-click what `window` shows at `col` of its first
+    /// row.
+    fn cmd_click(fake: &mut Fake, app: &mut App, window: WindowId, col: u16) {
+        fake.send(app, window, click(true, cell(col, 0), CMD, 1));
+        fake.send(app, window, click(false, cell(col, 0), CMD, 1));
+    }
+
+    /// A program that shows a URL at column 0, a file at 20, a program at
+    /// 31 and a directory at 45.
+    fn links() -> Program {
+        shell(concat!(
+            "stty raw -echo; ",
+            "printf 'https://lokyr.dev/x /etc/hosts /usr/bin/true /usr\\r\\n'; ",
+            "echo ready; cat -v"
+        ))
+    }
+
+    #[test]
+    fn a_link_asks_first_and_the_config_keeps_the_answer() {
+        let (mut fake, mut app, window, path) = pasting("links", "# mine\n", links());
+        let shown = |fake: &Fake| {
+            let open = &fake.alerts()[0];
+            assert_eq!(open.window, Some(window));
+            (
+                open.alert.message.clone(),
+                open.alert.detail.clone(),
+                open.alert.buttons.clone(),
+                open.alert.suppression.clone().unwrap(),
+            )
+        };
+        // A URL: Open or Cancel.
+        cmd_click(&mut fake, &mut app, window, 2);
+        let url = (
+            "Open this link?".to_owned(),
+            "https://lokyr.dev/x".to_owned(),
+            vec!["Open".to_owned(), "Cancel".to_owned()],
+            "Don't ask again for links".to_owned(),
+        );
+        assert_eq!(shown(&fake), url);
+        // Ticked, but cancelled: nothing changes.
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
+        // A file: Open, Show in Finder, or Cancel.
+        cmd_click(&mut fake, &mut app, window, 22);
+        let file = (
+            "Open this file?".to_owned(),
+            "/etc/hosts".to_owned(),
+            vec![
+                "Open".to_owned(),
+                "Show in Finder".to_owned(),
+                "Cancel".to_owned(),
+            ],
+            "Don't ask again for files".to_owned(),
+        );
+        assert_eq!(shown(&fake), file);
+        fake.answer_alert(&mut app, fake.alerts()[0].id, 1);
+        // A program shows in the Finder, and a directory opens, without a
+        // question.
+        cmd_click(&mut fake, &mut app, window, 33);
+        cmd_click(&mut fake, &mut app, window, 46);
+        assert!(fake.alerts().is_empty());
+        assert_eq!(fake.opened(), ["/usr"]);
+        assert_eq!(fake.revealed(), ["/etc/hosts", "/usr/bin/true"]);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# mine\n");
+        // Ticked, the answer goes into the config, and the next one opens
+        // without a question, before the file's reload too.
+        cmd_click(&mut fake, &mut app, window, 2);
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+        cmd_click(&mut fake, &mut app, window, 22);
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with("# mine\n"), "{written}");
+        let links = Config::read(&path).unwrap().links;
+        assert_eq!((links.urls, links.files), (OpenUrl::Open, OpenFile::Reveal));
+        cmd_click(&mut fake, &mut app, window, 2);
+        cmd_click(&mut fake, &mut app, window, 22);
+        assert!(fake.alerts().is_empty());
+        assert_eq!(
+            fake.opened()[1..],
+            ["https://lokyr.dev/x", "https://lokyr.dev/x"]
+        );
+        assert_eq!(fake.revealed()[2..], ["/etc/hosts", "/etc/hosts"]);
+        // Opening a file, ticked, keeps `open`.
+        std::fs::write(&path, "").unwrap();
+        app.apply(&mut fake, Config::default());
+        cmd_click(&mut fake, &mut app, window, 22);
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+        assert_eq!(fake.opened().last().map(String::as_str), Some("/etc/hosts"));
+        assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
+        assert!(app.links_chosen == (None, None));
+    }
+
+    #[test]
+    fn a_link_s_answer_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
+        let text = "[font]\nsise = 14\n";
+        let (mut fake, mut app, window, path) = pasting("bad-links", text, links());
+        cmd_click(&mut fake, &mut app, window, 2);
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+        cmd_click(&mut fake, &mut app, window, 22);
+        fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert_eq!(
+            app.links_chosen,
+            (Some(OpenUrl::Open), Some(OpenFile::Open))
+        );
+        // A reload of the file does not bring the questions back.
+        app.apply(&mut fake, Config::default());
+        cmd_click(&mut fake, &mut app, window, 2);
+        cmd_click(&mut fake, &mut app, window, 22);
+        assert!(fake.alerts().is_empty());
+        assert_eq!(fake.opened().len(), 4);
     }
 
     #[test]
