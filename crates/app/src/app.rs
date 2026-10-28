@@ -31,7 +31,7 @@ use lokyr_ui_core::cursor::{self, Blink};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
-use lokyr_vt_core::input::{MouseAction, MouseEvent, Wheel};
+use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{MouseEncoding, MouseTracking, Scroll};
 
 use crate::environment;
@@ -185,7 +185,8 @@ struct Window {
     /// The keys of the sequence under way, which go to the program if the
     /// next key does not go on with it.
     held_back: Vec<KeyEvent>,
-    /// The keys whose presses the keymap took, whose releases go nowhere.
+    /// The keys whose presses the keymap took, whose releases go nowhere,
+    /// each once.
     taken: Vec<KeyCode>,
 }
 
@@ -211,6 +212,26 @@ impl Window {
             held_back: Vec::new(),
             taken: Vec::new(),
         }
+    }
+
+    /// Takes the press of the key at `code` for the keymap, so that its
+    /// release goes nowhere.
+    fn take(&mut self, code: KeyCode) {
+        if !self.taken.contains(&code) {
+            self.taken.push(code);
+        }
+    }
+
+    /// Ends the sequence under way, and gives back its keys, for the
+    /// program, whose releases go to it too, as the keymap no longer takes
+    /// their presses.
+    fn end_sequence(&mut self) -> Vec<KeyEvent> {
+        self.resolver = Resolver::new();
+        let keys = std::mem::take(&mut self.held_back);
+        for key in &keys {
+            self.taken.retain(|&code| code != key.code);
+        }
+        keys
     }
 }
 
@@ -423,8 +444,11 @@ impl App {
     }
 
     /// A button of the mouse went down or up over `window`: the program
-    /// learns of it, as its mouse modes have it. Shift keeps the mouse for
-    /// the terminal, which selects with it.
+    /// learns of it, as its mouse modes have it, at the screen's row, and
+    /// not of a press above the screen, in a view scrolled up. Shift keeps
+    /// a press for the terminal, which selects with it; a release goes to
+    /// the program whenever it learned of the press, so that no button stays
+    /// down for it.
     fn mouse_button(
         &mut self,
         platform: &dyn Platform,
@@ -434,9 +458,12 @@ impl App {
         position: Point,
         mods: Modifiers,
     ) {
-        let Some(button) = mouse::button(button).filter(|_| !mods.shift) else {
+        let Some(button) = mouse::button(button) else {
             return;
         };
+        if pressed && mods.shift {
+            return;
+        }
         let Some(pointer) = self.pointer(platform, window, position) else {
             return;
         };
@@ -450,20 +477,26 @@ impl App {
         else {
             return;
         };
-        let action = if pressed {
-            state.mouse.press(button);
-            MouseAction::Press(button)
+        let on_screen =
+            mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height);
+        if pressed {
+            let Some(pointer) = on_screen else {
+                return;
+            };
+            state.mouse.moved(pointer, true);
+            if pane.mouse(&mouse_event(MouseAction::Press(button), mods, pointer)) {
+                state.mouse.press(button);
+            }
         } else if state.mouse.release(button) {
-            MouseAction::Release(button)
-        } else {
-            return;
-        };
-        state.mouse.moved(pointer, true);
-        pane.mouse(&mouse_event(action, mods, pointer));
+            let pointer = on_screen.unwrap_or(mouse::at_top(pointer));
+            state.mouse.moved(pointer, true);
+            pane.mouse(&mouse_event(MouseAction::Release(button), mods, pointer));
+        }
     }
 
     /// The pointer moved over `window`: a program that asked learns of it,
-    /// once a cell, or a pixel for reports in pixels.
+    /// once a cell, or a pixel for reports in pixels, at the screen's row,
+    /// and not above the screen.
     fn mouse_moved(
         &mut self,
         platform: &dyn Platform,
@@ -493,6 +526,10 @@ impl App {
         if modes.mouse_tracking == MouseTracking::None {
             return;
         }
+        let offset = pane.snapshot().offset();
+        let Some(pointer) = mouse::on_screen(pointer, offset, pane.grid().cell_height) else {
+            return;
+        };
         let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
         if state.mouse.moved(pointer, pixels) {
             let action = MouseAction::Motion(state.mouse.held());
@@ -526,6 +563,10 @@ impl App {
         };
         let row_points = f64::from(pane.grid().cell_height) / scale;
         let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        // A step that the program takes over the scrollback goes to it at
+        // the screen's top row.
+        let pointer = mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height)
+            .unwrap_or(mouse::at_top(pointer));
         let to_program = !mods.shift && !pane.is_kept();
         // A binding of a step takes it first, before the program and the
         // view.
@@ -662,7 +703,8 @@ impl App {
     /// What the keymap does with `key`, in `window`: runs a command, holds
     /// the key back as a sequence goes on, or gives it to the program,
     /// after the keys of a sequence that it did not go on with. A release
-    /// of a key that the keymap took goes nowhere.
+    /// of a key that the keymap took goes nowhere, but for a key of the
+    /// sequence under way, whose release waits with it.
     fn resolve_key(&mut self, window: WindowId, key: &KeyEvent) -> Taken {
         let Some(state) = self.windows.get_mut(&window) else {
             return Taken::Held;
@@ -670,31 +712,51 @@ impl App {
         if key.state == KeyState::Released {
             if let Some(at) = state.taken.iter().position(|&code| code == key.code) {
                 state.taken.remove(at);
+                if state.held_back.iter().any(|held| held.code == key.code) {
+                    state.held_back.push(key.clone());
+                }
                 return Taken::Held;
             }
             return Taken::Program(vec![key.clone()]);
         }
-        let pressed = keys::terminal_key(key).and_then(|event| {
+        // A key of the sequence under way, held, waits for the next.
+        if key.state == KeyState::Repeated
+            && state.resolver.is_pending()
+            && state.taken.contains(&key.code)
+        {
+            return Taken::Held;
+        }
+        let event = keys::terminal_key(key);
+        let pressed = event.as_ref().and_then(|event| {
             Pressed::key(event.key, binding_mods(key.mods), key.code.base_layout())
         });
-        // A modifier alone neither takes a binding nor ends a sequence.
+        // A modifier or a lock alone neither takes a binding nor ends a
+        // sequence; another key that the keymap does not name, as the
+        // keypad's, ends it, and goes to the program after its keys.
         let Some(pressed) = pressed else {
-            return Taken::Program(vec![key.clone()]);
+            let unnamed = event.is_some_and(|event| !is_modifier(event.key));
+            let mut keys = if unnamed {
+                state.end_sequence()
+            } else {
+                Vec::new()
+            };
+            keys.push(key.clone());
+            return Taken::Program(keys);
         };
         let context = context(self.workspace.pane(state.pane));
         match state.resolver.press(&self.keymap, pressed, &context) {
             Resolved::Run(invocation) => {
                 state.held_back.clear();
-                state.taken.push(key.code);
+                state.take(key.code);
                 Taken::Run(invocation)
             }
             Resolved::Pending => {
                 state.held_back.push(key.clone());
-                state.taken.push(key.code);
+                state.take(key.code);
                 Taken::Held
             }
             Resolved::Program { .. } => {
-                let mut keys = std::mem::take(&mut state.held_back);
+                let mut keys = state.end_sequence();
                 keys.push(key.clone());
                 Taken::Program(keys)
             }
@@ -1107,11 +1169,15 @@ impl Handler for App {
                 }
             }
             // The focus, and a key, start the cursor blinking again, on.
+            // A window that loses the focus forgets the keys that the keymap
+            // took, whose releases go elsewhere.
             WindowEvent::Focused(focused) => {
                 if let Some(state) = self.windows.get_mut(&window) {
                     state.focused = focused;
                     if focused {
                         state.blink.restart(Instant::now());
+                    } else {
+                        state.taken.clear();
                     }
                     platform.request_frame(window);
                 }
@@ -1152,17 +1218,17 @@ impl Handler for App {
                         else {
                             return;
                         };
-                        for key in &keys {
-                            if let Some(event) = keys::terminal_key(key) {
-                                pane.key(&event, options);
-                            }
-                        }
+                        give(pane, &keys, options);
                     }
                 }
             }
             // The input method's text: composed, shown at the cursor, or
-            // typed, sent to the program.
+            // typed, sent to the program, after the keys of a sequence under
+            // way, which it ends. A composition that starts brings the view
+            // back to the screen, and the cursor's blinking on, as typing
+            // does.
             WindowEvent::Ime(ime) => {
+                let options = keys::options(self.config.keyboard.option_as_meta);
                 let Some(state) = self.windows.get_mut(&window) else {
                     return;
                 };
@@ -1178,8 +1244,19 @@ impl Handler for App {
                     }
                     return;
                 }
+                let composes = match &ime {
+                    Ime::Preedit { text, .. } => !text.is_empty(),
+                    Ime::Commit(_) => true,
+                };
+                if composes && state.resolver.is_pending() {
+                    give(pane, &state.end_sequence(), options);
+                }
                 match ime {
                     Ime::Preedit { text, selection } => {
+                        if !text.is_empty() && state.preedit.is_none() {
+                            pane.scroll(Scroll::Bottom);
+                            state.blink.restart(Instant::now());
+                        }
                         state.preedit = (!text.is_empty()).then_some(Preedit {
                             text,
                             cursor: selection.start,
@@ -1240,6 +1317,24 @@ fn closes(key: &lokyr_platform_core::KeyEvent) -> bool {
                 Key::Modifier(_) | Key::CapsLock | Key::NumLock | Key::ScrollLock
             )
         })
+}
+
+/// Gives `keys` to the program of `pane`, in their order, with the
+/// keyboard's `options`.
+fn give(pane: &Pane, keys: &[KeyEvent], options: KeyOptions) {
+    for key in keys {
+        if let Some(event) = keys::terminal_key(key) {
+            pane.key(&event, options);
+        }
+    }
+}
+
+/// Whether `key` is a modifier or a lock, which no binding takes.
+fn is_modifier(key: Key) -> bool {
+    matches!(
+        key,
+        Key::Modifier(_) | Key::CapsLock | Key::ScrollLock | Key::NumLock
+    )
 }
 
 /// What the keymap does with a key.
@@ -2106,6 +2201,105 @@ mod tests {
     }
 
     #[test]
+    fn a_release_with_shift_reaches_a_program_that_learned_of_the_press() {
+        let (mut fake, mut app, window) = started_with(reader("\\033[?1000h\\033[?1006h"));
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, true, cell(4, 2), Modifiers::NONE),
+        );
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, false, cell(4, 2), SHIFT),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[<0;5;3M^[[<4;5;3m")
+        });
+    }
+
+    #[test]
+    fn a_release_goes_nowhere_when_the_program_did_not_learn_of_the_press() {
+        // The mouse's tracking from the first key on.
+        let program = shell(
+            "stty raw -echo; echo ready; head -c 1 >/dev/null; printf '\\033[?1000h\\033[?1006h'; echo on; cat -v",
+        );
+        let (mut fake, mut app, window) = started_with(program);
+        let at = cell(4, 2);
+        fake.send(
+            &mut app,
+            window,
+            press(MouseButton::Left, true, at, Modifiers::NONE),
+        );
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "on"));
+        for pressed in [false, true, false] {
+            let event = press(MouseButton::Left, pressed, at, Modifiers::NONE);
+            fake.send(&mut app, window, event);
+        }
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window)
+                .iter()
+                .any(|line| line.trim() == "^[[<0;5;3M^[[<0;5;3m")
+        });
+    }
+
+    #[test]
+    fn a_click_in_a_scrolled_view_reaches_the_program_at_the_screen_s_row() {
+        let program = shell(
+            "seq 1 100; printf '\\033[?1003h\\033[?1006h'; stty raw -echo; echo ready; cat -v",
+        );
+        let (mut fake, mut app, window) = started_with(program);
+        let offset = |app: &App| app.pane(window).snapshot().offset();
+        // Shift's wheel moves the view, which the program takes otherwise.
+        let up = ScrollDelta::Lines { x: 0.0, y: 3.0 };
+        fake.send(&mut app, window, wheel(up, SHIFT));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 3);
+        // A move and a click above the screen go nowhere; those on its
+        // fifth row, the view's eighth, at its row.
+        for at in [cell(3, 2), cell(3, 7)] {
+            let moved = WindowEvent::MouseMoved {
+                position: at,
+                mods: Modifiers::NONE,
+            };
+            fake.send(&mut app, window, moved);
+        }
+        for row in [2, 7] {
+            for pressed in [true, false] {
+                let event = press(MouseButton::Left, pressed, cell(1, row), Modifiers::NONE);
+                fake.send(&mut app, window, event);
+            }
+        }
+        // The view stays up as the program writes: down to read it.
+        let down = ScrollDelta::Lines { x: 0.0, y: -3.0 };
+        fake.send(&mut app, window, wheel(down, SHIFT));
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window)
+                .iter()
+                .any(|line| line.trim() == "^[[<35;4;5M^[[<0;2;5M^[[<0;2;5m")
+        });
+    }
+
+    #[test]
+    fn a_composition_brings_the_view_back_to_the_screen() {
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), shell("seq 1 100; echo ready; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        let offset = |app: &App| app.pane(window).snapshot().offset();
+        let up = ScrollDelta::Lines { x: 0.0, y: 3.0 };
+        fake.send(&mut app, window, wheel(up, Modifiers::NONE));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 3);
+        let composing = Ime::Preedit {
+            text: "に".to_owned(),
+            selection: 3..3,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(composing));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 0);
+    }
+
+    #[test]
     fn the_wheel_moves_the_view_through_the_scrollback() {
         let mut fake = Fake::default();
         let mut app = app(unpadded(), shell("seq 1 100; echo ready; sleep 10"));
@@ -2556,6 +2750,111 @@ mod tests {
         let shown = screen(&app, window).concat();
         assert_eq!(shown.matches("^A").count(), 1, "{shown:?}");
         assert!(!shown.contains('n'), "{shown:?}");
+    }
+
+    /// `event`, a key's press, as the system repeats it.
+    fn repeated(event: WindowEvent) -> WindowEvent {
+        let WindowEvent::Key(key) = event else {
+            unreachable!("a key");
+        };
+        WindowEvent::Key(KeyEvent {
+            state: KeyState::Repeated,
+            ..key
+        })
+    }
+
+    #[test]
+    fn a_key_s_release_reaches_the_program_after_its_binding_repeated() {
+        let keys = "\"ctrl+a\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader("\\033[>3u"));
+        let bound = key_event(KeyCode::KeyA, "a", CTRL, true);
+        fake.send(&mut app, window, bound.clone());
+        fake.send(&mut app, window, repeated(bound));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, false));
+        assert_eq!(fake.windows().count(), 3);
+        // The key without Control is the program's, its release too.
+        let plain = Modifiers::NONE;
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", plain, true));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyA, "a", plain, false),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "a^[[97;1:3u")
+        });
+    }
+
+    #[test]
+    fn a_sequence_s_keys_go_back_to_the_program_with_their_releases() {
+        let keys = "\"ctrl+a>n\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader("\\033[>3u"));
+        // Released while the sequence waits, and held while it repeats.
+        let first = key_event(KeyCode::KeyA, "a", CTRL, true);
+        fake.send(&mut app, window, first.clone());
+        fake.send(&mut app, window, repeated(first));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, false));
+        let plain = Modifiers::NONE;
+        fake.send(&mut app, window, key_event(KeyCode::KeyE, "e", plain, true));
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[97;5u^[[97;5:3ue")
+        });
+        // Pressed, then given back, then released: the release follows.
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        fake.send(&mut app, window, key_event(KeyCode::KeyE, "e", plain, true));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, false));
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "e^[[97;5ue^[[97;5:3u")
+        });
+        assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn a_commit_and_a_keypad_key_end_a_sequence() {
+        let keys = "\"ctrl+a>n\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader(""));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::Ime(Ime::Commit("x".to_owned())),
+        );
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^Ax"));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::Numpad1, "1", Modifiers::NONE, true),
+        );
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^Ax^A1"));
+        // The sequence ended: `n` types.
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyN, "n", Modifiers::NONE, true),
+        );
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^Ax^A1n"));
+        assert_eq!(fake.windows().count(), 1);
+    }
+
+    #[test]
+    fn losing_the_focus_forgets_the_keys_that_the_keymap_took() {
+        let keys = "\"ctrl+a\" = \"window.new\"\n";
+        let (mut fake, mut app, window) = bound(keys, reader("\\033[>3u"));
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", CTRL, true));
+        // The release comes to another window.
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let plain = Modifiers::NONE;
+        fake.send(&mut app, window, key_event(KeyCode::KeyA, "a", plain, true));
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::KeyA, "a", plain, false),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "a^[[97;1:3u")
+        });
     }
 
     #[test]

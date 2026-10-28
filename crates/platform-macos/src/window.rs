@@ -142,17 +142,17 @@ impl Window {
         self.view.ivars().input.borrow_mut().area = (origin, size);
     }
 
+    /// Whether the pointer's moves without a button come to the view.
+    pub(crate) fn track_mouse_moves(&self, track: bool) {
+        self.ns_window.setAcceptsMouseMovedEvents(track);
+    }
+
     /// Makes the window translucent over `backdrop`, its background, which
     /// fills its whole shape, the titlebar and the rounded corners too,
     /// under the content that the renderer draws clear; or, with `None`,
     /// keeps it opaque. The window, its view and the view's layer turn
     /// non-opaque together, as the window server composes the window with
     /// what is behind it only then.
-    /// Whether the pointer's moves without a button come to the view.
-    pub(crate) fn track_mouse_moves(&self, track: bool) {
-        self.ns_window.setAcceptsMouseMovedEvents(track);
-    }
-
     pub(crate) fn set_translucent(&self, backdrop: Option<Backdrop>) {
         let opaque = backdrop.is_none();
         self.view.ivars().opaque.set(opaque);

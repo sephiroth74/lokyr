@@ -483,7 +483,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - The modifiers are `cmd`, `ctrl`, `alt` or `opt`, and `shift`.
   - The key is the character that it types without any modifier, Shift neither, as `]` in `cmd+shift+]`, or `+` in `cmd++`; or a named key: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, `f1` to `f35`; or a step of the wheel, `wheel-up`, `wheel-down`, `wheel-left` or `wheel-right`, which a trackpad's scroll makes too, a step a row.
   - Your keyboard layout gives the characters: a key whose character no binding takes runs the binding of the character at its place on the US layout, so that `cmd+]` works on a layout where `]` takes Option.
-- **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it. A step of the wheel makes no sequence.
+- **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel makes no sequence.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;

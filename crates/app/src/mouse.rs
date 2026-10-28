@@ -37,6 +37,32 @@ pub(crate) fn pointer(position: Point, scale: f64, padding: (u32, u32), grid: Gr
     Pointer { col, row, x, y }
 }
 
+/// `pointer`, over a view `offset` rows above the screen's top, of cells
+/// `cell_height` pixels high, at its place on the screen, whose rows the
+/// program counts: `None` above the screen, over the scrollback.
+pub(crate) fn on_screen(pointer: Pointer, offset: usize, cell_height: u16) -> Option<Pointer> {
+    let row = usize::from(pointer.row).checked_sub(offset)?;
+    let above = u32::try_from(offset)
+        .ok()?
+        .checked_mul(u32::from(cell_height))?;
+    Some(Pointer {
+        // Below the pointer's row, which a `u16` holds.
+        row: row as u16,
+        y: pointer.y.checked_sub(above)?,
+        ..pointer
+    })
+}
+
+/// `pointer` at the screen's top row, where an event that must reach the
+/// program goes from above the screen.
+pub(crate) fn at_top(pointer: Pointer) -> Pointer {
+    Pointer {
+        row: 0,
+        y: 0,
+        ..pointer
+    }
+}
+
 /// The terminal's button for the platform's `button`, numbered as X11
 /// numbers them; `None` for a button past the eleventh.
 pub(crate) fn button(button: Button) -> Option<MouseButton> {
@@ -206,6 +232,26 @@ mod tests {
             (far.col, far.row, far.x, far.y),
             (79, 23, 80 * 16 - 1, 24 * 32 - 1)
         );
+    }
+
+    #[test]
+    fn a_pointer_in_a_scrolled_view_takes_the_screen_s_row() {
+        let at = |row, y| Pointer {
+            col: 3,
+            row,
+            x: 50,
+            y,
+        };
+        // Two rows of 32 pixels above the screen: the view's fifth row is
+        // the screen's third.
+        assert_eq!(on_screen(at(4, 4 * 32 + 5), 2, 32), Some(at(2, 2 * 32 + 5)));
+        assert_eq!(on_screen(at(2, 2 * 32), 2, 32), Some(at(0, 0)));
+        // Above the screen, nowhere, but at its top for what must reach it.
+        assert_eq!(on_screen(at(1, 32 + 31), 2, 32), None);
+        assert_eq!(at_top(at(1, 63)), at(0, 0));
+        // A view on the screen leaves it as it is.
+        assert_eq!(on_screen(at(1, 40), 0, 32), Some(at(1, 40)));
+        assert_eq!(on_screen(at(1, 40), usize::MAX, 32), None);
     }
 
     #[test]
