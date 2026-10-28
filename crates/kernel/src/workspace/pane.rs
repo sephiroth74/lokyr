@@ -11,7 +11,8 @@ use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Scrollback;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, Snapshot, Terminal,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, SelectionShape,
+    SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
@@ -389,6 +390,38 @@ impl Pane {
         self.session
             .as_ref()
             .and_then(|session| session.lock().selection_text())
+    }
+
+    /// Selects from the view's cell `from` to its cell `to`, each by its
+    /// column and its row from the view's first, which can be above the
+    /// view, in `shape`, grown to `unit`, as [`Terminal::select`] does.
+    pub fn select(
+        &self,
+        from: (u16, i64),
+        to: (u16, i64),
+        shape: SelectionShape,
+        unit: SelectionUnit,
+    ) {
+        if let Some(session) = &self.session {
+            session
+                .lock()
+                .select(from, to, shape, unit, WORD_SEPARATORS);
+        }
+    }
+
+    /// How many rows the view is above the screen's top, as the terminal
+    /// has it now, which the snapshot learns at its next update.
+    pub fn view_offset(&self) -> usize {
+        self.session
+            .as_ref()
+            .map_or(0, |session| session.lock().viewport_offset())
+    }
+
+    /// Lets the selection go.
+    pub fn clear_selection(&self) {
+        if let Some(session) = &self.session {
+            session.lock().clear_selection();
+        }
     }
 
     /// Selects the scrollback and the screen, whole.

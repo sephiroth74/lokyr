@@ -385,7 +385,9 @@ pub fn cells_with(
             };
             if let Some(chosen) = chosen {
                 background = chosen.background;
-                foreground = chosen.foreground.unwrap_or(foreground);
+                foreground = chosen
+                    .foreground
+                    .unwrap_or_else(|| readable(foreground, background, defaults));
             }
             batch.backgrounds.push(background);
             // Text that blinks shows half of the time.
@@ -675,6 +677,24 @@ fn luminance(color: Color) -> f64 {
 /// that each cell of each frame can take.
 fn luma(color: Color) -> f32 {
     0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
+}
+
+/// The least contrast, as WCAG measures it, of selected text on a selection
+/// that keeps the text's colors: WCAG's AA for large text.
+const SELECTED_CONTRAST: f64 = 3.0;
+
+/// `text` when it reads on `background`; otherwise whichever reads better
+/// of the default text's color and the default background's, `defaults`,
+/// as inverse text, of the default background's color, does not read on a
+/// selection near it.
+fn readable(text: Color, background: Color, (fg, bg): (Color, Color)) -> Color {
+    if contrast(text, background) >= SELECTED_CONTRAST {
+        text
+    } else if contrast(fg, background) >= contrast(bg, background) {
+        fg
+    } else {
+        bg
+    }
 }
 
 /// The contrast ratio of two colors, as WCAG 2 defines it: from 1 to 21.
@@ -2004,6 +2024,64 @@ mod tests {
                 (0, 4, 4, LineStyle::Single, under),
                 (0, 2, 2, LineStyle::Single, under),
             ]
+        );
+    }
+
+    #[test]
+    fn selected_text_that_would_not_read_takes_a_color_that_reads() {
+        // Inverse text, of the default background's color, and plain text.
+        let snapshot = snapshot(6, 2, "\x1b[7mab\x1b[0mcd");
+        let colors = Colors::default();
+        let (text, background) = (color(colors.foreground), color(colors.background));
+        // A selection that keeps the text's colors, on a background near
+        // the default one, as a dark theme's.
+        let near = Color::from_rgb8(
+            colors.background.r.saturating_add(40),
+            colors.background.g.saturating_add(40),
+            colors.background.b.saturating_add(60),
+        );
+        let selection = Selection {
+            colors: SelectionColors {
+                background: near,
+                foreground: None,
+            },
+            contains: &|_, row| row == 0,
+        };
+        let batch = cells(
+            &snapshot,
+            &cell(),
+            0,
+            0,
+            Some(&selection),
+            None,
+            &mut atlas(&mut Vec::new()),
+        );
+        assert!(contrast(background, near) < SELECTED_CONTRAST);
+        // The inverse text takes the default text's color, which reads;
+        // the plain text keeps its own.
+        let colored: Vec<(u16, Color)> = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.color))
+            .collect();
+        assert_eq!(colored, [(0, text), (1, text), (2, text), (3, text)]);
+        assert!(contrast(text, near) >= SELECTED_CONTRAST);
+        // On a light selection, the default background reads better.
+        assert_eq!(
+            readable(
+                Color::from_rgb8(250, 250, 250),
+                Color::from_rgb8(240, 240, 240),
+                (Color::from_rgb8(255, 255, 255), Color::from_rgb8(0, 0, 0))
+            ),
+            Color::from_rgb8(0, 0, 0)
+        );
+        assert_eq!(
+            readable(
+                Color::from_rgb8(0, 0, 0),
+                Color::from_rgb8(240, 240, 240),
+                (text, background)
+            ),
+            Color::from_rgb8(0, 0, 0)
         );
     }
 

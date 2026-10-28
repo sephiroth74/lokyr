@@ -90,6 +90,7 @@ option-as-meta = "left"              # none | left | right | both
 [clipboard]
 read = "ask"                         # never | ask: a program's read of the clipboard
 confirm-paste = "always"             # auto | always | never: a paste with line breaks asks first
+copy-on-select = true                # a selection by the mouse copies its text as it ends
 
 [bell]
 sound = true                         # true | false: the system's alert sound
@@ -578,6 +579,21 @@ When a paste with line breaks asks you first: a program that does not ask for br
 - `"always"` asks whenever the text has a line break, into any program.
 - `"never"` pastes as it is.
 - The question shows the text's first lines, as the program would get them, and three buttons: Paste, the default one; Paste as One Line, which puts a space for each line break and leaves out the last one; and Cancel. Its checkbox, Don't ask again, sets this key to `"never"` in your config file as you paste, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits.
+- It applies as you save the file.
+
+### `copy-on-select`
+
+<sub>Platforms: macOS</sub>
+
+Whether a selection that you make with the mouse copies its text to the clipboard as you let go of the button, as a double click on a word does too.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- With `false`, ⌘C copies the selection, as other Mac apps do.
+- You select by dragging, the cells between where you press and where the pointer is; a double click takes a word, a triple click a line, and dragging after them goes on by words or lines; Option makes a rectangle; Shift's click extends the last selection; dragging past the window's top or bottom scrolls, the faster the farther. A click takes the selection away.
+- A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection.
 - It applies as you save the file.
 
 ## `[bell]`

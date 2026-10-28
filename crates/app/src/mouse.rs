@@ -1,6 +1,6 @@
 //! The mouse over a pane: where the pointer is in its cells, the buttons
-//! that the program learned were held, and the wheel's scroll, which adds up
-//! to whole steps.
+//! that the program learned were held, the wheel's scroll, which adds up to
+//! whole steps, and the cells that a drag selects.
 
 use lokyr_kernel::workspace::Grid;
 use lokyr_platform_core::{MouseButton as Button, Point, ScrollDelta, ScrollPhase};
@@ -60,6 +60,93 @@ pub(crate) fn at_top(pointer: Pointer) -> Pointer {
         row: 0,
         y: 0,
         ..pointer
+    }
+}
+
+/// Where a selection by the mouse starts, or where the pointer is as it
+/// drags: its row from the screen's top, which can be above it, in the
+/// scrollback, as the view scrolls under the selection; the cell under the
+/// pointer; and the boundary between cells nearest to it, from 0, before
+/// the row's first cell, to the grid's columns, after its last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Spot {
+    pub(crate) row: i64,
+    pub(crate) col: u16,
+    pub(crate) boundary: u16,
+}
+
+/// The spot of `pointer`, over a view `offset` rows above the screen's
+/// top, in cells `cell_width` pixels wide, of a grid of `columns`.
+pub(crate) fn spot(pointer: Pointer, offset: usize, cell_width: u16, columns: u16) -> Spot {
+    let width = u32::from(cell_width.max(1));
+    // Within the grid's columns, which a `u16` holds.
+    let boundary = ((pointer.x + width / 2) / width).min(u32::from(columns)) as u16;
+    // Fewer rows than an `i64` holds.
+    let row = i64::from(pointer.row) - offset as i64;
+    Spot {
+        row,
+        col: pointer.col,
+        boundary,
+    }
+}
+
+/// The cells, by column and row from the screen's top, that a drag from
+/// `anchor` to `to` selects, the first and the last in reading order: those
+/// between the two spots' boundaries, as text's selection takes them; `None`
+/// when no cell is between them, as after a click.
+pub(crate) fn dragged_cells(
+    anchor: Spot,
+    to: Spot,
+    columns: u16,
+) -> Option<((u16, i64), (u16, i64))> {
+    let (first, last) = if (anchor.row, anchor.boundary) <= (to.row, to.boundary) {
+        (anchor, to)
+    } else {
+        (to, anchor)
+    };
+    // A boundary after a row's last cell starts at the next row's first;
+    // one before a row's first ends at the row before's last.
+    let from = if first.boundary >= columns {
+        (0, first.row + 1)
+    } else {
+        (first.boundary, first.row)
+    };
+    let to = if last.boundary == 0 {
+        (columns.saturating_sub(1), last.row - 1)
+    } else {
+        (last.boundary - 1, last.row)
+    };
+    ((from.1, from.0) <= (to.1, to.0)).then_some((from, to))
+}
+
+/// The corners, top left and bottom right, of the rectangle that a drag from
+/// `anchor` to `to` selects: the columns between the two spots' boundaries,
+/// on the rows from one's to the other's; `None` when no column is between
+/// them.
+pub(crate) fn rectangle_cells(anchor: Spot, to: Spot) -> Option<((u16, i64), (u16, i64))> {
+    let (left, right) = (
+        anchor.boundary.min(to.boundary),
+        anchor.boundary.max(to.boundary),
+    );
+    let (top, bottom) = (anchor.row.min(to.row), anchor.row.max(to.row));
+    (left < right).then_some(((left, top), (right - 1, bottom)))
+}
+
+/// How many rows past the grid's top, negative, or its bottom, positive,
+/// the pointer at `y` points is, in a window of `scale`, whose cells start
+/// `padding` pixels from its top edge, of `grid`: 0 within the grid, and a
+/// row as soon as it leaves it.
+pub(crate) fn beyond(y: f64, scale: f64, padding: u32, grid: Grid) -> i64 {
+    let height = f64::from(grid.cell_height.max(1));
+    let pixel = y * scale - f64::from(padding);
+    let bottom = height * f64::from(grid.rows);
+    // A cast from a float saturates, and takes NaN to 0.
+    if pixel < 0.0 {
+        -((-pixel / height).floor() as i64) - 1
+    } else if pixel >= bottom {
+        ((pixel - bottom) / height).floor() as i64 + 1
+    } else {
+        0
     }
 }
 
@@ -232,6 +319,73 @@ mod tests {
             (far.col, far.row, far.x, far.y),
             (79, 23, 80 * 16 - 1, 24 * 32 - 1)
         );
+    }
+
+    fn at(row: i64, col: u16, boundary: u16) -> Spot {
+        Spot { row, col, boundary }
+    }
+
+    #[test]
+    fn a_spot_takes_the_nearest_boundary_and_the_screen_s_row() {
+        let pointer = |col: u16, x: u32, row: u16| Pointer { col, row, x, y: 0 };
+        // Cells of 16 pixels: the boundary after the first cell from 8.
+        assert_eq!(spot(pointer(0, 7, 3), 0, 16, 80), at(3, 0, 0));
+        assert_eq!(spot(pointer(0, 8, 3), 0, 16, 80), at(3, 0, 1));
+        assert_eq!(spot(pointer(79, 80 * 16 - 1, 0), 0, 16, 80), at(0, 79, 80));
+        // A view two rows up: the row above the screen's top.
+        assert_eq!(spot(pointer(5, 80, 1), 2, 16, 80).row, -1);
+    }
+
+    #[test]
+    fn a_drag_selects_the_cells_between_its_boundaries() {
+        // Within a row, either way; nothing between the same boundaries.
+        assert_eq!(
+            dragged_cells(at(0, 2, 2), at(0, 5, 5), 10),
+            Some(((2, 0), (4, 0)))
+        );
+        assert_eq!(
+            dragged_cells(at(0, 5, 5), at(0, 2, 2), 10),
+            Some(((2, 0), (4, 0)))
+        );
+        assert_eq!(dragged_cells(at(0, 3, 3), at(0, 3, 3), 10), None);
+        // Across rows, in reading order.
+        assert_eq!(
+            dragged_cells(at(2, 7, 7), at(0, 3, 3), 10),
+            Some(((3, 0), (6, 2)))
+        );
+        // From after a row's last cell, and to before a row's first.
+        assert_eq!(
+            dragged_cells(at(0, 9, 10), at(2, 0, 0), 10),
+            Some(((0, 1), (9, 1)))
+        );
+        assert_eq!(dragged_cells(at(0, 9, 10), at(1, 0, 0), 10), None);
+        // From the scrollback, above the screen.
+        assert_eq!(
+            dragged_cells(at(-3, 0, 0), at(1, 4, 4), 10),
+            Some(((0, -3), (3, 1)))
+        );
+    }
+
+    #[test]
+    fn a_rectangle_takes_the_columns_between_its_boundaries() {
+        assert_eq!(
+            rectangle_cells(at(4, 6, 6), at(1, 2, 2)),
+            Some(((2, 1), (5, 4)))
+        );
+        assert_eq!(rectangle_cells(at(1, 2, 2), at(4, 2, 2)), None);
+    }
+
+    #[test]
+    fn beyond_the_grid_the_pointer_counts_rows() {
+        let grid = grid();
+        // 8 pixels of padding at a scale of 2, rows of 32 pixels, 24 rows.
+        assert_eq!(beyond(4.0, 2.0, 8, grid), 0);
+        assert_eq!(beyond(3.9, 2.0, 8, grid), -1);
+        assert_eq!(beyond(-30.0, 2.0, 8, grid), -3);
+        let bottom = (8.0 + 24.0 * 32.0) / 2.0;
+        assert_eq!(beyond(bottom - 0.1, 2.0, 8, grid), 0);
+        assert_eq!(beyond(bottom, 2.0, 8, grid), 1);
+        assert_eq!(beyond(bottom + 40.0, 2.0, 8, grid), 3);
     }
 
     #[test]

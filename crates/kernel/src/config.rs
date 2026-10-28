@@ -445,6 +445,8 @@ pub struct ClipboardConfig {
     pub read: ClipboardRead,
     /// When a paste with line breaks asks the user first.
     pub confirm_paste: ConfirmPaste,
+    /// Whether a selection by the mouse copies its text as it ends.
+    pub copy_on_select: bool,
 }
 
 /// When a paste with line breaks, which a program that does not ask for
@@ -1678,7 +1680,10 @@ mod tests {
             keys::<TerminalConfig>(),
             ["term", "unicode-widths", "ambiguous-width", "normalization"]
         );
-        assert_eq!(keys::<ClipboardConfig>(), ["read", "confirm-paste"]);
+        assert_eq!(
+            keys::<ClipboardConfig>(),
+            ["read", "confirm-paste", "copy-on-select"]
+        );
         assert_eq!(
             keys::<BellConfig>(),
             ["sound", "flash", "bounce", "mark-title"]

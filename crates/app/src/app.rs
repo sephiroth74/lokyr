@@ -38,12 +38,15 @@ use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::page::{Budget, Scrollback};
-use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, MouseEncoding, MouseTracking, Scroll};
+use lokyr_vt_core::terminal::{
+    self as vt, ClipboardRequest, MouseEncoding, MouseTracking, Scroll, SelectionShape,
+    SelectionUnit,
+};
 
 use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
-use crate::mouse::{self, Mouse, Pointer};
+use crate::mouse::{self, Mouse, Pointer, Spot};
 
 use crate::watch::Watcher;
 
@@ -93,6 +96,14 @@ const UNDRAWN_CELL: (u32, u32) = (8, 16);
 
 /// How long a window's flash for its bell lasts.
 const FLASH: Duration = Duration::from_millis(100);
+
+/// How often the view scrolls under a selection that the pointer drags past
+/// the grid's top or bottom.
+const SELECTION_SCROLL: Duration = Duration::from_millis(50);
+
+/// The most rows that the view scrolls a step under a selection, as the
+/// pointer goes farther past the grid.
+const SELECTION_SCROLL_ROWS: usize = 8;
 
 /// The opacity of the default text's color over a window as it flashes.
 const FLASH_OPACITY: f32 = 0.2;
@@ -268,6 +279,25 @@ struct Window {
     /// The keys whose presses the keymap took, whose releases go nowhere,
     /// each once.
     taken: Vec<KeyCode>,
+    /// The selection that the mouse makes, or made last, which Shift's click
+    /// extends.
+    selecting: Option<Selecting>,
+}
+
+/// A selection that the mouse's left button makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Selecting {
+    /// Where the press started it.
+    anchor: Spot,
+    /// Where the pointer is, or was as the button went up.
+    last: Spot,
+    shape: SelectionShape,
+    unit: SelectionUnit,
+    /// Whether the button is down.
+    held: bool,
+    /// How many rows past the grid's top, negative, or bottom, positive,
+    /// the pointer is, which scrolls the view.
+    beyond: i64,
 }
 
 impl Window {
@@ -295,6 +325,7 @@ impl Window {
             resolver: Resolver::new(),
             held_back: Vec::new(),
             taken: Vec::new(),
+            selecting: None,
         }
     }
 
@@ -359,6 +390,9 @@ pub struct App {
     resize_timer: Option<(TimerId, Instant)>,
     /// The timer of the end of the windows' flashes.
     flash_timer: Option<TimerId>,
+    /// The timer of the next step of the views that scroll under a
+    /// selection dragged past their grid.
+    scroll_timer: Option<TimerId>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -418,6 +452,7 @@ impl App {
             exit_timer: None,
             resize_timer: None,
             flash_timer: None,
+            scroll_timer: None,
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -589,16 +624,24 @@ impl App {
     /// down for it.
     fn mouse_button(
         &mut self,
-        platform: &dyn Platform,
+        platform: &mut dyn Platform,
         window: WindowId,
-        button: MouseButton,
-        pressed: bool,
+        (button, pressed, clicks): (MouseButton, bool, u32),
         position: Point,
         mods: Modifiers,
     ) {
         let Some(button) = mouse::button(button) else {
             return;
         };
+        if button == lokyr_vt_core::input::MouseButton::Left && self.selects(window, pressed, mods)
+        {
+            if pressed {
+                self.select_press(platform, window, position, (mods, clicks));
+            } else {
+                self.select_release(platform, window);
+            }
+            return;
+        }
         if pressed && mods.shift {
             return;
         }
@@ -632,16 +675,200 @@ impl App {
         }
     }
 
+    /// Whether the left button's press, `pressed`, or its release, with
+    /// `mods`, over `window` selects: a press where no program takes the
+    /// mouse, or with Shift, which keeps it for the terminal; a release that
+    /// ends a selection.
+    fn selects(&self, window: WindowId, pressed: bool, mods: Modifiers) -> bool {
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        if !pressed {
+            return state.selecting.is_some_and(|selecting| selecting.held);
+        }
+        mods.shift
+            || self.workspace.pane(state.pane).is_none_or(|pane| {
+                pane.is_kept()
+                    || pane
+                        .input_modes()
+                        .is_none_or(|modes| modes.mouse_tracking == MouseTracking::None)
+            })
+    }
+
+    /// Starts a selection at `position`, as the left button goes down with
+    /// `mods`, of its `clicks` in a row: a click starts one of cells, which
+    /// selects nothing until the pointer moves, and takes the selection that
+    /// was there away; a double click selects the word, a triple click the
+    /// line; Option makes a rectangle; Shift, where no program takes it,
+    /// extends the last selection to the pointer.
+    fn select_press(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+        (mods, clicks): (Modifiers, u32),
+    ) {
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let grid = pane.grid();
+        let spot = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        let tracking = !pane.is_kept()
+            && pane
+                .input_modes()
+                .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None);
+        match &mut state.selecting {
+            Some(selecting) if mods.shift && !tracking && clicks <= 1 => {
+                selecting.last = spot;
+                selecting.held = true;
+            }
+            slot => {
+                let unit = match clicks {
+                    2 => SelectionUnit::Word,
+                    3.. => SelectionUnit::Line,
+                    _ => SelectionUnit::Cell,
+                };
+                let rectangle = (mods.left_alt || mods.right_alt) && unit == SelectionUnit::Cell;
+                *slot = Some(Selecting {
+                    anchor: spot,
+                    last: spot,
+                    shape: if rectangle {
+                        SelectionShape::Rectangle
+                    } else {
+                        SelectionShape::Cells
+                    },
+                    unit,
+                    held: true,
+                    beyond: 0,
+                });
+            }
+        }
+        if let Some(selecting) = &state.selecting {
+            show_selection(pane, selecting);
+        }
+        platform.request_frame(window);
+    }
+
+    /// The pointer dragged a selection to `position`: the selection takes
+    /// the cells to it, and the view scrolls while it is past the grid's
+    /// top or bottom.
+    fn select_drag(&mut self, platform: &mut dyn Platform, window: WindowId, position: Point) {
+        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+            return;
+        };
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let (_, top) = self.padding(scale);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let Some(selecting) = &mut state.selecting else {
+            return;
+        };
+        let grid = pane.grid();
+        selecting.last = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        selecting.beyond = mouse::beyond(position.y, scale, top, grid);
+        show_selection(pane, selecting);
+        platform.request_frame(window);
+        if selecting.beyond != 0 && self.scroll_timer.is_none() {
+            self.scroll_timer = Some(platform.start_timer(Instant::now() + SELECTION_SCROLL));
+        }
+    }
+
+    /// The left button went up, which ends the selection that it made:
+    /// with `copy-on-select`, its text goes to the clipboard.
+    fn select_release(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if let Some(selecting) = &mut state.selecting {
+            selecting.held = false;
+            selecting.beyond = 0;
+        }
+        if self.config.clipboard.copy_on_select
+            && let Some(text) = self
+                .workspace
+                .pane(state.pane)
+                .and_then(Pane::selection_text)
+            && !text.is_empty()
+        {
+            platform.set_clipboard_text(&text);
+        }
+    }
+
+    /// The views under selections dragged past their grid scroll a step,
+    /// of a row for each row that the pointer is past it, and the
+    /// selections take the rows that come; the timer goes on while a view
+    /// still scrolls.
+    fn scroll_selections(&mut self, platform: &mut dyn Platform) {
+        self.scroll_timer = None;
+        let mut scrolled = false;
+        for (&window, state) in &mut self.windows {
+            let Some(selecting) = &mut state.selecting else {
+                continue;
+            };
+            if !selecting.held || selecting.beyond == 0 {
+                continue;
+            }
+            let Some(pane) = self.workspace.pane(state.pane) else {
+                continue;
+            };
+            let rows = usize::try_from(selecting.beyond.unsigned_abs())
+                .unwrap_or(usize::MAX)
+                .min(SELECTION_SCROLL_ROWS);
+            let before = pane.view_offset();
+            pane.scroll(if selecting.beyond < 0 {
+                Scroll::Up(rows)
+            } else {
+                Scroll::Down(rows)
+            });
+            let offset = pane.view_offset();
+            // The pointer stays past the edge, on the row that the view
+            // brings under it.
+            let edge = if selecting.beyond < 0 {
+                0
+            } else {
+                i64::from(pane.grid().rows) - 1
+            };
+            selecting.last.row = edge - offset as i64;
+            show_selection(pane, selecting);
+            platform.request_frame(window);
+            scrolled |= offset != before;
+        }
+        if scrolled {
+            self.scroll_timer = Some(platform.start_timer(Instant::now() + SELECTION_SCROLL));
+        }
+    }
+
     /// The pointer moved over `window`: a program that asked learns of it,
     /// once a cell, or a pixel for reports in pixels, at the screen's row,
     /// and not above the screen.
     fn mouse_moved(
         &mut self,
-        platform: &dyn Platform,
+        platform: &mut dyn Platform,
         window: WindowId,
         position: Point,
         mods: Modifiers,
     ) {
+        let dragging = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.selecting)
+            .is_some_and(|selecting| selecting.held);
+        if dragging {
+            self.select_drag(platform, window, position);
+            return;
+        }
         if mods.shift {
             return;
         }
@@ -1587,6 +1814,8 @@ impl App {
             blink_shown,
         };
         let config = self.config.cursor;
+        let dark = platform.appearance() == Appearance::Dark;
+        let selection_colors = self.theme.variant(dark).selection;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -1614,7 +1843,22 @@ impl App {
             i32::try_from(left).unwrap_or(i32::MAX),
             i32::try_from(top).unwrap_or(i32::MAX),
         );
-        let mut batch = cells::cells_with(snapshot, &cell, (x, y), None, cursor, look, font);
+        let selected = snapshot.selection();
+        let contains =
+            |column: u16, row: u16| selected.is_some_and(|shown| shown.contains(column, row));
+        let selection = selected.map(|_| cells::Selection {
+            colors: selection_colors,
+            contains: &contains,
+        });
+        let mut batch = cells::cells_with(
+            snapshot,
+            &cell,
+            (x, y),
+            selection.as_ref(),
+            cursor,
+            look,
+            font,
+        );
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
@@ -1735,6 +1979,9 @@ impl Handler for App {
                 }
             }
             // The windows' flashes end.
+            AppEvent::Timer(timer) if self.scroll_timer == Some(timer) => {
+                self.scroll_selections(platform);
+            }
             AppEvent::Timer(timer) if self.flash_timer == Some(timer) => {
                 self.flash_timer = None;
                 for (&window, state) in &mut self.windows {
@@ -1942,8 +2189,8 @@ impl Handler for App {
                 pressed,
                 position,
                 mods,
-                ..
-            } => self.mouse_button(platform, window, button, pressed, position, mods),
+                clicks,
+            } => self.mouse_button(platform, window, (button, pressed, clicks), position, mods),
             WindowEvent::MouseMoved { position, mods } => {
                 self.mouse_moved(platform, window, position, mods);
             }
@@ -1957,6 +2204,25 @@ impl Handler for App {
             WindowEvent::CloseRequested => self.ask_close(platform, window),
             _ => {}
         }
+    }
+}
+
+/// Shows `selecting`'s selection in `pane`: the cells between its spots,
+/// or the words or the lines that they are in; none, as after a click.
+fn show_selection(pane: &Pane, selecting: &Selecting) {
+    let offset = pane.view_offset() as i64;
+    let (anchor, last) = (selecting.anchor, selecting.last);
+    let cells = match (selecting.shape, selecting.unit) {
+        (SelectionShape::Rectangle, _) => mouse::rectangle_cells(anchor, last),
+        (SelectionShape::Cells, SelectionUnit::Cell) => {
+            mouse::dragged_cells(anchor, last, pane.grid().columns)
+        }
+        (SelectionShape::Cells, _) => Some(((anchor.col, anchor.row), (last.col, last.row))),
+    };
+    let view = |(col, row): (u16, i64)| (col, row + offset);
+    match cells {
+        Some((from, to)) => pane.select(view(from), view(to), selecting.shape, selecting.unit),
+        None => pane.clear_selection(),
     }
 }
 
@@ -3004,6 +3270,234 @@ mod tests {
             mods,
             clicks: 1,
         }
+    }
+
+    /// The left button's press, or release, at `at`, with `mods`, of
+    /// `clicks` in a row.
+    fn click(pressed: bool, at: Point, mods: Modifiers, clicks: u32) -> WindowEvent {
+        WindowEvent::MouseButton {
+            button: MouseButton::Left,
+            pressed,
+            position: at,
+            mods,
+            clicks,
+        }
+    }
+
+    /// The pointer's move to `at`, with `mods`.
+    fn moved(at: Point, mods: Modifiers) -> WindowEvent {
+        WindowEvent::MouseMoved { position: at, mods }
+    }
+
+    /// A drag of the left button from `from` to `to`, with `mods`.
+    fn select_drag(
+        fake: &mut Fake,
+        app: &mut App,
+        window: WindowId,
+        (from, to): (Point, Point),
+        mods: Modifiers,
+    ) {
+        fake.send(app, window, click(true, from, mods, 1));
+        fake.send(app, window, moved(to, mods));
+        fake.send(app, window, click(false, to, mods, 1));
+    }
+
+    /// The text that `window`'s pane selects, as the terminal has it.
+    fn selected_text(app: &App, window: WindowId) -> Option<String> {
+        app.pane(window).selection_text()
+    }
+
+    /// The app without padding, its window running a program that shows two
+    /// lines, `hello world` and `second line`, then `ready`, of `config`'s
+    /// `[clipboard]`.
+    fn selecting(clipboard: &str, modes: &str) -> (Fake, App, WindowId) {
+        let mut config = Config::parse(
+            &format!("[clipboard]\n{clipboard}"),
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        config.window = unpadded().window;
+        let program = shell(&format!(
+            "stty raw -echo; printf 'hello world\\r\\nsecond line\\r\\n{modes}'; echo ready; cat -v"
+        ));
+        let mut fake = Fake::default();
+        let mut app = app(config, program);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        (fake, app, window)
+    }
+
+    #[test]
+    fn a_drag_selects_the_cells_between_its_ends_and_a_click_selects_none() {
+        let (mut fake, mut app, window) = selecting("", "");
+        let none = Modifiers::NONE;
+        select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 0)), none);
+        assert_eq!(selected_text(&app, window).as_deref(), Some("hello"));
+        // Backwards, across rows.
+        select_drag(&mut fake, &mut app, window, (cell(6, 1), cell(6, 0)), none);
+        assert_eq!(
+            selected_text(&app, window).as_deref(),
+            Some("world\nsecond")
+        );
+        // The view shows it at its next frame.
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(window).snapshot().selection().is_some()
+        });
+        assert!(fake.window(window).is_some());
+        // A click takes it away.
+        fake.send(&mut app, window, click(true, cell(2, 1), none, 1));
+        fake.send(&mut app, window, click(false, cell(2, 1), none, 1));
+        assert_eq!(selected_text(&app, window), None);
+    }
+
+    #[test]
+    fn clicks_select_a_word_and_a_line_and_option_a_rectangle() {
+        let (mut fake, mut app, window) = selecting("", "");
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(8, 0), none, 2));
+        assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
+        // Dragged, a word's selection goes on by words.
+        fake.send(&mut app, window, moved(cell(1, 1), none));
+        assert_eq!(
+            selected_text(&app, window).as_deref(),
+            Some("world\nsecond")
+        );
+        fake.send(&mut app, window, click(false, cell(1, 1), none, 2));
+        fake.send(&mut app, window, click(true, cell(3, 1), none, 3));
+        fake.send(&mut app, window, click(false, cell(3, 1), none, 3));
+        assert_eq!(selected_text(&app, window).as_deref(), Some("second line"));
+        let option = Modifiers {
+            left_alt: true,
+            ..Modifiers::NONE
+        };
+        select_drag(
+            &mut fake,
+            &mut app,
+            window,
+            (cell(1, 0), cell(4, 1)),
+            option,
+        );
+        assert_eq!(selected_text(&app, window).as_deref(), Some("ell\neco"));
+    }
+
+    #[test]
+    fn shift_s_click_extends_the_selection() {
+        let (mut fake, mut app, window) = selecting("", "");
+        select_drag(
+            &mut fake,
+            &mut app,
+            window,
+            (cell(0, 0), cell(5, 0)),
+            Modifiers::NONE,
+        );
+        fake.send(&mut app, window, click(true, cell(3, 1), SHIFT, 1));
+        fake.send(&mut app, window, click(false, cell(3, 1), SHIFT, 1));
+        assert_eq!(
+            selected_text(&app, window).as_deref(),
+            Some("hello world\nsec")
+        );
+    }
+
+    #[test]
+    fn a_selection_copies_its_text_as_it_ends_when_the_config_says() {
+        let (mut fake, mut app, window) = selecting("", "");
+        select_drag(
+            &mut fake,
+            &mut app,
+            window,
+            (cell(0, 0), cell(5, 0)),
+            Modifiers::NONE,
+        );
+        assert_eq!(fake.clipboard_text(), None);
+        let (mut fake, mut app, window) = selecting("copy-on-select = true\n", "");
+        fake.send(
+            &mut app,
+            window,
+            click(true, cell(0, 0), Modifiers::NONE, 1),
+        );
+        fake.send(&mut app, window, moved(cell(5, 0), Modifiers::NONE));
+        // Not before the button goes up.
+        assert_eq!(fake.clipboard_text(), None);
+        fake.send(
+            &mut app,
+            window,
+            click(false, cell(5, 0), Modifiers::NONE, 1),
+        );
+        assert_eq!(fake.clipboard_text().as_deref(), Some("hello"));
+        // A click, which selects nothing, copies nothing.
+        fake.send(
+            &mut app,
+            window,
+            click(true, cell(2, 1), Modifiers::NONE, 1),
+        );
+        fake.send(
+            &mut app,
+            window,
+            click(false, cell(2, 1), Modifiers::NONE, 1),
+        );
+        assert_eq!(fake.clipboard_text().as_deref(), Some("hello"));
+        // Nor do empty cells, whose text is empty.
+        select_drag(
+            &mut fake,
+            &mut app,
+            window,
+            (cell(0, 6), cell(5, 6)),
+            Modifiers::NONE,
+        );
+        assert_eq!(selected_text(&app, window).as_deref(), Some(""));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn a_program_that_takes_the_mouse_has_the_clicks_but_shift_s() {
+        let (mut fake, mut app, window) = selecting("", "\\033[?1000h\\033[?1006h");
+        select_drag(
+            &mut fake,
+            &mut app,
+            window,
+            (cell(0, 0), cell(5, 0)),
+            Modifiers::NONE,
+        );
+        assert_eq!(selected_text(&app, window), None);
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "[<0;1;1M"));
+        select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 0)), SHIFT);
+        assert_eq!(selected_text(&app, window).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn a_drag_past_the_top_scrolls_the_view_under_the_selection() {
+        let mut fake = Fake::default();
+        let mut app = app(
+            unpadded(),
+            shell("seq 1 200; echo ready; stty raw -echo; cat -v"),
+        );
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(3, 2), none, 1));
+        // Two rows above the window's top.
+        let above = Point { x: 1.0, y: -12.0 };
+        fake.send(&mut app, window, moved(above, none));
+        assert!(app.scroll_timer.is_some());
+        for _ in 0..3 {
+            fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL);
+        }
+        // Three steps of two rows; the selection goes up with the view.
+        assert_eq!(app.pane(window).view_offset(), 6);
+        // From where the view brought the pointer, six rows above the
+        // screen's top row, `141`, to the press's, after `143`.
+        let text = selected_text(&app, window).unwrap();
+        assert_eq!(text.lines().count(), 9, "{text:?}");
+        assert!(text.starts_with("135\n136"), "{text:?}");
+        assert!(text.ends_with("142\n143"), "{text:?}");
+        // Back within the grid, the scrolling stops.
+        fake.send(&mut app, window, moved(cell(0, 0), none));
+        fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL);
+        assert_eq!(app.pane(window).view_offset(), 6);
+        assert!(app.scroll_timer.is_none());
+        fake.send(&mut app, window, click(false, cell(0, 0), none, 1));
     }
 
     fn wheel(delta: ScrollDelta, mods: Modifiers) -> WindowEvent {

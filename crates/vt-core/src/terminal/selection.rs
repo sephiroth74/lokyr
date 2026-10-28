@@ -422,24 +422,26 @@ fn trim_line(text: &mut String) {
 }
 
 impl Terminal {
-    /// Selects from the view's cell `from`, its column and its row, to its
+    /// Selects from the view's cell `from`, its column and its row from the
+    /// view's first, which can be above the view, in the scrollback, to its
     /// cell `to`, either before the other, in `shape`, grown to `unit`, with
     /// `separators` ending the words besides spaces, as [`WORD_SEPARATORS`]
-    /// does by default. A rectangle takes no unit. The selection that was
-    /// there goes.
+    /// does by default. A rectangle takes no unit. A row past the list's
+    /// ends takes the nearest end's. The selection that was there goes.
     pub fn select(
         &mut self,
-        from: (u16, u16),
-        to: (u16, u16),
+        from: (u16, i64),
+        to: (u16, i64),
         shape: SelectionShape,
         unit: SelectionUnit,
         separators: &str,
     ) {
         self.clear_selection();
-        let top = self.view_top();
+        let top = self.view_top() as i64;
         let rows = &self.screen().rows;
-        let (cols, last_row) = (rows.cols(), rows.rows() - 1);
-        let at = |(col, row): (u16, u16)| (top + usize::from(row.min(last_row)), col.min(cols - 1));
+        let (cols, last) = (rows.cols(), rows.total_rows() as i64 - 1);
+        // Within the list's rows, which a `usize` holds.
+        let at = |(col, row): (u16, i64)| ((top + row).clamp(0, last) as usize, col.min(cols - 1));
         let (a, b) = (at(from), at(to));
         let (mut start, mut end) = match shape {
             SelectionShape::Rectangle => {
@@ -675,15 +677,15 @@ mod tests {
     /// The text that `terminal` selects from `from` to `to`, by `unit`.
     fn selected(
         terminal: &mut Terminal,
-        from: (u16, u16),
-        to: (u16, u16),
+        from: (u16, i64),
+        to: (u16, i64),
         unit: SelectionUnit,
     ) -> String {
         terminal.select(from, to, SelectionShape::Cells, unit, WORD_SEPARATORS);
         terminal.selection_text().expect("a selection")
     }
 
-    fn word_at(terminal: &mut Terminal, at: (u16, u16)) -> String {
+    fn word_at(terminal: &mut Terminal, at: (u16, i64)) -> String {
         selected(terminal, at, at, SelectionUnit::Word)
     }
 
@@ -813,6 +815,24 @@ mod tests {
         let selected = terminal.selection().unwrap();
         assert_eq!(selected.start, (0, 3 - 995));
         assert!(!selected.contains(0, 0));
+    }
+
+    #[test]
+    fn a_selection_s_rows_can_be_above_the_view_and_past_the_list() {
+        // Rows 0 to 7, of which the screen shows the last three.
+        let mut terminal = fed(10, 3, "0\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
+        // From two rows above the view, in the scrollback, to its last.
+        assert_eq!(
+            selected(&mut terminal, (0, -2), (0, 2), SelectionUnit::Line),
+            "3\n4\n5\n6\n7"
+        );
+        // Past the list's first row and its last, its ends.
+        assert_eq!(
+            selected(&mut terminal, (0, -100), (0, 50), SelectionUnit::Line)
+                .lines()
+                .count(),
+            8
+        );
     }
 
     #[test]
