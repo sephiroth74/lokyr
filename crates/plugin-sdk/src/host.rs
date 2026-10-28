@@ -100,6 +100,11 @@ pub trait HostApi {
     /// which reaches it as Return, waits for the user to confirm it.
     fn paste(&mut self, pane: PaneId, text: &str) -> Result<(), Error>;
 
+    /// Sends `text` to `pane`'s program as it is, its control characters
+    /// too, as typed keys would, which can run commands; the view comes
+    /// back to the screen.
+    fn send_text(&mut self, pane: PaneId, text: &str) -> Result<(), Error>;
+
     /// Scrolls `pane`'s view.
     fn scroll(&mut self, pane: PaneId, scroll: Scroll) -> Result<(), Error>;
 

@@ -4009,6 +4009,46 @@ mod tests {
     }
 
     #[test]
+    fn a_binding_of_the_config_sends_its_text_as_it_is() {
+        // A shell's line editing: the word before, and the line's start.
+        let keys = concat!(
+            "\"alt+backspace\" = { command = \"pane.send-text\", args = { text = \"\\u0017\" } }\n",
+            "\"cmd+left\" = { command = \"pane.send-text\", args = { text = \"\\u0001\" } }\n",
+        );
+        // More lines than the window's rows, for a scrollback.
+        let program = shell("seq 1 200; echo ready; stty raw -echo; cat -v");
+        let (mut fake, mut app, window) = bound(keys, program);
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        // A view up the scrollback comes back down, as typing brings it.
+        let offset = |app: &App| app.pane(window).snapshot().offset();
+        fake.send(&mut app, window, key_event(KeyCode::ArrowUp, "", CMD, true));
+        run_until(&mut fake, &mut app, |_, app| offset(app) == 1);
+        let alt = Modifiers {
+            left_alt: true,
+            ..Modifiers::NONE
+        };
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::Backspace, "", alt, true),
+        );
+        fake.send(
+            &mut app,
+            window,
+            key_event(KeyCode::ArrowLeft, "", CMD, true),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            offset(app) == 0 && shows(app, window, "^W^A")
+        });
+        // Its text is required.
+        let error = app
+            .commands
+            .check("pane.send-text", Args::new())
+            .unwrap_err();
+        assert_eq!(error.code, Code::MissingArgument);
+    }
+
+    #[test]
     fn a_sequence_holds_its_keys_back_until_it_runs_or_gives_them_to_the_program() {
         let keys = "\"ctrl+a>n\" = \"window.new\"\n";
         let (mut fake, mut app, window) = bound(keys, reader(""));

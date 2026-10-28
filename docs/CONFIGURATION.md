@@ -105,6 +105,7 @@ language = "it"                      # system | en | it
 "cmd+shift+n" = "window.new"         # keys, and the command that they run
 "ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
 "cmd+q" = false                      # takes the binding away; the menu's Command-Q stays, for now
+"alt+backspace" = { command = "pane.send-text", args = { text = "\u0017" } }   # sends Control-W
 ```
 
 ## `config_version`
@@ -689,6 +690,27 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
 - For now, the keys of the menus' items, Command-N and Command-Q, stay theirs: the menus take them before the bindings see them.
 - A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
+
+A command without keys of its own, for your bindings:
+
+- `pane.send-text` sends its `text` to the program as it is, its control characters too, as keys that typed it would, which can run commands; the view comes back to the screen. In the TOML string, `\u0017` writes Control-W, and `\u001b` Escape.
+
+For the keys of a shell's line editing, as macOS's text fields have them:
+
+```toml
+[keys]
+"alt+backspace" = { command = "pane.send-text", args = { text = "\u0017" } }  # the word before: Control-W
+"cmd+backspace" = { command = "pane.send-text", args = { text = "\u0015" } }  # to the line's start: Control-U
+"cmd+delete" = { command = "pane.send-text", args = { text = "\u000b" } }     # to the line's end: Control-K
+"alt+delete" = { command = "pane.send-text", args = { text = "\u001bd" } }    # the word after: Esc d
+"alt+left" = { command = "pane.send-text", args = { text = "\u001bb" } }      # a word back: Esc b
+"alt+right" = { command = "pane.send-text", args = { text = "\u001bf" } }     # a word on: Esc f
+"cmd+left" = { command = "pane.send-text", args = { text = "\u0001" } }       # the line's start: Control-A
+"cmd+right" = { command = "pane.send-text", args = { text = "\u0005" } }      # the line's end: Control-E
+```
+
+- `delete` is the key that deletes forward, fn-⌫ on a laptop's keyboard.
+- zsh's Control-U deletes the whole line, where bash's and fish's delete to its start; `bindkey '^U' backward-kill-line` in `~/.zshrc` makes zsh's delete to the start.
 
 The defaults:
 

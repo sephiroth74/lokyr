@@ -6,7 +6,9 @@
 
 #![forbid(unsafe_code)]
 
-use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
+};
 use lokyr_plugin_sdk::host::{Binding, Scroll};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
@@ -38,6 +40,10 @@ const SCROLL_PAGE_UP: &str = "pane.scroll-page-up";
 const SCROLL_PAGE_DOWN: &str = "pane.scroll-page-down";
 const SCROLL_TOP: &str = "pane.scroll-top";
 const SCROLL_BOTTOM: &str = "pane.scroll-bottom";
+
+/// Sends its `text` to the focused pane's program, as it is: for keys that
+/// the config binds, as those of a shell's line editing.
+const SEND_TEXT: &str = "pane.send-text";
 
 /// The sizes of the text, in points, that the commands go between.
 const SIZES: (f32, f32) = (4.0, 200.0);
@@ -147,10 +153,20 @@ impl Plugin for CoreActions {
                 })?;
             }
         }
-        Ok(())
+        cx.register_command(Command {
+            name: SEND_TEXT.to_owned(),
+            title: "Send Text".to_owned(),
+            category: Category::Input,
+            capabilities: vec![Capability::PtyWrite],
+            params: vec![Param {
+                name: "text".to_owned(),
+                kind: Kind::String,
+                default: None,
+            }],
+        })
     }
 
-    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _args: Args) -> Result<(), Error> {
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         // The font's size is every window's; it stays within its sizes.
         let (smallest, largest) = SIZES;
         let size = cx.font_size();
@@ -181,6 +197,13 @@ impl Plugin for CoreActions {
         };
         if let Some(scroll) = scroll {
             return cx.scroll(pane, scroll);
+        }
+        if name == SEND_TEXT {
+            // The registry checked that the text is there, a string.
+            return match args.get("text") {
+                Some(Value::String(text)) => cx.send_text(pane, text),
+                _ => Ok(()),
+            };
         }
         match name {
             COPY => {

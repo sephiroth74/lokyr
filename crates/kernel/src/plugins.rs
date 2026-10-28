@@ -427,6 +427,11 @@ impl HostApi for Host<'_, '_> {
         Ok(())
     }
 
+    fn send_text(&mut self, pane: host::PaneId, text: &str) -> Result<(), Error> {
+        self.pane(pane)?.send_text(text);
+        Ok(())
+    }
+
     fn scroll(&mut self, pane: host::PaneId, scroll: host::Scroll) -> Result<(), Error> {
         let rows = |n: u32| usize::try_from(n).unwrap_or(usize::MAX);
         self.pane(pane)?.scroll(match scroll {

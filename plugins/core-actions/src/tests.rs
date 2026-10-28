@@ -74,6 +74,11 @@ impl HostApi for Host {
         Ok(())
     }
 
+    fn send_text(&mut self, pane: PaneId, text: &str) -> Result<(), Error> {
+        self.calls.push(format!("send {} {text:?}", pane.0));
+        Ok(())
+    }
+
     fn scroll(&mut self, pane: PaneId, scroll: Scroll) -> Result<(), Error> {
         self.calls.push(format!("scroll {} {scroll:?}", pane.0));
         Ok(())
@@ -114,7 +119,7 @@ fn the_commands_register_with_their_keys() {
         .commands
         .iter()
         .map(|command| {
-            assert!(command.params.is_empty());
+            assert!(command.params.is_empty() || command.name == "pane.send-text");
             let capabilities = command.capabilities.iter().map(ToString::to_string);
             (
                 command.name.as_str(),
@@ -150,7 +155,24 @@ fn the_commands_register_with_their_keys() {
             view("pane.scroll-page-down"),
             view("pane.scroll-top"),
             view("pane.scroll-bottom"),
+            ("pane.send-text", Category::Input, names(&["pty-write"])),
         ]
+    );
+    // Sending text takes its text, and has no keys of its own.
+    let send = host.commands.last().unwrap();
+    assert_eq!(send.params.len(), 1);
+    assert_eq!(
+        (
+            send.params[0].name.as_str(),
+            send.params[0].kind,
+            &send.params[0].default
+        ),
+        ("text", lokyr_plugin_sdk::command::Kind::String, &None)
+    );
+    assert!(
+        host.bindings
+            .iter()
+            .all(|binding| binding.command != "pane.send-text")
     );
     let bound: Vec<(&str, &str)> = host
         .bindings
@@ -301,5 +323,24 @@ fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
     // Without a focused pane, nothing.
     let mut host = Host::default();
     run(&mut host, SCROLL_TOP).unwrap();
+    assert!(host.calls.is_empty());
+}
+
+#[test]
+fn sending_text_sends_it_as_it_is() {
+    let mut host = Host {
+        pane: Some(PaneId(9)),
+        ..Host::default()
+    };
+    let args = Args::from([("text".to_owned(), Value::String("\u{17}\u{1b}b".to_owned()))]);
+    CoreActions
+        .on_command(&mut Cx::new(&mut host), SEND_TEXT, args.clone())
+        .unwrap();
+    assert_eq!(host.calls, ["send 9 \"\\u{17}\\u{1b}b\""]);
+    // Without a focused pane, nothing.
+    let mut host = Host::default();
+    CoreActions
+        .on_command(&mut Cx::new(&mut host), SEND_TEXT, args)
+        .unwrap();
     assert!(host.calls.is_empty());
 }

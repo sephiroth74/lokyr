@@ -270,6 +270,14 @@ impl Session {
         self.write(bytes);
     }
 
+    /// Sends `text` as it is, its control characters too, as keys that
+    /// typed it would, and brings the view back to the screen.
+    pub fn send(&self, text: &str) {
+        let bytes = text.as_bytes().to_vec();
+        typed(&mut self.lock(), &bytes);
+        self.write(bytes);
+    }
+
     /// Pastes `text`, in one entry of the queue, so that no reply comes
     /// between its brackets; the writer writes it in chunks. The view comes
     /// back to the screen.

@@ -413,6 +413,14 @@ impl Pane {
         }
     }
 
+    /// Sends `text` to the program as it is, as typed keys would, and
+    /// brings the view back to the screen.
+    pub fn send_text(&self, text: &str) {
+        if let Some(session) = &self.session {
+            session.send(text);
+        }
+    }
+
     /// Pastes `text`, bracketed when the program asks, without its control
     /// characters but tab and the line breaks.
     pub fn paste(&self, text: &str) {
