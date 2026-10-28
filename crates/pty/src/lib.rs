@@ -110,6 +110,9 @@ pub struct Options {
     /// The directory of the app's resources, which the program finds in
     /// `LOKYR_RESOURCES_DIR`.
     pub resources_dir: Option<PathBuf>,
+    /// The directory of the terminal's own terminfo entry, which `TERMINFO`
+    /// names for a `TERM` of it, `xterm-lokyr` or `lokyr`.
+    pub terminfo_dir: Option<PathBuf>,
     /// The locale that `LANG` gets when the environment sets none, as when
     /// the app starts from the Dock: a UTF-8 one.
     pub fallback_locale: String,
@@ -128,6 +131,7 @@ impl Options {
             term: term.into(),
             working_directory: None,
             resources_dir: None,
+            terminfo_dir: None,
             fallback_locale: "en_US.UTF-8".to_owned(),
             env: Vec::new(),
             size: Size {

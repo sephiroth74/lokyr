@@ -34,6 +34,32 @@ fn resources_of(executable: &Path) -> Option<PathBuf> {
     resources.is_dir().then_some(resources)
 }
 
+/// The directory of the terminal's own terminfo entry, `xterm-lokyr`: the
+/// bundle's, in its `resources`, or, outside a bundle, as `cargo run`
+/// starts the app, the source tree's, which `cargo xtask terminfo`
+/// compiles; `None` where neither has the entry.
+pub(crate) fn terminfo(resources: Option<&Path>) -> Option<PathBuf> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/terminfo");
+    terminfo_in(
+        resources.map(|resources| resources.join("terminfo")),
+        source,
+    )
+}
+
+/// The first of `bundled` and `source` that holds the entry, by the
+/// letter's directory or, as macOS's `tic` writes it, by its hex code's.
+fn terminfo_in(bundled: Option<PathBuf>, source: PathBuf) -> Option<PathBuf> {
+    let has = |directory: &Path| {
+        ["78", "x"]
+            .iter()
+            .any(|first| directory.join(first).join("xterm-lokyr").is_file())
+    };
+    bundled
+        .into_iter()
+        .chain([source])
+        .find(|directory| has(directory))
+}
+
 /// The UTF-8 locales that the system has, by their names, in order.
 pub(crate) fn system_locales() -> Vec<String> {
     let Ok(entries) = fs::read_dir(Path::new(LOCALES)) else {
@@ -173,6 +199,30 @@ mod tests {
         let loose = bin.join("other");
         fs::write(&loose, "").unwrap();
         assert_eq!(resources_of(&loose), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_terminfo_entry_is_the_bundle_s_or_the_source_tree_s() {
+        let root = std::env::temp_dir().join(format!("lokyr-terminfo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (bundled, source) = (root.join("bundle"), root.join("source"));
+        let write = |directory: &Path, first: &str| {
+            fs::create_dir_all(directory.join(first)).unwrap();
+            fs::write(directory.join(first).join("xterm-lokyr"), "").unwrap();
+        };
+        assert_eq!(terminfo_in(Some(bundled.clone()), source.clone()), None);
+        write(&source, "x");
+        assert_eq!(
+            terminfo_in(Some(bundled.clone()), source.clone()),
+            Some(source.clone())
+        );
+        write(&bundled, "78");
+        assert_eq!(
+            terminfo_in(Some(bundled.clone()), source.clone()),
+            Some(bundled)
+        );
+        assert_eq!(terminfo_in(None, source.clone()), Some(source));
         fs::remove_dir_all(root).unwrap();
     }
 

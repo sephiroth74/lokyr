@@ -827,15 +827,15 @@ fn environment(
     set("COLORTERM", "truecolor".into());
     set("TERM_PROGRAM", "lokyr".into());
     set("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION").into());
+    // The terminal's own entry, which the app keeps, where programs would
+    // not otherwise find it.
+    if matches!(options.term.as_str(), "xterm-lokyr" | "lokyr")
+        && let Some(dir) = &options.terminfo_dir
+    {
+        set("TERMINFO", dir.clone().into());
+    }
     match &options.resources_dir {
-        Some(dir) => {
-            set("LOKYR_RESOURCES_DIR", dir.clone().into());
-            // The terminal's own entry, which the app keeps with its
-            // resources, where programs would not otherwise find it.
-            if matches!(options.term.as_str(), "xterm-lokyr" | "lokyr") {
-                set("TERMINFO", dir.join("terminfo").into());
-            }
-        }
+        Some(dir) => set("LOKYR_RESOURCES_DIR", dir.clone().into()),
         None => {
             env.remove(OsStr::new("LOKYR_RESOURCES_DIR"));
         }
@@ -1375,9 +1375,11 @@ mod tests {
     fn terminfo_points_to_the_entry_that_the_app_keeps() {
         let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-lokyr");
         let inherited = || vars(&[("TERMINFO", "/opt/other/terminfo")]);
-        // Without the resources, there is no entry to point to.
-        assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
+        // Without the entry's directory, there is none to point to, the
+        // resources' or not.
         options.resources_dir = Some("/Applications/Lokyr.app/Contents/Resources".into());
+        assert_eq!(get(&environment(&options, inherited()), "TERMINFO"), None);
+        options.terminfo_dir = Some("/Applications/Lokyr.app/Contents/Resources/terminfo".into());
         assert_eq!(
             get(&environment(&options, inherited()), "TERMINFO"),
             Some("/Applications/Lokyr.app/Contents/Resources/terminfo")

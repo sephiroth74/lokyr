@@ -71,6 +71,9 @@ pub struct Environment {
     pub resources: Option<PathBuf>,
     /// The locale that `LANG` takes when the environment sets none.
     pub locale: String,
+    /// The directory of the terminal's own terminfo entry, if the app has
+    /// one, which `TERMINFO` names for a `TERM` of it.
+    pub terminfo: Option<PathBuf>,
 }
 
 impl Default for Environment {
@@ -78,6 +81,7 @@ impl Default for Environment {
         Self {
             resources: None,
             locale: "en_US.UTF-8".to_owned(),
+            terminfo: None,
         }
     }
 }
@@ -165,6 +169,7 @@ fn pty_options(
     let mut pty = lokyr_pty::Options::new(program.clone(), term);
     pty.size = grid.size();
     pty.resources_dir.clone_from(&environment.resources);
+    pty.terminfo_dir.clone_from(&environment.terminfo);
     pty.fallback_locale.clone_from(&environment.locale);
     pty
 }
@@ -539,6 +544,7 @@ mod tests {
         let environment = Environment {
             resources: Some("/Applications/Lokyr.app/Contents/Resources".into()),
             locale: "it_CH.UTF-8".to_owned(),
+            terminfo: Some("/Applications/Lokyr.app/Contents/Resources/terminfo".into()),
         };
         let grid = Grid {
             columns: 80,
@@ -550,6 +556,7 @@ mod tests {
         assert_eq!(options.resources_dir, environment.resources);
         assert_eq!(options.fallback_locale, "it_CH.UTF-8");
         assert_eq!(options.term, "xterm-lokyr");
+        assert_eq!(options.terminfo_dir, environment.terminfo);
         assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
     }

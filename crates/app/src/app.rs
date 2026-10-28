@@ -95,6 +95,10 @@ const NOTIFICATION_PAUSE: Duration = Duration::from_secs(2);
 const NOTIFICATION_TITLE: usize = 256;
 const NOTIFICATION_BODY: usize = 2048;
 
+/// The `TERM` that a window takes in place of the terminal's own when the
+/// app has no entry of it to give its programs.
+const FALLBACK_TERM: &str = "xterm-256color";
+
 /// The title of a window whose program gives none, and what stands before
 /// the title of a window whose bell rang in the background.
 const TITLE: &str = "Lokyr";
@@ -354,9 +358,13 @@ impl App {
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
-            environment: Environment {
-                resources: environment::resources(),
-                ..Environment::default()
+            environment: {
+                let resources = environment::resources();
+                Environment {
+                    terminfo: environment::terminfo(resources.as_deref()),
+                    resources,
+                    ..Environment::default()
+                }
             },
             budget,
         }
@@ -895,11 +903,21 @@ impl App {
 
     /// What a new window's terminal takes of the config: its `TERM`, its
     /// widths and normal form, and its scrollback's limit, within the
-    /// budget that the windows share.
+    /// budget that the windows share. The terminal's own `TERM`, without
+    /// its entry, as outside the bundle before `cargo xtask terminfo`,
+    /// gives way to `xterm-256color`, as the log tells, rather than leave
+    /// the programs a terminal that they cannot know.
     fn settings(&self) -> Settings {
         let terminal = &self.config.terminal;
+        let mut term = terminal.term.as_str();
+        if matches!(term, "xterm-lokyr" | "lokyr") && self.environment.terminfo.is_none() {
+            eprintln!(
+                "lokyr: `{term}` has no terminfo entry here, outside the bundle: the window takes `{FALLBACK_TERM}`; `cargo xtask terminfo` compiles the entry for `cargo run`"
+            );
+            term = FALLBACK_TERM;
+        }
         Settings {
-            term: terminal.term.as_str().to_owned(),
+            term: term.to_owned(),
             widths: terminal.widths(),
             normalization: terminal.normalization.form(),
             scrollback: Scrollback {
@@ -2932,6 +2950,36 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| {
             shows(app, window, "+r544E=7674323230")
         });
+    }
+
+    #[test]
+    fn the_terminal_s_own_term_needs_its_entry() {
+        let program =
+            || shell("printf '[%s] [%s]\\n' \"$TERM\" \"$TERMINFO\"; echo ready; sleep 10");
+        let config = || {
+            let mut config = Config::parse(
+                "[terminal]\nterm = \"xterm-lokyr\"\n",
+                std::path::Path::new("config.toml"),
+            )
+            .unwrap();
+            config.window = unpadded().window;
+            config
+        };
+        for (terminfo, shown) in [
+            (None, "[xterm-256color] []"),
+            (
+                Some("/tmp/lokyr-terminfo"),
+                "[xterm-lokyr] [/tmp/lokyr-terminfo]",
+            ),
+        ] {
+            let mut fake = Fake::default();
+            let mut app = app(config(), program());
+            app.environment.terminfo = terminfo.map(PathBuf::from);
+            fake.start(&mut app);
+            let window = fake.windows().next().unwrap();
+            run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+            assert_eq!(row(&app, window, 0).trim(), shown);
+        }
     }
 
     #[test]

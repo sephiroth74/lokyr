@@ -426,7 +426,7 @@ The `TERM` that programs see, which tells them what the terminal can do: letters
 | a terminfo name, as `"xterm-256color"`, `"xterm-lokyr"`, `"xterm"`, `"vt220"` | `"xterm-256color"` |
 
 - It changes only what programs are told, never the terminal, which does all that xterm does whatever the name.
-- `"xterm-lokyr"` describes Lokyr itself, with the capabilities past xterm's, as undercurls and the kitty keyboard; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior.
+- `"xterm-lokyr"` describes Lokyr itself, with the capabilities past xterm's, as undercurls and the kitty keyboard; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
 - It applies to the windows that open after the change: the programs of a window keep the `TERM` that they started with.
 
 ### `unicode-widths`
