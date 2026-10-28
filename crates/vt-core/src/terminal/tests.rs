@@ -3996,6 +3996,46 @@ fn clearing_to_the_prompt_keeps_the_cursor_s_line_at_the_top() {
 }
 
 #[test]
+fn the_lines_after_a_clear_to_the_prompt_are_lines() {
+    // A line that wraps below the cursor's, as a menu of completions, on a
+    // row that a prompt's mark starts.
+    let mut term = Term::new(10, 8);
+    term.feed("0123456789AB\r\n\r\n$ ls");
+    term.feed("\x1b[6;1H\x1b]133;A\x07menu-menu-MENU\x1b[4;5H");
+    assert!(term.row(5).has(RowFlag::PromptStart));
+    term.terminal.clear_to_prompt();
+    for y in 1..8 {
+        for flag in [
+            RowFlag::SoftWrapped,
+            RowFlag::Continuation,
+            RowFlag::PromptStart,
+        ] {
+            assert!(!term.row(y).has(flag), "row {y}: {flag:?}");
+        }
+    }
+    term.feed("\r\none\r\ntwo\r\nthree\r\nfour");
+    term.terminal.select_all();
+    assert_eq!(
+        term.terminal.selection_text().as_deref(),
+        Some("$ ls\none\ntwo\nthree\nfour")
+    );
+    // A wider screen keeps them apart.
+    term.terminal.clear_selection();
+    term.terminal.resize(20, 8);
+    assert_eq!(term.screen()[..5], ["$ ls", "one", "two", "three", "four"]);
+}
+
+#[test]
+fn a_mark_after_a_clear_to_the_prompt_joins_the_prompt_s_last_character() {
+    let mut term = Term::new(10, 4);
+    term.feed("a\r\nb\r\nc\r\n$ e");
+    term.terminal.clear_to_prompt();
+    term.feed("\u{301}");
+    assert_eq!(term.screen()[0], "$ e\u{301}");
+    assert_eq!(term.cursor(), (3, 0, false));
+}
+
+#[test]
 fn clearing_to_the_prompt_leaves_the_alternate_screen_and_a_view_above() {
     let mut term = Term::new(10, 3);
     term.feed("a\r\nb\r\nc\r\nd\x1b[?1049h\x1b[Hvim\r\nfile");

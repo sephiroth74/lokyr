@@ -261,11 +261,15 @@ fn a_pane_tells_the_jobs_behind_the_shell() {
 fn a_pane_tells_its_contexts() {
     let pane = pane("printf 'ready'; sleep 10");
     assert!(pane.contexts().is_empty());
-    // Once the program shows something to select.
+    // Once the program shows what it shows, so that no output moves the
+    // selection's rows away.
     let start = Instant::now();
     loop {
         pane.select_all();
-        if pane.selection_text().is_some() {
+        if pane
+            .selection_text()
+            .is_some_and(|text| text.contains("ready"))
+        {
             break;
         }
         assert!(start.elapsed() < Duration::from_secs(10));

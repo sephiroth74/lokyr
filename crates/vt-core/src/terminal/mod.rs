@@ -812,6 +812,16 @@ impl Terminal {
             let width = self.cols;
             let (page, row) = self.screen_mut().rows.screen_row_mut(y);
             page.erase(row, 0..width, Cell::EMPTY, false);
+            // An empty row that neither goes on from another, nor to the
+            // next, nor starts a prompt, as an erase leaves it.
+            let flags = page.row_mut(row);
+            for flag in [
+                RowFlag::SoftWrapped,
+                RowFlag::Continuation,
+                RowFlag::PromptStart,
+            ] {
+                flags.set(flag, false);
+            }
         }
         if start > 0 {
             // The row above no longer goes on into the prompt, as output
@@ -822,6 +832,8 @@ impl Terminal {
         }
         self.clear_scrollback();
         self.screen_mut().cursor.y -= start;
+        // The cluster in progress was the cursor's old row's.
+        self.moved();
     }
 
     /// Sets the bytes that the primary screen's scrollback may take, as
