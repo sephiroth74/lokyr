@@ -161,6 +161,33 @@ fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
     Ok(font)
 }
 
+/// Checks `config` as the app takes it, without applying it: its font,
+/// whose failure fails the whole config, and its icon and its language,
+/// which the log tells of when they are not Lokyr's, and whose defaults
+/// then show.
+pub(crate) fn check(config: &Config) -> Result<(), String> {
+    font(config.font.clone())?;
+    texts(&config.app.language, &[]);
+    if let Some(icons) = Icons::find() {
+        variant(&icons.variants(), &config.app.icon);
+    }
+    Ok(())
+}
+
+/// The variant of `variants` that `wanted` names; for a name that is none
+/// of theirs, the default one, as the log tells.
+fn variant<'a>(variants: &[String], wanted: &'a str) -> &'a str {
+    if variants.iter().any(|variant| variant == wanted) {
+        wanted
+    } else {
+        eprintln!(
+            "lokyr: the icon `{wanted}` is not one of Lokyr's: {}; the default one shows",
+            variants.join(", ")
+        );
+        AppConfig::DEFAULT_ICON
+    }
+}
+
 /// The config file, and its watch.
 #[derive(Debug)]
 struct ConfigFile {
@@ -479,17 +506,7 @@ impl App {
             );
             return;
         };
-        let variants = icons.variants();
-        let wanted = &self.config.app.icon;
-        let variant = if variants.contains(wanted) {
-            wanted.as_str()
-        } else {
-            eprintln!(
-                "lokyr: the icon `{wanted}` is not one of Lokyr's: {}; the default one shows",
-                variants.join(", ")
-            );
-            AppConfig::DEFAULT_ICON
-        };
+        let variant = variant(&icons.variants(), &self.config.app.icon);
         let shown = self
             .icon_shown
             .as_deref()

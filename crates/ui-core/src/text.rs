@@ -10,11 +10,11 @@
 //! blink = true            # whether text that programs make blink blinks
 //! ```
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The `[text]` section: which styles of text take their faces, and how the
 /// programs' colors and blinking show.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TextConfig {
     /// Whether bold text takes the bold face: without, the regular one.

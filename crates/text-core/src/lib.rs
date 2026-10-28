@@ -23,7 +23,7 @@ pub use backend::{
     ShapedGlyph, Synthesis,
 };
 pub use cell::CellMetrics;
-pub use config::{Factor, FontConfig, Name, Size, ThinStrokes};
+pub use config::{Factor, FontConfig, Name, Size, ThinStrokes, as_written};
 pub use faces::{
     Face, FaceError, Faces, Resolved, choose as choose_faces, resolve as resolve_faces,
 };

@@ -71,12 +71,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use lokyr_text_core::FontConfig;
+use lokyr_text_core::as_written;
 use lokyr_ui_core::cursor::CursorConfig;
 use lokyr_ui_core::text::TextConfig;
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
-use serde::Deserialize;
 use serde::de::{self, Visitor};
+use serde::{Deserialize, Serialize};
 use toml_edit::{Document, Item, TableLike};
+
+mod written;
 
 /// The version of the file's format that the app reads.
 pub const VERSION: i64 = 1;
@@ -89,7 +92,7 @@ const FILE: &str = "config.toml";
 
 /// The config: its sections, each with the defaults of what the file leaves
 /// out.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Config {
     /// The version of the file's format, which can only be the app's.
@@ -121,7 +124,7 @@ pub struct Config {
 
 /// The `[keys]` section: bindings of keys to commands over the defaults, by
 /// their keys, as [`crate::keymap`] writes them.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct KeysConfig {
     /// The bindings, by their keys.
@@ -130,7 +133,7 @@ pub struct KeysConfig {
 
 /// What keys take: a command, a binding, several in their contexts, or
 /// `false`, which takes the defaults of the keys away.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum KeyValue {
     /// A command, without arguments, in every context.
@@ -144,13 +147,13 @@ pub enum KeyValue {
 }
 
 /// A binding of keys: its command, its arguments and its context.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyBinding {
     /// The command's name.
     pub command: String,
     /// Its arguments.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub args: BTreeMap<String, ArgValue>,
     /// The context in which it holds, as `pane.focused && !selection`.
     #[serde(default)]
@@ -158,7 +161,7 @@ pub struct KeyBinding {
 }
 
 /// An argument's value, as TOML writes it.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ArgValue {
     /// True or false.
@@ -172,7 +175,7 @@ pub enum ArgValue {
 }
 
 /// The `[app]` section: the application's own looks and language.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AppConfig {
     /// The variant of the icon that shows while the app runs, by its name
@@ -201,7 +204,7 @@ impl Default for AppConfig {
 
 /// The `[terminal]` section: what programs are told of the terminal, and
 /// how it counts and keeps their text, which must match how they count it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TerminalConfig {
     /// The `TERM` that programs see, which changes only what they are
@@ -228,9 +231,15 @@ impl TerminalConfig {
 
 /// A `TERM`: letters, digits, `.`, `_`, `+` and `-`, 64 at most, as
 /// terminfo names entries.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Term(String);
+
+impl From<Term> for String {
+    fn from(term: Term) -> Self {
+        term.0
+    }
+}
 
 impl Term {
     /// The name.
@@ -262,7 +271,7 @@ impl TryFrom<String> for Term {
 }
 
 /// Which width tables the terminal counts characters by.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum UnicodeWidths {
     /// Those of the Unicode version of the terminal's tables.
     #[default]
@@ -287,9 +296,15 @@ impl UnicodeWidths {
 /// The cells of an East Asian Ambiguous character, as `α` and `→`: 1, as
 /// most programs count them, or 2, as some fonts and locales of East Asia
 /// draw them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "i64")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "i64", into = "i64")]
 pub struct AmbiguousWidth(u8);
+
+impl From<AmbiguousWidth> for i64 {
+    fn from(width: AmbiguousWidth) -> Self {
+        i64::from(width.0)
+    }
+}
 
 impl AmbiguousWidth {
     /// Whether they take two cells.
@@ -319,7 +334,7 @@ impl TryFrom<i64> for AmbiguousWidth {
 }
 
 /// The normal form that printed text takes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum TextNormalization {
     /// As programs write it.
     #[default]
@@ -350,7 +365,7 @@ impl TextNormalization {
 
 /// The `[scrollback]` section: the rows above the screen, the view that
 /// scrolls through them, and the memory that they take.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct ScrollbackConfig {
     /// Whether a program's output brings a view scrolled up back down to
@@ -365,9 +380,17 @@ pub struct ScrollbackConfig {
 
 /// An amount of memory, in MiB, from 1 to 16,384, whole or not, by default
 /// `DEFAULT`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Memory<const DEFAULT: u32>(usize);
+
+/// In MiB, as the file writes it.
+impl<const DEFAULT: u32> From<Memory<DEFAULT>> for f64 {
+    fn from(memory: Memory<DEFAULT>) -> Self {
+        // Fewer bytes than an `f64` holds exactly.
+        memory.0 as f64 / MIB as f64
+    }
+}
 
 impl<const DEFAULT: u32> Memory<DEFAULT> {
     /// The most, in MiB.
@@ -405,7 +428,7 @@ impl<const DEFAULT: u32> TryFrom<f64> for Memory<DEFAULT> {
 const MIB: usize = 1024 * 1024;
 
 /// The `[keyboard]` section: how keys reach programs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct KeyboardConfig {
     /// Which Option keys act as Meta, sending an escape before the key,
@@ -415,7 +438,7 @@ pub struct KeyboardConfig {
 
 /// The `[clipboard]` section: what programs do with the clipboard. Their
 /// writes, with OSC 52, always reach it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct ClipboardConfig {
     /// Whether a program can read the clipboard, with OSC 52.
@@ -423,7 +446,7 @@ pub struct ClipboardConfig {
 }
 
 /// Whether a program can read the clipboard.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ClipboardRead {
     /// Never: a read gets no answer, as a program that runs elsewhere, over
@@ -436,7 +459,7 @@ pub enum ClipboardRead {
 
 /// The `[bell]` section: what a program's bell does, BEL, as the agents
 /// that run in the terminal ring it when they wait for the user.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct BellConfig {
     /// Whether it plays the system's alert sound.
@@ -463,7 +486,7 @@ impl Default for BellConfig {
 }
 
 /// Which Option keys act as Meta.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum OptionAsMeta {
     /// Neither, as Option types `@ # [ ] { } ~` on many layouts, the
@@ -492,7 +515,7 @@ impl OptionAsMeta {
 
 /// The `[window]` section: what a window does, the room around its grid,
 /// and how much of what is behind it shows through.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
     /// What a window does when its program ends.
@@ -510,9 +533,15 @@ pub struct WindowConfig {
 /// The opacity of the window's default background, from 0, clear, to 1,
 /// opaque: what is behind the window shows through. The cells whose
 /// background a program colors stay opaque, as does the text.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Opacity(f32);
+
+impl From<Opacity> for f64 {
+    fn from(value: Opacity) -> Self {
+        as_written(value.0)
+    }
+}
 
 impl Opacity {
     /// The opacity, from 0 to 1.
@@ -549,9 +578,15 @@ impl TryFrom<f64> for Opacity {
 
 /// The radius of the blur of what shows through the window's background,
 /// in points; 0 for none.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Blur(f32);
+
+impl From<Blur> for f64 {
+    fn from(value: Blur) -> Self {
+        as_written(value.0)
+    }
+}
 
 impl Blur {
     /// The most.
@@ -583,9 +618,15 @@ impl TryFrom<f64> for Blur {
 /// so that it keeps its look on a Retina display. The pixels that the cells
 /// leave over go to the right and the bottom, so that the grid stays where
 /// it is as the window's size changes.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Padding(f32);
+
+impl From<Padding> for f64 {
+    fn from(value: Padding) -> Self {
+        as_written(value.0)
+    }
+}
 
 impl Padding {
     /// The least.
@@ -629,7 +670,7 @@ impl TryFrom<f64> for Padding {
 }
 
 /// What a window does when its program ends.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CloseOnExit {
     /// It closes when the program exits with 0, and otherwise keeps its
@@ -644,9 +685,15 @@ pub enum CloseOnExit {
 }
 
 /// The version of the file's format: [`VERSION`], the only one so far.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize)]
-#[serde(try_from = "i64")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "i64", into = "i64")]
 struct Version;
+
+impl From<Version> for i64 {
+    fn from(_: Version) -> Self {
+        VERSION
+    }
+}
 
 impl TryFrom<i64> for Version {
     type Error = String;

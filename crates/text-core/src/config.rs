@@ -23,11 +23,11 @@
 
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The `[font]` section: the faces that the terminal's text takes, and the
 /// cell that they make.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct FontConfig {
     /// The family of the text; `None` for the default one.
@@ -73,7 +73,7 @@ pub struct FontConfig {
 }
 
 /// Where the glyphs are drawn of thin strokes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThinStrokes {
     /// Nowhere: as the system smooths fonts.
@@ -128,9 +128,15 @@ impl Default for FontConfig {
 
 /// A name of a family or of a style: not empty, and without spaces at
 /// either end.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Name(String);
+
+impl From<Name> for String {
+    fn from(name: Name) -> Self {
+        name.0
+    }
+}
 
 impl Name {
     /// The name.
@@ -158,9 +164,15 @@ impl fmt::Display for Name {
 }
 
 /// A size of the font, in points.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Size(f32);
+
+impl From<Size> for f64 {
+    fn from(size: Size) -> Self {
+        as_written(size.0)
+    }
+}
 
 impl Size {
     /// The smallest size.
@@ -191,9 +203,15 @@ impl TryFrom<f64> for Size {
 }
 
 /// A factor of a face's dimension, from half of it to three times it.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Factor(f32);
+
+impl From<Factor> for f64 {
+    fn from(factor: Factor) -> Self {
+        as_written(factor.0)
+    }
+}
 
 impl Factor {
     /// The smallest factor.
@@ -221,6 +239,13 @@ impl TryFrom<f64> for Factor {
     fn try_from(factor: f64) -> Result<Self, Self::Error> {
         in_range(factor, Self::MIN, Self::MAX, "the factor").map(Self)
     }
+}
+
+/// `value`, a value that a file wrote as a decimal and the configuration
+/// keeps as an `f32`, as the decimal that it was: `0.85` rather than the
+/// `f64` nearest to its `f32`, `0.8500000238418579`.
+pub fn as_written(value: f32) -> f64 {
+    value.to_string().parse().unwrap_or(f64::from(value))
 }
 
 /// `value` as an `f32`, if it is within `min` and `max`; otherwise the

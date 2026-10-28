@@ -22,6 +22,14 @@ Under each key's name, a small line tells the platforms where the key applies: m
   ```
 
   For now the errors go to the log: to the terminal that started Lokyr, when you start it from one. A notice in the window comes later.
+- **Every key at once**: `lokyr +show-config` prints the config with every key: the file's values, and the defaults of the keys that it leaves out.
+  - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
+  - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
+  - A file with an error prints nothing but the error.
+- **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's family and styles too.
+  - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A language or an icon that Lokyr lacks only warns, as the rest of the file applies.
+  - Without a config file, the defaults apply, and the check passes; a file that you name must exist.
+  - In the app's bundle, the command is `Lokyr.app/Contents/MacOS/Lokyr`, as `/Applications/Lokyr.app/Contents/MacOS/Lokyr +validate-config`.
 
 ### A complete example
 
@@ -312,6 +320,8 @@ The cursor that programs start with. Programs change its shape and its blinking,
 ### `shape`
 
 <sub>Platforms: macOS</sub>
+
+The shape of the cursor.
 
 | Values | Default |
 |---|---|

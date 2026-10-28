@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use lokyr_render_core::CursorShape;
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::terminal::{self, SnapshotCursor};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// How long the blinking cursor stays on, then off.
 pub const BLINK_INTERVAL: Duration = Duration::from_millis(500);
@@ -26,7 +26,7 @@ pub const BLINK_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The `[cursor]` section: the cursor that programs start with, and that
 /// `CSI 0 SP q` and a reset give back.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct CursorConfig {
     /// Its shape.
@@ -61,9 +61,15 @@ impl CursorConfig {
 }
 
 /// A thickness of the cursor, in points.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "f64")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "f64", into = "f64")]
 pub struct Thickness(f32);
+
+impl From<Thickness> for f64 {
+    fn from(thickness: Thickness) -> Self {
+        lokyr_text_core::as_written(thickness.0)
+    }
+}
 
 impl Thickness {
     /// The thinnest.
@@ -95,7 +101,7 @@ impl TryFrom<f64> for Thickness {
 }
 
 /// The shape of the cursor, as the configuration names it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Shape {
     /// A block over the cell.
