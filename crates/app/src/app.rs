@@ -130,8 +130,9 @@ const WINDOW_SIZE: Size = Size {
     height: 500.0,
 };
 
-/// How long after a frame the titles look once more at the programs in
-/// their windows' foreground, for one that started without a word.
+/// How long after a window's last frame of output its title looks once
+/// more at the program in its foreground, for one that started without a
+/// word.
 const TITLE_LOOK: Duration = Duration::from_millis(250);
 
 /// What parts a title's parts.
@@ -351,9 +352,9 @@ struct Window {
     place: (String, String),
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
-    /// Whether a frame came since the titles' timer last looked, for the
-    /// timer to look once more.
-    title_due: bool,
+    /// When its last frame of output came, since its title last looked, for
+    /// the titles' timer to look once more [`TITLE_LOOK`] after it.
+    output_at: Option<Instant>,
     /// The title that the user gave it, which takes the place of its
     /// program's and of its own.
     user_title: Option<String>,
@@ -461,7 +462,7 @@ impl Window {
             page: None,
             place: (String::new(), String::new()),
             title_shown: None,
-            title_due: false,
+            output_at: None,
             user_title: None,
             own_appearance: None,
             occluded: false,
@@ -539,9 +540,10 @@ pub struct App {
     /// restores the frame that a window kept.
     opened_one: bool,
     /// The timer of the windows' titles' last look at the programs in
-    /// their foreground, after the frames of a burst of output, and how
-    /// long after them; `None` for no last look.
-    title_timer: Option<TimerId>,
+    /// their foreground, after the frames of a burst of output, with the
+    /// time that it is for; and how long after a window's last frame of
+    /// output that look comes, `None` for none.
+    title_timer: Option<(TimerId, Instant)>,
     title_look: Option<Duration>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
@@ -2063,23 +2065,25 @@ impl App {
             .to_owned()
     }
 
-    /// Looks again at the directory and the program in `window`'s
-    /// foreground, while its program runs, and shows the title, if it
-    /// changed; a look reads the terminal's foreground group and its first
-    /// process's path and directory, some microseconds. A frame comes after
-    /// what a program wrote last, as `cd`'s prompt; the titles' timer looks
-    /// once more [`TITLE_LOOK`] after the frames of a burst, for a program
-    /// that started without a word after the echo of its command, as
-    /// `sleep`: one wakeup a burst, and nothing while no frame comes.
-    fn refresh_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        if self.look_at_place(window) {
+    /// Shows `window`'s title, if it changed, after a frame, which brought
+    /// `output` or not: one of output looks again at the directory and the
+    /// program in its foreground, while its program runs; a look reads the
+    /// terminal's foreground group and its first process's path and
+    /// directory, some microseconds. A frame of output comes after what a
+    /// program wrote last, as `cd`'s prompt; the titles' timer looks once
+    /// more [`TITLE_LOOK`] after a window's last one, for a program that
+    /// started without a word after the echo of its command, as `sleep`:
+    /// a wakeup or a few a burst, and none for the cursor's blinking.
+    fn refresh_title(&mut self, platform: &mut dyn Platform, window: WindowId, output: bool) {
+        if output && self.look_at_place(window) {
+            let now = Instant::now();
             if let Some(state) = self.windows.get_mut(&window) {
-                state.title_due = true;
+                state.output_at = Some(now);
             }
             if let Some(after) = self.title_look
                 && self.title_timer.is_none()
             {
-                self.title_timer = Some(platform.start_timer(Instant::now() + after));
+                self.title_timer = Some((platform.start_timer(now + after), now + after));
             }
         }
         self.show_title(platform, window);
@@ -2097,32 +2101,42 @@ impl App {
         if pane.is_kept() {
             return false;
         }
-        let directory = pane
-            .working_directory()
-            .map(|directory| directory_name(&directory, std::env::home_dir().as_deref()));
-        state.place = (
-            directory.unwrap_or_default(),
-            pane.foreground_program().unwrap_or_default(),
-        );
+        // A directory that cannot be read, as a program's of another user,
+        // as `sudo`, keeps the one before.
+        if let Some(directory) = pane.working_directory() {
+            state.place.0 = directory_name(&directory, std::env::home_dir().as_deref());
+        }
+        state.place.1 = pane.foreground_program().unwrap_or_default();
         true
     }
 
-    /// The titles' timer fired: the windows that drew since it started look
-    /// once more, and start it no more.
+    /// The titles' timer fired: the windows whose last frame of output came
+    /// [`TITLE_LOOK`] or more before the time that it was for look once
+    /// more; the timer starts again for the others, at the first of their
+    /// times.
     fn look_at_places_again(&mut self, platform: &mut dyn Platform) {
-        self.title_timer = None;
-        let due: Vec<WindowId> = self
-            .windows
-            .iter_mut()
-            .filter(|(_, state)| state.title_due)
-            .map(|(&window, state)| {
-                state.title_due = false;
-                window
-            })
-            .collect();
+        let (Some((_, at)), Some(after)) = (self.title_timer.take(), self.title_look) else {
+            return;
+        };
+        let mut next: Option<Instant> = None;
+        let mut due = Vec::new();
+        for (&window, state) in &mut self.windows {
+            let Some(output) = state.output_at else {
+                continue;
+            };
+            if output + after <= at {
+                state.output_at = None;
+                due.push(window);
+            } else {
+                next = Some(next.map_or(output + after, |next| next.min(output + after)));
+            }
+        }
         for window in due {
             self.look_at_place(window);
             self.show_title(platform, window);
+        }
+        if let Some(next) = next {
+            self.title_timer = Some((platform.start_timer(next), next));
         }
     }
 
@@ -2166,18 +2180,21 @@ impl App {
         }
     }
 
-    /// Shows `pane`'s program's notification, of `title`, or of its
-    /// window's title when that is empty, and `body`, as the system's,
-    /// while its window has no focus: one within [`NOTIFICATION_PAUSE`] of
-    /// the last of the window shows nothing, and a long title or text shows
-    /// its start.
+    /// Shows `pane`'s program's notification, of `title`, or, when that is
+    /// empty, of the title that the user gave its window, or its window's
+    /// name, and `body`, as the system's, while its window has no focus:
+    /// one within [`NOTIFICATION_PAUSE`] of the last of the window shows
+    /// nothing, and a long title or text shows its start.
     fn notify(&mut self, platform: &mut dyn Platform, pane: PaneId, title: &str, body: &str) {
         let Some(window) = self.window_of(pane) else {
             return;
         };
         let now = Instant::now();
         let title = if title.is_empty() {
-            self.window_name(window)
+            self.windows
+                .get(&window)
+                .and_then(|state| state.user_title.clone())
+                .unwrap_or_else(|| self.window_name(window))
         } else {
             title.to_owned()
         };
@@ -2754,7 +2771,8 @@ impl App {
         };
         let due = pane.resize(grid, now);
         // Output starts the cursor blinking again, on, as a key does.
-        if pane.update() {
+        let output = pane.update();
+        if output {
             state.blink.restart(now);
         }
         // The pointer's moves without a button wake the app only for a
@@ -2816,7 +2834,7 @@ impl App {
             platform.set_window_appearance(window, own);
             state.own_appearance = Some(own);
         }
-        self.refresh_title(platform, window);
+        self.refresh_title(platform, window, output);
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
@@ -3030,7 +3048,7 @@ impl Handler for App {
                 }
             }
             // The titles look once more after a burst of output.
-            AppEvent::Timer(timer) if self.title_timer == Some(timer) => {
+            AppEvent::Timer(timer) if self.title_timer.is_some_and(|(title, _)| title == timer) => {
                 self.look_at_places_again(platform);
             }
             // A selection dragged past a window's edge scrolls its view.
@@ -6182,6 +6200,69 @@ mod tests {
     }
 
     #[test]
+    fn the_cursor_s_blinking_takes_no_look_at_the_title() {
+        let (mut fake, mut app, window) = focused();
+        app.title_look = Some(TITLE_LOOK);
+        // The blink's frames, which no output brings: its timer alone.
+        for _ in 0..4 {
+            let (_, at) = app.blink_timer.unwrap();
+            fake.fire_timers(&mut app, at);
+            assert!(fake.send(&mut app, window, WindowEvent::Frame));
+            assert_eq!(fake.timers().count(), 1);
+            assert!(app.title_timer.is_none());
+        }
+        // A frame of output starts the titles' timer.
+        app.pane(window).text("x");
+        run_until(&mut fake, &mut app, |_, app| app.title_timer.is_some());
+    }
+
+    #[test]
+    fn the_title_s_last_look_comes_after_the_window_s_last_output() {
+        let (mut fake, mut app, window) = focused();
+        app.title_look = Some(TITLE_LOOK);
+        app.pane(window).text("x");
+        run_until(&mut fake, &mut app, |_, app| app.title_timer.is_some());
+        let (_, at) = app.title_timer.unwrap();
+        // A frame of output came after the timer started, and the program
+        // changed since.
+        let later = at - TITLE_LOOK / 2;
+        let state = app.windows.get_mut(&window).unwrap();
+        state.output_at = Some(later);
+        state.place.1 = "stale".to_owned();
+        // The timer looks not yet, and starts again for that frame.
+        fake.fire_timers(&mut app, at);
+        assert_eq!(app.windows[&window].place.1, "stale");
+        assert_eq!(app.title_timer.map(|(_, at)| at), Some(later + TITLE_LOOK));
+        fake.fire_timers(&mut app, later + TITLE_LOOK);
+        assert_eq!(app.windows[&window].place.1, "cat");
+        assert!(app.title_timer.is_none());
+        assert_eq!(app.windows[&window].output_at, None);
+    }
+
+    #[test]
+    fn a_directory_that_cannot_be_read_keeps_the_title_s_place() {
+        // A program of another user's, as `login` runs, whose directory the
+        // system does not tell, waiting for a name.
+        let mut fake = Fake::default();
+        let mut app = app(
+            unpadded(),
+            shell("cd /usr; stty -echo; echo ready; read line; echo gone; exec /usr/bin/login"),
+        );
+        app.title_look = Some(TITLE_LOOK);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        run_until(&mut fake, &mut app, |fake, _| {
+            title(fake).starts_with("usr — ")
+        });
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |fake, _| {
+            title(fake).ends_with(" — login — 200×62")
+        });
+        assert_eq!(title(&fake), "usr — login — 200×62");
+    }
+
+    #[test]
     fn a_kept_screen_keeps_its_title_s_place() {
         let mut config = unpadded();
         config.window.close_on_exit = CloseOnExit::Never;
@@ -6398,6 +6479,18 @@ mod tests {
         // A window that closed is not asked for.
         fake.send_app(&mut app, AppEvent::NotificationClicked(WindowId::new(999)));
         assert_eq!(fake.focus_requests(), [window]);
+    }
+
+    #[test]
+    fn a_notification_without_a_title_takes_the_user_s() {
+        let (mut fake, mut app, window) = configured("", notifier());
+        app.windows.get_mut(&window).unwrap().user_title = Some("build".to_owned());
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |fake, _| {
+            !fake.notifications().is_empty()
+        });
+        assert_eq!(fake.notifications()[0].title, "build");
     }
 
     #[test]
