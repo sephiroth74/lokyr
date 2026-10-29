@@ -7,13 +7,16 @@ use super::*;
 
 /// A host whose focused pane's view has one line, `line`, from its row 1,
 /// a cell each character, which wraps to the next row after ten, or in
-/// `cells`, with `link` at every cell.
+/// `cells`, with `link` at every cell; every target is there but
+/// `missing`.
 #[derive(Default)]
 struct Host {
     focused: bool,
     line: &'static str,
     cells: Option<Vec<(u16, i64)>>,
     link: Option<&'static str>,
+    /// A target that is not there, which opens nothing.
+    missing: Option<&'static str>,
     directory: Option<&'static str>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
@@ -93,6 +96,10 @@ impl HostApi for Host {
         Ok(())
     }
 
+    fn opens(&mut self, target: &str) -> Result<bool, Error> {
+        Ok(!target.starts_with("javascript:") && self.missing != Some(target))
+    }
+
     fn select_all(&mut self, _: PaneId) -> Result<(), Error> {
         Ok(())
     }
@@ -148,13 +155,26 @@ fn focused(line: &'static str) -> Host {
     }
 }
 
-/// Clicks `host`'s cell at `column` of `row`.
-fn click(host: &mut Host, column: i64, row: i64) -> Result<(), Error> {
-    let args = Args::from([
+/// The arguments of a click on the cell at `column` of `row`.
+fn cell(column: i64, row: i64) -> Args {
+    Args::from([
         ("column".to_owned(), Value::Integer(column)),
         ("row".to_owned(), Value::Integer(row)),
-    ]);
-    Links.on_command(&mut Cx::new(host), OPEN, args)
+    ])
+}
+
+/// Clicks `host`'s cell at `column` of `row`.
+fn click(host: &mut Host, column: i64, row: i64) -> Result<(), Error> {
+    Links.on_command(&mut Cx::new(host), OPEN, cell(column, row))
+}
+
+/// Whether a click on `host`'s cell at `column` of `row` would open
+/// something, which opens nothing.
+fn applies(host: &mut Host, column: i64, row: i64) -> bool {
+    let opened = host.opened.len();
+    let applies = Links.applies(&mut Cx::new(host), OPEN, &cell(column, row));
+    assert_eq!(host.opened.len(), opened);
+    applies
 }
 
 #[test]
@@ -203,10 +223,12 @@ fn a_click_opens_the_cell_s_link_first() {
         link: Some("https://lokyr.dev/osc8"),
         ..focused("see https://lokyr.dev/text")
     };
+    assert!(applies(&mut host, 0, 1));
     click(&mut host, 0, 1).unwrap();
     assert_eq!(host.opened, ["https://lokyr.dev/osc8"]);
     // A target that does not open fails as the host says.
     host.link = Some("javascript:x");
+    assert!(!applies(&mut host, 0, 1));
     assert_eq!(click(&mut host, 0, 1).unwrap_err().code, Code::Failed);
 }
 
@@ -229,6 +251,7 @@ fn a_click_opens_the_url_or_the_path_around_it() {
         ("open .", (5, 1), "/work/lokyr"),
     ] {
         let mut host = focused(line);
+        assert!(applies(&mut host, column, row), "{line}");
         click(&mut host, column, row).unwrap();
         assert_eq!(host.opened, [opened], "{line}");
     }
@@ -239,9 +262,11 @@ fn a_click_opens_the_url_or_the_path_around_it() {
         ..focused("🙂 a/b")
     };
     for column in [1, 2] {
+        assert!(!applies(&mut host, column, 1));
         click(&mut host, column, 1).unwrap();
     }
     assert!(host.opened.is_empty());
+    assert!(applies(&mut host, 3, 1));
     click(&mut host, 3, 1).unwrap();
     assert_eq!(host.opened, ["/work/lokyr/a/b"]);
     // A click on a wide character's second cell.
@@ -259,8 +284,10 @@ fn a_click_on_nothing_opens_nothing() {
     // the line, rows without one.
     let mut host = focused("v1.2 // 3.5");
     for (column, row) in [(1, 1), (4, 1), (5, 1), (8, 1), (9, 2), (0, 5), (0, 0)] {
+        assert!(!applies(&mut host, column, row), "{column}, {row}");
         click(&mut host, column, row).unwrap();
     }
+    assert!(!applies(&mut host, -1, 1));
     // Cells that no view has, and arguments that the registry would have
     // refused.
     click(&mut host, -1, 1).unwrap();
@@ -273,12 +300,14 @@ fn a_click_on_nothing_opens_nothing() {
         directory: None,
         ..focused("README.md")
     };
+    assert!(!applies(&mut ended, 2, 1));
     click(&mut ended, 2, 1).unwrap();
     // Without a focused pane.
     let mut unfocused = Host {
         focused: false,
         ..focused("/etc/hosts")
     };
+    assert!(!applies(&mut unfocused, 2, 1));
     click(&mut unfocused, 2, 1).unwrap();
     assert!(host.opened.is_empty() && ended.opened.is_empty() && unfocused.opened.is_empty());
     assert_eq!(
@@ -288,6 +317,15 @@ fn a_click_on_nothing_opens_nothing() {
             .code,
         Code::NotFound
     );
+    // A path that is not there, which a click tries all the same.
+    let mut missing = Host {
+        missing: Some("/work/lokyr/README.md"),
+        ..focused("README.md")
+    };
+    assert!(!applies(&mut missing, 2, 1));
+    // Another command, at a cell with a path.
+    let mut path = focused("/etc/hosts");
+    assert!(!Links.applies(&mut Cx::new(&mut path), "links.other", &cell(2, 1)));
 }
 
 #[test]

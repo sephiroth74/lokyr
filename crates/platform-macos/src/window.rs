@@ -94,6 +94,11 @@ impl Window {
         NonNull::from(&*self.view).cast()
     }
 
+    /// The window's content view.
+    pub(crate) fn view(&self) -> Retained<NSView> {
+        Retained::into_super(self.view.clone())
+    }
+
     pub(crate) fn ns_window(&self) -> &NSWindow {
         &self.ns_window
     }

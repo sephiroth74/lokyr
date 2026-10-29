@@ -71,6 +71,10 @@ impl HostApi for Host {
         Ok(())
     }
 
+    fn opens(&mut self, _: &str) -> Result<bool, Error> {
+        Ok(true)
+    }
+
     fn select_all(&mut self, pane: PaneId) -> Result<(), Error> {
         self.calls.push(format!("select all {}", pane.0));
         Ok(())

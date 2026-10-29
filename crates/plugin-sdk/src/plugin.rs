@@ -71,6 +71,15 @@ pub trait Plugin {
             format!("the plugin has no command `{name}`"),
         ))
     }
+
+    /// Whether `name`, one of the commands that it registered, would do
+    /// something now with `args`, which the host checked, as a menu asks
+    /// before it shows the command's item enabled or dimmed: by default, it
+    /// would. What the call asks of the app is dropped, as it only looks.
+    fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
+        let _ = (cx, name, args);
+        true
+    }
 }
 
 /// What a plugin's callbacks reach the host through: the host's API.

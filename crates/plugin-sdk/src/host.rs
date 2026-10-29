@@ -116,6 +116,10 @@ pub trait HostApi {
     /// never does.
     fn open(&mut self, target: &str) -> Result<(), Error>;
 
+    /// Whether [`open`](Self::open) would open `target`: a URL of its
+    /// schemes, or a path, absolute or from `~`, that is there.
+    fn opens(&mut self, target: &str) -> Result<bool, Error>;
+
     /// Selects everything of `pane`: its scrollback and its screen.
     fn select_all(&mut self, pane: PaneId) -> Result<(), Error>;
 

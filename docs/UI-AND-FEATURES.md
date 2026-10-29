@@ -279,6 +279,24 @@ The `core-actions` plugin:
   - double-click selects a word, triple-click a line, and ⌥ (Alt on Linux) makes a rectangular selection;
   - copy-on-select is optional.
 
+## The pane's context menu
+
+A right click, or a Control click, opens a native menu at the pointer, after macOS's Terminal; a program that takes the mouse's clicks has them, but with Shift. The click selects first: within the selection it keeps it, on a word it selects the word, on a blank cell it takes the selection away. Its items are the commands that take the click's cell, then the clipboard's and the editing's; an item that would do nothing there is dimmed, as its context or its plugin tells.
+
+The actions come with the features that they belong to, as the user asked on 29 October 2026, from Terminal's (T), iTerm2's (i) and Ghostty's (G) menus:
+
+| Phase | Actions |
+|---|---|
+| F2 | Open Link (T, i); Look Up “word” (T); Open man Page for “word” (T); Copy, Paste (T, i, G); Select All, Clear (i) |
+| F3, with the tabs, the splits and the plugins' items | Split Right, Left, Down and Up, Close Split (G, i); New Window and New Tab at the folder under the pointer (T); move the pane to a tab or a window (i); rename the tab (G); Search man Page Index (T); Search the Web, with the engine in the config (T, i); Copy Link Address (i) |
+| F5a, with the OSC 133 marks and the blocks | mark a line, as a bookmark too (T); the command's details, run it again, select its output, fold it (i) |
+| F5b | broadcast the input to the panes, lock a pane or make it read-only (i, G); annotate the selection, add a trigger, save the selection as a snippet (i) |
+| F5c, with the links' smart selection | open a `file:line` in the editor, Quick Look the link, the smart selection's own actions (i) |
+| Plugins, from F4 | the selection as pretty-printed JSON, Base64 decoded or encoded, the colors that it names (i) |
+| Tools, later | reset the terminal, the inspector, the terminal's modes (G, i) |
+
+Left out: downloads with scp (i), as the app has no networking code ([ADR 0008](adr/0008-separate-package-manager.md)), and editing the session (i), as the settings are the config's.
+
 ## Agents
 
 AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode or Aider, are recognized, and can drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).

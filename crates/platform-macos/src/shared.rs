@@ -33,6 +33,9 @@ pub(crate) enum Pending {
     /// An alert without a window, whose loop runs once no call is in
     /// progress.
     Modal(AlertId),
+    /// The context menu that the app asked for, whose loop runs once no
+    /// call is in progress, as an alert's.
+    ContextMenu,
     /// An alert closed, with AppKit's answer.
     AlertResponse(AlertId, NSModalResponse),
     /// A timer fired.
@@ -55,6 +58,9 @@ pub(crate) struct Shared {
     /// Whether the innermost of those loops was asked to end, for the
     /// application to stop once it has.
     modal_aborted: Cell<bool>,
+    /// Whether a context menu's loop runs, which opens the next menu once
+    /// it returns.
+    menu_open: Cell<bool>,
     /// Whether the system asked the application to quit and waits for its
     /// answer, as AppKit's `NSTerminateLater` has it.
     terminating: Cell<bool>,
@@ -71,6 +77,7 @@ impl Shared {
             modals: Cell::new(0),
             terminating: Cell::new(false),
             modal_aborted: Cell::new(false),
+            menu_open: Cell::new(false),
         })
     }
 
@@ -116,10 +123,10 @@ impl Shared {
                 self.queue.borrow_mut().clear();
                 break;
             }
-            if let Pending::Modal(alert) = pending {
-                self.run_modal(alert);
-            } else {
-                self.call(pending);
+            match pending {
+                Pending::Modal(alert) => self.run_modal(alert),
+                Pending::ContextMenu => self.run_context_menu(),
+                pending => self.call(pending),
             }
             self.stop_if_quit();
         }
@@ -200,7 +207,7 @@ impl Shared {
                     handler.app_event(backend, AppEvent::Timer(timer));
                 }
             }
-            Pending::Modal(_) => {}
+            Pending::Modal(_) | Pending::ContextMenu => {}
         }));
         if let Err(payload) = outcome {
             self.panic.borrow_mut().get_or_insert(payload);
@@ -222,5 +229,27 @@ impl Shared {
         // An outer loop, if one runs, is the next to end.
         self.modal_aborted.set(false);
         self.enqueue(Pending::AlertResponse(alert, response));
+    }
+
+    /// Runs the loop of the context menu that waits for its turn, at its
+    /// place over its window's view, and of the one that the app asked for
+    /// meanwhile, once it returns: within a menu's loop, the menu that the
+    /// app asked for closes it, and opens once its loop has returned. No
+    /// call is in progress, so the events that come during it, as its
+    /// chosen item's, are handed on as they come.
+    fn run_context_menu(&self) {
+        if self.menu_open.replace(true) {
+            return;
+        }
+        loop {
+            let Some((menu, view, location)) = self.backend.borrow_mut().open_context_menu() else {
+                break;
+            };
+            self.dispatching.set(false);
+            menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(&view));
+            self.dispatching.set(true);
+            self.backend.borrow_mut().context_menu_closed();
+        }
+        self.menu_open.set(false);
     }
 }

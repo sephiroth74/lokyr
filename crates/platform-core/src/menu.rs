@@ -1,4 +1,4 @@
-//! The main menu, and alerts.
+//! The main menu, the context menus, and alerts.
 
 use crate::KeyCode;
 
@@ -21,6 +21,19 @@ pub struct Menu {
     pub role: Option<MenuRole>,
 }
 
+/// A menu that opens at the pointer over a window, as a right click opens
+/// it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ContextMenu {
+    /// Its items, from the top: a command's comes as
+    /// [`WindowEvent::ContextCommand`](crate::WindowEvent::ContextCommand)
+    /// when it is chosen.
+    pub items: Vec<MenuItem>,
+    /// The commands whose items are dimmed: the others' are enabled, as the
+    /// main menu's dimmed ones are not.
+    pub dimmed: Vec<String>,
+}
+
 /// The part that a menu plays for the system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuRole {
@@ -34,7 +47,9 @@ pub enum MenuRole {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenuItem {
     /// An item that runs a command, which comes as
-    /// [`AppEvent::Command`](crate::AppEvent::Command) when it is chosen.
+    /// [`AppEvent::Command`](crate::AppEvent::Command) when it is chosen, or
+    /// as [`WindowEvent::ContextCommand`](crate::WindowEvent::ContextCommand)
+    /// from a context menu.
     Command {
         /// What the item shows.
         title: String,

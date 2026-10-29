@@ -598,7 +598,8 @@ Whether a selection that you make with the mouse copies its text to the clipboar
 
 - With `false`, ⌘C copies the selection, as other Mac apps do.
 - You select by dragging, the cells between where you press and where the pointer is; a double click takes a word, a triple click a line, and dragging after them goes on by words or lines; Option makes a rectangle; Shift's click extends the last selection, and Command's opens a link, as [`cmd+click`](#bindings) does; dragging past the window's top or bottom scrolls, the faster the farther; output that scrolls the text as you drag leaves the selection's start on its text. A click takes the selection away.
-- A program that takes the mouse, as vim or htop can, has the clicks: Shift held keeps them for the selection. The pointer over the window is the text's I-beam, and the arrow while a program takes the clicks.
+- A right click, or a Control click, opens a menu at the pointer: Open Link, Copy, Paste, Select All and Clear, an item dimmed where it would do nothing, as Open Link where no link is, or one that leads nowhere, and Copy without a selection. As the menu opens, the click keeps the selection when it is on it; else it selects the word under the pointer, which it does not copy, or nothing on a blank cell.
+- A program that takes the mouse, as vim or htop can, has the clicks, the right button's too: Shift held keeps them for the selection, and for the menu. The pointer over the window is the text's I-beam, and the arrow while a program takes the clicks.
 - It applies as you save the file.
 
 ## `[links]`
@@ -742,7 +743,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. `alternate-screen` holds while a program such as vim or less shows its own screen. A binding without `when` holds everywhere. An expression nests 32 levels deep at most.
 - **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
-- A click that a binding takes, a single one in the window that has the focus, runs its command before the selection and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer, from the view's top left one, `0` and `0`.
+- A click that a binding takes, a single one in the window that has the focus, runs its command before the selection, the menu of a Control click and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer, from the view's top left one, `0` and `0`.
 - The menus show each command's keys: of its bindings of one key, without arguments and without `when`, the first whose key no later binding takes. A menu's item takes its key before the program; a dimmed item, as Copy without a selection, takes none, and the key goes on to the bindings. A command that needs an argument, as `pane.send-text`, has no item.
 - A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
 

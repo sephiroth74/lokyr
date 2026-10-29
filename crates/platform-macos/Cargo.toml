@@ -84,6 +84,9 @@ objc2-user-notifications = { workspace = true, features = [
     "UNUserNotificationCenter",
 ] }
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-foundation = { workspace = true, features = ["NSOperation"] }
+
 # The run loop needs the process's main thread, which the test harness keeps
 # for itself.
 [[test]]
@@ -144,6 +147,10 @@ harness = false
 
 [[test]]
 name = "translucency"
+harness = false
+
+[[test]]
+name = "context_menu"
 harness = false
 
 [lints]

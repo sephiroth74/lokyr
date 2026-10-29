@@ -7,15 +7,15 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, MenuRole, Platform, Point, PointerShape,
-    Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, MainMenu, MenuRole, Platform, Point,
+    PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSBeep, NSEvent, NSEventModifierFlags, NSEventType, NSImage,
-    NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
+    NSAlert, NSApplication, NSBeep, NSEvent, NSEventModifierFlags, NSEventType, NSImage, NSMenu,
+    NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType, NSView,
 };
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
@@ -31,6 +31,17 @@ struct OpenAlert {
     alert: Retained<NSAlert>,
     window: Option<WindowId>,
     buttons: usize,
+}
+
+/// A context menu that waits for its turn to open, or is open.
+struct OpenMenu {
+    window: WindowId,
+    position: Point,
+    menu: Retained<NSMenu>,
+    /// The target of its items, which they do not retain.
+    _target: Retained<MenuTarget>,
+    /// Whether it is open, rather than waiting.
+    open: bool,
 }
 
 /// The platform of a running application.
@@ -49,6 +60,8 @@ pub(crate) struct Backend {
     /// The commands whose menu items are dimmed, which each menu's target
     /// reads.
     disabled: Rc<RefCell<BTreeSet<String>>>,
+    /// The last context menu that the app asked for, until it closes.
+    context_menu: Option<OpenMenu>,
     last_id: u64,
     quit: bool,
     stopped: bool,
@@ -69,6 +82,7 @@ impl Backend {
             option_as_meta: Rc::new(Cell::new((false, false))),
             menu_target: None,
             disabled: Rc::default(),
+            context_menu: None,
             last_id: 0,
             quit: false,
             stopped: false,
@@ -133,9 +147,47 @@ impl Backend {
         NSApplication::sharedApplication(self.mtm).replyToApplicationShouldTerminate(quit);
     }
 
+    /// The context menu that waits for its turn, now open, with the view
+    /// that it opens over and where in the view: `None` when none waits, or
+    /// when its window closed meanwhile.
+    pub(crate) fn open_context_menu(
+        &mut self,
+    ) -> Option<(Retained<NSMenu>, Retained<NSView>, NSPoint)> {
+        let waiting = self.context_menu.as_mut().filter(|waiting| !waiting.open)?;
+        let Some(window) = self.windows.get(&waiting.window) else {
+            self.context_menu = None;
+            return None;
+        };
+        waiting.open = true;
+        let view = window.view();
+        // The view's origin is its bottom left corner.
+        let location = NSPoint::new(
+            waiting.position.x,
+            view.bounds().size.height - waiting.position.y,
+        );
+        Some((waiting.menu.clone(), view, location))
+    }
+
+    /// Forgets the context menu that was open, which closed; one that the
+    /// app asked for meanwhile waits for its turn.
+    pub(crate) fn context_menu_closed(&mut self) {
+        if self.context_menu.as_ref().is_some_and(|menu| menu.open) {
+            self.context_menu = None;
+        }
+    }
+
+    /// Closes the context menu that is open, if one is, and forgets it.
+    fn cancel_context_menu(&mut self) {
+        if let Some(menu) = self.context_menu.take().filter(|menu| menu.open) {
+            menu.menu.cancelTrackingWithoutAnimation();
+        }
+    }
+
     /// Stops the application's loop, which makes `run` return.
     pub(crate) fn stop(&mut self) {
         self.stopped = true;
+        // The loop goes on once the menu's own loop has returned.
+        self.cancel_context_menu();
         let app = NSApplication::sharedApplication(self.mtm);
         app.stop(None);
         // The loop stops once it has handled an event: this one.
@@ -236,8 +288,16 @@ impl Platform for Backend {
         let Some(closing) = self.windows.remove(&window) else {
             return;
         };
-        // An alert on the window closes with it, unanswered.
+        // An alert on the window closes with it, unanswered, and so does
+        // its context menu.
         self.alerts.retain(|_, open| open.window != Some(window));
+        if self
+            .context_menu
+            .as_ref()
+            .is_some_and(|menu| menu.window == window)
+        {
+            self.cancel_context_menu();
+        }
         closing.close();
     }
 
@@ -303,6 +363,26 @@ impl Platform for Backend {
             disabled.remove(command);
         } else {
             disabled.insert(command.to_owned());
+        }
+    }
+
+    fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu) {
+        if !self.windows.contains_key(&window) {
+            return;
+        }
+        self.cancel_context_menu();
+        let (menu, target) = menu::context(self.mtm, self.shared.clone(), window, menu);
+        self.context_menu = Some(OpenMenu {
+            window,
+            position,
+            menu,
+            _target: target,
+            open: false,
+        });
+        // The menu runs its own loop, once the call in progress has
+        // returned.
+        if let Some(shared) = self.shared.upgrade() {
+            shared.enqueue(Pending::ContextMenu);
         }
     }
 

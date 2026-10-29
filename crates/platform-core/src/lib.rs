@@ -33,8 +33,8 @@ pub use input::{
     ScrollPhase,
 };
 pub use menu::{
-    Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey,
-    StandardAction,
+    Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem, MenuRole, Shortcut,
+    ShortcutKey, StandardAction,
 };
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
@@ -181,6 +181,12 @@ pub trait Platform {
     /// neither run nor take their keys; every command's are enabled until
     /// the app says otherwise, through a change of the menu too.
     fn set_command_enabled(&mut self, command: &str, enabled: bool);
+
+    /// Opens `menu` at `position` of `window`'s content, once the call in
+    /// progress has returned, so that the windows go on drawing while it is
+    /// open: its chosen item comes as [`WindowEvent::ContextCommand`]. A
+    /// menu that is open closes first.
+    fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu);
 
     /// The text on the clipboard, if it holds text.
     fn clipboard_text(&self) -> Option<String>;

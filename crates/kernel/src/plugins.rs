@@ -217,6 +217,34 @@ impl Plugins {
         )
     }
 
+    /// Whether `command`, which an active plugin registered, would do
+    /// something with `args`, which the registry checked, as its plugin
+    /// tells: what the call asks of the app is dropped; a fault when it
+    /// panicked, which disables it.
+    pub fn applies(
+        &mut self,
+        command: &str,
+        args: &Args,
+        context: &mut Context<'_>,
+    ) -> Result<bool, Error> {
+        let Some(at) = self.owner(command) else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("no plugin runs `{command}`"),
+            ));
+        };
+        let before = self.requests.len();
+        let applies = call(
+            &mut self.entries[at],
+            context,
+            &mut self.requests,
+            &mut self.bindings_changed,
+            |plugin, cx| Ok(plugin.applies(cx, command, args)),
+        );
+        self.requests.truncate(before);
+        applies
+    }
+
     /// The bindings of the active plugins, in their order, which the
     /// keymap takes after the app's and before the config's.
     pub fn bindings(&self) -> impl Iterator<Item = &Binding> {
@@ -258,13 +286,13 @@ impl Plugins {
 
 /// Calls `call` on `entry`'s plugin, within `catch_unwind`: a plugin that
 /// panics is disabled, and the requests of the call go.
-fn call(
+fn call<T>(
     entry: &mut Entry,
     context: &mut Context<'_>,
     requests: &mut Vec<Request>,
     bindings_changed: &mut bool,
-    call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<(), Error>,
-) -> Result<(), Error> {
+    call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
+) -> Result<T, Error> {
     let before = requests.len();
     let Entry { plugin, state } = entry;
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -348,6 +376,14 @@ fn opening(target: &str) -> Result<String, String> {
             "`{target}` is neither a URL nor a path that is absolute or from `~`"
         )),
     }
+}
+
+/// Whether opening `target` would open something: a URL of one of
+/// [`SCHEMES`], or a path, absolute or from `~`, that is there, as a link
+/// that leads somewhere.
+fn opens(target: &str) -> bool {
+    opening(target)
+        .is_ok_and(|target| !target.starts_with('/') || std::path::Path::new(&target).exists())
 }
 
 /// The host of one plugin's call.
@@ -463,6 +499,10 @@ impl HostApi for Host<'_, '_> {
         let target = opening(target).map_err(|message| Error::new(Code::Failed, message))?;
         self.requests.push(Request::Open(target));
         Ok(())
+    }
+
+    fn opens(&mut self, target: &str) -> Result<bool, Error> {
+        Ok(opens(target))
     }
 
     fn select_all(&mut self, pane: host::PaneId) -> Result<(), Error> {

@@ -1,12 +1,14 @@
 //! The main menu, built from the app's commands, with the system's own
-//! items, as hiding the application and minimizing a window.
+//! items, as hiding the application and minimizing a window; and the
+//! context menus.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    AppEvent, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey, StandardAction,
+    AppEvent, ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey,
+    StandardAction, WindowEvent, WindowId,
 };
 use objc2::rc::Retained;
 use objc2::runtime::Sel;
@@ -18,9 +20,13 @@ use crate::shared::{Pending, Shared};
 
 pub(crate) struct MenuTargetIvars {
     shared: Weak<Shared>,
+    /// The window of a context menu, whose items' commands come as its
+    /// events; `None` for the main menu.
+    window: Option<WindowId>,
     /// The commands of the menu's items, by their tags.
     commands: Vec<String>,
-    /// The commands whose items are dimmed, which the backend keeps.
+    /// The commands whose items are dimmed, which the backend keeps for
+    /// the main menu.
     disabled: Rc<RefCell<BTreeSet<String>>>,
 }
 
@@ -41,7 +47,11 @@ define_class!(
                 .ok()
                 .and_then(|tag| ivars.commands.get(tag));
             if let (Some(command), Some(shared)) = (command, ivars.shared.upgrade()) {
-                shared.post(Pending::App(AppEvent::Command(command.clone())));
+                let command = command.clone();
+                shared.post(match ivars.window {
+                    Some(window) => Pending::Window(window, WindowEvent::ContextCommand(command)),
+                    None => Pending::App(AppEvent::Command(command)),
+                });
             }
         }
 
@@ -83,14 +93,7 @@ pub(crate) fn build(
     for menu in &menu.menus {
         collect(&menu.items, &mut commands);
     }
-    let target = MenuTarget::alloc(mtm).set_ivars(MenuTargetIvars {
-        shared,
-        commands,
-        disabled,
-    });
-    // SAFETY: `NSObject`'s `init` has this signature.
-    let target: Retained<MenuTarget> = unsafe { msg_send![super(target), init] };
-
+    let target = target(mtm, shared, None, commands, disabled);
     let bar = NSMenu::new(mtm);
     let mut tag = 0;
     let mut roles = Vec::new();
@@ -104,6 +107,46 @@ pub(crate) fn build(
         }
     }
     Built { bar, target, roles }
+}
+
+/// The menu of `menu`, over `window`, and the target of its items, which
+/// the caller keeps as long as the menu.
+pub(crate) fn context(
+    mtm: MainThreadMarker,
+    shared: Weak<Shared>,
+    window: WindowId,
+    menu: &ContextMenu,
+) -> (Retained<NSMenu>, Retained<MenuTarget>) {
+    let mut commands = Vec::new();
+    collect(&menu.items, &mut commands);
+    let dimmed = Rc::new(RefCell::new(menu.dimmed.iter().cloned().collect()));
+    let target = target(mtm, shared, Some(window), commands, dimmed);
+    let menu = Menu {
+        title: String::new(),
+        items: menu.items.clone(),
+        role: None,
+    };
+    let ns_menu = submenu(mtm, &menu, &target, &mut 0);
+    (ns_menu, target)
+}
+
+/// The target of a menu's items, which runs `commands`, by their tags, and
+/// dims those in `disabled`.
+fn target(
+    mtm: MainThreadMarker,
+    shared: Weak<Shared>,
+    window: Option<WindowId>,
+    commands: Vec<String>,
+    disabled: Rc<RefCell<BTreeSet<String>>>,
+) -> Retained<MenuTarget> {
+    let target = MenuTarget::alloc(mtm).set_ivars(MenuTargetIvars {
+        shared,
+        window,
+        commands,
+        disabled,
+    });
+    // SAFETY: `NSObject`'s `init` has this signature.
+    unsafe { msg_send![super(target), init] }
 }
 
 /// The commands of `items`, in the order that [`submenu`] tags them.

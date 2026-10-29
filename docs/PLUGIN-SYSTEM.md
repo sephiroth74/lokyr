@@ -290,6 +290,8 @@ type Cx = {
     system: {
         -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, or a path from `/` or `~`.
         open: (target: string) -> (boolean, Error?),
+        -- Whether `open` would open `target`: a URL of its schemes, or a path that is there.
+        opens: (target: string) -> (boolean, Error?),
     },
     search: {
         -- Runs in the background: results arrive as `search-progress` events.
@@ -309,6 +311,9 @@ type Plugin = {
     deactivate: ((cx: Cx) -> ())?,
     on_event: ((cx: Cx, events: { Event }) -> ())?,
     on_command: ((cx: Cx, name: string, args: Args) -> ())?,
+    -- Whether a command would do something with `args`, as a menu asks before it dims its item; what
+    -- the call asks of the app is dropped. Without it, every command would.
+    applies: ((cx: Cx, name: string, args: Args) -> boolean)?,
     render: ((cx: Cx, slot: string) -> View)?,
     on_ui_event: ((cx: Cx, event: UiEvent) -> ())?,
 }
@@ -316,7 +321,8 @@ type Plugin = {
 
 ## Commands
 
-- **A command** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) has a name, `namespace.action`, each part of lowercase letters, digits and `-`, from a letter, as `window.new`, `tabs.goto` or `search-plus.open`; a title, for the menus and the palette; a category, which also tells the menu that lists it; the capabilities that its action needs; its parameters, a flat schema: each named as the parts are, of a string, an integer, a number or a boolean, and required, or optional with a default of its kind; and, if it needs one, the context in which it can run, written as a binding's `when`, as Copy's `selection`, outside of which its menu's item is dimmed.
+- **A command** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) has a name, `namespace.action`, each part of lowercase letters, digits and `-`, from a letter, as `window.new`, `tabs.goto` or `search-plus.open`; a title, for the menus and the palette; a category, which also tells the menu that lists it; the capabilities that its action needs; its parameters, a flat schema: each named as the parts are, of a string, an integer, a number or a boolean, and required, or optional with a default of its kind; and, if it needs one, the context in which it can run, written as a binding's `when`, as Copy's `selection`, outside of which its menu's item is dimmed. Its plugin's `applies` can dim the item too, where the command would do nothing, as Open Link where no link is.
+- **The pane's context menu**, of a right click, lists the commands of a cell, which take the `column` and the `row` of the cell clicked, then those of the clipboard and of the editing that need no arguments; its commands run in the pane that it opened over ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **The kernel's registry**, `kernel::commands::Registry`, registers the commands of the app and of the plugins, and checks a call before its action runs: its name, and its arguments, to which it adds the defaults of those left out; an integer is a number too. A plugin's call is checked as well against the commands that its manifest declares and the capabilities that it has, its own commands aside. The action runs where it can: in the app for those that the platform does, in the plugin that registered the command otherwise.
 - **The app's commands**: `app.quit` and `window.new`, which its menu runs.
 - **Errors**: a code, never renumbered, whose hundreds tell the category and how serious it is, a kind, as the Luau API names it, and a message:

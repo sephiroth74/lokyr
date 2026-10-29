@@ -64,6 +64,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - app and window, with the titlebar prototype;
   - input and IME (`NSTextInputClient`);
   - live resize, clipboard, menus;
+  - the pane's context menu, after macOS's Terminal: Open Link, Look Up, the man page, the clipboard and the editing ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
   - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md));
   - an accessibility skeleton.
 - **`font-coretext` and `text-core`**:
@@ -84,6 +85,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`; `links`, which comes in F2, underlines the link under the pointer while ⌘ is held, with the API's events and decorations.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
+- **The context menu's items of the plugins**: the splits', the tabs', the man page index, a web search, a link's address ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **Cursor options**: smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
 
@@ -139,7 +141,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Warp-style blocks**:
   - command and output grouped together;
   - a sticky header while scrolling;
-  - actions: copy, rerun, collapse.
+  - actions: copy, rerun, collapse, in the context menu too, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **ssh integration**: installs the terminfo on the remote host, or falls back to `xterm-256color` automatically.
 
 ### F5b — iTerm2 power features
@@ -148,6 +150,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Windows and sessions**: hotkey window and quick terminal, input broadcast, session restore.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
 - **Search**: filter mode.
+- **The context menu**: broadcast, locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **Settings**: a panel generated from the config schemas.
 - **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
 
@@ -158,7 +161,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **Links and selection**, in the `links` plugin, which opens links, URLs and paths with ⌘-click since F2:
   - hints;
   - semantic history: ⌘-click on `file:line` opens the editor;
-  - smart selection.
+  - smart selection, with its actions in the context menu, and Quick Look for a link ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 
 ### F6 — Release 1.0
 

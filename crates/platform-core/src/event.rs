@@ -20,6 +20,8 @@ pub enum WindowEvent {
     /// The user asked to close the window, which stays open until the app
     /// closes it.
     CloseRequested,
+    /// An item of the window's context menu was chosen: its command.
+    ContextCommand(String),
     /// The window is ready for the frame that the app asked for, with
     /// [`Platform::request_frame`](crate::Platform::request_frame): the app
     /// draws it now.

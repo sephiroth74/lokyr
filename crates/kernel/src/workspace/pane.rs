@@ -11,7 +11,7 @@ use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Scrollback;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, SelectionShape,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, Selected, SelectionShape,
     SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
@@ -383,6 +383,12 @@ impl Pane {
         self.session
             .as_ref()
             .map(|session| session.lock().input_modes())
+    }
+
+    /// The selection, if there is one, as the terminal has it now, which
+    /// the snapshot learns at its next update.
+    pub fn selection(&self) -> Option<Selected> {
+        self.session.as_ref()?.lock().selection()
     }
 
     /// The text of the selection, if there is one.

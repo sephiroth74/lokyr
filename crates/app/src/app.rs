@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
-use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry, Value};
+use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Registry, Value};
 use lokyr_kernel::config::{
     self, AppConfig, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile, OpenUrl,
 };
@@ -25,9 +25,9 @@ use lokyr_kernel::workspace::{
     self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
 };
 use lokyr_platform_core::{
-    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
-    KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton, Platform, Point,
-    PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, StandardAction,
+    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Handler, Ime, KeyCode,
+    KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton, Platform,
+    Point, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, StandardAction,
     TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
@@ -470,6 +470,13 @@ pub struct App {
     /// pane's last frame had it.
     menu_contexts: Vec<(String, When)>,
     menu_enabled: BTreeMap<String, bool>,
+    /// The cell that the last context menu opened on, by its window, and
+    /// its column and its row in the view, which its commands of a cell
+    /// take.
+    context_cell: Option<(WindowId, u16, u16)>,
+    /// The window whose pane the commands run in, in place of the focused
+    /// one, while a context menu's do.
+    acting: Option<WindowId>,
     /// What the user chose that links do, where the config could not keep
     /// it: until the app quits.
     links_chosen: (Option<OpenUrl>, Option<OpenFile>),
@@ -531,6 +538,8 @@ impl App {
             links_chosen: (None, None),
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
+            context_cell: None,
+            acting: None,
             close_asks: BTreeMap::new(),
             quit_ask: None,
             system_quit: false,
@@ -718,6 +727,17 @@ impl App {
         {
             return;
         }
+        // The right button, or the left one with Control, opens the context
+        // menu where the terminal keeps the click.
+        let menu_button = match button {
+            lokyr_vt_core::input::MouseButton::Right => true,
+            lokyr_vt_core::input::MouseButton::Left => mods.control,
+            _ => false,
+        };
+        if pressed && menu_button && self.keeps_click(window, mods) {
+            self.context_menu(platform, window, position);
+            return;
+        }
         if button == lokyr_vt_core::input::MouseButton::Left && self.selects(window, pressed, mods)
         {
             if pressed {
@@ -802,16 +822,24 @@ impl App {
     }
 
     /// Whether the left button's press, `pressed`, or its release, with
-    /// `mods`, over `window` selects: a press where no program takes the
-    /// mouse, or with Shift, which keeps it for the terminal; a release that
-    /// ends a selection.
+    /// `mods`, over `window` selects: a press that the terminal keeps; a
+    /// release that ends a selection.
     fn selects(&self, window: WindowId, pressed: bool, mods: Modifiers) -> bool {
+        if pressed {
+            return self.keeps_click(window, mods);
+        }
+        self.windows
+            .get(&window)
+            .and_then(|state| state.selecting)
+            .is_some_and(|selecting| selecting.held)
+    }
+
+    /// Whether a press with `mods` over `window` stays with the terminal:
+    /// where no program takes the mouse, or with Shift.
+    fn keeps_click(&self, window: WindowId, mods: Modifiers) -> bool {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
-        if !pressed {
-            return state.selecting.is_some_and(|selecting| selecting.held);
-        }
         mods.shift
             || self.workspace.pane(state.pane).is_none_or(|pane| {
                 pane.is_kept()
@@ -819,6 +847,129 @@ impl App {
                         .input_modes()
                         .is_none_or(|modes| modes.mouse_tracking == MouseTracking::None)
             })
+    }
+
+    /// Opens `window`'s context menu at `position`, over the cell there,
+    /// once the click has selected, as macOS's Terminal does: the
+    /// selection stays when it holds the cell; else the cell's word is
+    /// selected, as by a double click, or nothing on a blank cell. Its
+    /// items are the commands of a cell, which take its `column` and `row`,
+    /// then the clipboard's and the editing's that run without arguments;
+    /// an item is dimmed where its command's context does not hold, or
+    /// where its plugin tells that it would do nothing.
+    fn context_menu(&mut self, platform: &mut dyn Platform, window: WindowId, position: Point) {
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let within = pane
+            .selection()
+            .is_some_and(|selected| selected.contains(pointer.col, pointer.row));
+        if !within {
+            let grid = pane.grid();
+            let offset = pane.view_offset();
+            let spot = mouse::spot(pointer, offset, grid.cell_width, grid.columns);
+            pane.anchor_selection((spot.col, spot.row + offset as i64));
+            let mut selecting = Selecting {
+                anchor: spot,
+                last: spot,
+                shape: SelectionShape::Cells,
+                unit: SelectionUnit::Word,
+                held: false,
+                beyond: 0,
+            };
+            show_selection(pane, &mut selecting);
+            let blank = pane
+                .selection_text()
+                .is_none_or(|text| text.trim().is_empty());
+            if blank {
+                pane.clear_selection();
+            }
+            state.selecting = (!blank).then_some(selecting);
+            platform.request_frame(window);
+        }
+        let context = context(Some(pane));
+        let cell = (pointer.col, pointer.row);
+        let commands: Vec<Command> = self
+            .commands
+            .in_order()
+            .filter(|command| of_cell(command))
+            .chain(self.commands.in_order().filter(|command| {
+                [Category::Clipboard, Category::Edit].contains(&command.category)
+                    && command.params.iter().all(|param| param.default.is_some())
+                    && !of_cell(command)
+            }))
+            .cloned()
+            .collect();
+        self.acting = Some(window);
+        let dimmed = commands
+            .iter()
+            .filter(|command| !self.applies(platform, command, &context, cell))
+            .map(|command| command.name.clone())
+            .collect();
+        self.acting = None;
+        self.context_cell = Some((window, pointer.col, pointer.row));
+        let menu = ContextMenu {
+            items: command_items(&commands, |_| None),
+            dimmed,
+        };
+        platform.show_context_menu(window, position, &menu);
+    }
+
+    /// Whether `command` would do something in `context`, at the view's
+    /// cell `cell` for a command of a cell: its context holds, and its
+    /// plugin, if one runs it, tells that it would.
+    fn applies(
+        &mut self,
+        platform: &mut dyn Platform,
+        command: &Command,
+        context: &Context,
+        (column, row): (u16, u16),
+    ) -> bool {
+        let when = command.when.as_deref().map(When::parse);
+        if when.is_some_and(|when| when.is_ok_and(|when| !when.holds(context))) {
+            return false;
+        }
+        if !self.plugins.owns(&command.name) {
+            return true;
+        }
+        let args = if of_cell(command) {
+            cell_args(column, row)
+        } else {
+            Args::new()
+        };
+        let applies = self.commands.check(&command.name, args).and_then(|args| {
+            self.with_plugins(platform, |plugins, context| {
+                plugins.applies(&command.name, &args, context)
+            })
+        });
+        applies.unwrap_or_else(|error| {
+            eprintln!("lokyr: {error}");
+            false
+        })
+    }
+
+    /// Runs `name`, which `window`'s context menu chose, in its pane, as
+    /// though the window had the focus: a command of a cell takes the cell
+    /// that the menu opened on.
+    fn context_command(&mut self, platform: &mut dyn Platform, window: WindowId, name: &str) {
+        if !self.windows.contains_key(&window) {
+            return;
+        }
+        let args = match (self.commands.get(name), self.context_cell) {
+            (Some(command), Some((at, column, row))) if at == window && of_cell(command) => {
+                cell_args(column, row)
+            }
+            _ => Args::new(),
+        };
+        self.acting = Some(window);
+        self.run(platform, name, args);
+        self.acting = None;
     }
 
     /// Starts a selection at `position`, as the left button goes down with
@@ -1321,14 +1472,16 @@ impl App {
 
     /// Calls `call` with the plugins and what their host reaches of the
     /// app: the registry, the workspace, the platform's clipboard, the
-    /// focused window and the text's size.
+    /// focused window, or the one that a context menu's commands run in,
+    /// and the text's size.
     fn with_plugins<T>(
         &mut self,
         platform: &mut dyn Platform,
         call: impl FnOnce(&mut Plugins, &mut plugins::Context<'_>) -> T,
     ) -> T {
-        let focused = platform
-            .focused_window()
+        let focused = self
+            .acting
+            .or_else(|| platform.focused_window())
             .and_then(|window| self.windows.get(&window))
             .map(|state| state.window);
         let font_size = self.font_size.unwrap_or(self.config.font.size.points());
@@ -2511,9 +2664,38 @@ impl Handler for App {
                 ..
             } => self.scroll(platform, window, (delta, phase), position, mods),
             WindowEvent::CloseRequested => self.ask_close(platform, window),
+            WindowEvent::ContextCommand(command) => {
+                self.context_command(platform, window, &command);
+            }
             _ => {}
         }
     }
+}
+
+/// Whether `command` is one of a cell: it takes the cell's `column` and
+/// `row`, whole numbers, and needs no other argument.
+fn of_cell(command: &Command) -> bool {
+    let cell = |name: &str| {
+        command
+            .params
+            .iter()
+            .any(|param| param.name == name && param.kind == Kind::Integer)
+    };
+    cell("column")
+        && cell("row")
+        && command
+            .params
+            .iter()
+            .all(|param| param.name == "column" || param.name == "row" || param.default.is_some())
+}
+
+/// The arguments of a command of a cell for the view's cell at `column` of
+/// `row`.
+fn cell_args(column: u16, row: u16) -> Args {
+    Args::from([
+        ("column".to_owned(), Value::Integer(i64::from(column))),
+        ("row".to_owned(), Value::Integer(i64::from(row))),
+    ])
 }
 
 /// Shows `selecting`'s selection in `pane`: the cells between its spots,
@@ -2728,25 +2910,14 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
 /// `texts`'.
 fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
     let items = |categories: &[Category]| {
-        let mut items = Vec::new();
-        let mut group = None;
-        let shown = commands.in_order().filter(|command| {
-            categories.contains(&command.category)
-                && command.params.iter().all(|param| param.default.is_some())
-        });
-        for command in shown {
-            let namespace = command.name.split('.').next().unwrap_or_default();
-            if group.is_some_and(|group| group != (command.category, namespace)) {
-                items.push(MenuItem::Separator);
-            }
-            group = Some((command.category, namespace));
-            items.push(MenuItem::Command {
-                title: command.title.clone(),
-                command: command.name.clone(),
-                shortcut: keymap.shortcut(&command.name).and_then(shortcut),
-            });
-        }
-        items
+        let shown: Vec<&Command> = commands
+            .in_order()
+            .filter(|command| {
+                categories.contains(&command.category)
+                    && command.params.iter().all(|param| param.default.is_some())
+            })
+            .collect();
+        command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
     };
     let standard = |key: &str, action, shortcut: Option<Shortcut>| MenuItem::Standard {
         title: texts.text(key),
@@ -2823,6 +2994,30 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
             menu("menu-help", Vec::new(), Some(MenuRole::Help)),
         ],
     }
+}
+
+/// The items of `commands`, in their order, each with the keys that
+/// `shortcut` gives its name: a line parts the commands of a category or a
+/// namespace from the next.
+fn command_items<'a>(
+    commands: impl IntoIterator<Item = &'a Command>,
+    shortcut: impl Fn(&str) -> Option<Shortcut>,
+) -> Vec<MenuItem> {
+    let mut items = Vec::new();
+    let mut group = None;
+    for command in commands {
+        let namespace = command.name.split('.').next().unwrap_or_default();
+        if group.is_some_and(|group| group != (command.category, namespace)) {
+            items.push(MenuItem::Separator);
+        }
+        group = Some((command.category, namespace));
+        items.push(MenuItem::Command {
+            title: command.title.clone(),
+            command: command.name.clone(),
+            shortcut: shortcut(&command.name),
+        });
+    }
+    items
 }
 
 /// The contexts in which the commands of `commands` that tell one can run,
@@ -4121,6 +4316,113 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "[<0;1;1M"));
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 0)), SHIFT);
         assert_eq!(selected_text(&app, window).as_deref(), Some("hello"));
+    }
+
+    /// The last context menu that the app opened, over `window`: where, its
+    /// items' titles, `-` for a line, and its dimmed commands.
+    fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<String>) {
+        let (over, position, menu) = fake.context_menus().last().expect("a context menu");
+        assert_eq!(*over, window);
+        let items = menu
+            .items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Command {
+                    title, shortcut, ..
+                } => {
+                    assert_eq!(*shortcut, None, "{title}");
+                    title.clone()
+                }
+                MenuItem::Separator => "-".to_owned(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        (*position, items, menu.dimmed.clone())
+    }
+
+    /// A press and a release of the right button at `at`, with `mods`.
+    fn right_click(fake: &mut Fake, app: &mut App, window: WindowId, at: Point, mods: Modifiers) {
+        fake.send(app, window, press(MouseButton::Right, true, at, mods));
+        fake.send(app, window, press(MouseButton::Right, false, at, mods));
+    }
+
+    #[test]
+    fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
+        let (mut fake, mut app, window) = selecting("", "");
+        let none = Modifiers::NONE;
+        // On a word, which it selects; its program has no link there.
+        right_click(&mut fake, &mut app, window, cell(8, 0), none);
+        assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
+        let (position, items, dimmed) = context_menu(&fake, window);
+        assert_eq!(position, cell(8, 0));
+        assert_eq!(
+            items,
+            [
+                "Open Link",
+                "-",
+                "Copy",
+                "Paste",
+                "-",
+                "Select All",
+                "Clear"
+            ]
+        );
+        assert_eq!(dimmed, ["links.open"]);
+        // Within the selection, which stays.
+        select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
+        right_click(&mut fake, &mut app, window, cell(1, 0), none);
+        assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
+        assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+        // On a blank cell, which takes it away, and dims Copy.
+        right_click(&mut fake, &mut app, window, cell(5, 0), none);
+        assert_eq!(selected_text(&app, window), None);
+        assert!(app.windows[&window].selecting.is_none());
+        assert_eq!(context_menu(&fake, window).2, ["links.open", "pane.copy"]);
+        // A Control click opens it too, and starts no selection that the
+        // pointer would drag.
+        let control = Modifiers {
+            control: true,
+            ..none
+        };
+        fake.send(&mut app, window, click(true, cell(2, 1), control, 1));
+        fake.send(&mut app, window, moved(cell(9, 1), control));
+        fake.send(&mut app, window, click(false, cell(9, 1), control, 1));
+        assert_eq!(selected_text(&app, window).as_deref(), Some("second"));
+        assert_eq!(context_menu(&fake, window).0, cell(2, 1));
+        assert_eq!(fake.context_menus().len(), 4);
+        // Its items run in its window's pane, which has no focus.
+        assert_eq!(fake.focused_window(), None);
+        let chosen = |name: &str| WindowEvent::ContextCommand(name.to_owned());
+        fake.send(&mut app, window, chosen("pane.copy"));
+        assert_eq!(fake.clipboard_text().as_deref(), Some("second"));
+        fake.send(&mut app, window, chosen("pane.select-all"));
+        assert!(
+            selected_text(&app, window).is_some_and(|text| text.starts_with("hello world\n")),
+            "{:?}",
+            selected_text(&app, window)
+        );
+    }
+
+    #[test]
+    fn a_program_that_takes_the_clicks_has_the_right_button_but_with_shift() {
+        let (mut fake, mut app, window) = selecting("", "\\033[?1000h\\033[?1006h");
+        right_click(&mut fake, &mut app, window, cell(2, 0), Modifiers::NONE);
+        let control = Modifiers {
+            control: true,
+            ..Modifiers::NONE
+        };
+        fake.send(&mut app, window, click(true, cell(4, 0), control, 1));
+        fake.send(&mut app, window, click(false, cell(4, 0), control, 1));
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "^[[<2;3;1M^[[<2;3;1m^[[<16;5;1M^[[<16;5;1m")
+        });
+        assert!(fake.context_menus().is_empty());
+        // With Shift, the menu opens, and the program learns of nothing.
+        right_click(&mut fake, &mut app, window, cell(8, 0), SHIFT);
+        assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
+        assert_eq!(context_menu(&fake, window).0, cell(8, 0));
+        fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "1mx"));
     }
 
     /// The app without padding, its window running `seq 1 100`, which
@@ -5519,6 +5821,28 @@ mod tests {
         cmd_click(&mut fake, &mut app, 2, 0);
         assert_eq!(fake.opened().len(), 3);
         assert!(app.windows[&window].selecting.is_some());
+    }
+
+    #[test]
+    fn the_context_menu_opens_the_link_at_its_cell() {
+        let (mut fake, mut app, window, _) = pasting(
+            "context",
+            "[links]\nurls = \"open\"\n",
+            shell(concat!(
+                "stty raw -echo; printf 'see https://lokyr.dev/x here\\r\\n'; ",
+                "echo ready; cat -v"
+            )),
+        );
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
+        assert_eq!(context_menu(&fake, window).2, Vec::<String>::new());
+        right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
+        assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+        // The item takes the cell that the menu opened on.
+        right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
+        let chosen = WindowEvent::ContextCommand("links.open".to_owned());
+        fake.send(&mut app, window, chosen);
+        assert_eq!(fake.opened(), ["https://lokyr.dev/x"]);
     }
 
     /// Opens with Command-click what `window` shows at `col` of its first

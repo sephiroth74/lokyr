@@ -280,6 +280,73 @@ fn a_plugin_that_panics_is_disabled_with_its_commands_and_bindings() {
         .unwrap();
 }
 
+/// A plugin whose command `look.at` applies to its `answer` `yes`, panics
+/// on `boom`, and asks for a window as it looks.
+struct Looking;
+
+impl Plugin for Looking {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("look.at"))
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
+        cx.open_window().unwrap();
+        match args.get("answer") {
+            Some(Value::String(answer)) if answer == "boom" => panic!("on purpose"),
+            Some(Value::String(answer)) => name == "look.at" && answer == "yes",
+            _ => false,
+        }
+    }
+}
+
+#[test]
+fn a_plugin_tells_whether_its_command_applies_and_asks_nothing_meanwhile() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins.add("look", Box::new(Looking));
+    plugins.add(
+        "calm",
+        scripted(
+            |cx| cx.register_command(command("calm.go")),
+            |_, _, _| Ok(()),
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let answer = |text: &str| Args::from([("answer".to_owned(), Value::String(text.to_owned()))]);
+    assert!(
+        plugins
+            .applies("look.at", &answer("yes"), &mut app.context())
+            .unwrap()
+    );
+    assert!(
+        !plugins
+            .applies("look.at", &answer("no"), &mut app.context())
+            .unwrap()
+    );
+    // What it asked for as it looked went.
+    assert!(plugins.take_requests().is_empty());
+    // A plugin that does not say applies.
+    assert!(
+        plugins
+            .applies("calm.go", &Args::new(), &mut app.context())
+            .unwrap()
+    );
+    assert_eq!(
+        plugins
+            .applies("none.go", &Args::new(), &mut app.context())
+            .unwrap_err()
+            .code,
+        Code::NotFound
+    );
+    let error = plugins
+        .applies("look.at", &answer("boom"), &mut app.context())
+        .unwrap_err();
+    assert_eq!(error.code, Code::Fault);
+    assert_eq!(plugins.status("look"), Some(Status::Disabled));
+    assert!(app.registry.get("look.at").is_none());
+    assert!(plugins.take_requests().is_empty());
+}
+
 #[test]
 fn a_plugin_whose_activation_fails_or_panics_is_disabled() {
     let mut app = App::default();
@@ -679,6 +746,13 @@ fn only_urls_of_the_schemes_and_paths_from_the_root_or_home_open() {
     // A text before a `:` that is no scheme is no URL.
     for target in ["1:2", "src/main.rs:42"] {
         assert!(opening(target).unwrap_err().contains("neither"), "{target}");
+    }
+    // A path opens something once it is there.
+    for target in ["https://lokyr.dev", "/", "/usr/bin", "~"] {
+        assert!(opens(target), "{target}");
+    }
+    for target in ["/lokyr-nowhere", "~/lokyr-nowhere", "src", "tel:123"] {
+        assert!(!opens(target), "{target}");
     }
 }
 

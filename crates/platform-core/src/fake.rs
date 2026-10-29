@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, Error, Handler, MainMenu, Platform, Point,
-    PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, MainMenu,
+    Platform, Point, PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -73,6 +73,9 @@ pub struct Fake {
     menu: Option<MainMenu>,
     /// The commands whose menu items are dimmed.
     disabled: std::collections::BTreeSet<String>,
+    /// The context menus that the app opened, from the first, each over its
+    /// window at its position.
+    context_menus: Vec<(WindowId, Point, ContextMenu)>,
     clipboard: Option<String>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
@@ -119,6 +122,7 @@ impl Fake {
             focused: None,
             menu: None,
             disabled: std::collections::BTreeSet::new(),
+            context_menus: Vec::new(),
             clipboard: None,
             alerts: Vec::new(),
             timers: BTreeMap::new(),
@@ -281,6 +285,12 @@ impl Fake {
         !self.disabled.contains(command)
     }
 
+    /// The context menus that the app opened, from the first, each over its
+    /// window at its position.
+    pub fn context_menus(&self) -> &[(WindowId, Point, ContextMenu)] {
+        &self.context_menus
+    }
+
     /// The alerts that are open, from the first opened.
     pub fn alerts(&self) -> &[FakeAlert] {
         &self.alerts
@@ -439,6 +449,10 @@ impl Platform for Fake {
         } else {
             self.disabled.insert(command.to_owned());
         }
+    }
+
+    fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu) {
+        self.context_menus.push((window, position, menu.clone()));
     }
 
     fn clipboard_text(&self) -> Option<String> {
