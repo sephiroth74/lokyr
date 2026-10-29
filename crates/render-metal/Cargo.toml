@@ -9,6 +9,10 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# Three drawables a window, rather than two, to measure against them.
+three-drawables = []
+
 [dependencies]
 lokyr-render-core.workspace = true
 raw-window-handle.workspace = true

@@ -17,6 +17,8 @@ path = "src/main.rs"
 default = ["luau-plugins"]
 # Support for third-party plugins written in Luau.
 luau-plugins = ["dep:lokyr-plugin-host-luau"]
+# Three drawables a window, rather than two, to measure against them.
+three-drawables = ["lokyr-render-metal/three-drawables"]
 
 [dependencies]
 lokyr-core-actions.workspace = true

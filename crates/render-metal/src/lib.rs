@@ -23,10 +23,15 @@ use objc2_metal::{
 use objc2_quartz_core::{CALayer, CAMetalDrawable, CAMetalLayer};
 use raw_window_handle::{RawWindowHandle, WindowHandle};
 
-/// The drawables of a window's layer: three, so that a frame takes one at
-/// once while the display shows one and holds the next, where two keep the
-/// frame waiting for the display's refresh.
-const DRAWABLES: usize = 3;
+/// The drawables of a window's layer: two, so that the GPU draws a frame
+/// while the display shows the one before, which keep no frame waiting at
+/// 60 Hz nor at 120 Hz; three with the build's feature `three-drawables`,
+/// to measure against them.
+const DRAWABLES: usize = if cfg!(feature = "three-drawables") {
+    3
+} else {
+    2
+};
 
 /// What went wrong with the GPU.
 #[derive(Debug, thiserror::Error)]
@@ -95,7 +100,8 @@ impl Surface {
     }
 
     /// The surface of `layer`, set up for the GPU: BGRA, 8 bits a component,
-    /// in sRGB; drawables that only display, three of them.
+    /// in sRGB; drawables that only display, two of them, or three with the
+    /// build's feature `three-drawables`.
     fn with_layer(gpu: &Gpu, layer: Retained<CAMetalLayer>) -> Self {
         layer.setDevice(Some(&gpu.device));
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
@@ -184,13 +190,18 @@ mod tests {
     }
 
     #[test]
-    fn a_surface_takes_three_drawables_of_bgra_in_srgb() {
+    fn a_surface_takes_two_drawables_of_bgra_in_srgb() {
         let Some(gpu) = gpu() else { return };
         let layer = CAMetalLayer::new();
         let surface = Surface::with_layer(&gpu, layer.clone());
         assert_eq!(layer.pixelFormat(), MTLPixelFormat::BGRA8Unorm);
         assert!(layer.framebufferOnly());
-        assert_eq!(layer.maximumDrawableCount(), 3);
+        let drawables = if cfg!(feature = "three-drawables") {
+            3
+        } else {
+            2
+        };
+        assert_eq!(layer.maximumDrawableCount(), drawables);
         let name = CGColorSpace::name(layer.colorspace().as_deref());
         // SAFETY: the name is Core Graphics' constant.
         assert_eq!(name.as_deref(), Some(unsafe { kCGColorSpaceSRGB }));

@@ -95,8 +95,14 @@ const LOCALES: &str = "crates/app/resources/locales";
 const SOURCE: &str = "en";
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
+    // The app's features to build with, as `--features three-drawables`.
+    let features = match (args.next(), args.next()) {
+        (None, _) => None,
+        (Some(flag), Some(features)) if flag == "--features" => Some(features),
+        (Some(arg), _) => bail!("bundle takes `--features <features>` alone, not `{arg}`"),
+    };
     if let Some(arg) = args.next() {
-        bail!("bundle takes no argument, not `{arg}`");
+        bail!("bundle takes `--features <features>` alone, not `{arg}`");
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -105,6 +111,11 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     run_command(
         Command::new(env!("CARGO"))
             .args(["build", "--release", "--locked", "-p", "lokyr-app"])
+            .args(
+                features
+                    .iter()
+                    .flat_map(|features| ["--features", features]),
+            )
             .current_dir(&root),
         "building the app",
     )?;

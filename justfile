@@ -84,9 +84,9 @@ check-links:
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps check-comments check-links bundle
 
-# Build target/Lokyr.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc.
-bundle:
-    cargo xtask bundle
+# Build target/Lokyr.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc; `--features three-drawables` builds it of three drawables a window.
+bundle *args:
+    cargo xtask bundle {{args}}
 
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
