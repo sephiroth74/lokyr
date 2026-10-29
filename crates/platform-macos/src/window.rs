@@ -21,6 +21,7 @@ use objc2_app_kit::{
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSObject,
     NSObjectProtocol, NSPoint, NSRange, NSRangePointer, NSRect, NSSize, NSString, NSUInteger,
+    NSUserDefaults,
 };
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
@@ -409,30 +410,10 @@ define_class!(
             self.post_key(event);
         }
 
-        // SAFETY: AppKit's signature. The titlebar's points are the
-        // window's frame's, which drags the window from them, and zooms or
-        // minimizes it at a double click, as the system's settings say,
-        // though the content runs under the bar.
-        #[unsafe(method_id(hitTest:))]
-        fn hit_test(&self, point: NSPoint) -> Option<Retained<NSView>> {
-            // The point is in the superview's coordinates, the window's frame
-            // view's, which are the window's.
-            let local = self.convertPoint_fromView(point, None);
-            let below = self.below_bar();
-            let over_bar = local.y >= below.origin.y + below.size.height
-                && local.y < self.bounds().size.height;
-            if over_bar {
-                None
-            } else {
-                // SAFETY: `NSView`'s method, of this signature.
-                unsafe { msg_send![super(self), hitTest: point] }
-            }
-        }
-
         // SAFETY: AppKit's signature, for each of the mouse's buttons. A
-        // press over the titlebar is the window's, as the hit test gives it
-        // to the window's frame: one that still comes, the content learns
-        // nothing of, until every button is up.
+        // press over the titlebar is the window's, which it drags, or which
+        // a double click zooms: the content learns of nothing, until every
+        // button is up.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             self.press(event);
@@ -742,6 +723,23 @@ impl ContentView {
         self.ivars().over_bar.set(over);
         if !over {
             self.post_button(event, true);
+            return;
+        }
+        // The window's frame does neither for the content that runs under
+        // its bar: the left button drags the window, as the system does,
+        // and a double click does what the system's settings say.
+        if event.r#type() == NSEventType::LeftMouseDown
+            && let Some(window) = self.window()
+        {
+            if event.clickCount() == 2 {
+                match bar_double_click() {
+                    BarDoubleClick::Zoom => window.performZoom(None),
+                    BarDoubleClick::Minimize => window.performMiniaturize(None),
+                    BarDoubleClick::Nothing => {}
+                }
+            } else {
+                window.performWindowDragWithEvent(event);
+            }
         }
     }
 
@@ -1042,6 +1040,39 @@ fn restore_frame(window: &NSWindow) -> bool {
     shown
 }
 
+/// What a double click on a window's titlebar does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BarDoubleClick {
+    Zoom,
+    Minimize,
+    Nothing,
+}
+
+/// What a double click on a window's titlebar does, as the system's
+/// settings say, in Desktop & Dock: zoom by default, and for Fill, which
+/// tiles a window where the public calls only zoom it; minimize; or
+/// nothing.
+fn bar_double_click() -> BarDoubleClick {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let action = defaults
+        .stringForKey(&NSString::from_str("AppleActionOnDoubleClick"))
+        .map(|action| action.to_string());
+    let minimize = defaults.boolForKey(&NSString::from_str("AppleMiniaturizeOnDoubleClick"));
+    double_click_of(action.as_deref(), minimize)
+}
+
+/// The double click of the settings' `action`, or, without one, of the
+/// older setting of minimizing.
+fn double_click_of(action: Option<&str>, minimize: bool) -> BarDoubleClick {
+    match action {
+        Some("Minimize") => BarDoubleClick::Minimize,
+        Some("None") => BarDoubleClick::Nothing,
+        Some(_) => BarDoubleClick::Zoom,
+        None if minimize => BarDoubleClick::Minimize,
+        None => BarDoubleClick::Zoom,
+    }
+}
+
 /// The window that a window's notification is about.
 fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
     notification.object()?.downcast::<NSWindow>().ok()
@@ -1050,6 +1081,21 @@ fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_double_click_on_the_bar_does_as_the_settings_say() {
+        for (action, minimize, wanted) in [
+            (None, false, BarDoubleClick::Zoom),
+            (Some("Maximize"), false, BarDoubleClick::Zoom),
+            (Some("Fill"), false, BarDoubleClick::Zoom),
+            (Some("Minimize"), false, BarDoubleClick::Minimize),
+            (Some("None"), true, BarDoubleClick::Nothing),
+            // The older setting, without the newer one.
+            (None, true, BarDoubleClick::Minimize),
+        ] {
+            assert_eq!(double_click_of(action, minimize), wanted, "{action:?}");
+        }
+    }
 
     #[test]
     fn a_gesture_s_phases_become_the_scroll_s() {

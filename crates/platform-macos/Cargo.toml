@@ -84,6 +84,7 @@ objc2-foundation = { workspace = true, features = [
     "NSRunLoop",
     "NSString",
     "NSTimer",
+    "NSUserDefaults",
     "NSValue",
     "NSURL",
 ] }
