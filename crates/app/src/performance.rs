@@ -160,6 +160,35 @@ impl Performance {
     }
 }
 
+/// The log's line of `measure`, of the window `number`, in English, as the
+/// log is: the panel's numbers, each second while it shows, for a measure
+/// over more seconds than an eye takes in.
+pub(crate) fn log_line(number: u64, measure: &Measure) -> String {
+    let ms = |times: Option<(Duration, Duration)>| {
+        times.map_or("-".to_owned(), |(typical, longest)| {
+            format!(
+                "{:.2} ms, at most {:.2}",
+                typical.as_secs_f64() * 1000.0,
+                longest.as_secs_f64() * 1000.0
+            )
+        })
+    };
+    let wakeups = measure.wakeups.map_or("-".to_owned(), |(all, idle)| {
+        format!("{all:.1}/s, {idle:.1} from idle")
+    });
+    let memory = measure
+        .memory
+        .map_or("-".to_owned(), |memory| format!("{memory:.1} MB"));
+    format!(
+        "lokyr: performance of window {number}: {:.0} frames/s; CPU {}; display wait {}; GPU {}; wakeups {wakeups}; memory {memory}; output {:.2} MB/s",
+        measure.rate,
+        ms(measure.cpu),
+        ms(measure.wait),
+        ms(measure.gpu),
+        measure.output
+    )
+}
+
 /// The panel's lines of `measure`, in `texts`' language: the numbers as
 /// text, which the catalogs place.
 pub(crate) fn lines(measure: &Measure, texts: &Texts) -> Vec<String> {
@@ -358,6 +387,23 @@ mod tests {
         assert_eq!(next[0].1.gpu, None);
         assert_eq!((next[0].1.wakeups, next[0].1.memory), (None, None));
         assert_eq!(next[0].1.output, 0.0);
+    }
+
+    #[test]
+    fn the_log_tells_the_numbers_in_english() {
+        let measure = Measure {
+            rate: 59.6,
+            cpu: Some((Duration::from_micros(140), Duration::from_micros(900))),
+            wait: Some((Duration::from_micros(1500), Duration::from_micros(16_600))),
+            gpu: None,
+            wakeups: Some((130.6, 0.0)),
+            memory: None,
+            output: 1.37,
+        };
+        assert_eq!(
+            log_line(3, &measure),
+            "lokyr: performance of window 3: 60 frames/s; CPU 0.14 ms, at most 0.90; display wait 1.50 ms, at most 16.60; GPU -; wakeups 130.6/s, 0.0 from idle; memory -; output 1.37 MB/s"
+        );
     }
 
     #[test]

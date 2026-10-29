@@ -1286,6 +1286,7 @@ impl App {
         let measures = shown.measure(now, &windows, gpu, platform.usage(), bytes);
         shown.keep(&windows);
         for (window, measure) in measures {
+            eprintln!("{}", performance::log_line(window.get(), &measure));
             shown.set_lines(window, performance::lines(&measure, &self.texts));
             platform.request_frame(window);
         }

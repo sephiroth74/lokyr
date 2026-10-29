@@ -7,7 +7,21 @@ Measured on 2026-10-30 by the user, with the performance overlay of F2-122, on t
 - Apple M5 Pro, macOS 27.2.
 - Display: Samsung U28E590, 3008 × 1692 points at 60 Hz, a scale of 2. The MacBook's own display, of 120 Hz, was not in use: the measure at 120 Hz is still to make.
 
-## Results
+## At 120 Hz, from the log
+
+On 2026-10-30, the MacBook's own display, ProMotion, at 120 Hz: each bundle started with the overlay on, which logs its numbers each second, and 30 s of `yes` written into its pane's terminal. The logs are in [drawables-F2-57/](drawables-F2-57/).
+
+| Under output, over 30 s | Two drawables | Three drawables |
+|---|---|---|
+| Frames a second, the median | 120 | 120 |
+| Display wait, the median of the seconds' medians | 0.34 ms, from 0.33 to 0.35 | 0.34 ms, from 0.32 to 0.36 |
+| The longest wait, the median of the seconds' | 0.52 ms | 0.53 ms |
+| The longest wait | 0.64 ms | 3.88 ms, once |
+| Output | 108 MB/s | 107 MB/s |
+
+**At 120 Hz, two drawables never keep a frame waiting**: the third changes nothing.
+
+## At 60 Hz, as the user read the overlay
 
 | | Two drawables | Three drawables |
 |---|---|---|
@@ -15,4 +29,4 @@ Measured on 2026-10-30 by the user, with the performance overlay of F2-122, on t
 | A live resize, during the output | display wait 15 ms | display wait 15 ms |
 
 - **At 60 Hz, two drawables keep a frame waiting 1.5 ms**, and a third takes 0.25 ms of it away. The frame of 16.65 ms that the overlay's first version showed, on 29 October 2026, before it told the wait apart, is not seen again.
-- **A live resize waits about a frame** with either count: the live resize presents each frame with its transaction, synchronously, so that the content follows the window's edge, which [F2-07](../tasks/F2-macos-single-pane.md#f2-07--live-resize) takes up.
+- **A live resize waits about a frame** with either count, of 60 Hz as of 120 Hz, as the user saw it: 15 ms and 6 to 7 ms: the live resize presents each frame with its transaction, synchronously, so that the content follows the window's edge, which [F2-07](../tasks/F2-macos-single-pane.md#f2-07--live-resize) takes up.
