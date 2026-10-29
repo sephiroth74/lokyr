@@ -66,6 +66,15 @@ blink = false                        # true | false: text that programs make bli
 shape = "bar"                        # block | bar | underline | hollow
 blink = false                        # true | false
 thickness = 2                        # points, from 0.5 to 20
+blink-interval = 600                 # ms on, then off, from 100 to 5000
+blink-timeout = 30                   # seconds after a key or output; 0 never stops
+smooth-blink = "custom"              # off | breathing | linear | fast | slow | subtle | custom
+fade-in = 300                        # with "custom": ms, from 0 to 10000
+fade-in-curve = "ease-out"           # linear | ease-in | ease-out | ease-in-out
+visible = 700                        # ms held visible, from 0 to 10000
+fade-out = 400
+fade-out-curve = "ease-in"
+hidden = 200                         # ms held hidden
 
 [window]
 columns = 120                        # a new window's size, in cells, from 1 to 1000
@@ -362,8 +371,9 @@ Whether the cursor blinks.
 |---|---|
 | `true`, `false` | `true` |
 
-- The cursor stays on for half a second and off for another.
-- It stops blinking, and stays on, 15 seconds after the last key or the last output, so that an idle window keeps the Mac idle too. A key, output, or the window's focus makes it blink again.
+- The cursor stays on for [`blink-interval`](#blink-interval) and off for as long, or fades out and in, as [`smooth-blink`](#smooth-blink) says.
+- It stops blinking, and stays on, [`blink-timeout`](#blink-timeout) after the last key or the last output, 15 seconds by default, so that an idle window keeps the Mac idle too. A key, output, or the window's focus makes it blink again.
+- macOS's window server blinks the cursor, which wakes Lokyr no more than a steady cursor does, faded or not.
 - Only the window that has the focus blinks, and a cursor that the program hides, as full-screen programs such as `htop` hide it, does not blink.
 - A program can turn blinking on or off with DECSCUSR. The escape sequence of mode 12, which some programs send as they start, turns blinking on too; its reset, which most full-screen programs send as they end, leaves this setting as it is.
 
@@ -378,6 +388,85 @@ The width of a bar and the height of an underline, in points, so that they keep 
 | from `0.5` to `20` | the font's underline thickness |
 
 A hollow block's edges always take the font's underline thickness.
+
+### `blink-interval`
+
+<sub>Platforms: macOS</sub>
+
+How long the cursor stays on, then off, as it blinks without [`smooth-blink`](#smooth-blink), in milliseconds.
+
+| Values | Default |
+|---|---|
+| from `100` to `5000` | `500` |
+
+Text that blinks, as the escape sequence SGR 5 makes it, takes the same interval.
+
+### `blink-timeout`
+
+<sub>Platforms: macOS</sub>
+
+How long the cursor blinks after the last key or output, in seconds; then it stays on.
+
+| Values | Default |
+|---|---|
+| from `0` to `3600`; `0` never stops | `15` |
+
+A cursor that blinks for ever keeps the Mac awake no more than one that stops, as the window server blinks it.
+
+### `smooth-blink`
+
+<sub>Platforms: macOS</sub>
+
+Whether the cursor fades out and in as it blinks, rather than switching, and how: by one of iTerm2's presets, or by the keys that follow.
+
+| Values | Default |
+|---|---|
+| `"off"`, `"breathing"`, `"linear"`, `"fast"`, `"slow"`, `"subtle"`, `"custom"` | `"off"` |
+
+- The presets, in milliseconds:
+
+  | Preset | Fade in | Held visible | Fade out | Held hidden | Curves |
+  |---|---|---|---|---|---|
+  | `"breathing"` | 900 | 500 | 900 | 500 | ease in and out |
+  | `"linear"` | 400 | 700 | 400 | 500 | linear |
+  | `"fast"` | 200 | 700 | 200 | 200 | ease in and out |
+  | `"slow"` | 500 | 1000 | 750 | 200 | ease in and out |
+  | `"subtle"` | 150 | 900 | 150 | 200 | ease in and out |
+
+- `"custom"` takes [`fade-in`, `fade-out`](#fade-in-fade-out), [`fade-in-curve`, `fade-out-curve`](#fade-in-curve-fade-out-curve) and [`visible`, `hidden`](#visible-hidden), whose defaults are Breathing's.
+- With Reduce motion on, in System Settings › Accessibility › Display on macOS, the cursor switches rather than fading, at each fade's middle.
+
+### `fade-in`, `fade-out`
+
+<sub>Platforms: macOS</sub>
+
+With `smooth-blink = "custom"`, how long the cursor fades in, and out, in milliseconds.
+
+| Values | Default |
+|---|---|
+| from `0` to `10000` | `900` |
+
+A fade of `0` switches. A cycle of fades and holds shorter than 50 ms does not blink.
+
+### `fade-in-curve`, `fade-out-curve`
+
+<sub>Platforms: macOS</sub>
+
+With `smooth-blink = "custom"`, how each fade goes: at a constant rate, slow at its start, slow at its end, or both.
+
+| Values | Default |
+|---|---|
+| `"linear"`, `"ease-in"`, `"ease-out"`, `"ease-in-out"` | `"ease-in-out"` |
+
+### `visible`, `hidden`
+
+<sub>Platforms: macOS</sub>
+
+With `smooth-blink = "custom"`, how long the cursor holds visible, after it fades in, and hidden, after it fades out, in milliseconds.
+
+| Values | Default |
+|---|---|
+| from `0` to `10000` | `500` |
 
 ## `[window]`
 

@@ -8,6 +8,15 @@
 //! blink = true
 //! thickness = 2     # a bar's width and an underline's height, in points,
 //!                   # 0.5 to 20; the face's underline thickness when absent
+//! blink-interval = 500         # on, then off, in ms, without smooth-blink
+//! blink-timeout = 15           # seconds after a key or output; 0 never stops
+//! smooth-blink = "breathing"   # off | breathing | linear | fast | slow | subtle | custom
+//! fade-in = 900                # with "custom": the fades, in ms, their curves,
+//! fade-in-curve = "ease-in-out" # and how long it holds visible and hidden
+//! visible = 500
+//! fade-out = 900
+//! fade-out-curve = "ease-in-out"
+//! hidden = 500
 //! ```
 
 use std::time::{Duration, Instant};
@@ -17,11 +26,11 @@ use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::terminal::{self, SnapshotCursor};
 use serde::{Deserialize, Serialize};
 
-/// How long the blinking cursor stays on, then off.
+/// How long the blinking cursor stays on, then off, by default.
 pub const BLINK_INTERVAL: Duration = Duration::from_millis(500);
 
-/// How long the cursor blinks after the last key or output; then it stays
-/// on, so that an idle window takes no wakeups.
+/// How long the cursor blinks after the last key or output by default; then
+/// it stays on, so that an idle window takes no wakeups.
 pub const BLINK_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The `[cursor]` section: the cursor that programs start with, and that
@@ -36,19 +45,89 @@ pub struct CursorConfig {
     /// A bar's width and an underline's height; `None` for the face's
     /// underline thickness.
     pub thickness: Option<Thickness>,
+    /// How long it stays on, then off, without smooth blinking.
+    pub blink_interval: Interval,
+    /// How long it blinks after the last key or output: `None` for ever.
+    pub blink_timeout: Timeout,
+    /// Whether it fades out and in, and how: by a preset, or by the keys
+    /// that follow.
+    pub smooth_blink: SmoothBlink,
+    /// With [`SmoothBlink::Custom`]: the fade in.
+    pub fade_in: Span,
+    /// With [`SmoothBlink::Custom`]: the fade in's curve.
+    pub fade_in_curve: Curve,
+    /// With [`SmoothBlink::Custom`]: how long it holds visible.
+    pub visible: Span,
+    /// With [`SmoothBlink::Custom`]: the fade out.
+    pub fade_out: Span,
+    /// With [`SmoothBlink::Custom`]: the fade out's curve.
+    pub fade_out_curve: Curve,
+    /// With [`SmoothBlink::Custom`]: how long it holds hidden.
+    pub hidden: Span,
 }
 
 impl Default for CursorConfig {
     fn default() -> Self {
+        let breathing = SmoothBlink::BREATHING;
         Self {
             shape: Shape::Block,
             blink: true,
             thickness: None,
+            blink_interval: Interval(500),
+            blink_timeout: Timeout(15),
+            smooth_blink: SmoothBlink::Off,
+            fade_in: Span(breathing.fade_in),
+            fade_in_curve: breathing.fade_in_curve,
+            visible: Span(breathing.visible),
+            fade_out: Span(breathing.fade_out),
+            fade_out_curve: breathing.fade_out_curve,
+            hidden: Span(breathing.hidden),
         }
     }
 }
 
 impl CursorConfig {
+    /// The cycle of the blinking: on and off for `blink-interval` each, or
+    /// smooth-blink's fades and holds, its preset's or its keys'.
+    pub fn pattern(&self) -> Pattern {
+        let millis = |millis: u32| Duration::from_millis(u64::from(millis));
+        let steps = match self.smooth_blink {
+            SmoothBlink::Off => {
+                let interval = self.blink_interval.0;
+                return Pattern {
+                    visible: millis(interval),
+                    fade_out: Duration::ZERO,
+                    fade_out_curve: Curve::Linear,
+                    hidden: millis(interval),
+                    fade_in: Duration::ZERO,
+                    fade_in_curve: Curve::Linear,
+                };
+            }
+            SmoothBlink::Custom => Steps {
+                fade_in: self.fade_in.0,
+                fade_in_curve: self.fade_in_curve,
+                visible: self.visible.0,
+                fade_out: self.fade_out.0,
+                fade_out_curve: self.fade_out_curve,
+                hidden: self.hidden.0,
+            },
+            preset => preset.steps(),
+        };
+        Pattern {
+            visible: millis(steps.visible),
+            fade_out: millis(steps.fade_out),
+            fade_out_curve: steps.fade_out_curve,
+            hidden: millis(steps.hidden),
+            fade_in: millis(steps.fade_in),
+            fade_in_curve: steps.fade_in_curve,
+        }
+    }
+
+    /// How long the cursor blinks after a key or output, `None` for ever.
+    pub fn timeout(&self) -> Option<Duration> {
+        (self.blink_timeout.0 > 0).then(|| Duration::from_secs(u64::from(self.blink_timeout.0)))
+    }
+
     /// The pixels of a bar's width and an underline's height, in a cell of
     /// `cell` on a display of `scale`: one at least.
     pub fn thickness(&self, cell: &CellMetrics, scale: f32) -> u32 {
@@ -97,6 +176,190 @@ impl TryFrom<f64> for Thickness {
                 Self::MAX
             ))
         }
+    }
+}
+
+/// How long the cursor stays on, then off, without smooth blinking, in ms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Interval(u32);
+
+impl From<Interval> for u32 {
+    fn from(interval: Interval) -> Self {
+        interval.0
+    }
+}
+
+impl TryFrom<u32> for Interval {
+    type Error = String;
+
+    fn try_from(millis: u32) -> Result<Self, Self::Error> {
+        if (100..=5000).contains(&millis) {
+            Ok(Self(millis))
+        } else {
+            Err(format!(
+                "the blink's interval, in ms, is from 100 to 5000, not {millis}"
+            ))
+        }
+    }
+}
+
+/// How long the cursor blinks after the last key or output, in seconds: 0
+/// for ever.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Timeout(u32);
+
+impl From<Timeout> for u32 {
+    fn from(timeout: Timeout) -> Self {
+        timeout.0
+    }
+}
+
+impl TryFrom<u32> for Timeout {
+    type Error = String;
+
+    fn try_from(seconds: u32) -> Result<Self, Self::Error> {
+        if seconds <= 3600 {
+            Ok(Self(seconds))
+        } else {
+            Err(format!(
+                "the blink's timeout, in seconds, is from 0 to 3600, not {seconds}"
+            ))
+        }
+    }
+}
+
+/// A fade's duration, or how long the cursor holds, in ms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct Span(u32);
+
+impl From<Span> for u32 {
+    fn from(span: Span) -> Self {
+        span.0
+    }
+}
+
+impl TryFrom<u32> for Span {
+    type Error = String;
+
+    fn try_from(millis: u32) -> Result<Self, Self::Error> {
+        if millis <= 10_000 {
+            Ok(Self(millis))
+        } else {
+            Err(format!(
+                "a fade, or a hold, in ms, is from 0 to 10000, not {millis}"
+            ))
+        }
+    }
+}
+
+/// Whether the cursor fades out and in as it blinks, rather than switching,
+/// and how: by one of iTerm2's presets, or by the keys of its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SmoothBlink {
+    /// It switches, on and off.
+    #[default]
+    Off,
+    /// A slow, symmetric breath.
+    Breathing,
+    /// Fades of a constant rate.
+    Linear,
+    /// Quick fades.
+    Fast,
+    /// Slow, its fade out longer than its fade in.
+    Slow,
+    /// Mostly on, with a brief dip.
+    Subtle,
+    /// The fades and the holds of the keys of `[cursor]`.
+    Custom,
+}
+
+/// A smooth blink's steps, in ms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Steps {
+    fade_in: u32,
+    fade_in_curve: Curve,
+    visible: u32,
+    fade_out: u32,
+    fade_out_curve: Curve,
+    hidden: u32,
+}
+
+impl SmoothBlink {
+    /// Breathing's steps, which the custom keys take by default.
+    const BREATHING: Steps = Steps {
+        fade_in: 900,
+        fade_in_curve: Curve::EaseInOut,
+        visible: 500,
+        fade_out: 900,
+        fade_out_curve: Curve::EaseInOut,
+        hidden: 500,
+    };
+
+    /// The steps of a preset, as iTerm2 has them.
+    fn steps(self) -> Steps {
+        let eased = |fade_in, visible, fade_out, hidden| Steps {
+            fade_in,
+            fade_in_curve: Curve::EaseInOut,
+            visible,
+            fade_out,
+            fade_out_curve: Curve::EaseInOut,
+            hidden,
+        };
+        match self {
+            Self::Linear => Steps {
+                fade_in_curve: Curve::Linear,
+                fade_out_curve: Curve::Linear,
+                ..eased(400, 700, 400, 500)
+            },
+            Self::Fast => eased(200, 700, 200, 200),
+            Self::Slow => eased(500, 1000, 750, 200),
+            Self::Subtle => eased(150, 900, 150, 200),
+            Self::Off | Self::Breathing | Self::Custom => Self::BREATHING,
+        }
+    }
+}
+
+/// How a fade goes, from its start to its end.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Curve {
+    /// At a constant rate.
+    Linear,
+    /// Slow at its start.
+    EaseIn,
+    /// Slow at its end.
+    EaseOut,
+    /// Slow at its start and at its end.
+    #[default]
+    EaseInOut,
+}
+
+/// A blink's cycle: the cursor holds visible, fades out, holds hidden, and
+/// fades in; without fades, it switches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pattern {
+    /// How long it holds visible.
+    pub visible: Duration,
+    /// Its fade out.
+    pub fade_out: Duration,
+    /// The fade out's curve.
+    pub fade_out_curve: Curve,
+    /// How long it holds hidden.
+    pub hidden: Duration,
+    /// Its fade in.
+    pub fade_in: Duration,
+    /// The fade in's curve.
+    pub fade_in_curve: Curve,
+}
+
+impl Pattern {
+    /// The cycle's length.
+    pub fn cycle(&self) -> Duration {
+        self.visible + self.fade_out + self.hidden + self.fade_in
     }
 }
 
@@ -156,8 +419,9 @@ pub fn blinks(cursor: &SnapshotCursor, config: &CursorConfig, focused: bool) -> 
         }
 }
 
-/// The clock of the blinking cursor: on, then off, for [`BLINK_INTERVAL`]
-/// each, from the last key or output and for [`BLINK_TIMEOUT`]; then on.
+/// The clock of the blinking cursor and text: on, then off, for the
+/// config's interval each, from the last key or output and until its
+/// timeout; then on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Blink {
     since: Instant,
@@ -174,20 +438,34 @@ impl Blink {
         self.since = now;
     }
 
-    /// Whether the cursor shows at `now`, and when that changes next:
-    /// `None` once it stays on.
-    pub fn at(&self, now: Instant) -> (bool, Option<Instant>) {
-        let elapsed = now.saturating_duration_since(self.since);
-        if elapsed >= BLINK_TIMEOUT {
+    /// When it started blinking, last.
+    pub fn since(&self) -> Instant {
+        self.since
+    }
+
+    /// When it stops blinking, after `config`'s timeout; `None` for never.
+    pub fn stops(&self, config: &CursorConfig) -> Option<Instant> {
+        config.timeout().map(|timeout| self.since + timeout)
+    }
+
+    /// Whether it blinks still at `now`, before `config`'s timeout.
+    pub fn blinks(&self, now: Instant, config: &CursorConfig) -> bool {
+        self.stops(config).is_none_or(|stops| now < stops)
+    }
+
+    /// Whether what blinks shows at `now`, on and off for `config`'s
+    /// interval, and when that changes next: `None` once it stays on.
+    pub fn at(&self, now: Instant, config: &CursorConfig) -> (bool, Option<Instant>) {
+        if !self.blinks(now, config) {
             return (true, None);
         }
-        let phase = elapsed.as_nanos() / BLINK_INTERVAL.as_nanos();
-        // Fewer phases than the timeout's, which fits a `u32`.
-        let next = self.since + BLINK_INTERVAL * (phase as u32 + 1);
-        (
-            phase.is_multiple_of(2),
-            Some(next.min(self.since + BLINK_TIMEOUT)),
-        )
+        let interval = Duration::from_millis(u64::from(config.blink_interval.0));
+        let elapsed = now.saturating_duration_since(self.since);
+        let phase = elapsed.as_nanos() / interval.as_nanos();
+        // An hour's phases at most, which fit a `u32`.
+        let next = self.since + interval * u32::try_from(phase + 1).unwrap_or(u32::MAX);
+        let next = self.stops(config).map_or(next, |stops| next.min(stops));
+        (phase.is_multiple_of(2), Some(next))
     }
 }
 
@@ -210,7 +488,7 @@ mod tests {
         CursorConfig {
             shape,
             blink,
-            thickness: None,
+            ..CursorConfig::default()
         }
     }
 
@@ -289,7 +567,8 @@ mod tests {
     fn blinking_goes_on_and_off_then_stops_on() {
         let start = Instant::now();
         let blink = Blink::new(start);
-        let at = |millis: u64| blink.at(start + Duration::from_millis(millis));
+        let config = CursorConfig::default();
+        let at = |millis: u64| blink.at(start + Duration::from_millis(millis), &config);
         let after = |millis: u64| Some(start + Duration::from_millis(millis));
         assert_eq!(at(0), (true, after(500)));
         assert_eq!(at(499), (true, after(500)));
@@ -305,12 +584,104 @@ mod tests {
     fn a_restart_blinks_again_from_on() {
         let start = Instant::now();
         let mut blink = Blink::new(start);
+        let config = CursorConfig::default();
         let later = start + Duration::from_secs(20);
-        assert_eq!(blink.at(later), (true, None));
+        assert_eq!(blink.at(later, &config), (true, None));
         blink.restart(later);
         assert_eq!(
-            blink.at(later + Duration::from_millis(700)),
+            blink.at(later + Duration::from_millis(700), &config),
             (false, Some(later + Duration::from_millis(1000)))
         );
+    }
+
+    #[test]
+    fn the_config_s_interval_and_timeout_time_the_clock() {
+        let start = Instant::now();
+        let blink = Blink::new(start);
+        let config = CursorConfig {
+            blink_interval: Interval::try_from(200).unwrap(),
+            blink_timeout: Timeout::try_from(1).unwrap(),
+            ..CursorConfig::default()
+        };
+        let after = |millis: u64| start + Duration::from_millis(millis);
+        assert_eq!(blink.at(after(250), &config), (false, Some(after(400))));
+        assert_eq!(blink.at(after(900), &config), (true, Some(after(1000))));
+        assert_eq!(blink.at(after(1000), &config), (true, None));
+        assert_eq!(blink.stops(&config), Some(after(1000)));
+        // A timeout of 0 never stops.
+        let never = CursorConfig {
+            blink_timeout: Timeout::try_from(0).unwrap(),
+            ..config
+        };
+        assert_eq!(blink.stops(&never), None);
+        assert!(blink.blinks(after(3_600_000), &never));
+        assert!(blink.at(after(3_600_100), &never).0);
+        // Out of their ranges, none.
+        assert!(Interval::try_from(99).is_err() && Interval::try_from(5001).is_err());
+        assert!(Timeout::try_from(3601).is_err());
+        assert!(Span::try_from(10_001).is_err());
+    }
+
+    #[test]
+    fn each_smooth_blink_has_iterm2_s_steps_or_the_keys() {
+        let millis = |millis| Duration::from_millis(millis);
+        let pattern = |smooth_blink| {
+            CursorConfig {
+                smooth_blink,
+                ..CursorConfig::default()
+            }
+            .pattern()
+        };
+        let eased = Curve::EaseInOut;
+        for (preset, steps) in [
+            (SmoothBlink::Breathing, (900, 500, 900, 500, eased)),
+            (SmoothBlink::Linear, (400, 700, 400, 500, Curve::Linear)),
+            (SmoothBlink::Fast, (200, 700, 200, 200, eased)),
+            (SmoothBlink::Slow, (500, 1000, 750, 200, eased)),
+            (SmoothBlink::Subtle, (150, 900, 150, 200, eased)),
+        ] {
+            let (fade_in, visible, fade_out, hidden, curve) = steps;
+            assert_eq!(
+                pattern(preset),
+                Pattern {
+                    visible: millis(visible),
+                    fade_out: millis(fade_out),
+                    fade_out_curve: curve,
+                    hidden: millis(hidden),
+                    fade_in: millis(fade_in),
+                    fade_in_curve: curve,
+                },
+                "{preset:?}"
+            );
+        }
+        // Off switches, on and off for the interval each.
+        let off = pattern(SmoothBlink::Off);
+        assert_eq!((off.visible, off.hidden), (millis(500), millis(500)));
+        assert_eq!(
+            (off.fade_in, off.fade_out),
+            (Duration::ZERO, Duration::ZERO)
+        );
+        assert_eq!(off.cycle(), millis(1000));
+        // Custom takes the keys, Breathing's by default.
+        assert_eq!(
+            pattern(SmoothBlink::Custom),
+            pattern(SmoothBlink::Breathing)
+        );
+        let custom = CursorConfig {
+            smooth_blink: SmoothBlink::Custom,
+            fade_in: Span::try_from(100).unwrap(),
+            fade_in_curve: Curve::EaseIn,
+            visible: Span::try_from(200).unwrap(),
+            fade_out: Span::try_from(300).unwrap(),
+            fade_out_curve: Curve::EaseOut,
+            hidden: Span::try_from(400).unwrap(),
+            ..CursorConfig::default()
+        }
+        .pattern();
+        assert_eq!(
+            (custom.fade_in, custom.fade_in_curve, custom.fade_out_curve),
+            (millis(100), Curve::EaseIn, Curve::EaseOut)
+        );
+        assert_eq!(custom.cycle(), millis(1000));
     }
 }

@@ -791,13 +791,8 @@ pub fn preedit(
     }
     let widths = Widths::default();
     let mut column = start;
-    let mut cursor = None;
-    let mut placed = Vec::new();
     let mut text = String::new();
-    for (at, character) in preedit.text.char_indices() {
-        if at == preedit.cursor {
-            cursor = Some(column);
-        }
+    for character in preedit.text.chars() {
         let width = u16::from(widths.char_width(character));
         if width == 0 {
             continue;
@@ -831,7 +826,6 @@ pub fn preedit(
                 color: foreground,
             });
         }
-        placed.push((column, width));
         column += width;
     }
     cut_lines(batch, row, start..column);
@@ -844,24 +838,150 @@ pub fn preedit(
         thickness: cell.underline_thickness,
         color: foreground,
     });
-    if let Some(drawn) = &mut batch.cursor {
-        let at = cursor.unwrap_or(column).min(columns - 1);
-        // A wide character under the cursor, composed or the grid's after
-        // the composition, takes it whole, from its first cell, as a
-        // composition cut at the right edge can leave the cursor on its
-        // second.
-        let (at, width) = match placed
-            .iter()
-            .find(|&&(first, width)| (first..first + width).contains(&at))
-        {
-            Some(&(first, width)) => (first, width),
-            None if width_at(at) == Some(Width::Wide) => (at, 2),
-            None => (at, 1),
-        };
+    if let (Some(drawn), Some((at, width))) = (
+        &mut batch.cursor,
+        composed_cursor(snapshot, preedit, columns),
+    ) {
         drawn.column = at;
-        drawn.columns = width.min(columns - at);
+        drawn.columns = width;
     }
     settle_cursor(batch, snapshot);
+}
+
+/// Where the cursor goes in the composition of `preedit` at the cursor of
+/// `snapshot`, in a grid of `columns`: its column and the cells that it
+/// covers, as [`preedit`] draws it; `None` off the grid.
+fn composed_cursor(snapshot: &Snapshot, preedit: &Preedit, columns: u16) -> Option<(u16, u16)> {
+    let position = snapshot.cursor().position;
+    let (mut start, row) = (position.x, position.y);
+    if row >= snapshot.rows() || start >= columns {
+        return None;
+    }
+    let line = snapshot.line(row);
+    let width_at = |column: u16| {
+        line.cells()
+            .get(usize::from(column))
+            .map(|cell| cell.width())
+    };
+    if start > 0 && width_at(start) == Some(Width::SpacerTail) {
+        start -= 1;
+    }
+    let widths = Widths::default();
+    let mut column = start;
+    let mut cursor = None;
+    let mut placed = Vec::new();
+    for (at, character) in preedit.text.char_indices() {
+        if at == preedit.cursor {
+            cursor = Some(column);
+        }
+        let width = u16::from(widths.char_width(character));
+        if width == 0 {
+            continue;
+        }
+        if column + width > columns {
+            break;
+        }
+        placed.push((column, width));
+        column += width;
+    }
+    let at = cursor.unwrap_or(column).min(columns - 1);
+    // A wide character under the cursor, composed or the grid's after the
+    // composition, takes it whole, from its first cell, as a composition
+    // cut at the right edge can leave the cursor on its second.
+    let (at, width) = match placed
+        .iter()
+        .find(|&&(first, width)| (first..first + width).contains(&at))
+    {
+        Some(&(first, width)) => (first, width),
+        None if width_at(at) == Some(Width::Wide) => (at, 2),
+        None => (at, 1),
+    };
+    Some((at, width.min(columns - at)))
+}
+
+/// The cursor's cells of `batch`, a frame's grid of `snapshot` that drew no
+/// cursor, as a batch of their own, for a layer over the grid that blinks
+/// apart from it: the cursor as `look` has it look, at its cell, or after
+/// the text that `preedit` composes; the text under a block in its cell's
+/// background, as the grid's own cursor shows it; and nothing else, as the
+/// grid shows the rest. With the cursor's column and row in the grid;
+/// `None` while the program hides it.
+pub fn cursor_cells(
+    batch: &CellBatch,
+    snapshot: &Snapshot,
+    look: CursorLook,
+    cell: &CellMetrics,
+    preedit: Option<&Preedit>,
+) -> Option<(u16, u16, CellBatch)> {
+    let mut cursor = place_cursor(snapshot, look, cell)?;
+    if let Some((at, width)) = preedit
+        .filter(|preedit| !preedit.text.is_empty())
+        .and_then(|preedit| composed_cursor(snapshot, preedit, batch.columns))
+    {
+        cursor.column = at;
+        cursor.columns = width;
+    }
+    let (column, row) = (cursor.column, cursor.row);
+    let covered = column..column + cursor.columns;
+    let first = usize::from(row) * usize::from(batch.columns) + usize::from(column);
+    let backgrounds = batch
+        .backgrounds
+        .get(first..first + usize::from(cursor.columns))?
+        .to_vec();
+    let glyphs = batch
+        .glyphs
+        .iter()
+        .filter(|glyph| glyph.row == row && covered.contains(&glyph.column))
+        .map(|&glyph| CellGlyph {
+            column: glyph.column - column,
+            row: 0,
+            ..glyph
+        })
+        .collect();
+    let lines = batch
+        .lines
+        .iter()
+        .filter(|line| {
+            line.row == row && line.column < covered.end && line.column + line.columns > column
+        })
+        .map(|&line| {
+            let start = line.column.max(column);
+            let end = (line.column + line.columns).min(covered.end);
+            CellLine {
+                column: start - column,
+                row: 0,
+                columns: end - start,
+                ..line
+            }
+        })
+        .collect();
+    let mut cells = CellBatch {
+        x: 0,
+        y: 0,
+        columns: cursor.columns,
+        rows: 1,
+        cell_width: batch.cell_width,
+        cell_height: batch.cell_height,
+        backgrounds,
+        glyphs,
+        lines,
+        cursor: Some(CellCursor {
+            column: 0,
+            row: 0,
+            ..cursor
+        }),
+    };
+    settle_cursor(&mut cells, snapshot);
+    // The grid shows its cells' backgrounds, and their text but under a
+    // block.
+    for background in &mut cells.backgrounds {
+        *background = background.with_alpha(0.0);
+    }
+    if cursor.shape != CursorShape::Block {
+        cells.glyphs.clear();
+        cells.lines.clear();
+    }
+    Some((column, row, cells))
 }
 
 /// The cell of `snapshot`'s cursor, its column and row, and whether it is
@@ -1286,6 +1406,110 @@ mod tests {
         assert_eq!(columns(looked(text, steady, false)), [0, 1, 2, 3]);
         assert!(has_blinking_text(&snapshot(8, 1, text)));
         assert!(!has_blinking_text(&snapshot(8, 1, "abc")));
+    }
+
+    #[test]
+    fn the_cursor_s_cells_go_apart_from_the_grid() {
+        // The cursor on `b`, red and underlined.
+        let shown = snapshot(6, 2, "a\x1b[41;4mb\x1b[0mc\x1b[2D");
+        let (mut first, mut second) = (Vec::new(), Vec::new());
+        let block = CursorLook {
+            shape: CursorShape::Block,
+            thickness: 2,
+        };
+        let whole = cells(
+            &shown,
+            &cell(),
+            4,
+            30,
+            None,
+            Some(block),
+            &mut atlas(&mut first),
+        );
+        let grid = cells(&shown, &cell(), 4, 30, None, None, &mut atlas(&mut second));
+        let (column, row, apart) = cursor_cells(&grid, &shown, block, &cell(), None).unwrap();
+        assert_eq!((column, row), (1, 0));
+        assert_eq!((apart.x, apart.y, apart.columns, apart.rows), (0, 0, 1, 1));
+        assert_eq!((apart.cell_width, apart.cell_height), (8, 16));
+        // The block, and its text, as the grid's own cursor has them.
+        let own = whole.cursor.unwrap();
+        assert_eq!(
+            apart.cursor,
+            Some(CellCursor {
+                column: 0,
+                row: 0,
+                ..own
+            })
+        );
+        let under = *whole
+            .glyphs
+            .iter()
+            .find(|glyph| (glyph.column, glyph.row) == (1, 0))
+            .unwrap();
+        assert_eq!(
+            apart.glyphs,
+            [CellGlyph {
+                column: 0,
+                row: 0,
+                ..under
+            }]
+        );
+        let red = color(Colors::default().palette[1]);
+        assert_eq!(under.color, red);
+        let lines: Vec<(u16, u16, Color)> = apart
+            .lines
+            .iter()
+            .map(|line| (line.column, line.columns, line.color))
+            .collect();
+        assert_eq!(lines, [(0, 1, red)]);
+        // Over the grid's backgrounds, which it leaves clear; the grid keeps
+        // its own colors under the cursor, and draws none.
+        assert!(
+            apart
+                .backgrounds
+                .iter()
+                .all(|background| background.alpha == 0.0)
+        );
+        assert!(grid.cursor.is_none());
+        let kept = grid.glyphs.iter().find(|glyph| glyph.column == 1).unwrap();
+        assert_ne!(kept.color, red);
+        // A bar is its shape alone, over the grid's text.
+        let bar = CursorLook {
+            shape: CursorShape::Bar,
+            thickness: 2,
+        };
+        let (_, _, apart) = cursor_cells(&grid, &shown, bar, &cell(), None).unwrap();
+        assert!(apart.glyphs.is_empty() && apart.lines.is_empty());
+        assert_eq!(
+            apart.cursor.map(|cursor| cursor.shape),
+            Some(CursorShape::Bar)
+        );
+        // A wide character's two cells, and none for a hidden cursor.
+        let wide = snapshot(6, 1, "日\x1b[2D");
+        let grid = cells(&wide, &cell(), 0, 0, None, None, &mut atlas(&mut first));
+        let (_, _, apart) = cursor_cells(&grid, &wide, block, &cell(), None).unwrap();
+        assert_eq!(apart.columns, 2);
+        let hidden = snapshot(6, 1, "a\x1b[?25l");
+        let grid = cells(&hidden, &cell(), 0, 0, None, None, &mut atlas(&mut first));
+        assert!(cursor_cells(&grid, &hidden, block, &cell(), None).is_none());
+        // In a composition, at its own cursor, over its wide character.
+        let typing = snapshot(6, 1, "a");
+        let composing = Preedit {
+            text: "日本".to_owned(),
+            cursor: 3,
+        };
+        let mut grid = cells(&typing, &cell(), 0, 0, None, None, &mut atlas(&mut first));
+        preedit(
+            &mut grid,
+            &typing,
+            &cell(),
+            &composing,
+            &mut atlas(&mut second),
+        );
+        let (column, _, apart) =
+            cursor_cells(&grid, &typing, block, &cell(), Some(&composing)).unwrap();
+        assert_eq!((column, apart.columns), (3, 2));
+        assert_eq!(apart.glyphs.len(), 1);
     }
 
     #[test]

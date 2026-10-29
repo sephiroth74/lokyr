@@ -12,6 +12,7 @@ mod alert;
 mod app;
 mod appearance;
 mod backend;
+mod cursor;
 mod definition;
 mod frame;
 mod keys;

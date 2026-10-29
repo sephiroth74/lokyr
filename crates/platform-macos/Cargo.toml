@@ -23,6 +23,7 @@ objc2-app-kit = { workspace = true, features = [
     "objc2-core-foundation",
     "objc2-quartz-core",
     "objc2-uniform-type-identifiers",
+    "NSAccessibility",
     "NSAlert",
     "NSAppearance",
     "NSApplication",
@@ -56,8 +57,12 @@ objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
     "std",
     "objc2-core-foundation",
+    "CAAnimation",
+    "CABase",
     "CADisplayLink",
     "CALayer",
+    "CAMediaTiming",
+    "CAMediaTimingFunction",
     "CAMetalLayer",
 ] }
 objc2-foundation = { workspace = true, features = [
@@ -79,6 +84,7 @@ objc2-foundation = { workspace = true, features = [
     "NSRunLoop",
     "NSString",
     "NSTimer",
+    "NSValue",
     "NSURL",
 ] }
 objc2-uniform-type-identifiers = { workspace = true, features = ["std", "UTType", "UTCoreTypes"] }
@@ -177,6 +183,10 @@ harness = false
 
 [[test]]
 name = "alert_keys"
+harness = false
+
+[[test]]
+name = "cursor_layer"
 harness = false
 
 [[test]]

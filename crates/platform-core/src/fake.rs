@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, MainMenu,
-    Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker, WindowAttributes,
-    WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, CursorPlace, Error, Handler,
+    MainMenu, Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -38,6 +38,11 @@ pub struct FakeWindow {
     pub frame_held: bool,
     /// Whether it keeps its frame.
     pub remember: bool,
+    /// Where the app placed its cursor's layer, and how it blinks: `None`
+    /// while it is hidden.
+    pub cursor: Option<CursorPlace>,
+    /// How many times the app placed it, or hid it.
+    pub cursor_places: usize,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
     /// Whether the app asked for the pointer's moves without a button.
@@ -515,6 +520,8 @@ impl Platform for Fake {
                 translucent: None,
                 frame_held: false,
                 remember: attributes.remember,
+                cursor: None,
+                cursor_places: 0,
                 restore: attributes.restore,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
@@ -552,6 +559,17 @@ impl Platform for Fake {
     fn window_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {
         // Nothing draws into the fake's windows.
         None
+    }
+
+    fn cursor_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {
+        None
+    }
+
+    fn set_cursor(&mut self, window: WindowId, cursor: Option<&CursorPlace>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.cursor = cursor.copied();
+            state.cursor_places += 1;
+        }
     }
 
     fn request_frame(&mut self, window: WindowId) {

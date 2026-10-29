@@ -25,6 +25,7 @@ use objc2_foundation::{
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
+use crate::cursor::CursorView;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::shared::{Pending, Shared};
@@ -34,6 +35,8 @@ use crate::text_input::{self, Handled, Step, TextInput};
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
+    /// The view of the cursor's cells, over the content's.
+    cursor: Retained<CursorView>,
     pacer: Pacer,
     /// Whether the window is hidden or covered, as its delegate tells, and
     /// whether it asked for a frame meanwhile.
@@ -97,6 +100,7 @@ impl Window {
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
+        let cursor = CursorView::new(mtm, &view);
         // The keys go to the view.
         ns_window.makeFirstResponder(Some(&view));
         let pacer = Pacer::new(mtm, &view, shared.clone(), id);
@@ -114,6 +118,7 @@ impl Window {
         Self {
             ns_window,
             view,
+            cursor,
             pacer,
             occluded,
             frame_held: Cell::new(false),
@@ -126,6 +131,17 @@ impl Window {
     /// as long as the window.
     pub(crate) fn view_address(&self) -> NonNull<c_void> {
         NonNull::from(&*self.view).cast()
+    }
+
+    /// The view of the cursor's cells, by its address, for a renderer: it
+    /// lives as long as the window.
+    pub(crate) fn cursor_address(&self) -> NonNull<c_void> {
+        self.cursor.address()
+    }
+
+    /// Places the cursor's view, blinking as `place` says, or hides it.
+    pub(crate) fn set_cursor(&self, place: Option<&lokyr_platform_core::CursorPlace>) {
+        self.cursor.place(place, self.view.bounds().size.height);
     }
 
     /// Places the window down and to the right of a window of the frame

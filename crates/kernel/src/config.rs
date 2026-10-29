@@ -1543,6 +1543,17 @@ mod tests {
             let message = error(&format!("[window]\n{text}\n")).1;
             assert!(message.contains(wanted), "{text}: {message}");
         }
+        // The blink's keys, out of their ranges and of their names.
+        for (text, wanted) in [
+            ("blink-interval = 50", "from 100 to 5000, not 50"),
+            ("blink-timeout = 4000", "from 0 to 3600, not 4000"),
+            ("fade-in = 20000", "from 0 to 10000, not 20000"),
+            ("smooth-blink = \"pulse\"", "pulse"),
+            ("fade-out-curve = \"bounce\"", "bounce"),
+        ] {
+            let message = error(&format!("[cursor]\n{text}\n")).1;
+            assert!(message.contains(wanted), "{text}: {message}");
+        }
         assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
@@ -1550,6 +1561,7 @@ mod tests {
                 shape: Shape::Bar,
                 blink: false,
                 thickness: Some(Thickness::try_from(1.5).unwrap()),
+                ..CursorConfig::default()
             }
         );
         let font = config.font;
@@ -2000,7 +2012,23 @@ mod tests {
                 "opaque-titlebar"
             ]
         );
-        assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);
+        assert_eq!(
+            keys::<CursorConfig>(),
+            [
+                "shape",
+                "blink",
+                "thickness",
+                "blink-interval",
+                "blink-timeout",
+                "smooth-blink",
+                "fade-in",
+                "fade-in-curve",
+                "visible",
+                "fade-out",
+                "fade-out-curve",
+                "hidden"
+            ]
+        );
         let font = keys::<FontConfig>();
         assert_eq!(font.len(), 14);
         assert_eq!(

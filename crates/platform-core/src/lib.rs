@@ -13,7 +13,7 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 mod event;
 #[cfg(any(test, feature = "fake"))]
@@ -91,6 +91,52 @@ pub struct WindowAttributes {
     /// rather than of `size`, cascaded or centred: on a screen that is
     /// still there.
     pub restore: bool,
+}
+
+/// Where the cursor's layer of a window goes, and how it blinks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CursorPlace {
+    /// Its top left corner, in points from the content's.
+    pub origin: Point,
+    /// Its size, in points.
+    pub size: Size,
+    /// How it blinks; `None` to show it, steady.
+    pub blink: Option<Blink>,
+}
+
+/// A blink of the cursor's layer, which the window server runs without the
+/// app: from `start`, on, it holds visible, fades out, holds hidden, and
+/// fades in, and goes round again; without fades, it switches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Blink {
+    /// When it started, at its visible hold's start.
+    pub start: Instant,
+    /// How long it holds visible.
+    pub visible: Duration,
+    /// Its fade out.
+    pub fade_out: Duration,
+    /// The fade out's curve.
+    pub fade_out_curve: Easing,
+    /// How long it holds hidden.
+    pub hidden: Duration,
+    /// Its fade in.
+    pub fade_in: Duration,
+    /// The fade in's curve.
+    pub fade_in_curve: Easing,
+}
+
+/// How a fade goes, from its start to its end.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Easing {
+    /// At a constant rate.
+    #[default]
+    Linear,
+    /// Slow at its start.
+    EaseIn,
+    /// Slow at its end.
+    EaseOut,
+    /// Slow at its start and at its end.
+    EaseInOut,
 }
 
 /// What the process has used of the machine, as the system counts it.
@@ -201,6 +247,18 @@ pub trait Platform {
     /// that keeps the layer retains it. `None` for a platform that draws
     /// nothing, such as the fake one.
     fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
+
+    /// What a renderer draws the cursor's cell of a window into, over its
+    /// content: on the Mac, a view of its own, whose layer is a
+    /// `CAMetalLayer`, clear where nothing is drawn, which the window server
+    /// blinks, as [`Platform::set_cursor`] says. Valid as
+    /// [`Platform::window_handle`]'s is; `None` for a platform that draws
+    /// nothing, such as the fake one.
+    fn cursor_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
+
+    /// Places the cursor's layer of `window`, which shows what the renderer
+    /// drew into it, blinking as the place says; `None` hides it.
+    fn set_cursor(&mut self, window: WindowId, cursor: Option<&CursorPlace>);
 
     /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
     /// current call returns, if the window drew no frame since its display's
