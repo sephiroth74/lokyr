@@ -38,6 +38,12 @@ pub(crate) fn current(mtm: MainThreadMarker) -> Appearance {
 /// Gives the application the appearance `appearance`, or the system's
 /// with `None`.
 pub(crate) fn set(mtm: MainThreadMarker, appearance: Option<Appearance>) {
+    NSApplication::sharedApplication(mtm).setAppearance(named(appearance).as_deref());
+}
+
+/// AppKit's appearance of `appearance`, the aqua one or the dark one;
+/// `None` for none.
+pub(crate) fn named(appearance: Option<Appearance>) -> Option<Retained<NSAppearance>> {
     // SAFETY: the names are AppKit's constants.
     let name = appearance.map(|appearance| unsafe {
         match appearance {
@@ -45,8 +51,7 @@ pub(crate) fn set(mtm: MainThreadMarker, appearance: Option<Appearance>) {
             Appearance::Dark => NSAppearanceNameDarkAqua,
         }
     });
-    let appearance = name.and_then(NSAppearance::appearanceNamed);
-    NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
+    name.and_then(NSAppearance::appearanceNamed)
 }
 
 pub(crate) struct ObserverIvars {

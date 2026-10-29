@@ -1518,6 +1518,10 @@ impl App {
                 pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
+                // A man page's light background takes a dark title.
+                if page.is_some() {
+                    platform.set_window_appearance(window, Some(Appearance::Light));
+                }
                 let mut state = Window::new(surface, ids, focused, Instant::now());
                 state.page = page;
                 self.windows.insert(window, state);
@@ -5051,6 +5055,8 @@ mod tests {
         // title the page's, in the man page's colors.
         let shown = fake.window(page).unwrap();
         assert_eq!(shown.title, "man world");
+        assert_eq!(shown.appearance, Some(Appearance::Light));
+        assert_eq!(fake.window(window).unwrap().appearance, None);
         assert_eq!(
             shown.size.points,
             Size {

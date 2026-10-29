@@ -37,6 +37,8 @@ pub struct FakeWindow {
     pub mouse_moves: bool,
     /// How the pointer looks over its content, as the app asked.
     pub pointer: PointerShape,
+    /// Its own appearance, if the app gave it one.
+    pub appearance: Option<Appearance>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -441,6 +443,7 @@ impl Platform for Fake {
                 translucent: None,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                appearance: None,
             },
         );
         Ok(id)
@@ -603,6 +606,12 @@ impl Platform for Fake {
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.translucent = backdrop;
+        }
+    }
+
+    fn set_window_appearance(&mut self, window: WindowId, appearance: Option<Appearance>) {
+        if let Some(window) = self.windows.get_mut(&window) {
+            window.appearance = appearance;
         }
     }
 

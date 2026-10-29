@@ -14,8 +14,9 @@ use lokyr_platform_core::{
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSBeep, NSEvent, NSEventModifierFlags, NSEventType, NSImage, NSMenu,
-    NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType, NSView,
+    NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
+    NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
+    NSView,
 };
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
@@ -561,6 +562,14 @@ impl Platform for Backend {
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>) {
         if let Some(window) = self.windows.get(&window) {
             window.set_translucent(backdrop);
+        }
+    }
+
+    fn set_window_appearance(&mut self, window: WindowId, appearance: Option<Appearance>) {
+        if let Some(window) = self.windows.get(&window) {
+            window
+                .ns_window()
+                .setAppearance(appearance::named(appearance).as_deref());
         }
     }
 }

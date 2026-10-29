@@ -244,6 +244,11 @@ pub trait Platform {
     /// or, with `None`, keeps the window opaque, as it opens.
     fn set_translucent(&mut self, window: WindowId, backdrop: Option<Backdrop>);
 
+    /// Gives `window` the appearance `appearance`, its titlebar's too,
+    /// whatever the app's is, as a window of a light background needs a
+    /// dark title over it; or the app's again with `None`.
+    fn set_window_appearance(&mut self, window: WindowId, appearance: Option<Appearance>);
+
     /// Whether the pointer's moves over `window` with no button held come
     /// as [`WindowEvent::MouseMoved`]: not as it opens, as each move would
     /// wake the app. Moves with a button held always come.
