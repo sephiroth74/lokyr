@@ -74,7 +74,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **`render-metal`**: instanced cells, cursor (block, bar and underline, blinking as DECSCUSR asks), selection, decorations.
 - **Minimal kernel**: commands, keymap, config with hot reload, plus the `core-actions` plugin.
 - **Terminal settings**: the reported `TERM`, the width tables and the width of ambiguous characters ([VT-CORE](VT-CORE.md#settings)).
-- **Environment and bundle**: locale, login shell, TCC strings, signed bundle; the bundle's `lokyr` on the panes' `PATH`, and Settings…, which opens the config file in the text editor.
+- **Environment and bundle**: locale, login shell, TCC strings, signed bundle; the bundle's `lokyr` on the panes' `PATH`, and Settings…, which opens the config file in the text editor; a performance overlay, frames a second, a frame's times, wakeups, memory and output.
 
 **Exit**: used as the main terminal for a week; Japanese IME works; budgets measured; zero wakeups when idle.
 
