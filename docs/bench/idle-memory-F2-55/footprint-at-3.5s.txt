@@ -1,0 +1,40 @@
+======================================================================
+lokyr [11718]: 64-bit    Footprint: 96 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+  56 MB        0 B          0 B         23    IOSurface
+  13 MB        0 B          0 B         11    Malloc Small
+7168 KB        0 B          0 B         14    Owned physical footprint (unmapped)
+6224 KB        0 B      4688 KB         53    IOAccelerator (graphics)
+4464 KB        0 B       104 MB         48    Owned physical footprint (unmapped) (graphics)
+1876 KB        0 B          0 B       1000    __DATA_DIRTY
+1531 KB        0 B          0 B       1016    __DATA
+1472 KB        0 B          0 B         12    Malloc Metadata
+ 721 KB        0 B          0 B          1    page table
+ 592 KB        0 B        32 KB         42    CoreAnimation
+ 576 KB        0 B          0 B          4    CoreUI Image Data
+ 544 KB        0 B        64 KB         30    Stack
+ 544 KB        0 B          0 B         41    Untagged
+ 511 KB        0 B          0 B        535    __AUTH
+ 320 KB        0 B          0 B          2    Dispatch Continuations
+ 288 KB        0 B          0 B          1    Malloc Tiny
+ 206 KB        0 B          0 B       2691    unused dyld shared cache area
+ 128 KB        0 B          0 B          1    Accelerate Framework
+ 128 KB        0 B          0 B          4    __TPRO_CONST
+  64 KB        0 B          0 B          2    IOAccelerator
+  64 KB        0 B          0 B          7    IOKit
+  36 KB        0 B          0 B          1    __OBJC_RW
+  32 KB        0 B          0 B          1    Activity Tracing
+  32 KB        0 B          0 B          2    CoreGraphics
+  16 KB      80 KB          0 B       1061    __DATA_CONST
+  16 KB        0 B          0 B          1    Deferred Reclaim
+  16 KB        0 B          0 B          1    OS Alloc Once
+  16 KB        0 B          0 B          1    Foundation
+  16 KB        0 B          0 B          1    ColorSync
+    0 B      14 MB          0 B         30    mapped file
+    0 B    2000 KB          0 B       1148    __TEXT
+    0 B      48 KB          0 B          4    __LINKEDIT
+    0 B        0 B          0 B          1    __OBJC_RO
+    0 B        0 B          0 B          1    __FONT_DATA
