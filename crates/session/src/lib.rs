@@ -75,8 +75,14 @@ struct Shared {
     queue: Queue,
     /// Calls the main thread back, once a change is waiting for it.
     wake: Box<dyn Fn() + Send + Sync>,
-    /// Whether a change waits for the main thread to look.
-    woken: AtomicBool,
+    /// Whether a change of the grid waits for the main thread to look,
+    /// which a snapshot lets wake again: a pane that is not drawn asks
+    /// for no more.
+    grid_woken: AtomicBool,
+    /// Whether something told waits for the main thread to take it, a
+    /// terminal's event or a bell, which taking the events lets wake again,
+    /// whether the pane is drawn or not.
+    told_woken: AtomicBool,
     /// Whether the program's output has ended.
     ended: AtomicBool,
     /// How many slices of output the I/O thread has parsed.
@@ -84,10 +90,13 @@ struct Shared {
 }
 
 impl Shared {
-    /// Tells the main thread of a change, unless it has a change to look
-    /// at already.
-    fn changed(&self) {
-        if !self.woken.swap(true, Ordering::AcqRel) {
+    /// Tells the main thread of a change of the grid, unless it has one to
+    /// look at already; and of something `told`, unless something told
+    /// waits for it already.
+    fn changed(&self, told: bool) {
+        let grid = !self.grid_woken.swap(true, Ordering::AcqRel);
+        let told = told && !self.told_woken.swap(true, Ordering::AcqRel);
+        if grid || told {
             (self.wake)();
         }
     }
@@ -113,7 +122,10 @@ pub struct Session {
 impl Session {
     /// Starts the program of `options` in a new terminal. `wake` is called,
     /// from the session's threads, when the terminal changes and the main
-    /// thread has looked at the last change, and when the output ends.
+    /// thread has looked at the last change, as [`Session::snapshot`] does;
+    /// when the terminal tells something, an event or a bell, and the main
+    /// thread has taken what it told last, as [`Session::clear_told`] lets
+    /// it; and when the output ends.
     pub fn spawn(
         options: &Options,
         wake: impl Fn() + Send + Sync + 'static,
@@ -130,7 +142,8 @@ impl Session {
             )),
             queue: Queue::default(),
             wake: Box::new(wake),
-            woken: AtomicBool::new(false),
+            grid_woken: AtomicBool::new(false),
+            told_woken: AtomicBool::new(false),
             ended: AtomicBool::new(false),
             slices: AtomicU64::new(0),
         });
@@ -178,7 +191,14 @@ impl Session {
     /// before it looks at the terminal, or with the lock held, so that a
     /// change made after its look calls `wake`.
     pub fn clear_wake(&self) {
-        self.shared.woken.store(false, Ordering::Release);
+        self.shared.grid_woken.store(false, Ordering::Release);
+    }
+
+    /// Lets the next event or bell call `wake` again, as the main thread
+    /// takes the events: it calls it with the lock held, so that one told
+    /// after it took them calls `wake`.
+    pub fn clear_told(&self) {
+        self.shared.told_woken.store(false, Ordering::Release);
     }
 
     /// Whether the program's output has ended: the program, and every
@@ -370,7 +390,7 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
             if late {
                 terminal.end_synchronized_output();
                 drop(terminal);
-                shared.changed();
+                shared.changed(false);
             }
         }
         let n = match reader.read_until(&mut buffer, deadline) {
@@ -380,7 +400,9 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
             Ok(ReadOutcome::End) | Err(_) => break,
         };
         let mut terminal = shared.terminal.lock_in_turn();
+        let bells = terminal.bells();
         parser.advance(&mut *terminal, &buffer[..n]);
+        let told = terminal.has_events() || terminal.bells() != bells;
         if terminal.scroll_on_output() {
             terminal.scroll_viewport(Scroll::Bottom);
         }
@@ -397,7 +419,7 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
             update = started;
             deadline = Some(Instant::now() + sync_timeout);
         }
-        shared.changed();
+        shared.changed(told);
     }
 }
 
@@ -411,7 +433,8 @@ impl Drop for Ending<'_> {
         // No more output can end the update under way.
         self.0.terminal.lock_in_turn().end_synchronized_output();
         self.0.ended.store(true, Ordering::Release);
-        self.0.woken.store(true, Ordering::Release);
+        self.0.grid_woken.store(true, Ordering::Release);
+        self.0.told_woken.store(true, Ordering::Release);
         if thread::panicking() {
             // A wake that panics again, as the thread unwinds, would abort
             // the app.

@@ -623,6 +623,43 @@ fn a_snapshot_waits_for_a_synchronized_update_and_copies_only_changes() {
 }
 
 #[test]
+fn what_the_terminal_tells_wakes_again_once_taken_without_a_snapshot() {
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let session = {
+        let wakes = Arc::clone(&wakes);
+        let script = "echo one; read line; echo two; read line; printf '\\a'; read line";
+        Session::spawn(&sh(script), move || {
+            wakes.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap()
+    };
+    let wait_wakes = |count: usize| {
+        let start = Instant::now();
+        while wakes.load(Ordering::SeqCst) < count {
+            assert!(start.elapsed() < Duration::from_secs(10), "no wake");
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    wait_for(&session, "one", |terminal| shows(terminal, "one"));
+    wait_wakes(1);
+    // The main thread takes what was told, and draws nothing: the grid's
+    // change wakes no one, as no snapshot looked.
+    {
+        let mut terminal = session.lock();
+        session.clear_told();
+        terminal.take_events();
+    }
+    session.write("\n");
+    wait_for(&session, "two", |terminal| shows(terminal, "two"));
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    // A bell does.
+    session.write("\n");
+    wait_wakes(2);
+    assert_eq!(session.lock().bells(), 1);
+}
+
+#[test]
 fn a_snapshot_lets_the_next_change_wake_the_main_thread() {
     let wakes = Arc::new(AtomicUsize::new(0));
     let session = {

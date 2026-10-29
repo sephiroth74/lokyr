@@ -260,6 +260,9 @@ impl Pane {
         let session = self.session.as_ref()?;
         let (events, title, bells) = {
             let mut terminal = session.lock();
+            // What the terminal tells from now on wakes the main thread
+            // again, whether the pane is drawn or not.
+            session.clear_told();
             let events = terminal.take_events();
             let titled = events.contains(&terminal::Event::TitleChanged);
             let title = titled.then(|| terminal.title().to_owned());

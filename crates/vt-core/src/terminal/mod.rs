@@ -1121,6 +1121,11 @@ impl Terminal {
         self.events.take()
     }
 
+    /// Whether an event waits for the embedder to take it.
+    pub fn has_events(&self) -> bool {
+        !self.events.is_empty()
+    }
+
     /// Sets the size of a cell in pixels, which CSI 14 t and 16 t report;
     /// until then, they get no reply.
     pub fn set_cell_size(&mut self, width: u16, height: u16) {

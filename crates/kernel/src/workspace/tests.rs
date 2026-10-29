@@ -48,6 +48,57 @@ fn collect_until(workspace: &mut Workspace, done: impl Fn(&[Event]) -> bool) -> 
 }
 
 #[test]
+fn the_second_bell_of_a_pane_that_is_not_drawn_arrives() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let woken = Arc::clone(&wakes);
+    let program = Program::command(
+        "/bin/sh",
+        ["-c", "printf '\\a'; read line; printf 'more\\a'; read line"],
+    );
+    let pane = Pane::spawn(
+        &program,
+        &Environment::default(),
+        &Settings::default(),
+        grid(),
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        move || {
+            woken.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+    let id = pane.id();
+    let mut workspace = Workspace::new();
+    workspace.open_window(pane);
+    // The main thread's loop: it collects as it is woken, and draws
+    // nothing.
+    let mut seen = 0;
+    let mut bells = 0;
+    let start = Instant::now();
+    while bells < 2 {
+        assert!(start.elapsed() < Duration::from_secs(10), "{bells} bells");
+        let now = wakes.load(Ordering::SeqCst);
+        if now == seen {
+            std::thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+        seen = now;
+        workspace.collect();
+        let rang = workspace
+            .take_events()
+            .iter()
+            .filter(|event| **event == Event::Bell(id))
+            .count();
+        if rang > 0 && bells == 0 {
+            workspace.pane(id).unwrap().text("\n");
+        }
+        bells += rang;
+    }
+}
+
+#[test]
 fn a_window_opens_with_one_tab_whose_layout_is_its_pane() {
     let mut workspace = Workspace::new();
     let pane = pane("sleep 10");

@@ -158,6 +158,11 @@ impl Events {
     }
 
     /// Takes the events that wait, oldest first.
+    /// Whether an event waits.
+    pub(super) fn is_empty(&self) -> bool {
+        self.events.len() == self.empty
+    }
+
     pub(super) fn take(&mut self) -> Vec<Event> {
         std::mem::take(self).events.into_iter().flatten().collect()
     }
