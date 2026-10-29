@@ -13,10 +13,16 @@ use lokyr_platform_core::{
 use objc2::rc::Retained;
 use objc2::runtime::Sel;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
-use objc2_app_kit::{NSEventModifierFlags, NSMenu, NSMenuItem};
+use objc2_app_kit::{
+    NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuItem,
+};
 use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
 use crate::shared::{Pending, Shared};
+
+/// Commands that the backend keeps and the menus' targets read, as those
+/// whose items are dimmed.
+pub(crate) type Commands = Rc<RefCell<BTreeSet<String>>>;
 
 pub(crate) struct MenuTargetIvars {
     shared: Weak<Shared>,
@@ -25,9 +31,10 @@ pub(crate) struct MenuTargetIvars {
     window: Option<WindowId>,
     /// The commands of the menu's items, by their tags.
     commands: Vec<String>,
-    /// The commands whose items are dimmed, which the backend keeps for
-    /// the main menu.
-    disabled: Rc<RefCell<BTreeSet<String>>>,
+    /// The commands whose items are dimmed, and those whose items are
+    /// ticked, which the backend keeps for the main menu.
+    disabled: Commands,
+    checked: Commands,
 }
 
 define_class!(
@@ -56,14 +63,23 @@ define_class!(
         }
 
         // SAFETY: `NSMenuItemValidation`'s signature: AppKit asks it before
-        // it shows the item, and before its key runs it.
+        // it shows the item, and before its key runs it, which is when the
+        // item takes its tick too.
         #[unsafe(method(validateMenuItem:))]
         fn validate_menu_item(&self, item: &NSMenuItem) -> bool {
             let ivars = self.ivars();
-            usize::try_from(item.tag())
+            let command = usize::try_from(item.tag())
                 .ok()
-                .and_then(|tag| ivars.commands.get(tag))
-                .is_none_or(|command| !ivars.disabled.borrow().contains(command))
+                .and_then(|tag| ivars.commands.get(tag));
+            if let Some(command) = command {
+                let ticked = ivars.checked.borrow().contains(command);
+                item.setState(if ticked {
+                    NSControlStateValueOn
+                } else {
+                    NSControlStateValueOff
+                });
+            }
+            command.is_none_or(|command| !ivars.disabled.borrow().contains(command))
         }
     }
 
@@ -82,18 +98,18 @@ pub(crate) struct Built {
 }
 
 /// The menu bar of `menu`, whose items' target dims those of the commands
-/// in `disabled`.
+/// in `disabled`, and ticks those in `checked`.
 pub(crate) fn build(
     mtm: MainThreadMarker,
     shared: Weak<Shared>,
     menu: &MainMenu,
-    disabled: Rc<RefCell<BTreeSet<String>>>,
+    (disabled, checked): (Commands, Commands),
 ) -> Built {
     let mut commands = Vec::new();
     for menu in &menu.menus {
         collect(&menu.items, &mut commands);
     }
-    let target = target(mtm, shared, None, commands, disabled);
+    let target = target(mtm, shared, None, commands, (disabled, checked));
     let bar = NSMenu::new(mtm);
     let mut tag = 0;
     let mut roles = Vec::new();
@@ -120,7 +136,7 @@ pub(crate) fn context(
     let mut commands = Vec::new();
     collect(&menu.items, &mut commands);
     let dimmed = Rc::new(RefCell::new(menu.dimmed.iter().cloned().collect()));
-    let target = target(mtm, shared, Some(window), commands, dimmed);
+    let target = target(mtm, shared, Some(window), commands, (dimmed, Rc::default()));
     let menu = Menu {
         title: String::new(),
         items: menu.items.clone(),
@@ -130,20 +146,21 @@ pub(crate) fn context(
     (ns_menu, target)
 }
 
-/// The target of a menu's items, which runs `commands`, by their tags, and
-/// dims those in `disabled`.
+/// The target of a menu's items, which runs `commands`, by their tags,
+/// dims those in `disabled` and ticks those in `checked`.
 fn target(
     mtm: MainThreadMarker,
     shared: Weak<Shared>,
     window: Option<WindowId>,
     commands: Vec<String>,
-    disabled: Rc<RefCell<BTreeSet<String>>>,
+    (disabled, checked): (Commands, Commands),
 ) -> Retained<MenuTarget> {
     let target = MenuTarget::alloc(mtm).set_ivars(MenuTargetIvars {
         shared,
         window,
         commands,
         disabled,
+        checked,
     });
     // SAFETY: `NSObject`'s `init` has this signature.
     unsafe { msg_send![super(target), init] }

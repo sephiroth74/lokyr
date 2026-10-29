@@ -4,6 +4,9 @@
 command-window-new = New Window
 command-window-close = Close Window
 command-app-quit = Quit Lokyr
+command-appearance-system = Automatic Appearance
+command-appearance-light = Light Appearance
+command-appearance-dark = Dark Appearance
 
 # The menus of the menu bar, and the system's own items in them.
 menu-shell = Shell
@@ -17,6 +20,10 @@ menu-show-all = Show All
 menu-minimize = Minimize
 menu-zoom = Zoom
 menu-bring-all-to-front = Bring All to Front
+menu-appearance = Appearance
+menu-appearance-system = Automatic
+menu-appearance-light = Light
+menu-appearance-dark = Dark
 
 # The alert of a program's read of the clipboard, and its buttons, the
 # default one first.

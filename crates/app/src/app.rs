@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Registry, Value};
 use lokyr_kernel::config::{
-    self, AppConfig, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile, OpenUrl,
+    self, AppConfig, AppearanceMode, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile,
+    OpenUrl,
 };
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver, When,
@@ -60,6 +61,26 @@ const NEW_WINDOW: &str = "window.new";
 
 /// The command that closes the focused window.
 const CLOSE_WINDOW: &str = "window.close";
+
+/// The commands that give the app an appearance, as the View menu's
+/// Appearance chooses it, each with its own and its title's message.
+const APPEARANCES: [(&str, AppearanceMode, &str); 3] = [
+    (
+        "app.appearance-system",
+        AppearanceMode::System,
+        "appearance-system",
+    ),
+    (
+        "app.appearance-light",
+        AppearanceMode::Light,
+        "appearance-light",
+    ),
+    (
+        "app.appearance-dark",
+        AppearanceMode::Dark,
+        "appearance-dark",
+    ),
+];
 
 /// The lines of a pasted text that its confirmation shows, and the
 /// characters of each.
@@ -480,6 +501,9 @@ pub struct App {
     /// What the user chose that links do, where the config could not keep
     /// it: until the app quits.
     links_chosen: (Option<OpenUrl>, Option<OpenFile>),
+    /// The appearance that the user chose from the menu, where the config
+    /// could not keep it: until the app quits, or the config's key changes.
+    appearance_chosen: Option<AppearanceMode>,
     /// The windows whose closing the user is asked to confirm, by their
     /// alerts.
     close_asks: BTreeMap<AlertId, WindowId>,
@@ -536,6 +560,7 @@ impl App {
             pastes_unconfirmed: false,
             open_asks: BTreeMap::new(),
             links_chosen: (None, None),
+            appearance_chosen: None,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             context_cell: None,
@@ -628,6 +653,7 @@ impl App {
         }
         let icon_changed = config.app.icon != self.config.app.icon;
         let language_changed = config.app.language != self.config.app.language;
+        let appearance_changed = config.app.appearance != self.config.app.appearance;
         let keys_changed = config.keys != self.config.keys;
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
@@ -649,6 +675,10 @@ impl App {
         }
         if icon_changed {
             self.show_icon(platform);
+        }
+        if appearance_changed {
+            self.appearance_chosen = None;
+            self.show_appearance(platform);
         }
         if language_changed {
             self.texts = texts(&self.config.app.language, &self.preferred);
@@ -1449,6 +1479,12 @@ impl App {
                     }
                     Ok(())
                 }
+                _ if let Some(&(_, mode, _)) =
+                    APPEARANCES.iter().find(|(command, ..)| *command == name) =>
+                {
+                    self.choose_appearance(platform, mode);
+                    Ok(())
+                }
                 _ => Err(Error::new(
                     Code::Failed,
                     format!("`{name}` has no action in the app"),
@@ -2045,6 +2081,61 @@ impl App {
         }
     }
 
+    /// Gives the app the appearance `mode`, as the user chose it from the
+    /// menu: the config file takes it, or, if it cannot, as the log tells,
+    /// the app keeps it until it quits, or until the config's key changes.
+    fn choose_appearance(&mut self, platform: &mut dyn Platform, mode: AppearanceMode) {
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "app", "appearance", mode.name())
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file, without a home directory".to_owned()),
+        };
+        match written {
+            Ok(()) => {
+                self.config.app.appearance = mode;
+                self.appearance_chosen = None;
+            }
+            Err(error) => {
+                eprintln!("lokyr: {error}");
+                eprintln!("lokyr: the appearance is {} until Lokyr quits", mode.name());
+                self.appearance_chosen = Some(mode);
+            }
+        }
+        self.show_appearance(platform);
+    }
+
+    /// Gives the platform the appearance that the user chose, or the
+    /// system's, ticks its item in the View menu, and draws the panes in
+    /// its theme's variant.
+    fn show_appearance(&mut self, platform: &mut dyn Platform) {
+        let mode = self.appearance_chosen.unwrap_or(self.config.app.appearance);
+        platform.set_appearance(match mode {
+            AppearanceMode::System => None,
+            AppearanceMode::Light => Some(Appearance::Light),
+            AppearanceMode::Dark => Some(Appearance::Dark),
+        });
+        for (command, choice, _) in APPEARANCES {
+            platform.set_command_checked(command, choice == mode);
+        }
+        let appearance = platform.appearance();
+        self.appearance_changed(platform, appearance);
+    }
+
+    /// The app's appearance is `appearance`: the panes take its theme's
+    /// variant, and the windows draw again.
+    fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
+        let colors = self.colors(appearance);
+        for pane in self.workspace.panes() {
+            pane.set_colors(&colors);
+        }
+        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+        for window in windows {
+            if let Some(size) = platform.window_size(window) {
+                self.draw(platform, window, size);
+            }
+        }
+    }
+
     /// The theme's colors in `appearance`.
     fn colors(&self, appearance: Appearance) -> lokyr_vt_core::terminal::Colors {
         self.theme
@@ -2366,6 +2457,7 @@ impl Handler for App {
         self.commands = commands(&self.texts, &self.plugins);
         self.activate_plugins(platform);
         self.set_menu(platform);
+        self.show_appearance(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
@@ -2514,16 +2606,7 @@ impl Handler for App {
                 }
             }
             AppEvent::AppearanceChanged(appearance) => {
-                let colors = self.colors(appearance);
-                for pane in self.workspace.panes() {
-                    pane.set_colors(&colors);
-                }
-                let windows: Vec<WindowId> = self.windows.keys().copied().collect();
-                for window in windows {
-                    if let Some(size) = platform.window_size(window) {
-                        self.draw(platform, window, size);
-                    }
-                }
+                self.appearance_changed(platform, appearance);
             }
             _ => {}
         }
@@ -2874,14 +2957,20 @@ fn texts(chosen: &str, preferred: &[String]) -> Texts {
 fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
-        (NEW_WINDOW, "command-window-new", Category::Windows),
-        (CLOSE_WINDOW, "command-window-close", Category::Windows),
-        (QUIT, "command-app-quit", Category::App),
-    ];
+        (NEW_WINDOW, "window-new", Category::Windows),
+        (CLOSE_WINDOW, "window-close", Category::Windows),
+        (QUIT, "app-quit", Category::App),
+    ]
+    .into_iter()
+    .chain(
+        APPEARANCES
+            .into_iter()
+            .map(|(name, _, title)| (name, title, Category::View)),
+    );
     for (name, title, category) in commands {
         let command = Command {
             name: name.to_owned(),
-            title: texts.text(title),
+            title: texts.text(&format!("command-{title}")),
             category,
             capabilities: Vec::new(),
             params: Vec::new(),
@@ -2915,10 +3004,30 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
             .filter(|command| {
                 categories.contains(&command.category)
                     && command.params.iter().all(|param| param.default.is_some())
+                    && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
             })
             .collect();
         command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
     };
+    // The appearances, in a menu of their own, by their short titles.
+    let appearances = APPEARANCES
+        .into_iter()
+        .filter(|(name, ..)| commands.get(name).is_some())
+        .map(|(name, _, title)| MenuItem::Command {
+            title: texts.text(&format!("menu-{title}")),
+            command: name.to_owned(),
+            shortcut: keymap.shortcut(name).and_then(shortcut),
+        })
+        .collect();
+    let mut view = items(&[Category::View]);
+    if !view.is_empty() {
+        view.push(MenuItem::Separator);
+    }
+    view.push(MenuItem::Submenu(Menu {
+        title: texts.text("menu-appearance"),
+        items: appearances,
+        role: None,
+    }));
     let standard = |key: &str, action, shortcut: Option<Shortcut>| MenuItem::Standard {
         title: texts.text(key),
         action,
@@ -2972,7 +3081,7 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
                 items(&[Category::Clipboard, Category::Edit]),
                 None,
             ),
-            menu("menu-view", items(&[Category::View]), None),
+            menu("menu-view", view, None),
             menu(
                 "menu-window",
                 vec![
@@ -3165,7 +3274,9 @@ mod tests {
                 "Scroll Up a Page cmd+PageUp",
                 "Scroll Down a Page cmd+PageDown",
                 "Scroll to the Top cmd+Home",
-                "Scroll to the Bottom cmd+End"
+                "Scroll to the Bottom cmd+End",
+                "-",
+                "Appearance"
             ]
         );
         assert_eq!(
@@ -3288,6 +3399,13 @@ mod tests {
         assert_eq!(
             registered,
             [
+                ("app.appearance-dark", "Dark Appearance", Category::View),
+                ("app.appearance-light", "Light Appearance", Category::View),
+                (
+                    "app.appearance-system",
+                    "Automatic Appearance",
+                    Category::View
+                ),
                 ("app.quit", "Quit Lokyr", Category::App),
                 ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
@@ -3355,6 +3473,120 @@ mod tests {
             ["New Window", "Hide Lokyr", "Quit Lokyr", "Edit"]
         );
         assert_eq!(app.texts.language(), "en");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// The commands of the View menu's Appearance, and whether each one's
+    /// item is ticked.
+    fn appearances(fake: &Fake) -> Vec<(String, bool)> {
+        let view = &fake.main_menu().unwrap().menus[3];
+        let Some(MenuItem::Submenu(menu)) = view.items.last() else {
+            panic!("{view:?}");
+        };
+        menu.items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Command { title, command, .. } => {
+                    (title.clone(), fake.command_checked(command))
+                }
+                other => panic!("{other:?}"),
+            })
+            .collect()
+    }
+
+    /// The default background of `window`'s pane, once a frame shows it.
+    fn background(fake: &mut Fake, app: &mut App, window: WindowId) -> lokyr_vt_core::page::Rgb {
+        fake.send(app, window, WindowEvent::Frame);
+        app.pane(window).snapshot().colors().background
+    }
+
+    #[test]
+    fn the_appearance_follows_the_config_and_the_menu() {
+        let (mut fake, mut app, path) = with_file(
+            "appearance",
+            "# Mine.\n[app]\nappearance = \"dark\" # at night\n",
+        );
+        let window = fake.windows().next().unwrap();
+        let (light, dark) = (
+            app.colors(Appearance::Light).background,
+            app.colors(Appearance::Dark).background,
+        );
+        assert_eq!(fake.own_appearance(), Some(Appearance::Dark));
+        assert_eq!(
+            appearances(&fake),
+            [
+                ("Automatic".to_owned(), false),
+                ("Light".to_owned(), false),
+                ("Dark".to_owned(), true)
+            ]
+        );
+        assert_eq!(background(&mut fake, &mut app, window), dark);
+        // The system's change does not reach it.
+        assert!(!fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Light)));
+        assert_eq!(background(&mut fake, &mut app, window), dark);
+        // The menu's choice applies, and goes into the file.
+        let choose = |fake: &mut Fake, app: &mut App, command: &str| {
+            fake.send_app(app, AppEvent::Command(command.to_owned()));
+        };
+        choose(&mut fake, &mut app, "app.appearance-light");
+        assert_eq!(fake.own_appearance(), Some(Appearance::Light));
+        assert_eq!(background(&mut fake, &mut app, window), light);
+        assert_eq!(
+            appearances(&fake)
+                .iter()
+                .map(|(_, ticked)| *ticked)
+                .collect::<Vec<_>>(),
+            [false, true, false]
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# Mine.\n[app]\nappearance = \"light\" # at night\n"
+        );
+        // The system's, which is light, then dark.
+        choose(&mut fake, &mut app, "app.appearance-system");
+        assert_eq!(fake.own_appearance(), None);
+        assert!(fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark)));
+        assert_eq!(background(&mut fake, &mut app, window), dark);
+        assert!(fake.command_checked("app.appearance-system"));
+        // The file that the menu wrote changes nothing as it reloads; set by
+        // hand, it applies.
+        change(&mut fake, &mut app);
+        assert_eq!(fake.own_appearance(), None);
+        std::fs::write(&path, "[app]\nappearance = \"light\"\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(fake.own_appearance(), Some(Appearance::Light));
+        assert!(fake.command_checked("app.appearance-light"));
+        assert!(!fake.command_checked("app.appearance-system"));
+        // A file that does not read keeps the choice until the key changes.
+        std::fs::write(&path, "[app\n").unwrap();
+        choose(&mut fake, &mut app, "app.appearance-dark");
+        assert_eq!(fake.own_appearance(), Some(Appearance::Dark));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[app\n");
+        std::fs::write(&path, "[app]\nappearance = \"light\"\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(fake.own_appearance(), Some(Appearance::Dark));
+        std::fs::write(&path, "[app]\nappearance = \"system\"\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(fake.own_appearance(), None);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn the_appearance_s_menu_is_in_the_config_s_language() {
+        let (fake, _app, path) = with_file("appearance-it", "[app]\nlanguage = \"it\"\n");
+        let view = &fake.main_menu().unwrap().menus[3];
+        let Some(MenuItem::Submenu(menu)) = view.items.last() else {
+            panic!("{view:?}");
+        };
+        assert_eq!(menu.title, "Aspetto");
+        assert_eq!(
+            appearances(&fake),
+            [
+                ("Automatico".to_owned(), true),
+                ("Chiaro".to_owned(), false),
+                ("Scuro".to_owned(), false)
+            ]
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

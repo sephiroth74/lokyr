@@ -9,7 +9,7 @@ use lokyr_platform_core::{AppEvent, Appearance};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication};
+use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication};
 use objc2_foundation::{
     NSArray, NSDictionary, NSKeyValueChangeKey, NSKeyValueObservingOptions, NSObject,
     NSObjectNSKeyValueObserverRegistration, NSObjectProtocol, NSString,
@@ -33,6 +33,20 @@ pub(crate) fn current(mtm: MainThreadMarker) -> Appearance {
         Some(name) if &*name == dark => Appearance::Dark,
         _ => Appearance::Light,
     }
+}
+
+/// Gives the application the appearance `appearance`, or the system's
+/// with `None`.
+pub(crate) fn set(mtm: MainThreadMarker, appearance: Option<Appearance>) {
+    // SAFETY: the names are AppKit's constants.
+    let name = appearance.map(|appearance| unsafe {
+        match appearance {
+            Appearance::Light => NSAppearanceNameAqua,
+            Appearance::Dark => NSAppearanceNameDarkAqua,
+        }
+    });
+    let appearance = name.and_then(NSAppearance::appearanceNamed);
+    NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
 }
 
 pub(crate) struct ObserverIvars {

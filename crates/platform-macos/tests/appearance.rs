@@ -1,5 +1,6 @@
 //! The application's appearance: a change, whether of the system's or of the
-//! application's own, comes as an event, once.
+//! application's own, which the platform sets, comes as an event, once, and
+//! the platform tells the appearance at once.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -10,25 +11,16 @@ mod probe {
     use std::rc::Rc;
 
     use lokyr_platform_core::{AppEvent, Appearance, Handler, Platform, WindowEvent, WindowId};
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{
-        NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication,
-    };
 
     use crate::common;
 
-    /// Gives the application the appearance `appearance`, or the system's.
-    fn set(appearance: Option<Appearance>) {
-        let mtm = MainThreadMarker::new().expect("the main thread");
-        // SAFETY: AppKit's constants.
-        let name = appearance.map(|appearance| unsafe {
-            match appearance {
-                Appearance::Light => NSAppearanceNameAqua,
-                Appearance::Dark => NSAppearanceNameDarkAqua,
-            }
-        });
-        let appearance = name.and_then(NSAppearance::appearanceNamed);
-        NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
+    /// Gives the application the appearance `appearance`, which the platform
+    /// tells at once, or the system's.
+    fn set(platform: &mut dyn Platform, appearance: Option<Appearance>) {
+        platform.set_appearance(appearance);
+        if let Some(appearance) = appearance {
+            assert_eq!(platform.appearance(), appearance);
+        }
     }
 
     fn other(appearance: Appearance) -> Appearance {
@@ -50,7 +42,7 @@ mod probe {
         fn started(&mut self, platform: &mut dyn Platform) {
             let first = platform.appearance();
             self.0.borrow_mut().first = Some(first);
-            set(Some(other(first)));
+            set(platform, Some(other(first)));
         }
 
         fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -62,10 +54,10 @@ mod probe {
             assert_eq!(platform.appearance(), appearance);
             if seen.changes.len() == 1 {
                 // The same appearance again changes nothing; then back.
-                set(Some(appearance));
-                set(seen.first);
+                set(platform, Some(appearance));
+                set(platform, seen.first);
             } else {
-                set(None);
+                set(platform, None);
                 platform.quit();
             }
         }

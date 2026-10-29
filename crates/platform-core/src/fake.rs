@@ -67,12 +67,16 @@ pub struct FakeNotification {
 #[derive(Debug)]
 pub struct Fake {
     scale: f64,
+    /// The system's appearance, and the app's own.
     appearance: Appearance,
+    own_appearance: Option<Appearance>,
     windows: BTreeMap<WindowId, FakeWindow>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
-    /// The commands whose menu items are dimmed.
+    /// The commands whose menu items are dimmed, and those whose items are
+    /// ticked.
     disabled: std::collections::BTreeSet<String>,
+    checked: std::collections::BTreeSet<String>,
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     context_menus: Vec<(WindowId, Point, ContextMenu)>,
@@ -118,10 +122,12 @@ impl Fake {
         Self {
             scale,
             appearance: Appearance::Light,
+            own_appearance: None,
             windows: BTreeMap::new(),
             focused: None,
             menu: None,
             disabled: std::collections::BTreeSet::new(),
+            checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
             clipboard: None,
             alerts: Vec::new(),
@@ -176,14 +182,18 @@ impl Fake {
     }
 
     /// Hands `handler` an event of the application, once the fake has
-    /// applied the appearance that it brings. Returns whether it handed it:
-    /// not once the app has quit.
+    /// applied the appearance that it brings, as the system's. Returns
+    /// whether it handed it: not once the app has quit, nor a change of the
+    /// system's appearance while the app has its own, which it does not see.
     pub fn send_app(&mut self, handler: &mut dyn Handler, event: AppEvent) -> bool {
         if self.quit {
             return false;
         }
         if let AppEvent::AppearanceChanged(appearance) = event {
             self.appearance = appearance;
+            if self.own_appearance.is_some() {
+                return false;
+            }
         }
         handler.app_event(self, event);
         true
@@ -285,6 +295,16 @@ impl Fake {
         !self.disabled.contains(command)
     }
 
+    /// Whether the menu items of `command` are ticked.
+    pub fn command_checked(&self, command: &str) -> bool {
+        self.checked.contains(command)
+    }
+
+    /// The appearance that the app gave itself, if it gave one.
+    pub fn own_appearance(&self) -> Option<Appearance> {
+        self.own_appearance
+    }
+
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     pub fn context_menus(&self) -> &[(WindowId, Point, ContextMenu)] {
@@ -376,7 +396,11 @@ impl Platform for Fake {
     }
 
     fn appearance(&self) -> Appearance {
-        self.appearance
+        self.own_appearance.unwrap_or(self.appearance)
+    }
+
+    fn set_appearance(&mut self, appearance: Option<Appearance>) {
+        self.own_appearance = appearance;
     }
 
     fn locales(&self) -> Vec<String> {
@@ -448,6 +472,14 @@ impl Platform for Fake {
             self.disabled.remove(command);
         } else {
             self.disabled.insert(command.to_owned());
+        }
+    }
+
+    fn set_command_checked(&mut self, command: &str, checked: bool) {
+        if checked {
+            self.checked.insert(command.to_owned());
+        } else {
+            self.checked.remove(command);
         }
     }
 

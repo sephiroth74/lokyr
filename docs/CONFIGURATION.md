@@ -105,6 +105,7 @@ mark-title = false                   # true | false: 🔔 in its title until it 
 [app]
 icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
+appearance = "dark"                  # system | light | dark
 
 [keys]
 "cmd+shift+n" = "window.new"         # keys, and the command that they run
@@ -711,6 +712,20 @@ The language of what Lokyr shows: its menus, the titles of its commands, and the
 - A language that Lokyr does not have takes the system's, and the log names those that it has; the rest of the file applies.
 - The prompts that macOS shows when a program asks for the camera, the contacts and the like follow the system's language, whatever the key says.
 - The log, for the reports of problems, stays in English.
+
+### `appearance`
+
+<sub>Platforms: macOS</sub>
+
+Whether Lokyr is light or dark: the theme's colors, and Lokyr's own titlebar, menus and alerts.
+
+| Values | Default |
+|---|---|
+| `"system"`, `"light"`, `"dark"` | `"system"` |
+
+- `"system"` follows the appearance of macOS, in the system's settings, as it changes, automatic too; `"light"` and `"dark"` keep theirs, whatever the system's is.
+- The View menu's Appearance sets it too: Automatic, Light or Dark, the one in force ticked. The choice goes into your config file, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits, or until you change the key.
+- It applies at once, as you save the file.
 
 ## `[keys]`
 

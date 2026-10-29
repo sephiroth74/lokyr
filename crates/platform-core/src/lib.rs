@@ -131,8 +131,14 @@ pub trait Platform {
     /// nothing without a request.
     fn refuse_quit(&mut self);
 
-    /// The system's appearance.
+    /// The appearance that the app has: its own, or the system's.
     fn appearance(&self) -> Appearance;
+
+    /// Gives the app the appearance `appearance`, its windows' and its
+    /// menus' too, whatever the system's is, or the system's again with
+    /// `None`. [`Platform::appearance`] tells it at once; a change can come
+    /// as [`AppEvent::AppearanceChanged`] too.
+    fn set_appearance(&mut self, appearance: Option<Appearance>);
 
     /// The user's languages, each with a region, in the order of the
     /// system's preferences, as the names of POSIX locales without their
@@ -181,6 +187,11 @@ pub trait Platform {
     /// neither run nor take their keys; every command's are enabled until
     /// the app says otherwise, through a change of the menu too.
     fn set_command_enabled(&mut self, command: &str, enabled: bool);
+
+    /// Ticks the main menu's items of `command`, or takes their tick away,
+    /// as the choice that is in force among others; none is ticked until
+    /// the app says so, and a change of the menu keeps the ticks.
+    fn set_command_checked(&mut self, command: &str, checked: bool);
 
     /// Opens `menu` at `position` of `window`'s content, once the call in
     /// progress has returned, so that the windows go on drawing while it is

@@ -1,7 +1,7 @@
 //! The [`Platform`] that the app's handler talks to.
 
-use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cell::Cell;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::time::Instant;
@@ -57,9 +57,10 @@ pub(crate) struct Backend {
     option_as_meta: Rc<Cell<(bool, bool)>>,
     /// The target of the main menu's items, which the menu does not retain.
     menu_target: Option<Retained<MenuTarget>>,
-    /// The commands whose menu items are dimmed, which each menu's target
-    /// reads.
-    disabled: Rc<RefCell<BTreeSet<String>>>,
+    /// The commands whose menu items are dimmed, and those whose items are
+    /// ticked, which each menu's target reads.
+    disabled: menu::Commands,
+    checked: menu::Commands,
     /// The last context menu that the app asked for, until it closes.
     context_menu: Option<OpenMenu>,
     last_id: u64,
@@ -82,6 +83,7 @@ impl Backend {
             option_as_meta: Rc::new(Cell::new((false, false))),
             menu_target: None,
             disabled: Rc::default(),
+            checked: Rc::default(),
             context_menu: None,
             last_id: 0,
             quit: false,
@@ -246,6 +248,10 @@ impl Platform for Backend {
         appearance::current(self.mtm)
     }
 
+    fn set_appearance(&mut self, appearance: Option<Appearance>) {
+        appearance::set(self.mtm, appearance);
+    }
+
     fn locales(&self) -> Vec<String> {
         let current = NSLocale::currentLocale();
         // A language without a region takes the system's.
@@ -345,7 +351,12 @@ impl Platform for Backend {
     }
 
     fn set_main_menu(&mut self, menu: &MainMenu) {
-        let built = menu::build(self.mtm, self.shared.clone(), menu, self.disabled.clone());
+        let built = menu::build(
+            self.mtm,
+            self.shared.clone(),
+            menu,
+            (self.disabled.clone(), self.checked.clone()),
+        );
         let app = NSApplication::sharedApplication(self.mtm);
         app.setMainMenu(Some(&built.bar));
         for (role, menu) in built.roles {
@@ -363,6 +374,15 @@ impl Platform for Backend {
             disabled.remove(command);
         } else {
             disabled.insert(command.to_owned());
+        }
+    }
+
+    fn set_command_checked(&mut self, command: &str, checked: bool) {
+        let mut ticked = self.checked.borrow_mut();
+        if checked {
+            ticked.insert(command.to_owned());
+        } else {
+            ticked.remove(command);
         }
     }
 

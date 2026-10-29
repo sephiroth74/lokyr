@@ -50,6 +50,7 @@
 //!
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
+//! appearance = "system"     # system | light | dark
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -192,6 +193,33 @@ pub struct AppConfig {
     /// of the system's preferred languages that the app has, or one, as
     /// `en` or `it`.
     pub language: String,
+    /// The appearance of the app and of its theme: the system's, or light
+    /// or dark, whatever the system's is.
+    pub appearance: AppearanceMode,
+}
+
+/// The appearance that the app takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AppearanceMode {
+    /// The system's, as it changes.
+    #[default]
+    System,
+    /// Light.
+    Light,
+    /// Dark.
+    Dark,
+}
+
+impl AppearanceMode {
+    /// Its value in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
 }
 
 impl AppConfig {
@@ -205,6 +233,7 @@ impl Default for AppConfig {
         Self {
             icon: Self::DEFAULT_ICON.to_owned(),
             language: "system".to_owned(),
+            appearance: AppearanceMode::System,
         }
     }
 }
@@ -1314,6 +1343,7 @@ mod tests {
             [app]
             icon = "laguz"
             language = "it"
+            appearance = "dark"
             "#,
         )
         .unwrap();
@@ -1352,6 +1382,17 @@ mod tests {
         assert_eq!(Config::default().clipboard.read, ClipboardRead::Never);
         assert_eq!(config.app.language, "it");
         assert_eq!(Config::default().app.language, "system");
+        assert_eq!(config.app.appearance, AppearanceMode::Dark);
+        assert_eq!(Config::default().app.appearance, AppearanceMode::System);
+        for mode in [
+            AppearanceMode::System,
+            AppearanceMode::Light,
+            AppearanceMode::Dark,
+        ] {
+            let text = format!("[app]\nappearance = \"{}\"\n", mode.name());
+            let read = Config::parse(&text, Path::new("config.toml")).unwrap();
+            assert_eq!(read.app.appearance, mode);
+        }
         assert!(config.scrollback.scroll_on_output);
         assert!(!Config::default().scrollback.scroll_on_output);
         assert_eq!(config.app.icon, "laguz");
@@ -1799,7 +1840,7 @@ mod tests {
             ["sound", "flash", "bounce", "mark-title"]
         );
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
-        assert_eq!(keys::<AppConfig>(), ["icon", "language"]);
+        assert_eq!(keys::<AppConfig>(), ["icon", "language", "appearance"]);
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(

@@ -153,5 +153,9 @@ harness = false
 name = "context_menu"
 harness = false
 
+[[test]]
+name = "main_menu"
+harness = false
+
 [lints]
 workspace = true
