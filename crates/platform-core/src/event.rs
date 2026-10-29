@@ -84,6 +84,9 @@ pub enum AppEvent {
         /// Whether its checkbox, [`Alert::suppression`](crate::Alert::suppression),
         /// was ticked; `false` without one.
         suppressed: bool,
+        /// The text of its field, [`Alert::input`](crate::Alert::input), as
+        /// it closed; `None` without one.
+        text: Option<String>,
     },
     /// The system's appearance changed.
     AppearanceChanged(Appearance),

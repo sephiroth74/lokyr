@@ -3,6 +3,7 @@
 # The titles of the app's commands, which its menus show.
 command-window-new = New Window
 command-window-close = Close Window
+command-window-set-title = Set Title…
 command-app-quit = Quit Lokyr
 command-appearance-system = Automatic Appearance
 command-appearance-light = Light Appearance
@@ -58,6 +59,13 @@ close-running-message = Close this window?
 close-running-detail = This window is running { $program }, and closing the window ends it.
 close-running-close = Close
 close-running-cancel = Cancel
+
+# The question of a window's title, which a field holds, and its buttons,
+# the default one first.
+set-title-message = The window's title
+set-title-detail = Leave it empty for the window's own: the program's title, or its folder, then the program that runs.
+set-title-set = Set
+set-title-cancel = Cancel
 quit-running-message = Quit Lokyr?
 quit-running-detail = { $windows ->
     [one] A window is running { $programs }, and quitting ends it.

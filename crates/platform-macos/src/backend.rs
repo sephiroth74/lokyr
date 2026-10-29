@@ -103,12 +103,16 @@ impl Backend {
     }
 
     /// Forgets the alert `alert`, which closed, and returns how many
-    /// buttons it had, and whether its checkbox was ticked; `None` if it
-    /// was not open.
-    pub(crate) fn take_alert(&mut self, alert: AlertId) -> Option<(usize, bool)> {
-        self.alerts
-            .remove(&alert)
-            .map(|open| (open.buttons, alert::suppressed(&open.alert)))
+    /// buttons it had, whether its checkbox was ticked, and its field's
+    /// text; `None` if it was not open.
+    pub(crate) fn take_alert(&mut self, alert: AlertId) -> Option<(usize, bool, Option<String>)> {
+        self.alerts.remove(&alert).map(|open| {
+            (
+                open.buttons,
+                alert::suppressed(&open.alert),
+                alert::text(&open.alert),
+            )
+        })
     }
 
     /// Forgets the timer `timer`, which fired, and returns whether it was

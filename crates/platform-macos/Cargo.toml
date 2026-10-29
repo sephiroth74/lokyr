@@ -41,6 +41,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSMenuItem",
     "NSPasteboard",
     "NSResponder",
+    "NSTextField",
     "NSTextInputClient",
     "NSRunningApplication",
     "NSView",
@@ -162,6 +163,10 @@ harness = false
 
 [[test]]
 name = "cascade"
+harness = false
+
+[[test]]
+name = "alert_text"
 harness = false
 
 [lints]

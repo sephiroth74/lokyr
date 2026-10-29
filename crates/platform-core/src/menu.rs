@@ -130,6 +130,9 @@ pub struct Alert {
     /// The title of a checkbox under the detail, as "Don't ask again",
     /// whose state the answer tells; `None` for none.
     pub suppression: Option<String>,
+    /// A field of text under the detail, which holds this text as the
+    /// alert opens, and whose text the answer gives; `None` for none.
+    pub input: Option<String>,
 }
 
 /// How serious an alert is.

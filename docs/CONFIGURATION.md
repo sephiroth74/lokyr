@@ -441,7 +441,7 @@ Whether the window's title ends with the size of its grid, in columns and rows, 
 |---|---|
 | `true`, `false` | `true` |
 
-- The title before it is the program's, when it gives one, as vim and the shells' prompts can, or a man page's, as `man ls`, or the folder of the program in the foreground; then that program, as `lokyr — vim`, which Lokyr looks at as the program writes, so that a program that you run shows though your prompt set the title.
+- The title before it is the one that you give with Shell › Set Title…, `cmd+shift+i`; otherwise the program's, when it gives one, as vim and the shells' prompts can, or a man page's, as `man ls`, or the folder of the program in the foreground; then that program, as `lokyr — vim`, which Lokyr looks at as the program writes, and once more a moment after, so that a program that you run shows though your prompt set the title.
 - As you resize the window, the size follows.
 - It applies at once, as you save the file.
 
@@ -819,6 +819,7 @@ The defaults:
 |---|---|---|
 | `cmd+n` | `window.new` | Opens a window |
 | `cmd+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
+| `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |

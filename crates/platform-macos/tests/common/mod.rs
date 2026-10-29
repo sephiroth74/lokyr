@@ -35,5 +35,6 @@ pub fn alert() -> Alert {
         detail: "It closes by itself.".to_owned(),
         buttons: vec!["OK".to_owned(), "Cancel".to_owned()],
         suppression: None,
+        input: None,
     }
 }

@@ -62,6 +62,9 @@ const NEW_WINDOW: &str = "window.new";
 /// The command that closes the focused window.
 const CLOSE_WINDOW: &str = "window.close";
 
+/// The command that asks for a title of the user's for the focused window.
+const SET_TITLE: &str = "window.set-title";
+
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
 const LOOK_UP: &str = "pane.look-up";
@@ -126,6 +129,10 @@ const WINDOW_SIZE: Size = Size {
     width: 800.0,
     height: 500.0,
 };
+
+/// How long after a frame the titles look once more at the programs in
+/// their windows' foreground, for one that started without a word.
+const TITLE_LOOK: Duration = Duration::from_millis(250);
 
 /// What parts a title's parts.
 const TITLE_DASH: &str = " — ";
@@ -344,6 +351,12 @@ struct Window {
     place: (String, String),
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
+    /// Whether a frame came since the titles' timer last looked, for the
+    /// timer to look once more.
+    title_due: bool,
+    /// The title that the user gave it, which takes the place of its
+    /// program's and of its own.
+    user_title: Option<String>,
     /// The appearance of its own that the platform has for it, once the
     /// app gave one: `None` for the app's.
     own_appearance: Option<Option<Appearance>>,
@@ -446,6 +459,8 @@ impl Window {
             page: None,
             place: (String::new(), String::new()),
             title_shown: None,
+            title_due: false,
+            user_title: None,
             own_appearance: None,
         }
     }
@@ -517,6 +532,11 @@ pub struct App {
     /// The timer of the next step of the views that scroll under a
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
+    /// The timer of the windows' titles' last look at the programs in
+    /// their foreground, after the frames of a burst of output, and how
+    /// long after them; `None` for no last look.
+    title_timer: Option<TimerId>,
+    title_look: Option<Duration>,
     /// The icon's variants, where the app finds them.
     icons: Option<Icons>,
     /// The variant that the app made the icon, once it made one.
@@ -554,6 +574,8 @@ pub struct App {
     /// The windows whose closing the user is asked to confirm, by their
     /// alerts.
     close_asks: BTreeMap<AlertId, WindowId>,
+    /// The windows whose title the user is asked for, by their alerts.
+    title_asks: BTreeMap<AlertId, WindowId>,
     /// The question before quitting, while it waits for its answer.
     quit_ask: Option<AlertId>,
     /// Whether the system asked to quit, and waits for the answer.
@@ -601,6 +623,8 @@ impl App {
             resize_timer: None,
             flash_timer: None,
             scroll_timer: None,
+            title_timer: None,
+            title_look: Some(TITLE_LOOK),
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -614,6 +638,7 @@ impl App {
             context_cell: None,
             acting: None,
             close_asks: BTreeMap::new(),
+            title_asks: BTreeMap::new(),
             quit_ask: None,
             system_quit: false,
             environment: {
@@ -635,10 +660,14 @@ impl App {
         self
     }
 
-    /// The app, whose windows run `program` rather than the login shell.
+    /// The app, whose windows run `program` rather than the login shell;
+    /// its titles take no last look after a burst of output, whose timer
+    /// the tests of the other timers would count, but where a test gives
+    /// them one.
     #[cfg(test)]
     fn with_program(mut self, program: Program) -> Self {
         self.program = program;
+        self.title_look = None;
         self
     }
 
@@ -1563,6 +1592,7 @@ impl App {
             self.open_asks
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
+            self.title_asks.retain(|_, asked| *asked != window);
             self.workspace.close_window(state.window);
         }
         platform.close_window(window);
@@ -1698,6 +1728,12 @@ impl App {
                 CLOSE_WINDOW => {
                     if let Some(window) = platform.focused_window() {
                         self.ask_close(platform, window);
+                    }
+                    Ok(())
+                }
+                SET_TITLE => {
+                    if let Some(window) = self.acting.or_else(|| platform.focused_window()) {
+                        self.ask_title(platform, window);
                     }
                     Ok(())
                 }
@@ -1962,6 +1998,14 @@ impl App {
     /// prompt, would otherwise hide; but a man page's, and a program whose
     /// name is the title's.
     fn base_title(&self, window: WindowId) -> String {
+        // The user's, in place of the rest.
+        if let Some(title) = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.user_title.clone())
+        {
+            return title;
+        }
         let name = self.window_name(window);
         let program = self
             .windows
@@ -1997,28 +2041,65 @@ impl App {
 
     /// Looks again at the directory and the program in `window`'s
     /// foreground, while its program runs, and shows the title, if it
-    /// changed. A frame comes after what the program wrote last, as after
-    /// `cd`'s prompt, so that the title follows it; a look reads the
-    /// terminal's foreground group and its first process's path and
-    /// directory, some microseconds, and nothing looks while no frame
-    /// comes.
+    /// changed; a look reads the terminal's foreground group and its first
+    /// process's path and directory, some microseconds. A frame comes after
+    /// what a program wrote last, as `cd`'s prompt; the titles' timer looks
+    /// once more [`TITLE_LOOK`] after the frames of a burst, for a program
+    /// that started without a word after the echo of its command, as
+    /// `sleep`: one wakeup a burst, and nothing while no frame comes.
     fn refresh_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        let Some(state) = self.windows.get_mut(&window) else {
-            return;
-        };
-        let Some(pane) = self.workspace.pane(state.pane) else {
-            return;
-        };
-        if !pane.is_kept() {
-            let directory = pane
-                .working_directory()
-                .map(|directory| directory_name(&directory, std::env::home_dir().as_deref()));
-            state.place = (
-                directory.unwrap_or_default(),
-                pane.foreground_program().unwrap_or_default(),
-            );
+        if self.look_at_place(window) {
+            if let Some(state) = self.windows.get_mut(&window) {
+                state.title_due = true;
+            }
+            if let Some(after) = self.title_look
+                && self.title_timer.is_none()
+            {
+                self.title_timer = Some(platform.start_timer(Instant::now() + after));
+            }
         }
         self.show_title(platform, window);
+    }
+
+    /// Looks at the directory and the program in `window`'s foreground,
+    /// while its program runs: whether it did.
+    fn look_at_place(&mut self, window: WindowId) -> bool {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return false;
+        };
+        if pane.is_kept() {
+            return false;
+        }
+        let directory = pane
+            .working_directory()
+            .map(|directory| directory_name(&directory, std::env::home_dir().as_deref()));
+        state.place = (
+            directory.unwrap_or_default(),
+            pane.foreground_program().unwrap_or_default(),
+        );
+        true
+    }
+
+    /// The titles' timer fired: the windows that drew since it started look
+    /// once more, and start it no more.
+    fn look_at_places_again(&mut self, platform: &mut dyn Platform) {
+        self.title_timer = None;
+        let due: Vec<WindowId> = self
+            .windows
+            .iter_mut()
+            .filter(|(_, state)| state.title_due)
+            .map(|(&window, state)| {
+                state.title_due = false;
+                window
+            })
+            .collect();
+        for window in due {
+            self.look_at_place(window);
+            self.show_title(platform, window);
+        }
     }
 
     /// Rings `pane`'s bell, as `[bell]` says: the system's sound; a flash
@@ -2121,6 +2202,7 @@ impl App {
                 self.texts.text("clipboard-read-allow"),
             ],
             suppression: None,
+            input: None,
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.clipboard_asks.insert(alert, (pane, request));
@@ -2155,6 +2237,7 @@ impl App {
                 self.texts.text("paste-lines-cancel"),
             ],
             suppression: Some(self.texts.text("paste-lines-dont-ask")),
+            input: None,
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.paste_asks.insert(alert, (pane, text));
@@ -2216,6 +2299,7 @@ impl App {
             detail: shown(&target),
             buttons,
             suppression: Some(self.texts.text(dont_ask)),
+            input: None,
         };
         let window = platform.focused_window();
         let alert = platform.show_alert(window, &alert);
@@ -2282,6 +2366,32 @@ impl App {
         }
     }
 
+    /// Asks the user for a title of `window`, which takes the place of its
+    /// program's and of its own, in a field that holds the one that the
+    /// user gave before; an empty one gives the window's own back. A window
+    /// that waits for the answer asks nothing more.
+    fn ask_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        if self.title_asks.values().any(|&asked| asked == window) {
+            return;
+        }
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let alert = Alert {
+            style: AlertStyle::Informational,
+            message: self.texts.text("set-title-message"),
+            detail: self.texts.text("set-title-detail"),
+            buttons: vec![
+                self.texts.text("set-title-set"),
+                self.texts.text("set-title-cancel"),
+            ],
+            suppression: None,
+            input: Some(state.user_title.clone().unwrap_or_default()),
+        };
+        let asked = platform.show_alert(Some(window), &alert);
+        self.title_asks.insert(asked, window);
+    }
+
     /// Closes `window`, once the user confirms it while a program other
     /// than a shell runs in it, which closing ends; a window that waits for
     /// the answer asks nothing more.
@@ -2308,6 +2418,7 @@ impl App {
                 self.texts.text("close-running-cancel"),
             ],
             suppression: None,
+            input: None,
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.close_asks.insert(alert, window);
@@ -2354,6 +2465,7 @@ impl App {
                 self.texts.text("quit-running-cancel"),
             ],
             suppression: None,
+            input: None,
         };
         self.quit_ask = Some(platform.show_alert(None, &alert));
     }
@@ -2893,6 +3005,10 @@ impl Handler for App {
                     self.pace_at(platform, next);
                 }
             }
+            // The titles look once more after a burst of output.
+            AppEvent::Timer(timer) if self.title_timer == Some(timer) => {
+                self.look_at_places_again(platform);
+            }
             // A selection dragged past a window's edge scrolls its view.
             AppEvent::Timer(timer) if self.scroll_timer == Some(timer) => {
                 self.scroll_selections(platform);
@@ -2931,6 +3047,7 @@ impl Handler for App {
                 alert,
                 button,
                 suppressed,
+                text,
             } => {
                 if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
                     && button == 1
@@ -2942,6 +3059,18 @@ impl Handler for App {
                     && button == 0
                 {
                     self.close(platform, window);
+                }
+                // The title given, or the window's own, for none.
+                if let Some(window) = self.title_asks.remove(&alert)
+                    && button == 0
+                    && let Some(state) = self.windows.get_mut(&window)
+                {
+                    state.user_title = text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|title| !title.is_empty())
+                        .map(str::to_owned);
+                    self.show_title(platform, window);
                 }
                 if self.quit_ask == Some(alert) {
                     self.quit_ask = None;
@@ -3420,6 +3549,7 @@ fn default_bindings() -> Vec<Binding> {
     [
         ("cmd+n", NEW_WINDOW),
         ("cmd+w", CLOSE_WINDOW),
+        ("cmd+shift+i", SET_TITLE),
         ("cmd+q", QUIT),
     ]
     .into_iter()
@@ -3458,6 +3588,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let commands = [
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
+        (SET_TITLE, "window-set-title", Category::Windows),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),
@@ -3749,7 +3880,11 @@ mod tests {
         );
         assert_eq!(
             menu_items(&fake, 1),
-            ["New Window cmd+n", "Close Window cmd+w"]
+            [
+                "New Window cmd+n",
+                "Close Window cmd+w",
+                "Set Title… shift+cmd+i"
+            ]
         );
         assert_eq!(
             menu_items(&fake, 2),
@@ -3838,7 +3973,10 @@ mod tests {
         let (fake, _, _) = bound(keys, reader(""));
         // A binding's key, the one that a key bound later takes away, and
         // one that holds in a context alone, which no item shows.
-        assert_eq!(menu_items(&fake, 1), ["New Window cmd+y", "Close Window"]);
+        assert_eq!(
+            menu_items(&fake, 1),
+            ["New Window cmd+y", "Close Window", "Set Title… shift+cmd+i"]
+        );
         assert_eq!(
             menu_items(&fake, 2),
             [
@@ -3912,6 +4050,7 @@ mod tests {
                 ("pane.man-page", "Open man Page", Category::Windows),
                 ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
+                ("window.set-title", "Set Title…", Category::Windows),
             ]
         );
         let texts = Texts::new("en", &CATALOGS);
@@ -3924,7 +4063,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(titles, ["New Window", "Close Window"]);
+        assert_eq!(titles, ["New Window", "Close Window", "Set Title…"]);
         // A command that takes no argument rejects one, and does nothing.
         let mut args = Args::new();
         args.insert(
@@ -5881,8 +6020,16 @@ mod tests {
 
     #[test]
     fn the_title_tells_the_directory_the_program_and_the_size() {
-        let (mut fake, mut app, window) =
-            started_with(shell("cd /usr; stty raw -echo; echo ready; exec cat"));
+        // A program that starts without a word: the last look after the
+        // output's frames finds it.
+        let mut fake = Fake::default();
+        let mut app = app(
+            unpadded(),
+            shell("cd /usr; stty raw -echo; echo ready; sleep 0.1; exec cat"),
+        );
+        app.title_look = Some(TITLE_LOOK);
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
         let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
         run_until(&mut fake, &mut app, |fake, _| {
             title(fake) == "usr — cat — 200×62"
@@ -5953,6 +6100,51 @@ mod tests {
             appearance_over(gray(112), Appearance::Light),
             Some(Appearance::Dark)
         );
+    }
+
+    #[test]
+    fn a_title_of_the_user_s_takes_the_place_of_the_window_s_own() {
+        let program = shell("stty raw -echo; echo ready; cat");
+        let (mut fake, mut app, window) = configured("", program);
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        let own = app.title_of(window);
+        let ask = |fake: &mut Fake, app: &mut App| {
+            fake.send(app, window, command_key_shift(KeyCode::KeyI, "i"));
+            let open = fake.alerts().last().expect("the question").clone();
+            assert_eq!(open.window, Some(window));
+            open
+        };
+        // The question holds nothing at first; its title, trimmed.
+        let open = ask(&mut fake, &mut app);
+        assert_eq!(open.alert.input.as_deref(), Some(""));
+        assert_eq!(open.alert.buttons, ["Set", "Cancel"]);
+        // A second ask waits for the first's answer.
+        fake.send_app(&mut app, AppEvent::Command(SET_TITLE.to_owned()));
+        assert_eq!(fake.alerts().len(), 1);
+        fake.answer_alert_typed(&mut app, open.id, (0, false), Some("  build  "));
+        assert_eq!(title(&fake), "build — 200×62");
+        // A program's title stays behind it.
+        app.pane(window).text("\u{1b}]2;prompt\u{7}");
+        let pause = Instant::now() + Duration::from_millis(200);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        assert_eq!(title(&fake), "build — 200×62");
+        // Asked again, it holds the user's; cancelled, it stays.
+        let open = ask(&mut fake, &mut app);
+        assert_eq!(open.alert.input.as_deref(), Some("build"));
+        fake.answer_alert_typed(&mut app, open.id, (1, false), Some("other"));
+        assert_eq!(title(&fake), "build — 200×62");
+        // Emptied, the window's own comes back, of the program's title.
+        let open = ask(&mut fake, &mut app);
+        fake.answer_alert_typed(&mut app, open.id, (0, false), Some(" "));
+        assert_eq!(title(&fake), "prompt — bash — 200×62");
+        assert_ne!(own, title(&fake));
+    }
+
+    /// The press of Command and Shift and the key of `letter`.
+    fn command_key_shift(code: KeyCode, letter: &str) -> WindowEvent {
+        let mods = Modifiers { shift: true, ..CMD };
+        key_event(code, letter, mods, true)
     }
 
     #[test]

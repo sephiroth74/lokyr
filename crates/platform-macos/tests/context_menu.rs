@@ -22,16 +22,21 @@ mod probe {
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
     use objc2_app_kit::{
-        NSApplication, NSMenu, NSMenuDidBeginTrackingNotification, NSPopUpMenuWindowLevel,
+        NSApplication, NSMenu, NSMenuDidBeginTrackingNotification,
+        NSMenuDidEndTrackingNotification, NSPopUpMenuWindowLevel,
     };
     use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint};
 
     use crate::common;
 
     thread_local! {
-        /// The menu whose loop began last.
+        /// The menu whose loop began last, until it ends.
         static TRACKED: RefCell<Option<Retained<NSMenu>>> = const { RefCell::new(None) };
     }
+
+    /// How many times the first menu opens again, when a click or a key of
+    /// the user's closed it before its time.
+    const RETRIES: usize = 3;
 
     #[derive(Debug, Default)]
     struct Seen {
@@ -47,6 +52,8 @@ mod probe {
         /// that the app asked for.
         at_point: bool,
         commands: Vec<(WindowId, String)>,
+        /// How many times the first menu opened again.
+        retries: usize,
     }
 
     struct Probe {
@@ -118,6 +125,14 @@ mod probe {
                 1 => {
                     seen.at_point = menu_at(Point { x: 20.0, y: 20.0 });
                     platform.request_frame(window);
+                }
+                // Something of the user's closed the first menu, or the third,
+                // before its time: it opens again, for the step again.
+                2 | 4 if tracked().is_none() && seen.retries < RETRIES => {
+                    seen.retries += 1;
+                    seen.step -= 1;
+                    seen.in_menu.pop();
+                    platform.show_context_menu(window, Point { x: 20.0, y: 20.0 }, &menu());
                 }
                 // Its first item is chosen, which closes it.
                 2 => {
@@ -202,13 +217,35 @@ mod probe {
                 &block,
             )
         };
+        let ended = RcBlock::new(|notification: NonNull<NSNotification>| {
+            // SAFETY: the notification lives through the observer's call.
+            let notification = unsafe { notification.as_ref() };
+            let menu = notification
+                .object()
+                .and_then(|object| object.downcast::<NSMenu>().ok());
+            TRACKED.with(|tracked| {
+                let mut tracked = tracked.borrow_mut();
+                if tracked.as_ref() == menu.as_ref() {
+                    *tracked = None;
+                }
+            });
+        });
+        // SAFETY: as the observer of the beginnings.
+        let end_observer = unsafe {
+            NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+                Some(NSMenuDidEndTrackingNotification),
+                None,
+                None,
+                &ended,
+            )
+        };
         let seen = Rc::new(RefCell::new(Seen::default()));
         let probe = Probe {
             seen: Rc::clone(&seen),
             window: None,
         };
         lokyr_platform_macos::run(probe).expect("the application runs");
-        drop(observer);
+        drop((observer, end_observer));
         let seen = seen.borrow();
         assert_eq!(seen.in_menu, [true, true, true, true], "{seen:?}");
         assert!(seen.frames_in_menu >= 1, "{seen:?}");

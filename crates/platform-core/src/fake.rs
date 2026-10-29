@@ -253,17 +253,35 @@ impl Fake {
         button: usize,
         suppressed: bool,
     ) -> bool {
+        self.answer_alert_typed(handler, alert, (button, suppressed), None)
+    }
+
+    /// Closes `alert` with `button`, its checkbox ticked when `suppressed`,
+    /// as [`Fake::answer_alert_with`] does, its field holding `text`, or the
+    /// text that it opened with, if it has one.
+    pub fn answer_alert_typed(
+        &mut self,
+        handler: &mut dyn Handler,
+        alert: AlertId,
+        (button, suppressed): (usize, bool),
+        text: Option<&str>,
+    ) -> bool {
         let Some(index) = self.alerts.iter().position(|open| open.id == alert) else {
             return false;
         };
         let open = self.alerts.remove(index);
         let suppressed = suppressed && open.alert.suppression.is_some();
+        let text = open
+            .alert
+            .input
+            .map(|input| text.map_or(input, str::to_owned));
         self.send_app(
             handler,
             AppEvent::AlertClosed {
                 alert,
                 button,
                 suppressed,
+                text,
             },
         )
     }

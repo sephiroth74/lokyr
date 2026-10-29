@@ -2,6 +2,7 @@
 
 command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
+command-window-set-title = Imposta titolo…
 command-app-quit = Esci da Lokyr
 command-appearance-system = Aspetto automatico
 command-appearance-light = Aspetto chiaro
@@ -46,6 +47,11 @@ close-running-message = Chiudere questa finestra?
 close-running-detail = In questa finestra è in esecuzione { $program }: chiuderla lo termina.
 close-running-close = Chiudi
 close-running-cancel = Annulla
+
+set-title-message = Il titolo della finestra
+set-title-detail = Lascialo vuoto per quello della finestra: il titolo del programma, o la sua cartella, poi il programma in esecuzione.
+set-title-set = Imposta
+set-title-cancel = Annulla
 quit-running-message = Uscire da Lokyr?
 quit-running-detail = { $windows ->
     [one] In una finestra è in esecuzione { $programs }: uscire lo termina.

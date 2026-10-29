@@ -8,9 +8,9 @@ use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSControlStateValueOn, NSModalResponse,
-    NSWindow,
+    NSTextField, NSWindow,
 };
-use objc2_foundation::NSString;
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
 use crate::shared::{Pending, Shared};
 
@@ -33,7 +33,28 @@ pub(crate) fn new(mtm: MainThreadMarker, alert: &Alert) -> Retained<NSAlert> {
             checkbox.setTitle(&NSString::from_str(title));
         }
     }
+    if let Some(text) = &alert.input {
+        let field = NSTextField::textFieldWithString(&NSString::from_str(text), mtm);
+        field.setFrame(NSRect::new(
+            NSPoint::ZERO,
+            NSSize::new(FIELD_WIDTH, FIELD_HEIGHT),
+        ));
+        ns_alert.setAccessoryView(Some(&field));
+        // The field takes the keys as the alert opens.
+        ns_alert.window().setInitialFirstResponder(Some(&field));
+    }
     ns_alert
+}
+
+/// The size of an alert's field of text, in points.
+const FIELD_WIDTH: f64 = 300.0;
+const FIELD_HEIGHT: f64 = 24.0;
+
+/// The text of the field of `ns_alert`, once it closed: `None` for one that
+/// shows none.
+pub(crate) fn text(ns_alert: &NSAlert) -> Option<String> {
+    let field = ns_alert.accessoryView()?.downcast::<NSTextField>().ok()?;
+    Some(field.stringValue().to_string())
 }
 
 /// Whether the checkbox of `ns_alert`, once it closed, was ticked: `false`

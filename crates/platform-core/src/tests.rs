@@ -79,6 +79,7 @@ impl Handler for App {
                         detail: "vim is running.".to_owned(),
                         buttons: vec!["Close".to_owned(), "Cancel".to_owned()],
                         suppression: None,
+                        input: None,
                     };
                     self.alert = Some(platform.show_alert(self.windows.first().copied(), &alert));
                 }
@@ -338,7 +339,8 @@ fn an_alert_closes_with_the_button_chosen() {
         Some(&AppEvent::AlertClosed {
             alert,
             button: 1,
-            suppressed: false
+            suppressed: false,
+            text: None
         })
     );
     // An alert closes once.
@@ -352,7 +354,8 @@ fn an_alert_closes_with_the_button_chosen() {
         Some(&AppEvent::AlertClosed {
             alert,
             button: 0,
-            suppressed: false
+            suppressed: false,
+            text: None
         })
     );
     let checked = fake.show_alert(
@@ -363,6 +366,7 @@ fn an_alert_closes_with_the_button_chosen() {
             detail: String::new(),
             buttons: vec!["Paste".to_owned(), "Cancel".to_owned()],
             suppression: Some("Don't ask again".to_owned()),
+            input: None,
         },
     );
     fake.answer_alert_with(&mut app, checked, 0, true);
@@ -371,9 +375,36 @@ fn an_alert_closes_with_the_button_chosen() {
         Some(&AppEvent::AlertClosed {
             alert: checked,
             button: 0,
-            suppressed: true
+            suppressed: true,
+            text: None
         })
     );
+    // A field's text, as typed, or as it opened.
+    let asking = |fake: &mut Fake| {
+        fake.show_alert(
+            Some(window),
+            &Alert {
+                style: AlertStyle::Informational,
+                message: "The title".to_owned(),
+                detail: String::new(),
+                buttons: vec!["Set".to_owned()],
+                suppression: None,
+                input: Some("old".to_owned()),
+            },
+        )
+    };
+    let typed = asking(&mut fake);
+    fake.answer_alert_typed(&mut app, typed, (0, false), Some("new"));
+    let untouched = asking(&mut fake);
+    fake.answer_alert(&mut app, untouched, 0);
+    let texts: Vec<Option<&str>> = app.app_events[app.app_events.len() - 2..]
+        .iter()
+        .map(|event| match event {
+            AppEvent::AlertClosed { text, .. } => text.as_deref(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, [Some("new"), Some("old")]);
 }
 
 #[test]
