@@ -95,6 +95,9 @@ pub struct Fake {
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     context_menus: Vec<(WindowId, Point, ContextMenu)>,
+    /// The height of the titlebar of the windows that open, which their
+    /// content runs under.
+    bar: f64,
     /// The definitions that the app showed, from the first.
     definitions: Vec<FakeDefinition>,
     clipboard: Option<String>,
@@ -146,6 +149,7 @@ impl Fake {
             disabled: std::collections::BTreeSet::new(),
             checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
+            bar: 0.0,
             definitions: Vec::new(),
             clipboard: None,
             alerts: Vec::new(),
@@ -323,6 +327,14 @@ impl Fake {
         self.own_appearance
     }
 
+    /// Gives the windows that open from now on a titlebar `bar` points high
+    /// over their content, which runs under it, as a backend's: their
+    /// content is that much taller than the size asked for, which is the one
+    /// below the bar.
+    pub fn set_bar(&mut self, bar: f64) {
+        self.bar = bar;
+    }
+
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     pub fn context_menus(&self) -> &[(WindowId, Point, ContextMenu)] {
@@ -436,7 +448,14 @@ impl Platform for Fake {
             id,
             FakeWindow {
                 title: attributes.title.clone(),
-                size: WindowSize::new(attributes.size, self.scale),
+                size: WindowSize::new(
+                    Size {
+                        width: attributes.size.width,
+                        height: attributes.size.height + self.bar,
+                    },
+                    self.scale,
+                )
+                .with_bar(self.bar),
                 occluded: false,
                 frame_requested: false,
                 text_area: None,

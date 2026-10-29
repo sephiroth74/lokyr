@@ -47,7 +47,9 @@ struct GlyphInstance {
     position: [f32; 2],
     size: [f32; 2],
     atlas: [u32; 2],
-    _padding: [u32; 2],
+    /// The atlas: 0 for coverage's, 1 for colors'.
+    texture: u32,
+    _padding: u32,
     color: [f32; 4],
 }
 
@@ -87,8 +89,7 @@ pub struct MetalRenderer {
     solid: Pipeline,
     background: Pipeline,
     lines: Pipeline,
-    coverage_glyphs: Pipeline,
-    color_glyphs: Pipeline,
+    glyphs: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
     /// The commands of the frames that the GPU may still draw, by their
@@ -114,8 +115,7 @@ impl MetalRenderer {
             solid: pipeline("rect_vertex", "solid_fragment")?,
             background: pipeline("background_vertex", "solid_fragment")?,
             lines: pipeline("line_vertex", "line_fragment")?,
-            coverage_glyphs: pipeline("glyph_vertex", "coverage_fragment")?,
-            color_glyphs: pipeline("glyph_vertex", "color_fragment")?,
+            glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
             queue: gpu.queue.clone(),
@@ -448,14 +448,11 @@ impl Frame<'_> {
             _ if matches!(self.clips.last(), Some(None)) => {}
             Item::Rect { rect, color } => self.rects(&[rect_instance(rect, *color)]),
             Item::Glyphs(glyphs) => {
-                let instances: Vec<(Texture, GlyphInstance)> = glyphs
+                let instances: Vec<GlyphInstance> = glyphs
                     .iter()
                     .map(|glyph| {
                         let position = [glyph.x as f32, glyph.y as f32];
-                        (
-                            glyph.region.texture,
-                            glyph_instance(position, &glyph.region, glyph.color),
-                        )
+                        glyph_instance(position, &glyph.region, glyph.color)
                     })
                     .collect();
                 self.glyphs(&instances);
@@ -598,16 +595,13 @@ impl Frame<'_> {
                 }
             })
             .collect();
-        let glyphs: Vec<(Texture, GlyphInstance)> = batch
+        let glyphs: Vec<GlyphInstance> = batch
             .glyphs
             .iter()
             .map(|glyph| {
                 let (x, y) = cell_origin(glyph.column, glyph.row);
                 let position = [(x + glyph.x) as f32, (y + glyph.y) as f32];
-                (
-                    glyph.region.texture,
-                    glyph_instance(position, &glyph.region, glyph.color),
-                )
+                glyph_instance(position, &glyph.region, glyph.color)
             })
             .collect();
         self.glyphs(&glyphs);
@@ -617,37 +611,30 @@ impl Frame<'_> {
         }
     }
 
-    /// Draws `glyphs`, those of each texture with its pipeline.
-    fn glyphs(&self, glyphs: &[(Texture, GlyphInstance)]) {
-        for (texture, pipeline) in [
-            (Texture::Coverage, &self.renderer.coverage_glyphs),
-            (Texture::Color, &self.renderer.color_glyphs),
-        ] {
-            let instances: Vec<GlyphInstance> = glyphs
-                .iter()
-                .filter(|(of, _)| *of == texture)
-                .map(|&(_, instance)| instance)
-                .collect();
-            let Some(buffer) = self.renderer.buffer(&instances) else {
-                continue;
-            };
-            self.encoder.setRenderPipelineState(pipeline);
-            // SAFETY: the buffers, bytes and texture that the glyphs' shaders
-            // take, at their indices.
-            unsafe {
-                self.encoder
-                    .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
-                self.set_viewport();
-                self.encoder
-                    .setFragmentTexture_atIndex(Some(self.renderer.texture(texture)), 0);
-                self.encoder
-                    .drawPrimitives_vertexStart_vertexCount_instanceCount(
-                        MTLPrimitiveType::TriangleStrip,
-                        0,
-                        QUAD,
-                        instances.len(),
-                    );
-            }
+    /// Draws `glyphs`, of either atlas, in their order, each over those
+    /// before it.
+    fn glyphs(&self, glyphs: &[GlyphInstance]) {
+        let Some(buffer) = self.renderer.buffer(glyphs) else {
+            return;
+        };
+        self.encoder.setRenderPipelineState(&self.renderer.glyphs);
+        // SAFETY: the buffers, bytes and textures that the glyphs' shaders
+        // take, at their indices.
+        unsafe {
+            self.encoder
+                .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+            self.set_viewport();
+            self.encoder
+                .setFragmentTexture_atIndex(Some(self.renderer.texture(Texture::Coverage)), 0);
+            self.encoder
+                .setFragmentTexture_atIndex(Some(self.renderer.texture(Texture::Color)), 1);
+            self.encoder
+                .drawPrimitives_vertexStart_vertexCount_instanceCount(
+                    MTLPrimitiveType::TriangleStrip,
+                    0,
+                    QUAD,
+                    glyphs.len(),
+                );
         }
     }
 
@@ -704,7 +691,11 @@ fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> Gly
         position,
         size: [region.width as f32, region.height as f32],
         atlas: [region.x, region.y],
-        _padding: [0; 2],
+        texture: match region.texture {
+            Texture::Coverage => 0,
+            Texture::Color => 1,
+        },
+        _padding: 0,
         color: rgba(color),
     }
 }
@@ -1011,6 +1002,51 @@ mod tests {
         let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
         surface.resize(64, 32, 1.0);
         assert!(renderer.draw(&surface, &list()).unwrap());
+    }
+
+    #[test]
+    fn glyphs_of_either_atlas_draw_in_their_order() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // A pixel of full coverage, and a green one of its own color.
+        renderer
+            .update_textures(&[
+                TextureUpdate::Upload {
+                    region: region(Texture::Coverage, 0, 0, 1, 1),
+                    data: vec![255],
+                },
+                TextureUpdate::Upload {
+                    region: region(Texture::Color, 0, 0, 1, 1),
+                    data: vec![0, 255, 0, 255],
+                },
+            ])
+            .unwrap();
+        let red = Color::from_rgb8(255, 0, 0);
+        let glyph = |texture| PlacedGlyph {
+            region: region(texture, 0, 0, 1, 1),
+            x: 0,
+            y: 0,
+            color: red,
+        };
+        let drawn = |renderer: &mut MetalRenderer, glyphs: Vec<PlacedGlyph>| {
+            let list = DisplayList {
+                frame: 1,
+                background: Color::from_rgb8(0, 0, 255),
+                items: vec![Item::Glyphs(glyphs)],
+            };
+            renderer.draw_offscreen(&list, 1, 1).unwrap()
+        };
+        let color_then_coverage = drawn(
+            &mut renderer,
+            vec![glyph(Texture::Color), glyph(Texture::Coverage)],
+        );
+        assert_eq!(color_then_coverage, [255, 0, 0, 255]);
+        let coverage_then_color = drawn(
+            &mut renderer,
+            vec![glyph(Texture::Coverage), glyph(Texture::Color)],
+        );
+        assert_eq!(coverage_then_color, [0, 255, 0, 255]);
     }
 
     #[test]

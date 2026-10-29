@@ -127,6 +127,9 @@ const WINDOW_SIZE: Size = Size {
     height: 500.0,
 };
 
+/// What parts a title's parts.
+const TITLE_DASH: &str = " — ";
+
 /// The columns and the rows of a man page's window: `man` lays its pages
 /// out for 80 columns.
 const MAN_PAGE_CELLS: (u32, u32) = (80, 48);
@@ -336,6 +339,14 @@ struct Window {
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
     page: Option<String>,
+    /// The directory and the program in its foreground, as its title shows
+    /// them, as `lokyr — zsh`.
+    place: String,
+    /// The title that the platform shows, once the app gave one.
+    title_shown: Option<String>,
+    /// The appearance of its own that the platform has for it, once the
+    /// app gave one: `None` for the app's.
+    own_appearance: Option<Option<Appearance>>,
 }
 
 /// `target` as a question shows it: each character that shows nothing,
@@ -433,6 +444,9 @@ impl Window {
             taken: Vec::new(),
             selecting: None,
             page: None,
+            place: String::new(),
+            title_shown: None,
+            own_appearance: None,
         }
     }
 
@@ -760,9 +774,13 @@ impl App {
         position: Point,
     ) -> Option<Pointer> {
         let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
-        let scale = platform.window_size(window)?.scale;
-        let padding = self.padding(scale);
-        Some(mouse::pointer(position, scale, padding, pane.grid()))
+        let size = platform.window_size(window)?;
+        Some(mouse::pointer(
+            position,
+            size.scale,
+            self.origin(size),
+            pane.grid(),
+        ))
     }
 
     /// A button of the mouse went down or up over `window`: the program
@@ -1108,7 +1126,7 @@ impl App {
         // A selection that starts above the view, or below it, shows at its
         // edge.
         let row = row.clamp(0, i64::from(grid.rows.saturating_sub(1))) as f64;
-        let (left, top) = self.padding(size.scale);
+        let (left, top) = self.origin(size);
         let baseline = self
             .drawing
             .as_ref()
@@ -1234,13 +1252,14 @@ impl App {
     /// the cells to it, and the view scrolls while it is past the grid's
     /// top or bottom.
     fn select_drag(&mut self, platform: &mut dyn Platform, window: WindowId, position: Point) {
-        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+        let Some(size) = platform.window_size(window) else {
             return;
         };
+        let scale = size.scale;
         let Some(pointer) = self.pointer(platform, window, position) else {
             return;
         };
-        let (_, top) = self.padding(scale);
+        let (_, top) = self.origin(size);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -1518,10 +1537,6 @@ impl App {
                 pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
-                // A man page's light background takes a dark title.
-                if page.is_some() {
-                    platform.set_window_appearance(window, Some(Appearance::Light));
-                }
                 let mut state = Window::new(surface, ids, focused, Instant::now());
                 state.page = page;
                 self.windows.insert(window, state);
@@ -1911,17 +1926,40 @@ impl App {
     /// Gives `window` the title of its active tab, or Lokyr's when its
     /// program gives none, after 🔔 when its bell rang while it had no
     /// focus.
-    fn show_title(&self, platform: &mut dyn Platform, window: WindowId) {
-        let Some(state) = self.windows.get(&window) else {
+    fn show_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let title = self.title_of(window);
+        let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
         let mark = if state.bell_marked { BELL_MARK } else { "" };
-        platform.set_title(window, &format!("{mark}{}", self.title_of(window)));
+        let title = format!("{mark}{title}");
+        if state.title_shown.as_ref() != Some(&title) {
+            platform.set_title(window, &title);
+            state.title_shown = Some(title);
+        }
     }
 
-    /// The title of `window`'s active tab, or, when its program gives none,
-    /// its man page's, or Lokyr's.
+    /// The title of `window`, as [`App::base_title`] gives it, then the
+    /// grid's size, as `— 100×33`, unless the config leaves it out.
     fn title_of(&self, window: WindowId) -> String {
+        let title = self.base_title(window);
+        let grid = self
+            .windows
+            .get(&window)
+            .and_then(|state| self.workspace.pane(state.pane))
+            .map(Pane::grid);
+        match grid {
+            Some(grid) if self.config.window.title_size => {
+                format!("{title}{TITLE_DASH}{}×{}", grid.columns, grid.rows)
+            }
+            _ => title,
+        }
+    }
+
+    /// The title of `window` before its size: its active tab's, which its
+    /// program gives; or its man page's; or the directory and the program
+    /// in its foreground, as `lokyr — zsh`; or Lokyr's.
+    fn base_title(&self, window: WindowId) -> String {
         let state = self.windows.get(&window);
         state
             .and_then(|state| self.workspace.window(state.window))
@@ -1929,8 +1967,37 @@ impl App {
             .map(workspace::Tab::title)
             .filter(|title| !title.is_empty())
             .or_else(|| state.and_then(|state| state.page.as_deref()))
+            .or_else(|| {
+                state
+                    .map(|state| state.place.as_str())
+                    .filter(|place| !place.is_empty())
+            })
             .unwrap_or(TITLE)
             .to_owned()
+    }
+
+    /// Looks again at the directory and the program in `window`'s
+    /// foreground, while its program runs, and shows the title, if it
+    /// changed. A frame comes after what the program wrote last, as after
+    /// `cd`'s prompt, so that the title follows it; a look reads the
+    /// terminal's foreground group and its first process's path and
+    /// directory, some microseconds, and nothing looks while no frame
+    /// comes.
+    fn refresh_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        if !pane.is_kept() {
+            state.place = place(
+                pane.working_directory().as_deref(),
+                pane.foreground_program().as_deref(),
+                std::env::home_dir().as_deref(),
+            );
+        }
+        self.show_title(platform, window);
     }
 
     /// Rings `pane`'s bell, as `[bell]` says: the system's sound; a flash
@@ -1984,7 +2051,7 @@ impl App {
         };
         let now = Instant::now();
         let title = if title.is_empty() {
-            self.title_of(window)
+            self.base_title(window)
         } else {
             title.to_owned()
         };
@@ -2371,9 +2438,11 @@ impl App {
             (pixels.saturating_sub(2 * padding) / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16
         };
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
+        // The titlebar is over the content's top.
+        let below = size.pixels.height.saturating_sub(size.bar_pixels());
         Grid {
             columns: fit(size.pixels.width, x, width),
-            rows: fit(size.pixels.height, y, height),
+            rows: fit(below, y, height),
             cell_width: pixels(width),
             cell_height: pixels(height),
         }
@@ -2433,6 +2502,14 @@ impl App {
                 ],
                 blur: f64::from(window.background_blur.points()),
             })
+    }
+
+    /// Where a window of `size` has its grid's first cell, in pixels from
+    /// its content's top left corner: past the padding, and below the
+    /// titlebar.
+    fn origin(&self, size: WindowSize) -> (u32, u32) {
+        let (x, y) = self.padding(size.scale);
+        (x, y + size.bar_pixels())
     }
 
     /// The room between the grid and the window's edges, in pixels on a
@@ -2510,7 +2587,7 @@ impl App {
     /// cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         let grid = self.grid(size);
-        let (left, top) = self.padding(size.scale);
+        let (left, top) = self.origin(size);
         let now = Instant::now();
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -2573,6 +2650,16 @@ impl App {
                 state.backdrop = backdrop;
             }
         }
+        // The title reads over the background, as the window takes the
+        // appearance of its background where it is not the app's.
+        let own = appearance_over(background, platform.appearance());
+        if let Some(state) = self.windows.get_mut(&window)
+            && state.own_appearance != Some(own)
+        {
+            platform.set_window_appearance(window, own);
+            state.own_appearance = Some(own);
+        }
+        self.refresh_title(platform, window);
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
@@ -2658,9 +2745,16 @@ impl App {
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
-        // Over a backdrop, what the cells leave shows it.
+        // Over a backdrop, what the cells leave shows it, and the titlebar
+        // too, unless the config keeps it opaque.
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
-        let mut items = vec![Item::Cells(batch)];
+        let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar;
+        let mut items: Vec<Item> = opaque_bar
+            .then(|| bar_item(size, background))
+            .flatten()
+            .into_iter()
+            .collect();
+        items.push(Item::Cells(batch));
         // A flash of the bell, the default text's color over the window.
         if state
             .flash_until
@@ -3011,6 +3105,72 @@ impl Handler for App {
             _ => {}
         }
     }
+}
+
+/// The titlebar of a window of `size`, over its content's top, opaque in
+/// `background`'s color; `None` without one.
+fn bar_item(size: WindowSize, background: Color) -> Option<Item> {
+    let height = size.bar_pixels();
+    (height > 0).then_some(Item::Rect {
+        rect: Rect {
+            x: 0,
+            y: 0,
+            width: size.pixels.width,
+            height,
+        },
+        color: background.with_alpha(1.0),
+    })
+}
+
+/// A title's directory and program, as `lokyr — zsh`: the directory's
+/// last part, `~` for `home`'s, and `/` for the root; either alone, or
+/// nothing.
+fn place(
+    directory: Option<&std::path::Path>,
+    program: Option<&str>,
+    home: Option<&std::path::Path>,
+) -> String {
+    let directory = directory.map(|directory| {
+        if Some(directory) == home {
+            "~".to_owned()
+        } else {
+            directory.file_name().map_or_else(
+                || "/".to_owned(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        }
+    });
+    [directory.as_deref(), program]
+        .into_iter()
+        .flatten()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(TITLE_DASH)
+}
+
+/// The appearance that a window whose default background is `background`
+/// takes, in the app's `appearance`, for its title to read: its
+/// background's, light or dark, when it is not the app's; `None` for the
+/// app's. A background is light past WCAG's luminance where black and
+/// white text contrast alike with it.
+fn appearance_over(background: Color, appearance: Appearance) -> Option<Appearance> {
+    let linear = |channel: f32| {
+        let channel = f64::from(channel);
+        if channel <= 0.040_45 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let luminance = 0.2126 * linear(background.red)
+        + 0.7152 * linear(background.green)
+        + 0.0722 * linear(background.blue);
+    let own = if luminance > 0.179 {
+        Appearance::Light
+    } else {
+        Appearance::Dark
+    };
+    (own != appearance).then_some(own)
 }
 
 /// The arguments of `man` for the page that `text` names: its name, and
@@ -5102,9 +5262,9 @@ mod tests {
         // Of 80 columns and 48 rows, cells 4 points wide and 8 high, its
         // title the page's, in the man page's colors.
         let shown = fake.window(page).unwrap();
-        assert_eq!(shown.title, "man world");
-        assert_eq!(shown.appearance, Some(Appearance::Light));
-        assert_eq!(fake.window(window).unwrap().appearance, None);
+        assert_eq!(shown.title, "man world — 80×48");
+        // Light, as the app is.
+        assert_eq!(shown.appearance, None);
         assert_eq!(
             shown.size.points,
             Size {
@@ -5123,7 +5283,7 @@ mod tests {
         assert!(fake.windows().any(|other| other == page));
         assert_eq!(row(&app, page, 1), "line 1");
         // An empty title of the program's leaves the page's.
-        assert_eq!(fake.window(page).unwrap().title, "man world");
+        assert_eq!(fake.window(page).unwrap().title, "man world — 80×48");
         // A pager's keys scroll it, and others do nothing.
         fake.send(&mut app, page, typed(KeyCode::ArrowDown, "", false));
         fake.send(&mut app, page, WindowEvent::Frame);
@@ -5133,10 +5293,16 @@ mod tests {
         fake.send(&mut app, page, WindowEvent::Frame);
         assert!(fake.windows().any(|other| other == page));
         assert_eq!(app.pane(page).view_offset(), 0);
-        // The appearance leaves its colors.
+        // The appearance leaves its colors, and its title reads over them:
+        // dark, in the light appearance of its own.
         fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
         assert_eq!(background(&mut fake, &mut app, page), yellow);
         assert_ne!(background(&mut fake, &mut app, window), yellow);
+        assert_eq!(
+            fake.window(page).unwrap().appearance,
+            Some(Appearance::Light)
+        );
+        assert_eq!(fake.window(window).unwrap().appearance, None);
         // Two words name no page: the item is dimmed, and names nothing.
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(11, 0)), none);
         right_click(&mut fake, &mut app, window, cell(2, 0), none);
@@ -5638,16 +5804,165 @@ mod tests {
     }
 
     #[test]
+    fn the_grid_starts_below_the_titlebar() {
+        let mut fake = Fake::default();
+        fake.set_bar(14.0);
+        let mut app = app(unpadded(), selecting_program());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        // The size asked for is below the bar, whose height the grid leaves.
+        let size = fake.window(window).unwrap().size;
+        assert_eq!(size.points.height, 514.0);
+        let grid = app.pane(window).grid();
+        assert_eq!((grid.columns, grid.rows), (200, 62));
+        // The cells start below it.
+        let below = |col: u16, row: u16| Point {
+            y: cell(col, row).y + 14.0,
+            ..cell(col, row)
+        };
+        fake.send(
+            &mut app,
+            window,
+            click(true, below(8, 0), Modifiers::NONE, 2),
+        );
+        fake.send(
+            &mut app,
+            window,
+            click(false, below(8, 0), Modifiers::NONE, 2),
+        );
+        assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
+        fake.send(
+            &mut app,
+            window,
+            click(true, below(3, 1), Modifiers::NONE, 2),
+        );
+        fake.send(
+            &mut app,
+            window,
+            click(false, below(3, 1), Modifiers::NONE, 2),
+        );
+        assert_eq!(selected_text(&app, window).as_deref(), Some("second"));
+        // Over the bar, the first row.
+        fake.send(
+            &mut app,
+            window,
+            click(true, cell(8, 0), Modifiers::NONE, 2),
+        );
+        fake.send(
+            &mut app,
+            window,
+            click(false, cell(8, 0), Modifiers::NONE, 2),
+        );
+        assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
+        // An opaque bar covers the bar's pixels, of the background.
+        let background = Color::from_rgb8(1, 2, 3);
+        let Some(Item::Rect { rect, color }) = bar_item(size, background) else {
+            panic!("a bar");
+        };
+        assert_eq!((rect.x, rect.y, rect.width, rect.height), (0, 0, 1600, 28));
+        assert_eq!(color, background.with_alpha(1.0));
+        assert!(bar_item(points(400.0, 300.0), background).is_none());
+    }
+
+    /// A program that shows `hello world` and `second line`, then `ready`.
+    fn selecting_program() -> Program {
+        shell("stty raw -echo; printf 'hello world\\r\\nsecond line\\r\\n'; echo ready; cat -v")
+    }
+
+    #[test]
+    fn the_title_tells_the_directory_the_program_and_the_size() {
+        let (mut fake, mut app, window) =
+            started_with(shell("cd /usr; stty raw -echo; echo ready; exec cat"));
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        run_until(&mut fake, &mut app, |fake, _| {
+            title(fake) == "usr — cat — 200×62"
+        });
+        // Without the size.
+        app.config.window.title_size = false;
+        app.show_title(&mut fake, window);
+        assert_eq!(title(&fake), "usr — cat");
+        // The parts.
+        let home = std::path::Path::new("/Users/me");
+        fn at(directory: &str) -> Option<&std::path::Path> {
+            Some(std::path::Path::new(directory))
+        }
+        assert_eq!(
+            place(at("/Users/me/src/lokyr"), Some("zsh"), Some(home)),
+            "lokyr — zsh"
+        );
+        assert_eq!(place(at("/Users/me"), Some("zsh"), Some(home)), "~ — zsh");
+        assert_eq!(place(at("/"), Some("vim"), Some(home)), "/ — vim");
+        assert_eq!(place(None, Some("zsh"), Some(home)), "zsh");
+        assert_eq!(place(at("/tmp"), None, None), "tmp");
+        assert_eq!(place(None, None, None), "");
+    }
+
+    #[test]
+    fn a_kept_screen_keeps_its_title_s_place() {
+        let mut config = unpadded();
+        config.window.close_on_exit = CloseOnExit::Never;
+        let mut fake = Fake::default();
+        let mut app = app(
+            config,
+            shell("cd /usr; stty raw -echo; echo ready; head -c 1 >/dev/null; exit 3"),
+        );
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        run_until(&mut fake, &mut app, |fake, _| {
+            title(fake).starts_with("usr — ")
+        });
+        fake.send(&mut app, window, key());
+        run_until(&mut fake, &mut app, |_, app| app.pane(window).is_kept());
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(title(&fake).starts_with("usr — "), "{}", title(&fake));
+    }
+
+    #[test]
+    fn a_window_takes_the_appearance_of_its_background_where_it_is_not_the_app_s() {
+        let gray = |level: u8| Color::from_rgb8(level, level, level);
+        assert_eq!(appearance_over(gray(250), Appearance::Light), None);
+        assert_eq!(
+            appearance_over(gray(250), Appearance::Dark),
+            Some(Appearance::Light)
+        );
+        assert_eq!(
+            appearance_over(gray(30), Appearance::Light),
+            Some(Appearance::Dark)
+        );
+        assert_eq!(appearance_over(gray(30), Appearance::Dark), None);
+        // Past the luminance where black and white contrast alike, about
+        // 118 of 255.
+        assert_eq!(
+            appearance_over(gray(124), Appearance::Dark),
+            Some(Appearance::Light)
+        );
+        assert_eq!(
+            appearance_over(gray(112), Appearance::Light),
+            Some(Appearance::Dark)
+        );
+    }
+
+    #[test]
     fn a_window_takes_its_program_s_title() {
         let program = shell(
             "stty raw -echo; printf '\\033]2;x\\a'; echo ready; head -c 1 >/dev/null; printf '\\033]2;\\a'; sleep 10",
         );
         let (mut fake, mut app, window) = configured("", program);
         let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
-        run_until(&mut fake, &mut app, |fake, _| title(fake) == "x");
-        // A title of nothing gives Lokyr's.
+        let size = |app: &App| {
+            let grid = app.pane(window).grid();
+            format!("{TITLE_DASH}{}×{}", grid.columns, grid.rows)
+        };
+        run_until(&mut fake, &mut app, |fake, app| {
+            title(fake) == format!("x{}", size(app))
+        });
+        // A title of nothing gives the window's own.
         fake.send(&mut app, window, key());
-        run_until(&mut fake, &mut app, |fake, _| title(fake) == "Lokyr");
+        run_until(&mut fake, &mut app, |fake, app| {
+            !title(fake).starts_with('x') && title(fake) == app.title_of(window)
+        });
     }
 
     /// A program that rings its bell at each key, twice the second time
@@ -5671,7 +5986,7 @@ mod tests {
             app.windows[&window].flash_until.is_none()
         });
         assert_eq!((fake.alert_sounds(), fake.attention_requests()), (0, 0));
-        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+        assert!(!fake.window(window).unwrap().title.starts_with(BELL_MARK));
         // Without the focus: a bounce and the mark, once for the two bells,
         // until the window takes the focus. The bells of the first key are
         // a fifth of a second behind.
@@ -5679,15 +5994,15 @@ mod tests {
         run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
         fake.send(&mut app, window, WindowEvent::Focused(false));
         fake.send(&mut app, window, key());
-        run_until(&mut fake, &mut app, |fake, _| {
-            fake.window(window).unwrap().title == "🔔 Lokyr"
+        run_until(&mut fake, &mut app, |fake, app| {
+            fake.window(window).unwrap().title == format!("🔔 {}", app.title_of(window))
         });
         let pause = Instant::now() + Duration::from_millis(300);
         run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
         assert_eq!(fake.attention_requests(), 1);
         assert!(app.windows[&window].flash_until.is_none());
         fake.send(&mut app, window, WindowEvent::Focused(true));
-        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+        assert_eq!(fake.window(window).unwrap().title, app.title_of(window));
     }
 
     #[test]
@@ -5707,7 +6022,7 @@ mod tests {
         run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
         assert_eq!(fake.alert_sounds(), 2, "one sound for the two bells");
         assert_eq!(fake.attention_requests(), 0);
-        assert_eq!(fake.window(window).unwrap().title, "Lokyr");
+        assert!(!fake.window(window).unwrap().title.starts_with(BELL_MARK));
         assert!(app.windows[&window].flash_until.is_none());
     }
 

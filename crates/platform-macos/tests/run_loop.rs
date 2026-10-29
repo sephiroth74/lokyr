@@ -229,9 +229,16 @@ mod probe {
         eprintln!("run_loop: {seen:?}");
         assert!(seen.started, "{seen:?}");
         let size = seen.size.expect("the window has a size");
-        assert_eq!(size.points, SIZE);
-        assert_eq!(f64::from(size.pixels.width), SIZE.width * size.scale);
-        assert_eq!(f64::from(size.pixels.height), SIZE.height * size.scale);
+        // The size asked for is below the titlebar, which the content runs
+        // under.
+        assert!(size.bar > 0.0, "{seen:?}");
+        let points = Size {
+            width: SIZE.width,
+            height: SIZE.height + size.bar,
+        };
+        assert_eq!(size.points, points);
+        assert_eq!(f64::from(size.pixels.width), points.width * size.scale);
+        assert_eq!(f64::from(size.pixels.height), points.height * size.scale);
         assert_eq!(seen.title.as_deref(), Some(TITLE), "{seen:?}");
         assert!(seen.unknown_window_has_no_size, "{seen:?}");
         assert_eq!(seen.metal_layer_scale, Some(size.scale), "{seen:?}");

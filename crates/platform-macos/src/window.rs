@@ -16,7 +16,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSCursor, NSEvent, NSEventPhase, NSEventType, NSResponder,
     NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
-    NSWindowOcclusionState, NSWindowStyleMask,
+    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSObject,
@@ -49,14 +49,26 @@ impl Window {
         attributes: &WindowAttributes,
         option_as_meta: Rc<Cell<(bool, bool)>>,
     ) -> Self {
-        let content = NSRect::new(
+        let below = NSRect::new(
             NSPoint::ZERO,
             NSSize::new(attributes.size.width, attributes.size.height),
         );
-        let style = NSWindowStyleMask::Titled
+        let titled = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable
             | NSWindowStyleMask::Resizable;
+        // The content runs under the titlebar, so that the terminal's
+        // background is the bar's too: it is the bar's height taller, for
+        // the size asked to be the one below the bar.
+        let bar = NSWindow::frameRectForContentRect_styleMask(below, titled, mtm)
+            .size
+            .height
+            - below.size.height;
+        let content = NSRect::new(
+            NSPoint::ZERO,
+            NSSize::new(below.size.width, below.size.height + bar.max(0.0)),
+        );
+        let style = titled | NSWindowStyleMask::FullSizeContentView;
         // SAFETY: a new window, of a valid style, which `setReleasedWhenClosed`
         // below keeps from being released twice.
         let ns_window = unsafe {
@@ -72,6 +84,11 @@ impl Window {
         // release.
         unsafe { ns_window.setReleasedWhenClosed(false) };
         ns_window.setTitle(&NSString::from_str(&attributes.title));
+        // The bar shows what the view draws under it, without the system's
+        // material nor its line; the system's tabs are not the app's.
+        ns_window.setTitlebarAppearsTransparent(true);
+        ns_window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
+        ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
         // The keys go to the view.
@@ -196,14 +213,6 @@ impl Window {
             None => NSColor::windowBackgroundColor(),
         };
         self.ns_window.setBackgroundColor(Some(&background));
-        // The titlebar shows the backdrop too, without the material and the
-        // line that the system draws over an opaque window's.
-        self.ns_window.setTitlebarAppearsTransparent(!opaque);
-        self.ns_window.setTitlebarSeparatorStyle(if opaque {
-            NSTitlebarSeparatorStyle::Automatic
-        } else {
-            NSTitlebarSeparatorStyle::None
-        });
         let radius = backdrop.map_or(0, |backdrop| backdrop.blur.round() as isize);
         // SAFETY: the window server's calls take its connection, a window's
         // number and a radius; a window of the process, open, is its own.
@@ -258,6 +267,8 @@ fn size_of(window: &NSWindow) -> WindowSize {
     };
     let bounds = view.bounds();
     let backing = view.convertRectToBacking(bounds);
+    // The content runs under the titlebar, over the layout's rectangle.
+    let bar = (bounds.size.height - window.contentLayoutRect().size.height).max(0.0);
     WindowSize {
         points: points(bounds.size),
         pixels: PixelSize {
@@ -266,6 +277,7 @@ fn size_of(window: &NSWindow) -> WindowSize {
             height: backing.size.height.round() as u32,
         },
         scale,
+        bar,
     }
 }
 

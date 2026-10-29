@@ -94,7 +94,8 @@ mod probe {
         let opaque = seen[0];
         assert_eq!((opaque.0, opaque.1, opaque.2), (true, true, true));
         assert!(opaque.3 > 0.0, "{seen:?}");
-        assert!(!opaque.4, "{seen:?}");
+        // The titlebar shows what the view draws under it, opaque or not.
+        assert!(opaque.4, "{seen:?}");
         // Translucent, blurred or not, over the backdrop's color.
         for translucent in &seen[1..3] {
             let (window, view, layer, alpha, titlebar) = *translucent;

@@ -9,7 +9,7 @@ use objc2::runtime::ProtocolObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
-    NSApplicationTerminateReply,
+    NSApplicationTerminateReply, NSWindow,
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
 
@@ -30,6 +30,9 @@ pub fn run(handler: impl Handler + 'static) -> Result<(), Error> {
         .ok_or_else(|| Error::Start("the application must run on the main thread".to_owned()))?;
     let app = NSApplication::sharedApplication(mtm);
     app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    // The windows are no tabs of the system's, nor does its Window menu
+    // offer them.
+    NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
 
     let wake = WakeSource::install()?;
     let shared = Shared::new(mtm, Box::new(handler), wake.waker());

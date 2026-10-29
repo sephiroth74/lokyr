@@ -38,11 +38,14 @@ pub struct WindowSize {
     pub pixels: PixelSize,
     /// The pixels in a point, along each axis: 1 or 2 on the Mac.
     pub scale: f64,
+    /// The height, in points, of the titlebar over the content's top, which
+    /// the content runs under; 0 without one.
+    pub bar: f64,
 }
 
 impl WindowSize {
     /// The size of `points` at `scale`, with its pixels rounded to the
-    /// nearest.
+    /// nearest, without a titlebar over it.
     pub fn new(points: Size, scale: f64) -> Self {
         Self {
             points,
@@ -51,7 +54,18 @@ impl WindowSize {
                 height: to_pixels(points.height, scale),
             },
             scale,
+            bar: 0.0,
         }
+    }
+
+    /// The size, with a titlebar `bar` points high over its top.
+    pub fn with_bar(self, bar: f64) -> Self {
+        Self { bar, ..self }
+    }
+
+    /// The titlebar's height in pixels, rounded to the nearest.
+    pub fn bar_pixels(&self) -> u32 {
+        to_pixels(self.bar, self.scale)
     }
 }
 

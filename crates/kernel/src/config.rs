@@ -20,6 +20,8 @@
 //! padding-y = 4             # points, at the top and the bottom
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
+//! title-size = true         # the grid's size in the title
+//! opaque-titlebar = false   # the titlebar opaque over a translucent window
 //!
 //! [terminal]
 //! term = "xterm-256color"   # the TERM that programs see
@@ -606,8 +608,8 @@ impl OptionAsMeta {
 }
 
 /// The `[window]` section: what a window does, the room around its grid,
-/// and how much of what is behind it shows through.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize)]
+/// how much of what is behind it shows through, and its titlebar.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
     /// What a window does when its program ends.
@@ -620,6 +622,25 @@ pub struct WindowConfig {
     pub background_opacity: Opacity,
     /// The blur of what shows through the default background.
     pub background_blur: Blur,
+    /// Whether the title ends with the grid's size, as `100×33`.
+    pub title_size: bool,
+    /// Whether the titlebar stays opaque over a translucent window, in the
+    /// default background's color.
+    pub opaque_titlebar: bool,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            close_on_exit: CloseOnExit::default(),
+            padding_x: Padding::default(),
+            padding_y: Padding::default(),
+            background_opacity: Opacity::default(),
+            background_blur: Blur::default(),
+            title_size: true,
+            opaque_titlebar: false,
+        }
+    }
 }
 
 /// The opacity of the window's default background, from 0, clear, to 1,
@@ -1318,6 +1339,8 @@ mod tests {
             padding-y = 2.5
             background-opacity = 0.85
             background-blur = 20
+            title-size = false
+            opaque-titlebar = true
 
             [terminal]
             term = "xterm-lokyr"
@@ -1402,6 +1425,9 @@ mod tests {
         assert_eq!(config.window.padding_y.points(), 2.5);
         assert_eq!(config.window.background_opacity.value(), 0.85);
         assert_eq!(config.window.background_blur.points(), 20.0);
+        assert!(!config.window.title_size && config.window.opaque_titlebar);
+        let window = Config::default().window;
+        assert!(window.title_size && !window.opaque_titlebar);
         assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
@@ -1850,7 +1876,9 @@ mod tests {
                 "padding-x",
                 "padding-y",
                 "background-opacity",
-                "background-blur"
+                "background-blur",
+                "title-size",
+                "opaque-titlebar"
             ]
         );
         assert_eq!(keys::<CursorConfig>(), ["shape", "blink", "thickness"]);

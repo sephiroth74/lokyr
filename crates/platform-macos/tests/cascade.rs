@@ -1,6 +1,7 @@
 //! A new window opens down and to the right of the window that has the
 //! focus, as the system cascades windows; the first one, in the screen's
-//! centre.
+//! centre. Its content runs under its titlebar, whose height its size
+//! tells, and is the size asked for below it.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -11,7 +12,7 @@ mod probe {
     use std::rc::Rc;
 
     use lokyr_platform_core::{
-        AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId,
+        AppEvent, Handler, Platform, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
     };
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
@@ -21,6 +22,8 @@ mod probe {
 
     #[derive(Debug, Default)]
     struct Seen {
+        /// The first window's size, as it opened.
+        size: Option<WindowSize>,
         first: Option<WindowId>,
         /// The windows' frames, the first's and the second's, as the second
         /// opened.
@@ -52,7 +55,10 @@ mod probe {
 
     impl Handler for Probe {
         fn started(&mut self, platform: &mut dyn Platform) {
-            self.0.borrow_mut().first = Some(open(platform));
+            let first = open(platform);
+            let mut seen = self.0.borrow_mut();
+            seen.first = Some(first);
+            seen.size = platform.window_size(first);
         }
 
         fn app_event(&mut self, _: &mut dyn Platform, _: AppEvent) {}
@@ -90,6 +96,11 @@ mod probe {
         assert!(second.origin.x > first.origin.x, "{seen:?}");
         assert!(top(second) < top(first), "{seen:?}");
         assert_eq!(second.size, first.size, "{seen:?}");
+        let size = seen.size.expect("the first window's size");
+        assert!(size.bar > 10.0 && size.bar < 60.0, "{seen:?}");
+        assert_eq!(size.points.width, 320.0, "{seen:?}");
+        assert_eq!(size.points.height, 200.0 + size.bar, "{seen:?}");
+        assert_eq!(size.bar_pixels(), (size.bar * size.scale).round() as u32);
         println!("cascade: ok");
     }
 }

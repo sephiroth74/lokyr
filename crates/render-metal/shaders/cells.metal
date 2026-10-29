@@ -31,11 +31,14 @@ struct Rect {
 };
 
 // A glyph: where it goes and its size, in pixels; where its pixels are in
-// the atlas; the color that fills a glyph of coverage.
+// the atlas; which atlas, 0 for coverage's and 1 for colors'; the color
+// that fills a glyph of coverage.
 struct Glyph {
     float2 position;
     float2 size;
     uint2 atlas;
+    uint texture;
+    uint padding;
     float4 color;
 };
 
@@ -43,6 +46,7 @@ struct Fragment {
     float4 position [[position]];
     float4 color [[flat]];
     uint2 atlas [[flat]];
+    uint texture [[flat]];
     // The pixel within the glyph, at its centre.
     float2 local;
 };
@@ -66,6 +70,7 @@ vertex Fragment rect_vertex(uint vertex_id [[vertex_id]],
     out.position = clip_space(rect.position + corner(vertex_id) * rect.size, viewport.size);
     out.color = rect.color;
     out.atlas = uint2(0);
+    out.texture = 0;
     out.local = float2(0);
     return out;
 }
@@ -80,6 +85,7 @@ vertex Fragment background_vertex(uint vertex_id [[vertex_id]],
     out.position = clip_space(grid.origin + (cell + corner(vertex_id)) * grid.cell, viewport.size);
     out.color = colors[instance];
     out.atlas = uint2(0);
+    out.texture = 0;
     out.local = float2(0);
     return out;
 }
@@ -98,21 +104,22 @@ vertex Fragment glyph_vertex(uint vertex_id [[vertex_id]],
     out.position = clip_space(glyph.position + local, viewport.size);
     out.color = glyph.color;
     out.atlas = glyph.atlas;
+    out.texture = glyph.texture;
     out.local = local;
     return out;
 }
 
-// A glyph of coverage, filled with its color, which comes premultiplied.
-fragment float4 coverage_fragment(Fragment in [[stage_in]],
-                                  texture2d<float, access::read> atlas [[texture(0)]]) {
-    float coverage = atlas.read(in.atlas + uint2(in.local)).r;
-    return in.color * coverage;
-}
-
-// A glyph of its own colors, premultiplied as the atlas holds it.
-fragment float4 color_fragment(Fragment in [[stage_in]],
-                               texture2d<float, access::read> atlas [[texture(0)]]) {
-    return atlas.read(in.atlas + uint2(in.local));
+// A glyph of coverage, filled with its color, which comes premultiplied; or
+// of its own colors, premultiplied as the atlas holds them. The two kinds
+// draw in one pass, each over those before it.
+fragment float4 glyph_fragment(Fragment in [[stage_in]],
+                               texture2d<float, access::read> coverage [[texture(0)]],
+                               texture2d<float, access::read> colors [[texture(1)]]) {
+    uint2 pixel = in.atlas + uint2(in.local);
+    if (in.texture == 1) {
+        return colors.read(pixel);
+    }
+    return in.color * coverage.read(pixel).r;
 }
 
 // A line across cells: the band of pixels that its pattern takes; its

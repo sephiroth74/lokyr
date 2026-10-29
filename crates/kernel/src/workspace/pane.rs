@@ -462,6 +462,13 @@ impl Pane {
             .and_then(|session| session.lock().link_at(column, row))
     }
 
+    /// The name of the program in the terminal's foreground, as `zsh` or
+    /// `vim`, once the program runs.
+    pub fn foreground_program(&self) -> Option<String> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        session.foreground_program()
+    }
+
     /// The working directory of the program in the terminal's foreground,
     /// once the program runs.
     pub fn working_directory(&self) -> Option<PathBuf> {

@@ -72,6 +72,8 @@ padding-x = 6                        # points, from 0 to 100
 padding-y = 4
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
+title-size = false                   # true | false: the grid's size in the title
+opaque-titlebar = true               # true | false: the titlebar opaque over a translucent window
 
 [terminal]
 term = "xterm-lokyr"                 # the TERM that programs see
@@ -428,6 +430,34 @@ The radius of the blur of what shows through the background, in points.
 
 - The blur shows only below a `background-opacity` of 1.
 - macOS has no public way to blur what is behind a window: Lokyr asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
+
+### `title-size`
+
+<sub>Platforms: macOS</sub>
+
+Whether the window's title ends with the size of its grid, in columns and rows, as `lokyr — zsh — 120×30`.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The title before it is the program's, when it gives one, as vim and the shells' prompts can; otherwise the folder and the program in the foreground, as `lokyr — zsh`, which Lokyr looks at as the program writes; or a man page's, as `man ls`.
+- As you resize the window, the size follows.
+- It applies at once, as you save the file.
+
+### `opaque-titlebar`
+
+<sub>Platforms: macOS</sub>
+
+Whether the titlebar stays opaque over a translucent window, in the default background's color.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- The terminal's background runs under the titlebar: with `false`, the titlebar is as translucent as the background, as `background-opacity` makes it; with `true`, it is opaque, and what is behind the window shows through the background below it alone.
+- The title's color reads over the background: a light background in the dark appearance, or a dark one in the light appearance, gives the window the appearance of its background.
+- It applies at once, as you save the file.
 
 ## `[terminal]`
 

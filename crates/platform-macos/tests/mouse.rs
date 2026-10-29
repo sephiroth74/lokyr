@@ -75,8 +75,9 @@ mod probe {
     }
 
     /// Hands the view a mouse event of `kind` through its method `method`,
-    /// `x` points from the content's left edge and `y` from its bottom one,
-    /// as AppKit counts.
+    /// `x` points from the content's left edge and `y` from its top one,
+    /// which AppKit counts from the window's bottom: the content, which
+    /// runs under the titlebar, is the whole window.
     fn send(
         method: &str,
         kind: NSEventType,
@@ -89,9 +90,10 @@ mod probe {
             .windows()
             .firstObject()
             .expect("the probe's window");
+        let height = view().bounds().size.height;
         let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
             kind,
-            NSPoint::new(x, y),
+            NSPoint::new(x, height - y),
             flags,
             0.0,
             window.windowNumber(),
@@ -185,18 +187,18 @@ mod probe {
             send(
                 "mouseDown:",
                 NSEventType::LeftMouseDown,
-                (10.0, 190.0),
+                (10.0, 10.0),
                 2,
                 shift,
             );
             send(
                 "mouseDragged:",
                 NSEventType::LeftMouseDragged,
-                (30.0, 150.0),
+                (30.0, 50.0),
                 1,
                 none,
             );
-            send("mouseUp:", NSEventType::LeftMouseUp, (30.0, 150.0), 1, none);
+            send("mouseUp:", NSEventType::LeftMouseUp, (30.0, 50.0), 1, none);
             send(
                 "rightMouseDown:",
                 NSEventType::RightMouseDown,
@@ -211,7 +213,13 @@ mod probe {
                 1,
                 none,
             );
-            send("mouseMoved:", NSEventType::MouseMoved, (5.0, 5.0), 0, none);
+            send(
+                "mouseMoved:",
+                NSEventType::MouseMoved,
+                (5.0, 195.0),
+                0,
+                none,
+            );
             scroll(true, 3);
             scroll(false, -20);
             common::wake_after(platform.waker(), 200);
@@ -256,7 +264,7 @@ mod probe {
             position: Point { x, y },
             mods: none,
         };
-        // From the top left corner of the content, of 300 by 200 points.
+        // From the top left corner of the content.
         assert_eq!(
             seen.events[..6],
             [
