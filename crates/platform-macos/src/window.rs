@@ -409,10 +409,30 @@ define_class!(
             self.post_key(event);
         }
 
+        // SAFETY: AppKit's signature. The titlebar's points are the
+        // window's frame's, which drags the window from them, and zooms or
+        // minimizes it at a double click, as the system's settings say,
+        // though the content runs under the bar.
+        #[unsafe(method_id(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> Option<Retained<NSView>> {
+            // The point is in the superview's coordinates, the window's frame
+            // view's, which are the window's.
+            let local = self.convertPoint_fromView(point, None);
+            let below = self.below_bar();
+            let over_bar = local.y >= below.origin.y + below.size.height
+                && local.y < self.bounds().size.height;
+            if over_bar {
+                None
+            } else {
+                // SAFETY: `NSView`'s method, of this signature.
+                unsafe { msg_send![super(self), hitTest: point] }
+            }
+        }
+
         // SAFETY: AppKit's signature, for each of the mouse's buttons. A
-        // press over the titlebar is the window's, which the titlebar drags
-        // and zooms: the content learns of nothing, until every button is
-        // up.
+        // press over the titlebar is the window's, as the hit test gives it
+        // to the window's frame: one that still comes, the content learns
+        // nothing of, until every button is up.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
             self.press(event);

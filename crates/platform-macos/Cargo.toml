@@ -190,6 +190,10 @@ name = "cursor_layer"
 harness = false
 
 [[test]]
+name = "titlebar"
+harness = false
+
+[[test]]
 name = "window_frame"
 harness = false
 
