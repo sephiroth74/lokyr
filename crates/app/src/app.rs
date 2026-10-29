@@ -339,9 +339,9 @@ struct Window {
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
     page: Option<String>,
-    /// The directory and the program in its foreground, as its title shows
-    /// them, as `lokyr — zsh`.
-    place: String,
+    /// The last part of the directory of the program in its foreground, as
+    /// `lokyr`, and that program's name, as `zsh`, which its title shows.
+    place: (String, String),
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
     /// The appearance of its own that the platform has for it, once the
@@ -444,7 +444,7 @@ impl Window {
             taken: Vec::new(),
             selecting: None,
             page: None,
-            place: String::new(),
+            place: (String::new(), String::new()),
             title_shown: None,
             own_appearance: None,
         }
@@ -1956,10 +1956,29 @@ impl App {
         }
     }
 
-    /// The title of `window` before its size: its active tab's, which its
-    /// program gives; or its man page's; or the directory and the program
-    /// in its foreground, as `lokyr — zsh`; or Lokyr's.
+    /// The title of `window` before its size: its name, as
+    /// [`App::window_name`] gives it, then the program in its foreground,
+    /// as `lokyr — vim`, which a shell's title of its own, set at its
+    /// prompt, would otherwise hide; but a man page's, and a program whose
+    /// name is the title's.
     fn base_title(&self, window: WindowId) -> String {
+        let name = self.window_name(window);
+        let program = self
+            .windows
+            .get(&window)
+            .filter(|state| state.page.is_none())
+            .map(|state| state.place.1.as_str())
+            .filter(|program| !program.is_empty() && *program != name);
+        match program {
+            Some(program) => format!("{name}{TITLE_DASH}{program}"),
+            None => name,
+        }
+    }
+
+    /// The name of `window`: its active tab's title, which its program
+    /// gives; or its man page's; or the last part of its program's
+    /// directory, as `lokyr`; or Lokyr's.
+    fn window_name(&self, window: WindowId) -> String {
         let state = self.windows.get(&window);
         state
             .and_then(|state| self.workspace.window(state.window))
@@ -1969,8 +1988,8 @@ impl App {
             .or_else(|| state.and_then(|state| state.page.as_deref()))
             .or_else(|| {
                 state
-                    .map(|state| state.place.as_str())
-                    .filter(|place| !place.is_empty())
+                    .map(|state| state.place.0.as_str())
+                    .filter(|directory| !directory.is_empty())
             })
             .unwrap_or(TITLE)
             .to_owned()
@@ -1991,10 +2010,12 @@ impl App {
             return;
         };
         if !pane.is_kept() {
-            state.place = place(
-                pane.working_directory().as_deref(),
-                pane.foreground_program().as_deref(),
-                std::env::home_dir().as_deref(),
+            let directory = pane
+                .working_directory()
+                .map(|directory| directory_name(&directory, std::env::home_dir().as_deref()));
+            state.place = (
+                directory.unwrap_or_default(),
+                pane.foreground_program().unwrap_or_default(),
             );
         }
         self.show_title(platform, window);
@@ -2051,7 +2072,7 @@ impl App {
         };
         let now = Instant::now();
         let title = if title.is_empty() {
-            self.base_title(window)
+            self.window_name(window)
         } else {
             title.to_owned()
         };
@@ -3122,30 +3143,16 @@ fn bar_item(size: WindowSize, background: Color) -> Option<Item> {
     })
 }
 
-/// A title's directory and program, as `lokyr — zsh`: the directory's
-/// last part, `~` for `home`'s, and `/` for the root; either alone, or
-/// nothing.
-fn place(
-    directory: Option<&std::path::Path>,
-    program: Option<&str>,
-    home: Option<&std::path::Path>,
-) -> String {
-    let directory = directory.map(|directory| {
-        if Some(directory) == home {
-            "~".to_owned()
-        } else {
-            directory.file_name().map_or_else(
-                || "/".to_owned(),
-                |name| name.to_string_lossy().into_owned(),
-            )
-        }
-    });
-    [directory.as_deref(), program]
-        .into_iter()
-        .flatten()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(TITLE_DASH)
+/// A title's name of `directory`: its last part, `~` for `home`, and `/`
+/// for the root.
+fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    if Some(directory) == home {
+        return "~".to_owned();
+    }
+    directory.file_name().map_or_else(
+        || "/".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 /// The appearance that a window whose default background is `background`
@@ -5882,20 +5889,22 @@ mod tests {
         app.config.window.title_size = false;
         app.show_title(&mut fake, window);
         assert_eq!(title(&fake), "usr — cat");
-        // The parts.
-        let home = std::path::Path::new("/Users/me");
-        fn at(directory: &str) -> Option<&std::path::Path> {
-            Some(std::path::Path::new(directory))
-        }
-        assert_eq!(
-            place(at("/Users/me/src/lokyr"), Some("zsh"), Some(home)),
-            "lokyr — zsh"
-        );
-        assert_eq!(place(at("/Users/me"), Some("zsh"), Some(home)), "~ — zsh");
-        assert_eq!(place(at("/"), Some("vim"), Some(home)), "/ — vim");
-        assert_eq!(place(None, Some("zsh"), Some(home)), "zsh");
-        assert_eq!(place(at("/tmp"), None, None), "tmp");
-        assert_eq!(place(None, None, None), "");
+        // A title of the program's, as a shell's prompt sets, and the
+        // program in the foreground after it; once, when they are one.
+        app.config.window.title_size = true;
+        app.pane(window).text("\u{1b}]2;prompt\u{7}");
+        run_until(&mut fake, &mut app, |fake, _| {
+            title(fake) == "prompt — cat — 200×62"
+        });
+        app.pane(window).text("\u{1b}]2;cat\u{7}");
+        run_until(&mut fake, &mut app, |fake, _| title(fake) == "cat — 200×62");
+        // The directory's names.
+        let home = Some(std::path::Path::new("/Users/me"));
+        let named = |directory: &str| directory_name(std::path::Path::new(directory), home);
+        assert_eq!(named("/Users/me/src/lokyr"), "lokyr");
+        assert_eq!(named("/Users/me"), "~");
+        assert_eq!(named("/"), "/");
+        assert_eq!(directory_name(std::path::Path::new("/tmp"), None), "tmp");
     }
 
     #[test]
@@ -5955,8 +5964,10 @@ mod tests {
             let grid = app.pane(window).grid();
             format!("{TITLE_DASH}{}×{}", grid.columns, grid.rows)
         };
+        // The program's title, then the program in the foreground: the
+        // shell that runs the script.
         run_until(&mut fake, &mut app, |fake, app| {
-            title(fake) == format!("x{}", size(app))
+            title(fake) == format!("x{TITLE_DASH}bash{}", size(app))
         });
         // A title of nothing gives the window's own.
         fake.send(&mut app, window, key());

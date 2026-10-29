@@ -300,6 +300,9 @@ pub(crate) struct ContentViewIvars {
     opaque: Cell<bool>,
     /// How the pointer looks over the view.
     pointer: Cell<PointerShape>,
+    /// Whether the buttons held went down over the titlebar, whose drags
+    /// and releases are the window's, not the content's.
+    over_bar: Cell<bool>,
 }
 
 define_class!(
@@ -325,7 +328,8 @@ define_class!(
                 PointerShape::Arrow => NSCursor::arrowCursor(),
                 PointerShape::Text => NSCursor::IBeamCursor(),
             };
-            self.addCursorRect_cursor(self.bounds(), &cursor);
+            // Below the titlebar, whose pointer is the arrow.
+            self.addCursorRect_cursor(self.below_bar(), &cursor);
         }
 
         // SAFETY: AppKit's signature. The keys that the menus' shortcuts
@@ -347,66 +351,72 @@ define_class!(
             self.post_key(event);
         }
 
-        // SAFETY: AppKit's signature, for each of the mouse's buttons.
+        // SAFETY: AppKit's signature, for each of the mouse's buttons. A
+        // press over the titlebar is the window's, which the titlebar drags
+        // and zooms: the content learns of nothing, until every button is
+        // up.
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
-            self.post_button(event, true);
+            self.press(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(mouseUp:))]
         fn mouse_up(&self, event: &NSEvent) {
-            self.post_button(event, false);
+            self.release(event);
         }
 
         // SAFETY: AppKit's signature. The view takes the right button,
         // which would otherwise open its contextual menu.
         #[unsafe(method(rightMouseDown:))]
         fn right_mouse_down(&self, event: &NSEvent) {
-            self.post_button(event, true);
+            self.press(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(rightMouseUp:))]
         fn right_mouse_up(&self, event: &NSEvent) {
-            self.post_button(event, false);
+            self.release(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(otherMouseDown:))]
         fn other_mouse_down(&self, event: &NSEvent) {
-            self.post_button(event, true);
+            self.press(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(otherMouseUp:))]
         fn other_mouse_up(&self, event: &NSEvent) {
-            self.post_button(event, false);
+            self.release(event);
         }
 
         // SAFETY: AppKit's signature, for a move with no button held, which
-        // comes while the window accepts them.
+        // comes while the window accepts them; one over the titlebar is
+        // the window's.
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
-            self.post_moved(event);
+            if !self.is_over_bar(event) {
+                self.post_moved(event);
+            }
         }
 
         // SAFETY: AppKit's signature, for each button held.
         #[unsafe(method(mouseDragged:))]
         fn mouse_dragged(&self, event: &NSEvent) {
-            self.post_moved(event);
+            self.drag(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(rightMouseDragged:))]
         fn right_mouse_dragged(&self, event: &NSEvent) {
-            self.post_moved(event);
+            self.drag(event);
         }
 
         // SAFETY: AppKit's signature.
         #[unsafe(method(otherMouseDragged:))]
         fn other_mouse_dragged(&self, event: &NSEvent) {
-            self.post_moved(event);
+            self.drag(event);
         }
 
         // SAFETY: AppKit's signature.
@@ -566,6 +576,7 @@ impl ContentView {
             option_as_meta,
             opaque: Cell::new(true),
             pointer: Cell::new(PointerShape::Arrow),
+            over_bar: Cell::new(false),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -617,6 +628,64 @@ impl ContentView {
             mods: keys::modifiers(event.modifierFlags()),
             clicks: u32::try_from(event.clickCount()).unwrap_or(0),
         });
+    }
+
+    /// The view's part below the titlebar, which the content runs under.
+    fn below_bar(&self) -> NSRect {
+        let bounds = self.bounds();
+        let Some(window) = self.window() else {
+            return bounds;
+        };
+        let layout = self.convertRect_fromView(window.contentLayoutRect(), None);
+        NSRect::new(
+            bounds.origin,
+            NSSize::new(
+                bounds.size.width,
+                (layout.origin.y + layout.size.height - bounds.origin.y)
+                    .clamp(0.0, bounds.size.height),
+            ),
+        )
+    }
+
+    /// Whether `event` is over the titlebar: above the part below it, in
+    /// the view, whose origin is its bottom left corner.
+    fn is_over_bar(&self, event: &NSEvent) -> bool {
+        let local = self.convertPoint_fromView(event.locationInWindow(), None);
+        let below = self.below_bar();
+        local.y >= below.origin.y + below.size.height
+    }
+
+    /// A button went down: over the titlebar, the window's, which the
+    /// content learns nothing of, with the drags and the releases that
+    /// follow; otherwise the content's. As the titlebar's drag can keep its
+    /// release, each press tells anew.
+    fn press(&self, event: &NSEvent) {
+        let over = self.is_over_bar(event);
+        self.ivars().over_bar.set(over);
+        if !over {
+            self.post_button(event, true);
+        }
+    }
+
+    /// A button went up: the content's, unless the buttons went down over
+    /// the titlebar, which they no longer are once every one is up.
+    fn release(&self, event: &NSEvent) {
+        let ivars = self.ivars();
+        if ivars.over_bar.get() {
+            if NSEvent::pressedMouseButtons() == 0 {
+                ivars.over_bar.set(false);
+            }
+            return;
+        }
+        self.post_button(event, false);
+    }
+
+    /// The pointer moved with buttons held: the content's, unless they went
+    /// down over the titlebar.
+    fn drag(&self, event: &NSEvent) {
+        if !self.ivars().over_bar.get() {
+            self.post_moved(event);
+        }
     }
 
     fn post_moved(&self, event: &NSEvent) {

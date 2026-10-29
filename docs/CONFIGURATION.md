@@ -441,7 +441,7 @@ Whether the window's title ends with the size of its grid, in columns and rows, 
 |---|---|
 | `true`, `false` | `true` |
 
-- The title before it is the program's, when it gives one, as vim and the shells' prompts can; otherwise the folder and the program in the foreground, as `lokyr — zsh`, which Lokyr looks at as the program writes; or a man page's, as `man ls`.
+- The title before it is the program's, when it gives one, as vim and the shells' prompts can, or a man page's, as `man ls`, or the folder of the program in the foreground; then that program, as `lokyr — vim`, which Lokyr looks at as the program writes, so that a program that you run shows though your prompt set the title.
 - As you resize the window, the size follows.
 - It applies at once, as you save the file.
 

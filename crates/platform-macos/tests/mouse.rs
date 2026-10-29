@@ -187,29 +187,29 @@ mod probe {
             send(
                 "mouseDown:",
                 NSEventType::LeftMouseDown,
-                (10.0, 10.0),
+                (10.0, 50.0),
                 2,
                 shift,
             );
             send(
                 "mouseDragged:",
                 NSEventType::LeftMouseDragged,
-                (30.0, 50.0),
+                (30.0, 90.0),
                 1,
                 none,
             );
-            send("mouseUp:", NSEventType::LeftMouseUp, (30.0, 50.0), 1, none);
+            send("mouseUp:", NSEventType::LeftMouseUp, (30.0, 90.0), 1, none);
             send(
                 "rightMouseDown:",
                 NSEventType::RightMouseDown,
-                (100.0, 100.0),
+                (100.0, 140.0),
                 1,
                 none,
             );
             send(
                 "rightMouseUp:",
                 NSEventType::RightMouseUp,
-                (100.0, 100.0),
+                (100.0, 140.0),
                 1,
                 none,
             );
@@ -220,6 +220,38 @@ mod probe {
                 0,
                 none,
             );
+            // Over the titlebar, 10 points from the top, the window's: a
+            // click, a drag that goes below it, the right button and a move.
+            send(
+                "mouseDown:",
+                NSEventType::LeftMouseDown,
+                (10.0, 10.0),
+                1,
+                none,
+            );
+            send(
+                "mouseDragged:",
+                NSEventType::LeftMouseDragged,
+                (10.0, 100.0),
+                1,
+                none,
+            );
+            send("mouseUp:", NSEventType::LeftMouseUp, (10.0, 100.0), 1, none);
+            send(
+                "rightMouseDown:",
+                NSEventType::RightMouseDown,
+                (10.0, 10.0),
+                1,
+                none,
+            );
+            send(
+                "rightMouseUp:",
+                NSEventType::RightMouseUp,
+                (10.0, 10.0),
+                1,
+                none,
+            );
+            send("mouseMoved:", NSEventType::MouseMoved, (5.0, 5.0), 0, none);
             scroll(true, 3);
             scroll(false, -20);
             common::wake_after(platform.waker(), 200);
@@ -264,17 +296,25 @@ mod probe {
             position: Point { x, y },
             mods: none,
         };
-        // From the top left corner of the content.
+        // From the top left corner of the content, which runs under the
+        // titlebar, below it.
         assert_eq!(
             seen.events[..6],
             [
-                button(MouseButton::Left, true, (10.0, 10.0), shift, 2),
-                moved((30.0, 50.0)),
-                button(MouseButton::Left, false, (30.0, 50.0), none, 1),
-                button(MouseButton::Right, true, (100.0, 100.0), none, 1),
-                button(MouseButton::Right, false, (100.0, 100.0), none, 1),
+                button(MouseButton::Left, true, (10.0, 50.0), shift, 2),
+                moved((30.0, 90.0)),
+                button(MouseButton::Left, false, (30.0, 90.0), none, 1),
+                button(MouseButton::Right, true, (100.0, 140.0), none, 1),
+                button(MouseButton::Right, false, (100.0, 140.0), none, 1),
                 moved((5.0, 195.0)),
             ],
+            "{seen:#?}"
+        );
+        // Nothing of the titlebar's: the scrolls come next.
+        assert!(
+            seen.events[6..]
+                .iter()
+                .all(|event| matches!(event, WindowEvent::Scroll { .. })),
             "{seen:#?}"
         );
         // A wheel's steps, and a smooth scroll's points, without a phase.
