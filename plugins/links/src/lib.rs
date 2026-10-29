@@ -95,8 +95,8 @@ impl Plugin for Links {
 /// link, or the URL or the path around it, with the working directory
 /// before a relative one; `None` for nothing.
 fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
-    // The registry checked that both are there, whole numbers; one past
-    // the view's cells finds nothing.
+    // The registry checked that both are there, whole numbers; a cell past
+    // the screen's last row finds nothing.
     let cell = |name| match args.get(name) {
         Some(&Value::Integer(value)) => u16::try_from(value).ok(),
         _ => None,

@@ -127,7 +127,8 @@ impl Surface {
     }
 
     /// Draws a frame of one color, and presents it. Returns whether it did:
-    /// no drawable comes when every drawable is in use for a second.
+    /// no drawable comes from a layer that was never sized, nor when every
+    /// drawable is in use for a second.
     pub fn clear(&self, color: Color) -> Result<bool, Error> {
         Ok(self.encode_clear(color)?.is_some())
     }

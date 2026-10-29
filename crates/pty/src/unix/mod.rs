@@ -229,9 +229,11 @@ impl Pty {
 
     /// The names of the processes whose terminal this is, as the program's
     /// and the jobs' that it started, in the foreground, stopped or in the
-    /// background: the foreground's group first, then by their ids. A name
-    /// that cannot be read, as another user's, is empty; a process that
-    /// ended, whose parent has not looked at it yet, is left out.
+    /// background: the foreground's group first, then by their ids. A
+    /// process whose group cannot be read, as another user's, is in the
+    /// foreground's when it leads it; a name that cannot be read is empty;
+    /// a process that ended, whose parent has not looked at it yet, is left
+    /// out.
     pub fn programs(&self) -> Vec<String> {
         let foreground = self.foreground_process_group();
         let mut processes = terminal_processes(&self.tty);
