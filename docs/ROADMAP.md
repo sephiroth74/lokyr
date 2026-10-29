@@ -74,7 +74,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **`render-metal`**: instanced cells, cursor (block, bar and underline, blinking as DECSCUSR asks), selection, decorations.
 - **Minimal kernel**: commands, keymap, config with hot reload, plus the `core-actions` plugin.
 - **Terminal settings**: the reported `TERM`, the width tables and the width of ambiguous characters ([VT-CORE](VT-CORE.md#settings)).
-- **Environment and bundle**: locale, login shell, TCC strings, signed bundle.
+- **Environment and bundle**: locale, login shell, TCC strings, signed bundle; the bundle's `lokyr` on the panes' `PATH`, and Settings…, which opens the config file in the text editor.
 
 **Exit**: used as the main terminal for a week; Japanese IME works; budgets measured; zero wakeups when idle.
 
@@ -157,7 +157,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F5c — Graphics and kitty protocols
 
 - **Images**: kitty graphics (with Unicode placeholders for tmux), sixel and iTerm2 images (OSC 1337 `File=`), all under a memory quota.
-- **Choosing a font**, as the user asked on 28 October 2026: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, lists the system's families and their styles as `[font]` names them, each drawn in its own face with a line of samples, as images that the terminal shows; `--monospace` keeps the fixed-pitch families, and a family's name shows its styles alone. The `lokyr` of the bundle is on the panes' `PATH`.
+- **Choosing a font**, as the user asked on 28 October 2026: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, lists the system's families and their styles as `[font]` names them, each drawn in its own face with a line of samples, as images that the terminal shows; `--monospace` keeps the fixed-pitch families, and a family's name shows its styles alone.
 - **Links and selection**, in the `links` plugin, which opens links, URLs and paths with ⌘-click since F2:
   - hints;
   - semantic history: ⌘-click on `file:line` opens the editor;
@@ -168,6 +168,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - Stabilize the plugin API as 1.0, in both front ends.
 - Complete the docs: user guide, plugin author guide, reference.
 - Fix bugs and harden; reconfirm the license ([ADR 0010](adr/0010-mit-license.md)) and the final names.
+- **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and, if Lokyr goes through Homebrew, a cask whose `binary` stanza links it in Homebrew's `bin`.
 
 ### F7 — After 1.0
 
