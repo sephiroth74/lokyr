@@ -316,7 +316,13 @@ shape = "block"           # block | bar | underline | hollow
 blink = true
 thickness = 2             # a bar's width and an underline's height, in points (0.5–20); the face's underline thickness when absent
 blink-interval = 500      # how long the cursor stays on, then off, in ms (100–5000)
-smooth-blink = true       # fade out and in, instead of switching
+smooth-blink = "breathing" # off | breathing | linear | fast | slow | subtle | custom
+fade-in = 900             # with smooth-blink = "custom": the fades, in ms
+fade-in-curve = "ease-in-out" # linear | ease-in | ease-out | ease-in-out
+visible = 500             # how long it holds, visible, then hidden, between fades, in ms
+fade-out = 900
+fade-out-curve = "ease-in-out"
+hidden = 500
 blink-timeout = 15        # seconds without keys or output before blinking stops; 0 never stops
 movement = "instant"      # instant | snappy | gliding
 ```
@@ -324,10 +330,10 @@ movement = "instant"      # instant | snappy | gliding
 - **Shape**: a block, a vertical bar, an underline, or a hollow block, of its edges alone. Programs change the shape and the blinking with DECSCUSR, as vim does in insert mode, among the first three. The options are the default, which `CSI 0 SP q` and a reset bring back.
   - The text under a block takes its cell's background. A bar and an underline take `thickness`, which scales with the display as the font's size does, or else the face's underline thickness, which a hollow block's edges always take.
   - Mode 12, which `cvvis` sets in xterm's terminfo, makes the cursor blink too. Its reset, which `cnorm` sends as each full-screen program ends, leaves the configuration's blinking, so that the cursor does not stop blinking after `less` or `vim`.
-- **Blinking**: on and off for `blink-interval` each. With `smooth-blink`, the cursor fades between the two instead of switching.
+- **Blinking**: on and off for `blink-interval` each. With `smooth-blink`, the cursor fades between the two instead of switching, as iTerm2's does, of its presets, Breathing, Linear, Fast, Slow and Subtle, or of six values of the user's: each fade's duration and curve, and how long the cursor holds visible and hidden between them. The cursor's cell is a layer of its own, whose opacity the window server animates, so that the blinking and its fades wake the app no more.
 - **Movement**: `snappy` eases the cursor to its new position over a short time, `gliding` over a longer and softer one, and `instant` moves it at once.
   - The animation only moves the cursor that is drawn. The text that a key press changes still appears in the next frame, so the latency budget holds.
   - Each frame animates from where the cursor was drawn to where it is now, so a burst of output, or a synchronized update (mode 2026), moves it once rather than once per sequence.
 - **Focus**: only the focused pane's cursor blinks. An unfocused pane, or a window in the background, shows a hollow block.
-- **Power**: blinking stops after `blink-timeout` without keys or output, and the cursor stays on. The display link runs only while a fade or a movement is in progress, like the other animations, and the fade can run at a lower frame rate than the display's. If its frames still cost too much energy, the fade moves to a Core Animation layer over the pane, which the window server animates without waking the app; F3 measures both.
+- **Power**: blinking stops after `blink-timeout` without keys or output, and the cursor stays on. The blinking and its fades take no frame of the app's, as the window server animates the cursor's layer; the display link runs only while a movement is in progress, like the other animations.
 - **Accessibility**: with the system's "Reduce motion" setting, the movement is instant and blinking does not fade.
