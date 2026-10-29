@@ -96,13 +96,14 @@ impl Plugin for Links {
 /// before a relative one; of the text between quotes and the word around
 /// it, the first that is there, else the word's; `None` for nothing.
 fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
-    // The registry checked that both are there, whole numbers; a cell past
-    // the screen's last row finds nothing.
-    let cell = |name| match args.get(name) {
-        Some(&Value::Integer(value)) => u16::try_from(value).ok(),
+    // The registry checked that both are there, whole numbers; a row
+    // above the view is the scrollback's, and one past it finds nothing.
+    let number = |name| match args.get(name) {
+        Some(&Value::Integer(value)) => Some(value),
         _ => None,
     };
-    let (Some(column), Some(row)) = (cell("column"), cell("row")) else {
+    let column = number("column").and_then(|column| u16::try_from(column).ok());
+    let (Some(column), Some(row)) = (column, number("row")) else {
         return Ok(None);
     };
     let Some(pane) = cx.focused_pane() else {
@@ -119,7 +120,7 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     let Some(at) = line
         .cells
         .iter()
-        .rposition(|&(x, y)| y == i64::from(row) && x <= column)
+        .rposition(|&(x, y)| y == row && x <= column)
     else {
         return Ok(None);
     };

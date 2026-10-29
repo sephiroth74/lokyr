@@ -95,13 +95,16 @@ pub trait HostApi {
     /// The text of `pane`'s selection, if it has one.
     fn selection_text(&mut self, pane: PaneId) -> Result<Option<String>, Error>;
 
-    /// The text of the logical line that `pane`'s view row `row` is in,
-    /// with each character's cell; `None` past the rows.
-    fn line_text(&mut self, pane: PaneId, row: u16) -> Result<Option<LineText>, Error>;
+    /// The text of the logical line that `pane`'s row `row` from the view's
+    /// first is in, which can be above the view, in the scrollback, with
+    /// each character's cell; `None` past the view's last row, or above the
+    /// scrollback's first.
+    fn line_text(&mut self, pane: PaneId, row: i64) -> Result<Option<LineText>, Error>;
 
-    /// The target of the OSC 8 link that `pane`'s view cell at `column` of
-    /// `row` is part of, if it is one's.
-    fn link_at(&mut self, pane: PaneId, column: u16, row: u16) -> Result<Option<String>, Error>;
+    /// The target of the OSC 8 link that the cell of `pane` at `column` of
+    /// the row `row` from the view's first is part of, if it is one's: of
+    /// the view's rows, or above them, as [`HostApi::line_text`] takes them.
+    fn link_at(&mut self, pane: PaneId, column: u16, row: i64) -> Result<Option<String>, Error>;
 
     /// The working directory of the program in `pane`'s foreground, as a
     /// shell's at its prompt.

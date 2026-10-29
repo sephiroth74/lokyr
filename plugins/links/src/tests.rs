@@ -61,7 +61,7 @@ impl HostApi for Host {
         Ok(None)
     }
 
-    fn line_text(&mut self, pane: PaneId, row: u16) -> Result<Option<LineText>, Error> {
+    fn line_text(&mut self, pane: PaneId, row: i64) -> Result<Option<LineText>, Error> {
         assert_eq!(pane, PaneId(4));
         if !(1..=2).contains(&row) {
             return Ok(None);
@@ -80,7 +80,7 @@ impl HostApi for Host {
         }))
     }
 
-    fn link_at(&mut self, _: PaneId, _: u16, _: u16) -> Result<Option<String>, Error> {
+    fn link_at(&mut self, _: PaneId, _: u16, _: i64) -> Result<Option<String>, Error> {
         Ok(self.link.map(str::to_owned))
     }
 

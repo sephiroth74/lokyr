@@ -449,20 +449,43 @@ impl Pane {
         }
     }
 
-    /// The text of the logical line that the view's row `row` is in, with
-    /// each character's cell, as [`Terminal::line_text`] gives it.
-    pub fn line_text(&self, row: u16) -> Option<(String, Vec<(u16, i64)>)> {
+    /// The text of the logical line that the row `row` from the view's
+    /// first is in, which can be above the view, with each character's
+    /// cell, as [`Terminal::line_text`] gives it.
+    pub fn line_text(&self, row: i64) -> Option<(String, Vec<(u16, i64)>)> {
         self.session
             .as_ref()
             .and_then(|session| session.lock().line_text(row))
     }
 
-    /// The target of the OSC 8 link of the view's cell at `column` of
-    /// `row`.
-    pub fn link_at(&self, column: u16, row: u16) -> Option<String> {
+    /// The target of the OSC 8 link of the cell at `column` of the row
+    /// `row` from the view's first, as [`Terminal::link_at`] gives it.
+    pub fn link_at(&self, column: u16, row: i64) -> Option<String> {
         self.session
             .as_ref()
             .and_then(|session| session.lock().link_at(column, row))
+    }
+
+    /// Marks the view's cell `at`, its column and its row from the view's
+    /// first, as the one that a menu opened on, as
+    /// [`Terminal::mark_cell`] does: the mark moves with its text.
+    pub fn mark_cell(&self, at: (u16, i64)) {
+        if let Some(session) = &self.session {
+            session.lock().mark_cell(at);
+        }
+    }
+
+    /// The cell that [`Pane::mark_cell`] marked, now, by its column and its
+    /// row from the view's first, as [`Terminal::marked_cell`] tells it.
+    pub fn marked_cell(&self) -> Option<(u16, i64)> {
+        self.session.as_ref()?.lock().marked_cell()
+    }
+
+    /// Lets the cell's mark go, if there is one.
+    pub fn unmark_cell(&self) {
+        if let Some(session) = &self.session {
+            session.lock().unmark_cell();
+        }
     }
 
     /// Tells the program that the pane gained or lost the focus, if it asked

@@ -564,10 +564,9 @@ pub struct App {
     /// pane's last frame had it.
     menu_contexts: Vec<(String, When)>,
     menu_enabled: BTreeMap<String, bool>,
-    /// The cell that the last context menu opened on, by its window, and
-    /// its column and its row in the view, which its commands of a cell
-    /// take.
-    context_cell: Option<(WindowId, u16, u16)>,
+    /// The window that the last context menu opened on, whose pane marks
+    /// the cell that it opened on, which its commands of a cell take.
+    context_window: Option<WindowId>,
     /// The window whose pane the commands run in, in place of the focused
     /// one, while a context menu's do.
     acting: Option<WindowId>,
@@ -642,7 +641,7 @@ impl App {
             appearance_chosen: None,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
-            context_cell: None,
+            context_window: None,
             acting: None,
             close_asks: BTreeMap::new(),
             title_asks: BTreeMap::new(),
@@ -985,6 +984,9 @@ impl App {
         let Some(pane) = self.workspace.pane(state.pane) else {
             return;
         };
+        // Pinned, so that output that scrolls while the menu is open leaves
+        // its commands on the clicked text.
+        pane.mark_cell((pointer.col, i64::from(pointer.row)));
         let within = pane
             .selection()
             .is_some_and(|selected| selected.contains(pointer.col, pointer.row));
@@ -1046,7 +1048,7 @@ impl App {
             .map(|command| command.name.clone())
             .collect();
         self.acting = None;
-        self.context_cell = Some((window, pointer.col, pointer.row));
+        self.context_window = Some(window);
         // Look Up and the man page name what they take.
         let selection = self.looked_up(window).map(|(text, _)| text);
         let named = |name: &str| {
@@ -1107,7 +1109,7 @@ impl App {
             return true;
         }
         let args = if of_cell(command) {
-            cell_args(column, row)
+            cell_args(column, i64::from(row))
         } else {
             Args::new()
         };
@@ -1206,13 +1208,24 @@ impl App {
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as
     /// though the window had the focus: a command of a cell takes the cell
-    /// that the menu opened on.
+    /// that the menu opened on, wherever output moved its text, and does
+    /// not run once its text left the scrollback.
     fn context_command(&mut self, platform: &mut dyn Platform, window: WindowId, name: &str) {
-        if !self.windows.contains_key(&window) {
+        let Some(state) = self.windows.get(&window) else {
             return;
+        };
+        let pane = self.workspace.pane(state.pane);
+        let marked = pane
+            .filter(|_| self.context_window == Some(window))
+            .and_then(Pane::marked_cell);
+        if let Some(pane) = pane {
+            pane.unmark_cell();
         }
-        let args = match (self.commands.get(name), self.context_cell) {
-            (Some(command), Some((at, column, row))) if at == window && of_cell(command) => {
+        let args = match self.commands.get(name) {
+            Some(command) if of_cell(command) => {
+                let Some((column, row)) = marked else {
+                    return;
+                };
                 cell_args(column, row)
             }
             _ => Args::new(),
@@ -2290,8 +2303,8 @@ impl App {
     }
 
     /// Asks the user whether to open `target`, a URL or a file, of `kind`,
-    /// on the window that has the focus: a file can show in the file
-    /// manager instead.
+    /// on the window that the commands run in, or the one that has the
+    /// focus: a file can show in the file manager instead.
     fn ask_open(&mut self, platform: &mut dyn Platform, target: String, kind: TargetKind) {
         let file = kind == TargetKind::File;
         let (message, dont_ask) = if file {
@@ -2312,7 +2325,7 @@ impl App {
             suppression: Some(self.texts.text(dont_ask)),
             input: None,
         };
-        let window = platform.focused_window();
+        let window = self.acting.or_else(|| platform.focused_window());
         let alert = platform.show_alert(window, &alert);
         self.open_asks.insert(alert, (window, (target, kind)));
     }
@@ -3411,10 +3424,10 @@ fn of_cell(command: &Command) -> bool {
 
 /// The arguments of a command of a cell for the view's cell at `column` of
 /// `row`.
-fn cell_args(column: u16, row: u16) -> Args {
+fn cell_args(column: u16, row: i64) -> Args {
     Args::from([
         ("column".to_owned(), Value::Integer(i64::from(column))),
-        ("row".to_owned(), Value::Integer(i64::from(row))),
+        ("row".to_owned(), Value::Integer(row)),
     ])
 }
 
@@ -7283,6 +7296,57 @@ mod tests {
         let chosen = WindowEvent::ContextCommand("links.open".to_owned());
         fake.send(&mut app, window, chosen);
         assert_eq!(fake.opened(), ["https://lokyr.dev/x"]);
+    }
+
+    #[test]
+    fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
+        let (mut fake, mut app, window, _) = pasting(
+            "context-moved",
+            "[links]\nurls = \"ask\"\n",
+            shell(concat!(
+                "stty -echo; printf 'see https://lokyr.dev/x here\\n'; echo ready; ",
+                "read line; seq 1 70; echo https://lokyr.dev/y; echo done; read line; ",
+                "yes https://lokyr.dev/z | head -100; echo end; read line"
+            )),
+        );
+        let chosen = || WindowEvent::ContextCommand("links.open".to_owned());
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
+        assert!(
+            !context_menu(&fake, window)
+                .2
+                .contains(&"links.open".to_owned())
+        );
+        // Output scrolls the URL out of the view while the menu is open.
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+        assert_ne!(row(&app, window, 0), "see https://lokyr.dev/x here");
+        fake.send(&mut app, window, chosen());
+        // The question is the menu's window's, which has no focus.
+        let [ask] = fake.alerts() else {
+            panic!("one question: {:?}", fake.alerts());
+        };
+        assert_eq!(
+            (ask.window, ask.alert.detail.as_str()),
+            (Some(window), "https://lokyr.dev/x")
+        );
+        fake.answer_alert_with(&mut app, ask.id, 1, false);
+        // The menu's item runs once.
+        fake.send(&mut app, window, chosen());
+        assert!(fake.alerts().is_empty());
+        // Its text scrolled into the scrollback, which a clear takes away,
+        // it runs nothing, though another link came to its row.
+        let rows = app.pane(window).grid().rows;
+        let y = (0..rows)
+            .find(|&r| row(&app, window, r) == "https://lokyr.dev/y")
+            .unwrap();
+        right_click(&mut fake, &mut app, window, cell(10, y), Modifiers::NONE);
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "end"));
+        app.pane(window).clear_scrollback();
+        assert_eq!(row(&app, window, y), "https://lokyr.dev/z");
+        fake.send(&mut app, window, chosen());
+        assert!(fake.alerts().is_empty() && fake.opened().is_empty());
     }
 
     /// Opens with Command-click what `window` shows at `col` of its first

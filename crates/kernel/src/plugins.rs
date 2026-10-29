@@ -504,7 +504,7 @@ impl HostApi for Host<'_, '_> {
         Ok(self.pane(pane)?.selection_text())
     }
 
-    fn line_text(&mut self, pane: host::PaneId, row: u16) -> Result<Option<host::LineText>, Error> {
+    fn line_text(&mut self, pane: host::PaneId, row: i64) -> Result<Option<host::LineText>, Error> {
         Ok(self
             .pane(pane)?
             .line_text(row)
@@ -515,7 +515,7 @@ impl HostApi for Host<'_, '_> {
         &mut self,
         pane: host::PaneId,
         column: u16,
-        row: u16,
+        row: i64,
     ) -> Result<Option<String>, Error> {
         Ok(self.pane(pane)?.link_at(column, row))
     }

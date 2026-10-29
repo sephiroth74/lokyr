@@ -469,6 +469,9 @@ pub struct Terminal {
     /// The cell that a selection by the mouse grows from, if one was
     /// anchored.
     selection_anchor: Option<selection::Anchor>,
+    /// The cell that the embedder marked, as the one that a menu opened
+    /// on, if one was.
+    cell_mark: Option<selection::Anchor>,
 }
 
 impl Terminal {
@@ -571,6 +574,7 @@ impl Terminal {
             scroll_on_output: options.scroll_on_output,
             selection: None,
             selection_anchor: None,
+            cell_mark: None,
         }
     }
 

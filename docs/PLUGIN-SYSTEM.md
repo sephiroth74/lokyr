@@ -278,9 +278,9 @@ type Cx = {
     terminal: {
         -- Requires `terminal-read`; returns a `denied` error without it.
         read_lines: (pane: PaneId, start: number, count: number) -> ({ Line }?, Error?),
-        -- The logical line of a view's row, its wrapped rows joined, with each character's cell.
+        -- The logical line of a row from the view's first, or above it in the scrollback, its wrapped rows joined, with each character's cell.
         line_text: (pane: PaneId, row: number) -> (LineText?, Error?),
-        -- The target of the OSC 8 link at a view's cell.
+        -- The target of the OSC 8 link at a cell of the view, or above it.
         link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
     },
     process: {

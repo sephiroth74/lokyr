@@ -54,11 +54,11 @@ impl HostApi for Host {
         Ok(self.selection.clone())
     }
 
-    fn line_text(&mut self, _: PaneId, _: u16) -> Result<Option<LineText>, Error> {
+    fn line_text(&mut self, _: PaneId, _: i64) -> Result<Option<LineText>, Error> {
         Ok(None)
     }
 
-    fn link_at(&mut self, _: PaneId, _: u16, _: u16) -> Result<Option<String>, Error> {
+    fn link_at(&mut self, _: PaneId, _: u16, _: i64) -> Result<Option<String>, Error> {
         Ok(None)
     }
 
