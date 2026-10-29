@@ -7417,6 +7417,12 @@ mod tests {
             )),
         );
         let chosen = || WindowEvent::ContextCommand("links.open".to_owned());
+        // The program's last line written whole, its newline too, which a
+        // read of the terminal can bring after the line.
+        let ended = |app: &App, last: &str| {
+            let at = app.pane(window).snapshot().cursor().position;
+            at.x == 0 && at.y > 0 && row(app, window, at.y - 1) == last
+        };
         fake.send(&mut app, window, WindowEvent::Focused(false));
         right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
         assert!(
@@ -7426,7 +7432,7 @@ mod tests {
         );
         // Output scrolls the URL out of the view while the menu is open.
         fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-        run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+        run_until(&mut fake, &mut app, |_, app| ended(app, "done"));
         assert_ne!(row(&app, window, 0), "see https://lokyr.dev/x here");
         fake.send(&mut app, window, chosen());
         // The question is the menu's window's, which has no focus.
@@ -7449,7 +7455,7 @@ mod tests {
             .unwrap();
         right_click(&mut fake, &mut app, window, cell(10, y), Modifiers::NONE);
         fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-        run_until(&mut fake, &mut app, |_, app| shows(app, window, "end"));
+        run_until(&mut fake, &mut app, |_, app| ended(app, "end"));
         app.pane(window).clear_scrollback();
         assert_eq!(row(&app, window, y), "https://lokyr.dev/z");
         fake.send(&mut app, window, chosen());
