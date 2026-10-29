@@ -2873,7 +2873,8 @@ impl App {
     /// in the grid that fits its content within the padding, with the
     /// cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
-        // The CPU's time of the frame, which the performance's panel tells.
+        // The frame's time, which the performance's panel tells, the wait
+        // for the display's drawable apart from the CPU's.
         let started = self.performance.is_some().then(Instant::now);
         let grid = self.grid(size);
         let (left, top) = self.origin(size);
@@ -3092,8 +3093,9 @@ impl App {
             .and_then(|()| drawing.renderer.draw(surface, &list));
         match drawn {
             Ok(true) => {
+                let wait = drawing.renderer.drawable_wait();
                 if let (Some(started), Some(shown)) = (started, &mut self.performance) {
-                    shown.frame(window, started.elapsed());
+                    shown.frame(window, started.elapsed().saturating_sub(wait), wait);
                 }
             }
             Ok(false) => {}
@@ -4288,8 +4290,8 @@ mod tests {
         fake.send_app(&mut app, AppEvent::Timer(timer));
         assert!(fake.window(window).unwrap().frame_requested);
         let lines = app.performance.as_ref().unwrap().lines(window).unwrap();
-        assert_eq!(lines.len(), 6);
-        assert_eq!(lines[4], "Memory 2.0 MB");
+        assert_eq!(lines.len(), 7);
+        assert_eq!(lines[5], "Memory 2.0 MB");
         let next = app.performance.as_ref().unwrap().timer.unwrap();
         assert!(
             fake.timers()

@@ -9,6 +9,7 @@ command-app-performance = Mostra prestazioni
 performance-measuring = Misurazione…
 performance-frames = { $rate } FPS
 performance-cpu = CPU { $median } ms, al più { $longest }
+performance-wait = Attesa dello schermo { $median } ms, al più { $longest }
 performance-gpu = GPU { $mean } ms, al più { $longest }
 performance-wakeups = { $wakeups } risvegli/s, { $idle } dall'inattività
 performance-memory = Memoria { $memory } MB

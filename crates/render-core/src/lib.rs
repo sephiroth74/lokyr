@@ -380,6 +380,13 @@ pub trait Renderer {
     fn take_gpu_times(&mut self) -> GpuTimes {
         GpuTimes::default()
     }
+
+    /// How long the last draw waited for the target's drawable, which the
+    /// display gives back as it shows the frame after the one that it
+    /// shows; none for a backend that does not time it.
+    fn drawable_wait(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 #[cfg(test)]

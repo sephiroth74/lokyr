@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
@@ -98,6 +98,8 @@ pub struct MetalRenderer {
     drawing: VecDeque<(u64, Retained<ProtocolObject<dyn MTLCommandBuffer>>)>,
     /// The GPU's times of the frames that it finished, until they are taken.
     gpu_times: GpuTimes,
+    /// How long the last draw waited for its drawable.
+    drawable_wait: Duration,
     /// The commands of the last uploads, which the tests wait for.
     #[cfg(test)]
     uploaded: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
@@ -125,6 +127,7 @@ impl MetalRenderer {
             device,
             drawing: VecDeque::new(),
             gpu_times: GpuTimes::default(),
+            drawable_wait: Duration::ZERO,
             #[cfg(test)]
             uploaded: None,
         })
@@ -293,7 +296,10 @@ impl Renderer for MetalRenderer {
     }
 
     fn draw(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
-        let Some(drawable) = target.layer.nextDrawable() else {
+        let asked = Instant::now();
+        let drawable = target.layer.nextDrawable();
+        self.drawable_wait = asked.elapsed();
+        let Some(drawable) = drawable else {
             return Ok(false);
         };
         let buffer = self.encode(&drawable.texture(), list)?;
@@ -312,6 +318,10 @@ impl Renderer for MetalRenderer {
     fn take_gpu_times(&mut self) -> GpuTimes {
         self.drop_finished();
         std::mem::take(&mut self.gpu_times)
+    }
+
+    fn drawable_wait(&self) -> Duration {
+        self.drawable_wait
     }
 }
 

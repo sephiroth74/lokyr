@@ -802,7 +802,7 @@ What Lokyr shows of its own work, to see how it does: for now, a panel of its pe
 
 <sub>Platforms: macOS</sub>
 
-Whether a panel over each window shows Lokyr's performance, a line each: the frames that the window shows a second; the CPU's time of its frames, their median and the longest over the last second; the GPU's, their mean and the longest, of every window's frames; Lokyr's wakeups a second, and those that brought the processor out of idle; its memory, as macOS counts it against Lokyr; and the output of its programs, in MB a second. The first second shows Measuring…
+Whether a panel over each window shows Lokyr's performance, a line each: the frames that the window shows a second; the CPU's time of its frames, their median and the longest over the last second; how long a frame waited for the display to give back an image to draw into, which macOS keeps two of; the GPU's, their mean and the longest, of every window's frames; Lokyr's wakeups a second, and those that brought the processor out of idle; its memory, as macOS counts it against Lokyr; and the output of its programs, in MB a second. The first second shows Measuring…
 
 | Values | Default |
 |---|---|

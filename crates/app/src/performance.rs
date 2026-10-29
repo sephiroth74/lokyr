@@ -44,8 +44,9 @@ pub(crate) struct Performance {
     since: Instant,
     usage: Option<Usage>,
     bytes: u64,
-    /// The CPU's time of each frame that each window presented since then.
-    frames: BTreeMap<WindowId, Vec<Duration>>,
+    /// Each frame that each window presented since then: the CPU's time of
+    /// it, and how long it waited for the display's drawable.
+    frames: BTreeMap<WindowId, Vec<(Duration, Duration)>>,
     /// Each window's lines, as the last measure gave them.
     lines: BTreeMap<WindowId, Vec<String>>,
 }
@@ -58,6 +59,9 @@ pub(crate) struct Measure {
     /// The CPU's time of a frame, its median and its longest; none without
     /// a frame.
     pub(crate) cpu: Option<(Duration, Duration)>,
+    /// How long a frame waited for the display's drawable, the median and
+    /// the longest; none without a frame.
+    pub(crate) wait: Option<(Duration, Duration)>,
     /// The GPU's, its mean and its longest, of every window's frames.
     pub(crate) gpu: Option<(Duration, Duration)>,
     /// The wakeups a second, all of them and those out of idle, where the
@@ -83,9 +87,10 @@ impl Performance {
         }
     }
 
-    /// Records a frame that `window` presented, which took the CPU `time`.
-    pub(crate) fn frame(&mut self, window: WindowId, time: Duration) {
-        self.frames.entry(window).or_default().push(time);
+    /// Records a frame that `window` presented, which took the CPU `time`,
+    /// and waited `wait` for the display's drawable.
+    pub(crate) fn frame(&mut self, window: WindowId, time: Duration, wait: Duration) {
+        self.frames.entry(window).or_default().push((time, wait));
     }
 
     /// Measures at `now`, of the GPU's times since the last measure, and of
@@ -114,14 +119,17 @@ impl Performance {
         let measures = windows
             .iter()
             .map(|&window| {
-                let mut times = self.frames.remove(&window).unwrap_or_default();
-                times.sort_unstable();
-                let cpu = times
-                    .last()
-                    .map(|&longest| (times[times.len() / 2], longest));
+                let frames = self.frames.remove(&window).unwrap_or_default();
+                let spread = |mut times: Vec<Duration>| {
+                    times.sort_unstable();
+                    times
+                        .last()
+                        .map(|&longest| (times[times.len() / 2], longest))
+                };
                 let measure = Measure {
-                    rate: per_second(times.len() as f64),
-                    cpu,
+                    rate: per_second(frames.len() as f64),
+                    cpu: spread(frames.iter().map(|&(time, _)| time).collect()),
+                    wait: spread(frames.iter().map(|&(_, wait)| wait).collect()),
                     gpu,
                     wakeups,
                     memory,
@@ -163,6 +171,7 @@ pub(crate) fn lines(measure: &Measure, texts: &Texts) -> Vec<String> {
         })
     };
     let (cpu, cpu_longest) = pair(measure.cpu);
+    let (wait, wait_longest) = pair(measure.wait);
     let (gpu, gpu_longest) = pair(measure.gpu);
     let (wakeups, idle) = measure
         .wakeups
@@ -181,6 +190,13 @@ pub(crate) fn lines(measure: &Measure, texts: &Texts) -> Vec<String> {
             &[
                 ("median", Arg::Text(&cpu)),
                 ("longest", Arg::Text(&cpu_longest)),
+            ],
+        ),
+        texts.text_with(
+            "performance-wait",
+            &[
+                ("median", Arg::Text(&wait)),
+                ("longest", Arg::Text(&wait_longest)),
             ],
         ),
         texts.text_with(
@@ -300,10 +316,10 @@ mod tests {
         let start = Instant::now();
         let mut performance = Performance::new(start, Some(usage(10, 100, 0)), 1_000);
         let millis = Duration::from_millis;
-        for time in [3, 1, 2, 9] {
-            performance.frame(window(1), millis(time));
+        for (time, wait) in [(3, 10), (1, 12), (2, 11), (9, 0)] {
+            performance.frame(window(1), millis(time), millis(wait));
         }
-        performance.frame(window(2), millis(4));
+        performance.frame(window(2), millis(4), millis(5));
         let mut gpu = GpuTimes::default();
         gpu.add(millis(1));
         gpu.add(millis(3));
@@ -320,6 +336,7 @@ mod tests {
         };
         assert_eq!(first.rate, 2.0);
         assert_eq!(first.cpu, Some((millis(3), millis(9))));
+        assert_eq!(first.wait, Some((millis(11), millis(12))));
         assert_eq!(first.gpu, Some((millis(2), millis(3))));
         assert_eq!(first.wakeups, Some((3.0, 2.0)));
         assert_eq!(first.memory, Some(48.2));
@@ -337,7 +354,7 @@ mod tests {
             None,
             5_001_000,
         );
-        assert_eq!(next[0].1.cpu, None);
+        assert_eq!((next[0].1.cpu, next[0].1.wait), (None, None));
         assert_eq!(next[0].1.gpu, None);
         assert_eq!((next[0].1.wakeups, next[0].1.memory), (None, None));
         assert_eq!(next[0].1.output, 0.0);
@@ -348,6 +365,7 @@ mod tests {
         let measure = Measure {
             rate: 119.6,
             cpu: Some((Duration::from_micros(420), Duration::from_micros(1_100))),
+            wait: Some((Duration::from_micros(15_900), Duration::from_micros(16_200))),
             gpu: None,
             wakeups: Some((2.04, 0.0)),
             memory: Some(48.24),
@@ -359,6 +377,7 @@ mod tests {
             [
                 "120 FPS",
                 "CPU 0.42 ms, at most 1.10",
+                "Display wait 15.90 ms, at most 16.20",
                 "GPU – ms, at most –",
                 "2.0 wakeups/s, 0.0 from idle",
                 "Memory 48.2 MB",
@@ -367,7 +386,11 @@ mod tests {
         );
         let texts = Texts::new("it", &crate::app::CATALOGS);
         assert_eq!(
-            lines(&measure, &texts)[3],
+            lines(&measure, &texts)[2],
+            "Attesa dello schermo 15.90 ms, al più 16.20"
+        );
+        assert_eq!(
+            lines(&measure, &texts)[4],
             "2.0 risvegli/s, 0.0 dall'inattività"
         );
     }
