@@ -1,6 +1,7 @@
 //! The renderer of Metal: the atlas's textures, the pipelines of the shaders,
 //! and a frame drawn from a display list.
 
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -95,7 +96,17 @@ pub struct MetalRenderer {
     color: MetalTexture,
     /// The commands of the frames that the GPU may still draw, by their
     /// lists' frames, from the oldest.
-    drawing: VecDeque<(u64, Retained<ProtocolObject<dyn MTLCommandBuffer>>)>,
+    drawing: VecDeque<Drawing>,
+    /// Buffers that the frames that the GPU finished let go of, for the
+    /// next frames' instances.
+    spare: Vec<Buffer>,
+    /// The bytes of the last frame's instances, which the next frame's
+    /// first buffer takes at least.
+    last_bytes: usize,
+    /// How many buffers of instances the renderer made, which the tests
+    /// count.
+    #[cfg(test)]
+    made: std::cell::Cell<usize>,
     /// The GPU's times of the frames that it finished, until they are taken.
     gpu_times: GpuTimes,
     /// How long the last draw waited for its drawable.
@@ -126,6 +137,10 @@ impl MetalRenderer {
             queue: gpu.queue.clone(),
             device,
             drawing: VecDeque::new(),
+            spare: Vec::new(),
+            last_bytes: 0,
+            #[cfg(test)]
+            made: std::cell::Cell::new(0),
             gpu_times: GpuTimes::default(),
             drawable_wait: Duration::ZERO,
             #[cfg(test)]
@@ -302,17 +317,21 @@ impl Renderer for MetalRenderer {
         let Some(drawable) = drawable else {
             return Ok(false);
         };
-        let buffer = self.encode(&drawable.texture(), list)?;
-        buffer.presentDrawable(ProtocolObject::from_ref(&*drawable));
-        buffer.commit();
-        self.drawing.push_back((list.frame, buffer));
+        let (commands, buffers) = self.encode(&drawable.texture(), list)?;
+        commands.presentDrawable(ProtocolObject::from_ref(&*drawable));
+        commands.commit();
+        self.drawing.push_back(Drawing {
+            frame: list.frame,
+            commands,
+            buffers,
+        });
         self.drop_finished();
         Ok(true)
     }
 
     fn drawing_from(&mut self) -> Option<u64> {
         self.drop_finished();
-        self.drawing.front().map(|&(frame, _)| frame)
+        self.drawing.front().map(|drawing| drawing.frame)
     }
 
     fn take_gpu_times(&mut self) -> GpuTimes {
@@ -352,9 +371,10 @@ impl MetalRenderer {
             .device
             .newTextureWithDescriptor(&descriptor)
             .ok_or(Error::Device("texture"))?;
-        let buffer = self.encode(&texture, list)?;
-        buffer.commit();
-        buffer.waitUntilCompleted();
+        let (commands, buffers) = self.encode(&texture, list)?;
+        commands.commit();
+        commands.waitUntilCompleted();
+        self.take_back(buffers);
         let mut pixels = vec![0_u8; width * height * 4];
         let region = MTLRegion {
             origin: MTLOrigin { x: 0, y: 0, z: 0 },
@@ -380,12 +400,23 @@ impl MetalRenderer {
         Ok(pixels)
     }
 
-    /// The commands that draw `list` into `output`, to commit.
+    /// The commands that draw `list` into `output`, to commit, and the
+    /// buffers of its instances, which the GPU reads until it finishes.
     fn encode(
-        &self,
+        &mut self,
         output: &ProtocolObject<dyn MTLTexture>,
         list: &DisplayList,
-    ) -> Result<Retained<ProtocolObject<dyn MTLCommandBuffer>>, Error> {
+    ) -> Result<(Commands, Vec<Buffer>), Error> {
+        let arena = RefCell::new(Arena {
+            device: self.device.clone(),
+            spare: std::mem::take(&mut self.spare),
+            used: Vec::new(),
+            offset: 0,
+            first: self.last_bytes,
+            bytes: 0,
+            #[cfg(test)]
+            made: 0,
+        });
         let viewport = [output.width() as f32, output.height() as f32];
         let pass = MTLRenderPassDescriptor::new();
         // SAFETY: a render pass has a first color attachment.
@@ -406,12 +437,29 @@ impl MetalRenderer {
             encoder: &encoder,
             viewport,
             clips: Vec::new(),
+            arena: &arena,
         };
         for item in &list.items {
             frame.item(item);
         }
         encoder.endEncoding();
-        Ok(buffer)
+        let arena = arena.into_inner();
+        self.spare = arena.spare;
+        self.last_bytes = arena.bytes;
+        #[cfg(test)]
+        self.made.set(self.made.get() + arena.made);
+        Ok((buffer, arena.used))
+    }
+
+    /// Takes back `buffers`, of a frame that the GPU finished, for the
+    /// next frames: [`SPARE`] at most, the largest.
+    fn take_back(&mut self, buffers: Vec<Buffer>) {
+        self.spare.extend(buffers);
+        if self.spare.len() > SPARE {
+            self.spare
+                .sort_by_key(|buffer| std::cmp::Reverse(buffer.length()));
+            self.spare.truncate(SPARE);
+        }
     }
 
     /// Forgets the frames that the GPU finished, from the oldest: a queue's
@@ -419,19 +467,136 @@ impl MetalRenderer {
     /// Lets the commands of the frames that the GPU finished go, from the
     /// oldest, with their times.
     fn drop_finished(&mut self) {
-        while self.drawing.front().is_some_and(|(_, buffer)| {
+        while self.drawing.front().is_some_and(|drawing| {
             matches!(
-                buffer.status(),
+                drawing.commands.status(),
                 MTLCommandBufferStatus::Completed | MTLCommandBufferStatus::Error
             )
         }) {
-            if let Some((_, buffer)) = self.drawing.pop_front() {
-                let time = buffer.GPUEndTime() - buffer.GPUStartTime();
-                if buffer.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
+            if let Some(drawing) = self.drawing.pop_front() {
+                let commands = &drawing.commands;
+                let time = commands.GPUEndTime() - commands.GPUStartTime();
+                if commands.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
                     self.gpu_times.add(Duration::from_secs_f64(time));
                 }
+                self.take_back(drawing.buffers);
             }
         }
+    }
+}
+
+/// A buffer of the GPU's.
+type Buffer = Retained<ProtocolObject<dyn MTLBuffer>>;
+
+/// A frame's commands.
+type Commands = Retained<ProtocolObject<dyn MTLCommandBuffer>>;
+
+/// The spare buffers that the renderer keeps for the frames' instances, the
+/// largest; each frame most often takes one.
+const SPARE: usize = 6;
+
+/// The frames that a test draws to find each buffer taken back.
+#[cfg(test)]
+const DRAWABLES_IN_FLIGHT: usize = 3;
+
+/// The least that a buffer of instances takes, in bytes.
+const SMALLEST: usize = 64 * 1024;
+
+/// Where a draw's instances start in their buffer: a multiple of this, as
+/// a vertex buffer's offset is on every GPU of Metal's.
+const ALIGNMENT: usize = 256;
+
+/// A frame that the GPU may still be drawing: its list's `frame`, its
+/// commands, and the buffers of its instances, which the GPU reads until it
+/// finishes.
+#[derive(Debug)]
+struct Drawing {
+    frame: u64,
+    commands: Commands,
+    buffers: Vec<Buffer>,
+}
+
+/// The buffers of a frame's instances: each draw's bytes go after the last
+/// one's, in the buffer that the frame took last, or in the next, a spare
+/// one of the frames that the GPU finished, or a new one, so that a frame
+/// of the same size as the last makes none.
+struct Arena {
+    device: Retained<ProtocolObject<dyn MTLDevice>>,
+    spare: Vec<Buffer>,
+    /// The buffers that the frame took, the last one the one being filled,
+    /// up to `offset`.
+    used: Vec<Buffer>,
+    offset: usize,
+    /// The bytes that the first buffer takes at least: the last frame's.
+    first: usize,
+    /// The bytes that the frame's instances took.
+    bytes: usize,
+    /// How many buffers it made, which the tests count.
+    #[cfg(test)]
+    made: usize,
+}
+
+impl Arena {
+    /// The buffer that holds `items`' bytes, written into it, and where
+    /// they start in it; `None` for no items.
+    fn put<T: Copy>(&mut self, items: &[T]) -> Option<(Buffer, usize)> {
+        if items.is_empty() {
+            return None;
+        }
+        let length = size_of_val(items);
+        let mut start = self.offset.next_multiple_of(ALIGNMENT);
+        if self
+            .used
+            .last()
+            .is_none_or(|buffer| start + length > buffer.length())
+        {
+            let wanted = if self.used.is_empty() {
+                length.max(self.first)
+            } else {
+                length
+            };
+            let buffer = self.take(wanted)?;
+            self.used.push(buffer);
+            start = 0;
+        }
+        let buffer = self.used.last()?;
+        // SAFETY: the buffer's bytes from `start` hold `length` more, as the
+        // check above keeps them; no frame that the GPU draws reads it, as
+        // the frames give their buffers back once the GPU finished them, and
+        // this frame's draws read the bytes before `start` alone.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                items.as_ptr().cast::<u8>(),
+                buffer.contents().as_ptr().cast::<u8>().add(start),
+                length,
+            );
+        }
+        self.offset = start + length;
+        self.bytes += length;
+        Some((buffer.clone(), start))
+    }
+
+    /// A buffer of `length` bytes at least: the smallest spare one that
+    /// holds them, or a new one, of their next power of two.
+    fn take(&mut self, length: usize) -> Option<Buffer> {
+        let fitting = self
+            .spare
+            .iter()
+            .enumerate()
+            .filter(|(_, buffer)| buffer.length() >= length)
+            .min_by_key(|(_, buffer)| buffer.length())
+            .map(|(index, _)| index);
+        if let Some(index) = fitting {
+            return Some(self.spare.swap_remove(index));
+        }
+        #[cfg(test)]
+        {
+            self.made += 1;
+        }
+        self.device.newBufferWithLength_options(
+            length.next_power_of_two().max(SMALLEST),
+            MTLResourceOptions::StorageModeShared,
+        )
     }
 }
 
@@ -443,6 +608,8 @@ struct Frame<'a> {
     /// The clips in force, each within those before it; `None` for one that
     /// leaves nothing to draw.
     clips: Vec<Option<MTLScissorRect>>,
+    /// Where the frame's instances go.
+    arena: &'a RefCell<Arena>,
 }
 
 impl Frame<'_> {
@@ -498,7 +665,7 @@ impl Frame<'_> {
     }
 
     fn rects(&self, rects: &[RectInstance]) {
-        let Some(buffer) = self.renderer.buffer(rects) else {
+        let Some((buffer, offset)) = self.arena.borrow_mut().put(rects) else {
             return;
         };
         self.encoder.setRenderPipelineState(&self.renderer.solid);
@@ -506,7 +673,7 @@ impl Frame<'_> {
         // their indices.
         unsafe {
             self.encoder
-                .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+                .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
             self.set_viewport();
             self.encoder
                 .drawPrimitives_vertexStart_vertexCount_instanceCount(
@@ -519,7 +686,7 @@ impl Frame<'_> {
     }
 
     fn lines(&self, lines: &[LineInstance]) {
-        let Some(buffer) = self.renderer.buffer(lines) else {
+        let Some((buffer, offset)) = self.arena.borrow_mut().put(lines) else {
             return;
         };
         self.encoder.setRenderPipelineState(&self.renderer.lines);
@@ -527,7 +694,7 @@ impl Frame<'_> {
         // their indices.
         unsafe {
             self.encoder
-                .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+                .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
             self.set_viewport();
             self.encoder
                 .drawPrimitives_vertexStart_vertexCount_instanceCount(
@@ -541,7 +708,7 @@ impl Frame<'_> {
 
     fn cells(&self, batch: &CellBatch) {
         let colors: Vec<[f32; 4]> = batch.backgrounds.iter().map(|&color| rgba(color)).collect();
-        if let Some(buffer) = self.renderer.buffer(&colors) {
+        if let Some((buffer, offset)) = self.arena.borrow_mut().put(&colors) {
             let grid = GridUniform {
                 origin: [batch.x as f32, batch.y as f32],
                 cell: [batch.cell_width as f32, batch.cell_height as f32],
@@ -554,7 +721,7 @@ impl Frame<'_> {
             // take, at their indices.
             unsafe {
                 self.encoder
-                    .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+                    .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
                 self.set_viewport();
                 self.encoder.setVertexBytes_length_atIndex(
                     NonNull::from(&grid).cast(),
@@ -640,7 +807,7 @@ impl Frame<'_> {
     /// Draws `glyphs`, of either atlas, in their order, each over those
     /// before it.
     fn glyphs(&self, glyphs: &[GlyphInstance]) {
-        let Some(buffer) = self.renderer.buffer(glyphs) else {
+        let Some((buffer, offset)) = self.arena.borrow_mut().put(glyphs) else {
             return;
         };
         self.encoder.setRenderPipelineState(&self.renderer.glyphs);
@@ -648,7 +815,7 @@ impl Frame<'_> {
         // take, at their indices.
         unsafe {
             self.encoder
-                .setVertexBuffer_offset_atIndex(Some(&buffer), 0, 0);
+                .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
             self.set_viewport();
             self.encoder
                 .setFragmentTexture_atIndex(Some(self.renderer.texture(Texture::Coverage)), 0);
@@ -1031,6 +1198,46 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_of_the_same_size_takes_back_the_buffers_of_one_before() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(64, 32, 1.0);
+        let finish = |renderer: &mut MetalRenderer| {
+            for drawing in &renderer.drawing {
+                drawing.commands.waitUntilCompleted();
+            }
+            renderer.drawing_from();
+        };
+        assert!(renderer.draw(&surface, &list()).unwrap());
+        let made = renderer.made.get();
+        assert!(made >= 1);
+        // The frames that come once the GPU finished take its buffers back,
+        // one frame of each count of the drawables.
+        for _ in 0..DRAWABLES_IN_FLIGHT {
+            finish(&mut renderer);
+            assert!(renderer.draw(&surface, &list()).unwrap());
+        }
+        assert_eq!(renderer.made.get(), made);
+        finish(&mut renderer);
+        assert!(renderer.spare.len() <= SPARE);
+        // A frame larger than the buffers takes a new one.
+        let mut large = list();
+        large.items.push(Item::Glyphs(vec![
+            PlacedGlyph {
+                region: region(Texture::Coverage, 0, 0, 1, 1),
+                x: 0,
+                y: 0,
+                color: Color::from_rgb8(255, 255, 255),
+            };
+            SMALLEST
+        ]));
+        assert!(renderer.draw(&surface, &large).unwrap());
+        assert!(renderer.made.get() > made);
+    }
+
+    #[test]
     fn the_gpu_s_times_of_finished_frames_are_taken_once() {
         let Some((gpu, mut renderer)) = renderer() else {
             return;
@@ -1040,8 +1247,8 @@ mod tests {
         for _ in 0..2 {
             assert!(renderer.draw(&surface, &list()).unwrap());
         }
-        for (_, buffer) in &renderer.drawing {
-            buffer.waitUntilCompleted();
+        for drawing in &renderer.drawing {
+            drawing.commands.waitUntilCompleted();
         }
         let times = renderer.take_gpu_times();
         assert_eq!(times.frames, 2);
@@ -1138,10 +1345,10 @@ mod tests {
         }
         // The oldest that the GPU has not finished, if it has not.
         assert!(matches!(renderer.drawing_from(), None | Some(7 | 8)));
-        let (_, last) = renderer
+        let last = renderer
             .drawing
             .back()
-            .cloned()
+            .map(|drawing| drawing.commands.clone())
             .expect("a frame on the GPU");
         last.waitUntilCompleted();
         assert_eq!(renderer.drawing_from(), None);
