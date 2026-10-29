@@ -9,10 +9,11 @@ use std::path::{Path, PathBuf};
 use lokyr_platform_core::{Error, TargetKind, runs_by_itself};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2_app_kit::NSWorkspace;
+use objc2_app_kit::{NSWorkspace, NSWorkspaceOpenConfiguration};
 use objc2_foundation::{
     NSArray, NSBundle, NSDictionary, NSString, NSURL, NSURLBookmarkResolutionOptions,
 };
+use objc2_uniform_type_identifiers::UTTypePlainText;
 
 /// The applications that run, or install, the documents that they open:
 /// Java archives, installers' packages, Automator's workflows, and Python's
@@ -173,6 +174,30 @@ pub(crate) fn reveal(target: &str) -> Result<(), Error> {
         }
         Resolved::Url(_) => Err(Error::Open(target.to_owned(), "it is no file".to_owned())),
     }
+}
+
+/// Opens the file `path` in the application that opens plain text, as
+/// TextEdit or the editor that the user chose for it, whatever the file's
+/// own type opens in, as a `.toml` that no application may claim.
+pub(crate) fn in_text_editor(path: &Path) -> Result<(), Error> {
+    let failed = |why: &str| Error::Open(path.display().to_string(), why.to_owned());
+    let workspace = NSWorkspace::sharedWorkspace();
+    // SAFETY: the framework's constant, a type that it keeps.
+    let text = unsafe { UTTypePlainText };
+    let editor = workspace
+        .URLForApplicationToOpenContentType(text)
+        .ok_or_else(|| failed("no application opens text"))?;
+    let file = NSURL::fileURLWithPath(&NSString::from_str(
+        path.to_str()
+            .ok_or_else(|| failed("its path is not UTF-8"))?,
+    ));
+    workspace.openURLs_withApplicationAtURL_configuration_completionHandler(
+        &NSArray::from_retained_slice(&[file]),
+        &editor,
+        &NSWorkspaceOpenConfiguration::configuration(),
+        None,
+    );
+    Ok(())
 }
 
 /// Whether `host`, of a `file` URL, is this machine, whose name is `name`:

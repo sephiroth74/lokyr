@@ -4,6 +4,7 @@ command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-window-set-title = Imposta titolo…
 command-app-quit = Esci da Lokyr
+command-app-settings = Impostazioni…
 command-appearance-system = Aspetto automatico
 command-appearance-light = Aspetto chiaro
 command-appearance-dark = Aspetto scuro

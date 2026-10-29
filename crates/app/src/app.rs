@@ -56,6 +56,10 @@ use crate::watch::Watcher;
 /// The command that quits.
 const QUIT: &str = "app.quit";
 
+/// The command that opens the config file in the text editor, made first
+/// when it is not there.
+const SETTINGS: &str = "app.settings";
+
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
 
@@ -1200,6 +1204,24 @@ impl App {
         );
     }
 
+    /// Opens the config file in the system's text editor, made first, when
+    /// it is not there, of every key commented out with its default and its
+    /// text; without a home directory, which gives it no path, the log
+    /// tells.
+    fn open_settings(&mut self, platform: &mut dyn Platform) {
+        let Some(file) = &self.config_file else {
+            eprintln!("lokyr: there is no config file to open, without a home directory");
+            return;
+        };
+        if let Err(error) = config::make(&file.path) {
+            eprintln!("lokyr: {error}");
+            return;
+        }
+        if let Err(error) = platform.open_in_text_editor(&file.path) {
+            eprintln!("lokyr: {error}");
+        }
+    }
+
     /// Opens a window whose pane shows the man page that the selection of
     /// the window that the commands run in names, rather than the shell:
     /// `man`, which the user's login shell runs, as their `PATH` finds the
@@ -1755,6 +1777,10 @@ impl App {
             Ok(_) => match name {
                 QUIT => {
                     self.ask_quit(platform, false);
+                    Ok(())
+                }
+                SETTINGS => {
+                    self.open_settings(platform);
                     Ok(())
                 }
                 NEW_WINDOW => {
@@ -3616,6 +3642,7 @@ fn bindings(plugins: &Plugins) -> Vec<Binding> {
 /// The default bindings of the app's commands.
 fn default_bindings() -> Vec<Binding> {
     [
+        ("cmd+,", SETTINGS),
         ("cmd+n", NEW_WINDOW),
         ("cmd+w", CLOSE_WINDOW),
         ("cmd+shift+i", SET_TITLE),
@@ -3655,6 +3682,7 @@ fn texts(chosen: &str, preferred: &[String]) -> Texts {
 fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
+        (SETTINGS, "app-settings", Category::App),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
@@ -3747,7 +3775,15 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
         items,
         role,
     };
-    let mut application = vec![
+    // Settings first, as macOS's apps have it, then the system's items.
+    let mut application = items(&[Category::App])
+        .into_iter()
+        .filter(|item| matches!(item, MenuItem::Command { command, .. } if command == SETTINGS))
+        .collect::<Vec<_>>();
+    if !application.is_empty() {
+        application.push(MenuItem::Separator);
+    }
+    application.extend([
         standard("menu-hide", StandardAction::Hide, Some(cmd('h', false))),
         standard(
             "menu-hide-others",
@@ -3755,8 +3791,11 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
             Some(cmd('h', true)),
         ),
         standard("menu-show-all", StandardAction::ShowAll, None),
-    ];
-    let app_commands = items(&[Category::App]);
+    ]);
+    let app_commands: Vec<MenuItem> = items(&[Category::App])
+        .into_iter()
+        .filter(|item| !matches!(item, MenuItem::Command { command, .. } if command == SETTINGS))
+        .collect();
     if !app_commands.is_empty() {
         application.push(MenuItem::Separator);
         application.extend(app_commands);
@@ -3948,6 +3987,8 @@ mod tests {
         assert_eq!(
             menu_items(&fake, 0),
             [
+                "Settings… cmd+,",
+                "-",
                 "Hide Lokyr cmd+h",
                 "Hide Others alt+cmd+h",
                 "Show All",
@@ -4067,6 +4108,32 @@ mod tests {
     }
 
     #[test]
+    fn settings_opens_the_config_in_the_text_editor_made_first() {
+        let (mut fake, mut app, path) = with_file("settings", "");
+        std::fs::remove_file(&path).unwrap();
+        // The application's menu starts with it, of its key.
+        assert_eq!(menu_items(&fake, 0)[..2], ["Settings… cmd+,", "-"]);
+        assert_eq!(menu_items(&fake, 0).last().unwrap(), "Quit Lokyr cmd+q");
+        // A file that is not there is made of the template, then opens.
+        fake.send_app(&mut app, AppEvent::Command(SETTINGS.to_owned()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), Config::template());
+        assert_eq!(fake.edited(), std::slice::from_ref(&path));
+        // One that is there stays as it is.
+        std::fs::write(&path, "[font]\nsize = 14\n").unwrap();
+        fake.send_app(&mut app, AppEvent::Command(SETTINGS.to_owned()));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "[font]\nsize = 14\n"
+        );
+        assert_eq!(fake.edited(), [path.clone(), path.clone()]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        // Without a file's path, nothing opens.
+        let (mut fake, mut app) = started();
+        fake.send_app(&mut app, AppEvent::Command(SETTINGS.to_owned()));
+        assert!(fake.edited().is_empty());
+    }
+
+    #[test]
     fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
         let (mut fake, mut app, _, _) = with_tester();
         assert_eq!(menu_items(&fake, 1)[0], "New Window cmd+n");
@@ -4123,6 +4190,7 @@ mod tests {
                     Category::View
                 ),
                 ("app.quit", "Quit Lokyr", Category::App),
+                ("app.settings", "Settings…", Category::App),
                 ("pane.look-up", "Look Up", Category::Edit),
                 ("pane.man-page", "Open man Page", Category::Windows),
                 ("window.close", "Close Window", Category::Windows),
@@ -4165,9 +4233,15 @@ mod tests {
             MenuItem::Command { title, .. } | MenuItem::Standard { title, .. } => title.clone(),
             _ => String::new(),
         };
+        // The first of the system's items of the application's menu.
+        let standard = menus[0]
+            .items
+            .iter()
+            .find(|item| matches!(item, MenuItem::Standard { .. }))
+            .unwrap();
         vec![
             title(&menus[1].items[0]),
-            title(&menus[0].items[0]),
+            title(standard),
             title(menus[0].items.last().unwrap()),
             menus[2].title.clone(),
         ]
@@ -4185,6 +4259,7 @@ mod tests {
                 "Composizione"
             ]
         );
+        assert_eq!(menu_items(&fake, 0)[0], "Impostazioni… cmd+,");
         // The plugins' commands too, from their own catalogs.
         assert_eq!(
             menu_items(&fake, 2),

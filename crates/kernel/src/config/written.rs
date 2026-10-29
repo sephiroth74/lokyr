@@ -287,7 +287,43 @@ fn write_section_text(out: &mut String, section: &str, headings: &[Heading<'_>])
     }
 }
 
+/// The key whose line the template keeps, as the file's format needs it.
+const VERSION_KEY: &str = "config_version";
+
 impl Config {
+    /// The config file that is made where there is none: every key of the
+    /// defaults, with its text, commented out under its section, which
+    /// stays, but `config_version`, so that a key's `#` taken away changes
+    /// it, and the defaults to come apply to the others. It reads as the
+    /// defaults.
+    pub fn template() -> String {
+        let written = Config::default().written(true);
+        // The written file's own first lines, which tell of another file.
+        let body = written
+            .split_once("\n\n")
+            .map_or(written.as_str(), |(_, body)| body);
+        let mut out = String::new();
+        comment(
+            &mut out,
+            &[format!(
+                "Lokyr's config. Every key is here, commented out, with its default: take a key's `#` away, in its section, to change it. The guide tells more of each: {GUIDE_URL}"
+            )],
+        );
+        out.push('\n');
+        for line in body.lines() {
+            let kept = line.is_empty()
+                || line.starts_with('#')
+                || line.starts_with('[')
+                || line.starts_with(VERSION_KEY);
+            if !kept {
+                out.push_str("# ");
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    }
+
     /// The config as a file writes it: every key, with its value, in the
     /// guide's order; with `docs`, after the text of each, which tells
     /// what it does, its values and its default. It reads back as this
@@ -351,6 +387,42 @@ mod tests {
     fn parse(text: &str) -> Config {
         Config::parse(text, Path::new("config.toml"))
             .unwrap_or_else(|error| panic!("{error}\n{text}"))
+    }
+
+    #[test]
+    fn the_template_reads_as_the_defaults_and_each_key_as_its_default() {
+        let template = Config::template();
+        assert_eq!(parse(&template), Config::default());
+        assert!(template.starts_with("# Lokyr's config. Every key is here"));
+        assert!(template.contains("\nconfig_version = 1\n"));
+        assert!(template.contains("\n[font]\n"));
+        // The keys, commented out: each, its `#` taken away alone, reads as
+        // its default, in its section.
+        let written = Config::default().written(false);
+        let keys: Vec<&str> = written
+            .lines()
+            .filter(|line| line.contains(" = ") && !line.starts_with(VERSION_KEY))
+            .map(|line| line.split(" = ").next().unwrap())
+            .collect();
+        assert!(keys.len() > 40, "{keys:?}");
+        let lines: Vec<&str> = template.lines().collect();
+        let mut taken = 0;
+        for (index, line) in lines.iter().enumerate() {
+            let Some(key) = line.strip_prefix("# ") else {
+                continue;
+            };
+            if !keys
+                .iter()
+                .any(|name| key.starts_with(&format!("{name} = ")))
+            {
+                continue;
+            }
+            let mut changed = lines.clone();
+            changed[index] = key;
+            assert_eq!(parse(&changed.join("\n")), Config::default(), "{key}");
+            taken += 1;
+        }
+        assert_eq!(taken, keys.len());
     }
 
     #[test]
@@ -449,9 +521,8 @@ mod tests {
         assert!(written.contains("# Default: the system's monospaced font, SF Mono.\n"));
         // A section's own text, and the bindings' defaults.
         assert!(written.contains("[terminal]\n# What programs are told of the terminal"));
-        assert!(
-            written.contains("# The defaults:\n#  \"cmd+n\" = \"window.new\"   (Opens a window)\n")
-        );
+        assert!(written.contains("# The defaults:\n#  \"cmd+,\" = \"app.settings\"   (Opens"));
+        assert!(written.contains("\n#  \"cmd+n\" = \"window.new\"   (Opens a window)\n"));
         assert!(!written.contains("<sub>"));
         assert!(!written.contains("**"));
         for line in written.lines() {

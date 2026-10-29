@@ -128,6 +128,7 @@ pub struct Fake {
     /// The URLs and the paths that the app opened, and those that it
     /// showed in the file manager, from the first.
     opened: Vec<String>,
+    edited: Vec<PathBuf>,
     revealed: Vec<String>,
     last_id: u64,
     woken: Arc<AtomicBool>,
@@ -169,6 +170,7 @@ impl Fake {
             notifications: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
+            edited: Vec::new(),
             revealed: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
@@ -429,6 +431,11 @@ impl Fake {
     /// The paths that the app showed in the file manager, from the first.
     pub fn revealed(&self) -> &[String] {
         &self.revealed
+    }
+
+    /// The files that the app opened in the text editor, in order.
+    pub fn edited(&self) -> &[PathBuf] {
+        &self.edited
     }
 
     /// Whether the app has quit.
@@ -720,6 +727,11 @@ impl Platform for Fake {
             return Err(Error::Open(target.to_owned(), "not a file".to_owned()));
         }
         self.revealed.push(target.to_owned());
+        Ok(())
+    }
+
+    fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error> {
+        self.edited.push(path.to_owned());
         Ok(())
     }
 }

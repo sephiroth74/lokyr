@@ -996,6 +996,23 @@ pub fn set_string(path: &Path, section: &str, key: &str, value: &str) -> Result<
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
 }
 
+/// Makes the config file at `path`, in the file that a link points to,
+/// which stays a link, with its directory, when there is none: of the
+/// [`Config::template`], every key commented out. Whether it made one; a
+/// file that is there stays as it is.
+pub fn make(path: &Path) -> Result<bool, Error> {
+    let target = link_target(path);
+    if fs::symlink_metadata(&target).is_ok() {
+        return Ok(false);
+    }
+    write_whole(&target, &Config::template()).map_err(|error| Error {
+        path: target.clone(),
+        position: None,
+        message: format!("it cannot be written: {error}"),
+    })?;
+    Ok(true)
+}
+
 /// How many links a config's path can lead through, each to the next.
 const LINKS: usize = 32;
 
@@ -2163,6 +2180,37 @@ mod tests {
                     .contains("urls = \"open\"")
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_config_is_made_of_the_template_where_there_is_none() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("lokyr-make-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // With its directory, which is not there yet.
+        let path = root.join("lokyr/config.toml");
+        assert_eq!(make(&path), Ok(true));
+        assert_eq!(fs::read_to_string(&path).unwrap(), Config::template());
+        // A file that is there stays as it is.
+        fs::write(&path, "[font]\nsize = 14\n").unwrap();
+        assert_eq!(make(&path), Ok(false));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[font]\nsize = 14\n");
+        // Through a link to a file not there yet, which stays a link.
+        let link = root.join("linked.toml");
+        symlink(root.join("dotfiles/config.toml"), &link).unwrap();
+        assert_eq!(make(&link), Ok(true));
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("dotfiles/config.toml")).unwrap(),
+            Config::template()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -319,6 +319,10 @@ pub trait Platform {
     /// Shows `target`, an absolute path or a `file` URL, in the file
     /// manager, selected; another URL fails.
     fn reveal(&mut self, target: &str) -> Result<(), Error>;
+
+    /// Opens `path`, a file, in the system's text editor: the application
+    /// that opens plain text, whatever the file's own type opens in.
+    fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error>;
 }
 
 /// What the platform calls on the app, on the main thread.
