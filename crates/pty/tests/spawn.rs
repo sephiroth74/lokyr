@@ -729,8 +729,13 @@ fn programs_until(pty: &lokyr_pty::Pty, wanted: impl Fn(&[String]) -> bool) -> V
 
 #[test]
 fn a_terminal_s_processes_are_its_program_s_and_its_jobs() {
-    // A job in the background, and one stopped, behind a shell that reads.
-    let script = "set -m; sleep 30 & sleep 31 & kill -STOP $!; stty -echo; echo ready; read line";
+    // A job in the background, and one stopped, behind a shell that reads:
+    // stopped once it runs `sleep`, as a job stopped sooner stays bash's.
+    let script = concat!(
+        "set -m; sleep 30 & sleep 31 & job=$!; ",
+        "until ps -o comm= -p $job | grep -q sleep; do sleep 0.02; done; ",
+        "kill -STOP $job; stty -echo; echo ready; read line",
+    );
     let bash = Program::command("/bin/bash", ["-c", script]);
     let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
     let mut output = Output::new(pty.reader().unwrap());
