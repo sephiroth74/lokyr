@@ -33,6 +33,8 @@ pub struct Snapshot {
     cursor: SnapshotCursor,
     reverse_video: bool,
     smooth_scroll: bool,
+    /// Whether the alternate screen is the one shown.
+    alternate: bool,
     colors: Colors,
     /// The selection, as the view shows it.
     selection: Option<Selected>,
@@ -125,6 +127,12 @@ impl Snapshot {
     /// Whether the program asked for smooth scrolling (DECSCLM).
     pub fn smooth_scroll(&self) -> bool {
         self.smooth_scroll
+    }
+
+    /// Whether the alternate screen is the one shown, as a program such as
+    /// vim shows its own.
+    pub fn alternate_screen(&self) -> bool {
+        self.alternate
     }
 
     /// The colors to draw with.
@@ -272,6 +280,7 @@ impl Terminal {
             snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
         snapshot.reverse_video = reverse_video;
         snapshot.smooth_scroll = self.smooth_scroll();
+        snapshot.alternate = self.alternate_active;
         if snapshot.colors != self.colors {
             snapshot.colors.clone_from(&self.colors);
         }
@@ -384,6 +393,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         lines,
         reverse_video: terminal.reverse_video(),
         smooth_scroll: terminal.smooth_scroll(),
+        alternate: terminal.is_alternate_screen(),
         colors: terminal.colors().clone(),
         selection: None,
     }
@@ -402,6 +412,21 @@ mod tests {
         (Terminal::new(cols, rows, Options::default()), Parser::new())
     }
 
+    #[test]
+    fn a_snapshot_tells_the_alternate_screen() {
+        let (mut terminal, mut parser) = terminal(10, 3);
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        assert!(!snapshot.alternate_screen());
+        feed(&mut terminal, &mut parser, "\x1b[?1049h");
+        terminal.snapshot(&mut snapshot);
+        assert!(snapshot.alternate_screen());
+        assert!(copy_of(&terminal).alternate_screen());
+        feed(&mut terminal, &mut parser, "\x1b[?1049l");
+        terminal.snapshot(&mut snapshot);
+        assert!(!snapshot.alternate_screen());
+    }
+
     fn feed(terminal: &mut Terminal, parser: &mut Parser, text: &str) {
         parser.advance(terminal, text.as_bytes());
     }
@@ -417,6 +442,7 @@ mod tests {
         }
         assert_eq!(snapshot.cursor(), copy.cursor());
         assert_eq!(snapshot.reverse_video(), copy.reverse_video());
+        assert_eq!(snapshot.alternate_screen(), copy.alternate_screen());
         assert_eq!(snapshot.colors(), copy.colors());
     }
 

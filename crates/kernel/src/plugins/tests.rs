@@ -53,6 +53,7 @@ fn command(name: &str) -> Command {
         category: Category::View,
         capabilities: Vec::new(),
         params: Vec::new(),
+        when: None,
     }
 }
 

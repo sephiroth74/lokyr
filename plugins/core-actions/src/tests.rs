@@ -161,8 +161,8 @@ fn the_commands_register_with_their_keys() {
                 clipboard,
                 names(&["clipboard-read", "pty-write"])
             ),
-            view("pane.select-all"),
-            view("pane.clear"),
+            ("pane.select-all", Category::Edit, Vec::new()),
+            ("pane.clear", Category::Edit, Vec::new()),
             view("font.bigger"),
             view("font.smaller"),
             view("font.reset"),
@@ -175,6 +175,14 @@ fn the_commands_register_with_their_keys() {
             ("pane.send-text", Category::Input, names(&["pty-write"])),
         ]
     );
+    // Copying takes a selection; the others run in any context.
+    let whens: Vec<(&str, Option<&str>)> = host
+        .commands
+        .iter()
+        .filter(|command| command.when.is_some())
+        .map(|command| (command.name.as_str(), command.when.as_deref()))
+        .collect();
+    assert_eq!(whens, [("pane.copy", Some("selection"))]);
     // Sending text takes its text, and has no keys of its own.
     let send = host.commands.last().unwrap();
     assert_eq!(send.params.len(), 1);

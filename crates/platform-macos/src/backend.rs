@@ -1,14 +1,15 @@
 //! The [`Platform`] that the app's handler talks to.
 
-use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, Platform, Point, PointerShape, Size,
-    TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Backdrop, Error, MainMenu, MenuRole, Platform, Point, PointerShape,
+    Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
+    WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -45,6 +46,9 @@ pub(crate) struct Backend {
     option_as_meta: Rc<Cell<(bool, bool)>>,
     /// The target of the main menu's items, which the menu does not retain.
     menu_target: Option<Retained<MenuTarget>>,
+    /// The commands whose menu items are dimmed, which each menu's target
+    /// reads.
+    disabled: Rc<RefCell<BTreeSet<String>>>,
     last_id: u64,
     quit: bool,
     stopped: bool,
@@ -64,6 +68,7 @@ impl Backend {
             timers: HashMap::new(),
             option_as_meta: Rc::new(Cell::new((false, false))),
             menu_target: None,
+            disabled: Rc::default(),
             last_id: 0,
             quit: false,
             stopped: false,
@@ -280,9 +285,25 @@ impl Platform for Backend {
     }
 
     fn set_main_menu(&mut self, menu: &MainMenu) {
-        let (ns_menu, target) = menu::build(self.mtm, self.shared.clone(), menu);
-        NSApplication::sharedApplication(self.mtm).setMainMenu(Some(&ns_menu));
-        self.menu_target = Some(target);
+        let built = menu::build(self.mtm, self.shared.clone(), menu, self.disabled.clone());
+        let app = NSApplication::sharedApplication(self.mtm);
+        app.setMainMenu(Some(&built.bar));
+        for (role, menu) in built.roles {
+            match role {
+                MenuRole::Window => app.setWindowsMenu(Some(&menu)),
+                MenuRole::Help => app.setHelpMenu(Some(&menu)),
+            }
+        }
+        self.menu_target = Some(built.target);
+    }
+
+    fn set_command_enabled(&mut self, command: &str, enabled: bool) {
+        let mut disabled = self.disabled.borrow_mut();
+        if enabled {
+            disabled.remove(command);
+        } else {
+            disabled.insert(command.to_owned());
+        }
     }
 
     fn clipboard_text(&self) -> Option<String> {

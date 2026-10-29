@@ -44,6 +44,7 @@ fn menu() -> MainMenu {
                     shortcut: None,
                 },
             ],
+            role: None,
         }],
     }
 }

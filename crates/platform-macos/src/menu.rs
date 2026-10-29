@@ -1,9 +1,15 @@
-//! The main menu, built from the app's commands.
+//! The main menu, built from the app's commands, with the system's own
+//! items, as hiding the application and minimizing a window.
 
-use std::rc::Weak;
+use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::rc::{Rc, Weak};
 
-use lokyr_platform_core::{AppEvent, KeyCode, MainMenu, Menu, MenuItem, Shortcut, ShortcutKey};
+use lokyr_platform_core::{
+    AppEvent, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey, StandardAction,
+};
 use objc2::rc::Retained;
+use objc2::runtime::Sel;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{NSEventModifierFlags, NSMenu, NSMenuItem};
 use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
@@ -14,6 +20,8 @@ pub(crate) struct MenuTargetIvars {
     shared: Weak<Shared>,
     /// The commands of the menu's items, by their tags.
     commands: Vec<String>,
+    /// The commands whose items are dimmed, which the backend keeps.
+    disabled: Rc<RefCell<BTreeSet<String>>>,
 }
 
 define_class!(
@@ -36,35 +44,66 @@ define_class!(
                 shared.post(Pending::App(AppEvent::Command(command.clone())));
             }
         }
+
+        // SAFETY: `NSMenuItemValidation`'s signature: AppKit asks it before
+        // it shows the item, and before its key runs it.
+        #[unsafe(method(validateMenuItem:))]
+        fn validate_menu_item(&self, item: &NSMenuItem) -> bool {
+            let ivars = self.ivars();
+            usize::try_from(item.tag())
+                .ok()
+                .and_then(|tag| ivars.commands.get(tag))
+                .is_none_or(|command| !ivars.disabled.borrow().contains(command))
+        }
     }
 
     // SAFETY: `NSObjectProtocol` has no requirement.
     unsafe impl NSObjectProtocol for MenuTarget {}
 );
 
-/// The menu bar of `menu`, and the target of its items, which the caller
-/// keeps as long as the menu.
+/// A menu bar that [`build`] made.
+pub(crate) struct Built {
+    /// The bar.
+    pub(crate) bar: Retained<NSMenu>,
+    /// The target of its items, which the caller keeps as long as the menu.
+    pub(crate) target: Retained<MenuTarget>,
+    /// Its menus that play a part for the system.
+    pub(crate) roles: Vec<(MenuRole, Retained<NSMenu>)>,
+}
+
+/// The menu bar of `menu`, whose items' target dims those of the commands
+/// in `disabled`.
 pub(crate) fn build(
     mtm: MainThreadMarker,
     shared: Weak<Shared>,
     menu: &MainMenu,
-) -> (Retained<NSMenu>, Retained<MenuTarget>) {
+    disabled: Rc<RefCell<BTreeSet<String>>>,
+) -> Built {
     let mut commands = Vec::new();
     for menu in &menu.menus {
         collect(&menu.items, &mut commands);
     }
-    let target = MenuTarget::alloc(mtm).set_ivars(MenuTargetIvars { shared, commands });
+    let target = MenuTarget::alloc(mtm).set_ivars(MenuTargetIvars {
+        shared,
+        commands,
+        disabled,
+    });
     // SAFETY: `NSObject`'s `init` has this signature.
     let target: Retained<MenuTarget> = unsafe { msg_send![super(target), init] };
 
     let bar = NSMenu::new(mtm);
     let mut tag = 0;
+    let mut roles = Vec::new();
     for menu in &menu.menus {
         let item = NSMenuItem::new(mtm);
-        item.setSubmenu(Some(&submenu(mtm, menu, &target, &mut tag)));
+        let ns_menu = submenu(mtm, menu, &target, &mut tag);
+        item.setSubmenu(Some(&ns_menu));
         bar.addItem(&item);
+        if let Some(role) = menu.role {
+            roles.push((role, ns_menu));
+        }
     }
-    (bar, target)
+    Built { bar, target, roles }
 }
 
 /// The commands of `items`, in the order that [`submenu`] tags them.
@@ -72,7 +111,7 @@ fn collect(items: &[MenuItem], commands: &mut Vec<String>) {
     for item in items {
         match item {
             MenuItem::Command { command, .. } => commands.push(command.clone()),
-            MenuItem::Separator => {}
+            MenuItem::Standard { .. } | MenuItem::Separator => {}
             MenuItem::Submenu(menu) => collect(&menu.items, commands),
         }
     }
@@ -114,6 +153,30 @@ fn submenu(
                 *tag += 1;
                 ns_item
             }
+            MenuItem::Standard {
+                title,
+                action,
+                shortcut,
+            } => {
+                let key = shortcut
+                    .and_then(|shortcut| key_equivalent(shortcut.key))
+                    .unwrap_or_default();
+                // SAFETY: an item without a target sends its action along the
+                // responder chain, where the application or the window that
+                // has the focus answers it, as AppKit's own items do.
+                let ns_item = unsafe {
+                    NSMenuItem::initWithTitle_action_keyEquivalent(
+                        NSMenuItem::alloc(mtm),
+                        &NSString::from_str(title),
+                        Some(selector(*action)),
+                        &NSString::from_str(&key),
+                    )
+                };
+                if let Some(shortcut) = shortcut {
+                    ns_item.setKeyEquivalentModifierMask(modifier_mask(shortcut));
+                }
+                ns_item
+            }
             MenuItem::Separator => NSMenuItem::separatorItem(mtm),
             MenuItem::Submenu(menu) => {
                 let ns_item = NSMenuItem::new(mtm);
@@ -125,6 +188,18 @@ fn submenu(
         ns_menu.addItem(&ns_item);
     }
     ns_menu
+}
+
+/// The action of AppKit's own item that does `action`.
+fn selector(action: StandardAction) -> Sel {
+    match action {
+        StandardAction::Hide => sel!(hide:),
+        StandardAction::HideOthers => sel!(hideOtherApplications:),
+        StandardAction::ShowAll => sel!(unhideAllApplications:),
+        StandardAction::Minimize => sel!(performMiniaturize:),
+        StandardAction::Zoom => sel!(performZoom:),
+        StandardAction::BringAllToFront => sel!(arrangeInFront:),
+    }
 }
 
 fn modifier_mask(shortcut: &Shortcut) -> NSEventModifierFlags {

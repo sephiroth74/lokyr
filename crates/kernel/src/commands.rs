@@ -14,6 +14,8 @@ pub use lokyr_plugin_sdk::command::{
 #[derive(Clone, Debug, Default)]
 pub struct Registry {
     commands: BTreeMap<String, Command>,
+    /// The commands' names, in the order of their registrations.
+    order: Vec<String>,
 }
 
 /// The commands that a plugin's manifest says it runs: names, and
@@ -108,6 +110,15 @@ impl Registry {
                 ));
             }
         }
+        if let Some(when) = &command.when
+            && let Err(error) = crate::keymap::When::parse(when)
+        {
+            return Err(Error::new(
+                Code::InvalidSchema,
+                format!("the context of `{name}`, `{when}`, is not one: {error}"),
+            ));
+        }
+        self.order.push(name.clone());
         self.commands.insert(name.clone(), command);
         Ok(())
     }
@@ -120,12 +131,19 @@ impl Registry {
     /// Takes the command `name` away, which a plugin that is disabled
     /// registered.
     pub fn unregister(&mut self, name: &str) -> Option<Command> {
+        self.order.retain(|registered| registered != name);
         self.commands.remove(name)
     }
 
     /// The commands, by name.
     pub fn commands(&self) -> impl Iterator<Item = &Command> {
         self.commands.values()
+    }
+
+    /// The commands, in the order of their registrations, as the menus
+    /// list them.
+    pub fn in_order(&self) -> impl Iterator<Item = &Command> {
+        self.order.iter().filter_map(|name| self.commands.get(name))
     }
 
     /// Checks a call of `name` with `args`, and returns its arguments, with
@@ -236,6 +254,7 @@ mod tests {
             category: Category::Tabs,
             capabilities: Vec::new(),
             params,
+            when: None,
         }
     }
 
@@ -280,6 +299,46 @@ mod tests {
 
     fn code(result: Result<Args, Error>) -> u16 {
         result.unwrap_err().code.number()
+    }
+
+    #[test]
+    fn the_commands_keep_the_order_of_their_registrations() {
+        let mut registry = Registry::new();
+        for name in ["view.b", "view.a", "view.c"] {
+            registry.register(command(name, Vec::new())).unwrap();
+        }
+        let names = |registry: &Registry| -> Vec<String> {
+            registry
+                .in_order()
+                .map(|command| command.name.clone())
+                .collect()
+        };
+        assert_eq!(names(&registry), ["view.b", "view.a", "view.c"]);
+        registry.unregister("view.a");
+        registry.register(command("view.a", Vec::new())).unwrap();
+        assert_eq!(names(&registry), ["view.b", "view.c", "view.a"]);
+        // By name, as before.
+        let by_name: Vec<&str> = registry
+            .commands()
+            .map(|command| command.name.as_str())
+            .collect();
+        assert_eq!(by_name, ["view.a", "view.b", "view.c"]);
+    }
+
+    #[test]
+    fn a_command_s_context_is_one() {
+        let mut registry = Registry::new();
+        let when = |when: &str| Command {
+            when: Some(when.to_owned()),
+            ..command("view.x", Vec::new())
+        };
+        let error = registry.register(when("selection &&")).unwrap_err();
+        assert_eq!(error.code, Code::InvalidSchema);
+        assert!(registry.get("view.x").is_none());
+        assert_eq!(registry.in_order().count(), 0);
+        registry
+            .register(when("selection && !alternate-screen"))
+            .unwrap();
     }
 
     #[test]

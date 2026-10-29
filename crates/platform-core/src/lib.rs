@@ -32,7 +32,10 @@ pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerShape, ScrollDelta,
     ScrollPhase,
 };
-pub use menu::{Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, Shortcut, ShortcutKey};
+pub use menu::{
+    Alert, AlertId, AlertStyle, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey,
+    StandardAction,
+};
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
 pub use waker::Waker;
@@ -173,6 +176,11 @@ pub trait Platform {
 
     /// Sets the main menu, in place of the one before it.
     fn set_main_menu(&mut self, menu: &MainMenu);
+
+    /// Enables the main menu's items of `command`, or dims them, which then
+    /// neither run nor take their keys; every command's are enabled until
+    /// the app says otherwise, through a change of the menu too.
+    fn set_command_enabled(&mut self, command: &str, enabled: bool);
 
     /// The text on the clipboard, if it holds text.
     fn clipboard_text(&self) -> Option<String>;

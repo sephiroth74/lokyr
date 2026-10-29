@@ -743,7 +743,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
 - A click that a binding takes, a single one in the window that has the focus, runs its command before the selection and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer, from the view's top left one, `0` and `0`.
-- For now, the keys of the menus' items, Command-N and Command-Q, stay theirs: the menus take them before the bindings see them.
+- The menus show each command's keys: of its bindings of one key, without arguments and without `when`, the first whose key no later binding takes. A menu's item takes its key before the program; a dimmed item, as Copy without a selection, takes none, and the key goes on to the bindings. A command that needs an argument, as `pane.send-text`, has no item.
 - A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
 
 A command without keys of its own, for your bindings:

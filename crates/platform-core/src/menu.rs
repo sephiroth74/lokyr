@@ -17,6 +17,17 @@ pub struct Menu {
     pub title: String,
     /// Its items, from the top.
     pub items: Vec<MenuItem>,
+    /// The part that it plays for the system, if one.
+    pub role: Option<MenuRole>,
+}
+
+/// The part that a menu plays for the system.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuRole {
+    /// The windows' menu, which the system lists the windows in.
+    Window,
+    /// The help's menu, which the system gives a field to search the menus.
+    Help,
 }
 
 /// An item of a menu.
@@ -32,10 +43,36 @@ pub enum MenuItem {
         /// The keys that choose it, which the item shows.
         shortcut: Option<Shortcut>,
     },
+    /// An item that does what the system does, as hiding the application.
+    Standard {
+        /// What the item shows.
+        title: String,
+        /// What it does.
+        action: StandardAction,
+        /// The keys that choose it, which the item shows.
+        shortcut: Option<Shortcut>,
+    },
     /// A line between groups of items.
     Separator,
     /// A menu within the menu.
     Submenu(Menu),
+}
+
+/// What a menu's item of the system's does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StandardAction {
+    /// Hides the application.
+    Hide,
+    /// Hides the other applications.
+    HideOthers,
+    /// Shows every application.
+    ShowAll,
+    /// Minimizes the window that has the focus.
+    Minimize,
+    /// Zooms the window that has the focus, or takes it back.
+    Zoom,
+    /// Brings every window of the application to the front.
+    BringAllToFront,
 }
 
 /// The keys that choose a menu item.

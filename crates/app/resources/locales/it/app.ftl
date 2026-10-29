@@ -4,6 +4,18 @@ command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-app-quit = Esci da Lokyr
 
+menu-shell = Shell
+menu-edit = Composizione
+menu-view = Vista
+menu-window = Finestra
+menu-help = Aiuto
+menu-hide = Nascondi Lokyr
+menu-hide-others = Nascondi altre
+menu-show-all = Mostra tutte
+menu-minimize = Contrai
+menu-zoom = Zoom
+menu-bring-all-to-front = Porta tutto in primo piano
+
 clipboard-read-message = Un programma in questa finestra vuole leggere gli appunti.
 clipboard-read-detail = Riceverebbe il testo che hai copiato per ultimo, che può contenere una password. Consentilo solo se ti fidi del programma e del computer su cui gira.
 clipboard-read-deny = Non consentire

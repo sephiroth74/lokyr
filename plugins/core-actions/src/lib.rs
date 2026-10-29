@@ -73,8 +73,8 @@ const COMMANDS: [Spec; 13] = [
         &[Capability::ClipboardRead, Capability::PtyWrite],
         &["cmd+v"],
     ),
-    (SELECT_ALL, "Select All", Category::View, &[], &["cmd+a"]),
-    (CLEAR, "Clear", Category::View, &[], &["cmd+k"]),
+    (SELECT_ALL, "Select All", Category::Edit, &[], &["cmd+a"]),
+    (CLEAR, "Clear", Category::Edit, &[], &["cmd+k"]),
     // ⌘+ on a layout of its own `+` key, as the Italian, and with Shift on
     // the US layout's `=`.
     (
@@ -143,6 +143,8 @@ impl Plugin for CoreActions {
                 category,
                 capabilities: capabilities.to_vec(),
                 params: Vec::new(),
+                // Copying takes a selection.
+                when: (name == COPY).then(|| "selection".to_owned()),
             })?;
             for keys in keys {
                 cx.bind(Binding {
@@ -163,6 +165,7 @@ impl Plugin for CoreActions {
                 kind: Kind::String,
                 default: None,
             }],
+            when: None,
         })
     }
 

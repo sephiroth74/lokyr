@@ -5,6 +5,19 @@ command-window-new = New Window
 command-window-close = Close Window
 command-app-quit = Quit Lokyr
 
+# The menus of the menu bar, and the system's own items in them.
+menu-shell = Shell
+menu-edit = Edit
+menu-view = View
+menu-window = Window
+menu-help = Help
+menu-hide = Hide Lokyr
+menu-hide-others = Hide Others
+menu-show-all = Show All
+menu-minimize = Minimize
+menu-zoom = Zoom
+menu-bring-all-to-front = Bring All to Front
+
 # The alert of a program's read of the clipboard, and its buttons, the
 # default one first.
 clipboard-read-message = A program in this window wants to read the clipboard.

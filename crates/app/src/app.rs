@@ -14,7 +14,7 @@ use lokyr_kernel::config::{
     self, AppConfig, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile, OpenUrl,
 };
 use lokyr_kernel::keymap::{
-    self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver,
+    self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver, When,
 };
 use lokyr_kernel::l10n::{self, Arg, Texts};
 use lokyr_kernel::paste;
@@ -26,9 +26,9 @@ use lokyr_kernel::workspace::{
 };
 use lokyr_platform_core::{
     Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, Handler, Ime, KeyCode, KeyEvent,
-    KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, PointerShape,
-    ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, TargetKind, TimerId, WindowAttributes,
-    WindowEvent, WindowId, WindowSize,
+    KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton, Platform, Point,
+    PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, StandardAction,
+    TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Color, CursorShape, DisplayList, Item, Rect, Renderer};
@@ -465,6 +465,11 @@ pub struct App {
     /// alerts: the window that the question is on, the URL or the path,
     /// and what it is.
     open_asks: BTreeMap<AlertId, (Option<WindowId>, (String, TargetKind))>,
+    /// The contexts in which the menus' commands that tell one can run, and
+    /// whether the platform has each one's items enabled, as the focused
+    /// pane's last frame had it.
+    menu_contexts: Vec<(String, When)>,
+    menu_enabled: BTreeMap<String, bool>,
     /// What the user chose that links do, where the config could not keep
     /// it: until the app quits.
     links_chosen: (Option<OpenUrl>, Option<OpenFile>),
@@ -524,6 +529,8 @@ impl App {
             pastes_unconfirmed: false,
             open_asks: BTreeMap::new(),
             links_chosen: (None, None),
+            menu_contexts: Vec::new(),
+            menu_enabled: BTreeMap::new(),
             close_asks: BTreeMap::new(),
             quit_ask: None,
             system_quit: false,
@@ -612,7 +619,8 @@ impl App {
         }
         let icon_changed = config.app.icon != self.config.app.icon;
         let language_changed = config.app.language != self.config.app.language;
-        if config.keys != self.config.keys {
+        let keys_changed = config.keys != self.config.keys;
+        if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
         self.config = config;
@@ -636,7 +644,9 @@ impl App {
         if language_changed {
             self.texts = texts(&self.config.app.language, &self.preferred);
             self.commands = commands(&self.texts, &self.plugins);
-            platform.set_main_menu(&main_menu(&self.commands));
+            self.set_menu(platform);
+        } else if keys_changed {
+            self.set_menu(platform);
         }
         for &window in self.windows.keys() {
             platform.request_frame(window);
@@ -1339,6 +1349,32 @@ impl App {
         call(&mut self.plugins, &mut context)
     }
 
+    /// Gives the platform the main menu of the commands and their keys,
+    /// in place of the one before; the items that it dimmed are enabled
+    /// again, until the next frame of the focused pane settles them.
+    fn set_menu(&mut self, platform: &mut dyn Platform) {
+        platform.set_main_menu(&main_menu(&self.commands, &self.keymap, &self.texts));
+        for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
+            if !enabled {
+                platform.set_command_enabled(&command, true);
+            }
+        }
+        self.menu_contexts = menu_contexts(&self.commands);
+    }
+
+    /// Enables the menus' items of the commands that can run in `context`,
+    /// and dims the others, as each command's own context says: only those
+    /// whose state changes reach the platform.
+    fn settle_menu(&mut self, platform: &mut dyn Platform, context: &Context) {
+        for (command, when) in &self.menu_contexts {
+            let enabled = when.holds(context);
+            if self.menu_enabled.get(command) != Some(&enabled) {
+                platform.set_command_enabled(command, enabled);
+                self.menu_enabled.insert(command.clone(), enabled);
+            }
+        }
+    }
+
     /// Takes what the plugins' calls changed and asked, once they
     /// returned: their bindings into the keymap, and their requests, of
     /// which a command runs `depth` deep; the windows draw again, as a
@@ -1346,6 +1382,7 @@ impl App {
     fn after_plugins(&mut self, platform: &mut dyn Platform, depth: usize) {
         if self.plugins.take_bindings_changed() {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &self.config.keys);
+            self.set_menu(platform);
         }
         for request in self.plugins.take_requests() {
             match request {
@@ -2047,6 +2084,16 @@ impl App {
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
+        // The menus' items as the focused pane's frame has it.
+        let context = self
+            .windows
+            .get(&window)
+            .filter(|state| state.focused)
+            .and_then(|state| self.workspace.pane(state.pane))
+            .map(|pane| menu_context(pane.snapshot()));
+        if let Some(context) = context {
+            self.settle_menu(platform, &context);
+        }
         let shape = self.cursor(platform, window, Instant::now());
         // Text that blinks takes the cursor's clock, in the window that has
         // the focus, and stops shown with it.
@@ -2165,7 +2212,7 @@ impl Handler for App {
         self.texts = texts(&self.config.app.language, &self.preferred);
         self.commands = commands(&self.texts, &self.plugins);
         self.activate_plugins(platform);
-        platform.set_main_menu(&main_menu(&self.commands));
+        self.set_menu(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
@@ -2656,6 +2703,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             category,
             capabilities: Vec::new(),
             params: Vec::new(),
+            when: None,
         };
         if let Err(error) = registry.register(command) {
             eprintln!("lokyr: {error}");
@@ -2669,43 +2717,173 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     registry
 }
 
-/// The main menu: the application's menu, with New Window and Quit, by the
-/// titles of their commands in `commands`.
-fn main_menu(commands: &Registry) -> MainMenu {
-    let title = |name: &str| {
-        commands
-            .get(name)
-            .map_or_else(|| name.to_owned(), |command| command.title.clone())
+/// The main menu, of the commands of `commands` that run without
+/// arguments, by their categories, in the order of their registrations,
+/// each with the keys that `keymap` binds it to: the application's menu,
+/// with the system's items to hide it; the shell's, of the windows', the
+/// tabs', the panes' and the input's; the edit's, of the clipboard's and the
+/// editing's; the view's; the windows', with the system's items; and the
+/// help's, which the system gives a search of the menus. A line parts the
+/// commands of a category or a namespace from the next. Its titles are
+/// `texts`'.
+fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
+    let items = |categories: &[Category]| {
+        let mut items = Vec::new();
+        let mut group = None;
+        let shown = commands.in_order().filter(|command| {
+            categories.contains(&command.category)
+                && command.params.iter().all(|param| param.default.is_some())
+        });
+        for command in shown {
+            let namespace = command.name.split('.').next().unwrap_or_default();
+            if group.is_some_and(|group| group != (command.category, namespace)) {
+                items.push(MenuItem::Separator);
+            }
+            group = Some((command.category, namespace));
+            items.push(MenuItem::Command {
+                title: command.title.clone(),
+                command: command.name.clone(),
+                shortcut: keymap.shortcut(&command.name).and_then(shortcut),
+            });
+        }
+        items
     };
-    MainMenu {
-        menus: vec![Menu {
-            title: "Lokyr".to_owned(),
-            items: vec![
-                MenuItem::Command {
-                    title: title(NEW_WINDOW),
-                    command: NEW_WINDOW.to_owned(),
-                    shortcut: Some(Shortcut {
-                        key: ShortcutKey::Char('n'),
-                        command: true,
-                        shift: false,
-                        alt: false,
-                        control: false,
-                    }),
-                },
-                MenuItem::Command {
-                    title: title(QUIT),
-                    command: QUIT.to_owned(),
-                    shortcut: Some(Shortcut {
-                        key: ShortcutKey::Char('q'),
-                        command: true,
-                        shift: false,
-                        alt: false,
-                        control: false,
-                    }),
-                },
-            ],
-        }],
+    let standard = |key: &str, action, shortcut: Option<Shortcut>| MenuItem::Standard {
+        title: texts.text(key),
+        action,
+        shortcut,
+    };
+    let cmd = |key: char, alt: bool| Shortcut {
+        key: ShortcutKey::Char(key),
+        command: true,
+        shift: false,
+        alt,
+        control: false,
+    };
+    let menu = |key: &str, items, role| Menu {
+        title: texts.text(key),
+        items,
+        role,
+    };
+    let mut application = vec![
+        standard("menu-hide", StandardAction::Hide, Some(cmd('h', false))),
+        standard(
+            "menu-hide-others",
+            StandardAction::HideOthers,
+            Some(cmd('h', true)),
+        ),
+        standard("menu-show-all", StandardAction::ShowAll, None),
+    ];
+    let app_commands = items(&[Category::App]);
+    if !app_commands.is_empty() {
+        application.push(MenuItem::Separator);
+        application.extend(app_commands);
     }
+    MainMenu {
+        menus: vec![
+            Menu {
+                title: "Lokyr".to_owned(),
+                items: application,
+                role: None,
+            },
+            menu(
+                "menu-shell",
+                items(&[
+                    Category::Windows,
+                    Category::Tabs,
+                    Category::Panes,
+                    Category::Input,
+                ]),
+                None,
+            ),
+            menu(
+                "menu-edit",
+                items(&[Category::Clipboard, Category::Edit]),
+                None,
+            ),
+            menu("menu-view", items(&[Category::View]), None),
+            menu(
+                "menu-window",
+                vec![
+                    standard(
+                        "menu-minimize",
+                        StandardAction::Minimize,
+                        Some(cmd('m', false)),
+                    ),
+                    standard("menu-zoom", StandardAction::Zoom, None),
+                    MenuItem::Separator,
+                    standard(
+                        "menu-bring-all-to-front",
+                        StandardAction::BringAllToFront,
+                        None,
+                    ),
+                ],
+                Some(MenuRole::Window),
+            ),
+            menu("menu-help", Vec::new(), Some(MenuRole::Help)),
+        ],
+    }
+}
+
+/// The contexts in which the commands of `commands` that tell one can run,
+/// as the menus enable their items.
+fn menu_contexts(commands: &Registry) -> Vec<(String, When)> {
+    commands
+        .in_order()
+        .filter_map(|command| {
+            let when = When::parse(command.when.as_deref()?).ok()?;
+            Some((command.name.clone(), when))
+        })
+        .collect()
+}
+
+/// The keys of `combo` as a menu's item shows them: a key that types a
+/// character, or a named one, with its modifiers.
+fn shortcut(combo: keymap::Combo) -> Option<Shortcut> {
+    use keymap::{Named, Press};
+    let key = match combo.press {
+        Press::Char(character) => ShortcutKey::Char(character),
+        Press::Named(named) => ShortcutKey::Code(match named {
+            Named::Enter => KeyCode::Enter,
+            Named::Tab => KeyCode::Tab,
+            Named::Backspace => KeyCode::Backspace,
+            Named::Escape => KeyCode::Escape,
+            Named::Space => KeyCode::Space,
+            Named::Delete => KeyCode::Delete,
+            Named::Insert => KeyCode::Insert,
+            Named::Home => KeyCode::Home,
+            Named::End => KeyCode::End,
+            Named::PageUp => KeyCode::PageUp,
+            Named::PageDown => KeyCode::PageDown,
+            Named::Up => KeyCode::ArrowUp,
+            Named::Down => KeyCode::ArrowDown,
+            Named::Left => KeyCode::ArrowLeft,
+            Named::Right => KeyCode::ArrowRight,
+            Named::F(n) => KeyCode::F(n),
+        }),
+        Press::Wheel(_) | Press::Click => return None,
+    };
+    Some(Shortcut {
+        key,
+        command: combo.mods.cmd,
+        shift: combo.mods.shift,
+        alt: combo.mods.alt,
+        control: combo.mods.ctrl,
+    })
+}
+
+/// The context in which the menus' commands run, of a pane whose frame
+/// shows `snapshot`: the pane has the focus, and may show the alternate
+/// screen and a selection.
+fn menu_context(snapshot: &vt::Snapshot) -> Context {
+    let mut names = vec!["pane.focused"];
+    if snapshot.alternate_screen() {
+        names.push("alternate-screen");
+    }
+    if snapshot.selection().is_some() {
+        names.push("selection");
+    }
+    Context::new(names)
 }
 
 #[cfg(test)]
@@ -2734,33 +2912,169 @@ mod tests {
     }
 
     #[test]
-    fn starting_opens_a_window_under_a_menu_with_new_window_and_quit() {
+    fn starting_opens_a_window_under_the_menus_of_the_commands() {
         let (fake, _) = started();
         let windows: Vec<_> = fake.windows().collect();
         assert_eq!(windows.len(), 1);
         assert_eq!(fake.window(windows[0]).unwrap().size.points, WINDOW_SIZE);
         let menu = fake.main_menu().unwrap();
-        let shortcuts: Vec<(String, char)> = menu.menus[0]
+        let titles: Vec<&str> = menu.menus.iter().map(|menu| menu.title.as_str()).collect();
+        assert_eq!(titles, ["Lokyr", "Shell", "Edit", "View", "Window", "Help"]);
+        let roles: Vec<Option<MenuRole>> = menu.menus.iter().map(|menu| menu.role).collect();
+        assert_eq!(
+            roles,
+            [
+                None,
+                None,
+                None,
+                None,
+                Some(MenuRole::Window),
+                Some(MenuRole::Help)
+            ]
+        );
+        assert_eq!(
+            menu_items(&fake, 0),
+            [
+                "Hide Lokyr cmd+h",
+                "Hide Others alt+cmd+h",
+                "Show All",
+                "-",
+                "Quit Lokyr cmd+q"
+            ]
+        );
+        assert_eq!(
+            menu_items(&fake, 1),
+            ["New Window cmd+n", "Close Window cmd+w"]
+        );
+        assert_eq!(
+            menu_items(&fake, 2),
+            [
+                "Copy cmd+c",
+                "Paste cmd+v",
+                "-",
+                "Select All cmd+a",
+                "Clear cmd+k"
+            ]
+        );
+        // The commands that take an argument that they need have no item,
+        // as `links.open` and `pane.send-text`.
+        assert_eq!(
+            menu_items(&fake, 3),
+            [
+                "Bigger cmd+=",
+                "Smaller cmd+-",
+                "Default Size cmd+0",
+                "-",
+                "Scroll Up a Line cmd+ArrowUp",
+                "Scroll Down a Line cmd+ArrowDown",
+                "Scroll Up a Page cmd+PageUp",
+                "Scroll Down a Page cmd+PageDown",
+                "Scroll to the Top cmd+Home",
+                "Scroll to the Bottom cmd+End"
+            ]
+        );
+        assert_eq!(
+            menu_items(&fake, 4),
+            ["Minimize cmd+m", "Zoom", "-", "Bring All to Front"]
+        );
+        assert!(menu_items(&fake, 5).is_empty());
+    }
+
+    /// The items of the main menu's menu `index` that `fake` has: each
+    /// one's title and its keys, as `cmd+n`, or a line, `-`.
+    fn menu_items(fake: &Fake, index: usize) -> Vec<String> {
+        let keys = |shortcut: &Shortcut| {
+            let mut keys = String::new();
+            for (held, name) in [
+                (shortcut.control, "ctrl+"),
+                (shortcut.alt, "alt+"),
+                (shortcut.shift, "shift+"),
+                (shortcut.command, "cmd+"),
+            ] {
+                if held {
+                    keys.push_str(name);
+                }
+            }
+            match shortcut.key {
+                ShortcutKey::Char(key) => keys.push(key),
+                ShortcutKey::Code(code) => keys.push_str(&format!("{code:?}")),
+            }
+            keys
+        };
+        fake.main_menu().unwrap().menus[index]
             .items
             .iter()
-            .filter_map(|item| match item {
+            .map(|item| match item {
                 MenuItem::Command {
-                    command,
-                    shortcut:
-                        Some(Shortcut {
-                            key: ShortcutKey::Char(key),
-                            command: true,
-                            ..
-                        }),
-                    ..
-                } => Some((command.clone(), *key)),
-                _ => None,
+                    title, shortcut, ..
+                }
+                | MenuItem::Standard {
+                    title, shortcut, ..
+                } => match shortcut {
+                    Some(shortcut) => format!("{title} {}", keys(shortcut)),
+                    None => title.clone(),
+                },
+                MenuItem::Separator => "-".to_owned(),
+                MenuItem::Submenu(menu) => menu.title.clone(),
             })
-            .collect();
-        assert_eq!(
-            shortcuts,
-            [(NEW_WINDOW.to_owned(), 'n'), (QUIT.to_owned(), 'q')]
+            .collect()
+    }
+
+    #[test]
+    fn the_menus_follow_the_keys_of_the_config() {
+        let keys = concat!(
+            "\"cmd+n\" = false\n",
+            "\"cmd+y\" = \"window.new\"\n",
+            "\"cmd+j\" = { command = \"pane.clear\", when = \"selection\" }\n",
+            "\"cmd+w\" = \"pane.select-all\"\n",
         );
+        let (fake, _, _) = bound(keys, reader(""));
+        // A binding's key, the one that a key bound later takes away, and
+        // one that holds in a context alone, which no item shows.
+        assert_eq!(menu_items(&fake, 1), ["New Window cmd+y", "Close Window"]);
+        assert_eq!(
+            menu_items(&fake, 2),
+            [
+                "Copy cmd+c",
+                "Paste cmd+v",
+                "-",
+                "Select All cmd+a",
+                "Clear cmd+k"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
+        let (mut fake, mut app, _, _) = with_tester();
+        assert_eq!(menu_items(&fake, 1)[0], "New Window cmd+n");
+        app.run(&mut fake, "test.bind", Args::new());
+        assert_eq!(menu_items(&fake, 1)[0], "New Window");
+        assert!(menu_items(&fake, 3).contains(&"test.size cmd+n".to_owned()));
+        // A config that takes Command-W away, as it reloads.
+        let (mut fake, mut app, path) = with_file("menu-keys", "");
+        assert_eq!(menu_items(&fake, 1)[1], "Close Window cmd+w");
+        std::fs::write(&path, "[keys]\n\"cmd+w\" = false\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(menu_items(&fake, 1)[1], "Close Window");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn copy_s_item_is_enabled_with_a_selection_alone() {
+        let (mut fake, mut app, window) = focused_with(reader(""));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(!fake.command_enabled("pane.copy"));
+        assert!(fake.command_enabled("pane.paste"));
+        fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(fake.command_enabled("pane.copy"));
+        // A click takes the selection away.
+        let none = Modifiers::NONE;
+        fake.send(&mut app, window, click(true, cell(2, 1), none, 1));
+        fake.send(&mut app, window, click(false, cell(2, 1), none, 1));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(!fake.command_enabled("pane.copy"));
     }
 
     #[test]
@@ -2784,8 +3098,9 @@ mod tests {
                 ("window.new", "New Window", Category::Windows),
             ]
         );
-        let menu = main_menu(&registry);
-        let titles: Vec<&str> = menu.menus[0]
+        let texts = Texts::new("en", &CATALOGS);
+        let menu = main_menu(&registry, &Keymap::default(), &texts);
+        let titles: Vec<&str> = menu.menus[1]
             .items
             .iter()
             .filter_map(|item| match item {
@@ -2793,7 +3108,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(titles, ["New Window", "Quit Lokyr"]);
+        assert_eq!(titles, ["New Window", "Close Window"]);
         // A command that takes no argument rejects one, and does nothing.
         let mut args = Args::new();
         args.insert(
@@ -2809,25 +3124,41 @@ mod tests {
         assert!(fake.has_quit());
     }
 
-    /// The titles of the items of the main menu that `fake` has.
+    /// The titles of the main menu that `fake` has that the app's catalogs
+    /// give: the shell's first item, the application's first and last, and
+    /// the edit's menu.
     fn menu_titles(fake: &Fake) -> Vec<String> {
-        fake.main_menu().unwrap().menus[0]
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                MenuItem::Command { title, .. } => Some(title.clone()),
-                _ => None,
-            })
-            .collect()
+        let menus = &fake.main_menu().unwrap().menus;
+        let title = |item: &MenuItem| match item {
+            MenuItem::Command { title, .. } | MenuItem::Standard { title, .. } => title.clone(),
+            _ => String::new(),
+        };
+        vec![
+            title(&menus[1].items[0]),
+            title(&menus[0].items[0]),
+            title(menus[0].items.last().unwrap()),
+            menus[2].title.clone(),
+        ]
     }
 
     #[test]
     fn the_menus_take_the_config_s_language_and_change_with_it() {
         let (mut fake, mut app, path) = with_file("language", "[app]\nlanguage = \"it\"\n");
-        assert_eq!(menu_titles(&fake), ["Nuova finestra", "Esci da Lokyr"]);
+        assert_eq!(
+            menu_titles(&fake),
+            [
+                "Nuova finestra",
+                "Nascondi Lokyr",
+                "Esci da Lokyr",
+                "Composizione"
+            ]
+        );
         std::fs::write(&path, "[app]\nlanguage = \"en\"\n").unwrap();
         change(&mut fake, &mut app);
-        assert_eq!(menu_titles(&fake), ["New Window", "Quit Lokyr"]);
+        assert_eq!(
+            menu_titles(&fake),
+            ["New Window", "Hide Lokyr", "Quit Lokyr", "Edit"]
+        );
         assert_eq!(app.texts.language(), "en");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -2838,7 +3169,15 @@ mod tests {
         fake.set_locales(&["de_CH", "it_CH"]);
         let mut first = app(Config::default(), quiet());
         fake.start(&mut first);
-        assert_eq!(menu_titles(&fake), ["Nuova finestra", "Esci da Lokyr"]);
+        assert_eq!(
+            menu_titles(&fake),
+            [
+                "Nuova finestra",
+                "Nascondi Lokyr",
+                "Esci da Lokyr",
+                "Composizione"
+            ]
+        );
         // A language that Lokyr lacks takes the system's.
         let mut fake = Fake::default();
         fake.set_locales(&["it_IT"]);
@@ -2849,7 +3188,10 @@ mod tests {
         assert_eq!(second.texts.language(), "it");
         // Without a language of Lokyr's, English.
         let (fake, _) = started();
-        assert_eq!(menu_titles(&fake), ["New Window", "Quit Lokyr"]);
+        assert_eq!(
+            menu_titles(&fake),
+            ["New Window", "Hide Lokyr", "Quit Lokyr", "Edit"]
+        );
     }
 
     #[test]
@@ -4992,6 +5334,7 @@ mod tests {
                 "test.size",
                 "test.close",
                 "test.again",
+                "test.bind",
             ];
             for name in names {
                 cx.register_command(Command {
@@ -5000,6 +5343,7 @@ mod tests {
                     category: Category::View,
                     capabilities: Vec::new(),
                     params: Vec::new(),
+                    when: None,
                 })?;
             }
             for (keys, command) in [("ctrl+t", "test.copy"), ("ctrl+b", "test.boom")] {
@@ -5030,6 +5374,13 @@ mod tests {
                     self.runs.set(self.runs.get() + 1);
                     cx.run_command("test.again", Args::new())
                 }
+                // A binding that takes a key of the app's own.
+                "test.bind" => cx.bind(plugins::host::Binding {
+                    keys: "cmd+n".to_owned(),
+                    command: "test.size".to_owned(),
+                    args: Args::new(),
+                    when: None,
+                }),
                 _ => {
                     let pane = cx.focused_pane().expect("a focused pane");
                     cx.select_all(pane)?;

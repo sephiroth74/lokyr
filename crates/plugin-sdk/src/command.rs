@@ -27,6 +27,10 @@ pub struct Command {
     pub capabilities: Vec<Capability>,
     /// Its parameters, in their order.
     pub params: Vec<Param>,
+    /// The context in which it can run, as a binding's `when` writes it, as
+    /// `selection`; every context without one. The menus dim its item
+    /// outside it.
+    pub when: Option<String>,
 }
 
 /// A parameter of a command: its name, the kind of its value, and its
@@ -106,6 +110,9 @@ pub enum Category {
     Input,
     /// The clipboard.
     Clipboard,
+    /// Handling what a pane holds, but through the clipboard: selecting
+    /// it, clearing it.
+    Edit,
     /// What a pane shows and how: its scrollback, the font's size.
     View,
 }

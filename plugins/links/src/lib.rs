@@ -47,6 +47,7 @@ impl Plugin for Links {
                 Capability::ProcessRead,
             ],
             params: vec![param("column"), param("row")],
+            when: None,
         })?;
         cx.bind(Binding {
             keys: KEYS.to_owned(),

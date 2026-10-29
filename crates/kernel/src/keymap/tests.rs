@@ -389,3 +389,51 @@ fn a_click_binds_alone_with_its_modifiers() {
         Resolved::Program { .. }
     ));
 }
+
+#[test]
+fn a_menu_shows_a_command_s_first_key_that_no_later_binding_takes() {
+    let binding = |keys: &str, command: &str, when: Option<&str>| Binding {
+        keys: parse_keys(keys).unwrap(),
+        invocation: Invocation {
+            command: command.to_owned(),
+            args: Args::new(),
+        },
+        when: when.map(|when| When::parse(when).unwrap()),
+    };
+    let keymap = Keymap::new(vec![
+        binding("cmd+n", "window.new", None),
+        binding("cmd+c", "pane.copy", Some("selection")),
+        binding("cmd+shift+c", "pane.copy", None),
+        binding("cmd+w", "window.close", None),
+        binding("ctrl+a>c", "tabs.new", None),
+        binding("cmd+wheel-up", "font.bigger", None),
+        binding("cmd+=", "font.bigger", None),
+        binding("cmd+w", "pane.clear", None),
+        binding("cmd+k", "pane.clear", None),
+        binding("ctrl+a", "pane.select-all", None),
+        binding("ctrl+a>s", "panes.split", None),
+    ]);
+    let shown = |command| keymap.shortcut(command).map(|combo| combo.to_string());
+    assert_eq!(shown("window.new").as_deref(), Some("cmd+n"));
+    // Not the key of a context alone.
+    assert_eq!(shown("pane.copy").as_deref(), Some("cmd+shift+c"));
+    // Taken by a later binding.
+    assert_eq!(shown("window.close"), None);
+    assert_eq!(shown("pane.clear").as_deref(), Some("cmd+w"));
+    // Neither a sequence, nor a step of the wheel.
+    assert_eq!(shown("tabs.new"), None);
+    assert_eq!(shown("font.bigger").as_deref(), Some("cmd+="));
+    // Nor the first key of a later sequence.
+    assert_eq!(shown("pane.select-all"), None);
+    // A binding with arguments shows on no item.
+    let mut args = Args::new();
+    args.insert("text".to_owned(), Value::String("x".to_owned()));
+    let keymap = Keymap::new(vec![Binding {
+        invocation: Invocation {
+            command: "pane.send-text".to_owned(),
+            args,
+        },
+        ..binding("cmd+e", "pane.send-text", None)
+    }]);
+    assert_eq!(keymap.shortcut("pane.send-text"), None);
+}

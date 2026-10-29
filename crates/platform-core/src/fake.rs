@@ -71,6 +71,8 @@ pub struct Fake {
     windows: BTreeMap<WindowId, FakeWindow>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
+    /// The commands whose menu items are dimmed.
+    disabled: std::collections::BTreeSet<String>,
     clipboard: Option<String>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
@@ -116,6 +118,7 @@ impl Fake {
             windows: BTreeMap::new(),
             focused: None,
             menu: None,
+            disabled: std::collections::BTreeSet::new(),
             clipboard: None,
             alerts: Vec::new(),
             timers: BTreeMap::new(),
@@ -273,6 +276,11 @@ impl Fake {
         self.menu.as_ref()
     }
 
+    /// Whether the menu items of `command` are enabled.
+    pub fn command_enabled(&self, command: &str) -> bool {
+        !self.disabled.contains(command)
+    }
+
     /// The alerts that are open, from the first opened.
     pub fn alerts(&self) -> &[FakeAlert] {
         &self.alerts
@@ -423,6 +431,14 @@ impl Platform for Fake {
 
     fn set_main_menu(&mut self, menu: &MainMenu) {
         self.menu = Some(menu.clone());
+    }
+
+    fn set_command_enabled(&mut self, command: &str, enabled: bool) {
+        if enabled {
+            self.disabled.remove(command);
+        } else {
+            self.disabled.insert(command.to_owned());
+        }
     }
 
     fn clipboard_text(&self) -> Option<String> {

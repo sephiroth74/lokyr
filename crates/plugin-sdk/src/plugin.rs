@@ -17,6 +17,7 @@
 //!             category: Category::Clipboard,
 //!             capabilities: Vec::new(),
 //!             params: Vec::new(),
+//!             when: Some("selection".to_owned()),
 //!         })?;
 //!         cx.bind(Binding {
 //!             keys: "cmd+c".to_owned(),

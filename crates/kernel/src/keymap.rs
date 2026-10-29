@@ -520,6 +520,26 @@ impl Keymap {
         &self.bindings
     }
 
+    /// The keys that a menu's item shows for `command`, run without
+    /// arguments: of its bindings of one key, in every context, the first
+    /// whose key no later binding takes, alone or as the first of a
+    /// sequence, as a menu takes its item's key before the bindings see it.
+    pub fn shortcut(&self, command: &str) -> Option<Combo> {
+        self.bindings.iter().enumerate().find_map(|(at, binding)| {
+            let [combo] = binding.keys[..] else {
+                return None;
+            };
+            let ours = binding.invocation.command == command
+                && binding.invocation.args.is_empty()
+                && binding.when.is_none()
+                && matches!(combo.press, Press::Char(_) | Press::Named(_));
+            let taken = self.bindings[at + 1..]
+                .iter()
+                .any(|later| later.keys.first() == Some(&combo));
+            (ours && !taken).then_some(combo)
+        })
+    }
+
     /// The binding of `keys` that holds in `context`, the last of them.
     fn exact(&self, keys: &[Combo], context: &Context) -> Option<&Binding> {
         self.bindings
