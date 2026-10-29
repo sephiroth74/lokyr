@@ -4,11 +4,12 @@
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::ptr::NonNull;
+use std::time::Duration;
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, Item, LineStyle, Rect, Renderer,
-    Texture, TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, Rect,
+    Renderer, Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -95,6 +96,8 @@ pub struct MetalRenderer {
     /// The commands of the frames that the GPU may still draw, by their
     /// lists' frames, from the oldest.
     drawing: VecDeque<(u64, Retained<ProtocolObject<dyn MTLCommandBuffer>>)>,
+    /// The GPU's times of the frames that it finished, until they are taken.
+    gpu_times: GpuTimes,
     /// The commands of the last uploads, which the tests wait for.
     #[cfg(test)]
     uploaded: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
@@ -121,6 +124,7 @@ impl MetalRenderer {
             queue: gpu.queue.clone(),
             device,
             drawing: VecDeque::new(),
+            gpu_times: GpuTimes::default(),
             #[cfg(test)]
             uploaded: None,
         })
@@ -304,6 +308,11 @@ impl Renderer for MetalRenderer {
         self.drop_finished();
         self.drawing.front().map(|&(frame, _)| frame)
     }
+
+    fn take_gpu_times(&mut self) -> GpuTimes {
+        self.drop_finished();
+        std::mem::take(&mut self.gpu_times)
+    }
 }
 
 impl MetalRenderer {
@@ -397,6 +406,8 @@ impl MetalRenderer {
 
     /// Forgets the frames that the GPU finished, from the oldest: a queue's
     /// commands finish in their order.
+    /// Lets the commands of the frames that the GPU finished go, from the
+    /// oldest, with their times.
     fn drop_finished(&mut self) {
         while self.drawing.front().is_some_and(|(_, buffer)| {
             matches!(
@@ -404,7 +415,12 @@ impl MetalRenderer {
                 MTLCommandBufferStatus::Completed | MTLCommandBufferStatus::Error
             )
         }) {
-            self.drawing.pop_front();
+            if let Some((_, buffer)) = self.drawing.pop_front() {
+                let time = buffer.GPUEndTime() - buffer.GPUStartTime();
+                if buffer.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
+                    self.gpu_times.add(Duration::from_secs_f64(time));
+                }
+            }
         }
     }
 }
@@ -1002,6 +1018,25 @@ mod tests {
         let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
         surface.resize(64, 32, 1.0);
         assert!(renderer.draw(&surface, &list()).unwrap());
+    }
+
+    #[test]
+    fn the_gpu_s_times_of_finished_frames_are_taken_once() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(64, 32, 1.0);
+        for _ in 0..2 {
+            assert!(renderer.draw(&surface, &list()).unwrap());
+        }
+        for (_, buffer) in &renderer.drawing {
+            buffer.waitUntilCompleted();
+        }
+        let times = renderer.take_gpu_times();
+        assert_eq!(times.frames, 2);
+        assert!(times.longest > Duration::ZERO && times.total >= times.longest);
+        assert_eq!(renderer.take_gpu_times(), GpuTimes::default());
     }
 
     #[test]

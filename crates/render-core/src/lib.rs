@@ -9,6 +9,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::time::Duration;
+
 /// A color of the sRGB space, by its encoded components, from 0 to 1, as a
 /// theme gives them, and its opacity; opaque black by default.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -332,6 +334,27 @@ pub struct DisplayList {
     pub frame: u64,
 }
 
+/// How long the GPU took for some frames: how many, all together, and the
+/// longest one.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GpuTimes {
+    /// The frames.
+    pub frames: u32,
+    /// Their times together.
+    pub total: Duration,
+    /// The longest one's.
+    pub longest: Duration,
+}
+
+impl GpuTimes {
+    /// Takes the time of one more frame.
+    pub fn add(&mut self, time: Duration) {
+        self.frames += 1;
+        self.total += time;
+        self.longest = self.longest.max(time);
+    }
+}
+
 /// A GPU's backend: it keeps the atlas's textures, and draws display lists
 /// into windows.
 pub trait Renderer {
@@ -351,6 +374,12 @@ pub trait Renderer {
     /// The oldest frame, by its list's `frame`, that the GPU may still be
     /// drawing; `None` once it finished every one that it took.
     fn drawing_from(&mut self) -> Option<u64>;
+
+    /// The GPU's times of the frames that it finished since the last call,
+    /// which gives each once; none for a backend that does not time them.
+    fn take_gpu_times(&mut self) -> GpuTimes {
+        GpuTimes::default()
+    }
 }
 
 #[cfg(test)]

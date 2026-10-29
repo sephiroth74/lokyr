@@ -131,6 +131,8 @@ pub struct Config {
     pub bell: BellConfig,
     /// The `[app]` section.
     pub app: AppConfig,
+    /// The `[debug]` section.
+    pub debug: DebugConfig,
     /// The `[keys]` section.
     pub keys: KeysConfig,
 }
@@ -580,6 +582,31 @@ impl Default for BellConfig {
             mark_title: true,
         }
     }
+}
+
+/// The `[debug]` section: what Lokyr shows of its own work.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct DebugConfig {
+    /// Whether a panel of the performance shows over each window.
+    pub performance_overlay: bool,
+    /// The window's corner that the panel takes.
+    pub performance_corner: Corner,
+}
+
+/// A corner of a window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Corner {
+    /// The top right one, under the titlebar.
+    #[default]
+    TopRight,
+    /// The top left one, under the titlebar.
+    TopLeft,
+    /// The bottom right one.
+    BottomRight,
+    /// The bottom left one.
+    BottomLeft,
 }
 
 /// Which Option keys act as Meta.
@@ -1111,7 +1138,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 11] {
+fn sections() -> [(&'static str, &'static [&'static str]); 12] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1124,6 +1151,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 11] {
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
         ("app", keys::<AppConfig>()),
+        ("debug", keys::<DebugConfig>()),
     ]
 }
 
@@ -1932,6 +1960,7 @@ mod tests {
                 "links",
                 "bell",
                 "app",
+                "debug",
                 "keys"
             ]
         );

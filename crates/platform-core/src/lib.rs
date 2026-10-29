@@ -93,6 +93,20 @@ pub struct WindowAttributes {
     pub restore: bool,
 }
 
+/// What the process has used of the machine, as the system counts it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// The wakeups that brought the processor out of idle, since the
+    /// process started.
+    pub idle_wakeups: u64,
+    /// The wakeups of interrupts, as a timer's, idle or not, since the
+    /// process started.
+    pub interrupt_wakeups: u64,
+    /// The memory that the system counts against the process, in bytes:
+    /// its footprint.
+    pub footprint: u64,
+}
+
 /// The background of a translucent window, under what the app draws, and
 /// through which what is behind the window shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -157,6 +171,10 @@ pub trait Platform {
     /// The pixels in a point of the screen that a new window opens on: 1 or
     /// 2 on the Mac.
     fn screen_scale(&self) -> f64;
+
+    /// What the process has used of the machine so far, as the system
+    /// counts it; none where the system does not tell.
+    fn usage(&self) -> Option<Usage>;
 
     /// Opens a window, in front of the others, where it takes the focus:
     /// down and to the right of the window that has the focus, or of the

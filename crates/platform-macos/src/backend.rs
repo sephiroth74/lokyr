@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, MainMenu, MenuRole, Platform, Point,
-    PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    PointerShape, Size, TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -270,6 +270,21 @@ impl Platform for Backend {
 
     fn screen_scale(&self) -> f64 {
         NSScreen::mainScreen(self.mtm).map_or(1.0, |screen| screen.backingScaleFactor())
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        let pid = libc::pid_t::try_from(std::process::id()).ok()?;
+        // SAFETY: the struct is plain data, which zeros make valid.
+        let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
+        // SAFETY: `proc_pid_rusage` fills in the struct of the flavor that
+        // it is asked for, `rusage_info_v4`, which `info` is.
+        let status =
+            unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V4, (&raw mut info).cast()) };
+        (status == 0).then_some(Usage {
+            idle_wakeups: info.ri_pkg_idle_wkups,
+            interrupt_wakeups: info.ri_interrupt_wkups,
+            footprint: info.ri_phys_footprint,
+        })
     }
 
     fn locales(&self) -> Vec<String> {

@@ -508,6 +508,12 @@ impl Pane {
         session.foreground_program()
     }
 
+    /// How many bytes of output the pane's program has written since it
+    /// started.
+    pub fn output_bytes(&self) -> u64 {
+        self.session.as_ref().map_or(0, Session::output_bytes)
+    }
+
     /// The working directory of the program in the terminal's foreground,
     /// once the program runs.
     pub fn working_directory(&self) -> Option<PathBuf> {

@@ -87,6 +87,8 @@ struct Shared {
     ended: AtomicBool,
     /// How many slices of output the I/O thread has parsed.
     slices: AtomicU64,
+    /// How many bytes of output it has read.
+    bytes: AtomicU64,
 }
 
 impl Shared {
@@ -146,6 +148,7 @@ impl Session {
             told_woken: AtomicBool::new(false),
             ended: AtomicBool::new(false),
             slices: AtomicU64::new(0),
+            bytes: AtomicU64::new(0),
         });
         let sync_timeout = options.sync_timeout;
         {
@@ -213,6 +216,12 @@ impl Session {
     /// [`Pty::foreground_program`] gives it.
     pub fn foreground_program(&self) -> Option<String> {
         self.pty.foreground_program()
+    }
+
+    /// How many bytes of output the program has written, which the I/O
+    /// thread has read, since the session started.
+    pub fn output_bytes(&self) -> u64 {
+        self.shared.bytes.load(Ordering::Relaxed)
     }
 
     /// The names of the processes of the terminal, the program's and its
@@ -412,6 +421,7 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
             .then(|| terminal.synchronized_updates());
         shared.slices.fetch_add(1, Ordering::AcqRel);
         drop(terminal);
+        shared.bytes.fetch_add(n as u64, Ordering::Relaxed);
         shared.queue.push_replies(replies);
         // Each update that starts has its own deadline, which output does
         // not put off.

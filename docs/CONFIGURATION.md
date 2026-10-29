@@ -113,6 +113,10 @@ icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 
+[debug]
+performance-overlay = true           # true | false: a panel of the performance over each window
+performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bottom-left
+
 [keys]
 "cmd+shift+n" = "window.new"         # keys, and the command that they run
 "ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
@@ -788,6 +792,36 @@ Whether Lokyr is light or dark: the theme's colors, and Lokyr's own titlebar, me
 
 - `"system"` follows the appearance of macOS, in the system's settings, as it changes, automatic too; `"light"` and `"dark"` keep theirs, whatever the system's is.
 - The View menu's Appearance sets it too: Automatic, Light or Dark, the one in force ticked. The choice goes into your config file, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits, or until you change the key.
+- It applies at once, as you save the file.
+
+## `[debug]`
+
+What Lokyr shows of its own work, to see how it does: for now, a panel of its performance.
+
+### `performance-overlay`
+
+<sub>Platforms: macOS</sub>
+
+Whether a panel over each window shows Lokyr's performance, a line each: the frames that the window shows a second; the CPU's time of its frames, their median and the longest over the last second; the GPU's, their mean and the longest, of every window's frames; Lokyr's wakeups a second, and those that brought the processor out of idle; its memory, as macOS counts it against Lokyr; and the output of its programs, in MB a second. The first second shows Measuring…
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- View › Show Performance shows and hides it too, until Lokyr quits or the key changes.
+- While it shows, it changes each second, which wakes Lokyr and draws each window once a second, even when nothing else changes: Lokyr is no longer idle. Measure Lokyr with it hidden.
+- It applies at once, as you save the file.
+
+### `performance-corner`
+
+<sub>Platforms: macOS</sub>
+
+The corner of the window that the panel takes, under the titlebar at the top.
+
+| Values | Default |
+|---|---|
+| `"top-right"`, `"top-left"`, `"bottom-right"`, `"bottom-left"` | `"top-right"` |
+
 - It applies at once, as you save the file.
 
 ## `[keys]`

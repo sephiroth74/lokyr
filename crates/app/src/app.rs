@@ -50,6 +50,7 @@ use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
 use crate::mouse::{self, Mouse, Pointer, Spot};
+use crate::performance::{self, Performance};
 
 use crate::watch::Watcher;
 
@@ -59,6 +60,10 @@ const QUIT: &str = "app.quit";
 /// The command that opens the config file in the text editor, made first
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
+
+/// The command that shows the performance's panel over the windows, or
+/// hides it.
+const PERFORMANCE: &str = "app.performance";
 
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
@@ -121,7 +126,7 @@ const COMMANDS_DEEP: usize = 16;
 
 /// The catalogs of the texts that the app shows, the kernel's and its own,
 /// by language.
-const CATALOGS: [(&str, &str); 4] = [
+pub(crate) const CATALOGS: [(&str, &str); 4] = [
     l10n::KERNEL[0],
     l10n::KERNEL[1],
     ("en", include_str!("../resources/locales/en/app.ftl")),
@@ -582,6 +587,11 @@ pub struct App {
     /// The appearance that the user chose from the menu, where the config
     /// could not keep it: until the app quits, or the config's key changes.
     appearance_chosen: Option<AppearanceMode>,
+    /// The performance's panel, while it shows, with what it measures; and
+    /// whether the user chose from the menu to show it, until the app quits
+    /// or the config's key changes.
+    performance: Option<Performance>,
+    performance_chosen: Option<bool>,
     /// The windows whose closing the user is asked to confirm, by their
     /// alerts.
     close_asks: BTreeMap<AlertId, WindowId>,
@@ -645,6 +655,8 @@ impl App {
             open_asks: BTreeMap::new(),
             links_chosen: (None, None),
             appearance_chosen: None,
+            performance: None,
+            performance_chosen: None,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             context_window: None,
@@ -746,6 +758,8 @@ impl App {
         let appearance_changed = config.app.appearance != self.config.app.appearance;
         let keys_changed = config.keys != self.config.keys;
         let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
+        let performance_changed =
+            config.debug.performance_overlay != self.config.debug.performance_overlay;
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
@@ -778,6 +792,10 @@ impl App {
         if appearance_changed {
             self.appearance_chosen = None;
             self.show_appearance(platform);
+        }
+        if performance_changed {
+            self.performance_chosen = None;
+            self.show_performance(platform);
         }
         if language_changed {
             self.texts = texts(&self.config.app.language, &self.preferred);
@@ -1202,6 +1220,60 @@ impl App {
             at,
             family.as_deref().map(|family| (family, points)),
         );
+    }
+
+    /// Shows the performance's panel over every window, or hides it, as the
+    /// menu chose, else as the config says, and ticks the menu's item: while
+    /// it shows, its timer measures each second, which wakes the app, and
+    /// draws every window once more.
+    fn show_performance(&mut self, platform: &mut dyn Platform) {
+        let shown = self
+            .performance_chosen
+            .unwrap_or(self.config.debug.performance_overlay);
+        platform.set_command_checked(PERFORMANCE, shown);
+        match (shown, self.performance.take()) {
+            (true, None) => {
+                let now = Instant::now();
+                let bytes = self.workspace.panes().map(Pane::output_bytes).sum();
+                let mut shown = Performance::new(now, platform.usage(), bytes);
+                shown.timer = Some(platform.start_timer(now + performance::INTERVAL));
+                self.performance = Some(shown);
+            }
+            (true, Some(shown)) => self.performance = Some(shown),
+            (false, Some(hidden)) => {
+                if let Some(timer) = hidden.timer {
+                    platform.cancel_timer(timer);
+                }
+            }
+            (false, None) => {}
+        }
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
+        }
+    }
+
+    /// The performance's timer fired: it measures the second that went, a
+    /// window's lines each, and asks every window for the frame that shows
+    /// them.
+    fn measure_performance(&mut self, platform: &mut dyn Platform) {
+        let now = Instant::now();
+        let bytes = self.workspace.panes().map(Pane::output_bytes).sum();
+        let gpu = self
+            .drawing
+            .as_mut()
+            .map(|drawing| drawing.renderer.take_gpu_times())
+            .unwrap_or_default();
+        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+        let Some(shown) = &mut self.performance else {
+            return;
+        };
+        let measures = shown.measure(now, &windows, gpu, platform.usage(), bytes);
+        shown.keep(&windows);
+        for (window, measure) in measures {
+            shown.set_lines(window, performance::lines(&measure, &self.texts));
+            platform.request_frame(window);
+        }
+        shown.timer = Some(platform.start_timer(now + performance::INTERVAL));
     }
 
     /// Opens the config file in the system's text editor, made first, when
@@ -1781,6 +1853,11 @@ impl App {
                 }
                 SETTINGS => {
                     self.open_settings(platform);
+                    Ok(())
+                }
+                PERFORMANCE => {
+                    self.performance_chosen = Some(self.performance.is_none());
+                    self.show_performance(platform);
                     Ok(())
                 }
                 NEW_WINDOW => {
@@ -2796,6 +2873,8 @@ impl App {
     /// in the grid that fits its content within the padding, with the
     /// cursor.
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
+        // The CPU's time of the frame, which the performance's panel tells.
+        let started = self.performance.is_some().then(Instant::now);
         let grid = self.grid(size);
         let (left, top) = self.origin(size);
         let now = Instant::now();
@@ -2982,6 +3061,21 @@ impl App {
                 color: Color::from_rgb8(text.r, text.g, text.b).with_alpha(FLASH_OPACITY),
             });
         }
+        // The performance's panel, over everything.
+        if let Some(shown) = &self.performance {
+            let measuring;
+            let lines = match shown.lines(window) {
+                Some(lines) => lines,
+                None => {
+                    measuring = [self.texts.text("performance-measuring")];
+                    &measuring[..]
+                }
+            };
+            let area = (size.pixels.width, size.pixels.height, size.bar_pixels());
+            let corner = self.config.debug.performance_corner;
+            let glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
+            items.extend(performance::panel(lines, &cell, area, corner, glyph));
+        }
         let list = DisplayList {
             background: background.with_alpha(opacity),
             items,
@@ -2996,8 +3090,14 @@ impl App {
             .renderer
             .update_textures(&updates)
             .and_then(|()| drawing.renderer.draw(surface, &list));
-        if let Err(error) = drawn {
-            eprintln!("lokyr: {error}");
+        match drawn {
+            Ok(true) => {
+                if let (Some(started), Some(shown)) = (started, &mut self.performance) {
+                    shown.frame(window, started.elapsed());
+                }
+            }
+            Ok(false) => {}
+            Err(error) => eprintln!("lokyr: {error}"),
         }
     }
 }
@@ -3013,6 +3113,7 @@ impl Handler for App {
         self.commands = commands(&self.texts, &self.plugins);
         self.set_menu(platform);
         self.show_appearance(platform);
+        self.show_performance(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
@@ -3084,6 +3185,14 @@ impl Handler for App {
                 }
             }
             // The titles look once more after a burst of output.
+            AppEvent::Timer(timer)
+                if self
+                    .performance
+                    .as_ref()
+                    .is_some_and(|shown| shown.timer == Some(timer)) =>
+            {
+                self.measure_performance(platform);
+            }
             AppEvent::Timer(timer) if self.title_timer.is_some_and(|(title, _)| title == timer) => {
                 self.look_at_places_again(platform);
             }
@@ -3683,6 +3792,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
         (SETTINGS, "app-settings", Category::App),
+        (PERFORMANCE, "app-performance", Category::View),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
@@ -3734,6 +3844,7 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
                 categories.contains(&command.category)
                     && command.params.iter().all(|param| param.default.is_some())
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
+                    && command.name != PERFORMANCE
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
             })
             .collect();
@@ -3758,6 +3869,15 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
         items: appearances,
         role: None,
     }));
+    // The performance's panel, a tool to see how Lokyr does, last.
+    if let Some(command) = commands.get(PERFORMANCE) {
+        view.push(MenuItem::Separator);
+        view.push(MenuItem::Command {
+            title: command.title.clone(),
+            command: PERFORMANCE.to_owned(),
+            shortcut: keymap.shortcut(PERFORMANCE).and_then(shortcut),
+        });
+    }
     let standard = |key: &str, action, shortcut: Option<Shortcut>| MenuItem::Standard {
         title: texts.text(key),
         action,
@@ -4030,7 +4150,9 @@ mod tests {
                 "Scroll to the Top cmd+Home",
                 "Scroll to the Bottom cmd+End",
                 "-",
-                "Appearance"
+                "Appearance",
+                "-",
+                "Show Performance"
             ]
         );
         assert_eq!(
@@ -4134,6 +4256,63 @@ mod tests {
     }
 
     #[test]
+    fn the_performance_s_panel_shows_from_the_menu_and_the_config() {
+        let (mut fake, mut app, path) = with_file("performance", "");
+        let window = fake.windows().next().unwrap();
+        // Hidden: no timer of its own, and the View menu's last item.
+        assert!(app.performance.is_none());
+        assert!(!fake.command_checked(PERFORMANCE));
+        assert_eq!(menu_items(&fake, 3).last().unwrap(), "Show Performance");
+        let timers = fake.timers().count();
+        // The menu shows it, ticked, and its timer measures each second.
+        fake.set_usage(lokyr_platform_core::Usage {
+            idle_wakeups: 0,
+            interrupt_wakeups: 0,
+            footprint: 1_000_000,
+        });
+        fake.send_app(&mut app, AppEvent::Command(PERFORMANCE.to_owned()));
+        assert!(fake.command_checked(PERFORMANCE));
+        assert_eq!(fake.timers().count(), timers + 1);
+        let shown = app.performance.as_ref().unwrap();
+        assert_eq!(shown.lines(window), None);
+        let (timer, at) = fake
+            .timers()
+            .find(|&(timer, _)| shown.timer == Some(timer))
+            .unwrap();
+        fake.set_usage(lokyr_platform_core::Usage {
+            idle_wakeups: 3,
+            interrupt_wakeups: 4,
+            footprint: 2_000_000,
+        });
+        fake.send(&mut app, window, WindowEvent::Frame);
+        fake.send_app(&mut app, AppEvent::Timer(timer));
+        assert!(fake.window(window).unwrap().frame_requested);
+        let lines = app.performance.as_ref().unwrap().lines(window).unwrap();
+        assert_eq!(lines.len(), 6);
+        assert_eq!(lines[4], "Memory 2.0 MB");
+        let next = app.performance.as_ref().unwrap().timer.unwrap();
+        assert!(
+            fake.timers()
+                .any(|(timer, when)| timer == next && when > at)
+        );
+        // Again, it hides, and its timer goes.
+        fake.send_app(&mut app, AppEvent::Command(PERFORMANCE.to_owned()));
+        assert!(app.performance.is_none() && !fake.command_checked(PERFORMANCE));
+        assert!(!fake.timers().any(|(timer, _)| timer == next));
+        // The config's key shows it, and a change of it takes the menu's
+        // choice away.
+        fake.send_app(&mut app, AppEvent::Command(PERFORMANCE.to_owned()));
+        let mut config = app.config.clone();
+        config.debug.performance_overlay = true;
+        app.apply(&mut fake, config.clone());
+        assert!(app.performance.is_some());
+        config.debug.performance_overlay = false;
+        app.apply(&mut fake, config);
+        assert!(app.performance.is_none() && !fake.command_checked(PERFORMANCE));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
         let (mut fake, mut app, _, _) = with_tester();
         assert_eq!(menu_items(&fake, 1)[0], "New Window cmd+n");
@@ -4189,6 +4368,7 @@ mod tests {
                     "Automatic Appearance",
                     Category::View
                 ),
+                ("app.performance", "Show Performance", Category::View),
                 ("app.quit", "Quit Lokyr", Category::App),
                 ("app.settings", "Settings…", Category::App),
                 ("pane.look-up", "Look Up", Category::Edit),
@@ -4287,7 +4467,10 @@ mod tests {
     /// item is ticked.
     fn appearances(fake: &Fake) -> Vec<(String, bool)> {
         let view = &fake.main_menu().unwrap().menus[3];
-        let Some(MenuItem::Submenu(menu)) = view.items.last() else {
+        let Some(menu) = view.items.iter().find_map(|item| match item {
+            MenuItem::Submenu(menu) => Some(menu),
+            _ => None,
+        }) else {
             panic!("{view:?}");
         };
         menu.items
@@ -4382,7 +4565,10 @@ mod tests {
     fn the_appearance_s_menu_is_in_the_config_s_language() {
         let (fake, _app, path) = with_file("appearance-it", "[app]\nlanguage = \"it\"\n");
         let view = &fake.main_menu().unwrap().menus[3];
-        let Some(MenuItem::Submenu(menu)) = view.items.last() else {
+        let Some(menu) = view.items.iter().find_map(|item| match item {
+            MenuItem::Submenu(menu) => Some(menu),
+            _ => None,
+        }) else {
             panic!("{view:?}");
         };
         assert_eq!(menu.title, "Aspetto");

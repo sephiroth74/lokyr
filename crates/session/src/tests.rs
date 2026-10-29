@@ -144,6 +144,17 @@ fn the_main_thread_is_woken_once_until_it_looks() {
 }
 
 #[test]
+fn the_output_s_bytes_are_counted() {
+    let session = Session::spawn(&sh("head -c 1000 /dev/zero | tr '\\0' x; sleep 5"), || {}).unwrap();
+    let start = Instant::now();
+    while session.output_bytes() < 1000 {
+        assert!(start.elapsed() < Duration::from_secs(10), "the output never came");
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(session.output_bytes(), 1000);
+}
+
+#[test]
 fn the_end_of_the_output_is_told_with_the_exit() {
     let wakes = Arc::new(AtomicUsize::new(0));
     let mut session = {

@@ -10,8 +10,8 @@ use std::time::Instant;
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, MainMenu,
-    Platform, Point, PointerShape, Size, TargetKind, TimerId, Waker, WindowAttributes, WindowEvent,
-    WindowHandle, WindowId, WindowSize,
+    Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker, WindowAttributes,
+    WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -129,6 +129,7 @@ pub struct Fake {
     /// showed in the file manager, from the first.
     opened: Vec<String>,
     edited: Vec<PathBuf>,
+    usage: Option<Usage>,
     revealed: Vec<String>,
     last_id: u64,
     woken: Arc<AtomicBool>,
@@ -171,6 +172,7 @@ impl Fake {
             focus_requests: Vec::new(),
             opened: Vec::new(),
             edited: Vec::new(),
+            usage: None,
             revealed: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
@@ -433,6 +435,11 @@ impl Fake {
         &self.revealed
     }
 
+    /// Gives what the process has used of the machine, which `usage` tells.
+    pub fn set_usage(&mut self, usage: Usage) {
+        self.usage = Some(usage);
+    }
+
     /// The files that the app opened in the text editor, in order.
     pub fn edited(&self) -> &[PathBuf] {
         &self.edited
@@ -478,6 +485,10 @@ impl Platform for Fake {
 
     fn screen_scale(&self) -> f64 {
         self.scale
+    }
+
+    fn usage(&self) -> Option<Usage> {
+        self.usage
     }
 
     fn locales(&self) -> Vec<String> {
