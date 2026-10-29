@@ -400,7 +400,7 @@ Whether the first window, as Lokyr starts, opens where the last window that you 
 |---|---|
 | `true`, `false` | `true` |
 
-- The windows that you open after the first take [`columns` and `rows`](#columns-rows), down and to the right of the window that has the focus.
+- The windows that you open after the first take [`columns` and `rows`](#columns-rows), down and to the right of the window that has the focus, or of the one in front, as when a question is open on it. Where Lokyr places a window is not kept, only where you move or resize it.
 - A window that was on a display that is no longer there opens on one that is.
 - Lokyr keeps the place in its preferences of macOS, not in the config file; a window in full screen leaves it as it was.
 - It applies as you save the file, to the windows that you move or resize from then, and to the next start.

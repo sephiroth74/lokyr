@@ -521,6 +521,12 @@ impl Platform for Fake {
         }
     }
 
+    fn set_window_remember(&mut self, window: WindowId, remember: bool) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.remember = remember;
+        }
+    }
+
     fn window_size(&self, window: WindowId) -> Option<WindowSize> {
         self.windows.get(&window).map(|state| state.size)
     }

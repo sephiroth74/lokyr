@@ -303,16 +303,28 @@ impl Platform for Backend {
             attributes,
             Rc::clone(&self.option_as_meta),
         );
-        // Down and to the right of the window with the focus, as the
-        // system cascades windows; centred without one.
-        let focused = self
+        // Down and to the right of the window with the focus, else of the
+        // front one, as that of a sheet, which has the focus, or any while
+        // the app is not active, as the system cascades windows; centred
+        // without one.
+        let ordered = NSApplication::sharedApplication(self.mtm).orderedWindows();
+        let front = (0..ordered.count()).find_map(|index| {
+            let ns_window = ordered.objectAtIndex(index);
+            self.windows
+                .values()
+                .find(|window| std::ptr::eq(window.ns_window(), &*ns_window))
+        });
+        let after = self
             .windows
             .values()
             .find(|window| window.is_focused())
+            .or(front)
             .map(|window| window.ns_window().frame());
         if !window.is_restored() {
-            window.place(focused);
+            window.place(after);
         }
+        // Once placed, so that its own placing keeps nothing.
+        window.set_remember(attributes.remember);
         // The window is in the map before it takes the focus, whose event
         // follows this call.
         self.windows.insert(id, window);
@@ -340,6 +352,12 @@ impl Platform for Backend {
     fn set_title(&mut self, window: WindowId, title: &str) {
         if let Some(window) = self.windows.get(&window) {
             window.set_title(title);
+        }
+    }
+
+    fn set_window_remember(&mut self, window: WindowId, remember: bool) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_remember(remember);
         }
     }
 

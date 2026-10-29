@@ -84,7 +84,8 @@ pub struct WindowAttributes {
     /// The size of its content, in points, below its titlebar.
     pub size: Size,
     /// Whether it keeps its frame, its place and its size, as the user
-    /// moves or resizes it, for a window that restores it.
+    /// moves or resizes it, for a window that restores it: not where the
+    /// platform places it, as it opens.
     pub remember: bool,
     /// Whether it opens at the frame that a window kept last, if one did,
     /// rather than of `size`, cascaded or centred: on a screen that is
@@ -158,12 +159,17 @@ pub trait Platform {
     fn screen_scale(&self) -> f64;
 
     /// Opens a window, in front of the others, where it takes the focus:
-    /// down and to the right of the window that has the focus, as the
-    /// system cascades windows, or in the screen's centre.
+    /// down and to the right of the window that has the focus, or of the
+    /// front one of the app's, as the system cascades windows, or in the
+    /// screen's centre.
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error>;
 
     /// Closes a window: no event comes from it any more.
     fn close_window(&mut self, window: WindowId);
+
+    /// Whether `window` keeps its frame as the user moves or resizes it
+    /// from now, as [`WindowAttributes::remember`] has it.
+    fn set_window_remember(&mut self, window: WindowId, remember: bool);
 
     /// Sets the title of a window.
     fn set_title(&mut self, window: WindowId, title: &str);

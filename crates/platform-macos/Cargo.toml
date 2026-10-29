@@ -25,6 +25,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSAlert",
     "NSAppearance",
     "NSApplication",
+    "NSApplicationScripting",
     "NSAttributedString",
     "NSButton",
     "NSCell",

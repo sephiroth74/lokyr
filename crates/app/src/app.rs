@@ -740,10 +740,19 @@ impl App {
         let language_changed = config.app.language != self.config.app.language;
         let appearance_changed = config.app.appearance != self.config.app.appearance;
         let keys_changed = config.keys != self.config.keys;
+        let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
         self.config = config;
+        // The open windows keep their frames, or not, as the user moves or
+        // resizes them from now; a man page's never does.
+        if remember_changed {
+            for (&window, state) in &self.windows {
+                let remember = self.config.window.remember_frame && state.page.is_none();
+                platform.set_window_remember(window, remember);
+            }
+        }
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         // The open windows take the settings for their output to come;
@@ -5111,6 +5120,11 @@ mod tests {
         let first = fake.windows().next().unwrap();
         let shown = fake.window(first).unwrap();
         assert!(!shown.remember && !shown.restore);
+        // The key, turned on, reaches the window open.
+        let mut config = forgetful.config.clone();
+        config.window.remember_frame = true;
+        forgetful.apply(&mut fake, config);
+        assert!(fake.window(first).unwrap().remember);
     }
 
     #[test]

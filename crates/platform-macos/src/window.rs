@@ -42,7 +42,7 @@ pub(crate) struct Window {
     /// Whether it opened at the frame that a window kept.
     restored: bool,
     // The window holds its delegate weakly.
-    _delegate: Retained<WindowDelegate>,
+    delegate: Retained<WindowDelegate>,
 }
 
 impl Window {
@@ -105,11 +105,7 @@ impl Window {
             mtm,
             shared,
             id,
-            (
-                ns_window.backingScaleFactor(),
-                attributes.remember,
-                Rc::clone(&occluded),
-            ),
+            (ns_window.backingScaleFactor(), Rc::clone(&occluded)),
         );
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         // The frame that a window kept, on a screen that is still there,
@@ -122,7 +118,7 @@ impl Window {
             occluded,
             frame_held: Cell::new(false),
             restored,
-            _delegate: delegate,
+            delegate,
         }
     }
 
@@ -146,6 +142,13 @@ impl Window {
             }
             None => self.ns_window.center(),
         }
+    }
+
+    /// Whether the window keeps its frame as the user moves or resizes it
+    /// from now: the backend turns it on once it placed the window, so
+    /// that its own placing keeps nothing.
+    pub(crate) fn set_remember(&self, remember: bool) {
+        self.delegate.ivars().remember.set(remember);
     }
 
     /// The window's content view.
@@ -861,8 +864,9 @@ pub(crate) struct WindowDelegateIvars {
     /// The window's scale, which a change of its backing's other
     /// properties, as its color space, leaves.
     scale: Cell<f64>,
-    /// Whether the window keeps its frame as it moves and resizes.
-    remember: bool,
+    /// Whether the window keeps its frame as it moves and resizes, which
+    /// the backend turns on once it placed the window.
+    remember: Cell<bool>,
     /// Whether the window is hidden or covered, which the backend reads.
     occluded: Rc<Cell<bool>>,
 }
@@ -947,13 +951,13 @@ impl WindowDelegate {
         mtm: MainThreadMarker,
         shared: Weak<Shared>,
         id: WindowId,
-        (scale, remember, occluded): (f64, bool, Rc<Cell<bool>>),
+        (scale, occluded): (f64, Rc<Cell<bool>>),
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(WindowDelegateIvars {
             shared,
             id,
             scale: Cell::new(scale),
-            remember,
+            remember: Cell::new(false),
             occluded,
         });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -964,7 +968,9 @@ impl WindowDelegate {
     /// restores it, if the window keeps it, but in full screen, whose frame
     /// is the screen's.
     fn keep_frame(&self, window: &NSWindow) {
-        if self.ivars().remember && !window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        if self.ivars().remember.get()
+            && !window.styleMask().contains(NSWindowStyleMask::FullScreen)
+        {
             window.saveFrameUsingName(&NSString::from_str(FRAME_NAME));
         }
     }
