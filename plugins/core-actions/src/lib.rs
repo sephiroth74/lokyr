@@ -45,6 +45,12 @@ const SCROLL_BOTTOM: &str = "pane.scroll-bottom";
 /// the config binds, as those of a shell's line editing.
 const SEND_TEXT: &str = "pane.send-text";
 
+/// The plugin's catalogs, of its commands' titles.
+static CATALOGS: [(&str, &str); 2] = [
+    ("en", include_str!("../locales/en/core-actions.ftl")),
+    ("it", include_str!("../locales/it/core-actions.ftl")),
+];
+
 /// The sizes of the text, in points, that the commands go between.
 const SIZES: (f32, f32) = (4.0, 200.0);
 
@@ -167,6 +173,10 @@ impl Plugin for CoreActions {
             }],
             when: None,
         })
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &CATALOGS
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {

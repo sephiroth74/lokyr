@@ -2703,6 +2703,9 @@ impl Handler for App {
         self.texts = texts(&self.config.app.language, &self.preferred);
         self.commands = commands(&self.texts, &self.plugins);
         self.activate_plugins(platform);
+        // The plugins' commands registered in English, which their catalogs
+        // title in the language shown.
+        self.commands = commands(&self.texts, &self.plugins);
         self.set_menu(platform);
         self.show_appearance(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
@@ -3311,8 +3314,8 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             eprintln!("lokyr: {error}");
         }
     }
-    for command in plugins.commands() {
-        if let Err(error) = registry.register(command.clone()) {
+    for command in plugins.commands_in(texts.language()) {
+        if let Err(error) = registry.register(command) {
             eprintln!("lokyr: {error}");
         }
     }
@@ -3799,12 +3802,25 @@ mod tests {
                 "Composizione"
             ]
         );
+        // The plugins' commands too, from their own catalogs.
+        assert_eq!(
+            menu_items(&fake, 2),
+            [
+                "Copia cmd+c",
+                "Incolla cmd+v",
+                "-",
+                "Seleziona tutto cmd+a",
+                "Cancella cmd+k"
+            ]
+        );
+        assert_eq!(menu_items(&fake, 3)[0], "Aumenta cmd+=");
         std::fs::write(&path, "[app]\nlanguage = \"en\"\n").unwrap();
         change(&mut fake, &mut app);
         assert_eq!(
             menu_titles(&fake),
             ["New Window", "Hide Lokyr", "Quit Lokyr", "Edit"]
         );
+        assert_eq!(menu_items(&fake, 2)[0], "Copy cmd+c");
         assert_eq!(app.texts.language(), "en");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -3974,6 +3990,38 @@ mod tests {
         for command in commands(&texts, &Plugins::new()).commands() {
             assert!(!command.title.starts_with("command-"), "{}", command.title);
         }
+        // The built-in plugins' catalogs, each language's against English's,
+        // whose titles are those that the commands register.
+        let builtins: [Box<dyn plugins::Plugin>; 2] = [
+            Box::new(lokyr_core_actions::CoreActions),
+            Box::new(lokyr_links::Links),
+        ];
+        for plugin in &builtins {
+            let catalogs = plugin.catalogs();
+            let source = catalogs
+                .iter()
+                .find(|(language, _)| *language == l10n::SOURCE)
+                .expect("an English catalog")
+                .1;
+            assert!(catalogs.len() > 1, "{catalogs:?}");
+            for (_, other) in catalogs {
+                assert_eq!(l10n::check(source, other), Ok(()));
+            }
+        }
+        let (_, app) = started();
+        let registered: Vec<(String, String)> = app
+            .plugins
+            .commands()
+            .map(|command| (command.name.clone(), command.title.clone()))
+            .collect();
+        let english: Vec<(String, String)> = app
+            .plugins
+            .commands_in("en")
+            .into_iter()
+            .map(|command| (command.name, command.title))
+            .collect();
+        assert_eq!(english, registered);
+        assert!(registered.iter().any(|(name, _)| name == "links.open"));
     }
 
     #[test]

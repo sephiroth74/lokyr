@@ -26,6 +26,12 @@ const OPEN: &str = "links.open";
 /// The keys of [`OPEN`].
 const KEYS: &str = "cmd+click";
 
+/// The plugin's catalogs, of its command's title.
+static CATALOGS: [(&str, &str); 2] = [
+    ("en", include_str!("../locales/en/links.ftl")),
+    ("it", include_str!("../locales/it/links.ftl")),
+];
+
 /// The plugin of the links.
 #[derive(Debug, Default)]
 pub struct Links;
@@ -55,6 +61,10 @@ impl Plugin for Links {
             args: Args::new(),
             when: None,
         })
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &CATALOGS
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {

@@ -72,6 +72,16 @@ pub trait Plugin {
         ))
     }
 
+    /// Its catalogs of [Project Fluent](https://projectfluent.org), each by
+    /// its language, as `("it", source)`, English's the source of the
+    /// others: the host titles its commands in the language shown with
+    /// their messages, `command-` and the command's name, with `-` for its
+    /// `.`, as `command-pane-copy`; a title that they lack is the one that
+    /// the command registered. By default, none.
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &[]
+    }
+
     /// Whether `name`, one of the commands that it registered, would do
     /// something now with `args`, which the host checked, as a menu asks
     /// before it shows the command's item enabled or dimmed: by default, it

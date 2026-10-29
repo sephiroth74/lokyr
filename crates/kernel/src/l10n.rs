@@ -83,6 +83,19 @@ impl Texts {
         self.text_with(id, &[])
     }
 
+    /// The message `id`, the language's or the source's, if either has it.
+    pub fn get(&self, id: &str) -> Option<String> {
+        [&self.bundle, &self.source].into_iter().find_map(|bundle| {
+            let pattern = bundle.get_message(id)?.value()?;
+            let mut errors = Vec::new();
+            Some(
+                bundle
+                    .format_pattern(pattern, None, &mut errors)
+                    .into_owned(),
+            )
+        })
+    }
+
     /// The message `id`, with the values of its variables, `args`: the
     /// language's, or the source's where the language has none, or the id
     /// itself where neither has it.

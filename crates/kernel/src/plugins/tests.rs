@@ -347,6 +347,62 @@ fn a_plugin_tells_whether_its_command_applies_and_asks_nothing_meanwhile() {
     assert!(plugins.take_requests().is_empty());
 }
 
+/// A plugin of three commands, of which its catalogs title the first in
+/// English and Italian, the second in English alone, and the third not;
+/// or whose catalogs panic.
+struct Titled {
+    panics: bool,
+}
+
+/// The catalogs of [`Titled`].
+static TITLED: [(&str, &str); 2] = [
+    (
+        "en",
+        "command-titled-first = First\ncommand-titled-second = Second\n",
+    ),
+    ("it", "command-titled-first = Primo\n"),
+];
+
+impl Plugin for Titled {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["titled.first", "titled.second", "titled.third"] {
+            cx.register_command(command(name))?;
+        }
+        Ok(())
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        assert!(!self.panics, "on purpose");
+        &TITLED
+    }
+}
+
+#[test]
+fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
+    let titles = |plugin: Titled, language: &str| -> Vec<String> {
+        let mut app = App::default();
+        let mut plugins = Plugins::new();
+        plugins.add("titled", Box::new(plugin));
+        assert!(plugins.activate(&mut app.context()).is_empty());
+        plugins
+            .commands_in(language)
+            .into_iter()
+            .map(|command| command.title)
+            .collect()
+    };
+    let calm = || Titled { panics: false };
+    assert_eq!(titles(calm(), "it"), ["Primo", "Second", "titled.third"]);
+    assert_eq!(titles(calm(), "en"), ["First", "Second", "titled.third"]);
+    // A language that the catalogs lack takes English.
+    assert_eq!(titles(calm(), "fr"), ["First", "Second", "titled.third"]);
+    // Catalogs that panic leave the titles registered.
+    assert_eq!(
+        titles(Titled { panics: true }, "it"),
+        ["titled.first", "titled.second", "titled.third"]
+    );
+    assert_eq!(title_message("pane.select-all"), "command-pane-select-all");
+}
+
 #[test]
 fn a_plugin_whose_activation_fails_or_panics_is_disabled() {
     let mut app = App::default();
@@ -767,6 +823,7 @@ fn the_host_s_api_is_a_trait_object() {
             status: Status::Active,
             commands: Vec::new(),
             bindings: Vec::new(),
+            catalogs: &[],
         },
         Vec::new(),
         false,

@@ -19,6 +19,7 @@ use lokyr_vt_core::terminal::Scroll;
 use crate::commands::{self, Args, Code, Command, Error, Registry};
 use crate::config::ConfirmPaste;
 use crate::keymap::{self, Binding, Invocation, When};
+use crate::l10n::Texts;
 use crate::paste::{self, Paste};
 use crate::workspace::{Pane, PaneId, WindowId, Workspace};
 
@@ -98,6 +99,8 @@ struct State {
     status: Status,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
+    /// Its catalogs, of its commands' titles.
+    catalogs: &'static [(&'static str, &'static str)],
 }
 
 /// The plugins, in the order of their activation, and what their calls
@@ -131,6 +134,8 @@ impl Plugins {
 
     /// Adds `plugin`, by its `name`, to activate.
     pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) {
+        // A plugin whose catalogs panic has none.
+        let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
         self.entries.push(Entry {
             plugin,
             state: State {
@@ -138,6 +143,7 @@ impl Plugins {
                 status: Status::Inactive,
                 commands: Vec::new(),
                 bindings: Vec::new(),
+                catalogs,
             },
         });
     }
@@ -257,6 +263,26 @@ impl Plugins {
         self.active().flat_map(|state| &state.commands)
     }
 
+    /// The commands of the active plugins, as [`Plugins::commands`], titled
+    /// in `language` from their plugins' catalogs: by their messages, as
+    /// [`title_message`] names them, the language's or English's; or by the
+    /// titles that they registered.
+    pub fn commands_in(&self, language: &str) -> Vec<Command> {
+        let mut commands = Vec::new();
+        for state in self.active() {
+            let texts = Texts::new(language, state.catalogs);
+            commands.extend(state.commands.iter().map(|command| {
+                Command {
+                    title: texts
+                        .get(&title_message(&command.name))
+                        .unwrap_or_else(|| command.title.clone()),
+                    ..command.clone()
+                }
+            }));
+        }
+        commands
+    }
+
     fn active(&self) -> impl Iterator<Item = &State> {
         self.entries
             .iter()
@@ -282,6 +308,12 @@ impl Plugins {
     pub fn take_bindings_changed(&mut self) -> bool {
         std::mem::take(&mut self.bindings_changed)
     }
+}
+
+/// The message of a plugin's catalogs that titles its command `name`:
+/// `command-` and the name, with `-` for its `.`, as `command-pane-copy`.
+pub fn title_message(name: &str) -> String {
+    format!("command-{}", name.replace('.', "-"))
 }
 
 /// Calls `call` on `entry`'s plugin, within `catch_unwind`: a plugin that
