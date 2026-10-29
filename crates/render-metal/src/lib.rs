@@ -117,9 +117,17 @@ impl Surface {
             .setDrawableSize(CGSize::new(f64::from(width), f64::from(height)));
     }
 
+    /// Lets the window's drawables go, as for a window that does not show:
+    /// the layer takes drawables of a pixel, which it makes as the next
+    /// frame asks, in place of those of the window's size, until the next
+    /// [`Surface::resize`]. A size of nothing would change nothing, as the
+    /// layer ignores it.
+    pub fn release(&self) {
+        self.layer.setDrawableSize(CGSize::new(1.0, 1.0));
+    }
+
     /// Draws a frame of one color, and presents it. Returns whether it did:
-    /// no drawable comes while the size is zero, as when the window is
-    /// minimized, nor when every drawable is in use for a second.
+    /// no drawable comes when every drawable is in use for a second.
     pub fn clear(&self, color: Color) -> Result<bool, Error> {
         Ok(self.encode_clear(color)?.is_some())
     }
@@ -207,6 +215,20 @@ mod tests {
         let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
         surface.resize(0, 0, 2.0);
         assert!(!surface.clear(Color::default()).unwrap());
+    }
+
+    #[test]
+    fn a_released_surface_takes_drawables_of_a_pixel_until_it_is_sized_again() {
+        let Some(gpu) = gpu() else { return };
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(800, 600, 2.0);
+        surface.release();
+        let size = surface.layer.drawableSize();
+        assert_eq!((size.width, size.height), (1.0, 1.0));
+        assert!(surface.clear(Color::default()).unwrap());
+        surface.resize(800, 600, 2.0);
+        let size = surface.layer.drawableSize();
+        assert_eq!((size.width, size.height), (800.0, 600.0));
     }
 
     #[test]

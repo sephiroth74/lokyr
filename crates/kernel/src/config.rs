@@ -15,6 +15,9 @@
 //! shape = "bar"
 //!
 //! [window]
+//! columns = 100             # a new window's size, in cells
+//! rows = 30
+//! remember-frame = true     # the first window where the last one was
 //! close-on-exit = "clean"   # clean | always | never
 //! padding-x = 4             # points, at the left and the right
 //! padding-y = 4             # points, at the top and the bottom
@@ -612,6 +615,13 @@ impl OptionAsMeta {
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
+    /// A new window's columns.
+    pub columns: Cells,
+    /// A new window's rows.
+    pub rows: Cells,
+    /// Whether the first window, as the app starts, opens where the last
+    /// window that the user moved or resized was, of its size.
+    pub remember_frame: bool,
     /// What a window does when its program ends.
     pub close_on_exit: CloseOnExit,
     /// The room between the grid and the window's left and right edges.
@@ -632,6 +642,9 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
+            columns: Cells(100),
+            rows: Cells(30),
+            remember_frame: true,
             close_on_exit: CloseOnExit::default(),
             padding_x: Padding::default(),
             padding_y: Padding::default(),
@@ -686,6 +699,45 @@ impl TryFrom<f64> for Opacity {
                 "the window's background opacity is from 0 to 1, not {opacity}"
             ))
         }
+    }
+}
+
+/// A count of a new window's cells, its columns or its rows, from 1 to
+/// [`Cells::MAX`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "i64", into = "i64")]
+pub struct Cells(u16);
+
+impl From<Cells> for i64 {
+    fn from(value: Cells) -> Self {
+        value.0.into()
+    }
+}
+
+impl Cells {
+    /// The most.
+    pub const MAX: u16 = 1000;
+
+    /// The count.
+    pub fn count(self) -> u16 {
+        self.0
+    }
+}
+
+impl TryFrom<i64> for Cells {
+    type Error = String;
+
+    fn try_from(count: i64) -> Result<Self, Self::Error> {
+        u16::try_from(count)
+            .ok()
+            .filter(|count| (1..=Self::MAX).contains(count))
+            .map(Self)
+            .ok_or_else(|| {
+                format!(
+                    "a window's columns and rows are from 1 to {}, not {count}",
+                    Self::MAX
+                )
+            })
     }
 }
 
@@ -1334,6 +1386,9 @@ mod tests {
             thickness = 1.5
 
             [window]
+            columns = 80
+            rows = 24
+            remember-frame = false
             close-on-exit = "never"
             padding-x = 10
             padding-y = 2.5
@@ -1426,8 +1481,23 @@ mod tests {
         assert_eq!(config.window.background_opacity.value(), 0.85);
         assert_eq!(config.window.background_blur.points(), 20.0);
         assert!(!config.window.title_size && config.window.opaque_titlebar);
+        assert_eq!(
+            (config.window.columns.count(), config.window.rows.count()),
+            (80, 24)
+        );
+        assert!(!config.window.remember_frame);
         let window = Config::default().window;
         assert!(window.title_size && !window.opaque_titlebar);
+        assert_eq!((window.columns.count(), window.rows.count()), (100, 30));
+        assert!(window.remember_frame);
+        for (text, wanted) in [
+            ("columns = 0", "from 1 to 1000, not 0"),
+            ("rows = 1001", "from 1 to 1000, not 1001"),
+            ("columns = -3", "from 1 to 1000, not -3"),
+        ] {
+            let message = error(&format!("[window]\n{text}\n")).1;
+            assert!(message.contains(wanted), "{text}: {message}");
+        }
         assert_eq!(config.keyboard.option_as_meta.sides(), (true, false));
         assert_eq!(
             config.cursor,
@@ -1872,6 +1942,9 @@ mod tests {
         assert_eq!(
             keys::<WindowConfig>(),
             [
+                "columns",
+                "rows",
+                "remember-frame",
                 "close-on-exit",
                 "padding-x",
                 "padding-y",

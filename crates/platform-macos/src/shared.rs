@@ -185,6 +185,9 @@ impl Shared {
                     if event == WindowEvent::Frame {
                         backend.frame_delivered(window);
                     }
+                    if event == WindowEvent::Occluded(false) {
+                        backend.request_held_frame(window);
+                    }
                     handler.window_event(backend, window, event);
                 }
             }

@@ -40,6 +40,8 @@ mod probe {
                     width: 320.0,
                     height: 200.0,
                 },
+                remember: false,
+                restore: false,
             })
             .expect("a window")
     }

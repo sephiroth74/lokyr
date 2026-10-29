@@ -79,6 +79,8 @@ mod probe {
                         width: 200.0,
                         height: 100.0,
                     },
+                    remember: false,
+                    restore: false,
                 })
                 .expect("a window");
             platform.set_window_appearance(window, Some(first));

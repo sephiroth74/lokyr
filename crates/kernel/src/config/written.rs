@@ -363,7 +363,9 @@ mod tests {
         let written = defaults.written(false);
         assert!(written.starts_with("config_version = 1\n\n[font]\n"));
         assert!(written.contains("\n[font]\n# family: unset, for its default\nsize = 13\n"));
-        assert!(written.contains("\n[window]\nclose-on-exit = \"clean\"\npadding-x = 4\n"));
+        assert!(written.contains(
+            "\n[window]\ncolumns = 100\nrows = 30\nremember-frame = true\nclose-on-exit = \"clean\"\npadding-x = 4\n"
+        ));
         assert!(written.contains("\nlimit = 10\nbudget = 100\n"));
         assert!(
             written.ends_with(
@@ -443,7 +445,7 @@ mod tests {
         assert!(!written.contains("Programs can choose among the first three"));
         // Blocks part with one empty line, none under a section's name.
         assert!(!written.contains("\n\n\n"));
-        assert!(written.contains("\n\n[window]\n# What a window does when its program ends"));
+        assert!(written.contains("\n\n[window]\n# The size of a new window, in columns and rows"));
         assert!(written.contains("# Default: the system's monospaced font, SF Mono.\n"));
         // A section's own text, and the bindings' defaults.
         assert!(written.contains("[terminal]\n# What programs are told of the terminal"));

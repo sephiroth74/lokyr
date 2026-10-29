@@ -16,7 +16,7 @@ use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
     NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypeString, NSRequestUserAttentionType,
-    NSView,
+    NSScreen, NSView,
 };
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
@@ -130,6 +130,17 @@ impl Backend {
     /// Whether the app has quit.
     pub(crate) fn has_quit(&self) -> bool {
         self.quit
+    }
+
+    /// `window` shows again: the frame that it asked for while it did not,
+    /// if one.
+    pub(crate) fn request_held_frame(&self, window: WindowId) {
+        if let Some(open) = self.windows.get(&window)
+            && open.request_held_frame()
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(window, WindowEvent::Frame));
+        }
     }
 
     /// Tells the window's pacer that its frame came.
@@ -257,6 +268,10 @@ impl Platform for Backend {
         appearance::set(self.mtm, appearance);
     }
 
+    fn screen_scale(&self) -> f64 {
+        NSScreen::mainScreen(self.mtm).map_or(1.0, |screen| screen.backingScaleFactor())
+    }
+
     fn locales(&self) -> Vec<String> {
         let current = NSLocale::currentLocale();
         // A language without a region takes the system's.
@@ -295,7 +310,9 @@ impl Platform for Backend {
             .values()
             .find(|window| window.is_focused())
             .map(|window| window.ns_window().frame());
-        window.place(focused);
+        if !window.is_restored() {
+            window.place(focused);
+        }
         // The window is in the map before it takes the focus, whose event
         // follows this call.
         self.windows.insert(id, window);

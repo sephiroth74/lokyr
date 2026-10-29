@@ -55,6 +55,8 @@ impl App {
             .create_window(&WindowAttributes {
                 title: "shell".to_owned(),
                 size: SIZE,
+                remember: false,
+                restore: false,
             })
             .unwrap();
         self.windows.push(window);

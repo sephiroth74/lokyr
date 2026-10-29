@@ -81,8 +81,15 @@ impl TimerId {
 pub struct WindowAttributes {
     /// Its title.
     pub title: String,
-    /// The size of its content, in points.
+    /// The size of its content, in points, below its titlebar.
     pub size: Size,
+    /// Whether it keeps its frame, its place and its size, as the user
+    /// moves or resizes it, for a window that restores it.
+    pub remember: bool,
+    /// Whether it opens at the frame that a window kept last, if one did,
+    /// rather than of `size`, cascaded or centred: on a screen that is
+    /// still there.
+    pub restore: bool,
 }
 
 /// The background of a translucent window, under what the app draws, and
@@ -146,6 +153,10 @@ pub trait Platform {
     /// first, then the other languages that the user prefers.
     fn locales(&self) -> Vec<String>;
 
+    /// The pixels in a point of the screen that a new window opens on: 1 or
+    /// 2 on the Mac.
+    fn screen_scale(&self) -> f64;
+
     /// Opens a window, in front of the others, where it takes the focus:
     /// down and to the right of the window that has the focus, as the
     /// system cascades windows, or in the screen's centre.
@@ -172,7 +183,9 @@ pub trait Platform {
     /// last refresh, as after a while without one; otherwise at the next
     /// refresh, so that frames keep to the display's pace. The requests made
     /// before a frame come as that one. A window that asks for no frame
-    /// wakes nothing.
+    /// wakes nothing, and one that is hidden or covered, as
+    /// [`WindowEvent::Occluded`] tells, gets the frame that it asked for
+    /// once it shows again.
     fn request_frame(&mut self, window: WindowId);
 
     /// Brings a window in front of the others, with the focus.

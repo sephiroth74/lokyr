@@ -67,6 +67,9 @@ blink = false                        # true | false
 thickness = 2                        # points, from 0.5 to 20
 
 [window]
+columns = 120                        # a new window's size, in cells, from 1 to 1000
+rows = 40
+remember-frame = false               # true | false: the first window where the last one was
 close-on-exit = "never"              # clean | always | never
 padding-x = 6                        # points, from 0 to 100
 padding-y = 4
@@ -372,6 +375,35 @@ The width of a bar and the height of an underline, in points, so that they keep 
 A hollow block's edges always take the font's underline thickness.
 
 ## `[window]`
+
+### `columns`, `rows`
+
+<sub>Platforms: macOS</sub>
+
+The size of a new window, in columns and rows of the font's cells.
+
+| Values | Default |
+|---|---|
+| whole numbers, from `1` to `1000` | `100` columns, `30` rows |
+
+- The window is of that many cells, with the padding around them, below the titlebar; the display that it opens on, which can be smaller, can make it smaller.
+- The first window, as Lokyr starts, takes the place and the size of the last window that you moved or resized instead, while [`remember-frame`](#remember-frame) is on.
+- It applies to the windows that open after you save the file; those that are open keep their size.
+
+### `remember-frame`
+
+<sub>Platforms: macOS</sub>
+
+Whether the first window, as Lokyr starts, opens where the last window that you moved or resized was, of its size.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The windows that you open after the first take [`columns` and `rows`](#columns-rows), down and to the right of the window that has the focus.
+- A window that was on a display that is no longer there opens on one that is.
+- Lokyr keeps the place in its preferences of macOS, not in the config file; a window in full screen leaves it as it was.
+- It applies as you save the file, to the windows that you move or resize from then, and to the next start.
 
 ### `close-on-exit`
 

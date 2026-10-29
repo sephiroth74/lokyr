@@ -360,6 +360,8 @@ struct Window {
     /// The appearance of its own that the platform has for it, once the
     /// app gave one: `None` for the app's.
     own_appearance: Option<Option<Appearance>>,
+    /// Whether it is hidden or covered, which draws nothing.
+    occluded: bool,
 }
 
 /// `target` as a question shows it: each character that shows nothing,
@@ -462,6 +464,7 @@ impl Window {
             title_due: false,
             user_title: None,
             own_appearance: None,
+            occluded: false,
         }
     }
 
@@ -532,6 +535,9 @@ pub struct App {
     /// The timer of the next step of the views that scroll under a
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
+    /// Whether a window opened since the app started, after which none
+    /// restores the frame that a window kept.
+    opened_one: bool,
     /// The timer of the windows' titles' last look at the programs in
     /// their foreground, after the frames of a burst of output, and how
     /// long after them; `None` for no last look.
@@ -625,6 +631,7 @@ impl App {
             scroll_timer: None,
             title_timer: None,
             title_look: Some(TITLE_LOOK),
+            opened_one: false,
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -1522,22 +1529,26 @@ impl App {
         program: &Program,
         page: Option<String>,
     ) {
-        let size = match page {
-            Some(_) => {
-                // At the scale of the window that the page comes from.
-                let scale = self
-                    .acting
-                    .or_else(|| platform.focused_window())
-                    .and_then(|window| platform.window_size(window))
-                    .map_or(1.0, |size| size.scale);
-                self.size_of(scale, MAN_PAGE_CELLS)
-            }
-            None => WINDOW_SIZE,
+        // Of its cells, at the scale of the screen that it opens on; a man
+        // page's of its own, which it neither keeps nor restores.
+        let window_config = &self.config.window;
+        let cells = match page {
+            Some(_) => MAN_PAGE_CELLS,
+            None => (
+                u32::from(window_config.columns.count()),
+                u32::from(window_config.rows.count()),
+            ),
         };
+        let remember = window_config.remember_frame && page.is_none();
+        let size = self.size_of(platform.screen_scale(), cells);
         let attributes = WindowAttributes {
             title: page.clone().unwrap_or_else(|| TITLE.to_owned()),
             size,
+            remember,
+            // The first window as the app starts.
+            restore: remember && !self.opened_one,
         };
+        self.opened_one = true;
         match platform.create_window(&attributes) {
             Ok(window) => {
                 let surface = self.surface(platform, window);
@@ -2839,7 +2850,7 @@ impl App {
         let Some(pane) = self.workspace.pane(state.pane) else {
             return;
         };
-        if state.surface.is_none() {
+        if state.surface.is_none() || state.occluded {
             return;
         }
         // The glyphs of the frames that the GPU still draws, of any window,
@@ -3122,6 +3133,10 @@ impl Handler for App {
             // A window that takes the focus loses its bell's mark.
             WindowEvent::Focused(focused) => {
                 if let Some(state) = self.windows.get_mut(&window) {
+                    // A program that asked learns of it.
+                    if let Some(pane) = self.workspace.pane(state.pane) {
+                        pane.focus(focused);
+                    }
                     state.focused = focused;
                     if focused {
                         state.blink.restart(Instant::now());
@@ -3252,7 +3267,20 @@ impl Handler for App {
             WindowEvent::ContextCommand(command) => {
                 self.context_command(platform, window, &command);
             }
-            _ => {}
+            // A window that does not show lets its drawables go, and draws
+            // again as it shows.
+            WindowEvent::Occluded(occluded) => {
+                if let Some(state) = self.windows.get_mut(&window) {
+                    state.occluded = occluded;
+                    if occluded {
+                        if let Some(surface) = &state.surface {
+                            surface.release();
+                        }
+                    } else {
+                        platform.request_frame(window);
+                    }
+                }
+            }
         }
     }
 }
@@ -3852,7 +3880,15 @@ mod tests {
         let (fake, _) = started();
         let windows: Vec<_> = fake.windows().collect();
         assert_eq!(windows.len(), 1);
-        assert_eq!(fake.window(windows[0]).unwrap().size.points, WINDOW_SIZE);
+        // Of 100 columns of 4 points and 30 rows of 8, with 4 of padding at
+        // each edge.
+        assert_eq!(
+            fake.window(windows[0]).unwrap().size.points,
+            Size {
+                width: 408.0,
+                height: 248.0
+            }
+        );
         let menu = fake.main_menu().unwrap();
         let titles: Vec<&str> = menu.menus.iter().map(|menu| menu.title.as_str()).collect();
         assert_eq!(titles, ["Lokyr", "Shell", "Edit", "View", "Window", "Help"]);
@@ -4972,16 +5008,90 @@ mod tests {
     }
 
     #[test]
+    fn a_program_that_asks_learns_of_the_focus() {
+        let (mut fake, mut app, window) = started_with(shell(
+            "stty raw -echo; printf '\\033[?1004h'; echo ready; cat -v",
+        ));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[I^[[O"));
+    }
+
+    #[test]
+    fn a_window_that_does_not_show_draws_nothing_until_it_shows() {
+        let (mut fake, mut app, window) = started_with(shell(
+            "stty raw -echo; echo ready; head -c 1 >/dev/null; echo more; cat",
+        ));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        // Hidden and shown again without a frame asked meanwhile, it draws
+        // anew, as it let its drawables go.
+        fake.send(&mut app, window, WindowEvent::Occluded(true));
+        fake.send(&mut app, window, WindowEvent::Occluded(false));
+        assert!(fake.send(&mut app, window, WindowEvent::Frame));
+        assert!(!fake.window(window).unwrap().frame_requested);
+        fake.send(&mut app, window, WindowEvent::Occluded(true));
+        fake.send(&mut app, window, WindowEvent::Occluded(false));
+        assert!(fake.window(window).unwrap().frame_requested);
+        fake.send(&mut app, window, WindowEvent::Frame);
+        fake.send(&mut app, window, WindowEvent::Occluded(true));
+        assert!(app.windows[&window].occluded);
+        // Output asks for a frame, which waits.
+        fake.send(&mut app, window, key());
+        let pause = Instant::now() + Duration::from_millis(300);
+        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+        let shown = fake.window(window).unwrap();
+        assert!(!shown.frame_requested && shown.frame_held);
+        // Shown again, it draws.
+        fake.send(&mut app, window, WindowEvent::Occluded(false));
+        assert!(!app.windows[&window].occluded);
+        assert!(fake.window(window).unwrap().frame_requested);
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "more"));
+    }
+
+    #[test]
+    fn a_window_opens_of_its_cells_and_the_first_where_the_last_was() {
+        let mut config = unpadded();
+        config.window.columns = 80.try_into().unwrap();
+        config.window.rows = 24.try_into().unwrap();
+        let mut fake = Fake::default();
+        let mut app = app(config, quiet());
+        fake.start(&mut app);
+        let first = fake.windows().next().unwrap();
+        let shown = fake.window(first).unwrap();
+        assert_eq!(
+            shown.size.points,
+            Size {
+                width: 320.0,
+                height: 192.0
+            }
+        );
+        assert!(shown.remember && shown.restore);
+        // The next keeps its frame, and opens of the cells.
+        fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+        let second = fake.windows().find(|&window| window != first).unwrap();
+        let shown = fake.window(second).unwrap();
+        assert!(shown.remember && !shown.restore);
+        // Without the key, none keeps it.
+        let mut config = unpadded();
+        config.window.remember_frame = false;
+        let mut fake = Fake::default();
+        let mut forgetful = App::new(None, config, None).with_program(quiet());
+        fake.start(&mut forgetful);
+        let first = fake.windows().next().unwrap();
+        let shown = fake.window(first).unwrap();
+        assert!(!shown.remember && !shown.restore);
+    }
+
+    #[test]
     fn a_window_shows_its_program_s_output() {
         let mut fake = Fake::default();
         let mut app = app(Config::default(), shell("printf 'hello'; sleep 10"));
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "hello");
-        // At the window's grid: 1600 by 1000 pixels, less 8 of padding at
-        // each edge, of cells of 8 by 16.
+        // Of the config's columns and rows, within the padding.
         let snapshot = app.pane(window).snapshot();
-        assert_eq!((snapshot.cols(), snapshot.rows()), (198, 61));
+        assert_eq!((snapshot.cols(), snapshot.rows()), (100, 30));
     }
 
     #[test]
@@ -5409,8 +5519,10 @@ mod tests {
         // title the page's, in the man page's colors.
         let shown = fake.window(page).unwrap();
         assert_eq!(shown.title, "man world — 80×48");
-        // Light, as the app is.
+        // Light, as the app is; it neither keeps its frame nor restores
+        // one.
         assert_eq!(shown.appearance, None);
+        assert!(!shown.remember && !shown.restore);
         assert_eq!(
             shown.size.points,
             Size {
@@ -5961,7 +6073,7 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
         // The size asked for is below the bar, whose height the grid leaves.
         let size = fake.window(window).unwrap().size;
-        assert_eq!(size.points.height, 514.0);
+        assert_eq!(size.points.height, 510.0);
         let grid = app.pane(window).grid();
         assert_eq!((grid.columns, grid.rows), (200, 62));
         // The cells start below it.
@@ -6545,10 +6657,14 @@ mod tests {
     }
 
     /// The config of a window without padding.
+    /// The config of no padding, of windows of 200 columns and 62 rows:
+    /// 800 points by 496, of cells 4 points wide and 8 high.
     fn unpadded() -> Config {
         let mut config = Config::default();
         config.window.padding_x = 0.0.try_into().unwrap();
         config.window.padding_y = 0.0.try_into().unwrap();
+        config.window.columns = 200.try_into().unwrap();
+        config.window.rows = 62.try_into().unwrap();
         config
     }
 
@@ -6580,13 +6696,14 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::Frame);
         let (origin, _) = fake.window(window).unwrap().text_area.unwrap();
         assert_eq!((origin.x, origin.y), (10.0, 4.0));
-        // A reloaded padding gives the grid that it leaves.
+        // A reloaded padding gives the grid that it leaves: of a window of
+        // 100 columns and 30 rows with their padding, 420 points by 248.
         std::fs::write(&path, "[window]\npadding-x = 0\npadding-y = 0\n").unwrap();
         change(&mut fake, &mut app);
         assert!(fake.window(window).unwrap().frame_requested);
         fake.send(&mut app, window, WindowEvent::Frame);
         let snapshot = app.pane(window).snapshot();
-        assert_eq!((snapshot.cols(), snapshot.rows()), (200, 62));
+        assert_eq!((snapshot.cols(), snapshot.rows()), (105, 31));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

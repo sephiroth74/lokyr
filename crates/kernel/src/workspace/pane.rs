@@ -462,6 +462,14 @@ impl Pane {
             .and_then(|session| session.lock().link_at(column, row))
     }
 
+    /// Tells the program that the pane gained or lost the focus, if it asked
+    /// to learn of it (mode 1004), while it runs.
+    pub fn focus(&self, focused: bool) {
+        if let Some(session) = self.session.as_ref().filter(|_| !self.kept) {
+            session.focus(focused);
+        }
+    }
+
     /// The name of the program in the terminal's foreground, as `zsh` or
     /// `vim`, once the program runs.
     pub fn foreground_program(&self) -> Option<String> {

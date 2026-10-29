@@ -113,6 +113,8 @@ mod probe {
                 .create_window(&WindowAttributes {
                     title: "probe".to_owned(),
                     size: SIZE,
+                    remember: false,
+                    restore: false,
                 })
                 .expect("the window opens");
             platform.set_title(window, TITLE);

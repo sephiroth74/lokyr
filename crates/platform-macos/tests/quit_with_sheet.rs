@@ -32,6 +32,8 @@ mod probe {
                         width: 400.0,
                         height: 300.0,
                     },
+                    remember: false,
+                    restore: false,
                 })
                 .expect("the window opens");
             platform.show_alert(Some(window), &common::alert());

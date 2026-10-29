@@ -157,6 +157,8 @@ mod probe {
                         width: 300.0,
                         height: 200.0,
                     },
+                    remember: false,
+                    restore: false,
                 })
                 .expect("the window opens");
             let mtm = MainThreadMarker::new().expect("the main thread");

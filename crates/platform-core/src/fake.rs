@@ -33,6 +33,13 @@ pub struct FakeWindow {
     pub text_area: Option<(Point, Size)>,
     /// Its backdrop, when it is translucent.
     pub translucent: Option<Backdrop>,
+    /// Whether it asked for a frame while it was hidden or covered, which
+    /// comes once it shows.
+    pub frame_held: bool,
+    /// Whether it keeps its frame.
+    pub remember: bool,
+    /// Whether it opened at the frame kept last.
+    pub restore: bool,
     /// Whether the app asked for the pointer's moves without a button.
     pub mouse_moves: bool,
     /// How the pointer looks over its content, as the app asked.
@@ -193,7 +200,13 @@ impl Fake {
         };
         match &event {
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => state.size = *size,
-            WindowEvent::Occluded(occluded) => state.occluded = *occluded,
+            WindowEvent::Occluded(occluded) => {
+                state.occluded = *occluded;
+                // The frame asked for meanwhile comes as it shows.
+                if !occluded && std::mem::take(&mut state.frame_held) {
+                    state.frame_requested = true;
+                }
+            }
             WindowEvent::Frame => state.frame_requested = false,
             WindowEvent::Focused(true) => self.focused = Some(window),
             WindowEvent::Focused(false) if self.focused == Some(window) => self.focused = None,
@@ -456,6 +469,10 @@ impl Platform for Fake {
         self.own_appearance = appearance;
     }
 
+    fn screen_scale(&self) -> f64 {
+        self.scale
+    }
+
     fn locales(&self) -> Vec<String> {
         self.locales.clone()
     }
@@ -478,6 +495,9 @@ impl Platform for Fake {
                 frame_requested: false,
                 text_area: None,
                 translucent: None,
+                frame_held: false,
+                remember: attributes.remember,
+                restore: attributes.restore,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
                 appearance: None,
@@ -512,7 +532,11 @@ impl Platform for Fake {
 
     fn request_frame(&mut self, window: WindowId) {
         if let Some(state) = self.windows.get_mut(&window) {
-            state.frame_requested = true;
+            if state.occluded {
+                state.frame_held = true;
+            } else {
+                state.frame_requested = true;
+            }
         }
     }
 

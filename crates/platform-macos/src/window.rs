@@ -15,7 +15,7 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSBackingStoreType, NSColor, NSCursor, NSEvent, NSEventPhase, NSEventType, NSResponder,
-    NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
+    NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
     NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
 };
 use objc2_foundation::{
@@ -35,6 +35,12 @@ pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
     pacer: Pacer,
+    /// Whether the window is hidden or covered, as its delegate tells, and
+    /// whether it asked for a frame meanwhile.
+    occluded: Rc<Cell<bool>>,
+    frame_held: Cell<bool>,
+    /// Whether it opened at the frame that a window kept.
+    restored: bool,
     // The window holds its delegate weakly.
     _delegate: Retained<WindowDelegate>,
 }
@@ -94,12 +100,28 @@ impl Window {
         // The keys go to the view.
         ns_window.makeFirstResponder(Some(&view));
         let pacer = Pacer::new(mtm, &view, shared.clone(), id);
-        let delegate = WindowDelegate::new(mtm, shared, id);
+        let occluded = Rc::new(Cell::new(false));
+        let delegate = WindowDelegate::new(
+            mtm,
+            shared,
+            id,
+            (
+                ns_window.backingScaleFactor(),
+                attributes.remember,
+                Rc::clone(&occluded),
+            ),
+        );
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+        // The frame that a window kept, on a screen that is still there,
+        // rather than the size asked for.
+        let restored = attributes.restore && restore_frame(&ns_window);
         Self {
             ns_window,
             view,
             pacer,
+            occluded,
+            frame_held: Cell::new(false),
+            restored,
             _delegate: delegate,
         }
     }
@@ -143,7 +165,24 @@ impl Window {
     /// Asks for a frame. Returns whether it is due at once, rather than at
     /// the display's next refresh.
     pub(crate) fn request_frame(&self) -> bool {
+        // A window that does not show gets its frame as it shows again.
+        if self.occluded.get() {
+            self.frame_held.set(true);
+            return false;
+        }
         self.pacer.request()
+    }
+
+    /// The window shows again: the frame that it asked for meanwhile, if
+    /// one; whether it comes at once, as [`Window::request_frame`] tells.
+    pub(crate) fn request_held_frame(&self) -> bool {
+        self.frame_held.replace(false) && self.request_frame()
+    }
+
+    /// Whether it opened at the frame that a window kept, rather than
+    /// where the backend places it.
+    pub(crate) fn is_restored(&self) -> bool {
+        self.restored
     }
 
     /// Tells the pacer that the frame came.
@@ -819,7 +858,18 @@ impl ContentView {
 pub(crate) struct WindowDelegateIvars {
     shared: Weak<Shared>,
     id: WindowId,
+    /// The window's scale, which a change of its backing's other
+    /// properties, as its color space, leaves.
+    scale: Cell<f64>,
+    /// Whether the window keeps its frame as it moves and resizes.
+    remember: bool,
+    /// Whether the window is hidden or covered, which the backend reads.
+    occluded: Rc<Cell<bool>>,
 }
+
+/// The name under which the windows keep their frame, in the app's
+/// preferences.
+const FRAME_NAME: &str = "Lokyr Window";
 
 define_class!(
     // SAFETY: `NSObject` has no requirement of its subclasses, and the
@@ -845,14 +895,27 @@ define_class!(
         #[unsafe(method(windowDidResize:))]
         fn window_did_resize(&self, notification: &NSNotification) {
             if let Some(window) = window_of(notification) {
+                self.keep_frame(&window);
                 self.post(WindowEvent::Resized(size_of(&window)));
             }
         }
 
+        #[unsafe(method(windowDidMove:))]
+        fn window_did_move(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                self.keep_frame(&window);
+            }
+        }
+
+        // A change of the scale, and not of the backing's other properties,
+        // as its color space, which the same notification tells.
         #[unsafe(method(windowDidChangeBackingProperties:))]
         fn window_did_change_backing_properties(&self, notification: &NSNotification) {
             if let Some(window) = window_of(notification) {
-                self.post(WindowEvent::ScaleChanged(size_of(&window)));
+                let scale = window.backingScaleFactor();
+                if self.ivars().scale.replace(scale) != scale {
+                    self.post(WindowEvent::ScaleChanged(size_of(&window)));
+                }
             }
         }
 
@@ -872,6 +935,7 @@ define_class!(
                 let visible = window
                     .occlusionState()
                     .contains(NSWindowOcclusionState::Visible);
+                self.ivars().occluded.set(!visible);
                 self.post(WindowEvent::Occluded(!visible));
             }
         }
@@ -879,10 +943,30 @@ define_class!(
 );
 
 impl WindowDelegate {
-    fn new(mtm: MainThreadMarker, shared: Weak<Shared>, id: WindowId) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(WindowDelegateIvars { shared, id });
+    fn new(
+        mtm: MainThreadMarker,
+        shared: Weak<Shared>,
+        id: WindowId,
+        (scale, remember, occluded): (f64, bool, Rc<Cell<bool>>),
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(WindowDelegateIvars {
+            shared,
+            id,
+            scale: Cell::new(scale),
+            remember,
+            occluded,
+        });
         // SAFETY: `NSObject`'s `init` has this signature.
         unsafe { msg_send![super(this), init] }
+    }
+
+    /// Keeps `window`'s frame in the app's preferences, for the window that
+    /// restores it, if the window keeps it, but in full screen, whose frame
+    /// is the screen's.
+    fn keep_frame(&self, window: &NSWindow) {
+        if self.ivars().remember && !window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+            window.saveFrameUsingName(&NSString::from_str(FRAME_NAME));
+        }
     }
 
     fn post(&self, event: WindowEvent) {
@@ -891,6 +975,29 @@ impl WindowDelegate {
             shared.post(Pending::Window(ivars.id, event));
         }
     }
+}
+
+/// Gives `window` the frame that a window kept last, if one did and it is on
+/// a screen that is still there: whether it did.
+fn restore_frame(window: &NSWindow) -> bool {
+    let before = window.frame();
+    if !window.setFrameUsingName(&NSString::from_str(FRAME_NAME)) {
+        return false;
+    }
+    let frame = window.frame();
+    let mtm = window.mtm();
+    let screens = NSScreen::screens(mtm);
+    let shown = (0..screens.count()).any(|index| {
+        let visible = screens.objectAtIndex(index).visibleFrame();
+        frame.origin.x < visible.origin.x + visible.size.width
+            && visible.origin.x < frame.origin.x + frame.size.width
+            && frame.origin.y < visible.origin.y + visible.size.height
+            && visible.origin.y < frame.origin.y + frame.size.height
+    });
+    if !shown {
+        window.setFrame_display(before, false);
+    }
+    shown
 }
 
 /// The window that a window's notification is about.

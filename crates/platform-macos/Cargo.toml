@@ -41,6 +41,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSMenuItem",
     "NSPasteboard",
     "NSResponder",
+    "NSScreen",
     "NSTextField",
     "NSTextInputClient",
     "NSRunningApplication",
@@ -89,7 +90,7 @@ objc2-user-notifications = { workspace = true, features = [
 ] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-objc2-foundation = { workspace = true, features = ["NSOperation"] }
+objc2-foundation = { workspace = true, features = ["NSOperation", "NSUserDefaults"] }
 
 # The run loop needs the process's main thread, which the test harness keeps
 # for itself.
@@ -167,6 +168,10 @@ harness = false
 
 [[test]]
 name = "alert_text"
+harness = false
+
+[[test]]
+name = "window_frame"
 harness = false
 
 [lints]
