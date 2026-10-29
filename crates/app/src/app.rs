@@ -70,6 +70,19 @@ const LOOK_UP: &str = "pane.look-up";
 /// it shortens it.
 const LOOK_UP_TITLE: usize = 30;
 
+/// The command that opens a window whose pane shows the man page that the
+/// selection names, which the context menu alone shows, naming it.
+const MAN_PAGE: &str = "pane.man-page";
+
+/// The longest name of a man page, and of its section, that the man page's
+/// command takes.
+const MAN_PAGE_NAME: usize = 100;
+const MAN_SECTION: usize = 8;
+
+/// The commands that the context menu alone shows, as they name the
+/// selection.
+const CONTEXT_ONLY: [&str; 2] = [LOOK_UP, MAN_PAGE];
+
 /// The commands that give the app an appearance, as the View menu's
 /// Appearance chooses it, each with its own and its title's message.
 const APPEARANCES: [(&str, AppearanceMode, &str); 3] = [
@@ -443,6 +456,9 @@ pub struct App {
     theme: Theme,
     /// The program that a new window runs.
     program: Program,
+    /// The program that shows man pages, in place of the login shell's
+    /// `man`, as the tests give one.
+    man: Option<PathBuf>,
     /// The config in force.
     config: Config,
     /// The file of the config, if it has one.
@@ -541,6 +557,7 @@ impl App {
             drawing,
             theme: Theme::builtin(),
             program: Program::LoginShell,
+            man: None,
             config,
             config_file: path.map(|path| ConfigFile {
                 path,
@@ -933,39 +950,65 @@ impl App {
         }
         let context = context(Some(pane));
         let cell = (pointer.col, pointer.row);
-        let commands: Vec<Command> = self
-            .commands
-            .in_order()
-            .filter(|command| of_cell(command))
-            .chain(self.commands.in_order().filter(|command| {
-                [Category::Clipboard, Category::Edit].contains(&command.category)
-                    && command.params.iter().all(|param| param.default.is_some())
-                    && !of_cell(command)
-            }))
-            .cloned()
-            .collect();
+        let edits = |category: Category| -> Vec<Command> {
+            self.commands
+                .in_order()
+                .filter(|command| {
+                    command.category == category
+                        && command.params.iter().all(|param| param.default.is_some())
+                        && !of_cell(command)
+                        && !CONTEXT_ONLY.contains(&command.name.as_str())
+                })
+                .cloned()
+                .collect()
+        };
+        // As in Terminal: what opens, then Look Up, then the clipboard's,
+        // then the editing's.
+        let groups: [Vec<Command>; 4] = [
+            self.commands
+                .in_order()
+                .filter(|command| of_cell(command))
+                .chain(self.commands.get(MAN_PAGE))
+                .cloned()
+                .collect(),
+            self.commands.get(LOOK_UP).cloned().into_iter().collect(),
+            edits(Category::Clipboard),
+            edits(Category::Edit),
+        ];
         self.acting = Some(window);
-        let dimmed = commands
+        let dimmed = groups
             .iter()
+            .flatten()
             .filter(|command| !self.applies(platform, command, &context, cell))
             .map(|command| command.name.clone())
             .collect();
         self.acting = None;
-        let looked_up = self.looked_up(window);
         self.context_cell = Some((window, pointer.col, pointer.row));
-        let mut items = command_items(&commands, |_| None);
-        // Look Up names what it would look up.
-        if let Some((text, _)) = looked_up {
-            for item in &mut items {
-                if let MenuItem::Command { title, command, .. } = item
-                    && command == LOOK_UP
-                {
-                    *title = self.texts.text_with(
-                        "menu-look-up",
-                        &[("word", Arg::Text(&shortened(&text, LOOK_UP_TITLE)))],
-                    );
-                }
+        // Look Up and the man page name what they take.
+        let selection = self.looked_up(window).map(|(text, _)| text);
+        let named = |name: &str| {
+            let text = selection.as_deref()?;
+            let (message, variable) = match name {
+                LOOK_UP => ("menu-look-up", "word"),
+                MAN_PAGE if man_page(text).is_some() => ("menu-man-page", "page"),
+                _ => return None,
+            };
+            let text = shortened(text, LOOK_UP_TITLE);
+            Some(
+                self.texts
+                    .text_with(message, &[(variable, Arg::Text(&text))]),
+            )
+        };
+        let mut items = Vec::new();
+        for group in groups.iter().filter(|group| !group.is_empty()) {
+            if !items.is_empty() {
+                items.push(MenuItem::Separator);
             }
+            items.extend(group.iter().map(|command| MenuItem::Command {
+                title: named(&command.name).unwrap_or_else(|| command.title.clone()),
+                command: command.name.clone(),
+                shortcut: None,
+            }));
         }
         let menu = ContextMenu { items, dimmed };
         platform.show_context_menu(window, position, &menu);
@@ -990,6 +1033,12 @@ impl App {
                 .acting
                 .and_then(|window| self.looked_up(window))
                 .is_some();
+        }
+        if command.name == MAN_PAGE {
+            return self
+                .acting
+                .and_then(|window| self.looked_up(window))
+                .is_some_and(|(text, _)| man_page(&text).is_some());
         }
         if !self.plugins.owns(&command.name) {
             return true;
@@ -1072,6 +1121,21 @@ impl App {
             at,
             family.as_deref().map(|family| (family, points)),
         );
+    }
+
+    /// Opens a window whose pane shows the man page that the selection of
+    /// the window that the commands run in names, rather than the shell:
+    /// `man`, which the user's login shell runs, as their `PATH` finds the
+    /// pages of their own programs.
+    fn open_man_page(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some(args) = self.looked_up(window).and_then(|(text, _)| man_page(&text)) else {
+            return;
+        };
+        let program = man_program(self.man.as_deref(), &args);
+        self.open_window_running(platform, &program);
     }
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as
@@ -1385,6 +1449,13 @@ impl App {
     }
 
     fn open_window(&mut self, platform: &mut dyn Platform) {
+        let program = self.program.clone();
+        self.open_window_running(platform, &program);
+    }
+
+    /// Opens a window, whose pane runs `program`, and quits if it cannot
+    /// while no other window is open.
+    fn open_window_running(&mut self, platform: &mut dyn Platform, program: &Program) {
         let attributes = WindowAttributes {
             title: TITLE.to_owned(),
             size: WINDOW_SIZE,
@@ -1400,7 +1471,7 @@ impl App {
                 let colors = &self.colors(platform.appearance());
                 let waker = platform.waker();
                 let pane = Pane::spawn(
-                    &self.program,
+                    program,
                     &self.environment,
                     &self.settings(),
                     grid,
@@ -1571,6 +1642,10 @@ impl App {
                 }
                 LOOK_UP => {
                     self.look_up(platform);
+                    Ok(())
+                }
+                MAN_PAGE => {
+                    self.open_man_page(platform);
                     Ok(())
                 }
                 _ if let Some(&(_, mode, _)) =
@@ -2849,6 +2924,48 @@ impl Handler for App {
     }
 }
 
+/// The arguments of `man` for the page that `text` names: its name, and
+/// its section before it when `text` ends with one in brackets, as
+/// `ls(1)`, after `--`; `None` for a text that is no page's name, which
+/// only letters, digits and `.`, `_`, `+`, `:` and `-` make, not from `-`
+/// or `.`, as `man` would take an option, or a path.
+fn man_page(text: &str) -> Option<Vec<String>> {
+    let (name, section) = match text.strip_suffix(')').and_then(|text| text.split_once('(')) {
+        Some((name, section)) => (name, Some(section)),
+        None => (text, None),
+    };
+    let named = !name.is_empty()
+        && name.len() <= MAN_PAGE_NAME
+        && !name.starts_with(['-', '.'])
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+:-".contains(c));
+    // A section starts with its number, or `n`, as `3pm` and `n`.
+    let sectioned = section.is_none_or(|section| {
+        section.len() <= MAN_SECTION
+            && section.starts_with(|c: char| c.is_ascii_digit() || c == 'n')
+            && section.chars().all(|c| c.is_ascii_alphanumeric())
+    });
+    (named && sectioned).then(|| {
+        let mut args = vec!["--".to_owned()];
+        args.extend(section.map(str::to_owned));
+        args.push(name.to_owned());
+        args
+    })
+}
+
+/// The program that shows the man page of `args`: `man`, the path, with
+/// them, or the login shell's `man`, with them in its command, which they
+/// need no quotes in, whatever the shell.
+fn man_program(man: Option<&std::path::Path>, args: &[String]) -> Program {
+    match man {
+        Some(man) => Program::command(man, args),
+        None => Program::LoginCommand {
+            command: format!("exec man {}", args.join(" ")).into(),
+        },
+    }
+}
+
 /// `text`, shortened to its first `most` characters and `…` when it has
 /// more.
 fn shortened(text: &str, most: usize) -> String {
@@ -3064,6 +3181,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
+        (MAN_PAGE, "pane-man-page", Category::Windows),
     ]
     .into_iter()
     .chain(
@@ -3078,7 +3196,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             category,
             capabilities: Vec::new(),
             params: Vec::new(),
-            when: (name == LOOK_UP).then(|| "selection".to_owned()),
+            when: CONTEXT_ONLY.contains(&name).then(|| "selection".to_owned()),
         };
         if let Err(error) = registry.register(command) {
             eprintln!("lokyr: {error}");
@@ -3109,7 +3227,7 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
                 categories.contains(&command.category)
                     && command.params.iter().all(|param| param.default.is_some())
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
-                    && command.name != LOOK_UP
+                    && !CONTEXT_ONLY.contains(&command.name.as_str())
             })
             .collect();
         command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
@@ -3513,6 +3631,7 @@ mod tests {
                 ),
                 ("app.quit", "Quit Lokyr", Category::App),
                 ("pane.look-up", "Look Up", Category::Edit),
+                ("pane.man-page", "Open man Page", Category::Windows),
                 ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
             ]
@@ -4697,6 +4816,7 @@ mod tests {
             items,
             [
                 "Open Link",
+                "Open man Page for “world”",
                 "-",
                 "Look Up “world”",
                 "-",
@@ -4712,16 +4832,19 @@ mod tests {
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
         right_click(&mut fake, &mut app, window, cell(1, 0), none);
         assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
-        assert_eq!(context_menu(&fake, window).1[2], "Look Up “hel”");
+        assert_eq!(context_menu(&fake, window).1[3], "Look Up “hel”");
         assert_eq!(context_menu(&fake, window).2, ["links.open"]);
         // On a blank cell, which takes it away, and dims Copy and Look Up.
         right_click(&mut fake, &mut app, window, cell(5, 0), none);
         assert_eq!(selected_text(&app, window), None);
         assert!(app.windows[&window].selecting.is_none());
-        assert_eq!(context_menu(&fake, window).1[2], "Look Up");
+        assert_eq!(
+            context_menu(&fake, window).1[1..4],
+            ["Open man Page", "-", "Look Up"]
+        );
         assert_eq!(
             context_menu(&fake, window).2,
-            ["links.open", "pane.look-up", "pane.copy"]
+            ["links.open", "pane.man-page", "pane.look-up", "pane.copy"]
         );
         // A Control click opens it too, and starts no selection that the
         // pointer would drag.
@@ -4772,7 +4895,7 @@ mod tests {
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 1)), none);
         right_click(&mut fake, &mut app, window, cell(2, 0), none);
         let (_, items, dimmed) = context_menu(&fake, window);
-        assert_eq!(items[2], "Look Up");
+        assert_eq!(items[3], "Look Up");
         assert!(dimmed.contains(&LOOK_UP.to_owned()), "{dimmed:?}");
         look_up(&mut fake, &mut app);
         assert_eq!(fake.definitions().len(), 1);
@@ -4785,6 +4908,96 @@ mod tests {
         assert_eq!(
             (last.text.as_str(), last.baseline),
             ("line", Point { x: 28.0, y: 14.0 })
+        );
+    }
+
+    #[test]
+    fn the_man_page_of_the_selection_opens_in_a_window_of_its_own() {
+        let (mut fake, mut app, window) = selecting("", "");
+        // A man that tells its arguments, and waits.
+        let directory = std::env::temp_dir().join(format!("lokyr-man-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let man = directory.join("man");
+        std::fs::write(&man, "#!/bin/sh\necho \"man $*\"\nread line\n").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&man, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        app.man = Some(man);
+        let none = Modifiers::NONE;
+        let open = |fake: &mut Fake, app: &mut App| {
+            fake.send(
+                app,
+                window,
+                WindowEvent::ContextCommand(MAN_PAGE.to_owned()),
+            );
+        };
+        right_click(&mut fake, &mut app, window, cell(8, 0), none);
+        open(&mut fake, &mut app);
+        let opened: Vec<WindowId> = fake.windows().filter(|&other| other != window).collect();
+        let [page] = opened[..] else {
+            panic!("one window more: {opened:?}");
+        };
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, page, "man -- world")
+        });
+        // Two words name no page: the item is dimmed, and names nothing.
+        select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(11, 0)), none);
+        right_click(&mut fake, &mut app, window, cell(2, 0), none);
+        let (_, items, dimmed) = context_menu(&fake, window);
+        assert_eq!(items[1], "Open man Page");
+        assert!(dimmed.contains(&MAN_PAGE.to_owned()), "{dimmed:?}");
+        assert_eq!(items[3], "Look Up “hello world”");
+        open(&mut fake, &mut app);
+        assert_eq!(fake.windows().count(), 2);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn a_man_page_s_name_takes_its_section_and_no_option() {
+        let args = |text: &str| man_page(text).map(|args| args.join(" "));
+        for (text, wanted) in [
+            ("ls", "-- ls"),
+            ("ls(1)", "-- 1 ls"),
+            ("File::Spec(3pm)", "-- 3pm File::Spec"),
+            ("c++", "-- c++"),
+            ("git-commit", "-- git-commit"),
+            ("pthread_create(3)", "-- 3 pthread_create"),
+            ("printf(n)", "-- n printf"),
+        ] {
+            assert_eq!(args(text).as_deref(), Some(wanted), "{text}");
+        }
+        for text in [
+            "-P",
+            ".",
+            "..",
+            "./x.1",
+            "a/b",
+            "a b",
+            "x;rm",
+            "$(x)",
+            "ls(",
+            "(1)",
+            "ls()",
+            "ls(x)",
+            "ls(123456789)",
+            "",
+            &"a".repeat(MAN_PAGE_NAME + 1),
+        ] {
+            assert_eq!(args(text), None, "{text}");
+        }
+        assert!(man_page(&"a".repeat(MAN_PAGE_NAME)).is_some());
+        // Through the login shell, which takes them as they are.
+        let args = man_page("ls(1)").unwrap();
+        assert_eq!(
+            man_program(None, &args),
+            Program::LoginCommand {
+                command: "exec man -- 1 ls".into()
+            }
+        );
+        assert_eq!(
+            man_program(Some(std::path::Path::new("/bin/echo")), &args),
+            Program::command("/bin/echo", ["--", "1", "ls"])
         );
     }
 
@@ -6227,8 +6440,9 @@ mod tests {
             )),
         );
         fake.send(&mut app, window, WindowEvent::Focused(false));
+        // On the URL, which names no man page.
         right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-        assert_eq!(context_menu(&fake, window).2, Vec::<String>::new());
+        assert_eq!(context_menu(&fake, window).2, [MAN_PAGE]);
         right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
         assert_eq!(context_menu(&fake, window).2, ["links.open"]);
         // The item takes the cell that the menu opened on.

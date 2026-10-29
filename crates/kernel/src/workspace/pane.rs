@@ -211,7 +211,7 @@ impl Pane {
             changed: false,
             ended: None,
             kept: false,
-            through_login: matches!(program, Program::LoginShell),
+            through_login: through_login(program),
             bells: 0,
             ended_told: false,
         };
@@ -695,6 +695,12 @@ const SHELLS: [&str; 19] = [
     "pwsh", "elvish", "xonsh", "osh", "ysh", "tmux", "screen",
 ];
 
+/// Whether `program` starts through `login`, whose own status tells
+/// nothing, as the login shell does, a command too.
+fn through_login(program: &Program) -> bool {
+    matches!(program, Program::LoginShell | Program::LoginCommand { .. })
+}
+
 /// The status of a program that ended: its own, which `exit` gives; or, for
 /// the login shell that `login` starts, whose own status is `login`'s, the
 /// one that the shell's wrapper `told` through the terminal, past 128 for a
@@ -744,6 +750,11 @@ mod tests {
         // Another program's status is its own, whatever a shell in it told.
         let own = Some(Exit::Code(2));
         assert_eq!(status(own, Some(0), false), own);
+        assert!(through_login(&Program::LoginShell));
+        assert!(through_login(&Program::LoginCommand {
+            command: "exec man -- ls".into()
+        }));
+        assert!(!through_login(&Program::command("/bin/sh", ["-c", "true"])));
     }
 
     /// The rows of `pane`'s screen, once its output reaches it.

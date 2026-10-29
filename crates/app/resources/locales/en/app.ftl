@@ -8,6 +8,7 @@ command-appearance-system = Automatic Appearance
 command-appearance-light = Light Appearance
 command-appearance-dark = Dark Appearance
 command-pane-look-up = Look Up
+command-pane-man-page = Open man Page
 
 # The menus of the menu bar, and the system's own items in them.
 menu-shell = Shell
@@ -27,6 +28,8 @@ menu-appearance-light = Light
 menu-appearance-dark = Dark
 # The context menu's Look Up, which names the selection, shortened.
 menu-look-up = Look Up “{ $word }”
+# The context menu's man page, which names the page.
+menu-man-page = Open man Page for “{ $page }”
 
 # The alert of a program's read of the clipboard, and its buttons, the
 # default one first.

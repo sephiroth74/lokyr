@@ -982,15 +982,17 @@ fn command_line(
 ) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     match program {
         Program::Command { program, args } => (program.clone(), args.clone(), None),
-        Program::LoginShell => login_shell(account),
+        Program::LoginShell => login_shell(account, None),
+        Program::LoginCommand { command } => login_shell(account, Some(command)),
     }
 }
 
-/// The user's shell as a login shell, as Terminal.app starts it: through
-/// `login`, so that the session is recorded as a terminal's, with `-f`,
-/// since the user is logged in already, `-p` to keep the environment and
-/// `-l` to stay in the working directory. As `-l` also keeps the shell from
-/// being a login shell, bash starts it with `-` before its name.
+/// The user's shell as a login shell, which runs `command` if one, as
+/// Terminal.app starts it: through `login`, so that the session is
+/// recorded as a terminal's, with `-f`, since the user is logged in
+/// already, `-p` to keep the environment and `-l` to stay in the working
+/// directory. As `-l` also keeps the shell from being a login shell, bash
+/// starts it with `-` before its name.
 ///
 /// `login` exits with 0 whatever the shell's status, and closes the
 /// descriptors past the terminal's: bash waits for the shell, and tells its
@@ -998,7 +1000,10 @@ fn command_line(
 /// `OSC 133 ; D ; status`, 128 and a signal's number for a shell that a
 /// signal ended.
 #[cfg(target_os = "macos")]
-fn login_shell(account: &Account) -> (PathBuf, Vec<OsString>, Option<OsString>) {
+fn login_shell(
+    account: &Account,
+    command: Option<&OsStr>,
+) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     let name = account
         .shell
         .file_name()
@@ -1007,6 +1012,10 @@ fn login_shell(account: &Account) -> (PathBuf, Vec<OsString>, Option<OsString>) 
     exec.extend(quoted(&name));
     exec.push(b' ');
     exec.extend(quoted(account.shell.as_os_str()));
+    if let Some(command) = command {
+        exec.extend_from_slice(b" -c ");
+        exec.extend(quoted(command));
+    }
     exec.extend_from_slice(
         b" ); status=$?; printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\"",
     );
@@ -1022,12 +1031,17 @@ fn login_shell(account: &Account) -> (PathBuf, Vec<OsString>, Option<OsString>) 
     ("/usr/bin/login".into(), args, None)
 }
 
-/// The user's shell as a login shell: with `-` before its name.
+/// The user's shell as a login shell, which runs `command` if one: with
+/// `-` before its name.
 #[cfg(not(target_os = "macos"))]
-fn login_shell(account: &Account) -> (PathBuf, Vec<OsString>, Option<OsString>) {
+fn login_shell(
+    account: &Account,
+    command: Option<&OsStr>,
+) -> (PathBuf, Vec<OsString>, Option<OsString>) {
     let mut arg0 = OsString::from("-");
     arg0.push(account.shell.file_name().unwrap_or(OsStr::new("sh")));
-    (account.shell.clone(), Vec::new(), Some(arg0))
+    let args = command.map_or_else(Vec::new, |command| vec!["-c".into(), command.to_owned()]);
+    (account.shell.clone(), args, Some(arg0))
 }
 
 /// `text` in single quotes, for a shell, with each quote in it closed,
@@ -1705,6 +1719,48 @@ mod tests {
             ]
         );
         assert_eq!(arg0, None);
+        // A command, which the shell runs.
+        let command = Program::LoginCommand {
+            command: "exec man -- it's".into(),
+        };
+        let (_, args, _) = command_line(&command, &account);
+        assert_eq!(
+            args[6],
+            "( exec -l -a 'fish' '/opt/my shell/fish' -c 'exec man -- it'\\''s' ); status=$?; \
+             printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\""
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_login_command_runs_in_the_login_shell() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+
+        // A shell of its own, which tells its first argument and runs its
+        // command: a script's `$0` is its path, whatever its name is.
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-login-command-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let shell = directory.join("shell");
+        std::fs::write(&shell, "#!/bin/sh\necho \"with $1\"\neval \"$2\"\n").unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let account = Account {
+            shell,
+            ..Account::current()
+        };
+        let command = Program::LoginCommand {
+            command: "echo ran; exit 4".into(),
+        };
+        let (program, args, _) = command_line(&command, &account);
+        let options = Options::new(Program::Command { program, args }, "dumb");
+        let pty = spawn(&options).unwrap();
+        let mut text = String::new();
+        pty.reader().unwrap().read_to_string(&mut text).unwrap();
+        assert!(text.contains("with -c"), "{text:?}");
+        assert!(text.contains("ran"), "{text:?}");
+        assert!(text.contains("\x1b]133;D;4\x07"), "{text:?}");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(target_os = "macos")]
@@ -1750,6 +1806,13 @@ mod tests {
         let (program, args, arg0) = command_line(&Program::LoginShell, &account);
         assert_eq!(program, Path::new("/usr/bin/fish"));
         assert!(args.is_empty());
+        assert_eq!(arg0, Some("-fish".into()));
+        let command = Program::LoginCommand {
+            command: "exec man -- ls".into(),
+        };
+        let (program, args, arg0) = command_line(&command, &account);
+        assert_eq!(program, Path::new("/usr/bin/fish"));
+        assert_eq!(args, ["-c", "exec man -- ls"]);
         assert_eq!(arg0, Some("-fish".into()));
     }
 

@@ -6,7 +6,8 @@ command-app-quit = Esci da Lokyr
 command-appearance-system = Aspetto automatico
 command-appearance-light = Aspetto chiaro
 command-appearance-dark = Aspetto scuro
-command-pane-look-up = Cerca
+command-pane-look-up = Cerca info
+command-pane-man-page = Apri pagina man
 
 menu-shell = Shell
 menu-edit = Composizione
@@ -23,7 +24,8 @@ menu-appearance = Aspetto
 menu-appearance-system = Automatico
 menu-appearance-light = Chiaro
 menu-appearance-dark = Scuro
-menu-look-up = Cerca “{ $word }”
+menu-look-up = Cerca info su “{ $word }”
+menu-man-page = Apri la pagina man per “{ $page }”
 
 clipboard-read-message = Un programma in questa finestra vuole leggere gli appunti.
 clipboard-read-detail = Riceverebbe il testo che hai copiato per ultimo, che può contenere una password. Consentilo solo se ti fidi del programma e del computer su cui gira.

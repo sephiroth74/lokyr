@@ -75,6 +75,13 @@ pub enum Program {
     /// macOS through `login`, as Terminal.app starts it, and elsewhere with
     /// `-` before its name.
     LoginShell,
+    /// The user's shell, started as [`Program::LoginShell`] is, which runs
+    /// `command`, as its `-c` takes one, rather than reading commands: for a
+    /// program that needs the user's own environment, as their `PATH`.
+    LoginCommand {
+        /// The command, which the shell reads as it reads its own.
+        command: OsString,
+    },
     /// A program, found as a shell finds it, and its arguments.
     Command {
         /// The program.
