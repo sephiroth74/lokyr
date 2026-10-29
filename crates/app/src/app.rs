@@ -5403,8 +5403,10 @@ mod tests {
     /// The app without padding, its window running `seq 1 100`, which
     /// prints `101` to `103` at each Return: and the screen's row of `90`.
     fn numbers() -> (Fake, App, WindowId, u16) {
+        // The echo off before `ready`, so that no Return typed after it
+        // echoes a line of its own.
         let program = shell(concat!(
-            "seq 1 100; echo ready; stty -echo; ",
+            "seq 1 100; stty -echo; echo ready; ",
             "read line; seq 101 103; read line; seq 104 106; read line"
         ));
         let (fake, app, window) = started_with(program);
