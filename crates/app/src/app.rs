@@ -7413,7 +7413,7 @@ mod tests {
             shell(concat!(
                 "stty -echo; printf 'see https://lokyr.dev/x here\\n'; echo ready; ",
                 "read line; seq 1 70; echo https://lokyr.dev/y; echo done; read line; ",
-                "yes https://lokyr.dev/z | head -100; echo end; read line"
+                "yes https://lokyr.dev/z | head -100; echo https://lokyr.dev/z/end; read line"
             )),
         );
         let chosen = || WindowEvent::ContextCommand("links.open".to_owned());
@@ -7448,16 +7448,26 @@ mod tests {
         fake.send(&mut app, window, chosen());
         assert!(fake.alerts().is_empty());
         // Its text scrolled into the scrollback, which a clear takes away,
-        // it runs nothing, though another link came to its row.
+        // it runs nothing, though links came to every row around its own,
+        // which a resize that a pane puts off can move by one.
         let rows = app.pane(window).grid().rows;
         let y = (0..rows)
             .find(|&r| row(&app, window, r) == "https://lokyr.dev/y")
             .unwrap();
         right_click(&mut fake, &mut app, window, cell(10, y), Modifiers::NONE);
         fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-        run_until(&mut fake, &mut app, |_, app| ended(app, "end"));
+        run_until(&mut fake, &mut app, |_, app| {
+            ended(app, "https://lokyr.dev/z/end")
+        });
         app.pane(window).clear_scrollback();
-        assert_eq!(row(&app, window, y), "https://lokyr.dev/z");
+        let around: Vec<String> = (y.saturating_sub(2)..rows)
+            .map(|r| row(&app, window, r))
+            .collect();
+        assert!(
+            row(&app, window, y).starts_with("https://lokyr.dev/z"),
+            "row {y} of {rows}, the cursor at {:?}: {around:?}",
+            app.pane(window).snapshot().cursor().position
+        );
         fake.send(&mut app, window, chosen());
         assert!(fake.alerts().is_empty() && fake.opened().is_empty());
     }
