@@ -7,7 +7,7 @@ use super::*;
 
 /// A host whose focused pane's view has one line, `line`, from its row 1,
 /// a cell each character, which wraps to the next row after ten, or in
-/// `cells`, with `link` at every cell; every target is there but
+/// `cells`, with `link` at every cell; every target is there but those of
 /// `missing`.
 #[derive(Default)]
 struct Host {
@@ -15,8 +15,8 @@ struct Host {
     line: &'static str,
     cells: Option<Vec<(u16, i64)>>,
     link: Option<&'static str>,
-    /// A target that is not there, which opens nothing.
-    missing: Option<&'static str>,
+    /// The targets that are not there, which open nothing.
+    missing: Vec<&'static str>,
     directory: Option<&'static str>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
@@ -97,7 +97,7 @@ impl HostApi for Host {
     }
 
     fn opens(&mut self, target: &str) -> Result<bool, Error> {
-        Ok(!target.starts_with("javascript:") && self.missing != Some(target))
+        Ok(!target.starts_with("javascript:") && !self.missing.contains(&target))
     }
 
     fn select_all(&mut self, _: PaneId) -> Result<(), Error> {
@@ -319,13 +319,66 @@ fn a_click_on_nothing_opens_nothing() {
     );
     // A path that is not there, which a click tries all the same.
     let mut missing = Host {
-        missing: Some("/work/lokyr/README.md"),
+        missing: vec!["/work/lokyr/README.md"],
         ..focused("README.md")
     };
     assert!(!applies(&mut missing, 2, 1));
     // Another command, at a cell with a path.
     let mut path = focused("/etc/hosts");
     assert!(!Links.applies(&mut Cx::new(&mut path), "links.other", &cell(2, 1)));
+}
+
+#[test]
+fn a_quoted_sentence_opens_the_url_or_the_path_in_it() {
+    /// A host whose line `line` is on the view's row 1 alone, the targets
+    /// of `missing` not there.
+    fn one_row(line: &'static str, missing: Vec<&'static str>) -> Host {
+        let cells = (0..line.chars().count())
+            .map(|at| (u16::try_from(at).unwrap(), 1))
+            .collect();
+        Host {
+            cells: Some(cells),
+            missing,
+            ..focused(line)
+        }
+    }
+    let log = r#"{"msg":"failed to read /etc/app/config.yaml: no such file"}"#;
+    let quoted = "/work/lokyr/failed to read /etc/app/config.yaml";
+    let config = log.find("config").unwrap();
+    for (line, column, missing, opened, there) in [
+        // A URL, which a space ends.
+        (
+            r#"{"msg":"see https://example.com/docs for details"}"#,
+            30,
+            vec![],
+            "https://example.com/docs",
+            true,
+        ),
+        // The quoted text is no path that is there: the word's.
+        (log, config, vec![quoted], "/etc/app/config.yaml", true),
+        // Neither is there: the word's, which the click tries.
+        (
+            log,
+            config,
+            vec![quoted, "/etc/app/config.yaml"],
+            "/etc/app/config.yaml",
+            false,
+        ),
+        // A path with a space that is there, whole.
+        (
+            r#"?? "My File.txt""#,
+            8,
+            vec![],
+            "/work/lokyr/My File.txt",
+            true,
+        ),
+    ] {
+        let mut host = one_row(line, missing);
+        let column = i64::try_from(column).unwrap();
+        assert_eq!(applies(&mut host, column, 1), there, "{line}");
+        click(&mut host, column, 1).unwrap();
+        assert_eq!(host.opened, [opened], "{line}");
+    }
 }
 
 #[test]

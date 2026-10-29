@@ -55,20 +55,20 @@ const PATH_ENDS: [char; 14] = [
 /// them.
 const URL_TRAILING: [char; 10] = ['.', ',', ';', ':', '!', '?', '\'', '*', '_', '~'];
 
-/// The URL or the path that `text` holds around its character `at`, by
-/// the characters' count; `None` on a space. Text between quotes that has
-/// spaces is one, as `git status` and Python's tracebacks quote a path;
-/// a space after a backslash is part of a path.
-pub fn find(text: &str, at: usize) -> Option<Found> {
+/// The URLs or the paths that `text` holds around its character `at`, by
+/// the characters' count, each once: of the text between quotes that has
+/// spaces, as `git status` and Python's tracebacks quote a path, then of
+/// the word between spaces, as a log quotes a sentence with a path in it;
+/// none on a space. A space ends a URL; a space after a backslash is part
+/// of a path.
+pub fn find(text: &str, at: usize) -> Vec<Found> {
     let chars: Vec<char> = text.chars().collect();
     if chars.get(at).is_none_or(|c| c.is_whitespace()) {
-        return None;
+        return Vec::new();
     }
+    let mut found = Vec::new();
     if let Some((begin, end)) = quoted(&chars, at) {
-        let found = in_word(&chars[begin..end], at - begin);
-        if found.is_some() {
-            return found;
-        }
+        found.extend(in_word(&chars[begin..end], at - begin));
     }
     let unescaped = |i: usize| chars[i].is_whitespace() && (i == 0 || chars[i - 1] != '\\');
     let start = (0..at)
@@ -78,7 +78,12 @@ pub fn find(text: &str, at: usize) -> Option<Found> {
     let end = (at..chars.len())
         .find(|&i| unescaped(i))
         .unwrap_or(chars.len());
-    in_word(&chars[start..end], at - start)
+    if let Some(word) = in_word(&chars[start..end], at - start)
+        && !found.contains(&word)
+    {
+        found.push(word);
+    }
+    found
 }
 
 /// The URL, or else the path, of `word` that its character `at` is part
@@ -134,8 +139,9 @@ fn url(word: &[char], at: usize) -> Option<String> {
 
 /// Where the URL of `word` that starts at `begin`, of a scheme of `scheme`
 /// characters, ends: at the closing character of a pair that it comes
-/// after, the brackets nested within it counted; at the first character
-/// that ends a URL; after CJK text, at the first character past ASCII;
+/// after, the brackets nested within it counted; at the first space or
+/// character that ends a URL; after CJK text, at the first character past
+/// ASCII;
 /// without the punctuation after it, nor the brackets that close none
 /// within it.
 fn url_end(word: &[char], begin: usize, scheme: usize) -> usize {
@@ -156,7 +162,7 @@ fn url_end(word: &[char], begin: usize, scheme: usize) -> usize {
                 depth -= 1;
             }
         }
-        if URL_ENDS.contains(&c) || (after_cjk && !c.is_ascii()) {
+        if c.is_whitespace() || URL_ENDS.contains(&c) || (after_cjk && !c.is_ascii()) {
             end = i;
             break;
         }
@@ -207,9 +213,20 @@ fn path(word: &[char], at: usize) -> Option<String> {
         .position(|c| PATH_ENDS.contains(c))
         .map_or(word.len(), |stop| at + stop);
     let mut end = without_place(word, begin, end);
-    // A sentence's full stop, and `ls -F`'s marks of a link and a program.
+    // A sentence's full stop, and `ls -F`'s marks of a link and a program,
+    // but the dots of a last part of dots alone, as `..`: the part from
+    // after the last `/`, which none of these is, is dots alone up to its
+    // first other character.
+    let last_part = word[begin..end]
+        .iter()
+        .rposition(|&c| c == '/')
+        .map_or(begin, |slash| begin + slash + 1);
+    let dots_end = word[last_part..end]
+        .iter()
+        .position(|&c| c != '.')
+        .map_or(end, |other| last_part + other);
     while end > begin
-        && ((word[end - 1] == '.' && !all_dots(&word[begin..end]))
+        && ((word[end - 1] == '.' && !(last_part < end && end <= dots_end))
             || matches!(word[end - 1], '@' | '*'))
     {
         end -= 1;
@@ -291,13 +308,6 @@ fn without_place(word: &[char], begin: usize, end: usize) -> usize {
     end
 }
 
-/// Whether the last part of `path`, after its last `/`, is dots alone, as
-/// `..` is.
-fn all_dots(path: &[char]) -> bool {
-    let last = path.rsplit(|&c| c == '/').next().unwrap_or_default();
-    !last.is_empty() && last.iter().all(|&c| c == '.')
-}
-
 /// Whether `text` can be a path, as a file that `ls` lists: `.`, `..` or
 /// `~`, or a text with a letter or a digit, but not a number, nor a
 /// version, as `1.5` and `v1.2.3`.
@@ -316,9 +326,14 @@ mod tests {
 
     /// What `text` holds around its first `^`, which marks the character
     /// and is not part of the text.
-    fn at(marked: &str) -> Option<Found> {
+    fn found(marked: &str) -> Vec<Found> {
         let at = marked.chars().position(|c| c == '^').unwrap();
         find(&marked.replacen('^', "", 1), at)
+    }
+
+    /// The first of what `text` holds around its first `^`.
+    fn at(marked: &str) -> Option<Found> {
+        found(marked).into_iter().next()
     }
 
     fn url(text: &str) -> Option<Found> {
@@ -455,6 +470,48 @@ mod tests {
     }
 
     #[test]
+    fn a_url_ends_at_a_space_between_quotes() {
+        for (marked, wanted) in [
+            (
+                r#"{"msg":"see https://example.com/^docs for details"}"#,
+                "https://example.com/docs",
+            ),
+            (
+                r#"echo "visit https://example.^com today""#,
+                "https://example.com",
+            ),
+            ("'^https://a.b/c d'", "https://a.b/c"),
+        ] {
+            assert_eq!(found(marked), [Found::Url(wanted.to_owned())], "{marked}");
+        }
+    }
+
+    #[test]
+    fn a_path_between_quotes_with_spaces_comes_before_its_word() {
+        for (marked, quoted, word) in [
+            (
+                r#"{"msg":"failed to read /etc/app/^config.yaml: no such file"}"#,
+                "failed to read /etc/app/config.yaml",
+                "/etc/app/config.yaml",
+            ),
+            (
+                r#"error: "cannot open /etc/^hosts: permission denied""#,
+                "cannot open /etc/hosts",
+                "/etc/hosts",
+            ),
+            (r#"?? "My ^File.txt""#, "My File.txt", "File.txt"),
+        ] {
+            let paths = [quoted, word].map(|path| Found::Path(path.to_owned()));
+            assert_eq!(found(marked), paths, "{marked}");
+        }
+        // A word of the text between quotes that is no path.
+        assert_eq!(
+            found(r#""see https://a.b/c ^for details""#),
+            [Found::Path("for".to_owned())]
+        );
+    }
+
+    #[test]
     fn a_path_leaves_its_marks_and_its_places_out() {
         assert_eq!(at("^link@"), path("link"));
         assert_eq!(at("pro^g*"), path("prog"));
@@ -470,7 +527,18 @@ mod tests {
     #[test]
     fn closing_brackets_after_a_url_take_linear_time() {
         let text = format!("https://a.b/{}", ")".repeat(200_000));
-        assert_eq!(find(&text, 3), url("https://a.b/"));
+        assert_eq!(find(&text, 3), [Found::Url("https://a.b/".to_owned())]);
+    }
+
+    #[test]
+    fn trailing_dots_after_a_path_take_linear_time() {
+        let text = format!("x{}", ".".repeat(200_000));
+        for at in [0, 100_000] {
+            assert_eq!(find(&text, at), [Found::Path("x".to_owned())]);
+        }
+        // A last part of dots alone keeps them.
+        let dots = format!("a/{}", ".".repeat(200_000));
+        assert_eq!(find(&dots, 3), [Found::Path(dots.clone())]);
     }
 
     #[test]
@@ -487,6 +555,6 @@ mod tests {
         ] {
             assert_eq!(at(marked), None, "{marked}");
         }
-        assert_eq!(find("abc", 3), None);
+        assert_eq!(find("abc", 3), []);
     }
 }

@@ -93,7 +93,8 @@ impl Plugin for Links {
 
 /// What a click on the cell of `args`' `column` and `row` opens: the cell's
 /// link, or the URL or the path around it, with the working directory
-/// before a relative one; `None` for nothing.
+/// before a relative one; of the text between quotes and the word around
+/// it, the first that is there, else the word's; `None` for nothing.
 fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     // The registry checked that both are there, whole numbers; a cell past
     // the screen's last row finds nothing.
@@ -122,18 +123,34 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     else {
         return Ok(None);
     };
-    Ok(match find(&line.text, at) {
-        Some(Found::Url(url)) => Some(url),
-        Some(Found::Path(path))
-            if path.starts_with('/') || path == "~" || path.starts_with("~/") =>
-        {
-            Some(normal(&path))
+    let found = find(&line.text, at);
+    let relative = |path: &str| !(path.starts_with('/') || path == "~" || path.starts_with("~/"));
+    let directory = if found
+        .iter()
+        .any(|found| matches!(found, Found::Path(path) if relative(path)))
+    {
+        cx.working_directory(pane)?
+    } else {
+        None
+    };
+    let mut targets: Vec<String> = found
+        .into_iter()
+        .filter_map(|found| match found {
+            Found::Url(url) => Some(url),
+            Found::Path(path) if relative(&path) => directory
+                .as_ref()
+                .map(|directory| normal(&format!("{directory}/{path}"))),
+            Found::Path(path) => Some(normal(&path)),
+        })
+        .collect();
+    // The word's, the last, which a click tries even when it is not there.
+    let last = targets.pop();
+    for target in targets {
+        if cx.opens(&target).unwrap_or(false) {
+            return Ok(Some(target));
         }
-        Some(Found::Path(path)) => cx
-            .working_directory(pane)?
-            .map(|directory| normal(&format!("{directory}/{path}"))),
-        None => None,
-    })
+    }
+    Ok(last)
 }
 
 /// `path` without its `.` and `..` parts, nor its empty ones: a `..` takes
