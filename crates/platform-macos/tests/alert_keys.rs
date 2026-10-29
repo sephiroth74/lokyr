@@ -26,14 +26,16 @@ mod probe {
 
     use crate::common;
 
-    /// What a step does, and what the field and the clipboard then hold.
-    const STEPS: [(&str, &str, &str); 6] = [
-        ("⌘A ⌘V", "pasted", "pasted"),
-        ("⌘A ⌘C", "pasted", "pasted"),
-        ("⌘A ⌘X", "", "pasted"),
-        ("⌘Z", "pasted", "pasted"),
-        ("⇧⌘Z", "", "pasted"),
-        ("close", "", "pasted"),
+    /// What a step does, and what the field can then hold, and the
+    /// clipboard: the undo takes the cut back, or the paste with it, as the
+    /// system groups the edits of the wakes that come close together.
+    const STEPS: [(&str, &[&str], &str); 6] = [
+        ("⌘A ⌘V", &["pasted"], "pasted"),
+        ("⌘A ⌘C", &["pasted"], "pasted"),
+        ("⌘A ⌘X", &[""], "pasted"),
+        ("⌘Z", &["pasted", "old"], "pasted"),
+        ("⇧⌘Z", &[""], "pasted"),
+        ("close", &[""], "pasted"),
     ];
 
     #[derive(Debug, Default)]
@@ -317,11 +319,11 @@ mod probe {
         lokyr_platform_macos::run(probe).expect("the application runs");
         drop(kept);
         let seen = seen.borrow();
-        let wanted: Vec<(String, String)> = STEPS
-            .iter()
-            .map(|&(_, field, clipboard)| (field.to_owned(), clipboard.to_owned()))
-            .collect();
-        assert_eq!(seen.states, wanted, "{seen:?}");
+        assert_eq!(seen.states.len(), STEPS.len(), "{seen:?}");
+        for ((field, clipboard), &(keys, fields, wanted)) in seen.states.iter().zip(&STEPS) {
+            assert!(fields.contains(&field.as_str()), "{keys}: {seen:?}");
+            assert_eq!(clipboard, wanted, "{keys}: {seen:?}");
+        }
         assert_eq!(seen.commands, [] as [String; 0], "{seen:?}");
         assert_eq!(seen.answers, [(0, Some(String::new()))], "{seen:?}");
         println!("alert_keys: ok");
