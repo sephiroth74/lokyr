@@ -556,6 +556,7 @@ The radius of the blur of what shows through the background, in points.
 
 - The blur shows only below a `background-opacity` of 1.
 - macOS has no public way to blur what is behind a window: Lokyr asks the window server through a private call, which takes whole points, so that the radius is rounded. A larger radius asks more of the window server.
+- What it costs: over a video that plays behind the window, a blur of 20 took about 4 % more of a core of the window server, measured on an M5 Pro; translucency without blur, nothing measurable. Over what does not change, the window server blurs it once.
 
 ### `title-size`
 

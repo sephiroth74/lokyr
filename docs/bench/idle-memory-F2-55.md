@@ -22,8 +22,12 @@ Measured on 2026-10-29 with `lokyr-bench`, on the bundle of commit 146e8ee, agai
 | Blinking, switched (`smooth-blink = "off"`) | 0 | 0.45 | ≤ 2 |
 | Blinking, faded (`smooth-blink = "breathing"`) | 0 | 0.35 | ≤ 2 |
 | Steady (`blink = false`), as after the timeout | 0 | 0.35 | ≤ 0.5 |
+| Steady, with blinking text in the window (SGR 5) | 0.13 | 22.3 | ≤ 2 |
+| Output, `yes`, at 60 Hz | 0 | 130.6 | none: output draws frames |
 
 - **The blinking costs nothing more** than a steady cursor, faded or not: the window server blinks the cursor's layer ([ADR 0021](../adr/0021-drawables-and-the-cursor-layer.md)). Before F2-123, a blink took a frame, and 22 wakeups a second, as F2-20 measured, on the debug build.
+- **Blinking text takes a frame at each blink**, about 11 wakeups each, as the cursor did: past the budget, which [F2-125](../tasks/F2-macos-single-pane.md#f2-125--blinking-text-on-a-layer-of-its-own) brings within it.
+- **Output**: about two wakeups a frame; the sample shows the work where it belongs, the parser and the grid's scrolling.
 - **What wakes it, about once every 3 s**, while nothing changes: in a sample of 10 s, the main thread woke once, for a query of an accessibility client's, `_XCopyAttributeValue`, from outside Lokyr; the other threads waited, the session's reader in `poll`, its writer on its condition, and the config's watch in its run loop. The minimal AppKit app of F0 took 0.02 a second, likely without that client; F2-06 found the same 0.33 a second.
 
 ## Memory
@@ -32,13 +36,22 @@ Measured on 2026-10-29 with `lokyr-bench`, on the bundle of commit 146e8ee, agai
 |---|---|---|---|---|
 | Three minutes after the start | 93.5 MB | 69.5 MB | 24.0 MB | ≤ 35 MB without the GPU |
 | Four seconds after another start | 100.6 MB | 69.5 MB | 31.1 MB | |
+| Four windows, one of a full scrollback of 10 MB, after the output | 141.3 MB | 92.3 MB | 49.0 MB | ≤ 38 MB for four panes, but the scrollback, ≤ 10.5 MB |
 
 - **The GPU's memory**: 56 MB of IOSurface, the three drawables of 2824 × 1696 pixels, 19.2 MB each, as F2-57 chose; about 6 MB of IOAccelerator, the atlas's textures and the frames' buffers; the cursor's layer, a cell of pixels.
+- **More windows**: without the GPU, the footprint grows by about 3 to 5 MB a window, AppKit's window, its views and its layers with the pane's; a pane of its own, in a split, comes with F3, which measures it against its budget of 1 MB. The scrollback that `yes` filled took its limit, 10 MB, as the budget allows.
+- **A window in the Dock** lets all three of its drawables go: the IOSurface fell by 20 MB, three drawables of 1716 × 1010 pixels, where a covered window keeps one.
+- **Metal's memory while frames are drawn**: the same unmapped memory of Metal's comes back whenever the app draws, 93 to 95 MB dirty while output flows or text blinks, and becomes reclaimable about 1.5 s after the last frame. The renderer makes new buffers for each frame, which Metal keeps to use again: past the budget of the GPU's memory, which [F2-126](../tasks/F2-macos-single-pane.md#f2-126--the-frames-buffers-used-again) brings within it, by buffers that the frames use again.
 - **A peak at the start**: the GPU's memory reaches 235 MB in the first 0.2 s, and stays there for 1.8 s, before it falls to 72 MB, then 69.5 MB. The footprint's peak, over the process's life, is 267 MB. At 0.5 s, `footprint` names the peak "Owned physical footprint (unmapped) (graphics)": 156 MB in 60 regions, memory of Metal's that the process owns and does not map; at 3.5 s, 4.4 MB of it is dirty, and 104 MB reclaimable, which the system can take back. The drawables' IOSurface stays 56 MB throughout. Its source, Metal's own allocations at the device's or the pipelines' making, or the first frames' buffers, which Metal keeps to use again, is for Instruments' Metal resource allocations to tell.
 
-## Still to measure, with the user at the Mac
+## The window server, over a video
 
-- The footprint with five windows, and the drawable that a hidden window keeps.
-- The wakeups of the frames of output, and where each comes from.
-- Blinking text, which still draws a frame at each blink.
-- The window server's cost of a translucent window, with and without its blur, over a video that plays behind it.
+A video plays in a browser behind the window, which covers part of it, and nothing changes in the window: the window server's CPU, over 30 s, as `top` gives it, in a core's percent.
+
+| The window | Window server's CPU |
+|---|---|
+| Opaque | 33.5 % |
+| Translucent, `background-opacity = 0.85`, without blur | 32.9 % |
+| Translucent, with `background-blur = 20` | 37.0 % |
+
+Translucency alone costs nothing that one run tells apart; the blur, about 4 % of a core more, while what is behind the window changes. The window server's GPU is `powermetrics`'s, which needs the administrator, and is not measured.
