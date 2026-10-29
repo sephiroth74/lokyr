@@ -7,6 +7,7 @@ command-app-quit = Quit Lokyr
 command-appearance-system = Automatic Appearance
 command-appearance-light = Light Appearance
 command-appearance-dark = Dark Appearance
+command-pane-look-up = Look Up
 
 # The menus of the menu bar, and the system's own items in them.
 menu-shell = Shell
@@ -24,6 +25,8 @@ menu-appearance = Appearance
 menu-appearance-system = Automatic
 menu-appearance-light = Light
 menu-appearance-dark = Dark
+# The context menu's Look Up, which names the selection, shortened.
+menu-look-up = Look Up “{ $word }”
 
 # The alert of a program's read of the clipboard, and its buttons, the
 # default one first.

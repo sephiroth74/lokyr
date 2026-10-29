@@ -199,6 +199,18 @@ pub trait Platform {
     /// menu that is open closes first.
     fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu);
 
+    /// Shows the system's definition of `text`, in its dictionary's panel,
+    /// over `window`, where the text is: the left end of its baseline at
+    /// `baseline`, from the content's top left corner, in `font`, the family
+    /// and its size in points, or in the system's font of a fixed pitch.
+    fn show_definition(
+        &mut self,
+        window: WindowId,
+        text: &str,
+        baseline: Point,
+        font: Option<(&str, f64)>,
+    );
+
     /// The text on the clipboard, if it holds text.
     fn clipboard_text(&self) -> Option<String>;
 

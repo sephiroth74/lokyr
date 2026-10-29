@@ -61,6 +61,19 @@ pub struct FakeNotification {
     pub body: String,
 }
 
+/// A definition that the app showed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FakeDefinition {
+    /// The window that it showed over.
+    pub window: WindowId,
+    /// What it defines.
+    pub text: String,
+    /// Where the text's baseline starts.
+    pub baseline: Point,
+    /// The text's font, its family and its size, if the app gave one.
+    pub font: Option<(String, f64)>,
+}
+
 /// The fake platform. Its focus moves only with the
 /// [`WindowEvent::Focused`] events that a test sends, as a backend tells
 /// the focus through them.
@@ -80,6 +93,8 @@ pub struct Fake {
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     context_menus: Vec<(WindowId, Point, ContextMenu)>,
+    /// The definitions that the app showed, from the first.
+    definitions: Vec<FakeDefinition>,
     clipboard: Option<String>,
     alerts: Vec<FakeAlert>,
     /// The timers that have not fired, with the time of each.
@@ -129,6 +144,7 @@ impl Fake {
             disabled: std::collections::BTreeSet::new(),
             checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
+            definitions: Vec::new(),
             clipboard: None,
             alerts: Vec::new(),
             timers: BTreeMap::new(),
@@ -311,6 +327,11 @@ impl Fake {
         &self.context_menus
     }
 
+    /// The definitions that the app showed, from the first.
+    pub fn definitions(&self) -> &[FakeDefinition] {
+        &self.definitions
+    }
+
     /// The alerts that are open, from the first opened.
     pub fn alerts(&self) -> &[FakeAlert] {
         &self.alerts
@@ -485,6 +506,21 @@ impl Platform for Fake {
 
     fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu) {
         self.context_menus.push((window, position, menu.clone()));
+    }
+
+    fn show_definition(
+        &mut self,
+        window: WindowId,
+        text: &str,
+        baseline: Point,
+        font: Option<(&str, f64)>,
+    ) {
+        self.definitions.push(FakeDefinition {
+            window,
+            text: text.to_owned(),
+            baseline,
+            font: font.map(|(family, size)| (family.to_owned(), size)),
+        });
     }
 
     fn clipboard_text(&self) -> Option<String> {

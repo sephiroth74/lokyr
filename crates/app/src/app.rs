@@ -62,6 +62,14 @@ const NEW_WINDOW: &str = "window.new";
 /// The command that closes the focused window.
 const CLOSE_WINDOW: &str = "window.close";
 
+/// The command that shows the system's definition of the selection, of
+/// one line, which the context menu alone shows, naming it.
+const LOOK_UP: &str = "pane.look-up";
+
+/// The characters of the selection that Look Up's item names, past which
+/// it shortens it.
+const LOOK_UP_TITLE: usize = 30;
+
 /// The commands that give the app an appearance, as the View menu's
 /// Appearance chooses it, each with its own and its title's message.
 const APPEARANCES: [(&str, AppearanceMode, &str); 3] = [
@@ -943,11 +951,23 @@ impl App {
             .map(|command| command.name.clone())
             .collect();
         self.acting = None;
+        let looked_up = self.looked_up(window);
         self.context_cell = Some((window, pointer.col, pointer.row));
-        let menu = ContextMenu {
-            items: command_items(&commands, |_| None),
-            dimmed,
-        };
+        let mut items = command_items(&commands, |_| None);
+        // Look Up names what it would look up.
+        if let Some((text, _)) = looked_up {
+            for item in &mut items {
+                if let MenuItem::Command { title, command, .. } = item
+                    && command == LOOK_UP
+                {
+                    *title = self.texts.text_with(
+                        "menu-look-up",
+                        &[("word", Arg::Text(&shortened(&text, LOOK_UP_TITLE)))],
+                    );
+                }
+            }
+        }
+        let menu = ContextMenu { items, dimmed };
         platform.show_context_menu(window, position, &menu);
     }
 
@@ -964,6 +984,12 @@ impl App {
         let when = command.when.as_deref().map(When::parse);
         if when.is_some_and(|when| when.is_ok_and(|when| !when.holds(context))) {
             return false;
+        }
+        if command.name == LOOK_UP {
+            return self
+                .acting
+                .and_then(|window| self.looked_up(window))
+                .is_some();
         }
         if !self.plugins.owns(&command.name) {
             return true;
@@ -982,6 +1008,70 @@ impl App {
             eprintln!("lokyr: {error}");
             false
         })
+    }
+
+    /// What Look Up looks up in `window`: the selection's text, of one line,
+    /// without the spaces around it, and the cell where that text starts,
+    /// in the view; `None` without one.
+    fn looked_up(&self, window: WindowId) -> Option<(String, (u16, i64))> {
+        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
+        let (column, row) = pane.selection()?.start;
+        let selected = pane.selection_text()?;
+        let text = selected.trim();
+        if text.is_empty() || text.contains('\n') {
+            return None;
+        }
+        // Each space before the text takes a cell.
+        let spaces = selected[..selected.len() - selected.trim_start().len()]
+            .chars()
+            .count();
+        let column = column.saturating_add(u16::try_from(spaces).unwrap_or(u16::MAX));
+        Some((text.to_owned(), (column, row)))
+    }
+
+    /// Shows the system's definition of the selection of the window that
+    /// the commands run in, over the selection's first cell, in the text's
+    /// font.
+    fn look_up(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some((text, (column, row))) = self.looked_up(window) else {
+            return;
+        };
+        let (Some(size), Some(state)) = (platform.window_size(window), self.windows.get(&window))
+        else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let grid = pane.grid();
+        // A selection that starts above the view, or below it, shows at its
+        // edge.
+        let row = row.clamp(0, i64::from(grid.rows.saturating_sub(1))) as f64;
+        let (left, top) = self.padding(size.scale);
+        let baseline = self
+            .drawing
+            .as_ref()
+            .map_or(f64::from(grid.cell_height) * 0.75, |drawing| {
+                f64::from(drawing.font.cell().baseline)
+            });
+        let at = Point {
+            x: (f64::from(left) + f64::from(column) * f64::from(grid.cell_width)) / size.scale,
+            y: (f64::from(top) + row * f64::from(grid.cell_height) + baseline) / size.scale,
+        };
+        let points = f64::from(self.font_size.unwrap_or(self.config.font.size.points()));
+        let family = self
+            .drawing
+            .as_ref()
+            .map(|drawing| drawing.font.family().to_owned());
+        platform.show_definition(
+            window,
+            &text,
+            at,
+            family.as_deref().map(|family| (family, points)),
+        );
     }
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as
@@ -1477,6 +1567,10 @@ impl App {
                     if let Some(window) = platform.focused_window() {
                         self.ask_close(platform, window);
                     }
+                    Ok(())
+                }
+                LOOK_UP => {
+                    self.look_up(platform);
                     Ok(())
                 }
                 _ if let Some(&(_, mode, _)) =
@@ -2755,6 +2849,15 @@ impl Handler for App {
     }
 }
 
+/// `text`, shortened to its first `most` characters and `…` when it has
+/// more.
+fn shortened(text: &str, most: usize) -> String {
+    match text.char_indices().nth(most) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_owned(),
+    }
+}
+
 /// Whether `command` is one of a cell: it takes the cell's `column` and
 /// `row`, whole numbers, and needs no other argument.
 fn of_cell(command: &Command) -> bool {
@@ -2960,6 +3063,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (QUIT, "app-quit", Category::App),
+        (LOOK_UP, "pane-look-up", Category::Edit),
     ]
     .into_iter()
     .chain(
@@ -2974,7 +3078,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             category,
             capabilities: Vec::new(),
             params: Vec::new(),
-            when: None,
+            when: (name == LOOK_UP).then(|| "selection".to_owned()),
         };
         if let Err(error) = registry.register(command) {
             eprintln!("lokyr: {error}");
@@ -3005,6 +3109,7 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
                 categories.contains(&command.category)
                     && command.params.iter().all(|param| param.default.is_some())
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
+                    && command.name != LOOK_UP
             })
             .collect();
         command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
@@ -3193,7 +3298,7 @@ fn menu_context(snapshot: &vt::Snapshot) -> Context {
 #[cfg(test)]
 mod tests {
     use lokyr_kernel::config::CloseOnExit;
-    use lokyr_platform_core::fake::Fake;
+    use lokyr_platform_core::fake::{Fake, FakeDefinition};
     use lokyr_ui_core::cursor::CursorConfig;
 
     use super::*;
@@ -3407,6 +3512,7 @@ mod tests {
                     Category::View
                 ),
                 ("app.quit", "Quit Lokyr", Category::App),
+                ("pane.look-up", "Look Up", Category::Edit),
                 ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
             ]
@@ -4592,6 +4698,8 @@ mod tests {
             [
                 "Open Link",
                 "-",
+                "Look Up “world”",
+                "-",
                 "Copy",
                 "Paste",
                 "-",
@@ -4604,12 +4712,17 @@ mod tests {
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
         right_click(&mut fake, &mut app, window, cell(1, 0), none);
         assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
+        assert_eq!(context_menu(&fake, window).1[2], "Look Up “hel”");
         assert_eq!(context_menu(&fake, window).2, ["links.open"]);
-        // On a blank cell, which takes it away, and dims Copy.
+        // On a blank cell, which takes it away, and dims Copy and Look Up.
         right_click(&mut fake, &mut app, window, cell(5, 0), none);
         assert_eq!(selected_text(&app, window), None);
         assert!(app.windows[&window].selecting.is_none());
-        assert_eq!(context_menu(&fake, window).2, ["links.open", "pane.copy"]);
+        assert_eq!(context_menu(&fake, window).1[2], "Look Up");
+        assert_eq!(
+            context_menu(&fake, window).2,
+            ["links.open", "pane.look-up", "pane.copy"]
+        );
         // A Control click opens it too, and starts no selection that the
         // pointer would drag.
         let control = Modifiers {
@@ -4633,6 +4746,54 @@ mod tests {
             "{:?}",
             selected_text(&app, window)
         );
+    }
+
+    #[test]
+    fn look_up_shows_the_definition_of_the_selection_of_one_line() {
+        let (mut fake, mut app, window) = selecting("", "");
+        let none = Modifiers::NONE;
+        let look_up = |fake: &mut Fake, app: &mut App| {
+            fake.send(app, window, WindowEvent::ContextCommand(LOOK_UP.to_owned()));
+        };
+        right_click(&mut fake, &mut app, window, cell(8, 0), none);
+        look_up(&mut fake, &mut app);
+        // Over the word's first cell, at its baseline, in a window of
+        // cells 4 points wide and 8 high, without the drawing's font.
+        assert_eq!(
+            fake.definitions(),
+            [FakeDefinition {
+                window,
+                text: "world".to_owned(),
+                baseline: Point { x: 24.0, y: 6.0 },
+                font: None,
+            }]
+        );
+        // A selection of two lines has none, and its item names nothing.
+        select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 1)), none);
+        right_click(&mut fake, &mut app, window, cell(2, 0), none);
+        let (_, items, dimmed) = context_menu(&fake, window);
+        assert_eq!(items[2], "Look Up");
+        assert!(dimmed.contains(&LOOK_UP.to_owned()), "{dimmed:?}");
+        look_up(&mut fake, &mut app);
+        assert_eq!(fake.definitions().len(), 1);
+        // On the second row, without the space before it, at the cell after
+        // the space.
+        select_drag(&mut fake, &mut app, window, (cell(6, 1), cell(12, 1)), none);
+        right_click(&mut fake, &mut app, window, cell(8, 1), none);
+        look_up(&mut fake, &mut app);
+        let last = fake.definitions().last().unwrap();
+        assert_eq!(
+            (last.text.as_str(), last.baseline),
+            ("line", Point { x: 28.0, y: 14.0 })
+        );
+    }
+
+    #[test]
+    fn a_title_shortens_past_its_characters() {
+        assert_eq!(shortened("abcdef", 3), "abc…");
+        assert_eq!(shortened("abc", 3), "abc");
+        assert_eq!(shortened("àèìòù", 2), "àè…");
+        assert_eq!(shortened("", 2), "");
     }
 
     #[test]

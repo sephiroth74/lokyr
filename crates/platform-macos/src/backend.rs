@@ -24,7 +24,7 @@ use crate::menu::MenuTarget;
 use crate::notify::Notifier;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
-use crate::{alert, appearance, menu, open, timer};
+use crate::{alert, appearance, definition, menu, open, timer};
 
 /// An alert that is open.
 struct OpenAlert {
@@ -383,6 +383,18 @@ impl Platform for Backend {
             ticked.insert(command.to_owned());
         } else {
             ticked.remove(command);
+        }
+    }
+
+    fn show_definition(
+        &mut self,
+        window: WindowId,
+        text: &str,
+        baseline: Point,
+        font: Option<(&str, f64)>,
+    ) {
+        if let Some(window) = self.windows.get(&window) {
+            definition::show(self.mtm, &window.view(), text, baseline, font);
         }
     }
 
