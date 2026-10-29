@@ -24,13 +24,17 @@ pub struct Variant {
     pub selection: SelectionColors,
 }
 
-/// The built-in theme, of a light and a dark variant.
+/// The built-in theme, of a light and a dark variant, and of the man
+/// pages'.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
     /// The variant of the light appearance.
     pub light: Variant,
     /// The variant of the dark appearance.
     pub dark: Variant,
+    /// The variant of a window that shows a man page, whatever the
+    /// appearance.
+    pub man_page: Variant,
 }
 
 impl Default for Theme {
@@ -66,13 +70,19 @@ const DARK: (Sixteen, u32, u32, u32) = (
     0x34445f,
 );
 
+/// A man page's text, background and selection, as the system's terminal
+/// shows a page: black on light yellow.
+const MAN_PAGE: (u32, u32, u32) = (0x000000, 0xfef49c, 0xbfb875);
+
 impl Theme {
     /// The built-in theme: a palette of our own, whose colors read on their
-    /// variant's background.
+    /// variant's background; a man page's takes the light one's.
     pub fn builtin() -> Self {
+        let (foreground, background, selection) = MAN_PAGE;
         Self {
             light: variant(LIGHT),
             dark: variant(DARK),
+            man_page: variant((LIGHT.0, foreground, background, selection)),
         }
     }
 
@@ -133,7 +143,8 @@ mod tests {
 
     #[test]
     fn the_text_reads_on_its_background() {
-        for variant in [Theme::builtin().light, Theme::builtin().dark] {
+        let theme = Theme::builtin();
+        for variant in [theme.light, theme.dark, theme.man_page] {
             let colors = &variant.colors;
             // WCAG's AAA, for the text of a terminal.
             assert!(contrast(colors.foreground, colors.background) > 12.0);

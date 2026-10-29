@@ -283,6 +283,14 @@ impl Platform for Backend {
             attributes,
             Rc::clone(&self.option_as_meta),
         );
+        // Down and to the right of the window with the focus, as the
+        // system cascades windows; centred without one.
+        let focused = self
+            .windows
+            .values()
+            .find(|window| window.is_focused())
+            .map(|window| window.ns_window().frame());
+        window.place(focused);
         // The window is in the map before it takes the focus, whose event
         // follows this call.
         self.windows.insert(id, window);

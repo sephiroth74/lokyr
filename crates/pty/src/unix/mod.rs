@@ -991,8 +991,9 @@ fn command_line(
 /// Terminal.app starts it: through `login`, so that the session is
 /// recorded as a terminal's, with `-f`, since the user is logged in
 /// already, `-p` to keep the environment and `-l` to stay in the working
-/// directory. As `-l` also keeps the shell from being a login shell, bash
-/// starts it with `-` before its name.
+/// directory, and `-q` before a command, whose output the last login's
+/// line would come before. As `-l` also keeps the shell from being a login
+/// shell, bash starts it with `-` before its name.
 ///
 /// `login` exits with 0 whatever the shell's status, and closes the
 /// descriptors past the terminal's: bash waits for the shell, and tells its
@@ -1020,7 +1021,7 @@ fn login_shell(
         b" ); status=$?; printf '\\033]133;D;%d\\007' \"$status\"; exit \"$status\"",
     );
     let args = vec![
-        "-flp".into(),
+        if command.is_some() { "-flpq" } else { "-flp" }.into(),
         account.name.clone(),
         "/bin/bash".into(),
         "--noprofile".into(),
@@ -1724,6 +1725,7 @@ mod tests {
             command: "exec man -- it's".into(),
         };
         let (_, args, _) = command_line(&command, &account);
+        assert_eq!(args[0], "-flpq");
         assert_eq!(
             args[6],
             "( exec -l -a 'fish' '/opt/my shell/fish' -c 'exec man -- it'\\''s' ); status=$?; \
@@ -1758,6 +1760,7 @@ mod tests {
         let mut text = String::new();
         pty.reader().unwrap().read_to_string(&mut text).unwrap();
         assert!(text.contains("with -c"), "{text:?}");
+        assert!(!text.contains("Last login"), "{text:?}");
         assert!(text.contains("ran"), "{text:?}");
         assert!(text.contains("\x1b]133;D;4\x07"), "{text:?}");
         std::fs::remove_dir_all(directory).unwrap();

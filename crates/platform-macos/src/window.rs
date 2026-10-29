@@ -76,7 +76,6 @@ impl Window {
         ns_window.setContentView(Some(&view));
         // The keys go to the view.
         ns_window.makeFirstResponder(Some(&view));
-        ns_window.center();
         let pacer = Pacer::new(mtm, &view, shared.clone(), id);
         let delegate = WindowDelegate::new(mtm, shared, id);
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
@@ -92,6 +91,22 @@ impl Window {
     /// as long as the window.
     pub(crate) fn view_address(&self) -> NonNull<c_void> {
         NonNull::from(&*self.view).cast()
+    }
+
+    /// Places the window down and to the right of a window of the frame
+    /// `after`, as the system cascades windows, within the screen; or in the
+    /// screen's centre.
+    pub(crate) fn place(&self, after: Option<NSRect>) {
+        match after {
+            Some(frame) => {
+                let top_left = NSPoint::new(frame.origin.x, frame.origin.y + frame.size.height);
+                // The first call puts the window at the point, and gives the
+                // next one's.
+                let next = self.ns_window.cascadeTopLeftFromPoint(top_left);
+                self.ns_window.cascadeTopLeftFromPoint(next);
+            }
+            None => self.ns_window.center(),
+        }
     }
 
     /// The window's content view.

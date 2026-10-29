@@ -146,7 +146,9 @@ pub trait Platform {
     /// first, then the other languages that the user prefers.
     fn locales(&self) -> Vec<String>;
 
-    /// Opens a window, in front of the others, where it takes the focus.
+    /// Opens a window, in front of the others, where it takes the focus:
+    /// down and to the right of the window that has the focus, as the
+    /// system cascades windows, or in the screen's centre.
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error>;
 
     /// Closes a window: no event comes from it any more.

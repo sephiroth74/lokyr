@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Registry, Value};
 use lokyr_kernel::config::{
-    self, AppConfig, AppearanceMode, ClipboardRead, Config, ConfirmPaste, LinksConfig, OpenFile,
-    OpenUrl,
+    self, AppConfig, AppearanceMode, ClipboardRead, CloseOnExit, Config, ConfirmPaste, LinksConfig,
+    OpenFile, OpenUrl,
 };
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver, When,
@@ -38,7 +38,7 @@ use lokyr_text_core::FontConfig;
 use lokyr_ui_core::cursor::{self, Blink};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
-use lokyr_ui_core::theme::Theme;
+use lokyr_ui_core::theme::{Theme, Variant};
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::page::{Budget, Scrollback};
 use lokyr_vt_core::terminal::{
@@ -126,6 +126,10 @@ const WINDOW_SIZE: Size = Size {
     width: 800.0,
     height: 500.0,
 };
+
+/// The columns and the rows of a man page's window: `man` lays its pages
+/// out for 80 columns.
+const MAN_PAGE_CELLS: (u32, u32) = (80, 48);
 
 /// How long the app waits after the last change of the config file, for
 /// the changes that come with it, as an editor's write and rename do, before
@@ -328,6 +332,10 @@ struct Window {
     /// The selection that the mouse makes, or made last, which Shift's click
     /// extends.
     selecting: Option<Selecting>,
+    /// The title of the man page that it shows, as `man ls`, when it shows
+    /// one: it takes the man page's colors, and keeps the page once `man`
+    /// has ended.
+    page: Option<String>,
 }
 
 /// `target` as a question shows it: each character that shows nothing,
@@ -424,6 +432,7 @@ impl Window {
             held_back: Vec::new(),
             taken: Vec::new(),
             selecting: None,
+            page: None,
         }
     }
 
@@ -1131,11 +1140,14 @@ impl App {
         let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
             return;
         };
-        let Some(args) = self.looked_up(window).and_then(|(text, _)| man_page(&text)) else {
+        let Some((text, args)) = self
+            .looked_up(window)
+            .and_then(|(text, _)| Some((text.clone(), man_page(&text)?)))
+        else {
             return;
         };
         let program = man_program(self.man.as_deref(), &args);
-        self.open_window_running(platform, &program);
+        self.open_window_running(platform, &program, Some(format!("man {text}")));
     }
 
     /// Runs `name`, which `window`'s context menu chose, in its pane, as
@@ -1450,15 +1462,33 @@ impl App {
 
     fn open_window(&mut self, platform: &mut dyn Platform) {
         let program = self.program.clone();
-        self.open_window_running(platform, &program);
+        self.open_window_running(platform, &program, None);
     }
 
     /// Opens a window, whose pane runs `program`, and quits if it cannot
-    /// while no other window is open.
-    fn open_window_running(&mut self, platform: &mut dyn Platform, program: &Program) {
+    /// while no other window is open: of the man page of the title `page`,
+    /// as `man ls`, of its size and colors, when it shows one.
+    fn open_window_running(
+        &mut self,
+        platform: &mut dyn Platform,
+        program: &Program,
+        page: Option<String>,
+    ) {
+        let size = match page {
+            Some(_) => {
+                // At the scale of the window that the page comes from.
+                let scale = self
+                    .acting
+                    .or_else(|| platform.focused_window())
+                    .and_then(|window| platform.window_size(window))
+                    .map_or(1.0, |size| size.scale);
+                self.size_of(scale, MAN_PAGE_CELLS)
+            }
+            None => WINDOW_SIZE,
+        };
         let attributes = WindowAttributes {
-            title: TITLE.to_owned(),
-            size: WINDOW_SIZE,
+            title: page.clone().unwrap_or_else(|| TITLE.to_owned()),
+            size,
         };
         match platform.create_window(&attributes) {
             Ok(window) => {
@@ -1468,7 +1498,10 @@ impl App {
                     .window_size(window)
                     .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
                 let grid = self.grid(size);
-                let colors = &self.colors(platform.appearance());
+                let colors = &match page {
+                    Some(_) => self.theme.man_page.colors.clone(),
+                    None => self.colors(platform.appearance()),
+                };
                 let waker = platform.waker();
                 let pane = Pane::spawn(
                     program,
@@ -1485,8 +1518,9 @@ impl App {
                 pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
-                self.windows
-                    .insert(window, Window::new(surface, ids, focused, Instant::now()));
+                let mut state = Window::new(surface, ids, focused, Instant::now());
+                state.page = page;
+                self.windows.insert(window, state);
                 self.draw(platform, window, size);
             }
             Err(error) => {
@@ -1530,9 +1564,17 @@ impl App {
             let Some(pane) = self.workspace.pane_mut(state.pane) else {
                 continue;
             };
+            // A man page's window keeps the page, from its top.
+            let page = state.page.is_some();
+            let close = if page { CloseOnExit::Never } else { close };
             match pane.exited(close, now, &self.texts) {
                 Some(Exited::Close) => closing.push(window),
-                Some(Exited::Keep) => platform.request_frame(window),
+                Some(Exited::Keep) => {
+                    if page {
+                        pane.scroll(Scroll::Top);
+                    }
+                    platform.request_frame(window);
+                }
                 None => waiting |= pane.is_waiting(),
             }
         }
@@ -1873,15 +1915,16 @@ impl App {
         platform.set_title(window, &format!("{mark}{}", self.title_of(window)));
     }
 
-    /// The title of `window`'s active tab, or Lokyr's when its program
-    /// gives none.
+    /// The title of `window`'s active tab, or, when its program gives none,
+    /// its man page's, or Lokyr's.
     fn title_of(&self, window: WindowId) -> String {
-        self.windows
-            .get(&window)
+        let state = self.windows.get(&window);
+        state
             .and_then(|state| self.workspace.window(state.window))
             .and_then(|shown| self.workspace.tab(shown.active_tab()))
             .map(workspace::Tab::title)
             .filter(|title| !title.is_empty())
+            .or_else(|| state.and_then(|state| state.page.as_deref()))
             .unwrap_or(TITLE)
             .to_owned()
     }
@@ -2294,8 +2337,10 @@ impl App {
     /// variant, and the windows draw again.
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
         let colors = self.colors(appearance);
-        for pane in self.workspace.panes() {
-            pane.set_colors(&colors);
+        for state in self.windows.values().filter(|state| state.page.is_none()) {
+            if let Some(pane) = self.workspace.pane(state.pane) {
+                pane.set_colors(&colors);
+            }
         }
         let windows: Vec<WindowId> = self.windows.keys().copied().collect();
         for window in windows {
@@ -2317,14 +2362,7 @@ impl App {
     /// cells of the font at its display's scale.
     fn grid(&mut self, size: WindowSize) -> Grid {
         let (x, y) = self.padding(size.scale);
-        let (width, height) = match &mut self.drawing {
-            Some(drawing) => {
-                drawing.font.set_scale(size.scale as f32);
-                let cell = drawing.font.cell();
-                (cell.width, cell.height)
-            }
-            None => UNDRAWN_CELL,
-        };
+        let (width, height) = self.cell_pixels(size.scale);
         let fit = |pixels: u32, padding: u32, cell: u32| {
             (pixels.saturating_sub(2 * padding) / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16
         };
@@ -2335,6 +2373,43 @@ impl App {
             cell_width: pixels(width),
             cell_height: pixels(height),
         }
+    }
+
+    /// The size of a cell, in pixels, of the font at a display's `scale`.
+    fn cell_pixels(&mut self, scale: f64) -> (u32, u32) {
+        match &mut self.drawing {
+            Some(drawing) => {
+                drawing.font.set_scale(scale as f32);
+                let cell = drawing.font.cell();
+                (cell.width, cell.height)
+            }
+            None => UNDRAWN_CELL,
+        }
+    }
+
+    /// The size, in points, of a window's content of `cells`, its columns
+    /// and its rows, with its padding, at a display's `scale`.
+    fn size_of(&mut self, scale: f64, (columns, rows): (u32, u32)) -> Size {
+        let (x, y) = self.padding(scale);
+        let (width, height) = self.cell_pixels(scale);
+        Size {
+            width: f64::from(columns * width + 2 * x) / scale,
+            height: f64::from(rows * height + 2 * y) / scale,
+        }
+    }
+
+    /// The variant of the theme that `window` takes: a man page's, or the
+    /// app's appearance's.
+    fn variant(&self, platform: &dyn Platform, window: WindowId) -> &Variant {
+        if self
+            .windows
+            .get(&window)
+            .is_some_and(|state| state.page.is_some())
+        {
+            return &self.theme.man_page;
+        }
+        self.theme
+            .variant(platform.appearance() == Appearance::Dark)
     }
 
     /// The backdrop of a window whose terminal's default background is
@@ -2532,8 +2607,7 @@ impl App {
             blink_shown,
         };
         let config = self.config.cursor;
-        let dark = platform.appearance() == Appearance::Dark;
-        let selection_colors = self.theme.variant(dark).selection;
+        let selection_colors = self.variant(platform, window).selection;
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -2823,6 +2897,14 @@ impl Handler for App {
                     return;
                 };
                 let pressed = key.state != KeyState::Released;
+                // A man page's keys scroll it, and close nothing.
+                if pane.is_kept() && state.page.is_some() {
+                    if pressed && let Some(scroll) = page_scroll(&key) {
+                        pane.scroll(scroll);
+                        platform.request_frame(window);
+                    }
+                    return;
+                }
                 if pane.is_kept() {
                     if pressed && closes(&key) {
                         self.close(platform, window);
@@ -2954,14 +3036,18 @@ fn man_page(text: &str) -> Option<Vec<String>> {
     })
 }
 
-/// The program that shows the man page of `args`: `man`, the path, with
-/// them, or the login shell's `man`, with them in its command, which they
-/// need no quotes in, whatever the shell.
+/// The program that shows the man page of `args`: `man`, the path, or the
+/// login shell's `man`, with them in its command, which they need no
+/// quotes in, whatever the shell. Its pager is `ul`, which prints the whole
+/// page, its bold and its underlined text as the terminal shows them, for
+/// the window to keep.
 fn man_program(man: Option<&std::path::Path>, args: &[String]) -> Program {
+    let mut all = vec!["-P".to_owned(), "ul".to_owned()];
+    all.extend(args.iter().cloned());
     match man {
-        Some(man) => Program::command(man, args),
+        Some(man) => Program::command(man, all),
         None => Program::LoginCommand {
-            command: format!("exec man {}", args.join(" ")).into(),
+            command: format!("exec man {}", all.join(" ")).into(),
         },
     }
 }
@@ -3044,6 +3130,25 @@ fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseE
         x: pointer.x,
         y: pointer.y,
     }
+}
+
+/// How `key` scrolls a man page that its window keeps, as a pager's keys
+/// do: the arrows by a row, Space and the page keys by a page, Home and
+/// End to the page's ends.
+fn page_scroll(key: &lokyr_platform_core::KeyEvent) -> Option<Scroll> {
+    use lokyr_vt_core::input::Key;
+    if key.mods.super_key {
+        return None;
+    }
+    Some(match keys::terminal_key(key)?.key {
+        Key::Up => Scroll::Up(1),
+        Key::Down => Scroll::Down(1),
+        Key::PageUp => Scroll::PageUp,
+        Key::PageDown | Key::Char(' ') => Scroll::PageDown,
+        Key::Home => Scroll::Top,
+        Key::End => Scroll::Bottom,
+        _ => return None,
+    })
 }
 
 /// Whether `key` closes a window whose program ended: a key that types or
@@ -3415,7 +3520,6 @@ fn menu_context(snapshot: &vt::Snapshot) -> Context {
 
 #[cfg(test)]
 mod tests {
-    use lokyr_kernel::config::CloseOnExit;
     use lokyr_platform_core::fake::{Fake, FakeDefinition};
     use lokyr_ui_core::cursor::CursorConfig;
 
@@ -4914,11 +5018,16 @@ mod tests {
     #[test]
     fn the_man_page_of_the_selection_opens_in_a_window_of_its_own() {
         let (mut fake, mut app, window) = selecting("", "");
-        // A man that tells its arguments, and waits.
+        // A man that tells its arguments, gives an empty title, prints a
+        // page of 100 lines, and ends.
         let directory = std::env::temp_dir().join(format!("lokyr-man-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let man = directory.join("man");
-        std::fs::write(&man, "#!/bin/sh\necho \"man $*\"\nread line\n").unwrap();
+        std::fs::write(
+            &man,
+            "#!/bin/sh\necho \"man $*\"\nprintf '\\033]2;\\007'\ni=1\nwhile [ $i -le 100 ]; do echo \"line $i\"; i=$((i+1)); done\n",
+        )
+        .unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&man, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -4938,9 +5047,42 @@ mod tests {
         let [page] = opened[..] else {
             panic!("one window more: {opened:?}");
         };
+        // Of 80 columns and 48 rows, cells 4 points wide and 8 high, its
+        // title the page's, in the man page's colors.
+        let shown = fake.window(page).unwrap();
+        assert_eq!(shown.title, "man world");
+        assert_eq!(
+            shown.size.points,
+            Size {
+                width: 320.0,
+                height: 384.0
+            }
+        );
+        let grid = app.pane(page).grid();
+        assert_eq!((grid.columns, grid.rows), (80, 48));
+        let yellow = app.theme.man_page.colors.background;
+        assert_eq!(background(&mut fake, &mut app, page), yellow);
+        // Once `man` has ended, the window keeps the page, from its top.
         run_until(&mut fake, &mut app, |_, app| {
-            shows(app, page, "man -- world")
+            app.pane(page).is_kept() && row(app, page, 0) == "man -P ul -- world"
         });
+        assert!(fake.windows().any(|other| other == page));
+        assert_eq!(row(&app, page, 1), "line 1");
+        // An empty title of the program's leaves the page's.
+        assert_eq!(fake.window(page).unwrap().title, "man world");
+        // A pager's keys scroll it, and others do nothing.
+        fake.send(&mut app, page, typed(KeyCode::ArrowDown, "", false));
+        fake.send(&mut app, page, WindowEvent::Frame);
+        assert_eq!(row(&app, page, 0), "line 1");
+        fake.send(&mut app, page, typed(KeyCode::KeyQ, "q", false));
+        fake.send(&mut app, page, typed(KeyCode::End, "", false));
+        fake.send(&mut app, page, WindowEvent::Frame);
+        assert!(fake.windows().any(|other| other == page));
+        assert_eq!(app.pane(page).view_offset(), 0);
+        // The appearance leaves its colors.
+        fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+        assert_eq!(background(&mut fake, &mut app, page), yellow);
+        assert_ne!(background(&mut fake, &mut app, window), yellow);
         // Two words name no page: the item is dimmed, and names nothing.
         select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(11, 0)), none);
         right_click(&mut fake, &mut app, window, cell(2, 0), none);
@@ -4992,12 +5134,12 @@ mod tests {
         assert_eq!(
             man_program(None, &args),
             Program::LoginCommand {
-                command: "exec man -- 1 ls".into()
+                command: "exec man -P ul -- 1 ls".into()
             }
         );
         assert_eq!(
             man_program(Some(std::path::Path::new("/bin/echo")), &args),
-            Program::command("/bin/echo", ["--", "1", "ls"])
+            Program::command("/bin/echo", ["-P", "ul", "--", "1", "ls"])
         );
     }
 

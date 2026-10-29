@@ -160,5 +160,9 @@ harness = false
 name = "main_menu"
 harness = false
 
+[[test]]
+name = "cascade"
+harness = false
+
 [lints]
 workspace = true
