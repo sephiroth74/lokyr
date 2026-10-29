@@ -1068,6 +1068,10 @@ fn quoted(text: &OsStr) -> Vec<u8> {
 /// terminal's description, `COLUMNS` and `LINES` to another size.
 const LEFT_OUT: [&str; 3] = ["TERMINFO", "COLUMNS", "LINES"];
 
+/// The `PATH` that a program takes where the environment has none, as
+/// `launchd` gives an app, before the app's command: the system's.
+const SYSTEM_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+
 /// The environment of the program: `inherited`, without [`LEFT_OUT`], with
 /// the terminal's variables, those of `options`, and a UTF-8 locale when no
 /// locale is set.
@@ -1097,6 +1101,24 @@ fn environment(
         Some(dir) => set("LOKYR_RESOURCES_DIR", dir.clone().into()),
         None => {
             env.remove(OsStr::new("LOKYR_RESOURCES_DIR"));
+        }
+    }
+    // The app's command, after the user's: a directory of a name with `:`,
+    // which no `PATH` can hold, is left out.
+    if let Some(dir) = &options.binaries_dir {
+        let path = env
+            .get(OsStr::new("PATH"))
+            .filter(|path| !path.is_empty())
+            .cloned()
+            .unwrap_or_else(|| SYSTEM_PATH.into());
+        let entries: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        let path = if entries.contains(dir) {
+            Some(path)
+        } else {
+            std::env::join_paths(entries.iter().chain(std::iter::once(dir))).ok()
+        };
+        if let Some(path) = path {
+            env.insert("PATH".into(), path);
         }
     }
     env.extend(options.env.iter().cloned());
@@ -1648,6 +1670,40 @@ mod tests {
             assert_eq!(get(&env, name), None, "{name}");
         }
         assert_eq!(get(&env, "LANG"), Some("it_IT.UTF-8"), "a locale set stays");
+    }
+
+    #[test]
+    fn the_app_s_command_comes_last_on_the_path() {
+        let mut options = Options::new(Program::LoginShell, "xterm-256color");
+        let path = |options: &Options, inherited: &[(&str, &str)]| {
+            get(&environment(options, vars(inherited)), "PATH").map(str::to_owned)
+        };
+        // Without the app's directory, the path stays.
+        assert_eq!(
+            path(&options, &[("PATH", "/usr/bin:/bin")]).as_deref(),
+            Some("/usr/bin:/bin")
+        );
+        options.binaries_dir = Some("/Applications/Lokyr.app/Contents/MacOS".into());
+        assert_eq!(
+            path(&options, &[("PATH", "/opt/homebrew/bin:/usr/bin")]).as_deref(),
+            Some("/opt/homebrew/bin:/usr/bin:/Applications/Lokyr.app/Contents/MacOS")
+        );
+        // Once, as a terminal started from one of its panes has it already.
+        let twice = "/Applications/Lokyr.app/Contents/MacOS:/usr/bin";
+        assert_eq!(path(&options, &[("PATH", twice)]).as_deref(), Some(twice));
+        // Without a path, or an empty one, after the system's commands.
+        for inherited in [&[][..], &[("PATH", "")]] {
+            assert_eq!(
+                path(&options, inherited).as_deref(),
+                Some("/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Lokyr.app/Contents/MacOS")
+            );
+        }
+        // A directory that no path can hold.
+        options.binaries_dir = Some("/Volumes/a:b/Lokyr.app/Contents/MacOS".into());
+        assert_eq!(
+            path(&options, &[("PATH", "/usr/bin")]).as_deref(),
+            Some("/usr/bin")
+        );
     }
 
     #[test]

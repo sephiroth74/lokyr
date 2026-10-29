@@ -25,12 +25,12 @@ use anyhow::{Context, Result, bail};
 /// The bundle's identifier, which follows the terminal's name.
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
 
-/// The bundle's name, and the app's in the Finder and the Dock, and its
-/// binary's in the bundle, which names its process, as Activity Monitor
-/// shows it.
+/// The bundle's name, and the app's in the Finder, the Dock and the menus.
 const NAME: &str = "Lokyr";
 
-/// The binary, as the app's crate names it.
+/// The binary, as the app's crate names it, and the bundle's, which the
+/// panes' programs run as their command line names it, on a volume that
+/// tells the case of names apart too.
 const EXECUTABLE: &str = "lokyr";
 
 /// The oldest macOS that the app runs on.
@@ -117,7 +117,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         fs::create_dir_all(directory).with_context(|| format!("making {}", directory.display()))?;
     }
     let binary = root.join("target/release").join(EXECUTABLE);
-    fs::copy(&binary, macos.join(NAME)).with_context(|| format!("copying {}", binary.display()))?;
+    fs::copy(&binary, macos.join(EXECUTABLE))
+        .with_context(|| format!("copying {}", binary.display()))?;
     crate::terminfo::compile(
         &root.join(crate::terminfo::SOURCE),
         &resources.join("terminfo"),
@@ -242,7 +243,7 @@ fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>)
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
-        ("CFBundleExecutable", NAME.to_owned()),
+        ("CFBundleExecutable", EXECUTABLE.to_owned()),
         ("CFBundleIdentifier", IDENTIFIER.to_owned()),
         ("CFBundleInfoDictionaryVersion", "6.0".to_owned()),
         ("CFBundleName", NAME.to_owned()),
@@ -444,7 +445,7 @@ mod tests {
         let plist = info_plist("1.2.3", &catalogs()).unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
-            ("CFBundleExecutable", "Lokyr"),
+            ("CFBundleExecutable", "lokyr"),
             ("CFBundleShortVersionString", "1.2.3"),
             ("LSMinimumSystemVersion", "26.0"),
             ("CFBundleIconFile", "AppIcon"),

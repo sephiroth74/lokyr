@@ -29,7 +29,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 - **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's styles too.
   - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A family that is not installed, or a language or an icon that Lokyr lacks, only warns, as Lokyr takes the file with its default in their place.
   - Without a config file, the defaults apply, and the check passes; a file that you name must exist.
-  - In the app's bundle, the command is `Lokyr.app/Contents/MacOS/Lokyr`, as `/Applications/Lokyr.app/Contents/MacOS/Lokyr +validate-config`.
+  - In the app's bundle, the command is `Lokyr.app/Contents/MacOS/lokyr`. Lokyr's panes have its directory at the end of their `PATH`, so that `lokyr +validate-config` runs there as it is, after a `lokyr` of your own, as Homebrew's; elsewhere, name it whole, as `/Applications/Lokyr.app/Contents/MacOS/lokyr +validate-config`.
 
 ### A complete example
 

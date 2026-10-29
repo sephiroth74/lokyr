@@ -654,6 +654,7 @@ impl App {
                 Environment {
                     terminfo: environment::terminfo(resources.as_deref()),
                     resources,
+                    binaries: environment::binaries(),
                     ..Environment::default()
                 }
             },

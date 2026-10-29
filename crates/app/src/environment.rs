@@ -34,6 +34,19 @@ fn resources_of(executable: &Path) -> Option<PathBuf> {
     resources.is_dir().then_some(resources)
 }
 
+/// The directory of the app's binary, the bundle's `Contents/MacOS`, by its
+/// real path, when the binary is a bundle's: the programs of its panes find
+/// its command line there.
+pub(crate) fn binaries() -> Option<PathBuf> {
+    binaries_of(&std::env::current_exe().ok()?)
+}
+
+/// The directory of `executable`, by its real path, when it is a bundle's.
+fn binaries_of(executable: &Path) -> Option<PathBuf> {
+    let real = fs::canonicalize(executable).ok()?;
+    in_bundle(&real).then(|| real.parent().map(Path::to_path_buf))?
+}
+
 /// The bundle's executable that the app's binary is a link to, when the
 /// path that started the app is not in a bundle itself, as a package
 /// manager's link in its `bin`: macOS takes the main bundle, and the
@@ -237,13 +250,35 @@ mod tests {
     }
 
     #[test]
+    fn the_bundle_s_binaries_are_its_contents_macos() {
+        let root = std::env::temp_dir().join(format!("lokyr-binaries-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let contents = root.join("Lokyr.app").join("Contents");
+        fs::create_dir_all(contents.join("MacOS")).unwrap();
+        fs::write(contents.join("Info.plist"), "").unwrap();
+        let binary = contents.join("MacOS").join("lokyr");
+        fs::write(&binary, "").unwrap();
+        let macos = fs::canonicalize(contents.join("MacOS")).unwrap();
+        assert_eq!(binaries_of(&binary), Some(macos.clone()));
+        // Through a link, as a package manager's `bin` has, the bundle's.
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        std::os::unix::fs::symlink(&binary, bin.join("lokyr")).unwrap();
+        assert_eq!(binaries_of(&bin.join("lokyr")), Some(macos));
+        // A binary outside a bundle, as `cargo run` starts it, has none.
+        fs::write(bin.join("other"), "").unwrap();
+        assert_eq!(binaries_of(&bin.join("other")), None);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_link_to_the_bundle_s_binary_gives_the_binary_s_own_path() {
         let root = std::env::temp_dir().join(format!("lokyr-linked-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let contents = root.join("Lokyr.app").join("Contents");
         fs::create_dir_all(contents.join("MacOS")).unwrap();
         fs::write(contents.join("Info.plist"), "").unwrap();
-        let binary = contents.join("MacOS").join("Lokyr");
+        let binary = contents.join("MacOS").join("lokyr");
         fs::write(&binary, "").unwrap();
         // Started from the bundle, it stays.
         assert_eq!(linked_bundle_executable(&binary), None);
@@ -258,7 +293,7 @@ mod tests {
         // bundle's already.
         let apps = root.join("apps");
         std::os::unix::fs::symlink(&root, &apps).unwrap();
-        let through = apps.join("Lokyr.app/Contents/MacOS/Lokyr");
+        let through = apps.join("Lokyr.app/Contents/MacOS/lokyr");
         assert_eq!(linked_bundle_executable(&through), None);
         // A binary outside a bundle, and a link to one, have none.
         let loose = bin.join("other");
