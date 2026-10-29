@@ -8,7 +8,7 @@
 - **What you can't see costs nothing**:
   - hidden panes are not drawn;
   - unused plugins are not loaded;
-  - occluded windows release their drawables.
+  - occluded windows draw nothing, and keep one drawable alone, the one that shows their last frame.
 - **Memory is accounted per category**: heap, GPU and mappings are tracked separately, because a single total hides problems.
 
 ## Budgets
@@ -22,7 +22,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Idle | 0 package idle wakeups/s and ≤ 0.5 interrupt wakeups/s, once the cursor stops blinking (15 s after the last key or output, by default); while it blinks, ≤ 2/s at the default interval, plus the frames of the fades with smooth blinking, measured in F3 | `lokyr-bench idle`: package idle wakeups, which `top -stats idlew` shows, and interrupt wakeups; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
 | Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `lokyr-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
 | Scrollback | ≤ configured limit + 5%; ≈ 8 B per cell | memory tests in CI |
-| GPU memory (accounted separately) | 2 BGRA8 `framebufferOnly` drawables per window (≈ 31 MB each at 3456×2234), none per pane, released when the window is hidden; the glyph atlas, shared by every window, at most 32 MB: a grayscale texture up to 4096² and a color one up to 2048² | The GPU categories of `lokyr-bench memory`; Instruments (Metal System Trace); DRM `fdinfo` on Linux |
+| GPU memory (accounted separately) | 2 BGRA8 `framebufferOnly` drawables per window (≈ 31 MB each at 3456×2234), none per pane, of which a hidden window keeps one, the one that shows its last frame; the glyph atlas, shared by every window, at most 32 MB: a grayscale texture up to 4096² and a color one up to 2048² | The GPU categories of `lokyr-bench memory`; Instruments (Metal System Trace); DRM `fdinfo` on Linux |
 | Throughput | Within 10% of the faster of Ghostty and Alacritty, but in vtebench's bottom region, with its lines of one character ([ADR 0015](adr/0015-vt-core-throughput-exception.md)) | vtebench; `cat` of a 1 GB file, headless and on screen |
 | CPU per frame | ≤ 2 ms p99 (4K, 4 panes) | `tracing` spans + signposts |
 | Luau plugin activation | ≤ 5 ms, compilation included | `tracing` spans |
@@ -92,7 +92,7 @@ Results history is published (e.g. on bencher.dev, or as JSON in a branch of the
 | Unicode properties in one table lookup | Throughput |
 | Grid lock taken per slice and released fairly | Latency under load |
 | Copying only the visible rows that changed | CPU per frame |
-| One GPU surface per window; 2 drawables; release when occluded | GPU memory |
+| One GPU surface per window; 2 drawables; one kept when occluded | GPU memory |
 | Display link running only when there is work; immediate draw after idle | Idle, latency |
 | Per-run shaping cache, shared glyph atlas | CPU per frame, memory |
 | Luau plugins loaded only when needed; no VM before the first one | Startup, memory |

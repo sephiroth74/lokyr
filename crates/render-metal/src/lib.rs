@@ -117,11 +117,14 @@ impl Surface {
             .setDrawableSize(CGSize::new(f64::from(width), f64::from(height)));
     }
 
-    /// Lets the window's drawables go, as for a window that does not show:
-    /// the layer takes drawables of a pixel, which it makes as the next
-    /// frame asks, in place of those of the window's size, until the next
-    /// [`Surface::resize`]. A size of nothing would change nothing, as the
-    /// layer ignores it.
+    /// Lets the window's drawables go, as for a window that does not show,
+    /// but the one that shows its last frame: the layer takes drawables of
+    /// a pixel, which it makes as the next frame asks, in place of those of
+    /// the window's size, until the next [`Surface::resize`]. In a window,
+    /// it lets go at once of those that do not show, and keeps the one that
+    /// does until a frame takes its place: a new layer alone would let that
+    /// one go too, and the window would show again empty until it drew. A
+    /// size of nothing would change nothing, as the layer ignores it.
     pub fn release(&self) {
         self.layer.setDrawableSize(CGSize::new(1.0, 1.0));
     }
