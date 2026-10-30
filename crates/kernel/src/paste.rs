@@ -92,11 +92,12 @@ pub fn preview(text: &str, most: usize, width: usize) -> String {
 
 /// The text that a drop of files at `paths` pastes: each path as a shell
 /// takes it, one argument of its own, between single quotes unless it is
-/// only of letters, digits and `_-./+,:@%=^`, a single quote within as
+/// only of letters, digits and `_-./+,:@%=`, a single quote within as
 /// `'\''`; the paths apart by spaces, and a space after the last, so that
-/// what is typed next is an argument of its own.
+/// what is typed next is an argument of its own. `^`, `#` and `~`, which
+/// zsh's `EXTENDED_GLOB` takes as patterns anywhere in a word, are quoted.
 pub fn dropped_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
-    let plain = |character: char| character.is_alphanumeric() || "_-./+,:@%=^".contains(character);
+    let plain = |character: char| character.is_alphanumeric() || "_-./+,:@%=".contains(character);
     let mut text = String::new();
     for path in paths {
         if !path.is_empty() && path.chars().all(plain) {
@@ -136,6 +137,40 @@ mod tests {
             "/tmp/città '/tmp/a\nb' "
         );
         assert_eq!(dropped_paths([]), "");
+        // The patterns of zsh's `EXTENDED_GLOB`, anywhere in a word.
+        assert_eq!(
+            dropped_paths(["/tmp/x^y", "/tmp/a#b", "/tmp/a~b"]),
+            "'/tmp/x^y' '/tmp/a#b' '/tmp/a~b' "
+        );
+    }
+
+    #[test]
+    fn zsh_takes_each_dropped_path_back_as_it_was() {
+        let zsh = std::path::Path::new("/bin/zsh");
+        if !zsh.exists() {
+            return;
+        }
+        let names = [
+            "/tmp/x^y",
+            "/tmp/a#b",
+            "/tmp/a~b",
+            "/tmp/=a,b@c%d+e:f",
+            "/tmp/a file's $HOME *.txt",
+            "/tmp/città",
+        ];
+        for name in names {
+            let output = std::process::Command::new(zsh)
+                .args(["-f", "-o", "extendedglob", "-o", "nullglob", "-c"])
+                .arg(format!("print -r -- {}", dropped_paths([name])))
+                .output()
+                .unwrap();
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout).trim_end_matches('\n'),
+                name,
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
     #[test]
