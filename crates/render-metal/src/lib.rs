@@ -124,6 +124,13 @@ impl Surface {
             .setDrawableSize(CGSize::new(f64::from(width), f64::from(height)));
     }
 
+    /// Has the frames to come show with Core Animation's transaction, as
+    /// the window's live resize changes its frame, so that the content
+    /// follows its edge, rather than as the GPU finishes them.
+    pub fn set_presents_with_transaction(&self, with: bool) {
+        self.layer.setPresentsWithTransaction(with);
+    }
+
     /// Lets the window's drawables go, as for a window that does not show,
     /// but the one that shows its last frame: the layer takes drawables of
     /// a pixel, which it makes as the next frame asks, in place of those of

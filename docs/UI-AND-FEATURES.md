@@ -49,6 +49,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 - **Moving the window**: dragging the bar calls `performWindowDragWithEvent:`.
 - **Double-click on the bar**: follows the system preference (`AppleActionOnDoubleClick`).
 - **Fullscreen**: the bar appears together with the system titlebar.
+- **Resizing**: the content follows the window's edge through a live resize, drawn with Core Animation's transaction; the grid's size, as `100 × 33`, shows at the window's centre while a resize changes it, and goes a second after the last change, or after the drag ends.
 - **Dragging tabs between windows**: our own implementation, using a drag session and a ghost window.
 
 **Linux** (F7)

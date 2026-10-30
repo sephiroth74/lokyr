@@ -10,6 +10,9 @@ use crate::{
 pub enum WindowEvent {
     /// The content changed size: in a live resize, once a step.
     Resized(WindowSize),
+    /// The user started resizing the window, dragging its edge, or ended:
+    /// the steps of a live resize come between.
+    LiveResize(bool),
     /// The window moved to a display of another scale, which changes the
     /// size of its content in pixels.
     ScaleChanged(WindowSize),

@@ -17,7 +17,7 @@ use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::{
     MTLBlendFactor, MTLBlitCommandEncoder, MTLBuffer, MTLClearColor, MTLCommandBuffer,
-    MTLCommandBufferStatus, MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLLibrary,
+    MTLCommandBufferStatus, MTLCommandEncoder, MTLCommandQueue, MTLDevice, MTLDrawable, MTLLibrary,
     MTLLoadAction, MTLOrigin, MTLPixelFormat, MTLPrimitiveType, MTLRegion, MTLRenderCommandEncoder,
     MTLRenderPassDescriptor, MTLRenderPipelineDescriptor, MTLRenderPipelineState,
     MTLResourceOptions, MTLScissorRect, MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture,
@@ -354,8 +354,16 @@ impl MetalRenderer {
             return Ok(false);
         };
         let (commands, buffers) = self.encode(&drawable.texture(), list)?;
-        commands.presentDrawable(ProtocolObject::from_ref(&*drawable));
-        commands.commit();
+        // A layer that presents with the transaction shows the drawable as
+        // Core Animation commits it, once the GPU has the commands.
+        if target.layer.presentsWithTransaction() {
+            commands.commit();
+            commands.waitUntilScheduled();
+            drawable.present();
+        } else {
+            commands.presentDrawable(ProtocolObject::from_ref(&*drawable));
+            commands.commit();
+        }
         self.drawing.push_back(Drawing {
             frame: list.frame,
             commands,
@@ -1261,6 +1269,29 @@ mod tests {
         ]));
         assert!(renderer.draw(&surface, &large).unwrap());
         assert!(renderer.made.get() > made);
+    }
+
+    #[test]
+    fn a_layer_that_presents_with_the_transaction_has_its_frame_scheduled() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(64, 32, 1.0);
+        surface.set_presents_with_transaction(true);
+        assert!(renderer.draw(&surface, &list()).unwrap());
+        // The GPU has the frame's commands as the draw returns, so that the
+        // drawable shows as the transaction commits.
+        let status = renderer.drawing.back().unwrap().commands.status();
+        assert!(
+            matches!(
+                status,
+                MTLCommandBufferStatus::Scheduled | MTLCommandBufferStatus::Completed
+            ),
+            "{status:?}"
+        );
+        surface.set_presents_with_transaction(false);
+        assert!(renderer.draw(&surface, &list()).unwrap());
     }
 
     #[test]

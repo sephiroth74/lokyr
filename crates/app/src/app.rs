@@ -57,6 +57,7 @@ use crate::keys;
 use crate::mouse::{self, Mouse, Pointer, Spot};
 use crate::notice;
 use crate::performance::{self, Performance};
+use crate::size_label;
 
 use crate::watch::Watcher;
 
@@ -429,6 +430,13 @@ struct Window {
     /// That directory, whole, as the title last looked, which stays once
     /// the program ended.
     directory: Option<PathBuf>,
+    /// Whether the user resizes it, dragging its edge; when it drew last;
+    /// the grid's size that it drew last, its columns and rows; and until
+    /// when the label of its grid's size shows, after the grid changed.
+    live_resize: bool,
+    drawn_at: Option<Instant>,
+    grid_drawn: Option<(u16, u16)>,
+    size_label: Option<Instant>,
     /// Where its last frame drew the notice's bar and its close, in pixels,
     /// and the pointer's areas that the platform has of them, in points.
     notice: Option<notice::Rects>,
@@ -552,6 +560,10 @@ impl Window {
             place: (String::new(), String::new()),
             directory: None,
             notice: None,
+            live_resize: false,
+            drawn_at: None,
+            grid_drawn: None,
+            size_label: None,
             pointer_areas: Vec::new(),
             title_shown: None,
             output_at: None,
@@ -617,6 +629,9 @@ pub struct App {
     windows: BTreeMap<WindowId, Window>,
     /// The timer of the next change of a blinking cursor, and its time.
     blink_timer: Option<(TimerId, Instant)>,
+    /// The timer of the end of the first label of a grid's size that ends,
+    /// and its time.
+    label_timer: Option<(TimerId, Instant)>,
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
@@ -741,6 +756,7 @@ impl App {
             workspace: Workspace::new(),
             windows: BTreeMap::new(),
             blink_timer: None,
+            label_timer: None,
             exit_timer: None,
             resize_timer: None,
             flash_timer: None,
@@ -3327,6 +3343,18 @@ impl App {
         self.blink_timer = Some((platform.start_timer(at), at));
     }
 
+    /// Keeps the timer of the labels of the grids' sizes at `at`, unless one
+    /// is due sooner.
+    fn label_at(&mut self, platform: &mut dyn Platform, at: Instant) {
+        if self.label_timer.is_some_and(|(_, current)| current <= at) {
+            return;
+        }
+        if let Some((timer, _)) = self.label_timer.take() {
+            platform.cancel_timer(timer);
+        }
+        self.label_timer = Some((platform.start_timer(at), at));
+    }
+
     /// Keeps the timer of the programs' sizes at `at`, unless it comes
     /// sooner.
     fn pace_at(&mut self, platform: &mut dyn Platform, at: Instant) {
@@ -3356,6 +3384,14 @@ impl App {
             return;
         };
         let due = pane.resize(grid, now);
+        // A resize that changes the grid shows its size, a moment.
+        let resized = state
+            .grid_drawn
+            .is_some_and(|drawn| drawn != (grid.columns, grid.rows));
+        state.grid_drawn = Some((grid.columns, grid.rows));
+        if resized {
+            state.size_label = Some(now + size_label::HOLD);
+        }
         // Output starts the cursor blinking again, on, as a key does.
         let output = pane.update();
         if output {
@@ -3428,6 +3464,9 @@ impl App {
             state.own_appearance = Some(own);
         }
         self.refresh_title(platform, window, output);
+        if resized {
+            self.label_at(platform, now + size_label::HOLD);
+        }
         if output && self.windows.get(&window).is_some_and(|state| state.focused) {
             self.settle_secure_input(platform);
         }
@@ -3564,6 +3603,17 @@ impl App {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
         }
+        // The grid's size, at the content's centre, while the window
+        // resizes.
+        let labelled = state
+            .size_label
+            .is_some_and(|until| state.live_resize || Instant::now() < until);
+        if labelled {
+            let text = size_label::text(grid.columns, grid.rows);
+            let area = (size.pixels.width, size.pixels.height, size.bar_pixels());
+            let glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
+            items.extend(size_label::label(&text, &cell, area, glyph));
+        }
         // A flash of the bell, the default text's color over the window.
         if state
             .flash_until
@@ -3610,7 +3660,10 @@ impl App {
             .update_textures(&updates)
             .and_then(|()| drawing.renderer.draw(surface, &list));
         let presented = match drawn {
-            Ok(true) => Some(drawing.renderer.drawable_wait()),
+            Ok(true) => {
+                state.drawn_at = Some(Instant::now());
+                Some(drawing.renderer.drawable_wait())
+            }
             Ok(false) => None,
             Err(error) => {
                 eprintln!("lokyr: {error}");
@@ -3780,6 +3833,32 @@ impl Handler for App {
                 self.exit_timer = None;
                 self.exits(platform);
             }
+            // The labels of the grids' sizes that end go.
+            AppEvent::Timer(timer) if self.label_timer.is_some_and(|(label, _)| label == timer) => {
+                // Its time, which has come, ends the labels of that time.
+                let now = self
+                    .label_timer
+                    .take()
+                    .map_or_else(Instant::now, |(_, at)| at.max(Instant::now()));
+                let mut next = None;
+                for (&window, state) in &mut self.windows {
+                    match state.size_label {
+                        // The end of its live resize starts its time.
+                        Some(_) if state.live_resize => {}
+                        Some(until) if until <= now => {
+                            state.size_label = None;
+                            platform.request_frame(window);
+                        }
+                        Some(until) => {
+                            next = Some(next.map_or(until, |next: Instant| next.min(until)));
+                        }
+                        None => {}
+                    }
+                }
+                if let Some(next) = next {
+                    self.label_at(platform, next);
+                }
+            }
             // A blinking cursor changes.
             AppEvent::Timer(timer) if self.blink_timer.is_some_and(|(blink, _)| blink == timer) => {
                 self.blink_timer = None;
@@ -3875,8 +3954,40 @@ impl Handler for App {
 
     fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
         match event {
+            // A step of a live resize draws at once, so that the content
+            // follows the edge, but once a refresh: a second draw within
+            // one would wait a refresh for a drawable, which the display's
+            // next frame draws instead.
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
-                self.draw(platform, window, size);
+                let refresh = platform.refresh_interval(window).unwrap_or_default();
+                let drew_within = self.windows.get(&window).is_some_and(|state| {
+                    state.live_resize
+                        && state
+                            .drawn_at
+                            .is_some_and(|drawn| drawn.elapsed() < refresh)
+                });
+                if drew_within {
+                    platform.request_frame(window);
+                } else {
+                    self.draw(platform, window, size);
+                }
+            }
+            // A live resize presents its frames with Core Animation's
+            // transaction, which moves the window's edge; its label of the
+            // grid's size stays a moment after it ends.
+            WindowEvent::LiveResize(resizing) => {
+                if let Some(state) = self.windows.get_mut(&window) {
+                    state.live_resize = resizing;
+                    if let Some(surface) = &state.surface {
+                        surface.set_presents_with_transaction(resizing);
+                    }
+                    if !resizing && state.size_label.is_some() {
+                        let until = Instant::now() + size_label::HOLD;
+                        state.size_label = Some(until);
+                        self.label_at(platform, until);
+                    }
+                    platform.request_frame(window);
+                }
             }
             WindowEvent::Frame => {
                 if let Some(size) = platform.window_size(window) {
@@ -8298,7 +8409,9 @@ mod tests {
             let Some((timer, at)) = app.resize_timer else {
                 break;
             };
-            assert_eq!(fake.timers().collect::<Vec<_>>(), [(timer, at)]);
+            // The label of the grid's size has its own, a second later.
+            let timers: Vec<_> = fake.timers().collect();
+            assert!(timers.contains(&(timer, at)), "{timers:?}");
             assert_eq!(fake.fire_timers(&mut app, at), 1);
         }
         assert_eq!(app.resize_timer, None);
@@ -8314,6 +8427,62 @@ mod tests {
             .collect();
         assert!(sizes.len() <= told.len() + 1, "{sizes:?}");
         assert_eq!(sizes.last().map(String::as_str), Some("37 149"));
+    }
+
+    #[test]
+    fn a_resize_shows_the_grid_s_size_until_a_moment_after_it_ends() {
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        let label = |app: &App| app.windows[&window].size_label;
+        // The first frame shows none.
+        assert_eq!(label(&app), None);
+        // A live resize that changes the grid shows it, while it lasts.
+        fake.send(&mut app, window, WindowEvent::LiveResize(true));
+        assert!(app.windows[&window].live_resize);
+        fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+        let until = label(&app).expect("the label");
+        let (timer, at) = app.label_timer.expect("its timer");
+        assert_eq!(at, until);
+        // Its timer, within the live resize, leaves it.
+        fake.send_app(&mut app, AppEvent::Timer(timer));
+        assert_eq!(label(&app), Some(until));
+        // Its end keeps it a moment more, then takes it away, with a frame.
+        let ended = Instant::now();
+        fake.send(&mut app, window, WindowEvent::LiveResize(false));
+        let until = label(&app).expect("the label");
+        assert!(until >= ended + size_label::HOLD);
+        let (_, at) = app.label_timer.expect("its timer");
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(!fake.window(window).unwrap().frame_requested);
+        // The cursor's blinking has a timer of its own before it.
+        assert!(fake.fire_timers(&mut app, at) >= 1);
+        assert_eq!(label(&app), None);
+        assert_eq!(app.label_timer, None);
+        assert!(fake.window(window).unwrap().frame_requested);
+        // A resize of the same grid shows none.
+        fake.send(&mut app, window, WindowEvent::Resized(points(401.0, 301.0)));
+        assert_eq!(label(&app), None);
+    }
+
+    #[test]
+    fn a_live_resize_draws_once_a_refresh() {
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::LiveResize(true));
+        // A frame drawn within this refresh: the step waits for the next.
+        app.windows.get_mut(&window).unwrap().drawn_at = Some(Instant::now());
+        let before = app.pane(window).grid();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert!(!fake.window(window).unwrap().frame_requested);
+        fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+        assert_eq!(app.pane(window).grid(), before);
+        assert!(fake.window(window).unwrap().frame_requested);
+        // A refresh later, it draws at once.
+        let earlier = Instant::now() - Duration::from_millis(50);
+        app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
+        fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+        assert_ne!(app.pane(window).grid(), before);
     }
 
     #[test]

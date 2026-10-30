@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, Layer, LayerPlace,
@@ -579,6 +579,13 @@ impl Platform for Fake {
 
     fn window_size(&self, window: WindowId) -> Option<WindowSize> {
         self.windows.get(&window).map(|state| state.size)
+    }
+
+    fn refresh_interval(&self, window: WindowId) -> Option<Duration> {
+        // A display of 60 Hz.
+        self.windows
+            .contains_key(&window)
+            .then(|| Duration::from_secs(1) / 60)
     }
 
     fn window_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {

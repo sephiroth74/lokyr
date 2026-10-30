@@ -254,6 +254,10 @@ pub trait Platform {
     /// The size of a window's content.
     fn window_size(&self, window: WindowId) -> Option<WindowSize>;
 
+    /// The shortest time between two refreshes of the display that a
+    /// window is on: a sixtieth of a second at 60 Hz.
+    fn refresh_interval(&self, window: WindowId) -> Option<Duration>;
+
     /// What a renderer draws the window's content into: on the Mac, its
     /// content view, whose layer is a `CAMetalLayer`. It is valid while the
     /// platform is borrowed, as no window can close meanwhile; a renderer

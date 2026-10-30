@@ -166,6 +166,17 @@ impl Window {
             .place(place, self.view.bounds().size.height);
     }
 
+    /// The shortest time between two refreshes of the display that the
+    /// window is on, or of the main one: its highest rate's.
+    pub(crate) fn refresh_interval(&self) -> std::time::Duration {
+        let rate = self
+            .ns_window
+            .screen()
+            .or_else(|| NSScreen::mainScreen(self.ns_window.mtm()))
+            .map_or(60, |screen| screen.maximumFramesPerSecond());
+        std::time::Duration::from_secs(1) / u32::try_from(rate.max(1)).unwrap_or(60)
+    }
+
     /// Places the window down and to the right of a window of the frame
     /// `after`, as the system cascades windows, within the screen; or in the
     /// screen's centre.
@@ -1032,6 +1043,16 @@ define_class!(
                 self.post(WindowEvent::Resized(size_of(&window)));
                 invalidate_text_area_of(&window);
             }
+        }
+
+        #[unsafe(method(windowWillStartLiveResize:))]
+        fn window_will_start_live_resize(&self, _notification: &NSNotification) {
+            self.post(WindowEvent::LiveResize(true));
+        }
+
+        #[unsafe(method(windowDidEndLiveResize:))]
+        fn window_did_end_live_resize(&self, _notification: &NSNotification) {
+            self.post(WindowEvent::LiveResize(false));
         }
 
         #[unsafe(method(windowDidMove:))]

@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::rc::{Rc, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, Layer, LayerPlace, MainMenu,
@@ -383,6 +383,10 @@ impl Platform for Backend {
 
     fn window_size(&self, window: WindowId) -> Option<WindowSize> {
         self.windows.get(&window).map(Window::size)
+    }
+
+    fn refresh_interval(&self, window: WindowId) -> Option<Duration> {
+        self.windows.get(&window).map(Window::refresh_interval)
     }
 
     fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>> {

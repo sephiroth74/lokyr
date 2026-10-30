@@ -295,7 +295,9 @@ mod tests {
         };
         let workspace = NSWorkspace::sharedWorkspace();
         open_with(&workspace, (&path, &file), &gone, waker);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        // LaunchServices answers within seconds, and later under the load
+        // of the other tests.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         let mut failed = Vec::new();
         while failed.is_empty() && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(20));
