@@ -660,8 +660,13 @@ impl Platform for Fake {
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
         self.global_keys = keys.to_vec();
+        // Another app's, or a function key past F20, which the Mac's
+        // keyboards lack, as the backend refuses it.
         (0..keys.len())
-            .filter(|&index| self.taken_keys.contains(&keys[index]))
+            .filter(|&index| {
+                self.taken_keys.contains(&keys[index])
+                    || matches!(keys[index].code, crate::KeyCode::F(number) if number > 20)
+            })
             .collect()
     }
 

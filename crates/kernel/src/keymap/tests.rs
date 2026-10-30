@@ -456,6 +456,15 @@ fn a_global_key_binds_one_key_with_a_modifier_outside_the_windows_keymap() {
     ] {
         assert!(parse_global(wrong).is_err(), "{wrong}");
     }
+    // A character by its key of the US layout, without Shift.
+    assert_eq!(parse_global("ctrl+shift+`"), Ok(combo("ctrl+shift+`")));
+    assert_eq!(parse_global("cmd+shift+P"), Ok(combo("cmd+shift+p")));
+    let shifted = parse_global("ctrl+~").unwrap_err();
+    assert!(shifted.contains("write `ctrl+shift+``"), "{shifted}");
+    let plus = parse_global("ctrl++").unwrap_err();
+    assert!(plus.contains("write `ctrl+shift+=`"), "{plus}");
+    let other = parse_global("ctrl+è").unwrap_err();
+    assert!(other.contains("no key of the US layout"), "{other}");
     let config = KeysConfig {
         bindings: [
             (

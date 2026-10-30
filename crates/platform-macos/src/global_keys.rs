@@ -92,6 +92,10 @@ const OPTION: u32 = 1 << 11;
 const CONTROL: u32 = 1 << 12;
 /// Carbon's answer for an event that its handler leaves to the next one.
 const NOT_HANDLED: OsStatus = -9874;
+/// The option of a hot key that its app holds alone: a key that another
+/// app holds so is refused, where a registration without it succeeds
+/// beside any other.
+const EXCLUSIVE: u32 = 1;
 
 /// The keys that the app takes, while it takes some.
 pub(crate) struct GlobalKeys {
@@ -173,7 +177,7 @@ impl GlobalKeys {
                     modifiers,
                     id,
                     GetApplicationEventTarget(),
-                    0,
+                    EXCLUSIVE,
                     &raw mut registered,
                 )
             };

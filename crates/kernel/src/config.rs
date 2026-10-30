@@ -2130,6 +2130,11 @@ mod tests {
                 "is not a key",
             ),
             (
+                "[keys]\n\"global:ctrl+~\" = \"window.toggle-quick-terminal\"\n",
+                2,
+                "takes Shift on the US layout",
+            ),
+            (
                 "[keys]\n\"global:ctrl+`\" = false\n",
                 2,
                 "no default to take away",

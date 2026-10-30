@@ -2102,7 +2102,7 @@ impl App {
             .map(|combo| format!("`{}{combo}`", keymap::GLOBAL))
             .collect();
         let text = format!(
-            "{} cannot be taken from every app: another app takes it, or the US layout has no key of its character, by which a global key goes",
+            "{} cannot be taken from every app: another app holds it, or the Mac's keyboards have no such key",
             named.join(", ")
         );
         let diagnostic = Diagnostic::new(Code::Unavailable, text, About::GlobalKeys);
@@ -10318,7 +10318,7 @@ print -z 'echo typed'
     #[test]
     fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
         let config = Config::parse(
-            "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n\"global:ctrl+è\" = \"window.new\"\n",
+            "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n\"global:ctrl+f24\" = \"window.new\"\n",
             std::path::Path::new("config.toml"),
         )
         .unwrap();
@@ -10333,11 +10333,16 @@ print -z 'echo typed'
             alt: false,
             shift: false,
         };
-        assert_eq!(fake.global_keys(), [key]);
-        // The one of a character that the US layout lacks is told.
+        let f24 = GlobalKey {
+            code: KeyCode::F(24),
+            ..key
+        };
+        assert_eq!(fake.global_keys(), [key, f24]);
+        // The one that the system refused, of a key that the Mac lacks, is
+        // told.
         let shown = app.diagnostics.shown().unwrap();
         assert_eq!(shown.about, About::GlobalKeys);
-        assert!(shown.text.contains("`global:ctrl+è`"), "{}", shown.text);
+        assert!(shown.text.contains("`global:ctrl+f24`"), "{}", shown.text);
         fake.send_app(&mut app, AppEvent::GlobalKey(0));
         assert!(quick_window(&fake).is_some());
         // Without its windows, the app waits for the key, and opens a

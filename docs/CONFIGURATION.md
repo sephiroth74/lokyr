@@ -1070,9 +1070,9 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel, or a click, makes no sequence.
 - **A global key**, written after `global:`, as ``"global:ctrl+`"``, runs its command from every app, Lokyr's windows too, as macOS gives Lokyr the key without the Accessibility permission, and takes it from them.
   - It is one key with `cmd`, `ctrl` or `alt`, or a function key, alone or with any of them; no sequence, no step of the wheel, no click.
-  - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards.
+  - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards. A character is the one that its key types without Shift: `~` is ``shift+` ``; a character that the US layout types with Shift, or has no key for, as `è`, is an error.
   - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.
-  - A key that another app takes already, or a character that no key of the US layout types, as `è`, shows in the bar across the windows' top, until the config takes it away.
+  - A key that another app holds as its own alone, or that the Mac's keyboards lack, as `f24`, shows in the bar across the windows' top, until the config takes it away. An app that took the key without holding it alone cannot be told, and the key then reaches one of the two.
   - While Lokyr holds a global key, it stays open as its last window closes, so that the key still works: its icon in the Dock opens a window. Without one, or when the system refused it, closing the last window quits Lokyr, the hidden quick terminal and its shell with it, asking first while a program runs there.
 - **The value**:
   - a command, as `"window.new"`;
