@@ -19,6 +19,19 @@ const GUIDE_URL: &str = "https://github.com/sephiroth74/lokyr/blob/main/docs/CON
 /// The widest line of the text, its `# ` included.
 const WIDTH: usize = 78;
 
+/// The values that the docs show for the keys that are unset by default,
+/// as TOML, which a file takes as they are once their `#` goes: a font that
+/// every Mac has, and its faces, by section and key.
+const EXAMPLES: &[(&str, &str, &str)] = &[
+    ("font", "family", "\"Menlo\""),
+    ("font", "style", "\"Regular\""),
+    ("font", "bold-style", "\"Bold\""),
+    ("font", "italic-style", "\"Italic\""),
+    ("font", "bold-italic-style", "\"Bold Italic\""),
+    ("font", "non-ascii-family", "\"Hiragino Sans\""),
+    ("cursor", "thickness", "2"),
+];
+
 /// What a heading of the guide is about.
 #[derive(Debug, PartialEq)]
 enum Topic<'a> {
@@ -151,15 +164,11 @@ fn described(text: &[&str]) -> Vec<String> {
             }
         }
         Some(["Keys", ..]) => {
-            lines.push("The defaults:".to_owned());
+            lines.push("The defaults, each under what it does:".to_owned());
             for row in table.iter().skip(2) {
-                if let [keys, command, does] = row.as_slice() {
-                    let unquoted = |cell: &str| cell.trim_matches('`').to_owned();
-                    lines.push(format!(
-                        "  \"{}\" = \"{}\"   ({does})",
-                        unquoted(keys),
-                        unquoted(command)
-                    ));
+                if let [keys, commands, does] = row.as_slice() {
+                    lines.push(does.trim_end_matches('.').to_owned() + ".");
+                    lines.extend(bindings(keys, commands));
                 }
             }
         }
@@ -167,7 +176,69 @@ fn described(text: &[&str]) -> Vec<String> {
     }
     lines.extend(defaults);
     lines.retain(|line| !line.is_empty());
-    lines.iter().map(|line| line.replace("**", "")).collect()
+    lines
+        .iter()
+        .map(|line| unlinked(&line.replace("**", "")))
+        .collect()
+}
+
+/// The lines of the bindings of a row of the guide's table: each of `keys`,
+/// in backquotes, to its command of `commands`, which share them in their
+/// order, as `cmd+up` and `cmd+down` take a line's scroll up and down; a
+/// line each, as a file writes it, after a space, so that its comment
+/// keeps it whole.
+fn bindings(keys: &str, commands: &str) -> Vec<String> {
+    let (keys, commands) = (quoted(keys), quoted(commands));
+    let each = keys.len() / commands.len().max(1);
+    keys.chunks(each.max(1))
+        .zip(commands)
+        .flat_map(|(keys, command)| {
+            keys.iter()
+                .map(move |keys| format!(" {} = {}", Key::new(*keys), Value::from(command)))
+        })
+        .collect()
+}
+
+/// `line` with the guide's links as their text alone, or, to a page of
+/// another site, with its address after it.
+fn unlinked(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('[') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        // The link's text, which brackets can be in, as a section's name.
+        let mut depth = 0;
+        let close = after.char_indices().find_map(|(at, character)| {
+            match character {
+                '[' => depth += 1,
+                ']' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(at)
+        });
+        let link = close.and_then(|close| {
+            let target = after[close + 1..].strip_prefix('(')?;
+            let end = target.find(')')?;
+            Some((close, &target[..end]))
+        });
+        match link {
+            Some((close, target)) => {
+                let text = &after[1..close];
+                out.push_str(text);
+                if target.contains("://") {
+                    out.push_str(&format!(" ({target})"));
+                }
+                rest = &after[close + 3 + target.len()..];
+            }
+            None => {
+                out.push('[');
+                rest = &after[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `text` in lines of `width` characters at most, broken between words.
@@ -243,10 +314,23 @@ fn write_keys(
     headings: &[Heading<'_>],
     docs: bool,
 ) {
+    // A key without a value shows, with the docs, an example that a file
+    // takes as it is.
+    let example = |key: &str| {
+        EXAMPLES
+            .iter()
+            .find(|&&(of, name, _)| Some(of) == section && name == key)
+            .map(|&(_, _, example)| example)
+            .filter(|_| docs)
+    };
     let write = |out: &mut String, key: &str| {
-        let _ = match table.get(key) {
-            Some(value) => writeln!(out, "{key} = {}", shown(value)),
-            None => writeln!(out, "# {key}: unset, for its default"),
+        let _ = match (table.get(key), example(key)) {
+            (Some(value), _) => writeln!(out, "{key} = {}", shown(value)),
+            (None, Some(example)) => writeln!(
+                out,
+                "# Unset, for its default; for example:\n# {key} = {example}"
+            ),
+            (None, None) => writeln!(out, "# {key}: unset, for its default"),
         };
     };
     let mut written = Vec::new();
@@ -396,33 +480,108 @@ mod tests {
         assert!(template.starts_with("# Lokyr's config. Every key is here"));
         assert!(template.contains("\nconfig_version = 1\n"));
         assert!(template.contains("\n[font]\n"));
-        // The keys, commented out: each, its `#` taken away alone, reads as
-        // its default, in its section.
+        // Each line that reads as a key, commented out, its `#` taken away
+        // alone, reads: as the key's default, in its section; as an example,
+        // for a key that is unset; or as a default binding.
         let written = Config::default().written(false);
-        let keys: Vec<&str> = written
-            .lines()
-            .filter(|line| line.contains(" = ") && !line.starts_with(VERSION_KEY))
-            .map(|line| line.split(" = ").next().unwrap())
-            .collect();
-        assert!(keys.len() > 40, "{keys:?}");
+        let (mut keys, mut unset) = (Vec::new(), Vec::new());
+        for line in written.lines() {
+            if let Some((key, _)) = line.split_once(" = ")
+                && key != VERSION_KEY
+            {
+                keys.push(key);
+            } else if let Some(key) = line
+                .strip_prefix("# ")
+                .and_then(|line| line.strip_suffix(": unset, for its default"))
+            {
+                unset.push(key);
+            }
+        }
+        assert!(
+            keys.len() > 40 && unset.len() == EXAMPLES.len(),
+            "{unset:?}"
+        );
+        let is_key = |text: &str| {
+            text.split_once(" = ").is_some_and(|(key, _)| {
+                let bare = |key: &str| {
+                    !key.is_empty()
+                        && key
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                };
+                bare(key) || (key.len() > 1 && key.starts_with('"') && key.ends_with('"'))
+            })
+        };
         let lines: Vec<&str> = template.lines().collect();
-        let mut taken = 0;
+        let (mut defaults, mut examples, mut bindings) = (0, 0, 0);
         for (index, line) in lines.iter().enumerate() {
-            let Some(key) = line.strip_prefix("# ") else {
+            let Some(key) = line.strip_prefix("# ").filter(|key| is_key(key)) else {
+                // No line of the template is a key but its own form.
+                assert!(!line.contains(": unset"), "{line}");
                 continue;
             };
-            if !keys
-                .iter()
-                .any(|name| key.starts_with(&format!("{name} = ")))
-            {
-                continue;
-            }
             let mut changed = lines.clone();
             changed[index] = key;
-            assert_eq!(parse(&changed.join("\n")), Config::default(), "{key}");
-            taken += 1;
+            let read = parse(&changed.join("\n"));
+            let name = key.split(" = ").next().unwrap();
+            if keys.contains(&name) {
+                assert_eq!(read, Config::default(), "{key}");
+                defaults += 1;
+            } else if unset.contains(&name) {
+                assert_ne!(read, Config::default(), "{key}");
+                examples += 1;
+            } else {
+                let keys = name.trim_matches('"');
+                assert!(read.keys.bindings.contains_key(keys), "{key}");
+                bindings += 1;
+            }
         }
-        assert_eq!(taken, keys.len());
+        assert_eq!((defaults, examples), (keys.len(), unset.len()));
+        // The guide's defaults, a line for each of their keys: three of
+        // `font.bigger`, and two of each scroll.
+        assert!(bindings >= 20, "{bindings}");
+    }
+
+    #[test]
+    fn the_guide_s_bindings_take_a_line_each() {
+        assert_eq!(
+            bindings("`cmd+=`, `cmd+shift+=`, `cmd++`", "`font.bigger`"),
+            [
+                " \"cmd+=\" = \"font.bigger\"",
+                " \"cmd+shift+=\" = \"font.bigger\"",
+                " \"cmd++\" = \"font.bigger\""
+            ]
+        );
+        assert_eq!(
+            bindings(
+                "`cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown`",
+                "`pane.scroll-page-up`, `pane.scroll-page-down`"
+            ),
+            [
+                " \"cmd+pageup\" = \"pane.scroll-page-up\"",
+                " \"shift+pageup\" = \"pane.scroll-page-up\"",
+                " \"cmd+pagedown\" = \"pane.scroll-page-down\"",
+                " \"shift+pagedown\" = \"pane.scroll-page-down\""
+            ]
+        );
+    }
+
+    #[test]
+    fn the_guide_s_links_read_as_their_text() {
+        assert_eq!(
+            unlinked("as [The file](#the-file) says"),
+            "as The file says"
+        );
+        assert_eq!(
+            unlinked("as [`[links]`](#links) says, [x"),
+            "as `[links]` says, [x"
+        );
+        assert_eq!(
+            unlinked("[Apple's](https://developer.apple.com/x)."),
+            "Apple's (https://developer.apple.com/x)."
+        );
+        let written = Config::default().written(true);
+        assert!(!written.contains("](#"), "{written}");
     }
 
     #[test]
@@ -507,7 +666,7 @@ mod tests {
                 .count(),
             1
         );
-        assert!(written.contains("# family: unset, for its default"));
+        assert!(written.contains("# Unset, for its default; for example:\n# family = \"Menlo\"\n"));
         // The list that a paragraph opens, and only the paragraph before a
         // table.
         assert!(written.contains(
@@ -521,13 +680,13 @@ mod tests {
         assert!(written.contains("# Default: the system's monospaced font, SF Mono.\n"));
         // A section's own text, and the bindings' defaults.
         assert!(written.contains("[terminal]\n# What programs are told of the terminal"));
-        assert!(written.contains("# The defaults:\n#  \"cmd+,\" = \"app.settings\"   (Opens"));
-        assert!(written.contains("\n#  \"cmd+n\" = \"window.new\"   (Opens a window)\n"));
+        assert!(written.contains("# The defaults, each under what it does:\n# Opens the config"));
+        assert!(written.contains("\n# Opens a window.\n# \"cmd+n\" = \"window.new\"\n"));
         assert!(!written.contains("<sub>"));
         assert!(!written.contains("**"));
         for line in written.lines() {
             assert!(
-                line.chars().count() <= WIDTH || !line.contains(' ') || line.starts_with("#  "),
+                line.chars().count() <= WIDTH || !line.contains(' '),
                 "a line too long: {line}"
             );
         }
