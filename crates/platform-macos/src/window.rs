@@ -256,7 +256,12 @@ impl Window {
 
     /// Where the typed text goes, for the input method's candidates.
     pub(crate) fn set_text_area(&self, origin: Point, size: Size) {
-        self.view.ivars().input.borrow_mut().area = (origin, size);
+        let area = (origin, size);
+        let before = std::mem::replace(&mut self.view.ivars().input.borrow_mut().area, area);
+        // The input method asks again where its candidates go.
+        if before != area {
+            invalidate_text_area(&self.view);
+        }
     }
 
     /// Whether the pointer's moves without a button come to the view.
@@ -447,6 +452,11 @@ define_class!(
         // SAFETY: AppKit's signature.
         #[unsafe(method(flagsChanged:))]
         fn flags_changed(&self, event: &NSEvent) {
+            // An input method that switches its mode on a tap of Shift, as
+            // Pinyin's English, sees the modifiers too.
+            if let Some(context) = self.inputContext() {
+                context.handleEvent(event);
+            }
             self.post_key(event);
         }
 
@@ -1007,6 +1017,9 @@ define_class!(
             if let Some(window) = window_of(notification) {
                 self.keep_frame(&window);
                 self.post(WindowEvent::Resized(size_of(&window)));
+                if let Some(view) = window.contentView() {
+                    invalidate_text_area(&view);
+                }
             }
         }
 
@@ -1014,6 +1027,10 @@ define_class!(
         fn window_did_move(&self, notification: &NSNotification) {
             if let Some(window) = window_of(notification) {
                 self.keep_frame(&window);
+                // The candidates of a composition move with the window.
+                if let Some(view) = window.contentView() {
+                    invalidate_text_area(&view);
+                }
             }
         }
 
@@ -1227,6 +1244,14 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
             .collect();
     }
     pieces
+}
+
+/// Tells the input method of `view` that the text's place on the screen
+/// changed, so that its candidates follow it.
+fn invalidate_text_area(view: &NSView) {
+    if let Some(context) = view.inputContext() {
+        context.invalidateCharacterCoordinates();
+    }
 }
 
 /// What a drop of `pasteboard` gives: its files, by their paths, if it

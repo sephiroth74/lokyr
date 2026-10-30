@@ -877,20 +877,12 @@ pub fn preedit(
     glyphs: &mut dyn Glyphs,
 ) {
     let (foreground, background) = defaults(snapshot);
-    let position = snapshot.cursor().position;
-    let (mut start, row, columns) = (position.x, position.y, batch.columns);
-    if row >= batch.rows || start >= columns {
+    let columns = batch.columns;
+    let Some((row, start)) = composition_start(snapshot, preedit, columns) else {
         return;
-    }
-    // From a wide character's second cell, its first.
-    let line = snapshot.line(row);
-    let width_at = |column: u16| {
-        line.cells()
-            .get(usize::from(column))
-            .map(|cell| cell.width())
     };
-    if start > 0 && width_at(start) == Some(Width::SpacerTail) {
-        start -= 1;
+    if row >= batch.rows {
+        return;
     }
     let widths = Widths::default();
     let mut column = start;
@@ -951,14 +943,12 @@ pub fn preedit(
     settle_cursor(batch, snapshot);
 }
 
-/// The cells that the composition of `preedit` at the cursor of `snapshot`
-/// covers, in a grid of `columns`, as [`preedit`] draws it: its row and
-/// columns; `None` off the grid.
-fn composed_span(
-    snapshot: &Snapshot,
-    preedit: &Preedit,
-    columns: u16,
-) -> Option<(u16, std::ops::Range<u16>)> {
+/// The row and the column that the composition of `preedit` starts at, in
+/// a grid of `columns` of `snapshot`: the cursor's, from a wide
+/// character's first cell; or, where its first character has no room
+/// there, as a wide one at the last column, as far left as it takes, over
+/// the cells before; `None` off the grid.
+fn composition_start(snapshot: &Snapshot, preedit: &Preedit, columns: u16) -> Option<(u16, u16)> {
     let position = snapshot.cursor().position;
     let (mut start, row) = (position.x, position.y);
     if row >= snapshot.rows() || start >= columns {
@@ -973,6 +963,25 @@ fn composed_span(
     {
         start -= 1;
     }
+    let widths = Widths::default();
+    let first = preedit
+        .text
+        .chars()
+        .map(|character| u16::from(widths.char_width(character)))
+        .find(|&width| width > 0)
+        .unwrap_or(1);
+    Some((row, start.min(columns.saturating_sub(first))))
+}
+
+/// The cells that the composition of `preedit` at the cursor of `snapshot`
+/// covers, in a grid of `columns`, as [`preedit`] draws it: its row and
+/// columns; `None` off the grid.
+fn composed_span(
+    snapshot: &Snapshot,
+    preedit: &Preedit,
+    columns: u16,
+) -> Option<(u16, std::ops::Range<u16>)> {
+    let (row, start) = composition_start(snapshot, preedit, columns)?;
     let widths = Widths::default();
     let mut end = start;
     for character in preedit.text.chars() {
@@ -989,20 +998,13 @@ fn composed_span(
 /// `snapshot`, in a grid of `columns`: its column and the cells that it
 /// covers, as [`preedit`] draws it; `None` off the grid.
 fn composed_cursor(snapshot: &Snapshot, preedit: &Preedit, columns: u16) -> Option<(u16, u16)> {
-    let position = snapshot.cursor().position;
-    let (mut start, row) = (position.x, position.y);
-    if row >= snapshot.rows() || start >= columns {
-        return None;
-    }
+    let (row, start) = composition_start(snapshot, preedit, columns)?;
     let line = snapshot.line(row);
     let width_at = |column: u16| {
         line.cells()
             .get(usize::from(column))
             .map(|cell| cell.width())
     };
-    if start > 0 && width_at(start) == Some(Width::SpacerTail) {
-        start -= 1;
-    }
     let widths = Widths::default();
     let mut column = start;
     let mut cursor = None;
@@ -2358,6 +2360,49 @@ mod tests {
         assert_eq!(batch.glyphs[0].region.x, u32::from('x'));
         let line = batch.lines.last().unwrap();
         assert_eq!((line.column, line.columns), (0, 1));
+    }
+
+    #[test]
+    fn a_wide_composition_from_the_last_column_starts_where_it_has_room() {
+        // The cursor in the last column, where `日` takes two.
+        let snapshot = snapshot(4, 1, "abc");
+        assert_eq!(snapshot.cursor().position.x, 3);
+        let mut asked = Vec::new();
+        let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let composed = Preedit {
+            text: "日本".to_owned(),
+            cursor: 3,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut asked),
+        );
+        // Over `c`, and the cell after it; `本` has no room.
+        let shown: Vec<(u16, u32)> = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.region.x))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (0, u32::from('a')),
+                (1, u32::from('b')),
+                (2, u32::from('日'))
+            ]
+        );
+        let line = batch.lines.last().unwrap();
+        assert_eq!((line.column, line.columns), (2, 2));
+        assert_eq!(composed_span(&snapshot, &composed, 4), Some((0, 2..4)));
+        // A narrow one stays at the cursor.
+        let narrow = Preedit {
+            text: "k".to_owned(),
+            cursor: 1,
+        };
+        assert_eq!(composed_span(&snapshot, &narrow, 4), Some((0, 3..4)));
     }
 
     #[test]
