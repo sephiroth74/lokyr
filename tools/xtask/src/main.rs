@@ -4,6 +4,7 @@ mod bundle;
 mod check_comments;
 mod check_deps;
 mod check_links;
+mod notarize;
 mod terminfo;
 mod ucd;
 
@@ -20,6 +21,7 @@ fn main() -> ExitCode {
         Some("check-comments") => check_comments::run(args),
         Some("check-deps") => check_deps::run(args),
         Some("check-links") => check_links::run(args),
+        Some("notarize") => notarize::run(args),
         Some("terminfo") => terminfo::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
@@ -42,6 +44,7 @@ fn print_help() {
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
+         notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );

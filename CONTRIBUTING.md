@@ -29,6 +29,8 @@ just ci                 # the checks of CI, as the next section tells
 
 Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you need it only to work on the fuzzers.
 
+The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the project's Developer ID where the keychain has it, and ad hoc elsewhere. `just notarize` has Apple notarize it and staples the ticket, for the maintainer: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
+
 ## The gate: `just ci`
 
 `just ci` runs the checks of CI that a Mac can make, and a pull request needs it green:

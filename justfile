@@ -88,6 +88,10 @@ ci: lint build test check-linux deny check-deps check-comments check-links bundl
 bundle *args:
     cargo xtask bundle {{args}}
 
+# Build target/Lokyr.app, have Apple notarize it, and staple the ticket: the keychain's profile lokyr-notary, or $LOKYR_NOTARY_PROFILE, has the credentials. It sends the bundle to Apple's notary service.
+notarize: bundle
+    cargo xtask notarize
+
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
     cargo xtask terminfo

@@ -13,7 +13,7 @@
 //! `LOKYR_SIGN_IDENTITY` names; otherwise, as on a machine without it,
 //! ad hoc; with the hardened runtime, and the entitlements of the resources
 //! that the programs in the terminal ask for, without which the runtime
-//! refuses them without a prompt. It is not notarized.
+//! refuses them without a prompt. `cargo xtask notarize` has it notarized.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -26,7 +26,7 @@ use anyhow::{Context, Result, bail};
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
 
 /// The bundle's name, and the app's in the Finder, the Dock and the menus.
-const NAME: &str = "Lokyr";
+pub const NAME: &str = "Lokyr";
 
 /// The binary, as the app's crate names it, and the bundle's, which the
 /// panes' programs run as their command line names it, on a volume that
