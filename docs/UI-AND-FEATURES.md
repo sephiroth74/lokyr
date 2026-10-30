@@ -33,8 +33,8 @@ This document covers our UI engine and the features the MVP cannot ship without:
 
 **Display list**
 - Primitives: rectangles (fill, border, radius, shadow), glyph runs from the atlas, images, clips.
-- A pane's instanced cell batch includes the cursor, the selection and decorations (curly, dotted and dashed underlines, strikethrough, overline).
-- A window produces a single display list covering chrome, panes and overlays.
+- A pane's instanced cell batch includes the selection and decorations (curly, dotted and dashed underlines, strikethrough, overline); the cursor's cells and the text that blinks go into batches of their own, for layers over the window's surface, which the window server blinks.
+- A window produces a display list covering chrome, panes and overlays, and one for each of those layers, drawn again only as their cells change.
 
 ## Tabs
 
@@ -308,7 +308,7 @@ AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode o
 
 ## Cursor
 
-`render-metal` draws the cursor in the pane's cell batch. Its options sit in the `[cursor]` section of the config, and hot reload applies them at once.
+`render-metal` draws the cursor's cells into a layer of their own, over the pane's, which the window server blinks. Its options sit in the `[cursor]` section of the config, and hot reload applies them at once.
 
 ```toml
 [cursor]

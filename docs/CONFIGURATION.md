@@ -411,7 +411,7 @@ How long the cursor blinks after the last key or output, in seconds; then it sta
 |---|---|
 | from `0` to `3600`; `0` never stops | `15` |
 
-A cursor that blinks for ever keeps the Mac awake no more than one that stops, as the window server blinks it.
+A cursor that blinks for ever wakes Lokyr no more than one that stops, as the window server blinks it; the window server itself shows the window again at each change of the cursor's opacity, through each frame of a fade with [`smooth-blink`](#smooth-blink), which a blinking that stops spares it.
 
 ### `smooth-blink`
 
@@ -900,6 +900,7 @@ Whether a panel over each window shows Lokyr's performance, a line each: the fra
 
 - View › Show Performance shows and hides it too, until Lokyr quits or the key changes.
 - While it shows, it changes each second, which wakes Lokyr and draws each window once a second, even when nothing else changes: Lokyr is no longer idle. Measure Lokyr with it hidden.
+- While it shows, Lokyr writes its numbers to its log too, a line a window each second.
 - It applies at once, as you save the file.
 
 ### `performance-corner`

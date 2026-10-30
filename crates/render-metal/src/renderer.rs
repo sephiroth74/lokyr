@@ -462,10 +462,9 @@ impl MetalRenderer {
         }
     }
 
-    /// Forgets the frames that the GPU finished, from the oldest: a queue's
-    /// commands finish in their order.
     /// Lets the commands of the frames that the GPU finished go, from the
-    /// oldest, with their times.
+    /// oldest, as a queue's commands finish in their order, with their
+    /// times, and takes their buffers back.
     fn drop_finished(&mut self) {
         while self.drawing.front().is_some_and(|drawing| {
             matches!(

@@ -3361,7 +3361,7 @@ impl Handler for App {
                     self.pace_at(platform, next);
                 }
             }
-            // The titles look once more after a burst of output.
+            // The performance's panel measures again.
             AppEvent::Timer(timer)
                 if self
                     .performance
@@ -3370,6 +3370,7 @@ impl Handler for App {
             {
                 self.measure_performance(platform);
             }
+            // The titles look once more after a burst of output.
             AppEvent::Timer(timer) if self.title_timer.is_some_and(|(title, _)| title == timer) => {
                 self.look_at_places_again(platform);
             }
