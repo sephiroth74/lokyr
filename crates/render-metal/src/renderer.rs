@@ -1281,8 +1281,14 @@ mod tests {
         surface.set_presents_with_transaction(true);
         assert!(renderer.draw(&surface, &list()).unwrap());
         // The GPU has the frame's commands as the draw returns, so that the
-        // drawable shows as the transaction commits.
-        let status = renderer.drawing.back().unwrap().commands.status();
+        // drawable shows as the transaction commits: a frame that it
+        // finished already went from the queue.
+        let status = renderer
+            .drawing
+            .back()
+            .map_or(MTLCommandBufferStatus::Completed, |drawing| {
+                drawing.commands.status()
+            });
         assert!(
             matches!(
                 status,
