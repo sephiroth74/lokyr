@@ -65,8 +65,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - input and IME (`NSTextInputClient`);
   - live resize, clipboard, menus;
   - the pane's context menu, after macOS's Terminal: Open Link, Look Up, the man page, the clipboard and the editing ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
-  - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md));
-  - an accessibility skeleton.
+  - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **`font-coretext` and `text-core`**:
   - font discovery and fallback, and an optional separate font for non-ASCII text, like iTerm2's;
   - CoreText shaping with ligatures;
@@ -82,7 +81,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 - **Full kernel**: workspace, layout tree, events, search and decoration services.
 - **Plugin plumbing**: the `HostApi` draft, `plugin-sdk` with the Rust front end, `export_plugin!`, `xtask gen-dist`.
-- **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit.
+- **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit, with the panes' text and cursor for VoiceOver, which came from F2 as the user chose on 30 October 2026.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`; `links`, which comes in F2, underlines the link under the pointer while ⌘ is held, with the API's events and decorations.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
 - **The context menu's items of the plugins**: the splits', the tabs', the man page index, a web search, a link's address ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
