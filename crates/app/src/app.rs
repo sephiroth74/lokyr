@@ -2203,6 +2203,9 @@ impl App {
             self.quick = None;
         }
         platform.close_window(window);
+        // The secure entry goes with the window that had the focus, whose
+        // loss of it the platform tells no more, unless another takes it.
+        self.settle_secure_input(platform);
         // A global key goes on showing the quick terminal, which needs the
         // app.
         if self.windows.is_empty() && self.global_keys.is_empty() {
@@ -6672,6 +6675,27 @@ mod tests {
         assert!(!on(&fake) && !fake.command_checked(SECURE_INPUT));
         // Each change once.
         assert_eq!(fake.secure_input().1, 14);
+    }
+
+    #[test]
+    fn secure_keyboard_entry_goes_with_the_focused_window_that_closes() {
+        let config = Config::parse(
+            "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        let mut fake = Fake::default();
+        let mut app = app(config, quiet());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send_app(&mut app, AppEvent::Command(SECURE_INPUT.to_owned()));
+        assert!(fake.secure_input().0);
+        // The last window, which a global key keeps the app open without:
+        // no window takes the focus.
+        app.close(&mut fake, window);
+        assert!(!fake.has_quit());
+        assert_eq!(fake.secure_input(), (false, 2));
     }
 
     #[test]
