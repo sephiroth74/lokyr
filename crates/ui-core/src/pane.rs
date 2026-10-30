@@ -948,7 +948,8 @@ pub fn preedit(
 /// character's first cell; or, where the composition has no room there to
 /// the right edge, as far left as it takes, over the cells before, but
 /// the row's first, so that a composition wider than the row loses its
-/// end alone; `None` off the grid.
+/// end alone, and from a wide character's first cell there too, which it
+/// covers whole; `None` off the grid.
 pub fn composition_start(
     snapshot: &Snapshot,
     preedit: &Preedit,
@@ -975,7 +976,20 @@ pub fn composition_start(
         .map(|character| usize::from(widths.char_width(character)))
         .sum();
     let width = u16::try_from(width).unwrap_or(u16::MAX).min(columns);
-    Some((row, start.min(columns - width)))
+    let moved = start.min(columns - width);
+    let tail = |column: u16| {
+        line.cells()
+            .get(usize::from(column))
+            .is_some_and(|cell| cell.width() == Width::SpacerTail)
+    };
+    Some((
+        row,
+        if moved > 0 && tail(moved) {
+            moved - 1
+        } else {
+            moved
+        },
+    ))
 }
 
 /// The cells that the composition of `preedit` at the cursor of `snapshot`
@@ -2402,6 +2416,38 @@ mod tests {
             cursor: 1,
         };
         assert_eq!(composed_span(&snapshot, &narrow, 6), Some((0, 5..6)));
+    }
+
+    #[test]
+    fn a_composition_moved_left_covers_a_wide_character_whole() {
+        // `日本` from the second column of six, and the cursor after them,
+        // where a composition of `日本` would start on `日`'s second cell.
+        let snapshot = snapshot(6, 1, "a日本");
+        assert_eq!(snapshot.cursor().position.x, 5);
+        let mut asked = Vec::new();
+        let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let composed = Preedit {
+            text: "日本".to_owned(),
+            cursor: 6,
+        };
+        preedit(
+            &mut batch,
+            &snapshot,
+            &cell(),
+            &composed,
+            &mut atlas(&mut asked),
+        );
+        // From `日`'s first cell, which it covers; no glyph of the grid's
+        // under it.
+        let shown: Vec<(u16, u32)> = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.region.x))
+            .collect();
+        let expected = [('a', 0), ('日', 1), ('本', 3)];
+        assert_eq!(shown, expected.map(|(text, at)| (at, u32::from(text))));
+        assert_eq!(composition_start(&snapshot, &composed, 6), Some((0, 1)));
+        assert_eq!(composed_span(&snapshot, &composed, 6), Some((0, 1..5)));
     }
 
     #[test]
