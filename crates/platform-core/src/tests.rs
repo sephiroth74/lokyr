@@ -57,6 +57,7 @@ impl App {
                 size: SIZE,
                 remember: false,
                 restore: false,
+                restore_size: false,
             })
             .unwrap();
         self.windows.push(window);

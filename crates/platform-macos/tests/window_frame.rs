@@ -1,6 +1,7 @@
 //! A window's frame: one that keeps it saves it as it moves, and a window
-//! that restores it opens there, of its size; a window that the backend
-//! places, cascaded, saves nothing, and one opened while a sheet has the
+//! that restores it opens there, of its size; one that restores its size
+//! alone opens of that size, cascaded; a window that the backend places,
+//! cascaded, saves nothing, and one opened while a sheet has the
 //! focus cascades from the sheet's window; a window keeps its frame from
 //! when the app says so; a change of the backing's properties that leaves
 //! the scale tells nothing.
@@ -19,7 +20,7 @@ mod probe {
     use objc2::rc::Retained;
     use objc2::{MainThreadMarker, msg_send};
     use objc2_app_kit::{NSApplication, NSWindow, NSWindowDidChangeBackingPropertiesNotification};
-    use objc2_foundation::{NSNotification, NSPoint, NSRect, NSString, NSUserDefaults};
+    use objc2_foundation::{NSNotification, NSPoint, NSRect, NSSize, NSString, NSUserDefaults};
 
     use crate::common;
 
@@ -38,6 +39,8 @@ mod probe {
         /// The frames of the window with the sheet, and of the one opened
         /// then.
         cascade: Vec<NSRect>,
+        /// The frame of the window that restored the kept size alone.
+        sized: Option<NSRect>,
         /// The frame saved after a window that no longer keeps it moved,
         /// then after one that keeps it now.
         kept_from_now: Vec<Option<String>>,
@@ -53,6 +56,14 @@ mod probe {
     }
 
     fn open(platform: &mut dyn Platform, remember: bool, restore: bool) -> WindowId {
+        open_of(platform, remember, (restore, false))
+    }
+
+    fn open_of(
+        platform: &mut dyn Platform,
+        remember: bool,
+        (restore, restore_size): (bool, bool),
+    ) -> WindowId {
         platform
             .create_window(&WindowAttributes {
                 title: "A frame".to_owned(),
@@ -62,6 +73,7 @@ mod probe {
                 },
                 remember,
                 restore,
+                restore_size,
             })
             .expect("a window")
     }
@@ -82,8 +94,11 @@ mod probe {
             NSUserDefaults::standardUserDefaults().removeObjectForKey(&NSString::from_str(KEY));
             open(platform, true, false);
             let kept = windows().pop().expect("the first window");
-            // Moved, it keeps its frame.
-            kept.setFrameOrigin(NSPoint::new(123.0, 234.0));
+            // Moved and resized, it keeps its frame.
+            kept.setFrame_display(
+                NSRect::new(NSPoint::new(123.0, 234.0), NSSize::new(480.0, 360.0)),
+                false,
+            );
             // The same scale, through the notification of the backing's
             // properties, tells nothing.
             // SAFETY: AppKit's name, and the window that it is of.
@@ -101,6 +116,9 @@ mod probe {
             open(platform, false, true);
             let mut seen = self.0.borrow_mut();
             seen.frames = windows().iter().map(|window| window.frame()).collect();
+            // Of the kept size alone, cascaded from the window in front.
+            open_of(platform, false, (false, true));
+            seen.sized = windows().last().map(|window| window.frame());
             // A cascaded window that keeps its frame keeps nothing yet.
             let cascaded = open(platform, true, false);
             seen.saved = vec![moved, saved()];
@@ -158,6 +176,9 @@ mod probe {
         };
         assert_eq!((kept.origin.x, kept.origin.y), (123.0, 234.0), "{seen:?}");
         assert_eq!(restored, kept, "{seen:?}");
+        let sized = seen.sized.expect("the window of the kept size");
+        assert_eq!(sized.size, kept.size, "{seen:?}");
+        assert_ne!(sized.origin, kept.origin, "{seen:?}");
         assert_eq!(seen.scale_changes, 0, "{seen:?}");
         // The cascaded window kept nothing, nor did its events after.
         let moved = seen.saved[0].clone();

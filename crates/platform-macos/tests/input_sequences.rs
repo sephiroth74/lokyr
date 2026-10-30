@@ -150,6 +150,7 @@ mod probe {
                     },
                     remember: false,
                     restore: false,
+                    restore_size: false,
                 })
                 .expect("the window opens");
             // The keys of someone typing at the Mac go to their own app.

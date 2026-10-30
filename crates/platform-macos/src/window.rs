@@ -119,6 +119,9 @@ impl Window {
         // The frame that a window kept, on a screen that is still there,
         // rather than the size asked for.
         let restored = attributes.restore && restore_frame(&ns_window);
+        if !restored && attributes.restore_size {
+            restore_size(&ns_window);
+        }
         Self {
             ns_window,
             view,
@@ -1051,6 +1054,26 @@ fn restore_frame(window: &NSWindow) -> bool {
         window.setFrame_display(before, false);
     }
     shown
+}
+
+/// Gives `window` the size of the frame that a window kept last, if one
+/// did, within the visible part of its screen, at its own place, which
+/// its placing changes.
+fn restore_size(window: &NSWindow) {
+    let before = window.frame();
+    if !window.setFrameUsingName(&NSString::from_str(FRAME_NAME)) {
+        return;
+    }
+    let mut size = window.frame().size;
+    if let Some(screen) = window
+        .screen()
+        .or_else(|| NSScreen::mainScreen(window.mtm()))
+    {
+        let visible = screen.visibleFrame().size;
+        size.width = size.width.min(visible.width);
+        size.height = size.height.min(visible.height);
+    }
+    window.setFrame_display(NSRect::new(before.origin, size), false);
 }
 
 /// What a double click on a window's titlebar does.

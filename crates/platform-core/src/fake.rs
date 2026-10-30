@@ -45,6 +45,8 @@ pub struct FakeWindow {
     pub layer_places: usize,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
+    /// Whether it opened of the size of the frame kept last.
+    pub restore_size: bool,
     /// Whether the app asked for the pointer's moves without a button.
     pub mouse_moves: bool,
     /// How the pointer looks over its content, as the app asked.
@@ -531,6 +533,7 @@ impl Platform for Fake {
                 layers: HashMap::new(),
                 layer_places: 0,
                 restore: attributes.restore,
+                restore_size: attributes.restore_size,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
                 appearance: None,

@@ -1781,8 +1781,10 @@ impl App {
             title: page.clone().unwrap_or_else(|| TITLE.to_owned()),
             size,
             remember,
-            // The first window as the app starts.
+            // The first window as the app starts; the others take the size
+            // that a window kept, cascaded.
             restore: remember && !self.opened_one,
+            restore_size: remember && self.opened_one,
         };
         self.opened_one = true;
         match platform.create_window(&attributes) {
@@ -1833,8 +1835,10 @@ impl App {
 
     /// The directory that a window that opens now starts in: the first
     /// window's, as the app starts, `start-directory` says; another's,
-    /// `new-directory`. `None` for the home directory, as a directory that
-    /// is not there, or cannot be read, takes too, which the log tells.
+    /// `new-directory`, of the window that the commands run in, or the one
+    /// that has the focus, or, while the app is not active, the one that
+    /// had it last. `None` for the home directory, as a directory that is
+    /// not there, or cannot be read, takes too, which the log tells.
     fn start_directory(&self, platform: &dyn Platform) -> Option<PathBuf> {
         let home = std::env::home_dir();
         let (key, chosen) = if self.opened_one {
@@ -1843,6 +1847,7 @@ impl App {
                 NewDirectory::Inherit => self
                     .acting
                     .or_else(|| platform.focused_window())
+                    .or(self.front)
                     .and_then(|window| self.directory_of(window)),
                 NewDirectory::Path(path) => config::expanded(path, home.as_deref()),
             };
@@ -5994,7 +5999,9 @@ mod tests {
         run_until(&mut fake, &mut app, |_, app| {
             app.pane(first).working_directory().as_deref() == Some(inherited.as_path())
         });
+        // The window that had the focus last, as the app is not active.
         fake.send(&mut app, first, WindowEvent::Focused(true));
+        fake.send(&mut app, first, WindowEvent::Focused(false));
         let opened = |fake: &mut Fake, app: &mut App| {
             let before: Vec<WindowId> = fake.windows().collect();
             fake.send_app(app, AppEvent::Command(NEW_WINDOW.to_owned()));
@@ -6004,7 +6011,7 @@ mod tests {
                 .unwrap();
             (window, started_in(fake, app, window))
         };
-        // Of the program in the window that has the focus, by default.
+        // Of the program in the window that had the focus, by default.
         let (second, directory) = opened(&mut fake, &mut app);
         assert_eq!(directory, shown(&inherited));
         app.config.window.new_directory = NewDirectory::Home;
@@ -6103,12 +6110,13 @@ mod tests {
                 height: 192.0
             }
         );
-        assert!(shown.remember && shown.restore);
-        // The next keeps its frame, and opens of the cells.
+        assert!(shown.remember && shown.restore && !shown.restore_size);
+        // The next keeps its frame, and opens of the kept size, or of the
+        // cells without one.
         fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
         let second = fake.windows().find(|&window| window != first).unwrap();
         let shown = fake.window(second).unwrap();
-        assert!(shown.remember && !shown.restore);
+        assert!(shown.remember && !shown.restore && shown.restore_size);
         // Without the key, none keeps it.
         let mut config = unpadded();
         config.window.remember_frame = false;
@@ -6118,6 +6126,9 @@ mod tests {
         let first = fake.windows().next().unwrap();
         let shown = fake.window(first).unwrap();
         assert!(!shown.remember && !shown.restore);
+        fake.send_app(&mut forgetful, AppEvent::Command(NEW_WINDOW.to_owned()));
+        let second = fake.windows().find(|&window| window != first).unwrap();
+        assert!(!fake.window(second).unwrap().restore_size);
         // The key, turned on, reaches the window open.
         let mut config = forgetful.config.clone();
         config.window.remember_frame = true;
@@ -6565,7 +6576,7 @@ mod tests {
         // Light, as the app is; it neither keeps its frame nor restores
         // one.
         assert_eq!(shown.appearance, None);
-        assert!(!shown.remember && !shown.restore);
+        assert!(!shown.remember && !shown.restore && !shown.restore_size);
         assert_eq!(
             shown.size.points,
             Size {

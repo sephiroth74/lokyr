@@ -115,6 +115,7 @@ mod probe {
                     size: SIZE,
                     remember: false,
                     restore: false,
+                    restore_size: false,
                 })
                 .expect("the window opens");
             platform.set_title(window, TITLE);

@@ -58,6 +58,7 @@ mod probe {
                     },
                     remember: false,
                     restore: false,
+                    restore_size: false,
                 })
                 .expect("the window opens");
             terminate_later(0.2);

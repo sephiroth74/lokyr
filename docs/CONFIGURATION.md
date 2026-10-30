@@ -483,7 +483,7 @@ The size of a new window, in columns and rows of the font's cells.
 | whole numbers, from `1` to `1000` | `100` columns, `30` rows |
 
 - The window is of that many cells, with the padding around them, below the titlebar; the display that it opens on, which can be smaller, can make it smaller.
-- The first window, as Lokyr starts, takes the place and the size of the last window that you moved or resized instead, while [`remember-frame`](#remember-frame) is on.
+- While [`remember-frame`](#remember-frame) is on, the first window, as Lokyr starts, takes the place and the size of the last window that you moved or resized instead, and the windows that you open after it take that size, at a place of their own: these keys apply until a window keeps one.
 - It applies to the windows that open after you save the file; those that are open keep their size.
 
 ### `remember-frame`
@@ -496,7 +496,7 @@ Whether the first window, as Lokyr starts, opens where the last window that you 
 |---|---|
 | `true`, `false` | `true` |
 
-- The windows that you open after the first take [`columns` and `rows`](#columns-rows), down and to the right of the window that has the focus, or of the one in front, as when a question is open on it. Where Lokyr places a window is not kept, only where you move or resize it.
+- The windows that you open after the first take the size of the last window that you moved or resized, or [`columns` and `rows`](#columns-rows) while no window kept one, down and to the right of the window that has the focus, or of the one in front, as when a question is open on it; within the display. Where Lokyr places a window is not kept, only where you move or resize it.
 - A window that was on a display that is no longer there opens on one that is.
 - Lokyr keeps the place in its preferences of macOS, not in the config file; a window in full screen leaves it as it was.
 - It applies as you save the file, to the windows that you move or resize from then, and to the next start.
@@ -545,7 +545,7 @@ The folder that a new window's shell starts in, as ⌘N opens one.
 |---|---|
 | `"inherit"`, `"home"`, or a path from `/` or `~` | `"inherit"` |
 
-- `"inherit"` starts in the folder of the program in the window that has the focus, the shell's or that of the program that runs in it, as `vim`'s; in your home folder when no window has the focus, or when the folder cannot be read, as a program of another user's, as `sudo`'s.
+- `"inherit"` starts in the folder of the program in the window that has the focus, or that had it last while Lokyr is not active, as from the Dock's menu: the shell's folder, or that of the program that runs in it, as `vim`'s; in your home folder without a window, or when the folder cannot be read, as a program of another user's, as `sudo`'s.
 - `"home"` starts in your home folder.
 - A path, as `"~/Projects"`, starts there; one that is not there starts in your home folder, and the log tells why.
 - It applies at once, to the windows that open from then.

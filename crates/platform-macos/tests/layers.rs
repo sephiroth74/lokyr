@@ -119,6 +119,7 @@ mod probe {
                     },
                     remember: false,
                     restore: false,
+                    restore_size: false,
                 })
                 .expect("the window opens");
             let mut seen = self.0.borrow_mut();

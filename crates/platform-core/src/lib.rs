@@ -91,6 +91,10 @@ pub struct WindowAttributes {
     /// rather than of `size`, cascaded or centred: on a screen that is
     /// still there.
     pub restore: bool,
+    /// Whether it opens of the size of the frame that a window kept last,
+    /// if one did and it does not restore it, rather than of `size`, where
+    /// the platform places it, cascaded or centred; within the screen.
+    pub restore_size: bool,
 }
 
 /// A layer of a window over its content, which the window server blinks
