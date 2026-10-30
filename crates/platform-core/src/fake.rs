@@ -632,18 +632,29 @@ impl Platform for Fake {
         let Some(shown) = &mut state.quick else {
             return;
         };
-        *shown = place.copied();
-        // Its frame changes as it shows, as the system's does at once, and
-        // its events follow as a test sends them.
-        if let Some(place) = place {
-            let (frame, _) = place.frames(SCREEN, SCREEN_AREA);
-            state.size = WindowSize::new(
-                Size {
-                    width: frame.width,
-                    height: frame.height,
-                },
-                self.scale,
-            );
+        match place {
+            // Shown, it takes the place's frame, as the system's does at
+            // once, and is no longer hidden, with the frame that it asked
+            // for, as the backend tells at once; its other events follow as
+            // a test sends them.
+            Some(place) if shown.is_none() => {
+                *shown = Some(*place);
+                state.occluded = false;
+                if std::mem::take(&mut state.frame_held) {
+                    state.frame_requested = true;
+                }
+                let (frame, _) = place.frames(SCREEN, SCREEN_AREA);
+                state.size = WindowSize::new(
+                    Size {
+                        width: frame.width,
+                        height: frame.height,
+                    },
+                    self.scale,
+                );
+            }
+            // Shown already, it keeps its place until it hides.
+            Some(_) => {}
+            None => *shown = None,
         }
     }
 
@@ -716,7 +727,13 @@ impl Platform for Fake {
     }
 
     fn focus_window(&mut self, window: WindowId) {
-        self.focus_requests.push(window);
+        let hidden_quick = self
+            .windows
+            .get(&window)
+            .is_some_and(|state| state.quick == Some(None));
+        if !hidden_quick {
+            self.focus_requests.push(window);
+        }
     }
 
     fn focused_window(&self) -> Option<WindowId> {

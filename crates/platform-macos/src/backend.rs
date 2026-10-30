@@ -452,7 +452,10 @@ impl Platform for Backend {
     }
 
     fn focus_window(&mut self, window: WindowId) {
-        if let Some(window) = self.windows.get(&window) {
+        // A hidden quick window would take the keys off the screen.
+        if let Some(window) = self.windows.get(&window)
+            && !window.is_hidden_quick()
+        {
             NSApplication::sharedApplication(self.mtm).activate();
             window.show();
         }

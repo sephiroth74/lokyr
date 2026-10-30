@@ -731,8 +731,11 @@ pub struct App {
     /// The quick terminal's window, once it opened, and whether it shows.
     quick: Option<(WindowId, bool)>,
     /// The config's global keys that the platform took, by the indices
-    /// that their presses tell, with the commands that they run.
+    /// that their presses tell, with the commands that they run; and
+    /// whether the system gave the app one of them at least, which keeps
+    /// the app open without windows.
     global_keys: Vec<(keymap::Combo, Invocation)>,
+    global_held: bool,
 }
 
 impl App {
@@ -810,6 +813,7 @@ impl App {
             budget,
             quick: None,
             global_keys: Vec::new(),
+            global_held: false,
         }
     }
 
@@ -1943,7 +1947,7 @@ impl App {
             Ok(window) => self.run_in(platform, window, (program, page), &environment),
             Err(error) => {
                 eprintln!("lokyr: {error}");
-                if self.windows.is_empty() && self.global_keys.is_empty() {
+                if self.windows.is_empty() && !self.global_held {
                     platform.quit();
                 }
             }
@@ -2082,7 +2086,9 @@ impl App {
                 None => refused.push(combo),
             }
         }
-        for index in platform.set_global_keys(&keys) {
+        let refused_keys = platform.set_global_keys(&keys);
+        self.global_held = refused_keys.len() < keys.len();
+        for index in refused_keys {
             if let Some(&(combo, _)) = self.global_keys.get(index) {
                 refused.push(combo);
             }
@@ -2207,9 +2213,15 @@ impl App {
         // loss of it the platform tells no more, unless another takes it.
         self.settle_secure_input(platform);
         // A global key goes on showing the quick terminal, which needs the
-        // app.
-        if self.windows.is_empty() && self.global_keys.is_empty() {
+        // app. Without one, the last window quits, the hidden quick
+        // terminal with it, after the question for a program in it.
+        if self.global_held {
+            return;
+        }
+        if self.windows.is_empty() {
             platform.quit();
+        } else if self.windows.len() == 1 && self.quick.is_some_and(|(_, shown)| !shown) {
+            self.ask_quit(platform, false);
         }
     }
 
@@ -4038,8 +4050,13 @@ impl Handler for App {
                     eprintln!("lokyr: {error}");
                 }
             }
+            // The quick terminal, hidden, shows at its place.
             AppEvent::NotificationClicked(window) => {
-                if self.windows.contains_key(&window) {
+                if self.quick.is_some_and(|(quick, _)| quick == window) {
+                    let place = quick::place(&self.config.quick_terminal);
+                    platform.show_quick_window(window, Some(&place));
+                    self.quick = Some((window, true));
+                } else if self.windows.contains_key(&window) {
                     platform.focus_window(window);
                 }
             }
@@ -10352,7 +10369,57 @@ print -z 'echo typed'
         app.apply(&mut fake, Config::default());
         assert!(app.diagnostics.shown().is_none());
         assert!(fake.global_keys().is_empty());
+        // A key that the system refused keeps nothing open.
+        let refused = Config::parse(
+            "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        app.apply(&mut fake, refused);
+        assert_eq!(fake.global_keys(), [key]);
         let window = fake.windows().next().unwrap();
+        app.close(&mut fake, window);
+        assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn without_a_global_key_the_last_window_quits_with_the_hidden_quick_terminal() {
+        // Its program asked about first.
+        let (mut fake, mut app) = started();
+        let window = fake.windows().next().unwrap();
+        toggle(&mut fake, &mut app);
+        let quick = quick_window(&fake).unwrap();
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        toggle(&mut fake, &mut app);
+        assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+        // A notification's click shows it, rather than focusing it hidden.
+        fake.send_app(&mut app, AppEvent::NotificationClicked(quick));
+        assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+        assert!(fake.focus_requests().is_empty());
+        fake.send(&mut app, quick, WindowEvent::Focused(false));
+        assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+        app.close(&mut fake, window);
+        assert!(!fake.has_quit());
+        let [question] = fake.alerts() else {
+            panic!("the question before quitting: {:?}", fake.alerts());
+        };
+        let question = question.id;
+        fake.answer_alert(&mut app, question, 0);
+        assert!(fake.has_quit());
+        // A shell at its prompt quits at once; a quick terminal that shows
+        // keeps the app.
+        let (mut fake, mut app, window) = started_running(idle());
+        toggle(&mut fake, &mut app);
+        let quick = quick_window(&fake).unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, quick).iter().any(|line| line.contains("ready"))
+        });
+        app.close(&mut fake, window);
+        assert!(!fake.has_quit());
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        toggle(&mut fake, &mut app);
+        fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+        let window = fake.windows().find(|&opened| opened != quick).unwrap();
         app.close(&mut fake, window);
         assert!(fake.has_quit());
     }

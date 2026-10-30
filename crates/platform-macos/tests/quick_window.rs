@@ -130,6 +130,8 @@ mod probe {
             }
             seen.focused = true;
             platform.show_quick_window(window, None);
+            // Hidden, the focus does not show it.
+            platform.focus_window(window);
             seen.panels.push(panel());
             let slide = place(QuickEdge::Bottom, Duration::from_millis(150));
             platform.show_quick_window(window, Some(&slide));

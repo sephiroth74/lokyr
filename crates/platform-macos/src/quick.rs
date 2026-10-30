@@ -105,12 +105,16 @@ impl Quick {
     pub(crate) fn show(self: &Rc<Self>, window: &Retained<NSWindow>, place: &QuickPlace) -> bool {
         let mtm = window.mtm();
         let app = NSApplication::sharedApplication(mtm);
-        if !app.isActive() {
+        // Shown from Lokyr itself, it gives the focus back to Lokyr's
+        // window that takes it next, not to an app before.
+        *self.previous.borrow_mut() = if app.isActive() {
+            None
+        } else {
             let ours = NSRunningApplication::currentApplication();
-            *self.previous.borrow_mut() = NSWorkspace::sharedWorkspace()
+            NSWorkspace::sharedWorkspace()
                 .frontmostApplication()
-                .filter(|front| !front.isEqual(Some(&ours)));
-        }
+                .filter(|front| !front.isEqual(Some(&ours)))
+        };
         let hidden = !self.shown.replace(true);
         if hidden {
             let turn = self.next_turn();
@@ -226,6 +230,11 @@ impl Quick {
         if let Some(previous) = previous.filter(|previous| !previous.isTerminated()) {
             previous.activateWithOptions(NSApplicationActivationOptions::empty());
         }
+    }
+
+    /// Whether it shows, or slides in.
+    pub(crate) fn shows(&self) -> bool {
+        self.shown.get()
     }
 
     fn next_turn(&self) -> u64 {

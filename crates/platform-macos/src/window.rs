@@ -302,6 +302,11 @@ impl Window {
         self.quick.is_some()
     }
 
+    /// Whether it is a quick window that does not show.
+    pub(crate) fn is_hidden_quick(&self) -> bool {
+        self.quick.as_ref().is_some_and(|quick| !quick.shows())
+    }
+
     /// Slides a quick window in, as `place` says, with the focus, or out;
     /// another window takes nothing.
     pub(crate) fn show_quick(&self, place: Option<&QuickPlace>) {

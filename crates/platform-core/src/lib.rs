@@ -307,7 +307,9 @@ pub trait Platform {
     /// once it shows again.
     fn request_frame(&mut self, window: WindowId);
 
-    /// Brings a window in front of the others, with the focus.
+    /// Brings a window in front of the others, with the focus; a hidden
+    /// quick window, which [`Platform::show_quick_window`] shows, takes
+    /// nothing.
     fn focus_window(&mut self, window: WindowId);
 
     /// The window that has the keyboard's focus, if one of the

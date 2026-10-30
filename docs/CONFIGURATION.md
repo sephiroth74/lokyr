@@ -1073,7 +1073,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards.
   - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.
   - A key that another app takes already, or a character that no key of the US layout types, as `è`, shows in the bar across the windows' top, until the config takes it away.
-  - While a global key is bound, Lokyr stays open as its last window closes, so that the key still works: its icon in the Dock opens a window. Without one, closing the last window quits Lokyr.
+  - While Lokyr holds a global key, it stays open as its last window closes, so that the key still works: its icon in the Dock opens a window. Without one, or when the system refused it, closing the last window quits Lokyr, the hidden quick terminal and its shell with it, asking first while a program runs there.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;

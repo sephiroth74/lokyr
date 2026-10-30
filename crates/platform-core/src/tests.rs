@@ -575,6 +575,15 @@ fn a_quick_window_opens_hidden_and_takes_its_place_s_size_as_it_shows() {
     fake.show_quick_window(quick, Some(&place));
     let state = fake.window(quick).unwrap();
     assert_eq!(state.quick, Some(Some(place)));
+    assert!(!state.occluded);
+    // Shown, it keeps its place until it hides.
+    let other = QuickPlace {
+        primary: Length::Percent(80.0),
+        ..place
+    };
+    fake.show_quick_window(quick, Some(&other));
+    let state = fake.window(quick).unwrap();
+    assert_eq!(state.quick, Some(Some(place)));
     // 40% of the area under the menu bar, the screen's width.
     assert_eq!(
         state.size,
@@ -586,8 +595,12 @@ fn a_quick_window_opens_hidden_and_takes_its_place_s_size_as_it_shows() {
             2.0
         )
     );
+    fake.focus_window(quick);
     fake.show_quick_window(quick, None);
     assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+    // Hidden, the focus does not reach it.
+    fake.focus_window(quick);
+    assert_eq!(fake.focus_requests(), [quick]);
     // Another window is no quick one.
     let window = fake
         .create_window(&WindowAttributes {
