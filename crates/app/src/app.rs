@@ -3627,7 +3627,7 @@ impl App {
         // The pointer's moves without a button wake the app only for a
         // program that asked for them all.
         let moves = pane
-            .input_modes()
+            .shown_modes()
             .is_some_and(|modes| modes.mouse_tracking == MouseTracking::AnyEvent);
         if moves != state.mouse_moves {
             platform.track_mouse_moves(window, moves);
@@ -3637,7 +3637,7 @@ impl App {
         // over a program that takes the mouse's clicks.
         let takes_clicks = !pane.is_kept()
             && pane
-                .input_modes()
+                .shown_modes()
                 .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None);
         let pointer = if takes_clicks {
             PointerShape::Arrow
@@ -10637,5 +10637,26 @@ print -z 'echo typed'
         fake.send(&mut app, window, WindowEvent::Focused(true));
         fake.send(&mut app, window, WindowEvent::Frame);
         assert_ne!(drawn(&app), first);
+    }
+
+    #[test]
+    fn a_frame_and_a_key_lock_the_pane_once_each() {
+        let (mut fake, mut app, window) = started_running(idle());
+        let locks = |app: &App| app.pane(window).locks();
+        // A frame copies the screen, and reads the rest from the copy.
+        let before = locks(&app);
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert_eq!(locks(&app) - before, 1);
+        // A key resolves in the frame's contexts, and locks to write.
+        let before = locks(&app);
+        fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+        assert_eq!(locks(&app) - before, 1);
+        let before = locks(&app);
+        fake.send(&mut app, window, typed(KeyCode::KeyX, "x", true));
+        assert_eq!(
+            locks(&app) - before,
+            0,
+            "Command's key, which the program does not take"
+        );
     }
 }

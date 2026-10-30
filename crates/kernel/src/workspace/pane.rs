@@ -2,6 +2,7 @@
 //! frames draw, and what its window does once the program ends.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -156,6 +157,9 @@ pub struct Pane {
     bells: u64,
     /// When the workspace last took what the session told.
     told_at: Option<Instant>,
+    /// Whether the app changed the selection since the last frame copied
+    /// the screen, which the contexts read from the terminal until then.
+    selection_touched: AtomicBool,
     /// Whether the workspace told that the program's output ended.
     ended_told: bool,
     /// The marked cell, and its line and its link, as
@@ -243,6 +247,7 @@ impl Pane {
             bells: 0,
             ended_told: false,
             told_at: None,
+            selection_touched: AtomicBool::new(false),
             marked: Mutex::new(None),
         };
         let mut options = Options::new(pty);
@@ -332,10 +337,20 @@ impl Pane {
     /// synchronized update holds it, when it stays as it was. Returns
     /// whether the screen changed.
     pub fn update(&mut self) -> bool {
-        self.session
+        let copied = self
+            .session
             .as_ref()
-            .and_then(|session| session.snapshot(&mut self.snapshot))
-            .is_some_and(|copied| copied > 0)
+            .and_then(|session| session.snapshot(&mut self.snapshot));
+        if copied.is_some() {
+            self.selection_touched.store(false, Ordering::Relaxed);
+        }
+        copied.is_some_and(|copied| copied > 0)
+    }
+
+    /// Notes that the app changed the selection, which the snapshot learns
+    /// at its next update.
+    fn touch_selection(&self) {
+        self.selection_touched.store(true, Ordering::Relaxed);
     }
 
     /// Gives the terminal `grid` at once, when it has another, reflowing
@@ -397,7 +412,7 @@ impl Pane {
         let Some(session) = &self.session else {
             return;
         };
-        if event.mods.super_key && session.lock().keyboard_flags() == KeyboardFlags::NONE {
+        if event.mods.super_key && self.snapshot.keyboard_flags() == KeyboardFlags::NONE {
             return;
         }
         session.key(event, options);
@@ -419,11 +434,25 @@ impl Pane {
             .is_some_and(|session| session.mouse(event))
     }
 
-    /// The modes that the program set of what the mouse sends.
+    /// The modes that the program set of what the keys, the mouse and a
+    /// paste send, as they are now, under the lock.
     pub fn input_modes(&self) -> Option<InputModes> {
         self.session
             .as_ref()
             .map(|session| session.lock().input_modes())
+    }
+
+    /// The same modes, as the last frame copied them, without the lock,
+    /// for what the frame shows of them: the pointer's shape, and the moves
+    /// that the platform tells.
+    pub fn shown_modes(&self) -> Option<InputModes> {
+        self.session.as_ref().map(|_| self.snapshot.input_modes())
+    }
+
+    /// How many times the pane's terminal was locked, as each lock waits
+    /// for a slice of its I/O thread at most.
+    pub fn locks(&self) -> u64 {
+        self.session.as_ref().map_or(0, Session::locks)
     }
 
     /// The selection, if there is one, as the terminal has it now, which
@@ -453,6 +482,7 @@ impl Pane {
             session
                 .lock()
                 .select(from, to, shape, unit, WORD_SEPARATORS);
+            self.touch_selection();
         }
     }
 
@@ -462,6 +492,7 @@ impl Pane {
     pub fn anchor_selection(&self, at: (u16, i64)) {
         if let Some(session) = &self.session {
             session.lock().anchor_selection(at);
+            self.touch_selection();
         }
     }
 
@@ -483,6 +514,7 @@ impl Pane {
     /// Lets the selection go.
     pub fn clear_selection(&self) {
         if let Some(session) = &self.session {
+            self.touch_selection();
             session.lock().clear_selection();
         }
     }
@@ -598,6 +630,7 @@ impl Pane {
     pub fn select_all(&self) {
         if let Some(session) = &self.session {
             session.lock().select_all();
+            self.touch_selection();
         }
     }
 
@@ -605,6 +638,7 @@ impl Pane {
     pub fn clear_scrollback(&self) {
         if let Some(session) = &self.session {
             session.lock().clear_scrollback();
+            self.touch_selection();
         }
     }
 
@@ -613,6 +647,7 @@ impl Pane {
     pub fn clear(&self) {
         if let Some(session) = &self.session {
             session.lock().clear_to_prompt();
+            self.touch_selection();
         }
     }
 
@@ -766,17 +801,30 @@ impl Pane {
 
     /// The keymap's contexts that the pane holds, as a binding's `when`
     /// names them: `alternate-screen` while its program shows a screen of
-    /// its own, and `selection` while it has a selection.
+    /// its own, and `selection` while it has a selection. As the last frame
+    /// showed them, without the lock; as the terminal has them now, once
+    /// the app changed the selection since.
     pub fn contexts(&self) -> Vec<&'static str> {
         let Some(session) = &self.session else {
             return Vec::new();
         };
-        let mut terminal = session.lock();
+        let (alternate, selection) = if self.selection_touched.load(Ordering::Relaxed) {
+            let mut terminal = session.lock();
+            (
+                terminal.is_alternate_screen(),
+                terminal.selection().is_some(),
+            )
+        } else {
+            (
+                self.snapshot.alternate_screen(),
+                self.snapshot.selection().is_some(),
+            )
+        };
         let mut names = Vec::new();
-        if terminal.is_alternate_screen() {
+        if alternate {
             names.push("alternate-screen");
         }
-        if terminal.selection().is_some() {
+        if selection {
             names.push("selection");
         }
         names

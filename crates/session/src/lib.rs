@@ -89,6 +89,8 @@ struct Shared {
     slices: AtomicU64,
     /// How many bytes of output it has read.
     bytes: AtomicU64,
+    /// How many times the session's owner locked the terminal.
+    locks: AtomicU64,
 }
 
 impl Shared {
@@ -149,6 +151,7 @@ impl Session {
             ended: AtomicBool::new(false),
             slices: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
+            locks: AtomicU64::new(0),
         });
         let sync_timeout = options.sync_timeout;
         {
@@ -170,7 +173,14 @@ impl Session {
 
     /// Locks the terminal, ahead of the I/O thread's next slice.
     pub fn lock(&self) -> MutexGuard<'_, Terminal> {
+        self.shared.locks.fetch_add(1, Ordering::Relaxed);
         self.shared.terminal.lock()
+    }
+
+    /// How many times the session's owner locked the terminal, as each
+    /// lock waits for a slice of the I/O thread at most.
+    pub fn locks(&self) -> u64 {
+        self.shared.locks.load(Ordering::Relaxed)
     }
 
     /// Brings `snapshot` up to date with the terminal, under the lock, and

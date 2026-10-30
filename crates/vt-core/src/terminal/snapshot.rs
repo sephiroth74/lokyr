@@ -1,7 +1,7 @@
 //! Snapshots: what a renderer draws, copied from the terminal under the
 //! lock, so that it can draw without the lock.
 
-use super::{Colors, Cursor, CursorStyle, Selected, Terminal};
+use super::{Colors, Cursor, CursorStyle, InputModes, KeyboardFlags, Selected, Terminal};
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
 /// The view as a renderer draws it: its rows, the screen's or, when the
@@ -35,6 +35,9 @@ pub struct Snapshot {
     smooth_scroll: bool,
     /// Whether the alternate screen is the one shown.
     alternate: bool,
+    /// What the program asked of the keys and the mouse.
+    input_modes: InputModes,
+    keyboard_flags: KeyboardFlags,
     colors: Colors,
     /// The selection, as the view shows it.
     selection: Option<Selected>,
@@ -133,6 +136,18 @@ impl Snapshot {
     /// vim shows its own.
     pub fn alternate_screen(&self) -> bool {
         self.alternate
+    }
+
+    /// The modes that the program set of what the keys, the mouse, the
+    /// focus and a paste send.
+    pub fn input_modes(&self) -> InputModes {
+        self.input_modes
+    }
+
+    /// The kitty keyboard protocol's enhancements that the program asked
+    /// for.
+    pub fn keyboard_flags(&self) -> KeyboardFlags {
+        self.keyboard_flags
     }
 
     /// The colors to draw with.
@@ -281,6 +296,8 @@ impl Terminal {
         snapshot.reverse_video = reverse_video;
         snapshot.smooth_scroll = self.smooth_scroll();
         snapshot.alternate = self.alternate_active;
+        snapshot.input_modes = self.input_modes();
+        snapshot.keyboard_flags = self.keyboard_flags();
         if snapshot.colors != self.colors {
             snapshot.colors.clone_from(&self.colors);
         }
@@ -394,6 +411,8 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         reverse_video: terminal.reverse_video(),
         smooth_scroll: terminal.smooth_scroll(),
         alternate: terminal.is_alternate_screen(),
+        input_modes: terminal.input_modes(),
+        keyboard_flags: terminal.keyboard_flags(),
         colors: terminal.colors().clone(),
         selection: None,
     }
@@ -425,6 +444,24 @@ mod tests {
         feed(&mut terminal, &mut parser, "\x1b[?1049l");
         terminal.snapshot(&mut snapshot);
         assert!(!snapshot.alternate_screen());
+    }
+
+    #[test]
+    fn a_snapshot_tells_the_keys_and_the_mouse_s_modes() {
+        let (mut terminal, mut parser) = terminal(10, 3);
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(snapshot.input_modes(), terminal.input_modes());
+        assert_eq!(snapshot.keyboard_flags(), KeyboardFlags::NONE);
+        // Bracketed paste, the mouse's tracking, and the kitty protocol's
+        // first flag.
+        feed(&mut terminal, &mut parser, "\x1b[?2004h\x1b[?1003h\x1b[>1u");
+        terminal.snapshot(&mut snapshot);
+        assert!(snapshot.input_modes().bracketed_paste);
+        assert_eq!(snapshot.input_modes(), terminal.input_modes());
+        assert_eq!(snapshot.keyboard_flags(), terminal.keyboard_flags());
+        assert_ne!(snapshot.keyboard_flags(), KeyboardFlags::NONE);
+        assert_eq!(copy_of(&terminal).input_modes(), terminal.input_modes());
     }
 
     fn feed(terminal: &mut Terminal, parser: &mut Parser, text: &str) {

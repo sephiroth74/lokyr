@@ -317,7 +317,8 @@ fn a_pane_tells_the_jobs_behind_the_shell() {
 
 #[test]
 fn a_pane_tells_its_contexts() {
-    let pane = pane("printf 'ready'; sleep 10");
+    // As its frames show them, but for the app's own changes.
+    let mut pane = pane("printf 'ready'; sleep 10");
     assert!(pane.contexts().is_empty());
     // Once the program shows what it shows, so that no output moves the
     // selection's rows away.
@@ -333,14 +334,21 @@ fn a_pane_tells_its_contexts() {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(10));
     }
+    // The app's own change, as the terminal has it, before the frame;
+    // then as the frame shows it.
+    assert_eq!(pane.contexts(), ["selection"]);
+    pane.update();
     assert_eq!(pane.contexts(), ["selection"]);
     pane.clear_selection();
     assert!(pane.contexts().is_empty());
-    let alternate = self::pane("printf '\\033[?1049h'; sleep 10");
+    pane.update();
+    assert!(pane.contexts().is_empty());
+    let mut alternate = self::pane("printf '\\033[?1049h'; sleep 10");
     let start = Instant::now();
     while alternate.contexts().is_empty() {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(10));
+        alternate.update();
     }
     assert_eq!(alternate.contexts(), ["alternate-screen"]);
 }
