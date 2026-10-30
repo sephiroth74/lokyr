@@ -1,7 +1,8 @@
 //! The field of an alert's sheet takes the keys of its editing, ⌘A, ⌘V,
 //! ⌘C, ⌘X, ⌘Z and ⇧⌘Z, which the main menu's items of the same keys would
-//! otherwise take as their commands. The clipboard is the system's, whose
-//! items the probe puts back as it ends.
+//! otherwise take as their commands, of a layout whose base map is not
+//! Latin, as a Russian one. The clipboard is the system's, whose items the
+//! probe puts back as it ends.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -121,8 +122,23 @@ mod probe {
             .expect("the alert's field")
     }
 
+    /// The character of the key of the Latin `character` in a Russian
+    /// layout's base map, which a Command key's characters without its
+    /// modifiers take, where its characters take the layout's Command map,
+    /// the Latin one.
+    fn russian(character: &str) -> &'static str {
+        match character {
+            "a" => "ф",
+            "c" => "с",
+            "v" => "м",
+            "x" => "ч",
+            "z" => "я",
+            _ => panic!("no key of {character}"),
+        }
+    }
+
     /// Sends the key with Command, and Shift when `shift`, of `character`,
-    /// as the system would, to the app.
+    /// as the system would, to the app, of a Russian layout.
     fn command_key(character: &str, shift: bool) {
         let mtm = MainThreadMarker::new().expect("the main thread");
         let app = NSApplication::sharedApplication(mtm);
@@ -131,10 +147,10 @@ mod probe {
         if shift {
             flags |= NSEventModifierFlags::Shift;
         }
-        let typed = if shift {
-            character.to_uppercase()
+        let (typed, base) = if shift {
+            (character.to_uppercase(), russian(character).to_uppercase())
         } else {
-            character.to_owned()
+            (character.to_owned(), russian(character).to_owned())
         };
         let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
             NSEventType::KeyDown,
@@ -144,7 +160,7 @@ mod probe {
             window.windowNumber(),
             None,
             &NSString::from_str(&typed),
-            &NSString::from_str(&typed),
+            &NSString::from_str(&base),
             false,
             0,
         )

@@ -89,10 +89,10 @@ fn edit_action(event: &NSEvent) -> Option<Sel> {
             | NSEventModifierFlags::Shift
             | NSEventModifierFlags::Option
             | NSEventModifierFlags::Control);
-    let key = event
-        .charactersIgnoringModifiers()?
-        .to_string()
-        .to_lowercase();
+    // The characters of the layout's Command map, which the menus' keys
+    // match too: those without the modifiers are of the layout's base
+    // map, Cyrillic or Greek on such a layout.
+    let key = event.characters()?.to_string().to_lowercase();
     let shifted = if held == NSEventModifierFlags::Command {
         false
     } else if held == NSEventModifierFlags::Command | NSEventModifierFlags::Shift {
