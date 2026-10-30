@@ -199,8 +199,14 @@ pub enum Code {
     InvalidSchema,
     /// 108: a binding whose keys, command or context is not one.
     InvalidBinding,
+    /// 109: a config that does not read, or whose values are not the
+    /// keys'.
+    InvalidConfig,
     /// 201: the command ran, and failed.
     Failed,
+    /// 202: what an action needs is not there, as a font's family that is
+    /// not installed.
+    Unavailable,
     /// 301: a command that the plugin did not declare it runs.
     Undeclared,
     /// 302: a capability that the command needs, and the plugin lacks.
@@ -221,7 +227,9 @@ impl Code {
             Self::AlreadyRegistered => 106,
             Self::InvalidSchema => 107,
             Self::InvalidBinding => 108,
+            Self::InvalidConfig => 109,
             Self::Failed => 201,
+            Self::Unavailable => 202,
             Self::Undeclared => 301,
             Self::MissingCapability => 302,
             Self::Fault => 401,
@@ -236,8 +244,9 @@ impl Code {
             Self::InvalidName
             | Self::AlreadyRegistered
             | Self::InvalidSchema
-            | Self::InvalidBinding => "invalid",
-            Self::Failed => "failed",
+            | Self::InvalidBinding
+            | Self::InvalidConfig => "invalid",
+            Self::Failed | Self::Unavailable => "failed",
             Self::Undeclared | Self::MissingCapability => "denied",
             Self::Fault => "fault",
         }
@@ -341,7 +350,9 @@ mod tests {
             ),
             (Code::InvalidSchema, 107, "invalid", ErrorCategory::Usage),
             (Code::InvalidBinding, 108, "invalid", ErrorCategory::Usage),
+            (Code::InvalidConfig, 109, "invalid", ErrorCategory::Usage),
             (Code::Failed, 201, "failed", ErrorCategory::Failure),
+            (Code::Unavailable, 202, "failed", ErrorCategory::Failure),
             (Code::Undeclared, 301, "denied", ErrorCategory::Security),
             (
                 Code::MissingCapability,

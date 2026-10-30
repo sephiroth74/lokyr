@@ -16,6 +16,8 @@ mod keys;
 #[cfg(target_os = "macos")]
 mod mouse;
 #[cfg(target_os = "macos")]
+mod notice;
+#[cfg(target_os = "macos")]
 mod performance;
 #[cfg(target_os = "macos")]
 mod watch;
@@ -152,13 +154,23 @@ fn run() -> ExitCode {
             executable.display()
         );
     }
-    let (mut config, path) = config();
+    use lokyr_kernel::commands::Code;
+    use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
+
+    let mut diagnostics = Diagnostics::default();
+    let invalid = |error: &str| {
+        let text = format!("{error}; none of the config applies, and the app takes the defaults");
+        Diagnostic::new(Code::InvalidConfig, text, About::Config)
+    };
+    let (mut config, path, error) = config();
+    if let Some(error) = error {
+        diagnostics.report(invalid(&error));
+    }
     let drawing = match app::Drawing::new(config.font.clone()) {
         Ok(drawing) => Some(drawing),
         // A config whose font fails is as invalid as one that does not read.
         Err(error) if config.font != Config::default().font => {
-            eprintln!("lokyr: {error}");
-            eprintln!("lokyr: none of the config applies, and the app takes the defaults");
+            diagnostics.report(invalid(&error));
             config = Config::default();
             app::Drawing::new(config.font.clone())
                 .inspect_err(|error| eprintln!("lokyr: {error}"))
@@ -169,7 +181,9 @@ fn run() -> ExitCode {
             None
         }
     };
-    let app = app::App::new(drawing, config, path).with_state(lokyr_kernel::state::directory());
+    let app = app::App::new(drawing, config, path)
+        .with_state(lokyr_kernel::state::directory())
+        .with_diagnostics(diagnostics);
     match lokyr_platform_macos::run(app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -180,18 +194,16 @@ fn run() -> ExitCode {
 }
 
 /// The config file's, or its defaults when there is none or it is invalid,
-/// which the log tells, and the file's path.
+/// with the error; and the file's path.
 #[cfg(target_os = "macos")]
-fn config() -> (Config, Option<PathBuf>) {
+fn config() -> (Config, Option<PathBuf>, Option<String>) {
     let Some(path) = config::path() else {
-        return (Config::default(), None);
+        return (Config::default(), None, None);
     };
-    let config = Config::read(&path).unwrap_or_else(|error| {
-        eprintln!("lokyr: {error}");
-        eprintln!("lokyr: none of the config applies, and the app takes the defaults");
-        Config::default()
-    });
-    (config, Some(path))
+    match Config::read(&path) {
+        Ok(config) => (config, Some(path), None),
+        Err(error) => (Config::default(), Some(path), Some(error.to_string())),
+    }
 }
 
 /// Fails: the target has no platform backend yet.

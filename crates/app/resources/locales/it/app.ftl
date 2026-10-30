@@ -81,3 +81,8 @@ open-reveal = Mostra nel Finder
 open-cancel = Annulla
 open-url-dont-ask = Non chiedere più per i link
 open-file-dont-ask = Non chiedere più per i file
+
+notice-config = Il file di configurazione non si applica:
+notice-font = Manca un font:
+notice-failed = Un comando non è riuscito:
+notice-fault = Un plugin si è fermato:

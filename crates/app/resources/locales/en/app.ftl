@@ -100,3 +100,10 @@ open-reveal = Show in Finder
 open-cancel = Cancel
 open-url-dont-ask = Don't ask again for links
 open-file-dont-ask = Don't ask again for files
+
+# The notice's bar across a window's top: what it is about, before the
+# error's own text, which the log has too.
+notice-config = The config file does not apply:
+notice-font = A font is missing:
+notice-failed = A command failed:
+notice-fault = A plugin stopped:

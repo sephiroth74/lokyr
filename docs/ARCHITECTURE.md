@@ -60,6 +60,7 @@ Workspace
 - **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model. Its types are plain data, apart from the sessions; they take serde's derives with the first that serializes them, IPC in F3b.
 - **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly.
 - **Identifiers** are opaque `u64` values, never reused during the life of the process: windows, tabs and panes take theirs from one counter of the process.
+- **Diagnostics**: `kernel::diagnostics`. What goes wrong that the user is to learn of, a config that does not read, a font that is not installed, a plugin that is disabled or a command that fails, is a diagnostic of a code, whose hundreds tell its category ([ADR 0019](adr/0019-commands-errors-and-permissions.md)), and of a text. The sink writes each to the log, and keeps those that the user can act on, the config's and the font's, the failures and the faults, for the notice bar across the top of the windows, the latest first, until a fix or a click takes it away; later the audit log and MCP take them too.
 - **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them: commands, dividers, mouse interaction. Without that plugin every tab has exactly one pane.
 
 ## Threads and data flow

@@ -18,11 +18,10 @@ Under each key's name, a small line tells the platforms where the key applies: m
 - **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Lokyr does not know, it names the nearest key that it knows:
 
   ```text
-  lokyr: /Users/you/.config/lokyr/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?
-  lokyr: none of the config applies, and the one in force stays
+  lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?; none of the config applies, and the one in force stays
   ```
 
-  For now the errors go to the log: to the terminal that started Lokyr, when you start it from one. A notice in the window comes later.
+  The error shows in a bar across the top of every window, under the titlebar, until you save a file that reads, or click the bar; it goes to the log too, the terminal that started Lokyr, when you start it from one. A font family that is not installed shows in the bar the same way, until the file names one that is.
 - **Every key at once**: `lokyr +show-config` prints the config with every key: the file's values, and the defaults of the keys that it leaves out.
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
@@ -167,7 +166,7 @@ The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` 
 - The case does not matter: `"menlo"` is Menlo.
 - `"SF Mono"` names the system's monospaced font, which macOS installs under another name.
 - A name that some faces of a family give themselves, as a font and its weight, such as `"CaskaydiaCove NFM SemiBold"`, names the whole family, and takes those faces as the regular text's.
-- A family that is not installed gives the default one, and the log tells it. The styles that the file names then do not apply, as they are the missing family's.
+- A family that is not installed gives the default one, and the notice bar tells it, as the log does. The styles that the file names then do not apply, as they are the missing family's.
 
 ### `size`
 
@@ -211,7 +210,7 @@ The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese
 - **Default**: the text's own family.
 - Its faces follow the weights of the text's: bold text takes its bold face. The styles that `style` and the other keys name are the text's family's, not this one's.
 - A character that this family lacks takes the text's own family, and then the font that macOS gives for it: the icons of a Nerd Font, such as those of a shell's prompt, stay the font's.
-- A family that is not installed leaves that text to the text's family, and the log tells it.
+- A family that is not installed leaves that text to the text's family, and the notice bar tells it, as the log does.
 
 ### `line-height`, `cell-width`
 

@@ -9,11 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
-use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Registry, Value};
+use lokyr_kernel::commands::{
+    Args, Category, Code, Command, Error, ErrorCategory, Kind, Registry, Value,
+};
 use lokyr_kernel::config::{
     self, AppConfig, AppearanceMode, ClipboardRead, CloseOnExit, Config, ConfirmPaste, LinksConfig,
     NewDirectory, OpenFile, OpenUrl, StartDirectory,
 };
+use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver, When,
 };
@@ -52,6 +55,7 @@ use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
 use crate::mouse::{self, Mouse, Pointer, Spot};
+use crate::notice;
 use crate::performance::{self, Performance};
 
 use crate::watch::Watcher;
@@ -240,25 +244,33 @@ impl Drawing {
         self.fonts += 1;
         Ok(())
     }
+
+    /// What the font lacks of the config's: a family that is not
+    /// installed, of the text or of the text past ASCII, and the one that
+    /// it takes instead.
+    fn missing(&self) -> Option<String> {
+        let taken = self.font.family();
+        let missing = |family: &str, of: &str| {
+            format!("the font family `{family}` is not installed; the {of} takes `{taken}`")
+        };
+        let text = self
+            .font
+            .missing_family()
+            .map(|family| missing(family, "text"));
+        let past_ascii = self
+            .font
+            .missing_non_ascii_family()
+            .map(|family| missing(family, "text past ASCII"));
+        match (text, past_ascii) {
+            (Some(text), Some(past)) => Some(format!("{text}; {past}")),
+            (text, past) => text.or(past),
+        }
+    }
 }
 
-/// The font that `config` gives, which tells of a family that is not
-/// installed.
+/// The font that `config` gives.
 fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
-    let font = Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())?;
-    if let Some(family) = font.missing_family() {
-        eprintln!(
-            "lokyr: the font family `{family}` is not installed; the text takes `{}`",
-            font.family()
-        );
-    }
-    if let Some(family) = font.missing_non_ascii_family() {
-        eprintln!(
-            "lokyr: the font family `{family}` is not installed; the text past ASCII takes `{}`",
-            font.family()
-        );
-    }
-    Ok(font)
+    Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())
 }
 
 /// Checks `config` as the app takes it, without applying it: its font,
@@ -409,6 +421,9 @@ struct Window {
     /// That directory, whole, as the title last looked, which stays once
     /// the program ended.
     directory: Option<PathBuf>,
+    /// Where its last frame drew the notice's bar, in pixels, which a click
+    /// closes.
+    notice: Option<Rect>,
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
     /// When its last frame of output came, since its title last looked, for
@@ -527,6 +542,7 @@ impl Window {
             page: None,
             place: (String::new(), String::new()),
             directory: None,
+            notice: None,
             title_shown: None,
             output_at: None,
             user_title: None,
@@ -612,6 +628,9 @@ pub struct App {
     /// The window that took the focus last, which is the one in front as
     /// the app quits, though the app is not active.
     front: Option<WindowId>,
+    /// What went wrong that the user is to learn of: the log, and the
+    /// notices that the windows show.
+    diagnostics: Diagnostics,
     /// The timer of the windows' titles' last look at the programs in
     /// their foreground, after the frames of a burst of output, with the
     /// time that it is for; and how long after a window's last frame of
@@ -717,6 +736,7 @@ impl App {
             opened_one: false,
             state: None,
             front: None,
+            diagnostics: Diagnostics::default(),
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -753,6 +773,13 @@ impl App {
     #[cfg(test)]
     fn with_plugin(mut self, name: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
         self.plugins.add(name, plugin);
+        self
+    }
+
+    /// The app, whose notices start with those of `diagnostics`, as a
+    /// config that does not read as the app starts.
+    pub fn with_diagnostics(mut self, diagnostics: Diagnostics) -> Self {
+        self.diagnostics = diagnostics;
         self
     }
 
@@ -811,9 +838,48 @@ impl App {
         match Config::read(&file.path) {
             Ok(config) => self.apply(platform, config),
             Err(error) => {
-                eprintln!("lokyr: {error}");
-                eprintln!("lokyr: none of the config applies, and the one in force stays");
+                let text =
+                    format!("{error}; none of the config applies, and the one in force stays");
+                let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Config);
+                self.report(platform, diagnostic);
             }
+        }
+    }
+
+    /// Tells `diagnostic`, in the log and, where it is one, in the notice
+    /// of every window.
+    fn report(&mut self, platform: &mut dyn Platform, diagnostic: Diagnostic) {
+        if self.diagnostics.report(diagnostic) {
+            self.request_frames(platform);
+        }
+    }
+
+    /// Takes the notice about `about` away, as a fix does.
+    fn resolve(&mut self, platform: &mut dyn Platform, about: &About) {
+        if self.diagnostics.resolve(about) {
+            self.request_frames(platform);
+        }
+    }
+
+    /// Asks every window for a frame.
+    fn request_frames(&self, platform: &mut dyn Platform) {
+        for &window in self.windows.keys() {
+            platform.request_frame(window);
+        }
+    }
+
+    /// Tells what the font lacks of the config's, or takes the notice of
+    /// what it lacked away.
+    fn tell_font(&mut self, platform: &mut dyn Platform) {
+        let Some(drawing) = &self.drawing else {
+            return;
+        };
+        match drawing.missing() {
+            Some(text) => self.report(
+                platform,
+                Diagnostic::new(Code::Unavailable, text, About::Font),
+            ),
+            None => self.resolve(platform, &About::Font),
         }
     }
 
@@ -821,15 +887,22 @@ impl App {
     /// or nothing of it, if its font fails.
     fn apply(&mut self, platform: &mut dyn Platform, config: Config) {
         if config == self.config {
+            self.resolve(platform, &About::Config);
             return;
         }
-        if config.font != self.config.font
+        let font_changed = config.font != self.config.font;
+        if font_changed
             && let Some(drawing) = &mut self.drawing
             && let Err(error) = drawing.set_font(sized(&config.font, self.font_size))
         {
-            eprintln!("lokyr: {error}");
-            eprintln!("lokyr: none of the config applies, and the one in force stays");
+            let text = format!("{error}; none of the config applies, and the one in force stays");
+            let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Config);
+            self.report(platform, diagnostic);
             return;
+        }
+        self.resolve(platform, &About::Config);
+        if font_changed {
+            self.tell_font(platform);
         }
         let icon_changed = config.app.icon != self.config.app.icon;
         let language_changed = config.app.language != self.config.app.language;
@@ -947,6 +1020,13 @@ impl App {
         let Some(button) = mouse::button(button) else {
             return;
         };
+        // A press on the notice's bar closes the notice, and goes no
+        // further.
+        if pressed && self.on_notice(platform, window, position) {
+            self.diagnostics.dismiss();
+            self.request_frames(platform);
+            return;
+        }
         // A press that a binding takes starts no selection, and reaches no
         // program, which then learns of no release.
         if button == lokyr_vt_core::input::MouseButton::Left
@@ -1452,6 +1532,20 @@ impl App {
         if let Some(pane) = self.workspace.pane(id) {
             pane.unmark_cell();
         }
+    }
+
+    /// Whether `position`, in points of `window`'s content, is on the bar
+    /// of the notice that its last frame drew.
+    fn on_notice(&self, platform: &dyn Platform, window: WindowId, position: Point) -> bool {
+        let (Some(state), Some(size)) = (self.windows.get(&window), platform.window_size(window))
+        else {
+            return false;
+        };
+        let pixels = (position.x * size.scale, position.y * size.scale);
+        state
+            .notice
+            .as_ref()
+            .is_some_and(|rect| notice::contains(rect, pixels))
     }
 
     /// Starts a selection at `position`, as the left button goes down with
@@ -2101,7 +2195,10 @@ impl App {
             },
         };
         if let Err(error) = ran {
-            eprintln!("lokyr: {error}");
+            self.report(
+                platform,
+                Diagnostic::new(error.code, error.message, About::Other),
+            );
         }
     }
 
@@ -2110,7 +2207,10 @@ impl App {
     fn activate_plugins(&mut self, platform: &mut dyn Platform) {
         let errors = self.with_plugins(platform, Plugins::activate);
         for error in errors {
-            eprintln!("lokyr: {error}");
+            self.report(
+                platform,
+                Diagnostic::new(error.code, error.message, About::Other),
+            );
         }
         self.after_plugins(platform, 0);
     }
@@ -3324,6 +3424,22 @@ impl App {
             .into_iter()
             .collect();
         items.push(Item::Cells(batch));
+        // The notice, across the content's top, under the titlebar.
+        state.notice = self.diagnostics.shown().map(|shown| {
+            let label = match (&shown.about, shown.category()) {
+                (About::Config, _) => "notice-config",
+                (About::Font, _) => "notice-font",
+                (About::Other, ErrorCategory::Fault) => "notice-fault",
+                (About::Other, _) => "notice-failed",
+            };
+            let label = self.texts.text(label);
+            let fault = shown.category() == ErrorCategory::Fault;
+            let area = (size.pixels.width, size.bar_pixels());
+            let glyph = |text: &cells::CellText<'_>| font.glyph(text);
+            let (rect, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
+            items.extend(drawn);
+            rect
+        });
         // A flash of the bell, the default text's color over the window.
         if state
             .flash_until
@@ -3439,6 +3555,7 @@ impl Handler for App {
         self.set_menu(platform);
         self.show_appearance(platform);
         self.show_performance(platform);
+        self.tell_font(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
@@ -9042,6 +9159,118 @@ mod tests {
         fake.send(&mut app, window, key_event(KeyCode::KeyN, "n", CMD, true));
         assert_eq!(fake.windows().count(), 2);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn an_invalid_config_shows_its_notice_until_one_that_reads() {
+        let (mut fake, mut app, path) = with_file("notice", "[font]\nsize = 14\n");
+        let window = fake.windows().next().unwrap();
+        assert_eq!(app.diagnostics.shown(), None);
+        // The error, of its line, and nothing of the file applies.
+        std::fs::write(&path, "[font]\nsize = 15\nbogus = 1\n").unwrap();
+        fake.send(&mut app, window, WindowEvent::Frame);
+        change(&mut fake, &mut app);
+        let shown = app.diagnostics.shown().cloned().expect("a notice");
+        assert_eq!(
+            (shown.code, &shown.about),
+            (Code::InvalidConfig, &About::Config)
+        );
+        assert!(shown.text.contains("config.toml:3:1: "), "{}", shown.text);
+        assert!(shown.text.ends_with("and the one in force stays"));
+        assert_eq!(app.config.font.size.points(), 14.0);
+        assert!(fake.window(window).unwrap().frame_requested);
+        // Another error takes its place; a config that reads takes it away.
+        std::fs::write(&path, "[font]\nsize = 1000\n").unwrap();
+        change(&mut fake, &mut app);
+        let again = app.diagnostics.shown().cloned().expect("a notice");
+        assert_ne!(again.text, shown.text);
+        std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(app.diagnostics.shown(), None);
+        assert_eq!(app.config.font.size.points(), 16.0);
+        // Back to the config in force, as after an error, takes it away too.
+        std::fs::write(&path, "bogus = 1\n").unwrap();
+        change(&mut fake, &mut app);
+        std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
+        change(&mut fake, &mut app);
+        assert_eq!(app.diagnostics.shown(), None);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
+        let family = |name: &str| Some(name.to_owned().try_into().unwrap());
+        let mut config = Config::default();
+        config.font.family = family("No Such Family 42");
+        // A machine without a GPU, as some CI's, draws nothing.
+        let Ok(drawing) = Drawing::new(config.font.clone()) else {
+            return;
+        };
+        let mut fake = Fake::default();
+        let mut app = App::new(Some(drawing), config, None).with_program(quiet());
+        fake.start(&mut app);
+        let shown = app.diagnostics.shown().cloned().expect("a notice");
+        assert_eq!(
+            (shown.code, &shown.about),
+            (Code::Unavailable, &About::Font)
+        );
+        assert!(
+            shown.text.starts_with(
+                "the font family `No Such Family 42` is not installed; the text takes `"
+            )
+        );
+        // A family that is there takes it away.
+        let mut config = app.config.clone();
+        config.font.family = family("Menlo");
+        app.apply(&mut fake, config);
+        assert_eq!(app.diagnostics.shown(), None);
+    }
+
+    #[test]
+    fn a_failure_shows_its_notice_and_a_click_on_the_bar_closes_it() {
+        let (mut fake, mut app, window, _) = with_tester();
+        // A command that the caller named wrongly goes to the log alone.
+        app.run(&mut fake, "test.nothing", Args::new());
+        assert_eq!(app.diagnostics.shown(), None);
+        // A plugin that panics: a fault, which disables it.
+        app.run(&mut fake, "test.boom", Args::new());
+        let shown = app.diagnostics.shown().cloned().expect("a notice");
+        assert_eq!(shown.code, Code::Fault);
+        assert!(
+            shown.text.contains("panicked: on purpose"),
+            "{}",
+            shown.text
+        );
+        // Where the bar was drawn, a press closes it, and reaches no
+        // program; below it, it does not.
+        let bar = Rect {
+            x: 0,
+            y: 56,
+            width: 800,
+            height: 40,
+        };
+        app.windows.get_mut(&window).unwrap().notice = Some(bar);
+        let scale = fake.window(window).unwrap().size.scale;
+        let at = |y: f64| Point {
+            x: 10.0,
+            y: y / scale,
+        };
+        let press = |position| WindowEvent::MouseButton {
+            button: lokyr_platform_core::MouseButton::Left,
+            pressed: true,
+            clicks: 1,
+            position,
+            mods: Modifiers::NONE,
+        };
+        fake.send(&mut app, window, press(at(70.0)));
+        assert_eq!(app.diagnostics.shown(), None);
+        assert!(app.windows[&window].selecting.is_none());
+        // A failure of a command shows too; a press below the bar leaves it.
+        let failed = Diagnostic::new(Code::Failed, "it failed", About::Other);
+        app.report(&mut fake, failed);
+        fake.send(&mut app, window, press(at(120.0)));
+        assert!(app.diagnostics.shown().is_some());
+        assert!(app.windows[&window].selecting.is_some());
     }
 
     #[test]

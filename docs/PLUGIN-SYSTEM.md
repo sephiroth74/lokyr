@@ -337,7 +337,9 @@ type Plugin = {
   | 106 | `invalid` | Usage | A command registered already |
   | 107 | `invalid` | Usage | A schema that repeats a parameter, or whose default is of another kind |
   | 108 | `invalid` | Usage | A binding whose keys, command or context is not one |
+  | 109 | `invalid` | Usage | A config that does not read, or whose values are not its keys' |
   | 201 | `failed` | Failure | The command ran, and failed |
+  | 202 | `failed` | Failure | What an action needs is not there, as a font's family that is not installed |
   | 301 | `denied` | Security | A command that the plugin's manifest does not declare |
   | 302 | `denied` | Security | A capability that the command needs, which the plugin lacks |
   | 401 | `fault` | Fault | A command that broke, as by a panic |
