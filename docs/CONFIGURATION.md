@@ -629,7 +629,7 @@ Whether the titlebar stays opaque over a translucent window, in the default back
 
 ## `[quick-terminal]`
 
-A window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says; Shell › Quick Terminal runs it too:
+A window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``"global:ctrl+`" = "window.toggle-quick-terminal"`` does; Shell › Quick Terminal runs it too.
 
 ```toml
 [keys]
@@ -1068,7 +1068,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. An ASCII letter or digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
   - Two entries of the same keys, written two ways, as `alt+x` and `opt+x`, or `cmd+shift+n` and `shift+cmd+n`, are an error.
 - **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel, or a click, makes no sequence.
-- **A global key**, written after `global:`, as `"global:ctrl+`"`, runs its command from every app, Lokyr's windows too, as macOS gives Lokyr the key without the Accessibility permission, and takes it from them.
+- **A global key**, written after `global:`, as ``"global:ctrl+`"``, runs its command from every app, Lokyr's windows too, as macOS gives Lokyr the key without the Accessibility permission, and takes it from them.
   - It is one key with `cmd`, `ctrl` or `alt`, or a function key, alone or with any of them; no sequence, no step of the wheel, no click.
   - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards.
   - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.

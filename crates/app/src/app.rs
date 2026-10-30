@@ -2891,10 +2891,6 @@ impl App {
         self.clipboard_asks.insert(alert, (pane, request));
     }
 
-    /// Asks the user to confirm a paste of `text` into `pane`, whose
-    /// program takes its line breaks as Return: an alert in its window,
-    /// with the text's first lines as they would reach the program. A
-    /// paste while one waits for its answer goes.
     /// Pastes `text` into `window`'s program as a paste of the clipboard
     /// does: bracketed where the program asks, and asking first where
     /// `confirm-paste` says so.
@@ -2919,6 +2915,10 @@ impl App {
         }
     }
 
+    /// Asks the user to confirm a paste of `text` into `pane`, whose
+    /// program takes its line breaks as Return: an alert in its window,
+    /// with the text's first lines as they would reach the program. A
+    /// paste while one waits for its answer goes.
     fn ask_paste(&mut self, platform: &mut dyn Platform, pane: PaneId, text: String) {
         if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
             return;
