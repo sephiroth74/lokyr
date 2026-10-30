@@ -367,7 +367,7 @@ pub fn blinking_cells(
         (look, shown),
         glyphs,
     );
-    // The composition shows in place of the text under it.
+    // The composition shows in place of the text under it, and its lines.
     if let Some((row, covered)) = preedit
         .filter(|preedit| !preedit.text.is_empty())
         .and_then(|preedit| composed_span(snapshot, preedit, batch.columns))
@@ -375,6 +375,7 @@ pub fn blinking_cells(
         batch
             .glyphs
             .retain(|glyph| glyph.row != row || !covered.contains(&glyph.column));
+        cut_lines(&mut batch, row, covered);
     }
     let drawn = batch.glyphs.iter().map(|glyph| glyph.row);
     let drawn = drawn.chain(batch.lines.iter().map(|line| line.row));
@@ -1632,8 +1633,9 @@ mod tests {
         let plain = snapshot(8, 2, "abc");
         let default = TextConfig::default();
         assert!(blinking_cells(&plain, &cell(), None, default, None, glyphs).is_none());
-        // A composition at the cursor covers the text under it.
-        let under = snapshot(8, 1, "\x1b[5mabc\x1b[3D");
+        // A composition at the cursor covers the text under it, and its
+        // lines, a strikeout's.
+        let under = snapshot(8, 1, "\x1b[5;9mabc\x1b[3D");
         let composing = Preedit {
             text: "日".to_owned(),
             cursor: 3,
@@ -1642,6 +1644,12 @@ mod tests {
             blinking_cells(&under, &cell(), None, default, Some(&composing), glyphs).unwrap();
         let cells: Vec<u16> = apart.glyphs.iter().map(|glyph| glyph.column).collect();
         assert_eq!(cells, [2]);
+        let lines: Vec<(u16, u16)> = apart
+            .lines
+            .iter()
+            .map(|line| (line.column, line.columns))
+            .collect();
+        assert_eq!(lines, [(2, 1)]);
     }
 
     #[test]

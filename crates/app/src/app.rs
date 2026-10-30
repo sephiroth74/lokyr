@@ -204,6 +204,9 @@ pub struct Drawing {
     gpu: Gpu,
     renderer: MetalRenderer,
     font: Font<CoreText>,
+    /// How many fonts it took, the first one too: a layer draws its cells
+    /// again of a new one, whose atlas gives their regions to other pixels.
+    fonts: u64,
 }
 
 impl Drawing {
@@ -219,6 +222,7 @@ impl Drawing {
             gpu,
             renderer,
             font,
+            fonts: 1,
         })
     }
 
@@ -232,6 +236,7 @@ impl Drawing {
             MetalRenderer::new(&self.gpu, coverage, color).map_err(|error| error.to_string())?;
         self.font = font;
         self.renderer = renderer;
+        self.fonts += 1;
         Ok(())
     }
 }
@@ -316,9 +321,9 @@ struct WindowLayer {
     /// Where the app placed it last, and how it blinks: `None` while it is
     /// hidden.
     place: Option<LayerPlace>,
-    /// The cells that it shows, and at what scale, which a frame draws
-    /// again only as they change.
-    drawn: Option<(CellBatch, f64)>,
+    /// The cells that it shows, at what scale, and of which of the
+    /// drawing's fonts, which a frame draws again only as they change.
+    drawn: Option<(CellBatch, f64, u64)>,
 }
 
 impl WindowLayer {
@@ -3977,7 +3982,7 @@ fn show_layer(
         let margin = |pixels: i32| u32::try_from(pixels).unwrap_or(0) * 2;
         let width = u32::from(cells.columns) * cells.cell_width + margin(cells.x);
         let height = u32::from(cells.rows) * cells.cell_height + margin(cells.y);
-        let drawn = (cells, scale);
+        let drawn = (cells, scale, drawing.fonts);
         if state.drawn.as_ref() != Some(&drawn) {
             let list = DisplayList {
                 background: Color::default().with_alpha(0.0),
@@ -5374,6 +5379,17 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::Focused(false));
         let (shape, blink) = app.cursor(&mut fake, window, Instant::now()).unwrap();
         assert_eq!((shape, blink), (CursorShape::Hollow, None));
+    }
+
+    #[test]
+    fn a_new_font_has_the_layers_draw_their_cells_again() {
+        // A machine without a GPU, as some CI's, draws nothing.
+        let Ok(mut drawing) = Drawing::new(FontConfig::default()) else {
+            return;
+        };
+        assert_eq!(drawing.fonts, 1);
+        drawing.set_font(FontConfig::default()).unwrap();
+        assert_eq!(drawing.fonts, 2);
     }
 
     #[test]
