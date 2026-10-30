@@ -134,6 +134,8 @@ pub struct Fake {
     /// showed in the file manager, from the first.
     opened: Vec<String>,
     edited: Vec<PathBuf>,
+    /// Why the text editor opens nothing, as the next open fails.
+    editor_fails: Option<String>,
     usage: Option<Usage>,
     revealed: Vec<String>,
     last_id: u64,
@@ -177,6 +179,7 @@ impl Fake {
             focus_requests: Vec::new(),
             opened: Vec::new(),
             edited: Vec::new(),
+            editor_fails: None,
             usage: None,
             revealed: Vec::new(),
             last_id: 0,
@@ -448,6 +451,11 @@ impl Fake {
     /// The files that the app opened in the text editor, in order.
     pub fn edited(&self) -> &[PathBuf] {
         &self.edited
+    }
+
+    /// Has the text editor open nothing, for `why`, until it is `None`.
+    pub fn fail_editing(&mut self, why: Option<&str>) {
+        self.editor_fails = why.map(str::to_owned);
     }
 
     /// Whether the app has quit.
@@ -763,6 +771,9 @@ impl Platform for Fake {
     }
 
     fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error> {
+        if let Some(why) = &self.editor_fails {
+            return Err(Error::Open(path.display().to_string(), why.clone()));
+        }
         self.edited.push(path.to_owned());
         Ok(())
     }

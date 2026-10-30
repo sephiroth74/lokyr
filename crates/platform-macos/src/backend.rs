@@ -603,7 +603,7 @@ impl Platform for Backend {
     }
 
     fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error> {
-        open::in_text_editor(path)
+        open::in_text_editor(path, self.waker.clone())
     }
 
     fn notify(&mut self, window: WindowId, title: &str, body: &str) {

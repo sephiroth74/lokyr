@@ -62,6 +62,9 @@ set-title-message = Il titolo della finestra
 set-title-detail = Lascialo vuoto per quello della finestra: il titolo del programma, o la sua cartella, poi il programma in esecuzione.
 set-title-set = Imposta
 set-title-cancel = Annulla
+
+settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
+settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.
 quit-running-message = Uscire da Lokyr?
 quit-running-detail = { $windows ->
     [one] In una finestra è in esecuzione { $programs }: uscire lo termina.

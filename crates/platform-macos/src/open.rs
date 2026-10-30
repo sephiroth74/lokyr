@@ -5,13 +5,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use lokyr_platform_core::{Error, TargetKind, runs_by_itself};
+use block2::RcBlock;
+use lokyr_platform_core::{Error, TargetKind, Waker, runs_by_itself};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2_app_kit::{NSWorkspace, NSWorkspaceOpenConfiguration};
+use objc2_app_kit::{NSRunningApplication, NSWorkspace, NSWorkspaceOpenConfiguration};
 use objc2_foundation::{
-    NSArray, NSBundle, NSDictionary, NSString, NSURL, NSURLBookmarkResolutionOptions,
+    NSArray, NSBundle, NSDictionary, NSError, NSString, NSURL, NSURLBookmarkResolutionOptions,
 };
 use objc2_uniform_type_identifiers::UTTypePlainText;
 
@@ -25,6 +27,19 @@ const RUNNERS: [&str; 4] = [
     "com.apple.AutomatorInstaller",
     "org.python.PythonLauncher",
 ];
+
+/// The opens that failed once the system took them on, which the main
+/// thread takes as a waker wakes it, as the system tells their end on a
+/// thread of its own: each one's target, and what went wrong.
+static FAILED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+/// Takes the opens that failed since the last take.
+pub(crate) fn take_failed() -> Vec<(String, String)> {
+    FAILED
+        .lock()
+        .map(|mut failed| std::mem::take(&mut *failed))
+        .unwrap_or_default()
+}
 
 /// How many aliases a path can lead through, each to the next.
 const ALIASES: usize = 8;
@@ -178,8 +193,10 @@ pub(crate) fn reveal(target: &str) -> Result<(), Error> {
 
 /// Opens the file `path` in the application that opens plain text, as
 /// TextEdit or the editor that the user chose for it, whatever the file's
-/// own type opens in, as a `.toml` that no application may claim.
-pub(crate) fn in_text_editor(path: &Path) -> Result<(), Error> {
+/// own type opens in, as a `.toml` that no application may claim. What
+/// fails after, as an editor that does not start, `waker` tells the main
+/// thread, which takes it with [`take_failed`].
+pub(crate) fn in_text_editor(path: &Path, waker: Waker) -> Result<(), Error> {
     let failed = |why: &str| Error::Open(path.display().to_string(), why.to_owned());
     let workspace = NSWorkspace::sharedWorkspace();
     // SAFETY: the framework's constant, a type that it keeps.
@@ -191,13 +208,33 @@ pub(crate) fn in_text_editor(path: &Path) -> Result<(), Error> {
         path.to_str()
             .ok_or_else(|| failed("its path is not UTF-8"))?,
     ));
-    workspace.openURLs_withApplicationAtURL_configuration_completionHandler(
-        &NSArray::from_retained_slice(&[file]),
-        &editor,
-        &NSWorkspaceOpenConfiguration::configuration(),
-        None,
-    );
+    open_with(&workspace, (path, &file), &editor, waker);
     Ok(())
+}
+
+/// Opens `file`, of `path`, in the application `editor`, and keeps what
+/// fails once the system took the open on, which `waker` tells.
+fn open_with(workspace: &NSWorkspace, (path, file): (&Path, &NSURL), editor: &NSURL, waker: Waker) {
+    let target = path.display().to_string();
+    let completion = RcBlock::new(move |_: *mut NSRunningApplication, error: *mut NSError| {
+        // SAFETY: the system gives an error that lives through the call, or
+        // none.
+        let Some(error) = (unsafe { error.as_ref() }) else {
+            return;
+        };
+        let why = error.localizedDescription().to_string();
+        let error = Error::Open(target.clone(), why).to_string();
+        if let Ok(mut failed) = FAILED.lock() {
+            failed.push((target.clone(), error));
+            waker.wake();
+        }
+    });
+    workspace.openURLs_withApplicationAtURL_configuration_completionHandler(
+        &NSArray::from_slice(&[file]),
+        editor,
+        &NSWorkspaceOpenConfiguration::configuration(),
+        Some(&completion),
+    );
 }
 
 /// Whether `host`, of a `file` URL, is this machine, whose name is `name`:
@@ -240,6 +277,37 @@ mod tests {
         let _ = fs::remove_dir_all(&directory);
         fs::create_dir_all(&directory).unwrap();
         directory
+    }
+
+    #[test]
+    fn an_editor_that_does_not_open_tells_the_main_thread_after() {
+        let directory = directory("editor-fails");
+        let path = directory.join("config.toml");
+        fs::write(&path, "").unwrap();
+        let file = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let gone = NSURL::fileURLWithPath(&NSString::from_str(
+            directory.join("Gone.app").to_str().unwrap(),
+        ));
+        let woken = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let waker = {
+            let woken = std::sync::Arc::clone(&woken);
+            Waker::new(move || woken.store(true, std::sync::atomic::Ordering::Release))
+        };
+        let workspace = NSWorkspace::sharedWorkspace();
+        open_with(&workspace, (&path, &file), &gone, waker);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut failed = Vec::new();
+        while failed.is_empty() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            failed = take_failed();
+        }
+        let _ = fs::remove_dir_all(&directory);
+        assert!(woken.load(std::sync::atomic::Ordering::Acquire));
+        let target = path.display().to_string();
+        assert!(
+            matches!(failed.as_slice(), [(of, error)] if *of == target && error.starts_with(&format!("{target} could not be opened: "))),
+            "{failed:?}"
+        );
     }
 
     /// Makes `alias` a Finder's alias of `original`.

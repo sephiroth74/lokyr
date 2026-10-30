@@ -405,7 +405,9 @@ pub trait Platform {
     fn reveal(&mut self, target: &str) -> Result<(), Error>;
 
     /// Opens `path`, a file, in the system's text editor: the application
-    /// that opens plain text, whatever the file's own type opens in.
+    /// that opens plain text, whatever the file's own type opens in. What
+    /// fails once the system took the open on, as an editor that does not
+    /// start, comes as [`AppEvent::OpenFailed`].
     fn open_in_text_editor(&mut self, path: &Path) -> Result<(), Error>;
 }
 

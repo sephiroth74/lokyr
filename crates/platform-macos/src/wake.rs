@@ -94,13 +94,18 @@ impl Drop for WakeSource {
     }
 }
 
-/// What the source does on the main thread once a waker signalled it: one
-/// call for the signals that came since the last.
+/// What the source does on the main thread once a waker signalled it, one
+/// call for the signals that came since the last: the clicks on
+/// notifications and the opens that failed, which other threads keep, as
+/// events, then a wake.
 unsafe extern "C-unwind" fn perform(_info: *mut c_void) {
     let shared = TARGET.with(|target| target.borrow().upgrade());
     if let Some(shared) = shared {
         for window in crate::notify::take_clicked() {
             shared.post(Pending::App(AppEvent::NotificationClicked(window)));
+        }
+        for (target, error) in crate::open::take_failed() {
+            shared.post(Pending::App(AppEvent::OpenFailed { target, error }));
         }
         shared.post(Pending::App(AppEvent::Wake));
     }

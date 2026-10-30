@@ -100,6 +100,15 @@ pub enum AppEvent {
     /// The user clicked a notification that the app showed for a window,
     /// with [`Platform::notify`](crate::Platform::notify).
     NotificationClicked(WindowId),
+    /// An open that the platform started failed, as the system told after
+    /// the call that started it returned, as
+    /// [`Platform::open_in_text_editor`](crate::Platform::open_in_text_editor)'s.
+    OpenFailed {
+        /// What it opened: a path, or a URL.
+        target: String,
+        /// What went wrong, its target named.
+        error: String,
+    },
 }
 
 /// The system's appearance.

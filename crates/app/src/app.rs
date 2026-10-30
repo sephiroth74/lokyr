@@ -1334,17 +1334,38 @@ impl App {
     /// text; without a home directory, which gives it no path, the log
     /// tells.
     fn open_settings(&mut self, platform: &mut dyn Platform) {
-        let Some(file) = &self.config_file else {
-            eprintln!("lokyr: there is no config file to open, without a home directory");
-            return;
+        let failed = match &self.config_file {
+            None => Some(self.texts.text("settings-no-home")),
+            Some(file) => config::make(&file.path)
+                .err()
+                .map(|error| error.to_string())
+                .or_else(|| {
+                    platform
+                        .open_in_text_editor(&file.path)
+                        .err()
+                        .map(|error| error.to_string())
+                }),
         };
-        if let Err(error) = config::make(&file.path) {
-            eprintln!("lokyr: {error}");
-            return;
+        if let Some(why) = failed {
+            self.tell_settings_failed(platform, why);
         }
-        if let Err(error) = platform.open_in_text_editor(&file.path) {
-            eprintln!("lokyr: {error}");
-        }
+    }
+
+    /// Tells, in an alert of the window that the commands run in, or of the
+    /// one that has the focus, that Settings… opens nothing, and `why`, as
+    /// the log does.
+    fn tell_settings_failed(&mut self, platform: &mut dyn Platform, why: String) {
+        eprintln!("lokyr: {why}");
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("settings-failed-message"),
+            detail: why,
+            buttons: Vec::new(),
+            suppression: None,
+            input: None,
+        };
+        let window = self.acting.or_else(|| platform.focused_window());
+        platform.show_alert(window, &alert);
     }
 
     /// Opens a window whose pane shows the man page that the selection of
@@ -3401,6 +3422,19 @@ impl Handler for App {
                 }
             }
             // A click on a program's notification brings its window forward.
+            // The text editor did not open the config file, as the system
+            // told once it had taken the open on.
+            AppEvent::OpenFailed { target, error } => {
+                let config = self
+                    .config_file
+                    .as_ref()
+                    .is_some_and(|file| file.path.display().to_string() == target);
+                if config {
+                    self.tell_settings_failed(platform, error);
+                } else {
+                    eprintln!("lokyr: {error}");
+                }
+            }
             AppEvent::NotificationClicked(window) => {
                 if self.windows.contains_key(&window) {
                     platform.focus_window(window);
@@ -4507,6 +4541,74 @@ mod tests {
         let (mut fake, mut app) = started();
         fake.send_app(&mut app, AppEvent::Command(SETTINGS.to_owned()));
         assert!(fake.edited().is_empty());
+    }
+
+    #[test]
+    fn settings_tells_why_it_opens_nothing() {
+        let settings = |fake: &mut Fake, app: &mut App| {
+            fake.send_app(app, AppEvent::Command(SETTINGS.to_owned()));
+        };
+        let told = |fake: &Fake| {
+            fake.alerts()
+                .iter()
+                .map(|shown| (shown.alert.message.clone(), shown.alert.detail.clone()))
+                .collect::<Vec<_>>()
+        };
+        let message = "Lokyr cannot open its config file".to_owned();
+        // A directory that cannot be made: a link to one that is gone.
+        let (mut fake, mut app, path) = with_file("settings-failed", "");
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let directory = path.parent().unwrap().to_owned();
+        std::fs::remove_dir_all(&directory).unwrap();
+        std::os::unix::fs::symlink(directory.with_extension("gone"), &directory).unwrap();
+        settings(&mut fake, &mut app);
+        let shown = told(&fake);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].0, message);
+        assert!(
+            shown[0].1.contains(&path.display().to_string()),
+            "{shown:?}"
+        );
+        assert!(fake.edited().is_empty());
+        // On the window that has the focus.
+        assert_eq!(fake.alerts()[0].window, Some(window));
+        std::fs::remove_file(&directory).unwrap();
+        // An editor that the platform does not find.
+        std::fs::create_dir_all(&directory).unwrap();
+        fake.fail_editing(Some("no application opens text"));
+        settings(&mut fake, &mut app);
+        let error = format!(
+            "{} could not be opened: no application opens text",
+            path.display()
+        );
+        assert_eq!(told(&fake)[1], (message.clone(), error));
+        // One that the system tells of after the open, for the config file;
+        // another target's goes to the log alone.
+        fake.fail_editing(None);
+        settings(&mut fake, &mut app);
+        let late = AppEvent::OpenFailed {
+            target: path.display().to_string(),
+            error: "it is damaged".to_owned(),
+        };
+        fake.send_app(&mut app, late);
+        assert_eq!(
+            told(&fake)[2],
+            (message.clone(), "it is damaged".to_owned())
+        );
+        let other = AppEvent::OpenFailed {
+            target: "/elsewhere".to_owned(),
+            error: "it is damaged".to_owned(),
+        };
+        fake.send_app(&mut app, other);
+        assert_eq!(told(&fake).len(), 3);
+        let _ = std::fs::remove_dir_all(&directory);
+        // Without a home directory.
+        let (mut fake, mut app) = started();
+        settings(&mut fake, &mut app);
+        let no_home =
+            "Without a home directory, there is no config file: the defaults apply.".to_owned();
+        assert_eq!(told(&fake), [(message, no_home)]);
     }
 
     #[test]

@@ -76,6 +76,11 @@ set-title-message = The window's title
 set-title-detail = Leave it empty for the window's own: the program's title, or its folder, then the program that runs.
 set-title-set = Set
 set-title-cancel = Cancel
+
+# The alert of Settings… that opens nothing: what went wrong, as the
+# system tells it, under the message.
+settings-failed-message = Lokyr cannot open its config file
+settings-no-home = Without a home directory, there is no config file: the defaults apply.
 quit-running-message = Quit Lokyr?
 quit-running-detail = { $windows ->
     [one] A window is running { $programs }, and quitting ends it.
