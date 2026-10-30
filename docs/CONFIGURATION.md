@@ -773,6 +773,7 @@ When a paste with line breaks asks you first: a program that does not ask for br
 - `"auto"` asks when the program does not ask for bracketed paste and the text has several lines. A single line with a line break after it, as a command copied with its line's end, pastes without the line break, so that the command waits for your Return. A shell that asks for bracketed paste, as zsh, fish and recent versions of bash do, takes any paste as typed text, which runs nothing: it is never asked about.
 - `"always"` asks whenever the text has a line break, into any program.
 - `"never"` pastes as it is.
+- Text that you drop on a window pastes as a paste does, and asks the same way; files that you drop paste their paths, each quoted for the shell where it needs it, as `'/tmp/a file.txt'`, apart by spaces and with one after the last.
 - The question shows the text's first lines, as the program would get them, and three buttons: Paste, the default one; Paste as One Line, which puts a space for each line break and leaves out the last one; and Cancel. Its checkbox, Don't ask again, sets this key to `"never"` in your config file as you paste, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits.
 - It applies as you save the file.
 

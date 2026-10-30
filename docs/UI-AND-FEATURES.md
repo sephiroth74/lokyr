@@ -272,7 +272,7 @@ The `command-palette` plugin (⌘⇧P on macOS, Ctrl+Shift+P on Linux):
 ## Basic actions
 
 The `core-actions` plugin:
-- **Clipboard and scrollback**: copy, paste (with the rules in [SECURITY.md](SECURITY.md)), select all, clear the scrollback.
+- **Clipboard and scrollback**: copy, paste (with the rules in [SECURITY.md](SECURITY.md)), select all, clear the scrollback. A drop of files pastes their paths, quoted for the shell; a drop of text pastes it, as a paste does.
 - **Font and scrolling**: font size (+, −, reset); scroll by line or page, to the top or bottom.
 - **Windows**: new window, close window, quit.
 - **Mouse selection**:

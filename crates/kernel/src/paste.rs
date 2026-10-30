@@ -90,12 +90,46 @@ pub fn preview(text: &str, most: usize, width: usize) -> String {
     lines.join("\n")
 }
 
+/// The text that a drop of files at `paths` pastes: each path as a shell
+/// takes it, one argument of its own, between single quotes unless it is
+/// only of letters, digits and `_-./+,:@%=^`, a single quote within as
+/// `'\''`; the paths apart by spaces, and a space after the last, so that
+/// what is typed next is an argument of its own.
+pub fn dropped_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
+    let plain = |character: char| character.is_alphanumeric() || "_-./+,:@%=^".contains(character);
+    let mut text = String::new();
+    for path in paths {
+        if !path.is_empty() && path.chars().all(plain) {
+            text.push_str(path);
+        } else {
+            text.push('\'');
+            text.push_str(&path.replace('\'', "'\\''"));
+            text.push('\'');
+        }
+        text.push(' ');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn now(text: &str) -> Paste<'_> {
         Paste::Now(Cow::Borrowed(text))
+    }
+
+    #[test]
+    fn dropped_paths_are_a_shell_s_arguments() {
+        assert_eq!(dropped_paths(["/usr/bin", "/tmp/a,b@c=d"]), "/usr/bin /tmp/a,b@c=d ");
+        // Spaces, quotes, the shell's own characters, and a single quote.
+        assert_eq!(
+            dropped_paths(["/tmp/a file.txt", "/tmp/$HOME", "/tmp/it's"]),
+            "'/tmp/a file.txt' '/tmp/$HOME' '/tmp/it'\\''s' "
+        );
+        // Letters of other scripts are plain; a newline is quoted.
+        assert_eq!(dropped_paths(["/tmp/città", "/tmp/a\nb"]), "/tmp/città '/tmp/a\nb' ");
+        assert_eq!(dropped_paths([]), "");
     }
 
     #[test]

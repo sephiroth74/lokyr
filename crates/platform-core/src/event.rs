@@ -22,6 +22,8 @@ pub enum WindowEvent {
     CloseRequested,
     /// An item of the window's context menu was chosen: its command.
     ContextCommand(String),
+    /// Files or text were dropped on the window's content.
+    Dropped(Dropped),
     /// The window is ready for the frame that the app asked for, with
     /// [`Platform::request_frame`](crate::Platform::request_frame): the app
     /// draws it now.
@@ -109,6 +111,15 @@ pub enum AppEvent {
         /// What went wrong, its target named.
         error: String,
     },
+}
+
+/// What was dropped on a window.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Dropped {
+    /// Files, by their paths, from the first.
+    Files(Vec<std::path::PathBuf>),
+    /// Text.
+    Text(String),
 }
 
 /// The system's appearance.

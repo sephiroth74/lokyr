@@ -30,10 +30,10 @@ use lokyr_kernel::workspace::{
     self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
 };
 use lokyr_platform_core::{
-    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Handler, Ime, KeyCode,
-    KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton, Platform,
-    Point, PointerArea, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size,
-    StandardAction, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Dropped, Handler, Ime,
+    KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton,
+    Platform, Point, PointerArea, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey,
+    Size, StandardAction, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_platform_core::{Blink as PlatformBlink, Easing, Layer, LayerPlace};
 use lokyr_pty::Program;
@@ -2734,6 +2734,30 @@ impl App {
     /// program takes its line breaks as Return: an alert in its window,
     /// with the text's first lines as they would reach the program. A
     /// paste while one waits for its answer goes.
+    /// Pastes `text` into `window`'s program as a paste of the clipboard
+    /// does: bracketed where the program asks, and asking first where
+    /// `confirm-paste` says so.
+    fn paste_into(&mut self, platform: &mut dyn Platform, window: WindowId, text: String) {
+        let Some(id) = self.windows.get(&window).map(|state| state.pane) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(id) else {
+            return;
+        };
+        let bracketed = pane
+            .input_modes()
+            .is_some_and(|modes| modes.bracketed_paste);
+        let confirm = if self.pastes_unconfirmed {
+            ConfirmPaste::Never
+        } else {
+            self.config.clipboard.confirm_paste
+        };
+        match paste::decide(&text, bracketed, confirm) {
+            paste::Paste::Now(text) => pane.paste(&text),
+            paste::Paste::Ask => self.ask_paste(platform, id, text),
+        }
+    }
+
     fn ask_paste(&mut self, platform: &mut dyn Platform, pane: PaneId, text: String) {
         if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
             return;
@@ -3996,6 +4020,21 @@ impl Handler for App {
                 ..
             } => self.scroll(platform, window, (delta, phase), position, mods),
             WindowEvent::CloseRequested => self.ask_close(platform, window),
+            // Files paste their paths, as a shell's arguments; text pastes
+            // as a paste does.
+            WindowEvent::Dropped(dropped) => {
+                let text = match dropped {
+                    Dropped::Files(paths) => {
+                        let paths: Vec<String> = paths
+                            .iter()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .collect();
+                        paste::dropped_paths(paths.iter().map(String::as_str))
+                    }
+                    Dropped::Text(text) => text,
+                };
+                self.paste_into(platform, window, text);
+            }
             WindowEvent::ContextCommand(command) => {
                 self.context_command(platform, window, &command);
             }
@@ -8969,6 +9008,33 @@ mod tests {
     fn paste_key(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) {
         fake.set_clipboard_text(text);
         fake.send(app, window, command_key(KeyCode::KeyV, "v"));
+    }
+
+    #[test]
+    fn a_drop_pastes_its_files_paths_or_its_text() {
+        let (mut fake, mut app, window) = focused_with(reader(""));
+        let paths = ["/tmp/a file.txt", "/usr/bin"].map(PathBuf::from).to_vec();
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::Dropped(Dropped::Files(paths)),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "'/tmp/a file.txt' /usr/bin")
+        });
+        // Text pastes as a paste does: several lines ask first.
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::Dropped(Dropped::Text("x".to_owned())),
+        );
+        run_until(&mut fake, &mut app, |_, app| {
+            shows(app, window, "/usr/bin x")
+        });
+        assert!(fake.alerts().is_empty());
+        let lines = Dropped::Text("a\nb\n".to_owned());
+        fake.send(&mut app, window, WindowEvent::Dropped(lines));
+        assert_eq!(fake.alerts().len(), 1);
     }
 
     #[test]

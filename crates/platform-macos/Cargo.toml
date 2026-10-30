@@ -42,6 +42,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSImage",
     "NSMenu",
     "NSMenuItem",
+    "NSDragging",
     "NSPasteboard",
     "NSResponder",
     "NSScreen",
@@ -192,6 +193,10 @@ harness = false
 
 [[test]]
 name = "secure_input"
+harness = false
+
+[[test]]
+name = "drop"
 harness = false
 
 [[test]]

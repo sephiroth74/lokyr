@@ -26,7 +26,7 @@ mod runs;
 mod tests;
 mod waker;
 
-pub use event::{AppEvent, Appearance, WindowEvent};
+pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
 pub use geometry::{PixelSize, Point, Size, WindowSize};
 pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,

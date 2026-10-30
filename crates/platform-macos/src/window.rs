@@ -7,21 +7,26 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea, PointerShape,
-    ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Backdrop, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea,
+    PointerShape, ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
+use std::path::PathBuf;
+
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::runtime::{AnyObject, Bool, ProtocolObject, Sel};
+use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSCursor, NSEvent, NSEventPhase, NSEventType, NSResponder,
-    NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
+    NSBackingStoreType, NSColor, NSCursor, NSDragOperation, NSDraggingDestination, NSDraggingInfo,
+    NSEvent, NSEventPhase, NSEventType, NSPasteboard, NSPasteboardTypeFileURL,
+    NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey, NSResponder, NSScreen,
+    NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
     NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
 };
 use objc2_foundation::{
-    NSArray, NSAttributedString, NSAttributedStringKey, NSNotFound, NSNotification, NSObject,
-    NSObjectProtocol, NSPoint, NSRange, NSRangePointer, NSRect, NSSize, NSString, NSUInteger,
-    NSUserDefaults,
+    NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
+    NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRange, NSRangePointer, NSRect, NSSize,
+    NSString, NSUInteger, NSURL, NSUserDefaults,
 };
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
@@ -554,6 +559,33 @@ define_class!(
         }
     }
 
+    unsafe impl NSObjectProtocol for ContentView {}
+
+    // SAFETY: `NSDraggingDestination` has no requirement; each method has
+    // AppKit's signature.
+    unsafe impl NSDraggingDestination for ContentView {
+        // Files and text copy, as the paste of their text.
+        #[unsafe(method(draggingEntered:))]
+        fn dragging_entered(&self, sender: &ProtocolObject<dyn NSDraggingInfo>) -> NSDragOperation {
+            if dropped(&sender.draggingPasteboard()).is_some() {
+                NSDragOperation::Copy
+            } else {
+                NSDragOperation::None
+            }
+        }
+
+        #[unsafe(method(performDragOperation:))]
+        fn perform_drag_operation(&self, sender: &ProtocolObject<dyn NSDraggingInfo>) -> Bool {
+            match dropped(&sender.draggingPasteboard()) {
+                Some(dropped) => {
+                    self.post(WindowEvent::Dropped(dropped));
+                    Bool::YES
+                }
+                None => Bool::NO,
+            }
+        }
+    }
+
     // SAFETY: `NSTextInputClient` has no requirement; each method has
     // AppKit's signature, and those that take a pointer check it.
     unsafe impl NSTextInputClient for ContentView {
@@ -676,6 +708,10 @@ impl ContentView {
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
+        // Files and text, which a drop pastes.
+        // SAFETY: AppKit's constants of the pasteboard's types.
+        let types = unsafe { [NSPasteboardTypeFileURL, NSPasteboardTypeString] };
+        view.registerForDraggedTypes(&NSArray::from_slice(&types));
         view
     }
 
@@ -1191,6 +1227,37 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
             .collect();
     }
     pieces
+}
+
+/// What a drop of `pasteboard` gives: its files, by their paths, if it
+/// holds any, else its text; `None` for neither.
+pub(crate) fn dropped(pasteboard: &NSPasteboard) -> Option<Dropped> {
+    let classes = NSArray::from_slice(&[NSURL::class()]);
+    // SAFETY: the framework's constant, a key that it keeps.
+    let files_only = unsafe { NSPasteboardURLReadingFileURLsOnlyKey };
+    let yes: Retained<AnyObject> = Retained::into_super(Retained::into_super(
+        Retained::into_super(NSNumber::new_bool(true)),
+    ));
+    let options = NSDictionary::from_slices(&[files_only], &[&*yes]);
+    // SAFETY: the classes are of objects that can read from a pasteboard,
+    // and the options' values are of the types that the keys take.
+    let objects = unsafe { pasteboard.readObjectsForClasses_options(&classes, Some(&options)) };
+    let objects = objects.map_or_else(Vec::new, |objects| {
+        (0..objects.count())
+            .map(|index| objects.objectAtIndex(index))
+            .collect()
+    });
+    let paths: Vec<PathBuf> = objects
+        .into_iter()
+        .filter_map(|object| object.downcast::<NSURL>().ok())
+        .filter_map(|url| url.path().map(|path| PathBuf::from(path.to_string())))
+        .collect();
+    if !paths.is_empty() {
+        return Some(Dropped::Files(paths));
+    }
+    // SAFETY: the framework's constant of the text's type.
+    let text = pasteboard.stringForType(unsafe { NSPasteboardTypeString })?;
+    Some(Dropped::Text(text.to_string()))
 }
 
 /// What a double click on a window's titlebar does.
