@@ -109,3 +109,5 @@ To compare Lokyr fairly with Ghostty, Alacritty, kitty, WezTerm and iTerm2:
 - same shell, without a complex prompt;
 - multiple runs, reporting median and spread;
 - terminal versions recorded alongside the results.
+
+[F2-134](tasks/F2-macos-single-pane.md#f2-134--lokyr-against-the-other-terminals) takes these conditions, and more, with the tools of each measure.
