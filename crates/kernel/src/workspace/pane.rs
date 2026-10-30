@@ -1,9 +1,9 @@
 //! A pane: the program that runs in it, in a session, the screen that its
 //! frames draw, and what its window does once the program ends.
 
-use std::time::{Duration, Instant};
-
 use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use lokyr_pty::{Exit, Program, Size};
 use lokyr_session::{Options, Session};
@@ -148,6 +148,18 @@ pub struct Pane {
     bells: u64,
     /// Whether the workspace told that the program's output ended.
     ended_told: bool,
+    /// The marked cell, and its line and its link, as
+    /// [`Pane::marked_cell`] read them last, until the mark goes.
+    marked: Mutex<Option<Marked>>,
+}
+
+/// A marked cell, by its column and its row from the view's first, and the
+/// text of its logical line and its link, read together.
+#[derive(Clone, Debug)]
+struct Marked {
+    at: (u16, i64),
+    line: Option<(String, Vec<(u16, i64)>)>,
+    link: Option<String>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -219,6 +231,7 @@ impl Pane {
             through_login: through_login(program),
             bells: 0,
             ended_told: false,
+            marked: Mutex::new(None),
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -456,19 +469,35 @@ impl Pane {
 
     /// The text of the logical line that the row `row` from the view's
     /// first is in, which can be above the view, with each character's
-    /// cell, as [`Terminal::line_text`] gives it.
+    /// cell, as [`Terminal::line_text`] gives it; of the marked cell's row,
+    /// as [`Pane::marked_cell`] read it.
     pub fn line_text(&self, row: i64) -> Option<(String, Vec<(u16, i64)>)> {
+        if let Some(marked) = self.marked().filter(|marked| marked.at.1 == row) {
+            return marked.line;
+        }
         self.session
             .as_ref()
             .and_then(|session| session.lock().line_text(row))
     }
 
     /// The target of the OSC 8 link of the cell at `column` of the row
-    /// `row` from the view's first, as [`Terminal::link_at`] gives it.
+    /// `row` from the view's first, as [`Terminal::link_at`] gives it; of
+    /// the marked cell, as [`Pane::marked_cell`] read it.
     pub fn link_at(&self, column: u16, row: i64) -> Option<String> {
+        if let Some(marked) = self.marked().filter(|marked| marked.at == (column, row)) {
+            return marked.link;
+        }
         self.session
             .as_ref()
             .and_then(|session| session.lock().link_at(column, row))
+    }
+
+    /// The marked cell, as [`Pane::marked_cell`] read it last.
+    fn marked(&self) -> Option<Marked> {
+        self.marked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// Marks the view's cell `at`, its column and its row from the view's
@@ -482,12 +511,27 @@ impl Pane {
 
     /// The cell that [`Pane::mark_cell`] marked, now, by its column and its
     /// row from the view's first, as [`Terminal::marked_cell`] tells it.
+    /// Its line's text and its link are read with it, which
+    /// [`Pane::line_text`] and [`Pane::link_at`] give of its row until the
+    /// mark goes, so that what a command reads of it is its own, whatever
+    /// output scrolls the view meanwhile.
     pub fn marked_cell(&self) -> Option<(u16, i64)> {
-        self.session.as_ref()?.lock().marked_cell()
+        let terminal = self.session.as_ref()?.lock();
+        let at = terminal.marked_cell()?;
+        let marked = Marked {
+            at,
+            line: terminal.line_text(at.1),
+            link: terminal.link_at(at.0, at.1),
+        };
+        drop(terminal);
+        *self.marked.lock().unwrap_or_else(PoisonError::into_inner) = Some(marked);
+        Some(at)
     }
 
-    /// Lets the cell's mark go, if there is one.
+    /// Lets the cell's mark go, if there is one, and what
+    /// [`Pane::marked_cell`] read of it.
     pub fn unmark_cell(&self) {
+        *self.marked.lock().unwrap_or_else(PoisonError::into_inner) = None;
         if let Some(session) = &self.session {
             session.lock().unmark_cell();
         }

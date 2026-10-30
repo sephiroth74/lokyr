@@ -1394,25 +1394,25 @@ impl App {
         let Some(state) = self.windows.get(&window) else {
             return;
         };
-        let pane = self.workspace.pane(state.pane);
+        let id = state.pane;
+        let pane = self.workspace.pane(id);
+        // The cell's line and link are read with it, which the command
+        // reads, until the mark goes after it.
         let marked = pane
             .filter(|_| self.context_window == Some(window))
             .and_then(Pane::marked_cell);
-        if let Some(pane) = pane {
+        let args = match self.commands.get(name) {
+            Some(command) if of_cell(command) => marked.map(|(column, row)| cell_args(column, row)),
+            _ => Some(Args::new()),
+        };
+        if let Some(args) = args {
+            self.acting = Some(window);
+            self.run(platform, name, args);
+            self.acting = None;
+        }
+        if let Some(pane) = self.workspace.pane(id) {
             pane.unmark_cell();
         }
-        let args = match self.commands.get(name) {
-            Some(command) if of_cell(command) => {
-                let Some((column, row)) = marked else {
-                    return;
-                };
-                cell_args(column, row)
-            }
-            _ => Args::new(),
-        };
-        self.acting = Some(window);
-        self.run(platform, name, args);
-        self.acting = None;
     }
 
     /// Starts a selection at `position`, as the left button goes down with

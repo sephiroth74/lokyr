@@ -337,3 +337,36 @@ fn a_pane_tells_its_contexts() {
     }
     assert_eq!(alternate.contexts(), ["alternate-screen"]);
 }
+
+#[test]
+fn a_marked_cell_s_line_and_link_are_its_own_as_output_scrolls_the_view() {
+    let pane = pane(concat!(
+        "stty -echo; printf '\\033]8;;https://lokyr.dev/osc\\033\\\\see\\033]8;;\\033\\\\ ",
+        "https://lokyr.dev/x\\n'; read line; seq 1 60; echo done; read line"
+    ));
+    let text = |row| pane.line_text(row).map(|(text, _)| text.trim_end().to_owned());
+    let wait = |done: &dyn Fn() -> bool| {
+        let start = Instant::now();
+        while !done() {
+            assert!(start.elapsed() < Duration::from_secs(10));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let first = "see https://lokyr.dev/x".to_owned();
+    wait(&|| text(0).as_deref() == Some(first.as_str()));
+    // A menu's cell, on the OSC 8 link, read with its line and its link.
+    pane.mark_cell((1, 0));
+    assert_eq!(pane.marked_cell(), Some((1, 0)));
+    // Output scrolls the view, and its row 0 shows another line.
+    pane.send_text("\r");
+    wait(&|| (1..24).any(|row| text(row).as_deref() == Some("done")));
+    assert_eq!(text(0), Some(first.clone()));
+    assert_eq!(pane.link_at(1, 0).as_deref(), Some("https://lokyr.dev/osc"));
+    let (_, cells) = pane.line_text(0).unwrap();
+    assert_eq!(cells[0], (0, 0));
+    // The other rows are the view's own, and the mark gone, the row too.
+    assert_ne!(text(1), Some(first.clone()));
+    pane.unmark_cell();
+    assert_ne!(text(0), Some(first));
+    assert_eq!(pane.link_at(1, 0), None);
+}
