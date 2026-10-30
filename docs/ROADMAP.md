@@ -13,11 +13,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
 | F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
-| F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs | Every must-have requirement in place | 10–14 weeks |
+| F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, windows restored with their directories, the Finder's service | Every must-have requirement in place | 12–16 weeks |
 | F3b MCP and agents | IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks | Agents drive panes over MCP, within their scope | 4–5 weeks |
 | F4 Plugin ecosystem | Luau host, Luau API, Sleip, registry v0 | Publishing and installing work end to end | 8–10 weeks |
-| F5a Shell integration and blocks | OSC 133, prompt jumping, Warp-style blocks, ssh integration | Verified in zsh, bash and fish, including over ssh | 4–6 weeks |
-| F5b iTerm2 power features | tmux -CC, hotkey window, triggers, profiles, broadcast | tmux -CC workflows on par with iTerm2 | 8–12 weeks |
+| F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
+| F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
 | F6 Release 1.0 | Hardening, docs, stable plugin API 1.0 | The 1.0 criteria (see [Versions](#versions)) | — |
 | F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — | — |
@@ -65,7 +65,8 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - input and IME (`NSTextInputClient`);
   - live resize, clipboard, menus;
   - the pane's context menu, after macOS's Terminal: Open Link, Look Up, the man page, the clipboard and the editing ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
-  - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md)).
+  - the programs' notifications (OSC 9, 777), which the agents that run in the terminal send ([ADR 0017](adr/0017-mcp-and-agents.md));
+  - the quick terminal, as Ghostty's: a window that a global hotkey slides in from an edge of the screen and out again, as the user asked on 30 October 2026, moved from F5b so that the week of use tries it; its policy goes into the `quick-terminal` plugin in F3.
 - **`font-coretext` and `text-core`**:
   - font discovery and fallback, and an optional separate font for non-ASCII text, like iTerm2's;
   - CoreText shaping with ligatures;
@@ -87,6 +88,15 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - **The context menu's items of the plugins**: the splits', the tabs', the man page index, a web search, a link's address ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
 - **Cursor options**: smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
+
+- **What every terminal's users expect**, as a search of the major terminals' trackers found on 30 October 2026, which the user took:
+  - copy mode: a cursor of the keyboard's, to move and select in the scrollback and the screen, a first-party plugin, with the HostApi's selection by range, a scroll to a row and a cursor of the plugin's own;
+  - the scrollbar, an overlay that the theme styles, with the search's marks;
+  - shell integration, moved from F5a: the scripts injected for zsh, bash and fish, without touching the user's files; jumping between prompts, OSC 133's marks; a notice when a long command ends, of its exit code and its duration, timed by its marks, without a timer;
+  - the windows, tabs and splits restored as Lokyr starts again, with their directories, moved from F5b; their scrollback stays F5b's;
+  - the Finder's service, New Lokyr Window Here, and a folder dropped on the Dock's icon;
+  - CSI 2031, which tells programs that the color scheme changed;
+  - the quick terminal's policy, out of the app into the `quick-terminal` plugin, once the HostApi has windows and hotkeys.
 
 **Exit**:
 - tabs: reorder, rename, drag;
@@ -132,11 +142,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 ### F5a — Shell integration and blocks
 
-- **Automatic injection** of shell integration for zsh, bash and fish, without touching the user's files.
-- **OSC 133 marks** with exit codes:
-  - jump between prompts;
-  - select the output of the last command;
-  - notify when long-running commands finish.
+- **OSC 133 marks**, past F3's jumps and notices: select the output of the last command.
 - **Warp-style blocks**:
   - command and output grouped together;
   - a sticky header while scrolling;
@@ -146,7 +152,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F5b — iTerm2 power features
 
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
-- **Windows and sessions**: hotkey window and quick terminal, input broadcast, session restore.
+- **Windows and sessions**: input broadcast; the scrollback restored with the windows, which F3 restores. The quick terminal came in F2.
 - **Automation**: triggers; profiles with automatic switching (by host or directory).
 - **Search**: filter mode.
 - **The context menu**: broadcast, locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).

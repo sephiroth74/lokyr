@@ -430,7 +430,8 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `command-palette` | Command palette and theme picker | F3 |
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
 | `shell-integration`, `blocks` | Prompt marks, command + output blocks | F5a |
-| `tmux-cc`, `quick-terminal`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
+| `quick-terminal` | The quick terminal's policy, which the app holds in F2 | F3 |
+| `tmux-cc`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `images` | Inline images | F5c |
 
 **Rules** (details in [ARCHITECTURE.md](ARCHITECTURE.md#dependency-rules)):
