@@ -335,10 +335,10 @@ Whether text that programs make blink, with the escape sequences SGR 5 and 6, bl
 |---|---|
 | `true`, `false` | `true` |
 
-- The text blinks as the cursor does: half a second shown and half a second hidden, only in the window that has the focus.
-- It stops blinking, and stays shown, 15 seconds after the last key or output, as the cursor stops, so that an idle window keeps the Mac idle.
+- The text blinks on the cursor's clock: shown and hidden for [`blink-interval`](#blink-interval) each, half a second by default, switched even when the cursor fades, and only in the window that has the focus.
+- It stops blinking, and stays shown, [`blink-timeout`](#blink-timeout) after the last key or output, 15 seconds by default, as the cursor stops.
 - `false` shows it steadily.
-- Each blink draws a frame of the window, as the cursor's blinking does; a later version blinks both without the app's work.
+- macOS's window server blinks it, on a layer of its own over the rows that hold it, which wakes Lokyr no more than steady text does. The layer takes some memory of the GPU's while blinking text shows, as much as a few rows of the window, and none once it goes.
 
 ## `[cursor]`
 
@@ -417,7 +417,7 @@ A cursor that blinks for ever keeps the Mac awake no more than one that stops, a
 
 <sub>Platforms: macOS</sub>
 
-Whether the cursor fades out and in as it blinks, rather than switching, and how: by one of iTerm2's presets, or by the keys that follow.
+Whether the cursor fades out and in as it blinks, rather than switching, and how: by one of five presets, or by the keys that follow.
 
 | Values | Default |
 |---|---|

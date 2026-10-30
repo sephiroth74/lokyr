@@ -336,4 +336,5 @@ movement = "instant"      # instant | snappy | gliding
   - Each frame animates from where the cursor was drawn to where it is now, so a burst of output, or a synchronized update (mode 2026), moves it once rather than once per sequence.
 - **Focus**: only the focused pane's cursor blinks. An unfocused pane, or a window in the background, shows a hollow block.
 - **Power**: blinking stops after `blink-timeout` without keys or output, and the cursor stays on. The blinking and its fades take no frame of the app's, as the window server animates the cursor's layer; the display link runs only while a movement is in progress, like the other animations.
+- **Blinking text**, of SGR 5 and 6, blinks on the cursor's clock, switched at `blink-interval`, and stops shown with it. It goes on a layer of its own, under the cursor's, over the rows that hold it, which the window server switches as the grid draws that text hidden, so that it takes no frame of the app's either.
 - **Accessibility**: with the system's "Reduce motion" setting, the movement is instant and blinking does not fade.

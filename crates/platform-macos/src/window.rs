@@ -7,8 +7,8 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Ime, MouseButton, PixelSize, Point, PointerShape, ScrollDelta, ScrollPhase, Size,
-    WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Backdrop, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerShape, ScrollDelta,
+    ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -26,9 +26,9 @@ use objc2_foundation::{
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
-use crate::cursor::CursorView;
 use crate::frame::Pacer;
 use crate::keys;
+use crate::layer::LayerView;
 use crate::shared::{Pending, Shared};
 use crate::text_input::{self, Handled, Step, TextInput};
 
@@ -36,8 +36,10 @@ use crate::text_input::{self, Handled, Step, TextInput};
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
-    /// The view of the cursor's cells, over the content's.
-    cursor: Retained<CursorView>,
+    /// The view of the text that blinks, over the content's, and of the
+    /// cursor's cells, over everything.
+    blinking_text: Retained<LayerView>,
+    cursor: Retained<LayerView>,
     pacer: Pacer,
     /// Whether the window is hidden or covered, as its delegate tells, and
     /// whether it asked for a frame meanwhile.
@@ -101,7 +103,8 @@ impl Window {
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
-        let cursor = CursorView::new(mtm, &view);
+        let blinking_text = LayerView::new(mtm, &view);
+        let cursor = LayerView::new(mtm, &view);
         // The keys go to the view.
         ns_window.makeFirstResponder(Some(&view));
         let pacer = Pacer::new(mtm, &view, shared.clone(), id);
@@ -119,6 +122,7 @@ impl Window {
         Self {
             ns_window,
             view,
+            blinking_text,
             cursor,
             pacer,
             occluded,
@@ -134,15 +138,24 @@ impl Window {
         NonNull::from(&*self.view).cast()
     }
 
-    /// The view of the cursor's cells, by its address, for a renderer: it
-    /// lives as long as the window.
-    pub(crate) fn cursor_address(&self) -> NonNull<c_void> {
-        self.cursor.address()
+    /// The view of `layer`.
+    fn layer(&self, layer: Layer) -> &LayerView {
+        match layer {
+            Layer::BlinkingText => &self.blinking_text,
+            Layer::Cursor => &self.cursor,
+        }
     }
 
-    /// Places the cursor's view, blinking as `place` says, or hides it.
-    pub(crate) fn set_cursor(&self, place: Option<&lokyr_platform_core::CursorPlace>) {
-        self.cursor.place(place, self.view.bounds().size.height);
+    /// The view of `layer`, by its address, for a renderer: it lives as long
+    /// as the window.
+    pub(crate) fn layer_address(&self, layer: Layer) -> NonNull<c_void> {
+        self.layer(layer).address()
+    }
+
+    /// Places the view of `layer`, blinking as `place` says, or hides it.
+    pub(crate) fn place_layer(&self, layer: Layer, place: Option<&LayerPlace>) {
+        self.layer(layer)
+            .place(place, self.view.bounds().size.height);
     }
 
     /// Places the window down and to the right of a window of the frame

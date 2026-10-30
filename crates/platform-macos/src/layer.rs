@@ -1,6 +1,6 @@
-//! The cursor's layer of a window: a view over the content's, of the
-//! cursor's cells, which the renderer draws into, whose opacity the window
-//! server animates as the cursor blinks, so that the blinking and its fades
+//! A layer of a window: a view over the content's, of the cursor's cells or
+//! of the text that blinks, which the renderer draws into, whose opacity the
+//! window server animates as it blinks, so that the blinking and its fades
 //! wake the app no more.
 
 use std::cell::Cell;
@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::time::{Duration, Instant};
 
-use lokyr_platform_core::{Blink, CursorPlace, Easing};
+use lokyr_platform_core::{Blink, Easing, LayerPlace};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
@@ -25,10 +25,10 @@ use objc2_quartz_core::{
 const BLINK: &str = "blink";
 
 /// The shortest cycle that blinks: a shorter one, as of nothing but zeros,
-/// leaves the cursor on.
+/// leaves the layer on.
 const SHORTEST: Duration = Duration::from_millis(50);
 
-pub(crate) struct CursorViewIvars {
+pub(crate) struct LayerViewIvars {
     /// The blink that its layer runs, as the app last gave it.
     blink: Cell<Option<Blink>>,
 }
@@ -38,10 +38,10 @@ define_class!(
     // breaks, and the view does not implement `Drop`.
     #[unsafe(super(NSView, NSResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[ivars = CursorViewIvars]
-    pub(crate) struct CursorView;
+    #[ivars = LayerViewIvars]
+    pub(crate) struct LayerView;
 
-    impl CursorView {
+    impl LayerView {
         // SAFETY: AppKit's signature: the layer that backs the view, clear
         // where the renderer draws nothing.
         #[unsafe(method_id(makeBackingLayer))]
@@ -77,10 +77,11 @@ define_class!(
     }
 );
 
-impl CursorView {
-    /// A hidden view of the cursor, for the content view `over`.
+impl LayerView {
+    /// A hidden view of a layer, for the content view `over`, over its
+    /// other views.
     pub(crate) fn new(mtm: MainThreadMarker, over: &NSView) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(CursorViewIvars {
+        let this = Self::alloc(mtm).set_ivars(LayerViewIvars {
             blink: Cell::new(None),
         });
         let frame = NSRect::new(NSPoint::ZERO, NSSize::new(1.0, 1.0));
@@ -100,7 +101,7 @@ impl CursorView {
 
     /// Places the view at `place`, over the content view whose height is
     /// `height` points, blinking as it says; `None` hides it.
-    pub(crate) fn place(&self, place: Option<&CursorPlace>, height: f64) {
+    pub(crate) fn place(&self, place: Option<&LayerPlace>, height: f64) {
         let Some(place) = place else {
             self.setHidden(true);
             self.blink(None);

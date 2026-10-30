@@ -1,6 +1,7 @@
-//! The cursor's layer of a window: a view over the content's, where the app
-//! places it, whose opacity the window server animates as the blink says,
-//! faded or switched, and which clicks go through.
+//! The layers of a window, of the text that blinks and of the cursor: views
+//! over the content's, the cursor's over the text's, where the app places
+//! them, whose opacity the window server animates as the blink says, faded
+//! or switched, and which clicks go through.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -12,8 +13,8 @@ mod probe {
     use std::time::{Duration, Instant};
 
     use lokyr_platform_core::{
-        AppEvent, Blink, CursorPlace, Easing, Handler, Platform, Point, Size, WindowAttributes,
-        WindowEvent, WindowId,
+        AppEvent, Blink, Easing, Handler, Layer, LayerPlace, Platform, Point, Size,
+        WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -28,30 +29,39 @@ mod probe {
 
     #[derive(Debug, Default)]
     struct Seen {
-        /// The view's frame, and whether it is hidden, after each place.
+        /// The cursor's view's frame, and whether it is hidden, after each
+        /// place.
         frames: Vec<(NSRect, bool)>,
         /// The animation's values, key times, duration, and whether it
         /// switches, after each place; `None` without one.
         animations: Vec<Option<Animation>>,
         /// Whether a click over the cursor goes to the content's view.
         through: bool,
-        handle: bool,
+        handles: [bool; 2],
+        /// The text's view's frame, whether it is hidden, and its
+        /// animation, placed, then hidden; and the cursor's frame then.
+        text: Vec<(NSRect, bool, Option<Animation>)>,
+        cursor_then: Option<(NSRect, bool)>,
         /// The content view's height, in points.
         height: f64,
     }
 
     struct Probe(Rc<RefCell<Seen>>);
 
-    /// The content view of the probe's window, and the cursor's, over it.
-    fn views() -> (Retained<NSView>, Retained<NSView>) {
+    /// The content view of the probe's window, the text's, over it, and
+    /// the cursor's, over both.
+    fn views() -> (Retained<NSView>, Retained<NSView>, Retained<NSView>) {
         let mtm = MainThreadMarker::new().expect("the main thread");
         let window = NSApplication::sharedApplication(mtm)
             .windows()
             .firstObject()
             .expect("the window");
         let content = window.contentView().expect("the content view");
-        let cursor = content.subviews().firstObject().expect("the cursor's view");
-        (content, cursor)
+        let subviews = content.subviews();
+        assert_eq!(subviews.count(), 2, "the layers' views");
+        let text = subviews.objectAtIndex(0);
+        let cursor = subviews.objectAtIndex(1);
+        (content, text, cursor)
     }
 
     fn numbers(array: Option<Retained<objc2_foundation::NSArray<NSNumber>>>) -> Vec<f64> {
@@ -62,9 +72,9 @@ mod probe {
         })
     }
 
-    /// The cursor's animation, as the layer runs it.
-    fn animation(cursor: &NSView) -> Option<Animation> {
-        let layer = cursor.layer()?;
+    /// The animation of a layer's view, as the layer runs it.
+    fn animation(view: &NSView) -> Option<Animation> {
+        let layer = view.layer()?;
         // SAFETY: the key that the backend gives its animation.
         let found = unsafe { layer.animationForKey(&NSString::from_str("blink")) }?;
         let keyframes = found.downcast::<CAKeyframeAnimation>().ok()?;
@@ -84,9 +94,15 @@ mod probe {
     }
 
     fn look(seen: &mut Seen) {
-        let (_, cursor) = views();
+        let (_, _, cursor) = views();
         seen.frames.push((cursor.frame(), cursor.isHidden()));
         seen.animations.push(animation(&cursor));
+    }
+
+    fn look_at_text(seen: &mut Seen) {
+        let (_, text, _) = views();
+        seen.text
+            .push((text.frame(), text.isHidden(), animation(&text)));
     }
 
     impl Handler for Probe {
@@ -103,7 +119,8 @@ mod probe {
                 })
                 .expect("the window opens");
             let mut seen = self.0.borrow_mut();
-            seen.handle = platform.cursor_handle(window).is_some();
+            seen.handles = [Layer::BlinkingText, Layer::Cursor]
+                .map(|layer| platform.layer_handle(window, layer).is_some());
             seen.height = views().0.bounds().size.height;
             let millis = Duration::from_millis;
             let breathing = Blink {
@@ -115,7 +132,7 @@ mod probe {
                 fade_in: millis(900),
                 fade_in_curve: Easing::EaseInOut,
             };
-            let place = |blink| CursorPlace {
+            let place = |blink| LayerPlace {
                 origin: Point { x: 20.0, y: 50.0 },
                 size: Size {
                     width: 8.0,
@@ -124,25 +141,42 @@ mod probe {
                 blink,
             };
             // Faded, then switched, then steady, then hidden.
-            platform.set_cursor(window, Some(&place(Some(breathing))));
+            let cursor = Layer::Cursor;
+            platform.place_layer(window, cursor, Some(&place(Some(breathing))));
             look(&mut seen);
             let switched = Blink {
                 fade_out: Duration::ZERO,
                 fade_in: Duration::ZERO,
                 ..breathing
             };
-            platform.set_cursor(window, Some(&place(Some(switched))));
+            platform.place_layer(window, cursor, Some(&place(Some(switched))));
             look(&mut seen);
-            platform.set_cursor(window, Some(&place(None)));
+            platform.place_layer(window, cursor, Some(&place(None)));
             look(&mut seen);
+            // The text's, rows of it, switched, under the cursor's, which it
+            // leaves where it is; then hidden.
+            let rows = LayerPlace {
+                origin: Point { x: 4.0, y: 40.0 },
+                size: Size {
+                    width: 392.0,
+                    height: 48.0,
+                },
+                blink: Some(switched),
+            };
+            platform.place_layer(window, Layer::BlinkingText, Some(&rows));
+            look_at_text(&mut seen);
+            let (_, _, shown) = views();
+            seen.cursor_then = Some((shown.frame(), shown.isHidden()));
+            platform.place_layer(window, Layer::BlinkingText, None);
+            look_at_text(&mut seen);
             // A click over the cursor's cell.
-            let (content, cursor) = views();
+            let (content, _, cursor) = views();
             let middle = NSPoint::new(cursor.frame().origin.x + 4.0, cursor.frame().origin.y + 8.0);
             // The window's frame view, the content's superview, takes the
             // window's coordinates.
             let hit = content.hitTest(content.convertPoint_toView(middle, None));
             seen.through = hit.is_some_and(|hit| hit == content);
-            platform.set_cursor(window, None);
+            platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
             common::wake_after(platform.waker(), 100);
         }
@@ -157,11 +191,11 @@ mod probe {
     }
 
     pub fn main() {
-        common::deadline("cursor_layer", 20);
+        common::deadline("layers", 20);
         let seen = Rc::new(RefCell::new(Seen::default()));
         lokyr_platform_macos::run(Probe(Rc::clone(&seen))).expect("the application runs");
         let seen = seen.borrow();
-        assert!(seen.handle, "{seen:?}");
+        assert_eq!(seen.handles, [true; 2], "{seen:?}");
         // From the content's top left corner.
         let (frame, hidden) = seen.frames[0];
         assert_eq!(
@@ -195,7 +229,24 @@ mod probe {
         assert_eq!(seen.animations[2], None, "{seen:?}");
         assert!(!seen.frames[2].1 && seen.frames[3].1, "{seen:?}");
         assert!(seen.through, "{seen:?}");
-        println!("cursor_layer: ok");
+        // The text's rows, switched, then hidden; the cursor's as it was.
+        let (frame, hidden, ref animation) = seen.text[0];
+        assert_eq!(
+            (
+                frame.origin.x,
+                frame.origin.y,
+                frame.size.width,
+                frame.size.height
+            ),
+            (4.0, seen.height - 40.0 - 48.0, 392.0, 48.0),
+            "{seen:?}"
+        );
+        assert!(!hidden, "{seen:?}");
+        let (values, _, _, switched) = animation.clone().expect("a switch");
+        assert!(values == [1.0, 0.0, 1.0] && switched, "{seen:?}");
+        assert!(seen.text[1].1, "{seen:?}");
+        assert_eq!(seen.cursor_then, Some(seen.frames[2]), "{seen:?}");
+        println!("layers: ok");
     }
 }
 

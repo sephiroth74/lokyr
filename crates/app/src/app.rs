@@ -31,7 +31,7 @@ use lokyr_platform_core::{
     Point, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, StandardAction,
     TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
-use lokyr_platform_core::{Blink as PlatformBlink, CursorPlace, Easing};
+use lokyr_platform_core::{Blink as PlatformBlink, Easing, Layer, LayerPlace};
 use lokyr_pty::Program;
 use lokyr_render_core::{CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
@@ -308,19 +308,51 @@ impl ConfigFile {
     }
 }
 
+/// A layer of a window, over its grid, which the window server blinks.
+#[derive(Debug, Default)]
+struct WindowLayer {
+    /// What the app draws into, where the platform has the layer.
+    surface: Option<Surface>,
+    /// Where the app placed it last, and how it blinks: `None` while it is
+    /// hidden.
+    place: Option<LayerPlace>,
+    /// The cells that it shows, and at what scale, which a frame draws
+    /// again only as they change.
+    drawn: Option<(CellBatch, f64)>,
+}
+
+impl WindowLayer {
+    fn new(surface: Option<Surface>) -> Self {
+        Self {
+            surface,
+            ..Self::default()
+        }
+    }
+
+    /// Lets the layer's drawables go, all of them, as a frame of a pixel
+    /// takes the place of the one that it shows; the next cells that it
+    /// shows draw again.
+    fn release(&mut self) {
+        let Some(surface) = &self.surface else {
+            return;
+        };
+        surface.release();
+        if let Err(error) = surface.clear(Color::default().with_alpha(0.0)) {
+            eprintln!("lokyr: {error}");
+        }
+        self.drawn = None;
+    }
+}
+
 /// A window that the app opened.
 #[derive(Debug)]
 struct Window {
     /// What it draws into, once the app draws and the platform has a layer.
     surface: Option<Surface>,
-    /// What it draws its cursor's cells into, over the rest, where the
-    /// platform has a layer of the cursor's, which the window server blinks;
-    /// and where it placed that layer last, and how it blinks.
-    cursor_surface: Option<Surface>,
-    cursor_place: Option<CursorPlace>,
-    /// The cursor's cells that its layer shows, and at what scale, which a
-    /// frame draws again only as they change.
-    cursor_drawn: Option<(CellBatch, f64)>,
+    /// The layers of its text that blinks, over the grid, and of its
+    /// cursor's cells, over everything.
+    text_layer: WindowLayer,
+    cursor_layer: WindowLayer,
     /// The workspace's window that it shows.
     window: workspace::WindowId,
     /// Its pane, which runs its program, and what that shows.
@@ -452,16 +484,19 @@ struct Selecting {
 
 impl Window {
     fn new(
-        (surface, cursor_surface): (Option<Surface>, Option<Surface>),
+        (surface, text_surface, cursor_surface): (
+            Option<Surface>,
+            Option<Surface>,
+            Option<Surface>,
+        ),
         (window, pane): (workspace::WindowId, PaneId),
         focused: bool,
         now: Instant,
     ) -> Self {
         Self {
             surface,
-            cursor_surface,
-            cursor_place: None,
-            cursor_drawn: None,
+            text_layer: WindowLayer::new(text_surface),
+            cursor_layer: WindowLayer::new(cursor_surface),
             window,
             pane,
             preedit: None,
@@ -604,9 +639,10 @@ pub struct App {
     /// or the config's key changes.
     performance: Option<Performance>,
     performance_chosen: Option<bool>,
-    /// Whether the cursors blink as on layers of their own without one, as
-    /// the tests' fake platform, which draws nothing, shows them.
-    cursor_layers: bool,
+    /// Whether the cursors and the text that blinks blink as on layers of
+    /// their own without them, as the tests' fake platform, which draws
+    /// nothing, shows them.
+    layers: bool,
     /// The windows whose closing the user is asked to confirm, by their
     /// alerts.
     close_asks: BTreeMap<AlertId, WindowId>,
@@ -672,7 +708,7 @@ impl App {
             appearance_chosen: None,
             performance: None,
             performance_chosen: None,
-            cursor_layers: false,
+            layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             context_window: None,
@@ -1687,8 +1723,11 @@ impl App {
         self.opened_one = true;
         match platform.create_window(&attributes) {
             Ok(window) => {
-                let surface = self.surface(platform, window);
-                let cursor_surface = self.cursor_surface(platform, window);
+                let surfaces = (
+                    self.surface(platform, window),
+                    self.layer_surface(platform, window, Layer::BlinkingText),
+                    self.layer_surface(platform, window, Layer::Cursor),
+                );
                 let focused = platform.focused_window() == Some(window);
                 let size = platform
                     .window_size(window)
@@ -1714,8 +1753,7 @@ impl App {
                 pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
                 let id = pane.id();
                 let ids = (self.workspace.open_window(pane), id);
-                let mut state =
-                    Window::new((surface, cursor_surface), ids, focused, Instant::now());
+                let mut state = Window::new(surfaces, ids, focused, Instant::now());
                 state.page = page;
                 self.windows.insert(window, state);
                 self.draw(platform, window, size);
@@ -2839,11 +2877,16 @@ impl App {
             .ok()
     }
 
-    /// The surface of `window`'s cursor's cells, if the app draws and the
-    /// platform has a layer for them.
-    fn cursor_surface(&self, platform: &dyn Platform, window: WindowId) -> Option<Surface> {
+    /// The surface of `layer` of `window`, if the app draws and the
+    /// platform has the layer.
+    fn layer_surface(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        layer: Layer,
+    ) -> Option<Surface> {
         let drawing = self.drawing.as_ref()?;
-        let handle = platform.cursor_handle(window)?;
+        let handle = platform.layer_handle(window, layer)?;
         Surface::new(&drawing.gpu, handle)
             .inspect_err(|error| eprintln!("lokyr: {error}"))
             .ok()
@@ -2871,7 +2914,7 @@ impl App {
         if !blinking {
             return Some((shape, None));
         }
-        if state.cursor_surface.is_some() || self.cursor_layers {
+        if state.cursor_layer.surface.is_some() || self.layers {
             let (since, stops) = (state.blink.since(), state.blink.stops(&config));
             if let Some(stops) = stops {
                 self.blink_at(platform, stops);
@@ -2883,6 +2926,55 @@ impl App {
             self.blink_at(platform, next);
         }
         on.then_some((shape, None))
+    }
+
+    /// Whether the text that blinks in `window` shows in its grid at `now`,
+    /// and how its layer blinks, which the window server runs. It blinks in
+    /// the window that has the focus, on the cursor's clock, switched at the
+    /// cursor's interval until its timeout, and stops shown; on a layer, the
+    /// grid hides it, and the layer blinks it, with the timer of the
+    /// blinking's end alone; without, the frames show and hide it, each with
+    /// the timer of the next change.
+    fn text_blink(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) -> (bool, Option<PlatformBlink>) {
+        let (text, config) = (self.config.text, self.config.cursor);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return (true, None);
+        };
+        let blinking = text.blink
+            && state.focused
+            && self
+                .workspace
+                .pane(state.pane)
+                .is_some_and(|pane| cells::has_blinking_text(pane.snapshot()));
+        if !blinking {
+            return (true, None);
+        }
+        if state.text_layer.surface.is_some() || self.layers {
+            if !state.blink.blinks(now, &config) {
+                return (true, None);
+            }
+            let switched = cursor::CursorConfig {
+                smooth_blink: cursor::SmoothBlink::Off,
+                ..config
+            };
+            let blink = blink_of(switched.pattern(), state.blink.since());
+            if let Some(stops) = state.blink.stops(&config) {
+                state.blinking = true;
+                self.blink_at(platform, stops);
+            }
+            return (false, Some(blink));
+        }
+        let (shown, next) = state.blink.at(now, &config);
+        if let Some(next) = next {
+            state.blinking = true;
+            self.blink_at(platform, next);
+        }
+        (shown, None)
     }
 
     /// Keeps the timer of the blinking cursors and text at `at`, unless
@@ -3008,25 +3100,8 @@ impl App {
             self.settle_menu(platform, &context);
         }
         let shown_cursor = self.cursor(platform, window, Instant::now());
-        // Text that blinks takes the cursor's clock, in the window that has
-        // the focus, and stops shown with it.
+        let (blink_shown, text_blink) = self.text_blink(platform, window, Instant::now());
         let text = self.config.text;
-        let Some(state) = self.windows.get_mut(&window) else {
-            return;
-        };
-        let Some(pane) = self.workspace.pane(state.pane) else {
-            return;
-        };
-        let blinking = text.blink && state.focused && cells::has_blinking_text(pane.snapshot());
-        let (blink_shown, next) = if blinking {
-            state.blink.at(Instant::now(), &self.config.cursor)
-        } else {
-            (true, None)
-        };
-        if let Some(next) = next {
-            state.blinking = true;
-            self.blink_at(platform, next);
-        }
         let look = TextLook {
             config: text,
             blink_shown,
@@ -3055,7 +3130,7 @@ impl App {
             thickness: config.thickness(&cell, size.scale as f32),
         });
         // A cursor of a layer of its own, which blinks apart from the grid.
-        let apart = state.cursor_surface.is_some();
+        let apart = state.cursor_layer.surface.is_some();
         let snapshot = pane.snapshot();
         let font = &mut drawing.font;
         let (x, y) = (
@@ -3084,6 +3159,13 @@ impl App {
         let cursor_cells = cursor.filter(|_| apart).and_then(|look| {
             cells::cursor_cells(&batch, snapshot, look, &cell, state.preedit.as_ref())
         });
+        // The text that blinks, which its layer shows, as the grid hides it.
+        let preedit = state.preedit.as_ref();
+        let text_cells = text_blink
+            .filter(|_| state.text_layer.surface.is_some())
+            .and_then(|_| {
+                cells::blinking_cells(snapshot, &cell, selection.as_ref(), text, preedit, font)
+            });
         // Over a backdrop, what the cells leave shows it, and the titlebar
         // too, unless the config keeps it opaque.
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
@@ -3149,39 +3231,45 @@ impl App {
         };
         // The cursor's cells, into their layer, which the platform places
         // over the grid's cell, and blinks.
-        let place = cursor_cells.and_then(|(column, row, cells)| {
-            let surface = state.cursor_surface.as_ref()?;
-            let (width, height) = (u32::from(cells.columns) * cell.width, cell.height);
-            let drawn = (cells, size.scale);
-            if state.cursor_drawn.as_ref() != Some(&drawn) {
-                let list = DisplayList {
-                    background: Color::default().with_alpha(0.0),
-                    items: vec![Item::Cells(drawn.0.clone())],
-                    frame: drawing.font.atlas_frame(),
-                };
-                surface.resize(width, height, size.scale);
-                match drawing.renderer.draw(surface, &list) {
-                    Ok(true) => state.cursor_drawn = Some(drawn),
-                    Ok(false) => {}
-                    Err(error) => eprintln!("lokyr: {error}"),
-                }
-            }
-            let points = |pixels: f64| pixels / size.scale;
-            Some(CursorPlace {
-                origin: Point {
-                    x: points(f64::from(x) + f64::from(column) * f64::from(cell.width)),
-                    y: points(f64::from(y) + f64::from(row) * f64::from(cell.height)),
-                },
-                size: Size {
-                    width: points(f64::from(width)),
-                    height: points(f64::from(height)),
-                },
-                blink: shown_cursor.and_then(|(_, blink)| blink),
-            })
+        let (left, top) = (f64::from(x), f64::from(y));
+        let (width, height) = (f64::from(cell.width), f64::from(cell.height));
+        let cursor_shown = cursor_cells.map(|(column, row, cells)| {
+            let at = (
+                left + f64::from(column) * width,
+                top + f64::from(row) * height,
+            );
+            (cells, at)
         });
-        if apart && state.cursor_place != place {
-            platform.set_cursor(window, place.as_ref());
-            state.cursor_place = place;
+        show_layer(
+            platform,
+            drawing,
+            (window, Layer::Cursor),
+            &mut state.cursor_layer,
+            cursor_shown,
+            size.scale,
+            shown_cursor.and_then(|(_, blink)| blink),
+        );
+        // The text that blinks, into its layer, over its rows, with a cell's
+        // margin on each side, which glyphs that go past their cells take.
+        let text_shown = text_cells.map(|(row, mut cells)| {
+            cells.x = i32::try_from(cell.width).unwrap_or(i32::MAX);
+            cells.y = i32::try_from(cell.height).unwrap_or(i32::MAX);
+            let at = (left - width, top + (f64::from(row) - 1.0) * height);
+            (cells, at)
+        });
+        let was_shown = state.text_layer.place.is_some();
+        show_layer(
+            platform,
+            drawing,
+            (window, Layer::BlinkingText),
+            &mut state.text_layer,
+            text_shown,
+            size.scale,
+            text_blink,
+        );
+        // Hidden, it lets its drawables go, as blinking text seldom shows.
+        if was_shown && state.text_layer.place.is_none() {
+            state.text_layer.release();
         }
         if let (Some(wait), Some(started), Some(shown)) =
             (presented, started, &mut self.performance)
@@ -3538,7 +3626,12 @@ impl Handler for App {
                 if let Some(state) = self.windows.get_mut(&window) {
                     state.occluded = occluded;
                     if occluded {
-                        if let Some(surface) = &state.surface {
+                        let surfaces = [
+                            &state.surface,
+                            &state.text_layer.surface,
+                            &state.cursor_layer.surface,
+                        ];
+                        for surface in surfaces.into_iter().flatten() {
                             surface.release();
                         }
                     } else {
@@ -3827,6 +3920,58 @@ fn sized(font: &FontConfig, size: Option<f32>) -> FontConfig {
     FontConfig {
         size: size.unwrap_or(font.size),
         ..font.clone()
+    }
+}
+
+/// Shows `shown` in `layer` of `window`, which `state` keeps: cells, which
+/// `drawing` draws into the layer's surface as they change, as large as
+/// they are and as their margin on each side, their batch's corner, at a
+/// corner in pixels of the content, of `scale`, blinking as `blink` says.
+/// `None` hides the layer.
+fn show_layer(
+    platform: &mut dyn Platform,
+    drawing: &mut Drawing,
+    (window, layer): (WindowId, Layer),
+    state: &mut WindowLayer,
+    shown: Option<(CellBatch, (f64, f64))>,
+    scale: f64,
+    blink: Option<PlatformBlink>,
+) {
+    let place = shown.and_then(|(cells, (x, y))| {
+        let surface = state.surface.as_ref()?;
+        let margin = |pixels: i32| u32::try_from(pixels).unwrap_or(0) * 2;
+        let width = u32::from(cells.columns) * cells.cell_width + margin(cells.x);
+        let height = u32::from(cells.rows) * cells.cell_height + margin(cells.y);
+        let drawn = (cells, scale);
+        if state.drawn.as_ref() != Some(&drawn) {
+            let list = DisplayList {
+                background: Color::default().with_alpha(0.0),
+                items: vec![Item::Cells(drawn.0.clone())],
+                frame: drawing.font.atlas_frame(),
+            };
+            surface.resize(width, height, scale);
+            match drawing.renderer.draw(surface, &list) {
+                Ok(true) => state.drawn = Some(drawn),
+                Ok(false) => {}
+                Err(error) => eprintln!("lokyr: {error}"),
+            }
+        }
+        let points = |pixels: f64| pixels / scale;
+        Some(LayerPlace {
+            origin: Point {
+                x: points(x),
+                y: points(y),
+            },
+            size: Size {
+                width: points(f64::from(width)),
+                height: points(f64::from(height)),
+            },
+            blink,
+        })
+    });
+    if state.place != place {
+        platform.place_layer(window, layer, place.as_ref());
+        state.place = place;
     }
 }
 
@@ -5078,7 +5223,7 @@ mod tests {
         let mut config = Config::default();
         config.cursor.smooth_blink = cursor::SmoothBlink::Breathing;
         let mut app = app(config, quiet());
-        app.cursor_layers = true;
+        app.layers = true;
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -5126,6 +5271,53 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::Focused(false));
         let (shape, blink) = app.cursor(&mut fake, window, Instant::now()).unwrap();
         assert_eq!((shape, blink), (CursorShape::Hollow, None));
+    }
+
+    #[test]
+    fn blinking_text_on_its_layer_blinks_without_a_timer_but_its_end() {
+        // A cursor that does not blink, and a smooth blink, which the text
+        // does not take.
+        let mut config = Config::default();
+        config.cursor.blink = false;
+        config.cursor.smooth_blink = cursor::SmoothBlink::Breathing;
+        let mut fake = Fake::default();
+        let mut app = app(config, shell("printf '\\033[5mblink\\033[0m'; sleep 10"));
+        app.layers = true;
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "blink");
+        fake.send(&mut app, window, WindowEvent::Frame);
+        // The grid hides it, and its layer switches it at the interval, from
+        // the clock's start.
+        let (shown, blink) = app.text_blink(&mut fake, window, Instant::now());
+        assert!(!shown);
+        let blink = blink.expect("a blink");
+        let since = app.windows[&window].blink.since();
+        assert_eq!(blink.start, since);
+        let interval = cursor::BLINK_INTERVAL;
+        assert_eq!((blink.visible, blink.hidden), (interval, interval));
+        assert_eq!(
+            (blink.fade_out, blink.fade_in),
+            (Duration::ZERO, Duration::ZERO)
+        );
+        // One timer alone, of the blinking's end; at its end, a frame, and
+        // the text in the grid, steady.
+        let (timer, at) = app.blink_timer.expect("the blinking's timer");
+        assert_eq!(at, since + cursor::BLINK_TIMEOUT);
+        fake.send_app(&mut app, AppEvent::Timer(timer));
+        assert!(fake.window(window).unwrap().frame_requested);
+        assert_eq!(app.text_blink(&mut fake, window, at), (true, None));
+        assert_eq!(app.blink_timer, None);
+        // Without the focus, steady.
+        app.windows
+            .get_mut(&window)
+            .unwrap()
+            .blink
+            .restart(Instant::now());
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        let unfocused = app.text_blink(&mut fake, window, Instant::now());
+        assert_eq!(unfocused, (true, None));
     }
 
     #[test]

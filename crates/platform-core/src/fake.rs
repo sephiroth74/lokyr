@@ -2,14 +2,14 @@
 //! asks of it, and hands the app the events that a test sends, once it has
 //! applied what they change, as a backend would.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, CursorPlace, Error, Handler,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, Layer, LayerPlace,
     MainMenu, Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
@@ -38,11 +38,11 @@ pub struct FakeWindow {
     pub frame_held: bool,
     /// Whether it keeps its frame.
     pub remember: bool,
-    /// Where the app placed its cursor's layer, and how it blinks: `None`
-    /// while it is hidden.
-    pub cursor: Option<CursorPlace>,
-    /// How many times the app placed it, or hid it.
-    pub cursor_places: usize,
+    /// Where the app placed its layers, and how they blink: none while
+    /// hidden.
+    pub layers: HashMap<Layer, LayerPlace>,
+    /// How many times the app placed a layer, or hid it.
+    pub layer_places: usize,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
     /// Whether the app asked for the pointer's moves without a button.
@@ -520,8 +520,8 @@ impl Platform for Fake {
                 translucent: None,
                 frame_held: false,
                 remember: attributes.remember,
-                cursor: None,
-                cursor_places: 0,
+                layers: HashMap::new(),
+                layer_places: 0,
                 restore: attributes.restore,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
@@ -561,14 +561,17 @@ impl Platform for Fake {
         None
     }
 
-    fn cursor_handle(&self, _window: WindowId) -> Option<WindowHandle<'_>> {
+    fn layer_handle(&self, _window: WindowId, _layer: Layer) -> Option<WindowHandle<'_>> {
         None
     }
 
-    fn set_cursor(&mut self, window: WindowId, cursor: Option<&CursorPlace>) {
+    fn place_layer(&mut self, window: WindowId, layer: Layer, place: Option<&LayerPlace>) {
         if let Some(state) = self.windows.get_mut(&window) {
-            state.cursor = cursor.copied();
-            state.cursor_places += 1;
+            match place {
+                Some(&place) => state.layers.insert(layer, place),
+                None => state.layers.remove(&layer),
+            };
+            state.layer_places += 1;
         }
     }
 

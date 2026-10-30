@@ -135,10 +135,13 @@ struct RunBuilder {
 impl RunBuilder {
     /// Whether a cell of `style`, of a background darker than its text when
     /// `dark`, goes on with the run: of the same face's style, bold and
-    /// italic alike, and as dark.
+    /// italic alike, as dark, and blinking alike, so that text that blinks
+    /// and text that does not take no ligature together, which the
+    /// blinking would split.
     fn takes(&self, style: &Style, dark: bool) -> bool {
         self.cells.is_empty()
-            || ((self.style.bold, self.style.italic) == (style.bold, style.italic)
+            || ((self.style.bold, self.style.italic, self.style.blink)
+                == (style.bold, style.italic, style.blink)
                 && self.dark == dark)
     }
 
@@ -313,10 +316,104 @@ pub fn has_blinking_text(snapshot: &Snapshot) -> bool {
 pub fn cells_with(
     snapshot: &Snapshot,
     cell: &CellMetrics,
-    (x, y): (i32, i32),
+    origin: (i32, i32),
     selection: Option<&Selection<'_>>,
     cursor: Option<CursorLook>,
     text: TextLook,
+    glyphs: &mut dyn Glyphs,
+) -> CellBatch {
+    let shown = Shown::All;
+    cells_of(
+        snapshot,
+        cell,
+        origin,
+        selection,
+        cursor,
+        (text, shown),
+        glyphs,
+    )
+}
+
+/// The text that blinks of `snapshot`, as SGR 5 and 6 make it, as a batch
+/// of its own, for a layer over the grid that blinks apart from it, where
+/// the grid draws that text hidden: its glyphs and lines, in the colors
+/// that [`cells_with`] gives them when the blinking shows them, over the
+/// rows from the first that shows them to the last, with the cells'
+/// backgrounds clear, as the grid shows them; none where the composition
+/// of `preedit` covers it. With the first of its rows in the grid; `None`
+/// without text that blinks, or when `text` keeps it steady.
+pub fn blinking_cells(
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    selection: Option<&Selection<'_>>,
+    text: TextConfig,
+    preedit: Option<&Preedit>,
+    glyphs: &mut dyn Glyphs,
+) -> Option<(u16, CellBatch)> {
+    if !text.blink || !has_blinking_text(snapshot) {
+        return None;
+    }
+    let look = TextLook {
+        config: text,
+        blink_shown: true,
+    };
+    let shown = Shown::Blinking;
+    let mut batch = cells_of(
+        snapshot,
+        cell,
+        (0, 0),
+        selection,
+        None,
+        (look, shown),
+        glyphs,
+    );
+    // The composition shows in place of the text under it.
+    if let Some((row, covered)) = preedit
+        .filter(|preedit| !preedit.text.is_empty())
+        .and_then(|preedit| composed_span(snapshot, preedit, batch.columns))
+    {
+        batch
+            .glyphs
+            .retain(|glyph| glyph.row != row || !covered.contains(&glyph.column));
+    }
+    let drawn = batch.glyphs.iter().map(|glyph| glyph.row);
+    let drawn = drawn.chain(batch.lines.iter().map(|line| line.row));
+    let (first, last) = drawn.fold(None, |rows, row| {
+        Some(rows.map_or((row, row), |(first, last): (u16, u16)| {
+            (first.min(row), last.max(row))
+        }))
+    })?;
+    for glyph in &mut batch.glyphs {
+        glyph.row -= first;
+    }
+    for line in &mut batch.lines {
+        line.row -= first;
+    }
+    batch.rows = last - first + 1;
+    let clear = background(snapshot).with_alpha(0.0);
+    batch.backgrounds = vec![clear; usize::from(batch.columns) * usize::from(batch.rows)];
+    Some((first, batch))
+}
+
+/// What a batch of the grid shows of its text.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Shown {
+    /// All of it, as its look has it.
+    All,
+    /// The text that blinks alone, in the rows that hold it: the others
+    /// take nothing, not even their backgrounds.
+    Blinking,
+}
+
+/// The grid of `snapshot`, as [`cells_with`] lays it out, of the text that
+/// `shown` says.
+fn cells_of(
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    (x, y): (i32, i32),
+    selection: Option<&Selection<'_>>,
+    cursor: Option<CursorLook>,
+    (text, shown): (TextLook, Shown),
     glyphs: &mut dyn Glyphs,
 ) -> CellBatch {
     let (columns, rows) = (snapshot.cols(), snapshot.rows());
@@ -355,6 +452,9 @@ pub fn cells_with(
     let mut decorations = Decorations::default();
     for row in 0..rows {
         let line = snapshot.line(row);
+        if shown == Shown::Blinking && !line.styles().any(|style| style.blink) {
+            continue;
+        }
         for (column, &cell_of) in (0..columns).zip(line.cells()) {
             if at == Some((column, row)) {
                 run.flush(&mut batch, row, cell, glyphs);
@@ -411,7 +511,9 @@ pub fn cells_with(
             batch.backgrounds.push(background);
             // Text that blinks shows half of the time.
             let blinking = style.blink && text.config.blink;
-            let hidden = style.invisible || (blinking && !text.blink_shown);
+            let hidden = style.invisible
+                || (blinking && !text.blink_shown)
+                || (shown == Shown::Blinking && !blinking);
             // The lines that decorate the text, as faint as it, and of its
             // color but for an underline's own, which spaces and a wide
             // character's second cell take too.
@@ -846,6 +948,40 @@ pub fn preedit(
         drawn.columns = width;
     }
     settle_cursor(batch, snapshot);
+}
+
+/// The cells that the composition of `preedit` at the cursor of `snapshot`
+/// covers, in a grid of `columns`, as [`preedit`] draws it: its row and
+/// columns; `None` off the grid.
+fn composed_span(
+    snapshot: &Snapshot,
+    preedit: &Preedit,
+    columns: u16,
+) -> Option<(u16, std::ops::Range<u16>)> {
+    let position = snapshot.cursor().position;
+    let (mut start, row) = (position.x, position.y);
+    if row >= snapshot.rows() || start >= columns {
+        return None;
+    }
+    let line = snapshot.line(row);
+    if start > 0
+        && line
+            .cells()
+            .get(usize::from(start))
+            .is_some_and(|cell| cell.width() == Width::SpacerTail)
+    {
+        start -= 1;
+    }
+    let widths = Widths::default();
+    let mut end = start;
+    for character in preedit.text.chars() {
+        let width = u16::from(widths.char_width(character));
+        if end + width > columns {
+            break;
+        }
+        end += width;
+    }
+    Some((row, start..end))
 }
 
 /// Where the cursor goes in the composition of `preedit` at the cursor of
@@ -1296,6 +1432,11 @@ mod tests {
         let mut runs = Runs::default();
         cells(&wide, &cell(), 0, 0, None, None, &mut runs);
         assert_eq!(runs.0, ["a\u{65E5}b"]);
+        // Text that blinks takes runs of its own, shown or not.
+        let blinking = snapshot(20, 1, "f\x1b[5mi\x1b[0mx");
+        let mut runs = Runs::default();
+        cells(&blinking, &cell(), 0, 0, None, None, &mut runs);
+        assert_eq!(runs.0, ["f", "i", "x"]);
     }
 
     /// The grid of `text` on a screen of 8 by 1, its text as `config` and
@@ -1406,6 +1547,101 @@ mod tests {
         assert_eq!(columns(looked(text, steady, false)), [0, 1, 2, 3]);
         assert!(has_blinking_text(&snapshot(8, 1, text)));
         assert!(!has_blinking_text(&snapshot(8, 1, "abc")));
+    }
+
+    #[test]
+    fn the_blinking_cells_go_apart_from_the_grid() {
+        // Blinking text, underlined, on the second row, and on the fourth,
+        // selected, between rows that do not blink.
+        let text = "top\r\na\x1b[5;4mbc\x1b[0md\r\nplain\r\n\x1b[5me\x1b[0m";
+        let shown = snapshot(8, 5, text);
+        let contains = |column: u16, row: u16| (column, row) == (0, 3);
+        let selection = Selection {
+            colors: SelectionColors {
+                background: rgb(0, 0, 255),
+                foreground: Some(rgb(1, 2, 3)),
+            },
+            contains: &contains,
+        };
+        let (mut first, mut second) = (Vec::new(), Vec::new());
+        let look = |blink_shown| TextLook {
+            config: TextConfig::default(),
+            blink_shown,
+        };
+        let draw = |look, asked: &mut Vec<_>| {
+            let glyphs = &mut atlas(asked);
+            cells_with(
+                &shown,
+                &cell(),
+                (0, 0),
+                Some(&selection),
+                None,
+                look,
+                glyphs,
+            )
+        };
+        let whole = draw(look(true), &mut first);
+        let grid = draw(look(false), &mut second);
+        let (row, apart) = blinking_cells(
+            &shown,
+            &cell(),
+            Some(&selection),
+            TextConfig::default(),
+            None,
+            &mut atlas(&mut first),
+        )
+        .unwrap();
+        // The rows from the first that blinks to the last.
+        assert_eq!(row, 1);
+        assert_eq!((apart.x, apart.y, apart.columns, apart.rows), (0, 0, 8, 3));
+        assert!(apart.cursor.is_none());
+        assert_eq!(apart.backgrounds.len(), 8 * 3);
+        assert!(apart.backgrounds.iter().all(|shown| shown.alpha == 0.0));
+        // Its glyphs and lines, as the whole grid has them, in their rows;
+        // the grid keeps the rest.
+        let moved = |glyph: &CellGlyph| CellGlyph {
+            row: glyph.row + row,
+            ..*glyph
+        };
+        let mut together: Vec<CellGlyph> = grid.glyphs.clone();
+        together.extend(apart.glyphs.iter().map(moved));
+        let key = |glyph: &CellGlyph| (glyph.row, glyph.column);
+        together.sort_by_key(key);
+        let mut expected = whole.glyphs.clone();
+        expected.sort_by_key(key);
+        assert_eq!(together, expected);
+        let cells: Vec<(u16, u16)> = apart.glyphs.iter().map(key).collect();
+        assert_eq!(cells, [(0, 1), (0, 2), (2, 0)]);
+        let selected = whole.glyphs.iter().find(|glyph| key(glyph) == (3, 0));
+        assert_eq!(apart.glyphs.last().map(moved).as_ref(), selected);
+        assert_eq!(selected.map(|glyph| glyph.color), Some(rgb(1, 2, 3)));
+        let lines: Vec<(u16, u16, u16)> = apart
+            .lines
+            .iter()
+            .map(|line| (line.row, line.column, line.columns))
+            .collect();
+        assert_eq!(lines, [(0, 1, 2)]);
+        assert!(grid.lines.is_empty());
+        // Nothing without text that blinks, or when it shows steadily.
+        let steady = TextConfig {
+            blink: false,
+            ..TextConfig::default()
+        };
+        let glyphs = &mut atlas(&mut first);
+        assert!(blinking_cells(&shown, &cell(), None, steady, None, glyphs).is_none());
+        let plain = snapshot(8, 2, "abc");
+        let default = TextConfig::default();
+        assert!(blinking_cells(&plain, &cell(), None, default, None, glyphs).is_none());
+        // A composition at the cursor covers the text under it.
+        let under = snapshot(8, 1, "\x1b[5mabc\x1b[3D");
+        let composing = Preedit {
+            text: "日".to_owned(),
+            cursor: 3,
+        };
+        let (_, apart) =
+            blinking_cells(&under, &cell(), None, default, Some(&composing), glyphs).unwrap();
+        let cells: Vec<u16> = apart.glyphs.iter().map(|glyph| glyph.column).collect();
+        assert_eq!(cells, [2]);
     }
 
     #[test]

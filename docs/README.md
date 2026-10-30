@@ -39,7 +39,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Fast and light on memory | 8-byte cells in pages; one GPU surface per window; native backends; no frames when idle | [VT-CORE](VT-CORE.md#paged-grid), [PERFORMANCE](PERFORMANCE.md), [ADR 0015](adr/0015-vt-core-throughput-exception.md) | F1–F2 |
 | Split panes | `splits` plugin; the layout tree lives in the kernel | [UI-AND-FEATURES](UI-AND-FEATURES.md#splits) | F3 |
 | Search the buffer | Kernel `search` service for the engine, `search` plugin for the UI | [UI-AND-FEATURES](UI-AND-FEATURES.md#search) | F3 |
-| Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy, gliding) | `[cursor]` options, drawn by `render-metal`; the blinking and its fades on the cursor's own layer, which the window server animates, and the movement only while it is in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor), [ADR 0021](adr/0021-drawables-and-the-cursor-layer.md) | F2–F3 |
+| Configurable cursor: blink interval, smooth blinking, block shape, smooth movement (snappy, gliding) | `[cursor]` options, drawn by `render-metal`; the blinking and its fades on the cursor's own layer, which the window server animates, as it blinks text on a layer of its own, and the movement only while it is in progress | [UI-AND-FEATURES](UI-AND-FEATURES.md#cursor), [ADR 0021](adr/0021-drawables-and-the-cursor-layer.md), [ADR 0023](adr/0023-blinking-text-layer.md) | F2–F3 |
 | Widths and terminal type that match the programs': the reported `TERM`, Unicode 8 or current width tables, ambiguous-width characters | `[terminal]` options, which the width computation of `vt-core` and the PTY's environment follow | [VT-CORE](VT-CORE.md#settings) | F1–F2 |
 | iTerm2's text options: Unicode normalization (NFC, NFD, HFS+), a separate font for non-ASCII text | The `normalization` option of `[terminal]`; the non-ASCII font in `[font]` | [VT-CORE](VT-CORE.md#unicode), [ROADMAP](ROADMAP.md#f2--macos-single-pane) | F1–F2 |
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
@@ -62,7 +62,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
 | [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012 |
 | [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
-| [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022 |
+| [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
 | [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
@@ -78,8 +78,9 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0018](adr/0018-names-lokyr-and-sleip.md) | Names: Lokyr for the terminal, Sleip for the package manager | Accepted |
 | [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted |
 | [0020](adr/0020-localization.md) | Localization: every text that Lokyr shows, in Fluent catalogs, English and Italian first; the system's preferred language, or the config's | Accepted |
-| [0021](adr/0021-drawables-and-the-cursor-layer.md) | Three drawables per window, of which a hidden window keeps one; the cursor's cell on a layer of its own, which the window server blinks | Accepted; amends 0005; its drawables superseded by 0022 |
+| [0021](adr/0021-drawables-and-the-cursor-layer.md) | Three drawables per window, of which a hidden window keeps one; the cursor's cell on a layer of its own, which the window server blinks | Accepted; amends 0005; its drawables superseded by 0022; blinking text on a layer, per 0023 |
 | [0022](adr/0022-two-drawables.md) | Two drawables per window, as measured at 60 and 120 Hz; three as a build's feature | Accepted; supersedes 0021's drawables |
+| [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
 
 ## Glossary
 

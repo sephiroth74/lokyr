@@ -93,9 +93,19 @@ pub struct WindowAttributes {
     pub restore: bool,
 }
 
-/// Where the cursor's layer of a window goes, and how it blinks.
+/// A layer of a window over its content, which the window server blinks
+/// without the app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Layer {
+    /// The text that blinks, under the cursor's.
+    BlinkingText,
+    /// The cursor's cells, over everything else.
+    Cursor,
+}
+
+/// Where a layer of a window goes, and how it blinks.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CursorPlace {
+pub struct LayerPlace {
     /// Its top left corner, in points from the content's.
     pub origin: Point,
     /// Its size, in points.
@@ -104,8 +114,7 @@ pub struct CursorPlace {
     pub blink: Option<Blink>,
 }
 
-/// A blink of the cursor's layer, which the window server runs without the
-/// app: from `start`, on, it holds visible, fades out, holds hidden, and
+/// A blink of a layer, which the window server runs without the app: from `start`, on, it holds visible, fades out, holds hidden, and
 /// fades in, and goes round again; without fades, it switches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Blink {
@@ -248,17 +257,16 @@ pub trait Platform {
     /// nothing, such as the fake one.
     fn window_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
 
-    /// What a renderer draws the cursor's cell of a window into, over its
-    /// content: on the Mac, a view of its own, whose layer is a
-    /// `CAMetalLayer`, clear where nothing is drawn, which the window server
-    /// blinks, as [`Platform::set_cursor`] says. Valid as
-    /// [`Platform::window_handle`]'s is; `None` for a platform that draws
-    /// nothing, such as the fake one.
-    fn cursor_handle(&self, window: WindowId) -> Option<WindowHandle<'_>>;
+    /// What a renderer draws a layer of a window into, over its content:
+    /// on the Mac, a view of its own, whose layer is a `CAMetalLayer`, clear
+    /// where nothing is drawn, which the window server blinks, as
+    /// [`Platform::place_layer`] says. Valid as [`Platform::window_handle`]'s
+    /// is; `None` for a platform that draws nothing, such as the fake one.
+    fn layer_handle(&self, window: WindowId, layer: Layer) -> Option<WindowHandle<'_>>;
 
-    /// Places the cursor's layer of `window`, which shows what the renderer
-    /// drew into it, blinking as the place says; `None` hides it.
-    fn set_cursor(&mut self, window: WindowId, cursor: Option<&CursorPlace>);
+    /// Places `layer` of `window`, which shows what the renderer drew into
+    /// it, blinking as the place says; `None` hides it.
+    fn place_layer(&mut self, window: WindowId, layer: Layer, place: Option<&LayerPlace>);
 
     /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
     /// current call returns, if the window drew no frame since its display's

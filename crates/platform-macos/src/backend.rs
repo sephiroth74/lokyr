@@ -7,9 +7,9 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, ContextMenu, CursorPlace, Error, MainMenu, MenuRole,
-    Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker, WindowAttributes,
-    WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, Layer, LayerPlace, MainMenu,
+    MenuRole, Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -388,17 +388,17 @@ impl Platform for Backend {
         Some(unsafe { WindowHandle::borrow_raw(raw) })
     }
 
-    fn cursor_handle(&self, window: WindowId) -> Option<WindowHandle<'_>> {
-        let view = self.windows.get(&window)?.cursor_address();
+    fn layer_handle(&self, window: WindowId, layer: Layer) -> Option<WindowHandle<'_>> {
+        let view = self.windows.get(&window)?.layer_address(layer);
         let raw = RawWindowHandle::AppKit(AppKitWindowHandle::new(view));
-        // SAFETY: the view is the window's cursor's, which lives as long as
+        // SAFETY: the view is the window's layer's, which lives as long as
         // the window, and no window closes while the backend is borrowed.
         Some(unsafe { WindowHandle::borrow_raw(raw) })
     }
 
-    fn set_cursor(&mut self, window: WindowId, cursor: Option<&CursorPlace>) {
+    fn place_layer(&mut self, window: WindowId, layer: Layer, place: Option<&LayerPlace>) {
         if let Some(window) = self.windows.get(&window) {
-            window.set_cursor(cursor);
+            window.place_layer(layer, place);
         }
     }
 
