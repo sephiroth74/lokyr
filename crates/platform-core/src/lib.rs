@@ -29,8 +29,8 @@ mod waker;
 pub use event::{AppEvent, Appearance, WindowEvent};
 pub use geometry::{PixelSize, Point, Size, WindowSize};
 pub use input::{
-    Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerShape, ScrollDelta,
-    ScrollPhase,
+    Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
+    ScrollDelta, ScrollPhase,
 };
 pub use menu::{
     Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem, MenuRole, Shortcut,
@@ -364,6 +364,12 @@ pub trait Platform {
     /// Gives the pointer over `window`'s content `shape`; the arrow until
     /// the app asks for another.
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape);
+
+    /// Gives the pointer over each of `areas` of `window`'s content its own
+    /// shape, the first area over those after it, and all over the shape
+    /// of the rest, in place of the areas before; none until the app asks.
+    /// The pointer changes as it moves, without waking the app.
+    fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]);
 
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a

@@ -7,8 +7,8 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerShape, ScrollDelta,
-    ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Backdrop, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea, PointerShape,
+    ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject, Sel};
@@ -267,6 +267,14 @@ impl Window {
         }
     }
 
+    /// Gives the areas of `areas` their own pointers, over the rest's.
+    pub(crate) fn set_pointer_areas(&self, areas: &[PointerArea]) {
+        if *self.view.ivars().areas.borrow() != areas {
+            *self.view.ivars().areas.borrow_mut() = areas.to_vec();
+            self.ns_window.invalidateCursorRectsForView(&self.view);
+        }
+    }
+
     /// Makes the window translucent over `backdrop`, its background, which
     /// fills its whole shape, the titlebar and the rounded corners too,
     /// under the content that the renderer draws clear; or, with `None`,
@@ -373,8 +381,10 @@ pub(crate) struct ContentViewIvars {
     /// Whether the view is opaque, as the window is unless the app made it
     /// translucent.
     opaque: Cell<bool>,
-    /// How the pointer looks over the view.
+    /// How the pointer looks over the view, and over the areas that have
+    /// their own.
     pointer: Cell<PointerShape>,
+    areas: RefCell<Vec<PointerArea>>,
     /// Whether the buttons held went down over the titlebar, whose drags
     /// and releases are the window's, not the content's.
     over_bar: Cell<bool>,
@@ -399,12 +409,21 @@ define_class!(
         // rectangle that the pointer is in, in the key window.
         #[unsafe(method(resetCursorRects))]
         fn reset_cursor_rects(&self) {
-            let cursor = match self.ivars().pointer.get() {
-                PointerShape::Arrow => NSCursor::arrowCursor(),
-                PointerShape::Text => NSCursor::IBeamCursor(),
-            };
             // Below the titlebar, whose pointer is the arrow.
-            self.addCursorRect_cursor(self.below_bar(), &cursor);
+            let rects = cursor_rects(
+                self.below_bar(),
+                self.bounds().size.height,
+                &self.ivars().areas.borrow(),
+                self.ivars().pointer.get(),
+            );
+            for (rect, shape) in rects {
+                let cursor = match shape {
+                    PointerShape::Arrow => NSCursor::arrowCursor(),
+                    PointerShape::Text => NSCursor::IBeamCursor(),
+                    PointerShape::PointingHand => NSCursor::pointingHandCursor(),
+                };
+                self.addCursorRect_cursor(rect, &cursor);
+            }
         }
 
         // SAFETY: AppKit's signature. The keys that the menus' shortcuts
@@ -651,6 +670,7 @@ impl ContentView {
             option_as_meta,
             opaque: Cell::new(true),
             pointer: Cell::new(PointerShape::Arrow),
+            areas: RefCell::new(Vec::new()),
             over_bar: Cell::new(false),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
@@ -1076,6 +1096,103 @@ fn restore_size(window: &NSWindow) {
     window.setFrame_display(NSRect::new(before.origin, size), false);
 }
 
+/// The cursor's rectangles of a view of `height` points, of its content
+/// `below`, the titlebar's bottom: each of `areas` of its own pointer,
+/// within the content, but where an area before it lies, and the rest of
+/// the content of `pointer`. None overlap, as AppKit leaves the cursor of
+/// rectangles that overlap undefined.
+fn cursor_rects(
+    below: NSRect,
+    height: f64,
+    areas: &[PointerArea],
+    pointer: PointerShape,
+) -> Vec<(NSRect, PointerShape)> {
+    let mut rects = Vec::new();
+    let mut taken: Vec<NSRect> = Vec::new();
+    for area in areas {
+        // The view's origin is its bottom left corner.
+        let rect = NSRect::new(
+            NSPoint::new(area.origin.x, height - area.origin.y - area.size.height),
+            NSSize::new(area.size.width, area.size.height),
+        );
+        let Some(rect) = intersection(rect, below) else {
+            continue;
+        };
+        rects.extend(
+            without(rect, &taken)
+                .into_iter()
+                .map(|piece| (piece, area.shape)),
+        );
+        taken.push(rect);
+    }
+    rects.extend(
+        without(below, &taken)
+            .into_iter()
+            .map(|piece| (piece, pointer)),
+    );
+    rects
+}
+
+/// Where `a` and `b` overlap, if they do.
+fn intersection(a: NSRect, b: NSRect) -> Option<NSRect> {
+    let left = a.origin.x.max(b.origin.x);
+    let bottom = a.origin.y.max(b.origin.y);
+    let right = (a.origin.x + a.size.width).min(b.origin.x + b.size.width);
+    let top = (a.origin.y + a.size.height).min(b.origin.y + b.size.height);
+    (left < right && bottom < top).then(|| {
+        NSRect::new(
+            NSPoint::new(left, bottom),
+            NSSize::new(right - left, top - bottom),
+        )
+    })
+}
+
+/// The parts of `rect` outside each of `holes`: rectangles that do not
+/// overlap.
+fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
+    let mut pieces = vec![rect];
+    for &hole in holes {
+        pieces = pieces
+            .into_iter()
+            .flat_map(|piece| {
+                let Some(cut) = intersection(piece, hole) else {
+                    return vec![piece];
+                };
+                let (left, bottom) = (piece.origin.x, piece.origin.y);
+                let (right, top) = (left + piece.size.width, bottom + piece.size.height);
+                let (cut_right, cut_top) = (
+                    cut.origin.x + cut.size.width,
+                    cut.origin.y + cut.size.height,
+                );
+                let band = |x0: f64, x1: f64| {
+                    NSRect::new(
+                        NSPoint::new(x0, cut.origin.y),
+                        NSSize::new(x1 - x0, cut.size.height),
+                    )
+                };
+                // Below the cut and above it, the piece's width; at its
+                // sides, the cut's height.
+                [
+                    NSRect::new(
+                        NSPoint::new(left, bottom),
+                        NSSize::new(piece.size.width, cut.origin.y - bottom),
+                    ),
+                    NSRect::new(
+                        NSPoint::new(left, cut_top),
+                        NSSize::new(piece.size.width, top - cut_top),
+                    ),
+                    band(left, cut.origin.x),
+                    band(cut_right, right),
+                ]
+                .into_iter()
+                .filter(|part| part.size.width > 0.0 && part.size.height > 0.0)
+                .collect()
+            })
+            .collect();
+    }
+    pieces
+}
+
 /// What a double click on a window's titlebar does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BarDoubleClick {
@@ -1117,6 +1234,47 @@ fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cursor_s_rects_of_areas_overlap_none() {
+        let rect = |x, y, w, h| NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+        let area = |x, y, w, h, shape| PointerArea {
+            origin: Point { x, y },
+            size: Size {
+                width: w,
+                height: h,
+            },
+            shape,
+        };
+        // A view of 100 by 50 points, its content below a bar of 10; a
+        // notice's bar across its top, of the arrow, and its close at the
+        // right, of the hand, over it.
+        let below = rect(0.0, 0.0, 100.0, 40.0);
+        let areas = [
+            area(90.0, 10.0, 10.0, 8.0, PointerShape::PointingHand),
+            area(0.0, 10.0, 100.0, 8.0, PointerShape::Arrow),
+        ];
+        let rects = cursor_rects(below, 50.0, &areas, PointerShape::Text);
+        assert_eq!(
+            rects,
+            [
+                (rect(90.0, 32.0, 10.0, 8.0), PointerShape::PointingHand),
+                (rect(0.0, 32.0, 90.0, 8.0), PointerShape::Arrow),
+                (rect(0.0, 0.0, 100.0, 32.0), PointerShape::Text),
+            ]
+        );
+        // Without areas, the content alone; an area outside it, nothing.
+        let outside = [area(0.0, 0.0, 100.0, 5.0, PointerShape::Arrow)];
+        assert_eq!(
+            cursor_rects(below, 50.0, &outside, PointerShape::Arrow),
+            [(below, PointerShape::Arrow)]
+        );
+        // A hole in the middle leaves four parts.
+        assert_eq!(
+            without(rect(0.0, 0.0, 10.0, 10.0), &[rect(4.0, 4.0, 2.0, 2.0)]).len(),
+            4
+        );
+    }
 
     #[test]
     fn a_double_click_on_the_bar_does_as_the_settings_say() {

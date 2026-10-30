@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, Layer, LayerPlace,
-    MainMenu, Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
+    MainMenu, Platform, Point, PointerArea, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
@@ -51,6 +51,9 @@ pub struct FakeWindow {
     pub mouse_moves: bool,
     /// How the pointer looks over its content, as the app asked.
     pub pointer: PointerShape,
+    /// The areas of its content of their own pointers, as the app gave
+    /// them.
+    pub pointer_areas: Vec<PointerArea>,
     /// Its own appearance, if the app gave it one.
     pub appearance: Option<Appearance>,
 }
@@ -536,6 +539,7 @@ impl Platform for Fake {
                 restore_size: attributes.restore_size,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                pointer_areas: Vec::new(),
                 appearance: None,
             },
         );
@@ -684,6 +688,12 @@ impl Platform for Fake {
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.mouse_moves = track;
+        }
+    }
+
+    fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.pointer_areas = areas.to_vec();
         }
     }
 

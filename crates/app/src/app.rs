@@ -32,8 +32,8 @@ use lokyr_kernel::workspace::{
 use lokyr_platform_core::{
     Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Handler, Ime, KeyCode,
     KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton, Platform,
-    Point, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size, StandardAction,
-    TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Point, PointerArea, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey, Size,
+    StandardAction, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_platform_core::{Blink as PlatformBlink, Easing, Layer, LayerPlace};
 use lokyr_pty::Program;
@@ -421,9 +421,10 @@ struct Window {
     /// That directory, whole, as the title last looked, which stays once
     /// the program ended.
     directory: Option<PathBuf>,
-    /// Where its last frame drew the notice's bar, in pixels, which a click
-    /// closes.
-    notice: Option<Rect>,
+    /// Where its last frame drew the notice's bar and its close, in pixels,
+    /// and the pointer's areas that the platform has of them, in points.
+    notice: Option<notice::Rects>,
+    pointer_areas: Vec<PointerArea>,
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
     /// When its last frame of output came, since its title last looked, for
@@ -543,6 +544,7 @@ impl Window {
             place: (String::new(), String::new()),
             directory: None,
             notice: None,
+            pointer_areas: Vec::new(),
             title_shown: None,
             output_at: None,
             user_title: None,
@@ -1020,12 +1022,17 @@ impl App {
         let Some(button) = mouse::button(button) else {
             return;
         };
-        // A press on the notice's bar closes the notice, and goes no
-        // further.
-        if pressed && self.on_notice(platform, window, position) {
-            self.diagnostics.dismiss();
-            self.request_frames(platform);
-            return;
+        // A press on the notice's close closes the notice; one on the rest
+        // of its bar does nothing, as the bar covers the text under it.
+        match self.on_notice(platform, window, position) {
+            Some(close) if pressed => {
+                if close {
+                    self.diagnostics.dismiss();
+                    self.request_frames(platform);
+                }
+                return;
+            }
+            _ => {}
         }
         // A press that a binding takes starts no selection, and reaches no
         // program, which then learns of no release.
@@ -1535,17 +1542,20 @@ impl App {
     }
 
     /// Whether `position`, in points of `window`'s content, is on the bar
-    /// of the notice that its last frame drew.
-    fn on_notice(&self, platform: &dyn Platform, window: WindowId, position: Point) -> bool {
-        let (Some(state), Some(size)) = (self.windows.get(&window), platform.window_size(window))
-        else {
-            return false;
-        };
+    /// of the notice that its last frame drew, and on its close; `None` off
+    /// the bar.
+    fn on_notice(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<bool> {
+        let (state, size) = (self.windows.get(&window)?, platform.window_size(window)?);
         let pixels = (position.x * size.scale, position.y * size.scale);
-        state
+        let rects = state
             .notice
-            .as_ref()
-            .is_some_and(|rect| notice::contains(rect, pixels))
+            .filter(|rects| notice::contains(&rects.bar, pixels))?;
+        Some(notice::contains(&rects.close, pixels))
     }
 
     /// Starts a selection at `position`, as the left button goes down with
@@ -3436,10 +3446,37 @@ impl App {
             let fault = shown.category() == ErrorCategory::Fault;
             let area = (size.pixels.width, size.bar_pixels());
             let glyph = |text: &cells::CellText<'_>| font.glyph(text);
-            let (rect, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
+            let (rects, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
             items.extend(drawn);
-            rect
+            rects
         });
+        // The hand over its close, the arrow over the rest of the bar,
+        // which the platform shows without the app.
+        let points = |rect: &Rect, shape| PointerArea {
+            origin: Point {
+                x: f64::from(rect.x) / size.scale,
+                y: f64::from(rect.y) / size.scale,
+            },
+            size: Size {
+                width: f64::from(rect.width) / size.scale,
+                height: f64::from(rect.height) / size.scale,
+            },
+            shape,
+        };
+        let areas: Vec<PointerArea> = state
+            .notice
+            .iter()
+            .flat_map(|rects| {
+                [
+                    points(&rects.close, PointerShape::PointingHand),
+                    points(&rects.bar, PointerShape::Arrow),
+                ]
+            })
+            .collect();
+        if areas != state.pointer_areas {
+            platform.set_pointer_areas(window, &areas);
+            state.pointer_areas = areas;
+        }
         // A flash of the bell, the default text's color over the window.
         if state
             .flash_until
@@ -9241,18 +9278,23 @@ mod tests {
             "{}",
             shown.text
         );
-        // Where the bar was drawn, a press closes it, and reaches no
-        // program; below it, it does not.
-        let bar = Rect {
-            x: 0,
+        // Where the bar was drawn, a press on its close closes it; on the
+        // rest of it, nothing; neither reaches the program, nor starts a
+        // selection.
+        let rect = |x, width| Rect {
+            x,
             y: 56,
-            width: 800,
+            width,
             height: 40,
         };
-        app.windows.get_mut(&window).unwrap().notice = Some(bar);
+        let rects = notice::Rects {
+            bar: rect(0, 800),
+            close: rect(780, 20),
+        };
+        app.windows.get_mut(&window).unwrap().notice = Some(rects);
         let scale = fake.window(window).unwrap().size.scale;
-        let at = |y: f64| Point {
-            x: 10.0,
+        let at = |x: f64, y: f64| Point {
+            x: x / scale,
             y: y / scale,
         };
         let press = |position| WindowEvent::MouseButton {
@@ -9262,13 +9304,16 @@ mod tests {
             position,
             mods: Modifiers::NONE,
         };
-        fake.send(&mut app, window, press(at(70.0)));
+        fake.send(&mut app, window, press(at(10.0, 70.0)));
+        assert!(app.diagnostics.shown().is_some());
+        assert!(app.windows[&window].selecting.is_none());
+        fake.send(&mut app, window, press(at(790.0, 70.0)));
         assert_eq!(app.diagnostics.shown(), None);
         assert!(app.windows[&window].selecting.is_none());
         // A failure of a command shows too; a press below the bar leaves it.
         let failed = Diagnostic::new(Code::Failed, "it failed", About::Other);
         app.report(&mut fake, failed);
-        fake.send(&mut app, window, press(at(120.0)));
+        fake.send(&mut app, window, press(at(10.0, 120.0)));
         assert!(app.diagnostics.shown().is_some());
         assert!(app.windows[&window].selecting.is_some());
     }

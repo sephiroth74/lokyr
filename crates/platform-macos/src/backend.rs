@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, Layer, LayerPlace, MainMenu,
-    MenuRole, Platform, Point, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
+    MenuRole, Platform, Point, PointerArea, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
     WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
@@ -575,6 +575,12 @@ impl Platform for Backend {
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape) {
         if let Some(window) = self.windows.get(&window) {
             window.set_pointer_shape(shape);
+        }
+    }
+
+    fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_pointer_areas(areas);
         }
     }
 

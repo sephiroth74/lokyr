@@ -84,17 +84,27 @@ fn lines(text: &str, columns: usize) -> Vec<String> {
     lines
 }
 
+/// The rectangles of a notice's bar, in pixels of the window's content.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Rects {
+    /// The whole bar, which a click goes no further than.
+    pub(crate) bar: Rect,
+    /// Its close, the end of its first line, which a click closes the
+    /// notice with.
+    pub(crate) close: Rect,
+}
+
 /// The bar of the notice `text`, which `label` opens, a fault's when
 /// `fault`, over a window of `width` pixels, whose content starts `top`
-/// pixels down, under its titlebar: its rectangle, which a click closes,
-/// and its drawings, a background and the glyphs of `cell`'s size, which
-/// `glyph` gives, a cell a character.
+/// pixels down, under its titlebar: its rectangles, and its drawings, a
+/// background and the glyphs of `cell`'s size, which `glyph` gives, a cell
+/// a character.
 pub(crate) fn bar(
     (label, text, fault): (&str, &str, bool),
     cell: &CellMetrics,
     (width, top): (u32, u32),
     mut glyph: impl FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
-) -> (Rect, Vec<Item>) {
+) -> (Rects, Vec<Item>) {
     // The text's room from the bar's edges, half a cell, and the close's,
     // the last cell, after one left empty.
     let padding = cell.width / 2;
@@ -140,10 +150,20 @@ pub(crate) fn bar(
             column += u32::from(widths.char_width(character));
         }
     }
-    place(CLOSE, cells.saturating_sub(1), 0);
+    let close_column = cells.saturating_sub(1);
+    place(CLOSE, close_column, 0);
+    // The close takes its cell, from the bar's top to its first line's
+    // bottom and padding, and to the window's right edge.
+    let close_x = padding + close_column * cell.width;
+    let close = Rect {
+        x: i32::try_from(close_x).unwrap_or(i32::MAX),
+        y: rect.y,
+        width: width.saturating_sub(close_x),
+        height: cell.height + 2 * padding,
+    };
     let background = if fault { FAULT } else { BACKGROUND };
     (
-        rect,
+        Rects { bar: rect, close },
         vec![
             Item::Rect {
                 rect,
@@ -208,7 +228,8 @@ mod tests {
         };
         // A window of 21 cells, 20 within a padding of half a cell: 18
         // columns of text, past the close's two.
-        let (rect, items) = bar(("Error:", "a b", false), &cell, (210, 56), glyph);
+        let (Rects { bar: rect, close }, items) =
+            bar(("Error:", "a b", false), &cell, (210, 56), glyph);
         assert_eq!((rect.x, rect.y, rect.width, rect.height), (0, 56, 210, 30));
         assert_eq!(asked, ["E", "r", "r", "o", "r", ":", "a", "b", "×"]);
         let [Item::Rect { color, .. }, Item::Glyphs(glyphs)] = &items[..] else {
@@ -219,6 +240,10 @@ mod tests {
         assert_eq!((glyphs[0].x, glyphs[0].y), (5 + 1, 56 + 5 + 16 - 10));
         // The close, in the last cell of the first line.
         assert_eq!(glyphs.last().unwrap().x, 5 + 190 + 1);
+        assert_eq!(
+            (close.x, close.y, close.width, close.height),
+            (195, 56, 15, 30)
+        );
         assert!(contains(&rect, (0.0, 56.0)) && contains(&rect, (209.0, 85.0)));
         assert!(!contains(&rect, (10.0, 55.0)) && !contains(&rect, (10.0, 86.0)));
     }

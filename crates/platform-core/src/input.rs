@@ -349,4 +349,18 @@ pub enum PointerShape {
     Arrow,
     /// The text's I-beam, as over text to select.
     Text,
+    /// The pointing hand, as over a button.
+    PointingHand,
+}
+
+/// An area of a window's content whose pointer is its own, over the shape
+/// of the rest.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointerArea {
+    /// Its top left corner, in points from the content's.
+    pub origin: crate::Point,
+    /// Its size, in points.
+    pub size: crate::Size,
+    /// How the pointer looks over it.
+    pub shape: PointerShape,
 }
