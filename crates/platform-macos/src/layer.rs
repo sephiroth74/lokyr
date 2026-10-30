@@ -12,7 +12,7 @@ use lokyr_platform_core::{Blink, Easing, LayerPlace};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
-use objc2_app_kit::{NSResponder, NSView, NSWorkspace};
+use objc2_app_kit::{NSAutoresizingMaskOptions, NSResponder, NSView, NSWorkspace};
 use objc2_foundation::{NSArray, NSNumber, NSObject, NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::{
     CACurrentMediaTime, CAKeyframeAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction,
@@ -89,6 +89,10 @@ impl LayerView {
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
         view.setHidden(true);
+        // It keeps its distance from the content's top, where the app
+        // places it from, as the window resizes: AppKit's origin is the
+        // bottom left corner.
+        view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin);
         over.addSubview(&view);
         view
     }

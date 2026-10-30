@@ -19,7 +19,7 @@ mod probe {
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
     use objc2_app_kit::{NSApplication, NSView};
-    use objc2_foundation::{NSNumber, NSPoint, NSRect, NSString};
+    use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, NSString};
     use objc2_quartz_core::{CAKeyframeAnimation, CAMediaTiming};
 
     use crate::common;
@@ -42,6 +42,9 @@ mod probe {
         /// animation, placed, then hidden; and the cursor's frame then.
         text: Vec<(NSRect, bool, Option<Animation>)>,
         cursor_then: Option<(NSRect, bool)>,
+        /// The cursor's distance from the content's top, and its frame's
+        /// size, before and after the window grows, and shrinks.
+        resized: Vec<(f64, NSSize)>,
         /// The content view's height, in points.
         height: f64,
     }
@@ -176,6 +179,20 @@ mod probe {
             // window's coordinates.
             let hit = content.hitTest(content.convertPoint_toView(middle, None));
             seen.through = hit.is_some_and(|hit| hit == content);
+            // The window's resizes keep the cursor where the app placed it,
+            // from the content's top, until it places it again.
+            let from_top = |content: &NSView, cursor: &NSView| {
+                let frame = cursor.frame();
+                let top = content.bounds().size.height - frame.origin.y - frame.size.height;
+                (top, frame.size)
+            };
+            seen.resized.push(from_top(&content, &cursor));
+            let ns_window = content.window().expect("the window");
+            for height in [420.0, 200.0] {
+                ns_window.setContentSize(NSSize::new(400.0, height));
+                let (content, _, cursor) = views();
+                seen.resized.push(from_top(&content, &cursor));
+            }
             platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
             common::wake_after(platform.waker(), 100);
@@ -229,6 +246,8 @@ mod probe {
         assert_eq!(seen.animations[2], None, "{seen:?}");
         assert!(!seen.frames[2].1 && seen.frames[3].1, "{seen:?}");
         assert!(seen.through, "{seen:?}");
+        let placed = (50.0, NSSize::new(8.0, 16.0));
+        assert_eq!(seen.resized, [placed; 3], "{seen:?}");
         // The text's rows, switched, then hidden; the cursor's as it was.
         let (frame, hidden, ref animation) = seen.text[0];
         assert_eq!(
