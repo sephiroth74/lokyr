@@ -270,6 +270,7 @@ The `command-palette` plugin (⌘⇧P on macOS, Ctrl+Shift+P on Linux):
 - fuzzy search over registered commands (title, shortcut, plugin), with recent commands first;
 - theme picker with live preview;
 - uses the `window-overlay` slot and an IME-capable text field.
+- runs the commands as the user's, and lists every command with its plugin and keys, through the capability `user-commands`, which a palette of a third party asks for at install ([ADR 0024](adr/0024-user-commands.md)).
 
 ## Basic actions
 

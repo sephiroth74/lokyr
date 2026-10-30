@@ -45,7 +45,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
 | iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
-| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md) | F3–F4 |
+| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
@@ -76,11 +76,12 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0016](adr/0016-new-names.md) | New names: Shard for the package manager; the terminal's still to choose, by the end of F2 | Superseded by 0018, never accepted |
 | [0017](adr/0017-mcp-and-agents.md) | An MCP server, and the AI agents that run in the terminal; phase F3b | Accepted |
 | [0018](adr/0018-names-lokyr-and-sleip.md) | Names: Lokyr for the terminal, Sleip for the package manager | Accepted |
-| [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted |
+| [0019](adr/0019-commands-errors-and-permissions.md) | Commands: a flat schema of arguments, errors with codes and categories, and the commands that plugins run, declared and checked; four new capabilities | Accepted; the commands that the user runs through a plugin, per 0024 |
 | [0020](adr/0020-localization.md) | Localization: every text that Lokyr shows, in Fluent catalogs, English and Italian first; the system's preferred language, or the config's | Accepted |
 | [0021](adr/0021-drawables-and-the-cursor-layer.md) | Three drawables per window, of which a hidden window keeps one; the cursor's cell on a layer of its own, which the window server blinks | Accepted; amends 0005; its drawables superseded by 0022; blinking text on a layer, per 0023 |
 | [0022](adr/0022-two-drawables.md) | Two drawables per window, as measured at 60 and 120 Hz; three as a build's feature | Accepted; supersedes 0021's drawables |
 | [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
+| [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
 
 ## Glossary
 
