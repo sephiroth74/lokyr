@@ -1291,8 +1291,13 @@ impl App {
         match (shown, self.performance.take()) {
             (true, None) => {
                 let now = Instant::now();
-                let bytes = self.workspace.panes().map(Pane::output_bytes).sum();
-                let mut shown = Performance::new(now, platform.usage(), bytes);
+                // The GPU's times from before it shows are not its own.
+                if let Some(drawing) = &mut self.drawing {
+                    drawing.renderer.take_gpu_times();
+                }
+                let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+                let bytes = self.output_bytes();
+                let mut shown = Performance::new(now, &windows, platform.usage(), bytes);
                 shown.timer = Some(platform.start_timer(now + performance::INTERVAL));
                 self.performance = Some(shown);
             }
@@ -1314,7 +1319,7 @@ impl App {
     /// them.
     fn measure_performance(&mut self, platform: &mut dyn Platform) {
         let now = Instant::now();
-        let bytes = self.workspace.panes().map(Pane::output_bytes).sum();
+        let bytes = self.output_bytes();
         let gpu = self
             .drawing
             .as_mut()
@@ -1334,10 +1339,18 @@ impl App {
         shown.timer = Some(platform.start_timer(now + performance::INTERVAL));
     }
 
+    /// The bytes that each pane's program wrote, by the pane's number.
+    fn output_bytes(&self) -> BTreeMap<u64, u64> {
+        self.workspace
+            .panes()
+            .map(|pane| (pane.id().get(), pane.output_bytes()))
+            .collect()
+    }
+
     /// Opens the config file in the system's text editor, made first, when
     /// it is not there, of every key commented out with its default and its
-    /// text; without a home directory, which gives it no path, the log
-    /// tells.
+    /// text; an alert tells why it cannot, as without a home directory,
+    /// which gives it no path.
     fn open_settings(&mut self, platform: &mut dyn Platform) {
         let failed = match &self.config_file {
             None => Some(self.texts.text("settings-no-home")),
@@ -3255,6 +3268,8 @@ impl App {
                 None
             }
         };
+        // The frame's time ends here: the layers draw seldom, apart.
+        let spent = started.map(|started| started.elapsed());
         // The cursor's cells, into their layer, which the platform places
         // over the grid's cell, and blinks.
         let (left, top) = (f64::from(x), f64::from(y));
@@ -3297,10 +3312,8 @@ impl App {
         if was_shown && state.text_layer.place.is_none() {
             state.text_layer.release();
         }
-        if let (Some(wait), Some(started), Some(shown)) =
-            (presented, started, &mut self.performance)
-        {
-            shown.frame(window, started.elapsed().saturating_sub(wait), wait);
+        if let (Some(wait), Some(spent), Some(shown)) = (presented, spent, &mut self.performance) {
+            shown.frame(window, spent.saturating_sub(wait), wait);
         }
     }
 }
@@ -3990,7 +4003,7 @@ fn show_layer(
                 frame: drawing.font.atlas_frame(),
             };
             surface.resize(width, height, scale);
-            match drawing.renderer.draw(surface, &list) {
+            match drawing.renderer.draw_untimed(surface, &list) {
                 Ok(true) => state.drawn = Some(drawn),
                 Ok(false) => {}
                 Err(error) => eprintln!("lokyr: {error}"),
@@ -4656,6 +4669,16 @@ mod tests {
             fake.timers()
                 .any(|(timer, when)| timer == next && when > at)
         );
+        // A window that opens shows its lines once it had a whole second.
+        fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+        let opened = fake.windows().find(|&other| other != window).unwrap();
+        fake.send_app(&mut app, AppEvent::Timer(next));
+        let shown = app.performance.as_ref().unwrap();
+        assert!(shown.lines(window).is_some() && shown.lines(opened).is_none());
+        let next = shown.timer.unwrap();
+        fake.send_app(&mut app, AppEvent::Timer(next));
+        assert!(app.performance.as_ref().unwrap().lines(opened).is_some());
+        let next = app.performance.as_ref().unwrap().timer.unwrap();
         // Again, it hides, and its timer goes.
         fake.send_app(&mut app, AppEvent::Command(PERFORMANCE.to_owned()));
         assert!(app.performance.is_none() && !fake.command_checked(PERFORMANCE));

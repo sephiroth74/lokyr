@@ -2,7 +2,7 @@
 //! of the GPU, of the process and of its programs' output, a second at a
 //! time, and the panel that shows it over a window, in a corner.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use lokyr_kernel::config::Corner;
@@ -39,11 +39,13 @@ const MEGABYTE: f64 = 1_000_000.0;
 pub(crate) struct Performance {
     /// The timer of the next measure.
     pub(crate) timer: Option<TimerId>,
-    /// When the last measure was, and what the process had used then, and
-    /// the bytes that its programs had written.
+    /// When the last measure was, the windows that were open then, which
+    /// the next one measures, what the process had used then, and the
+    /// bytes that each pane's program had written, by the pane's number.
     since: Instant,
+    windows: BTreeSet<WindowId>,
     usage: Option<Usage>,
-    bytes: u64,
+    bytes: BTreeMap<u64, u64>,
     /// Each frame that each window presented since then: the CPU's time of
     /// it, and how long it waited for the display's drawable.
     frames: BTreeMap<WindowId, Vec<(Duration, Duration)>>,
@@ -64,8 +66,8 @@ pub(crate) struct Measure {
     pub(crate) wait: Option<(Duration, Duration)>,
     /// The GPU's, its mean and its longest, of every window's frames.
     pub(crate) gpu: Option<(Duration, Duration)>,
-    /// The wakeups a second, all of them and those out of idle, where the
-    /// system tells them.
+    /// The wakeups a second, all of them, the interrupts', and those out
+    /// of idle, which are among them, where the system tells them.
     pub(crate) wakeups: Option<(f64, f64)>,
     /// The memory, in MB, where the system tells it.
     pub(crate) memory: Option<f64>,
@@ -74,12 +76,18 @@ pub(crate) struct Measure {
 }
 
 impl Performance {
-    /// Measures from `now`, of the process's `usage` and the programs'
-    /// `bytes` then.
-    pub(crate) fn new(now: Instant, usage: Option<Usage>, bytes: u64) -> Self {
+    /// Measures from `now`, of `windows`, of the process's `usage` and of
+    /// the `bytes` of each pane's program then.
+    pub(crate) fn new(
+        now: Instant,
+        windows: &[WindowId],
+        usage: Option<Usage>,
+        bytes: BTreeMap<u64, u64>,
+    ) -> Self {
         Self {
             timer: None,
             since: now,
+            windows: windows.iter().copied().collect(),
             usage,
             bytes,
             frames: BTreeMap::new(),
@@ -94,15 +102,18 @@ impl Performance {
     }
 
     /// Measures at `now`, of the GPU's times since the last measure, and of
-    /// the process's `usage` and the programs' `bytes` now: what each window
-    /// of `windows` found, which starts the next interval.
+    /// the process's `usage` and of the `bytes` of each pane's program now:
+    /// what each window of `windows` found, which starts the next interval.
+    /// A window that opened since the last measure has none, until it has
+    /// a whole interval; the output of a pane that closed since leaves the
+    /// others'.
     pub(crate) fn measure(
         &mut self,
         now: Instant,
         windows: &[WindowId],
         gpu: GpuTimes,
         usage: Option<Usage>,
-        bytes: u64,
+        bytes: BTreeMap<u64, u64>,
     ) -> Vec<(WindowId, Measure)> {
         let elapsed = now.saturating_duration_since(self.since).as_secs_f64();
         let per_second = |count: f64| if elapsed > 0.0 { count / elapsed } else { 0.0 };
@@ -112,12 +123,18 @@ impl Performance {
             let interrupts = after
                 .interrupt_wakeups
                 .saturating_sub(before.interrupt_wakeups) as f64;
-            (per_second(idle + interrupts), per_second(idle))
+            (per_second(interrupts), per_second(idle))
         });
         let memory = usage.map(|usage| usage.footprint as f64 / MEGABYTE);
-        let output = per_second(bytes.saturating_sub(self.bytes) as f64) / MEGABYTE;
+        // A pane that opened since wrote all of its bytes within.
+        let written: u64 = bytes
+            .iter()
+            .map(|(pane, &now)| now.saturating_sub(self.bytes.get(pane).copied().unwrap_or(0)))
+            .sum();
+        let output = per_second(written as f64) / MEGABYTE;
         let measures = windows
             .iter()
+            .filter(|window| self.windows.contains(window))
             .map(|&window| {
                 let frames = self.frames.remove(&window).unwrap_or_default();
                 let spread = |mut times: Vec<Duration>| {
@@ -139,6 +156,7 @@ impl Performance {
             })
             .collect();
         self.frames.clear();
+        self.windows = windows.iter().copied().collect();
         (self.since, self.usage, self.bytes) = (now, usage, bytes);
         measures
     }
@@ -343,22 +361,33 @@ mod tests {
     #[test]
     fn a_measure_takes_each_window_s_frames_and_the_process_s_rates() {
         let start = Instant::now();
-        let mut performance = Performance::new(start, Some(usage(10, 100, 0)), 1_000);
+        let windows = [window(1), window(2), window(3)];
+        let bytes = |panes: &[(u64, u64)]| panes.iter().copied().collect::<BTreeMap<_, _>>();
+        let mut performance = Performance::new(
+            start,
+            &windows,
+            Some(usage(10, 100, 0)),
+            bytes(&[(1, 1_000), (2, 9_000_000)]),
+        );
         let millis = Duration::from_millis;
         for (time, wait) in [(3, 10), (1, 12), (2, 11), (9, 0)] {
             performance.frame(window(1), millis(time), millis(wait));
         }
         performance.frame(window(2), millis(4), millis(5));
+        // A window that opened within, which has no measure yet.
+        performance.frame(window(4), millis(4), millis(5));
         let mut gpu = GpuTimes::default();
         gpu.add(millis(1));
         gpu.add(millis(3));
-        // Over two seconds.
+        // Over two seconds, of the wakeups out of idle among the others; of
+        // the output of a pane that went on, and of one that opened, where
+        // one closed.
         let measures = performance.measure(
             start + Duration::from_secs(2),
-            &[window(1), window(2), window(3)],
+            &[window(1), window(2), window(3), window(4)],
             gpu,
-            Some(usage(14, 102, 48_200_000)),
-            5_001_000,
+            Some(usage(14, 108, 48_200_000)),
+            bytes(&[(1, 5_001_000), (3, 1_000_000)]),
         );
         let [(_, first), (_, second), (_, third)] = measures[..] else {
             panic!("three windows: {measures:?}");
@@ -367,21 +396,26 @@ mod tests {
         assert_eq!(first.cpu, Some((millis(3), millis(9))));
         assert_eq!(first.wait, Some((millis(11), millis(12))));
         assert_eq!(first.gpu, Some((millis(2), millis(3))));
-        assert_eq!(first.wakeups, Some((3.0, 2.0)));
+        assert_eq!(first.wakeups, Some((4.0, 2.0)));
         assert_eq!(first.memory, Some(48.2));
-        assert_eq!(first.output, 2.5);
+        assert_eq!(first.output, 3.0);
         assert_eq!(
             (second.rate, second.cpu),
             (0.5, Some((millis(4), millis(4))))
         );
-        // A window that drew nothing, and the next interval, from nothing.
+        // A window that drew nothing, and the next interval, from nothing,
+        // of the window that opened, now.
         assert_eq!((third.rate, third.cpu), (0.0, None));
         let next = performance.measure(
             start + Duration::from_secs(3),
-            &[window(1)],
+            &[window(1), window(4)],
             GpuTimes::default(),
             None,
-            5_001_000,
+            bytes(&[(1, 5_001_000), (3, 1_000_000)]),
+        );
+        assert_eq!(
+            next.iter().map(|&(window, _)| window).collect::<Vec<_>>(),
+            [window(1), window(4)]
         );
         assert_eq!((next[0].1.cpu, next[0].1.wait), (None, None));
         assert_eq!(next[0].1.gpu, None);

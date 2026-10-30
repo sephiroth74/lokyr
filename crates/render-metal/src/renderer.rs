@@ -311,22 +311,7 @@ impl Renderer for MetalRenderer {
     }
 
     fn draw(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
-        let asked = Instant::now();
-        let drawable = target.layer.nextDrawable();
-        self.drawable_wait = asked.elapsed();
-        let Some(drawable) = drawable else {
-            return Ok(false);
-        };
-        let (commands, buffers) = self.encode(&drawable.texture(), list)?;
-        commands.presentDrawable(ProtocolObject::from_ref(&*drawable));
-        commands.commit();
-        self.drawing.push_back(Drawing {
-            frame: list.frame,
-            commands,
-            buffers,
-        });
-        self.drop_finished();
-        Ok(true)
+        self.present(target, list, true)
     }
 
     fn drawing_from(&mut self) -> Option<u64> {
@@ -345,6 +330,42 @@ impl Renderer for MetalRenderer {
 }
 
 impl MetalRenderer {
+    /// Draws `list` into `target`, as [`Renderer::draw`] does, but for its
+    /// GPU's time, which [`Renderer::take_gpu_times`] leaves out: a layer's
+    /// frame, of a few cells, apart from the windows' frames.
+    pub fn draw_untimed(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
+        self.present(target, list, false)
+    }
+
+    /// Draws `list` into the next drawable of `target`, and presents it,
+    /// its GPU's time counted when `timed`. Whether it drew: no drawable
+    /// comes from a layer that was never sized, nor when every drawable is
+    /// in use for a second.
+    fn present(
+        &mut self,
+        target: &Surface,
+        list: &DisplayList,
+        timed: bool,
+    ) -> Result<bool, Error> {
+        let asked = Instant::now();
+        let drawable = target.layer.nextDrawable();
+        self.drawable_wait = asked.elapsed();
+        let Some(drawable) = drawable else {
+            return Ok(false);
+        };
+        let (commands, buffers) = self.encode(&drawable.texture(), list)?;
+        commands.presentDrawable(ProtocolObject::from_ref(&*drawable));
+        commands.commit();
+        self.drawing.push_back(Drawing {
+            frame: list.frame,
+            commands,
+            buffers,
+            timed,
+        });
+        self.drop_finished();
+        Ok(true)
+    }
+
     /// Draws `list` into a texture of its own, `width` by `height` pixels,
     /// as a window's surface would show it, waits for the GPU, and reads
     /// its pixels back: RGBA, 8 bits a component in sRGB, a row after the
@@ -475,7 +496,10 @@ impl MetalRenderer {
             if let Some(drawing) = self.drawing.pop_front() {
                 let commands = &drawing.commands;
                 let time = commands.GPUEndTime() - commands.GPUStartTime();
-                if commands.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
+                if drawing.timed
+                    && commands.status() == MTLCommandBufferStatus::Completed
+                    && time > 0.0
+                {
                     self.gpu_times.add(Duration::from_secs_f64(time));
                 }
                 self.take_back(drawing.buffers);
@@ -513,6 +537,9 @@ struct Drawing {
     frame: u64,
     commands: Commands,
     buffers: Vec<Buffer>,
+    /// Whether its GPU's time counts among those that
+    /// [`Renderer::take_gpu_times`] gives.
+    timed: bool,
 }
 
 /// The buffers of a frame's instances: each draw's bytes go after the last
@@ -1246,6 +1273,8 @@ mod tests {
         for _ in 0..2 {
             assert!(renderer.draw(&surface, &list()).unwrap());
         }
+        // A layer's frame, which is not timed.
+        assert!(renderer.draw_untimed(&surface, &list()).unwrap());
         for drawing in &renderer.drawing {
             drawing.commands.waitUntilCompleted();
         }
