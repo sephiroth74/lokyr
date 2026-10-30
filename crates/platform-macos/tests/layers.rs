@@ -18,7 +18,7 @@ mod probe {
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
-    use objc2_app_kit::{NSApplication, NSView};
+    use objc2_app_kit::{NSApplication, NSView, NSWorkspace};
     use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, NSString};
     use objc2_quartz_core::{CAKeyframeAnimation, CAMediaTiming};
 
@@ -227,18 +227,29 @@ mod probe {
             "{seen:?}"
         );
         assert!(!hidden, "{seen:?}");
-        // Held, faded out, held, faded in, over 2.8 s.
+        // Held, faded out, held, faded in, over 2.8 s; where the system
+        // reduces motion, as a CI's runner can, switched at each fade's
+        // middle.
+        let reduced = NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
         let (values, times, duration, switched) = seen.animations[0].clone().expect("a fade");
-        assert_eq!(values, [1.0, 1.0, 0.0, 0.0, 1.0], "{seen:?}");
-        let expected = [0.0, 0.5, 1.4, 1.9, 2.8].map(|time| time / 2.8);
+        let (wanted_values, wanted_times): (&[f64], &[f64]) = if reduced {
+            (&[1.0, 0.0, 1.0], &[0.0, 0.95, 2.35, 2.8])
+        } else {
+            (&[1.0, 1.0, 0.0, 0.0, 1.0], &[0.0, 0.5, 1.4, 1.9, 2.8])
+        };
+        assert_eq!(values, wanted_values, "{reduced} {seen:?}");
         assert!(
-            times
-                .iter()
-                .zip(expected)
-                .all(|(time, wanted)| (time - wanted).abs() < 1e-9),
-            "{seen:?}"
+            times.len() == wanted_times.len()
+                && times
+                    .iter()
+                    .zip(wanted_times)
+                    .all(|(time, wanted)| (time - wanted / 2.8).abs() < 1e-9),
+            "{reduced} {seen:?}"
         );
-        assert!((duration - 2.8).abs() < 1e-9 && !switched, "{seen:?}");
+        assert!(
+            (duration - 2.8).abs() < 1e-9 && switched == reduced,
+            "{reduced} {seen:?}"
+        );
         // Without fades, switched, over the holds.
         let (values, _, duration, switched) = seen.animations[1].clone().expect("a switch");
         assert_eq!(values, [1.0, 0.0, 1.0], "{seen:?}");

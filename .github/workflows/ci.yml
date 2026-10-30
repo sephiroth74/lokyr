@@ -37,6 +37,21 @@ jobs:
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: just@1.58.0
+      # The renderer's shaders build with the Metal toolchain, a download
+      # of its own since Xcode 26, which a runner's image may lack.
+      - name: Install the Metal toolchain where the runner lacks it
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      # The golden tests draw offscreen where the runner has a Metal device,
+      # and skip without one: the job says which.
+      - name: Tell whether the golden tests draw
+        run: |
+          printf 'import Metal\nprint(MTLCreateSystemDefaultDevice()?.name ?? "")\n' > "$RUNNER_TEMP/device.swift"
+          device="$(swift "$RUNNER_TEMP/device.swift" 2>/dev/null || true)"
+          if [ -n "$device" ]; then
+            echo "The golden tests draw on $device."
+          else
+            echo "::notice title=Golden tests::The runner has no Metal device, and the golden tests skip."
+          fi
       - run: just clippy
       - run: just build
       - run: just test
