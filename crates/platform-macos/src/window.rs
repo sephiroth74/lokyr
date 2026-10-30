@@ -8,8 +8,8 @@ use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
     Backdrop, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea,
-    PointerShape, ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use std::path::PathBuf;
 
@@ -34,6 +34,7 @@ use objc2_quartz_core::{CALayer, CAMetalLayer};
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
+use crate::quick::{self, Quick};
 use crate::shared::{Pending, Shared};
 use crate::text_input::{self, Handled, Step, TextInput};
 
@@ -54,6 +55,11 @@ pub(crate) struct Window {
     restored: bool,
     // The window holds its delegate weakly.
     delegate: Retained<WindowDelegate>,
+    /// What a quick window keeps of its showing; `None` for another.
+    quick: Option<Rc<Quick>>,
+    /// What its events go to, and its number.
+    shared: Weak<Shared>,
+    id: WindowId,
 }
 
 impl Window {
@@ -100,11 +106,59 @@ impl Window {
         // SAFETY: `Retained` owns the window, which closing must then not
         // release.
         unsafe { ns_window.setReleasedWhenClosed(false) };
-        ns_window.setTitle(&NSString::from_str(&attributes.title));
         // The bar shows what the view draws under it, without the system's
         // material nor its line; the system's tabs are not the app's.
         ns_window.setTitlebarAppearsTransparent(true);
         ns_window.setTitlebarSeparatorStyle(NSTitlebarSeparatorStyle::None);
+        let mut window = Self::with(
+            ns_window,
+            content,
+            (shared, id, &attributes.title),
+            option_as_meta,
+            None,
+        );
+        // The frame that a window kept, on a screen that is still there,
+        // rather than the size asked for.
+        window.restored = attributes.restore && restore_frame(&window.ns_window);
+        if !window.restored && attributes.restore_size {
+            restore_size(&window.ns_window);
+        }
+        window
+    }
+
+    /// A quick window of `title`, hidden.
+    pub(crate) fn new_quick(
+        mtm: MainThreadMarker,
+        shared: Weak<Shared>,
+        id: WindowId,
+        title: &str,
+        option_as_meta: Rc<Cell<(bool, bool)>>,
+    ) -> Self {
+        let (panel, content) = quick::panel(mtm);
+        let window = Self::with(
+            panel,
+            content,
+            (shared, id, title),
+            option_as_meta,
+            Some(Rc::default()),
+        );
+        // It shows nothing until it slides in.
+        window.occluded.set(true);
+        window
+    }
+
+    /// The window of `ns_window`, of the content `content`, as the app's
+    /// window `id`, of `title`: its view, its layers, its pacer and its
+    /// delegate.
+    fn with(
+        ns_window: Retained<NSWindow>,
+        content: NSRect,
+        (shared, id, title): (Weak<Shared>, WindowId, &str),
+        option_as_meta: Rc<Cell<(bool, bool)>>,
+        quick: Option<Rc<Quick>>,
+    ) -> Self {
+        let mtm = ns_window.mtm();
+        ns_window.setTitle(&NSString::from_str(title));
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
@@ -116,17 +170,11 @@ impl Window {
         let occluded = Rc::new(Cell::new(false));
         let delegate = WindowDelegate::new(
             mtm,
-            shared,
+            shared.clone(),
             id,
             (ns_window.backingScaleFactor(), Rc::clone(&occluded)),
         );
         ns_window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        // The frame that a window kept, on a screen that is still there,
-        // rather than the size asked for.
-        let restored = attributes.restore && restore_frame(&ns_window);
-        if !restored && attributes.restore_size {
-            restore_size(&ns_window);
-        }
         Self {
             ns_window,
             view,
@@ -135,8 +183,11 @@ impl Window {
             pacer,
             occluded,
             frame_held: Cell::new(false),
-            restored,
+            restored: false,
             delegate,
+            quick,
+            shared,
+            id,
         }
     }
 
@@ -197,7 +248,11 @@ impl Window {
     /// from now: the backend turns it on once it placed the window, so
     /// that its own placing keeps nothing.
     pub(crate) fn set_remember(&self, remember: bool) {
-        self.delegate.ivars().remember.set(remember);
+        // A quick window's frame is its place's, not a window's to restore.
+        self.delegate
+            .ivars()
+            .remember
+            .set(remember && self.quick.is_none());
     }
 
     /// The window's content view.
@@ -242,7 +297,38 @@ impl Window {
         self.pacer.delivered();
     }
 
+    /// Whether it is a quick window.
+    pub(crate) fn is_quick(&self) -> bool {
+        self.quick.is_some()
+    }
+
+    /// Slides a quick window in, as `place` says, with the focus, or out;
+    /// another window takes nothing.
+    pub(crate) fn show_quick(&self, place: Option<&QuickPlace>) {
+        let Some(quick) = &self.quick else {
+            return;
+        };
+        match place {
+            Some(place) => {
+                // Shown, it draws at once, before the system tells that it
+                // is no longer hidden.
+                if quick.show(&self.ns_window, place)
+                    && self.occluded.replace(false)
+                    && let Some(shared) = self.shared.upgrade()
+                {
+                    shared.enqueue(Pending::Window(self.id, WindowEvent::Occluded(false)));
+                }
+            }
+            None => {
+                quick.hide(&self.ns_window);
+            }
+        }
+    }
+
     pub(crate) fn close(&self) {
+        if let Some(quick) = &self.quick {
+            quick.give_focus_back(&self.ns_window);
+        }
         self.pacer.stop();
         // What the window does as it closes, such as losing the focus, has
         // no window left to tell it to.

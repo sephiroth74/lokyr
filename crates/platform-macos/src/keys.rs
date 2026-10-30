@@ -34,17 +34,7 @@ unsafe extern "C" {
 /// modifiers, tells of; `None` for an event of another type.
 pub(crate) fn key_event(event: &NSEvent) -> Option<KeyEvent> {
     let flags = event.modifierFlags();
-    let mut code = key_code(event.keyCode());
-    // The key left of 1 and the one right of the left Shift report each
-    // other's codes on ISO keyboards.
-    // SAFETY: Carbon's functions, which read the keyboard's type.
-    if unsafe { KBGetLayoutType(i16::from(LMGetKbdType())) } == ISO {
-        code = match code {
-            KeyCode::IntlBackslash => KeyCode::Backquote,
-            KeyCode::Backquote => KeyCode::IntlBackslash,
-            other => other,
-        };
-    }
+    let code = iso_swapped(key_code(event.keyCode()));
     let mods = modifiers(flags);
     let text = |text: Option<objc2::rc::Retained<objc2_foundation::NSString>>| {
         text.map(|text| text.to_string()).unwrap_or_default()
@@ -138,6 +128,29 @@ fn modifier_down(code: KeyCode, flags: NSEventModifierFlags) -> Option<bool> {
     } else {
         bits & bit != 0
     })
+}
+
+/// `code`, of a virtual key code, at its place: the key left of 1 and the
+/// one right of the left Shift report each other's codes on ISO keyboards.
+fn iso_swapped(code: KeyCode) -> KeyCode {
+    // SAFETY: Carbon's functions, which read the keyboard's type.
+    if unsafe { KBGetLayoutType(i16::from(LMGetKbdType())) } != ISO {
+        return code;
+    }
+    match code {
+        KeyCode::IntlBackslash => KeyCode::Backquote,
+        KeyCode::Backquote => KeyCode::IntlBackslash,
+        other => other,
+    }
+}
+
+/// The virtual key code that the key at `key`'s place reports, on the
+/// keyboard of the last event; `None` for a key that has none.
+pub(crate) fn virtual_code(key: KeyCode) -> Option<u16> {
+    let reported = iso_swapped(key);
+    // From the last, as the keypad's Enter has two codes, the later its
+    // own.
+    (0..0x80).rev().find(|&code| key_code(code) == reported)
 }
 
 /// The key of macOS's virtual key code `code`, as Carbon's `kVK_` constants
@@ -299,6 +312,21 @@ mod tests {
             assert_eq!(key_code(code), key, "{code:#x}");
         }
         assert_eq!(key_code(0x42), KeyCode::Unidentified(0x42));
+    }
+
+    #[test]
+    fn each_key_has_the_code_that_tells_it() {
+        // But the keypad's Enter, of two codes, the later its own.
+        for code in (0..0x80).filter(|code| ![0x0A, 0x32, 0x34].contains(code)) {
+            let key = key_code(code);
+            assert_eq!(virtual_code(key), Some(code), "{key:?}");
+        }
+        assert_eq!(virtual_code(KeyCode::NumpadEnter), Some(0x4C));
+        assert_eq!(virtual_code(KeyCode::F(24)), None);
+        // The two keys that ISO keyboards swap, whichever this one is.
+        let left_of_one = virtual_code(KeyCode::Backquote).unwrap();
+        assert!([0x0A, 0x32].contains(&left_of_one));
+        assert_eq!(iso_swapped(key_code(left_of_one)), KeyCode::Backquote);
     }
 
     #[test]

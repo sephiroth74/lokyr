@@ -21,6 +21,7 @@ pub mod fake;
 mod geometry;
 mod input;
 mod menu;
+mod quick;
 mod runs;
 #[cfg(test)]
 mod tests;
@@ -36,6 +37,7 @@ pub use menu::{
     Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem, MenuRole, Shortcut,
     ShortcutKey, StandardAction,
 };
+pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen, ScreenRect};
 pub use raw_window_handle::WindowHandle;
 pub use runs::{RUNS, runs_by_itself};
 pub use waker::Waker;
@@ -240,6 +242,25 @@ pub trait Platform {
     /// front one of the app's, as the system cascades windows, or in the
     /// screen's centre.
     fn create_window(&mut self, attributes: &WindowAttributes) -> Result<WindowId, Error>;
+
+    /// Opens a quick window, of the title `title`, hidden: one without a
+    /// titlebar, which slides in from an edge of a screen over every app's
+    /// windows, those in full screen too, and out again, as
+    /// [`Platform::show_quick_window`] says. It keeps no frame.
+    fn create_quick_window(&mut self, title: &str) -> Result<WindowId, Error>;
+
+    /// Slides the quick window `window` in, as `place` says, if it is
+    /// hidden, at the size of its place, and gives it the keyboard's focus,
+    /// which it takes from the app that has it; or, with `None`, slides it
+    /// out, and gives the focus back to that app, if the focus is still
+    /// the app's own. A window that is no quick window takes nothing.
+    fn show_quick_window(&mut self, window: WindowId, place: Option<&QuickPlace>);
+
+    /// Takes the keys of `keys` from every app, as the system gives them,
+    /// in place of those that it took before: each press of one comes as
+    /// [`AppEvent::GlobalKey`], with its index. Gives the indices of those
+    /// that the system refused, as another app takes them.
+    fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize>;
 
     /// Closes a window: no event comes from it any more.
     fn close_window(&mut self, window: WindowId);

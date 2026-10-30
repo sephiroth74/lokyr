@@ -11,6 +11,11 @@
 //! A key matches a binding of its layout's character, or else of the US
 //! layout's character at its place, so that the bindings reach the keys of
 //! any layout.
+//!
+//! A binding whose keys start with `global:`, as `global:ctrl+\``, takes
+//! its key from every app, as the system gives it, by its place on the
+//! keyboard, as the US layout has it; the keymap of the windows leaves it
+//! out.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -266,6 +271,50 @@ pub fn parse_keys(text: &str) -> Result<Vec<Combo>, String> {
     Ok(combos)
 }
 
+/// The prefix of the keys of a binding that takes its key from every app.
+pub const GLOBAL: &str = "global:";
+
+/// The combination of the keys of a global binding, `text` after
+/// [`GLOBAL`]: one key, which no sequence follows, with Command, Control
+/// or Alt, or a function key, alone or not; neither the wheel nor a
+/// click, which reach no other app.
+pub fn parse_global(text: &str) -> Result<Combo, String> {
+    let combo = Combo::parse(text)?;
+    match combo.press {
+        Press::Wheel(_) | Press::Click => Err(format!(
+            "a global key is a key, not a step of the wheel nor a click, in `{text}`"
+        )),
+        Press::Named(Named::F(_)) => Ok(combo),
+        _ if combo.mods.cmd || combo.mods.ctrl || combo.mods.alt => Ok(combo),
+        _ => Err(format!(
+            "a global key takes `cmd`, `ctrl` or `alt`, but a function key, as it takes the key from every app, in `{text}`"
+        )),
+    }
+}
+
+/// The global bindings of the config's `[keys]`, of the keys that
+/// [`GLOBAL`] starts, each with the command that it runs, in the order of
+/// their keys; those that do not read, which the config's reading
+/// checked, are left out.
+pub fn global_bindings(config: &KeysConfig) -> Vec<(Combo, Invocation)> {
+    config
+        .bindings
+        .iter()
+        .filter_map(|(keys, value)| {
+            let combo = parse_global(keys.strip_prefix(GLOBAL)?).ok()?;
+            let invocation = match value {
+                KeyValue::Command(command) => Invocation {
+                    command: command.clone(),
+                    args: Args::new(),
+                },
+                KeyValue::Binding(binding) => from_config(&[combo], binding).invocation,
+                KeyValue::Unbound(_) | KeyValue::Bindings(_) => return None,
+            };
+            Some((combo, invocation))
+        })
+        .collect()
+}
+
 /// A context, as a binding's `when` names it: whether the names that hold
 /// make the expression true.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -473,9 +522,13 @@ impl Keymap {
     /// over them: an entry of `false` takes the defaults of its keys away,
     /// in every context, and the others bind theirs after the defaults, so
     /// that they win where they hold. The config's reading checked them.
+    /// The global bindings are not the windows'.
     pub fn with_config(defaults: Vec<Binding>, config: &KeysConfig) -> Self {
         let mut keymap = Self::new(defaults);
         for (keys, value) in &config.bindings {
+            if keys.starts_with(GLOBAL) {
+                continue;
+            }
             let Ok(keys) = parse_keys(keys) else {
                 continue;
             };

@@ -117,6 +117,8 @@ pub struct Config {
     pub cursor: CursorConfig,
     /// The `[window]` section.
     pub window: WindowConfig,
+    /// The `[quick-terminal]` section.
+    pub quick_terminal: QuickTerminalConfig,
     /// The `[terminal]` section.
     pub terminal: TerminalConfig,
     /// The `[scrollback]` section.
@@ -580,6 +582,203 @@ impl Default for BellConfig {
             flash: true,
             bounce: true,
             mark_title: true,
+        }
+    }
+}
+
+/// The `[quick-terminal]` section: the window that a global key slides in
+/// from an edge of the screen, and out again.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct QuickTerminalConfig {
+    /// The edge that it comes from, or the centre.
+    pub position: QuickPosition,
+    /// Its size into the screen, and along its edge.
+    pub size: QuickSize,
+    /// The screen that it shows on.
+    pub screen: QuickScreen,
+    /// How long it slides in and out, in milliseconds.
+    pub animation: AnimationTime,
+    /// Whether it hides as it loses the focus.
+    pub autohide: bool,
+    /// Whether it follows to the Space in front, or stays on its own.
+    pub spaces: QuickSpaces,
+}
+
+impl Default for QuickTerminalConfig {
+    fn default() -> Self {
+        Self {
+            position: QuickPosition::default(),
+            size: QuickSize::default(),
+            screen: QuickScreen::default(),
+            animation: AnimationTime(200),
+            autohide: true,
+            spaces: QuickSpaces::default(),
+        }
+    }
+}
+
+/// Where the quick terminal comes from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickPosition {
+    /// The screen's top edge.
+    #[default]
+    Top,
+    /// Its bottom edge.
+    Bottom,
+    /// Its left edge.
+    Left,
+    /// Its right edge.
+    Right,
+    /// Its centre.
+    Center,
+}
+
+/// The screen that the quick terminal shows on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickScreen {
+    /// The system's main screen, of the window in front.
+    #[default]
+    Main,
+    /// The screen that the pointer is on.
+    Mouse,
+    /// The screen of the menu bar, the first.
+    MenuBar,
+}
+
+/// Whether the quick terminal follows to the Space in front.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuickSpaces {
+    /// It shows on every Space, the one in front.
+    #[default]
+    Move,
+    /// It stays on the Space that it showed on.
+    Remain,
+}
+
+/// A length of the quick terminal: a share of the screen's, or points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Extent {
+    /// A percentage of the screen's, from 1 to 100.
+    Percent(f32),
+    /// Points, as macOS lays windows out.
+    Points(f32),
+}
+
+impl Extent {
+    fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if let Some(percent) = text.strip_suffix('%') {
+            let percent: f32 = percent.trim().parse().ok()?;
+            (percent > 0.0 && percent <= 100.0).then_some(Self::Percent(percent))
+        } else {
+            let points: f32 = text.strip_suffix("px")?.trim().parse().ok()?;
+            (1.0..=100_000.0)
+                .contains(&points)
+                .then_some(Self::Points(points))
+        }
+    }
+}
+
+impl fmt::Display for Extent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Percent(percent) => write!(f, "{}%", as_written(*percent)),
+            Self::Points(points) => write!(f, "{}px", as_written(*points)),
+        }
+    }
+}
+
+/// The quick terminal's size: first, how far it reaches into the screen
+/// from its edge, its height at the top or the bottom, its width at the
+/// left or the right, and its width at the centre; then, if it is given,
+/// its length along the edge, its width at the top or the bottom and its
+/// height elsewhere, else the screen's whole, or, at the centre, the
+/// first's share of the screen's height.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct QuickSize {
+    /// Into the screen.
+    pub primary: Extent,
+    /// Along the edge, if it is given.
+    pub secondary: Option<Extent>,
+}
+
+impl Default for QuickSize {
+    fn default() -> Self {
+        Self {
+            primary: Extent::Percent(50.0),
+            secondary: None,
+        }
+    }
+}
+
+impl From<QuickSize> for String {
+    fn from(size: QuickSize) -> Self {
+        match size.secondary {
+            Some(secondary) => format!("{},{secondary}", size.primary),
+            None => size.primary.to_string(),
+        }
+    }
+}
+
+impl TryFrom<String> for QuickSize {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        let wrong = || {
+            format!(
+                "`{text}` is no size of the quick terminal: a percentage from 1% to 100%, or points, as `300px`, and another after a comma, along its edge"
+            )
+        };
+        let (primary, secondary) = match text.split_once(',') {
+            Some((primary, secondary)) => (primary, Some(secondary)),
+            None => (text.as_str(), None),
+        };
+        let primary = Extent::parse(primary).ok_or_else(wrong)?;
+        let secondary = match secondary {
+            Some(secondary) => Some(Extent::parse(secondary).ok_or_else(wrong)?),
+            None => None,
+        };
+        Ok(Self { primary, secondary })
+    }
+}
+
+/// How long an animation takes, in milliseconds, from 0, none, to 2000.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct AnimationTime(u32);
+
+impl From<AnimationTime> for u32 {
+    fn from(time: AnimationTime) -> Self {
+        time.0
+    }
+}
+
+impl AnimationTime {
+    /// The most.
+    pub const MAX: u32 = 2000;
+
+    /// Its duration.
+    pub fn duration(self) -> std::time::Duration {
+        std::time::Duration::from_millis(u64::from(self.0))
+    }
+}
+
+impl TryFrom<u32> for AnimationTime {
+    type Error = String;
+
+    fn try_from(millis: u32) -> Result<Self, Self::Error> {
+        if millis <= Self::MAX {
+            Ok(Self(millis))
+        } else {
+            Err(format!(
+                "an animation takes from 0 to {} milliseconds, not {millis}",
+                Self::MAX
+            ))
         }
     }
 }
@@ -1243,12 +1442,13 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 12] {
+fn sections() -> [(&'static str, &'static [&'static str]); 13] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
+        ("quick-terminal", keys::<QuickTerminalConfig>()),
         ("terminal", keys::<TerminalConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
@@ -1268,7 +1468,8 @@ type Span = Option<std::ops::Range<usize>>;
 /// names otherwise, as `opt+x` and `alt+x`; a command's name that is not
 /// one, `true`, a binding without its command or with another field,
 /// arguments that are not plain values, and a `when` that is not an
-/// expression of the contexts.
+/// expression of the contexts; and a global key that is not one, or that
+/// takes a `when`, `false` or several bindings.
 fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
     let Some(item) = root.get("keys") else {
         return Ok(());
@@ -1276,19 +1477,44 @@ fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
     let Some(table) = item.as_table_like() else {
         return Err((item.span(), "`keys` is a section, not a value".to_owned()));
     };
-    let mut named: Vec<(Vec<crate::keymap::Combo>, &str)> = Vec::new();
+    let mut named: Vec<(bool, Vec<crate::keymap::Combo>, &str)> = Vec::new();
     for (keys, value) in table.iter() {
         let span = table.key(keys).and_then(toml_edit::Key::span);
-        let combos = crate::keymap::parse_keys(keys).map_err(|message| (span.clone(), message))?;
-        if let Some((_, other)) = named.iter().find(|(named, _)| *named == combos) {
+        let global = keys.strip_prefix(crate::keymap::GLOBAL);
+        let combos = match global {
+            Some(global) => crate::keymap::parse_global(global).map(|combo| vec![combo]),
+            None => crate::keymap::parse_keys(keys),
+        }
+        .map_err(|message| (span.clone(), message))?;
+        if let Some((.., other)) = named
+            .iter()
+            .find(|(of_all, named, _)| *of_all == global.is_some() && *named == combos)
+        {
             return Err((
                 span,
                 format!("`{keys}` and `{other}` are the same keys, which one entry binds"),
             ));
         }
-        named.push((combos, keys));
+        named.push((global.is_some(), combos, keys));
         let at = value.span().or(span.clone());
         let fail = |message: String| (at.clone(), message);
+        if global.is_some() {
+            if let Some(command) = value.as_str() {
+                check_command(command).map_err(fail)?;
+            } else if let Some(binding) = value.as_table_like() {
+                if binding.get("when").is_some() {
+                    return Err(fail(format!(
+                        "`{keys}` holds in every app, without a `when`"
+                    )));
+                }
+                check_binding(binding, at)?;
+            } else {
+                return Err(fail(format!(
+                    "`{keys}` takes a command or a binding: a global key has no default to take away, nor contexts"
+                )));
+            }
+            continue;
+        }
         if let Some(command) = value.as_str() {
             check_command(command).map_err(fail)?;
         } else if let Some(bound) = value.as_bool() {
@@ -1504,6 +1730,63 @@ mod tests {
 
     fn name(name: &str) -> Option<Name> {
         Some(Name::try_from(name.to_owned()).unwrap())
+    }
+
+    #[test]
+    fn the_quick_terminal_takes_its_edge_size_screen_and_times() {
+        let quick = |text: &str| {
+            parse(&format!("[quick-terminal]\n{text}\n"))
+                .unwrap()
+                .quick_terminal
+        };
+        let default = QuickTerminalConfig::default();
+        assert_eq!(
+            (default.position, default.screen, default.spaces),
+            (QuickPosition::Top, QuickScreen::Main, QuickSpaces::Move)
+        );
+        assert_eq!(default.size, QuickSize::try_from("50%".to_owned()).unwrap());
+        assert!(default.autohide);
+        assert_eq!(
+            default.animation.duration(),
+            std::time::Duration::from_millis(200)
+        );
+        assert_eq!(
+            keys::<QuickTerminalConfig>(),
+            [
+                "position",
+                "size",
+                "screen",
+                "animation",
+                "autohide",
+                "spaces"
+            ]
+        );
+        let read = quick("position = \"left\"\nsize = \"300px, 80%\"\nscreen = \"menu-bar\"");
+        assert_eq!(
+            (read.position, read.screen),
+            (QuickPosition::Left, QuickScreen::MenuBar)
+        );
+        assert_eq!(
+            (read.size.primary, read.size.secondary),
+            (Extent::Points(300.0), Some(Extent::Percent(80.0)))
+        );
+        // Written back as it read.
+        assert_eq!(String::from(read.size), "300px,80%");
+        // Neither a bare number, nor a share past the whole, nor a long
+        // animation.
+        for wrong in [
+            "size = \"50\"",
+            "size = \"120%\"",
+            "size = \"0%\"",
+            "animation = 2001",
+        ] {
+            let (_, message) = error(&format!("[quick-terminal]\n{wrong}\n"));
+            assert!(
+                message.contains("no size of the quick terminal")
+                    || message.contains("from 0 to 2000 milliseconds"),
+                "{wrong}: {message}"
+            );
+        }
     }
 
     #[test]
@@ -1835,6 +2118,32 @@ mod tests {
                 3,
                 "the same keys",
             ),
+            // A global key of one key with a modifier, of a command alone.
+            (
+                "[keys]\n\"global:a\" = \"window.toggle-quick-terminal\"\n",
+                2,
+                "takes `cmd`, `ctrl` or `alt`",
+            ),
+            (
+                "[keys]\n\"global:ctrl+a>b\" = \"window.toggle-quick-terminal\"\n",
+                2,
+                "is not a key",
+            ),
+            (
+                "[keys]\n\"global:ctrl+`\" = false\n",
+                2,
+                "no default to take away",
+            ),
+            (
+                "[keys]\n\"global:ctrl+`\" = { command = \"window.new\", when = \"selection\" }\n",
+                2,
+                "without a `when`",
+            ),
+            (
+                "[keys]\n\"global:alt+x\" = \"tabs.new\"\n\"global:opt+x\" = \"tabs.next\"\n",
+                3,
+                "the same keys",
+            ),
         ];
         for (text, line, message) in cases {
             let (position, error) = error(text);
@@ -2106,6 +2415,7 @@ mod tests {
                 "text",
                 "cursor",
                 "window",
+                "quick-terminal",
                 "terminal",
                 "scrollback",
                 "keyboard",

@@ -20,6 +20,8 @@ mod notice;
 #[cfg(target_os = "macos")]
 mod performance;
 #[cfg(target_os = "macos")]
+mod quick;
+#[cfg(target_os = "macos")]
 mod size_label;
 #[cfg(target_os = "macos")]
 mod watch;

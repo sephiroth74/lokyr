@@ -13,6 +13,9 @@ pub enum About {
     Config,
     /// The font, which a font that is there fixes.
     Font,
+    /// The global keys, which the system gives once no other app takes
+    /// them, or the config takes others.
+    GlobalKeys,
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,

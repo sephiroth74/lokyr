@@ -105,6 +105,13 @@ pub enum AppEvent {
     /// The user clicked a notification that the app showed for a window,
     /// with [`Platform::notify`](crate::Platform::notify).
     NotificationClicked(WindowId),
+    /// A key that the app takes from every app, with
+    /// [`Platform::set_global_keys`](crate::Platform::set_global_keys),
+    /// was pressed: its index.
+    GlobalKey(usize),
+    /// The user opened the app again, as from its icon in the Dock, while
+    /// it shows no window, nor one minimized.
+    Reopen,
     /// An open that the platform started failed, as the system told after
     /// the call that started it returned, as
     /// [`Platform::open_in_text_editor`](crate::Platform::open_in_text_editor)'s.

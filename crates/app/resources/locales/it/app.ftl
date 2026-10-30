@@ -3,6 +3,7 @@
 command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-window-set-title = Imposta titolo…
+command-window-toggle-quick-terminal = Terminale rapido
 command-app-quit = Esci da Lokyr
 command-app-settings = Impostazioni…
 command-app-secure-keyboard-entry = Immissione protetta da tastiera
@@ -85,5 +86,6 @@ open-file-dont-ask = Non chiedere più per i file
 
 notice-config = Il file di configurazione non si applica:
 notice-font = Manca un font:
+notice-global-keys = Un tasto globale non funziona:
 notice-failed = Un comando non è riuscito:
 notice-fault = Un plugin si è fermato:

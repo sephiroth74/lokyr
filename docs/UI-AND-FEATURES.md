@@ -51,6 +51,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 - **Fullscreen**: the bar appears together with the system titlebar.
 - **Resizing**: the content follows the window's edge through a live resize, drawn with Core Animation's transaction; the grid's size, as `100 × 33`, shows at the window's centre while a resize changes it, and goes a second after the last change, or after the drag ends.
 - **Dragging tabs between windows**: our own implementation, using a drag session and a ghost window.
+- **The quick terminal**: a borderless, non-activating `NSPanel` that a global key, Carbon's `RegisterEventHotKey`, which asks for no Accessibility permission, slides in from an edge of a screen over every app, on every Space or on its own and over the apps in full screen, and out again, as `NSAnimationContext` moves its frame; it takes the keys as it shows, and gives the focus back to the app that had it as it hides. Its pane runs while it is hidden, which keeps its last frame, so that it shows at once. The app holds its policy until the `quick-terminal` plugin takes it in F3.
 
 **Linux** (F7)
 - The same bar acts as the CSD titlebar:

@@ -7,9 +7,9 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, Layer, LayerPlace, MainMenu,
-    MenuRole, Platform, Point, PointerArea, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Layer, LayerPlace,
+    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, TargetKind,
+    TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -21,6 +21,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSLocale, NSPoint, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
+use crate::global_keys::GlobalKeys;
 use crate::menu::MenuTarget;
 use crate::notify::Notifier;
 use crate::secure::SecureInput;
@@ -74,13 +75,16 @@ pub(crate) struct Backend {
     /// The secure entry of the keyboard, which turns off as the backend
     /// goes.
     secure: SecureInput,
+    /// The keys that the app takes from every app, which the system gets
+    /// back as the backend goes.
+    global_keys: GlobalKeys,
 }
 
 impl Backend {
     pub(crate) fn new(mtm: MainThreadMarker, shared: Weak<Shared>, waker: Waker) -> Self {
         Self {
             mtm,
-            shared,
+            shared: shared.clone(),
             waker,
             windows: BTreeMap::new(),
             alerts: HashMap::new(),
@@ -95,6 +99,7 @@ impl Backend {
             stopped: false,
             notifier: None,
             secure: SecureInput::default(),
+            global_keys: GlobalKeys::new(shared),
         }
     }
 
@@ -327,17 +332,18 @@ impl Platform for Backend {
         // front one, as that of a sheet, which has the focus, or any while
         // the app is not active, as the system cascades windows; centred
         // without one.
+        // A quick window is none of them.
         let ordered = NSApplication::sharedApplication(self.mtm).orderedWindows();
         let front = (0..ordered.count()).find_map(|index| {
             let ns_window = ordered.objectAtIndex(index);
             self.windows
                 .values()
-                .find(|window| std::ptr::eq(window.ns_window(), &*ns_window))
+                .find(|window| !window.is_quick() && std::ptr::eq(window.ns_window(), &*ns_window))
         });
         let after = self
             .windows
             .values()
-            .find(|window| window.is_focused())
+            .find(|window| !window.is_quick() && window.is_focused())
             .or(front)
             .map(|window| window.ns_window().frame());
         if !window.is_restored() {
@@ -350,6 +356,29 @@ impl Platform for Backend {
         self.windows.insert(id, window);
         self.windows[&id].show();
         Ok(id)
+    }
+
+    fn create_quick_window(&mut self, title: &str) -> Result<WindowId, Error> {
+        let id = WindowId::new(self.next_id());
+        let window = Window::new_quick(
+            self.mtm,
+            self.shared.clone(),
+            id,
+            title,
+            Rc::clone(&self.option_as_meta),
+        );
+        self.windows.insert(id, window);
+        Ok(id)
+    }
+
+    fn show_quick_window(&mut self, window: WindowId, place: Option<&QuickPlace>) {
+        if let Some(window) = self.windows.get(&window) {
+            window.show_quick(place);
+        }
+    }
+
+    fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
+        self.global_keys.set(keys)
     }
 
     fn close_window(&mut self, window: WindowId) {

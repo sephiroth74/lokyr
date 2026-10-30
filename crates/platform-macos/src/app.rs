@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{AppEvent, Error, Handler};
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
+use objc2::runtime::{Bool, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
@@ -75,6 +75,24 @@ define_class!(
             #[allow(deprecated)]
             NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
             self.post(Pending::Started);
+        }
+
+        #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
+        fn application_should_handle_reopen(
+            &self,
+            sender: &NSApplication,
+            visible: Bool,
+        ) -> Bool {
+            // AppKit brings a minimized window back; without one, the app
+            // opens a window.
+            let windows = sender.windows();
+            let minimized =
+                (0..windows.count()).any(|index| windows.objectAtIndex(index).isMiniaturized());
+            if visible.as_bool() || minimized {
+                return Bool::YES;
+            }
+            self.post(Pending::App(AppEvent::Reopen));
+            Bool::NO
         }
 
         #[unsafe(method(applicationShouldTerminate:))]

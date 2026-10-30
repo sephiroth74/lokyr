@@ -437,3 +437,62 @@ fn a_menu_shows_a_command_s_first_key_that_no_later_binding_takes() {
     }]);
     assert_eq!(keymap.shortcut("pane.send-text"), None);
 }
+
+#[test]
+fn a_global_key_binds_one_key_with_a_modifier_outside_the_windows_keymap() {
+    assert_eq!(parse_global("ctrl+`"), Ok(combo("ctrl+`")));
+    assert_eq!(parse_global("f12"), Ok(combo("f12")));
+    assert_eq!(
+        parse_global("cmd+shift+space"),
+        Ok(combo("cmd+shift+space"))
+    );
+    for wrong in [
+        "a",
+        "shift+a",
+        "enter",
+        "ctrl+a>b",
+        "ctrl+wheel-up",
+        "cmd+click",
+    ] {
+        assert!(parse_global(wrong).is_err(), "{wrong}");
+    }
+    let config = KeysConfig {
+        bindings: [
+            (
+                "global:ctrl+`".to_owned(),
+                KeyValue::Command("window.toggle-quick-terminal".to_owned()),
+            ),
+            (
+                "global:f12".to_owned(),
+                KeyValue::Binding(KeyBinding {
+                    command: "pane.send-text".to_owned(),
+                    args: [("text".to_owned(), ArgValue::String("ls".to_owned()))].into(),
+                    when: None,
+                }),
+            ),
+            (
+                "cmd+n".to_owned(),
+                KeyValue::Command("window.new".to_owned()),
+            ),
+        ]
+        .into(),
+    };
+    let global = global_bindings(&config);
+    assert_eq!(
+        global
+            .iter()
+            .map(|(combo, invocation)| (combo.to_string(), invocation.command.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("ctrl+`".to_owned(), "window.toggle-quick-terminal"),
+            ("f12".to_owned(), "pane.send-text"),
+        ]
+    );
+    assert_eq!(
+        global[1].1.args.get("text"),
+        Some(&Value::String("ls".to_owned()))
+    );
+    // The windows' keymap has the others alone.
+    let keymap = Keymap::with_config(Vec::new(), &config);
+    assert_eq!(keymap.bindings(), [binding("cmd+n", "window.new", None)]);
+}

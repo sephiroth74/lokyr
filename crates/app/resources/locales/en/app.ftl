@@ -4,6 +4,7 @@
 command-window-new = New Window
 command-window-close = Close Window
 command-window-set-title = Set Title…
+command-window-toggle-quick-terminal = Quick Terminal
 command-app-quit = Quit Lokyr
 command-app-settings = Settings…
 command-app-secure-keyboard-entry = Secure Keyboard Entry
@@ -106,5 +107,6 @@ open-file-dont-ask = Don't ask again for files
 # error's own text, which the log has too.
 notice-config = The config file does not apply:
 notice-font = A font is missing:
+notice-global-keys = A global key does not work:
 notice-failed = A command failed:
 notice-fault = A plugin stopped:

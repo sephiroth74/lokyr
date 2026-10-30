@@ -114,8 +114,8 @@ lokyr/
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables
 │   ├── render-core/       Renderer trait, display-list types, shaders
-│   ├── platform-core/     traits: app, windows, events, IME, clipboard, menus, notifications, appearance
-│   ├── platform-macos/    AppKit via objc2 (NSWindow, NSView + CAMetalLayer, NSTextInputClient, NSMenu)
+│   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance
+│   ├── platform-macos/    AppKit via objc2 (NSWindow, NSPanel, NSView + CAMetalLayer, NSTextInputClient, NSMenu), Carbon's hot keys
 │   ├── platform-wayland/  (F7) smithay-client-toolkit + calloop, our own CSD
 │   ├── platform-x11/      (F7) x11rb + xkbcommon + xim
 │   ├── render-metal/      objc2-metal
@@ -127,9 +127,9 @@ lokyr/
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: kernel + backends for the target + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
-│   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/
+│   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/ quick-terminal/
 │   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
-│   └── (F5) shell-integration/ blocks/ tmux-cc/ quick-terminal/ triggers/ images/ …
+│   └── (F5) shell-integration/ blocks/ tmux-cc/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml
 ├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
 ├── registry/              registry-server (v1) + index specification

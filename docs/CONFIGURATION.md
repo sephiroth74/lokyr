@@ -89,6 +89,14 @@ background-blur = 20                 # points, from 0 to 100
 title-size = false                   # true | false: the grid's size in the title
 opaque-titlebar = true               # true | false: the titlebar opaque over a translucent window
 
+[quick-terminal]
+position = "bottom"                  # top | bottom | left | right | center
+size = "40%,80%"                     # into the screen, then along the edge: 1% to 100%, or points as "300px"
+screen = "mouse"                     # main | mouse | menu-bar
+animation = 150                      # ms, from 0 to 2000
+autohide = false                     # true | false: hides as it loses the focus
+spaces = "remain"                    # move | remain
+
 [terminal]
 term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
@@ -132,6 +140,7 @@ performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bot
 "ctrl+a>n" = { command = "window.new", when = "!alternate-screen" }
 "cmd+q" = false                      # takes the binding away; the menu's Command-Q stays, for now
 "alt+backspace" = { command = "pane.send-text", args = { text = "\u0017" } }   # sends Control-W
+"global:ctrl+`" = "window.toggle-quick-terminal"   # from every app: the quick terminal
 ```
 
 ## `config_version`
@@ -618,6 +627,94 @@ Whether the titlebar stays opaque over a translucent window, in the default back
 - The title's color reads over the background: a light background in the dark appearance, or a dark one in the light appearance, gives the window the appearance of its background.
 - It applies at once, as you save the file.
 
+## `[quick-terminal]`
+
+A window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says; Shell › Quick Terminal runs it too:
+
+```toml
+[keys]
+"global:ctrl+`" = "window.toggle-quick-terminal"
+```
+
+Pick a key that no other app takes: VS Code, as an example, takes Control-` for its own terminal while it is in front. The key shows the quick terminal and gives it the keys; again, it hides it, and the app that had the focus takes it back; shown without the focus, it takes the focus. Its shell runs while it is hidden, so that it shows at once, where [`new-directory`](#new-directory) says; closed, as its shell exits, the next key opens a new one.
+
+Hidden, it keeps its shell, its screen and its scrollback, as a window does, and its last frame, so that it shows at once: some ten megabytes of memory at half the screen of a Retina laptop, more on a larger screen. It draws nothing while hidden.
+
+### `position`
+
+<sub>Platforms: macOS</sub>
+
+The edge of the screen that the quick terminal comes from, or its centre.
+
+| Values | Default |
+|---|---|
+| `"top"`, `"bottom"`, `"left"`, `"right"`, `"center"` | `"top"` |
+
+It applies as it shows next.
+
+### `size`
+
+<sub>Platforms: macOS</sub>
+
+The quick terminal's size: first, how far it reaches into the screen from its edge, its height at the top or the bottom, its width at the left or the right, and its width at the centre; then, after a comma, its length along the edge, its width at the top or the bottom, and its height at the left, the right or the centre.
+
+| Values | Default |
+|---|---|
+| a percentage of the screen's, from `"1%"` to `"100%"`, or points, as `"300px"`; a second one after a comma | `"50%"` |
+
+- The screen's part is of its area below the menu bar and beside the Dock, where the quick terminal shows, centred along its edge.
+- Without the second, it takes the screen's whole width at the top or the bottom, its whole height at the left or the right, and, at the centre, the first's share of the height, or its points.
+- Points are those that macOS lays windows out in, two pixels each on a Retina display; a size past the screen's takes the screen's.
+- It applies as it shows next.
+
+### `screen`
+
+<sub>Platforms: macOS</sub>
+
+The screen that the quick terminal shows on.
+
+| Values | Default |
+|---|---|
+| `"main"`, `"mouse"`, `"menu-bar"` | `"main"` |
+
+`"main"` is the system's main screen, the one of the window in front; `"mouse"` the screen that the pointer is on; `"menu-bar"` the one that has the menu bar. It applies as it shows next.
+
+### `animation`
+
+<sub>Platforms: macOS</sub>
+
+How long the quick terminal slides in and out, in milliseconds.
+
+| Values | Default |
+|---|---|
+| from `0` to `2000`; `0` shows and hides it at once | `200` |
+
+With the system's Reduce motion, it shows and hides at once. It applies at once.
+
+### `autohide`
+
+<sub>Platforms: macOS</sub>
+
+Whether the quick terminal hides as it loses the focus, as you click another app or another of Lokyr's windows.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+It applies at once.
+
+### `spaces`
+
+<sub>Platforms: macOS</sub>
+
+Whether the quick terminal follows you to the Space in front, as you switch Spaces, or stays on the one that it showed on.
+
+| Values | Default |
+|---|---|
+| `"move"`, `"remain"` | `"move"` |
+
+It applies as it shows next.
+
 ## `[terminal]`
 
 What programs are told of the terminal, and how it counts and keeps their text. The widths must match how the programs count characters, or their lines go wrong; the defaults suit most of them.
@@ -971,6 +1068,12 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - Your keyboard layout gives the characters. A key whose character no binding takes runs the binding of the character at its place on the US layout, when its own is past ASCII, as `è` on the Italian layout runs `cmd+[`, or when both are punctuation, as the Italian `+` runs `cmd+]`, so that keys that take Option on your layout still work. An ASCII letter or digit is always yours: on AZERTY, Command-A is `cmd+a`, never the `cmd+q` at its place on the US layout.
   - Two entries of the same keys, written two ways, as `alt+x` and `opt+x`, or `cmd+shift+n` and `shift+cmd+n`, are an error.
 - **A sequence** of keys, each after the one before, parts them with `>`: `ctrl+a>n` is Control-A, then N. After the first keys, Lokyr waits for the next one, as long as it takes; a key that no sequence goes on with goes to the program, with the keys before it, as does a key that no binding can name, as the keypad's, and the input method's text. A step of the wheel, or a click, makes no sequence.
+- **A global key**, written after `global:`, as `"global:ctrl+`"`, runs its command from every app, Lokyr's windows too, as macOS gives Lokyr the key without the Accessibility permission, and takes it from them.
+  - It is one key with `cmd`, `ctrl` or `alt`, or a function key, alone or with any of them; no sequence, no step of the wheel, no click.
+  - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards.
+  - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.
+  - A key that another app takes already, or a character that no key of the US layout types, as `è`, shows in the bar across the windows' top, until the config takes it away.
+  - While a global key is bound, Lokyr stays open as its last window closes, so that the key still works: its icon in the Dock opens a window. Without one, closing the last window quits Lokyr.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;
@@ -983,9 +1086,10 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - The menus show each command's keys: of its bindings of one key, without arguments and without `when`, the first whose key no later binding takes. A menu's item takes its key before the program; a dimmed item, as Copy without a selection, takes none, and the key goes on to the bindings. A command that needs an argument, as `pane.send-text`, has no item.
 - A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
 
-A command without keys of its own, for your bindings:
+Commands without keys of their own, for your bindings:
 
 - `pane.send-text` sends its `text` to the program as it is, its control characters too, as keys that typed it would, which can run commands; the view comes back to the screen. In the TOML string, `\u0017` writes Control-W, and `\u001b` Escape.
+- `window.toggle-quick-terminal` shows the quick terminal, or hides it, as [`[quick-terminal]`](#quick-terminal) says: bound to a global key, from every app. Shell › Quick Terminal runs it too.
 
 For the keys of a shell's line editing, as macOS's text fields have them:
 

@@ -30,10 +30,11 @@ use lokyr_kernel::workspace::{
     self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
 };
 use lokyr_platform_core::{
-    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Dropped, Handler, Ime,
-    KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers, MouseButton,
-    Platform, Point, PointerArea, PointerShape, ScrollDelta, ScrollPhase, Shortcut, ShortcutKey,
-    Size, StandardAction, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Alert, AlertId, AlertStyle, AppEvent, Appearance, Backdrop, ContextMenu, Dropped, GlobalKey,
+    Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem, MenuRole, Modifiers,
+    MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta, ScrollPhase, Shortcut,
+    ShortcutKey, Size, StandardAction, TargetKind, TimerId, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use lokyr_platform_core::{Blink as PlatformBlink, Easing, Layer, LayerPlace};
 use lokyr_pty::Program;
@@ -57,6 +58,7 @@ use crate::keys;
 use crate::mouse::{self, Mouse, Pointer, Spot};
 use crate::notice;
 use crate::performance::{self, Performance};
+use crate::quick;
 use crate::size_label;
 
 use crate::watch::Watcher;
@@ -88,6 +90,9 @@ const CLOSE_WINDOW: &str = "window.close";
 
 /// The command that asks for a title of the user's for the focused window.
 const SET_TITLE: &str = "window.set-title";
+
+/// The command that shows the quick terminal, or hides it.
+const TOGGLE_QUICK: &str = "window.toggle-quick-terminal";
 
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
@@ -723,6 +728,11 @@ pub struct App {
     /// The memory that the windows' scrollbacks share, which the config
     /// sizes.
     budget: Arc<Budget>,
+    /// The quick terminal's window, once it opened, and whether it shows.
+    quick: Option<(WindowId, bool)>,
+    /// The config's global keys that the platform took, by the indices
+    /// that their presses tell, with the commands that they run.
+    global_keys: Vec<(keymap::Combo, Invocation)>,
 }
 
 impl App {
@@ -798,6 +808,8 @@ impl App {
                 }
             },
             budget,
+            quick: None,
+            global_keys: Vec::new(),
         }
     }
 
@@ -951,6 +963,9 @@ impl App {
         // resizes them from now; a man page's never does.
         if remember_changed {
             for (&window, state) in &self.windows {
+                if self.quick.is_some_and(|(quick, _)| quick == window) {
+                    continue;
+                }
                 let remember = self.config.window.remember_frame && state.page.is_none();
                 platform.set_window_remember(window, remember);
             }
@@ -986,6 +1001,9 @@ impl App {
             self.set_menu(platform);
         } else if keys_changed {
             self.set_menu(platform);
+        }
+        if keys_changed {
+            self.take_global_keys(platform);
         }
         for &window in self.windows.keys() {
             platform.request_frame(window);
@@ -1922,49 +1940,167 @@ impl App {
         };
         self.opened_one = true;
         match platform.create_window(&attributes) {
-            Ok(window) => {
-                let surfaces = (
-                    self.surface(platform, window),
-                    self.layer_surface(platform, window, Layer::BlinkingText),
-                    self.layer_surface(platform, window, Layer::Cursor),
-                );
-                let focused = platform.focused_window() == Some(window);
-                let size = platform
-                    .window_size(window)
-                    .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
-                let grid = self.grid(size);
-                let colors = &match page {
-                    Some(_) => self.theme.man_page.colors.clone(),
-                    None => self.colors(platform.appearance()),
-                };
-                let waker = platform.waker();
-                let pane = Pane::spawn(
-                    program,
-                    &environment,
-                    &self.settings(),
-                    grid,
-                    colors,
-                    &self.texts,
-                    move || {
-                        waker.wake();
-                    },
-                );
-                pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
-                pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
-                let id = pane.id();
-                let ids = (self.workspace.open_window(pane), id);
-                let mut state = Window::new(surfaces, ids, focused, Instant::now());
-                state.page = page;
-                self.windows.insert(window, state);
-                self.draw(platform, window, size);
-            }
+            Ok(window) => self.run_in(platform, window, (program, page), &environment),
             Err(error) => {
                 eprintln!("lokyr: {error}");
-                if self.windows.is_empty() {
+                if self.windows.is_empty() && self.global_keys.is_empty() {
                     platform.quit();
                 }
             }
         }
+    }
+
+    /// Gives the platform's new `window` a pane that runs `program` in
+    /// `environment`, of the man page of the title `page`, as `man ls`, of
+    /// its colors, when it shows one; and draws it.
+    fn run_in(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (program, page): (&Program, Option<String>),
+        environment: &Environment,
+    ) {
+        let surfaces = (
+            self.surface(platform, window),
+            self.layer_surface(platform, window, Layer::BlinkingText),
+            self.layer_surface(platform, window, Layer::Cursor),
+        );
+        let focused = platform.focused_window() == Some(window);
+        let size = platform
+            .window_size(window)
+            .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
+        let grid = self.grid(size);
+        let colors = &match page {
+            Some(_) => self.theme.man_page.colors.clone(),
+            None => self.colors(platform.appearance()),
+        };
+        let waker = platform.waker();
+        let pane = Pane::spawn(
+            program,
+            environment,
+            &self.settings(),
+            grid,
+            colors,
+            &self.texts,
+            move || {
+                waker.wake();
+            },
+        );
+        pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
+        pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
+        let id = pane.id();
+        let ids = (self.workspace.open_window(pane), id);
+        let mut state = Window::new(surfaces, ids, focused, Instant::now());
+        state.page = page;
+        self.windows.insert(window, state);
+        self.draw(platform, window, size);
+    }
+
+    /// Shows the quick terminal, at the place that the config gives, and
+    /// opens it first, in the directory that `new-directory` gives; or
+    /// hides it, if it shows with the focus. Shown without the focus, it
+    /// takes the focus.
+    fn toggle_quick(&mut self, platform: &mut dyn Platform) {
+        let place = quick::place(&self.config.quick_terminal);
+        match self.quick {
+            Some((window, true))
+                if self.windows.get(&window).is_some_and(|state| state.focused) =>
+            {
+                platform.show_quick_window(window, None);
+                self.quick = Some((window, false));
+            }
+            Some((window, _)) => {
+                platform.show_quick_window(window, Some(&place));
+                self.quick = Some((window, true));
+            }
+            None => {
+                let environment = Environment {
+                    directory: self.start_directory(platform),
+                    ..self.environment.clone()
+                };
+                match platform.create_quick_window(TITLE) {
+                    Ok(window) => {
+                        // Shown first, so that its pane starts of its size.
+                        platform.show_quick_window(window, Some(&place));
+                        let program = self.program.clone();
+                        self.run_in(platform, window, (&program, None), &environment);
+                        self.quick = Some((window, true));
+                    }
+                    Err(error) => eprintln!("lokyr: {error}"),
+                }
+            }
+        }
+    }
+
+    /// Hides the quick terminal as `window`, which it is, lost the focus,
+    /// if `autohide` says so: not for a question on it, which takes the
+    /// focus.
+    fn autohide(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        if self.quick != Some((window, true))
+            || !self.config.quick_terminal.autohide
+            || self.asks_on(window)
+        {
+            return;
+        }
+        platform.show_quick_window(window, None);
+        self.quick = Some((window, false));
+    }
+
+    /// Whether a question of the app's is open on `window`.
+    fn asks_on(&self, window: WindowId) -> bool {
+        let pane = self.windows.get(&window).map(|state| state.pane);
+        self.close_asks.values().any(|&asked| asked == window)
+            || self.title_asks.values().any(|&asked| asked == window)
+            || self
+                .open_asks
+                .values()
+                .any(|(asked, _)| *asked == Some(window))
+            || self
+                .clipboard_asks
+                .values()
+                .any(|(asked, _)| Some(*asked) == pane)
+            || self
+                .paste_asks
+                .values()
+                .any(|(asked, _)| Some(*asked) == pane)
+    }
+
+    /// Takes the config's global keys from every app, in place of those
+    /// before, and tells those that the platform refused, as another app
+    /// takes them, and those of a character that the US layout has no key
+    /// for, by which they go.
+    fn take_global_keys(&mut self, platform: &mut dyn Platform) {
+        let mut refused = Vec::new();
+        let mut keys: Vec<GlobalKey> = Vec::new();
+        self.global_keys.clear();
+        for (combo, invocation) in keymap::global_bindings(&self.config.keys) {
+            match quick::global_key(combo) {
+                Some(key) => {
+                    keys.push(key);
+                    self.global_keys.push((combo, invocation));
+                }
+                None => refused.push(combo),
+            }
+        }
+        for index in platform.set_global_keys(&keys) {
+            if let Some(&(combo, _)) = self.global_keys.get(index) {
+                refused.push(combo);
+            }
+        }
+        if refused.is_empty() {
+            self.resolve(platform, &About::GlobalKeys);
+            return;
+        }
+        let named: Vec<String> = refused
+            .iter()
+            .map(|combo| format!("`{}{combo}`", keymap::GLOBAL))
+            .collect();
+        let text = format!(
+            "{} cannot be taken from every app: another app takes it, or the US layout has no key of its character, by which a global key goes",
+            named.join(", ")
+        );
+        let diagnostic = Diagnostic::new(Code::Unavailable, text, About::GlobalKeys);
+        self.report(platform, diagnostic);
     }
 
     /// The directory that a window that opens now starts in: the first
@@ -2063,8 +2199,13 @@ impl App {
             self.title_asks.retain(|_, asked| *asked != window);
             self.workspace.close_window(state.window);
         }
+        if self.quick.is_some_and(|(quick, _)| quick == window) {
+            self.quick = None;
+        }
         platform.close_window(window);
-        if self.windows.is_empty() {
+        // A global key goes on showing the quick terminal, which needs the
+        // app.
+        if self.windows.is_empty() && self.global_keys.is_empty() {
             platform.quit();
         }
     }
@@ -2206,6 +2347,10 @@ impl App {
                 }
                 NEW_WINDOW => {
                     self.open_window(platform);
+                    Ok(())
+                }
+                TOGGLE_QUICK => {
+                    self.toggle_quick(platform);
                     Ok(())
                 }
                 CLOSE_WINDOW => {
@@ -3565,6 +3710,7 @@ impl App {
             let label = match (&shown.about, shown.category()) {
                 (About::Config, _) => "notice-config",
                 (About::Font, _) => "notice-font",
+                (About::GlobalKeys, _) => "notice-global-keys",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
             };
@@ -3736,6 +3882,7 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
+        self.take_global_keys(platform);
         self.environment.locale =
             environment::utf8_locale(&self.preferred, &environment::system_locales());
         if let Some(file) = &mut self.config_file {
@@ -3753,6 +3900,12 @@ impl Handler for App {
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
             AppEvent::Command(command) => self.run(platform, &command, Args::new()),
+            AppEvent::GlobalKey(index) => {
+                if let Some((_, invocation)) = self.global_keys.get(index).cloned() {
+                    self.run(platform, &invocation.command, invocation.args);
+                }
+            }
+            AppEvent::Reopen => self.open_window(platform),
             AppEvent::QuitRequested => self.ask_quit(platform, true),
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
@@ -4019,6 +4172,9 @@ impl Handler for App {
                     // mark goes with the focus.
                     self.settle_secure_input(platform);
                     self.show_title(platform, window);
+                }
+                if !focused {
+                    self.autohide(platform, window);
                 }
             }
             // A key goes to the program, and starts the cursor blinking
@@ -4586,6 +4742,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
+        (
+            TOGGLE_QUICK,
+            "window-toggle-quick-terminal",
+            Category::Windows,
+        ),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),
@@ -4914,7 +5075,8 @@ mod tests {
             [
                 "New Window cmd+n",
                 "Close Window cmd+w",
-                "Set Title… shift+cmd+i"
+                "Set Title… shift+cmd+i",
+                "Quick Terminal"
             ]
         );
         assert_eq!(
@@ -5008,7 +5170,12 @@ mod tests {
         // one that holds in a context alone, which no item shows.
         assert_eq!(
             menu_items(&fake, 1),
-            ["New Window cmd+y", "Close Window", "Set Title… shift+cmd+i"]
+            [
+                "New Window cmd+y",
+                "Close Window",
+                "Set Title… shift+cmd+i",
+                "Quick Terminal"
+            ]
         );
         assert_eq!(
             menu_items(&fake, 2),
@@ -5255,6 +5422,11 @@ mod tests {
                 ("window.close", "Close Window", Category::Windows),
                 ("window.new", "New Window", Category::Windows),
                 ("window.set-title", "Set Title…", Category::Windows),
+                (
+                    "window.toggle-quick-terminal",
+                    "Quick Terminal",
+                    Category::Windows
+                ),
             ]
         );
         let texts = Texts::new("en", &CATALOGS);
@@ -5267,7 +5439,10 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(titles, ["New Window", "Close Window", "Set Title…"]);
+        assert_eq!(
+            titles,
+            ["New Window", "Close Window", "Set Title…", "Quick Terminal"]
+        );
         // A command that takes no argument rejects one, and does nothing.
         let mut args = Args::new();
         args.insert(
@@ -10020,5 +10195,141 @@ print -z 'echo typed'
         fake.send_app(&mut app, AppEvent::Command("unknown".to_owned()));
         assert!(!fake.has_quit());
         assert_eq!(fake.windows().count(), 1);
+    }
+
+    /// The quick terminal's window, if the app opened it.
+    fn quick_window(fake: &Fake) -> Option<WindowId> {
+        fake.windows().find(|&window| {
+            fake.window(window)
+                .is_some_and(|state| state.quick.is_some())
+        })
+    }
+
+    fn toggle(fake: &mut Fake, app: &mut App) {
+        fake.send_app(app, AppEvent::Command(TOGGLE_QUICK.to_owned()));
+    }
+
+    #[test]
+    fn the_quick_terminal_shows_and_hides_keeping_its_pane() {
+        let (mut fake, mut app) = started();
+        assert_eq!(quick_window(&fake), None);
+        toggle(&mut fake, &mut app);
+        let quick = quick_window(&fake).unwrap();
+        let shown = |fake: &Fake| fake.window(quick).unwrap().quick.unwrap();
+        // At the top, of half the area under the menu bar, its pane of
+        // that size from the start.
+        assert_eq!(
+            shown(&fake),
+            Some(lokyr_platform_core::QuickPlace::default())
+        );
+        let size = fake.window(quick).unwrap().size;
+        assert_eq!((size.points.width, size.points.height), (1440.0, 438.0));
+        let pane = app.windows[&quick].pane;
+        assert_eq!(app.grid(size), app.pane(quick).grid());
+        // With the focus, it hides; its pane stays.
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        toggle(&mut fake, &mut app);
+        assert_eq!(shown(&fake), None);
+        fake.send(&mut app, quick, WindowEvent::Focused(false));
+        assert_eq!(app.windows[&quick].pane, pane);
+        // It shows again; without the focus, it takes it rather than
+        // hiding.
+        toggle(&mut fake, &mut app);
+        assert!(shown(&fake).is_some());
+        toggle(&mut fake, &mut app);
+        assert!(shown(&fake).is_some());
+        assert_eq!(quick_window(&fake), Some(quick));
+        // Losing the focus hides it, as `autohide` says.
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        fake.send(&mut app, quick, WindowEvent::Focused(false));
+        assert_eq!(shown(&fake), None);
+        // Closed, the next shows a new one.
+        app.close(&mut fake, quick);
+        assert_eq!(quick_window(&fake), None);
+        assert!(!fake.has_quit());
+        toggle(&mut fake, &mut app);
+        assert_ne!(quick_window(&fake), Some(quick));
+    }
+
+    #[test]
+    fn the_quick_terminal_stays_as_it_loses_the_focus_without_autohide_or_to_a_question() {
+        let mut config = Config::default();
+        config.quick_terminal.autohide = false;
+        config.quick_terminal.position = config::QuickPosition::Left;
+        let mut fake = Fake::default();
+        let mut app = app(config, quiet());
+        fake.start(&mut app);
+        toggle(&mut fake, &mut app);
+        let quick = quick_window(&fake).unwrap();
+        let place = fake.window(quick).unwrap().quick.unwrap().unwrap();
+        assert_eq!(place.edge, lokyr_platform_core::QuickEdge::Left);
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        fake.send(&mut app, quick, WindowEvent::Focused(false));
+        assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+        // With autohide, a question on it, which takes the focus, keeps it.
+        app.config.quick_terminal.autohide = true;
+        fake.send(&mut app, quick, WindowEvent::Focused(true));
+        app.ask_title(&mut fake, quick);
+        fake.send(&mut app, quick, WindowEvent::Focused(false));
+        assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+    }
+
+    #[test]
+    fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
+        let config = Config::parse(
+            "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n\"global:ctrl+è\" = \"window.new\"\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap();
+        let mut fake = Fake::default();
+        let mut app = app(config, quiet());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let key = GlobalKey {
+            code: KeyCode::Backquote,
+            command: false,
+            control: true,
+            alt: false,
+            shift: false,
+        };
+        assert_eq!(fake.global_keys(), [key]);
+        // The one of a character that the US layout lacks is told.
+        let shown = app.diagnostics.shown().unwrap();
+        assert_eq!(shown.about, About::GlobalKeys);
+        assert!(shown.text.contains("`global:ctrl+è`"), "{}", shown.text);
+        fake.send_app(&mut app, AppEvent::GlobalKey(0));
+        assert!(quick_window(&fake).is_some());
+        // Without its windows, the app waits for the key, and opens a
+        // window as the Dock's icon asks.
+        let quick = quick_window(&fake).unwrap();
+        app.close(&mut fake, quick);
+        app.close(&mut fake, window);
+        assert_eq!(fake.windows().count(), 0);
+        assert!(!fake.has_quit());
+        fake.send_app(&mut app, AppEvent::Reopen);
+        assert_eq!(fake.windows().count(), 1);
+        // A key that another app takes is told too; once the config takes
+        // it away, the notice goes, and the last window quits again.
+        fake.take_global_key(key);
+        app.apply(
+            &mut fake,
+            Config::parse(
+                "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n",
+                std::path::Path::new("config.toml"),
+            )
+            .unwrap(),
+        );
+        let shown = app.diagnostics.shown().unwrap();
+        assert!(
+            shown.text.contains("`global:ctrl+`` cannot"),
+            "{}",
+            shown.text
+        );
+        app.apply(&mut fake, Config::default());
+        assert!(app.diagnostics.shown().is_none());
+        assert!(fake.global_keys().is_empty());
+        let window = fake.windows().next().unwrap();
+        app.close(&mut fake, window);
+        assert!(fake.has_quit());
     }
 }

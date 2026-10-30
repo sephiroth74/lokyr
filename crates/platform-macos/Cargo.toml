@@ -25,6 +25,8 @@ objc2-app-kit = { workspace = true, features = [
     "objc2-uniform-type-identifiers",
     "NSAccessibility",
     "NSAlert",
+    "NSAnimation",
+    "NSAnimationContext",
     "NSAppearance",
     "NSApplication",
     "NSApplicationScripting",
@@ -43,6 +45,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSMenu",
     "NSMenuItem",
     "NSDragging",
+    "NSPanel",
     "NSPasteboard",
     "NSResponder",
     "NSScreen",
@@ -206,6 +209,10 @@ harness = false
 
 [[test]]
 name = "window_frame"
+harness = false
+
+[[test]]
+name = "quick_window"
 harness = false
 
 [lints]

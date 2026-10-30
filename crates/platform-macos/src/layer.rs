@@ -208,7 +208,7 @@ fn opacities(opacities: &[f64]) -> Retained<NSArray> {
 }
 
 /// Core Animation's function of `easing`.
-fn timing(easing: Easing) -> Retained<CAMediaTimingFunction> {
+pub(crate) fn timing(easing: Easing) -> Retained<CAMediaTimingFunction> {
     // SAFETY: Core Animation's constants.
     let name = unsafe {
         match easing {

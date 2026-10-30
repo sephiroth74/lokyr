@@ -480,6 +480,13 @@ fn a_key_names_what_it_types_on_the_us_layout() {
     assert_eq!(KeyCode::Numpad1.base_layout(), None);
     assert_eq!(KeyCode::IntlBackslash.base_layout(), None);
     assert_eq!(KeyCode::Unidentified(0x7f).base_layout(), None);
+    // And back, each key that types a character.
+    for character in "abcdefghijklmnopqrstuvwxyz0123456789`-=[]\\;',./ ".chars() {
+        let key = KeyCode::from_base_layout(character).unwrap();
+        assert_eq!(key.base_layout(), Some(character), "{character}");
+    }
+    assert_eq!(KeyCode::from_base_layout('Q'), Some(KeyCode::KeyQ));
+    assert_eq!(KeyCode::from_base_layout('è'), None);
 }
 
 #[test]
@@ -552,4 +559,63 @@ fn the_fake_tells_targets_apart_as_a_backend_does() {
         assert!(fake.target_kind(&target).is_err(), "{target}");
     }
     std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_quick_window_opens_hidden_and_takes_its_place_s_size_as_it_shows() {
+    let mut fake = Fake::new(2.0);
+    let quick = fake.create_quick_window("Lokyr").unwrap();
+    let state = fake.window(quick).unwrap();
+    assert_eq!(state.quick, Some(None));
+    assert!(state.occluded);
+    let place = QuickPlace {
+        primary: Length::Percent(40.0),
+        ..QuickPlace::default()
+    };
+    fake.show_quick_window(quick, Some(&place));
+    let state = fake.window(quick).unwrap();
+    assert_eq!(state.quick, Some(Some(place)));
+    // 40% of the area under the menu bar, the screen's width.
+    assert_eq!(
+        state.size,
+        WindowSize::new(
+            Size {
+                width: 1440.0,
+                height: 350.0
+            },
+            2.0
+        )
+    );
+    fake.show_quick_window(quick, None);
+    assert_eq!(fake.window(quick).unwrap().quick, Some(None));
+    // Another window is no quick one.
+    let window = fake
+        .create_window(&WindowAttributes {
+            title: "shell".to_owned(),
+            size: SIZE,
+            remember: false,
+            restore: false,
+            restore_size: false,
+        })
+        .unwrap();
+    fake.show_quick_window(window, Some(&place));
+    assert_eq!(fake.window(window).unwrap().quick, None);
+}
+
+#[test]
+fn the_global_keys_that_another_app_takes_are_refused() {
+    let mut fake = Fake::new(2.0);
+    let key = |code| GlobalKey {
+        code,
+        command: false,
+        control: true,
+        alt: false,
+        shift: false,
+    };
+    fake.take_global_key(key(KeyCode::KeyT));
+    let keys = [key(KeyCode::Backquote), key(KeyCode::KeyT)];
+    assert_eq!(fake.set_global_keys(&keys), [1]);
+    assert_eq!(fake.global_keys(), keys);
+    assert_eq!(fake.set_global_keys(&[]), Vec::<usize>::new());
+    assert!(fake.global_keys().is_empty());
 }

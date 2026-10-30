@@ -9,13 +9,36 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, Handler, Layer, LayerPlace,
-    MainMenu, Platform, Point, PointerArea, PointerShape, Size, TargetKind, TimerId, Usage, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
+    LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace, ScreenRect, Size,
+    TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
+    WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
 pub const DEFAULT_SCALE: f64 = 2.0;
+
+/// The fake's one screen.
+pub const SCREEN: ScreenRect = ScreenRect {
+    x: 0.0,
+    y: 0.0,
+    width: 1440.0,
+    height: 900.0,
+};
+
+/// The screen's area for windows, under a menu bar of 25 points.
+pub const SCREEN_AREA: ScreenRect = ScreenRect {
+    x: 0.0,
+    y: 25.0,
+    width: 1440.0,
+    height: 875.0,
+};
+
+/// The size of a quick window's content before it first shows.
+const QUICK_SIZE: Size = Size {
+    width: 800.0,
+    height: 400.0,
+};
 
 /// A window that the app opened, as the fake keeps it.
 #[derive(Clone, Debug, PartialEq)]
@@ -56,6 +79,8 @@ pub struct FakeWindow {
     pub pointer_areas: Vec<PointerArea>,
     /// Its own appearance, if the app gave it one.
     pub appearance: Option<Appearance>,
+    /// Whether it is a quick window, and its place while it shows.
+    pub quick: Option<Option<QuickPlace>>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -146,6 +171,10 @@ pub struct Fake {
     secure_input: (bool, usize),
     usage: Option<Usage>,
     revealed: Vec<String>,
+    /// The keys that the app takes from every app, and those that another
+    /// app takes, which the fake refuses.
+    global_keys: Vec<GlobalKey>,
+    taken_keys: Vec<GlobalKey>,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -191,6 +220,8 @@ impl Fake {
             secure_input: (false, 0),
             usage: None,
             revealed: Vec::new(),
+            global_keys: Vec::new(),
+            taken_keys: Vec::new(),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -473,6 +504,16 @@ impl Fake {
         self.editor_fails = why.map(str::to_owned);
     }
 
+    /// The keys that the app takes from every app, as it gave them last.
+    pub fn global_keys(&self) -> &[GlobalKey] {
+        &self.global_keys
+    }
+
+    /// Has another app take `key`, which the app cannot take from then on.
+    pub fn take_global_key(&mut self, key: GlobalKey) {
+        self.taken_keys.push(key);
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -551,9 +592,66 @@ impl Platform for Fake {
                 pointer: PointerShape::Arrow,
                 pointer_areas: Vec::new(),
                 appearance: None,
+                quick: None,
             },
         );
         Ok(id)
+    }
+
+    fn create_quick_window(&mut self, title: &str) -> Result<WindowId, Error> {
+        let id = WindowId::new(self.next_id());
+        self.windows.insert(
+            id,
+            FakeWindow {
+                title: title.to_owned(),
+                size: WindowSize::new(QUICK_SIZE, self.scale),
+                occluded: true,
+                frame_requested: false,
+                text_area: None,
+                translucent: None,
+                frame_held: false,
+                remember: false,
+                layers: HashMap::new(),
+                layer_places: 0,
+                restore: false,
+                restore_size: false,
+                mouse_moves: false,
+                pointer: PointerShape::Arrow,
+                pointer_areas: Vec::new(),
+                appearance: None,
+                quick: Some(None),
+            },
+        );
+        Ok(id)
+    }
+
+    fn show_quick_window(&mut self, window: WindowId, place: Option<&QuickPlace>) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(shown) = &mut state.quick else {
+            return;
+        };
+        *shown = place.copied();
+        // Its frame changes as it shows, as the system's does at once, and
+        // its events follow as a test sends them.
+        if let Some(place) = place {
+            let (frame, _) = place.frames(SCREEN, SCREEN_AREA);
+            state.size = WindowSize::new(
+                Size {
+                    width: frame.width,
+                    height: frame.height,
+                },
+                self.scale,
+            );
+        }
+    }
+
+    fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
+        self.global_keys = keys.to_vec();
+        (0..keys.len())
+            .filter(|&index| self.taken_keys.contains(&keys[index]))
+            .collect()
     }
 
     fn close_window(&mut self, window: WindowId) {
