@@ -3385,14 +3385,21 @@ impl App {
             platform.set_pointer_shape(window, pointer);
             state.pointer = pointer;
         }
-        // The input method's candidates go at the cursor's cell.
-        let at = pane.snapshot().cursor().position;
+        // The input method's candidates go at the cursor's cell, or at the
+        // composition's start, which can be left of it, near the right edge.
+        let snapshot = pane.snapshot();
+        let at = snapshot.cursor().position;
+        let (column, row) = state
+            .preedit
+            .as_ref()
+            .and_then(|preedit| cells::composition_start(snapshot, preedit, snapshot.cols()))
+            .map_or((at.x, at.y), |(row, column)| (column, row));
         let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
         platform.set_text_area(
             window,
             Point {
-                x: (f64::from(left) + f64::from(at.x) * width) / size.scale,
-                y: (f64::from(top) + f64::from(at.y) * height) / size.scale,
+                x: (f64::from(left) + f64::from(column) * width) / size.scale,
+                y: (f64::from(top) + f64::from(row) * height) / size.scale,
             },
             Size {
                 width: width / size.scale,
@@ -7329,6 +7336,33 @@ mod tests {
         };
         fake.send(&mut app, window, WindowEvent::Ime(composing));
         run_until(&mut fake, &mut app, |_, app| offset(app) == 0);
+    }
+
+    #[test]
+    fn the_candidates_go_at_a_composition_moved_left_of_the_cursor() {
+        // The cursor in the last column.
+        let mut fake = Fake::default();
+        let mut app = app(unpadded(), shell("printf 'ready\\033[999G'; sleep 10"));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+        let columns = app.pane(window).snapshot().cols();
+        let area = |fake: &mut Fake, app: &mut App| {
+            fake.send(app, window, WindowEvent::Frame);
+            fake.window(window).unwrap().text_area.unwrap().0.x
+        };
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(window).snapshot().cursor().position.x == columns - 1
+        });
+        // A column is 4 points: the cursor's, then the composition's, of
+        // four cells, as far left as it takes.
+        assert_eq!(area(&mut fake, &mut app), f64::from(columns - 1) * 4.0);
+        let composing = Ime::Preedit {
+            text: "日本".to_owned(),
+            selection: 6..6,
+        };
+        fake.send(&mut app, window, WindowEvent::Ime(composing));
+        assert_eq!(area(&mut fake, &mut app), f64::from(columns - 4) * 4.0);
     }
 
     /// The app without padding, of a config whose `[clipboard]` reads

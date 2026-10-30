@@ -945,10 +945,15 @@ pub fn preedit(
 
 /// The row and the column that the composition of `preedit` starts at, in
 /// a grid of `columns` of `snapshot`: the cursor's, from a wide
-/// character's first cell; or, where its first character has no room
-/// there, as a wide one at the last column, as far left as it takes, over
-/// the cells before; `None` off the grid.
-fn composition_start(snapshot: &Snapshot, preedit: &Preedit, columns: u16) -> Option<(u16, u16)> {
+/// character's first cell; or, where the composition has no room there to
+/// the right edge, as far left as it takes, over the cells before, but
+/// the row's first, so that a composition wider than the row loses its
+/// end alone; `None` off the grid.
+pub fn composition_start(
+    snapshot: &Snapshot,
+    preedit: &Preedit,
+    columns: u16,
+) -> Option<(u16, u16)> {
     let position = snapshot.cursor().position;
     let (mut start, row) = (position.x, position.y);
     if row >= snapshot.rows() || start >= columns {
@@ -964,13 +969,13 @@ fn composition_start(snapshot: &Snapshot, preedit: &Preedit, columns: u16) -> Op
         start -= 1;
     }
     let widths = Widths::default();
-    let first = preedit
+    let width: usize = preedit
         .text
         .chars()
-        .map(|character| u16::from(widths.char_width(character)))
-        .find(|&width| width > 0)
-        .unwrap_or(1);
-    Some((row, start.min(columns.saturating_sub(first))))
+        .map(|character| usize::from(widths.char_width(character)))
+        .sum();
+    let width = u16::try_from(width).unwrap_or(u16::MAX).min(columns);
+    Some((row, start.min(columns - width)))
 }
 
 /// The cells that the composition of `preedit` at the cursor of `snapshot`
@@ -2363,15 +2368,15 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_composition_from_the_last_column_starts_where_it_has_room() {
-        // The cursor in the last column, where `日` takes two.
-        let snapshot = snapshot(4, 1, "abc");
-        assert_eq!(snapshot.cursor().position.x, 3);
+    fn a_composition_without_room_to_the_right_edge_starts_where_it_has() {
+        // The cursor in the last column of six, where `日本` takes four.
+        let snapshot = snapshot(6, 1, "abcde");
+        assert_eq!(snapshot.cursor().position.x, 5);
         let mut asked = Vec::new();
         let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
         let composed = Preedit {
             text: "日本".to_owned(),
-            cursor: 3,
+            cursor: 6,
         };
         preedit(
             &mut batch,
@@ -2380,33 +2385,27 @@ mod tests {
             &composed,
             &mut atlas(&mut asked),
         );
-        // Over `c`, and the cell after it; `本` has no room.
+        // Over `cde`, and the cell after them, whole.
         let shown: Vec<(u16, u32)> = batch
             .glyphs
             .iter()
             .map(|glyph| (glyph.column, glyph.region.x))
             .collect();
-        assert_eq!(
-            shown,
-            [
-                (0, u32::from('a')),
-                (1, u32::from('b')),
-                (2, u32::from('日'))
-            ]
-        );
+        let expected = [('a', 0), ('b', 1), ('日', 2), ('本', 4)];
+        assert_eq!(shown, expected.map(|(text, at)| (at, u32::from(text))));
         let line = batch.lines.last().unwrap();
-        assert_eq!((line.column, line.columns), (2, 2));
-        assert_eq!(composed_span(&snapshot, &composed, 4), Some((0, 2..4)));
+        assert_eq!((line.column, line.columns), (2, 4));
+        assert_eq!(composed_span(&snapshot, &composed, 6), Some((0, 2..6)));
         // A narrow one stays at the cursor.
         let narrow = Preedit {
             text: "k".to_owned(),
             cursor: 1,
         };
-        assert_eq!(composed_span(&snapshot, &narrow, 4), Some((0, 3..4)));
+        assert_eq!(composed_span(&snapshot, &narrow, 6), Some((0, 5..6)));
     }
 
     #[test]
-    fn composed_text_past_the_right_edge_is_left_out() {
+    fn composed_text_wider_than_the_row_loses_its_end() {
         let snapshot = snapshot(4, 1, "ab");
         let mut asked = Vec::new();
         let mut batch = cells(&snapshot, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
@@ -2421,9 +2420,11 @@ mod tests {
             &composed,
             &mut atlas(&mut asked),
         );
+        // From the row's first cell: `日本`, and `語` left out.
         let line = batch.lines.last().unwrap();
-        assert_eq!((line.column, line.columns), (2, 2));
-        assert_eq!(batch.glyphs.len(), 3);
+        assert_eq!((line.column, line.columns), (0, 4));
+        let shown: Vec<u16> = batch.glyphs.iter().map(|glyph| glyph.column).collect();
+        assert_eq!(shown, [0, 2]);
     }
 
     /// A cell of 8 by 16 pixels whose underline, strikeout and their
