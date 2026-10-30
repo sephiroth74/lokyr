@@ -169,7 +169,8 @@ fn run() -> ExitCode {
             None
         }
     };
-    match lokyr_platform_macos::run(app::App::new(drawing, config, path)) {
+    let app = app::App::new(drawing, config, path).with_state(lokyr_kernel::state::directory());
+    match lokyr_platform_macos::run(app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lokyr: {error}");

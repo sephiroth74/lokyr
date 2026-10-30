@@ -344,7 +344,10 @@ fn a_marked_cell_s_line_and_link_are_its_own_as_output_scrolls_the_view() {
         "stty -echo; printf '\\033]8;;https://lokyr.dev/osc\\033\\\\see\\033]8;;\\033\\\\ ",
         "https://lokyr.dev/x\\n'; read line; seq 1 60; echo done; read line"
     ));
-    let text = |row| pane.line_text(row).map(|(text, _)| text.trim_end().to_owned());
+    let text = |row| {
+        pane.line_text(row)
+            .map(|(text, _)| text.trim_end().to_owned())
+    };
     let wait = |done: &dyn Fn() -> bool| {
         let start = Instant::now();
         while !done() {

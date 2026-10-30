@@ -213,7 +213,7 @@ Versions and maturity must be rechecked when coding starts.
 | Config (`config.toml`, `plugins.toml`, `plugins.lock`, `permissions.toml`, `themes/`) | `~/.config/lokyr/` (or `$XDG_CONFIG_HOME/lokyr/` if set) | `$XDG_CONFIG_HOME/lokyr/` |
 | Installed packages | `~/Library/Application Support/lokyr/store/` | `$XDG_DATA_HOME/lokyr/store/` |
 | Caches (fonts, compiled plugins) | `~/Library/Caches/lokyr/` | `$XDG_CACHE_HOME/lokyr/` |
-| State (saved sessions, search history) | `~/Library/Application Support/lokyr/state/` | `$XDG_STATE_HOME/lokyr/` |
+| State (the last window's directory; later, saved sessions and search history) | `~/Library/Application Support/lokyr/state/` | `$XDG_STATE_HOME/lokyr/` |
 | IPC socket | `$TMPDIR/lokyr-<uid>/` | `$XDG_RUNTIME_DIR/lokyr/` |
 
 On macOS too the config lives in `~/.config`, so it can be versioned with dotfiles, as Ghostty, Alacritty and kitty do.

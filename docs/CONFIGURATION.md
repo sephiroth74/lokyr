@@ -81,6 +81,8 @@ columns = 120                        # a new window's size, in cells, from 1 to 
 rows = 40
 remember-frame = false               # true | false: the first window where the last one was
 close-on-exit = "never"              # clean | always | never
+start-directory = "last"             # home | last | a path: the first window's folder
+new-directory = "~/Projects"         # inherit | home | a path: a new window's folder
 padding-x = 6                        # points, from 0 to 100
 padding-y = 4
 background-opacity = 0.9             # from 0 to 1
@@ -516,6 +518,37 @@ What a window does when its program ends, such as the shell after `exit`.
 The login shell's status is its own: on macOS, `login`, which starts it, hides it, and the shell tells it to Lokyr as it ends. A status past 128 tells the signal that ended it, as shells give it.
 
 Closing the last window quits Lokyr.
+
+### `start-directory`
+
+<sub>Platforms: macOS</sub>
+
+The folder that the first window's shell starts in, as Lokyr starts.
+
+| Values | Default |
+|---|---|
+| `"home"`, `"last"`, or a path from `/` or `~` | `"home"` |
+
+- `"home"` starts in your home folder.
+- `"last"` starts in the folder of the last window that closed, or of the window in front as you quit Lokyr with several open: the shell's folder, or that of the program that ran in it, as `vim`'s. Lokyr keeps it in `~/Library/Application Support/lokyr/state/` on macOS, not in the config file.
+- A path, as `"~/Projects"`, starts there.
+- A folder that is not there, or that you cannot enter, starts in your home folder, and the log tells why.
+- It applies at the next start.
+
+### `new-directory`
+
+<sub>Platforms: macOS</sub>
+
+The folder that a new window's shell starts in, as ⌘N opens one.
+
+| Values | Default |
+|---|---|
+| `"inherit"`, `"home"`, or a path from `/` or `~` | `"inherit"` |
+
+- `"inherit"` starts in the folder of the program in the window that has the focus, the shell's or that of the program that runs in it, as `vim`'s; in your home folder when no window has the focus, or when the folder cannot be read, as a program of another user's, as `sudo`'s.
+- `"home"` starts in your home folder.
+- A path, as `"~/Projects"`, starts there; one that is not there starts in your home folder, and the log tells why.
+- It applies at once, to the windows that open from then.
 
 ### `padding-x`, `padding-y`
 

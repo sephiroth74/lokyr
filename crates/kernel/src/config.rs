@@ -637,9 +637,10 @@ impl OptionAsMeta {
     }
 }
 
-/// The `[window]` section: what a window does, the room around its grid,
-/// how much of what is behind it shows through, and its titlebar.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+/// The `[window]` section: what a window does, the directory that its shell
+/// starts in, the room around its grid, how much of what is behind it shows
+/// through, and its titlebar.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct WindowConfig {
     /// A new window's columns.
@@ -651,6 +652,11 @@ pub struct WindowConfig {
     pub remember_frame: bool,
     /// What a window does when its program ends.
     pub close_on_exit: CloseOnExit,
+    /// The directory that the first window's shell starts in, as the app
+    /// starts.
+    pub start_directory: StartDirectory,
+    /// The directory that a new window's shell starts in.
+    pub new_directory: NewDirectory,
     /// The room between the grid and the window's left and right edges.
     pub padding_x: Padding,
     /// The room between the grid and the window's top and bottom edges.
@@ -673,6 +679,8 @@ impl Default for WindowConfig {
             rows: Cells(30),
             remember_frame: true,
             close_on_exit: CloseOnExit::default(),
+            start_directory: StartDirectory::default(),
+            new_directory: NewDirectory::default(),
             padding_x: Padding::default(),
             padding_y: Padding::default(),
             background_opacity: Opacity::default(),
@@ -859,6 +867,103 @@ impl TryFrom<f64> for Padding {
             ))
         }
     }
+}
+
+/// The directory that the first window's shell starts in, as the app
+/// starts.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum StartDirectory {
+    /// The home directory.
+    #[default]
+    Home,
+    /// The directory of the last window that closed, as the app keeps it.
+    Last,
+    /// A directory, as the file writes it, from `/` or from `~`.
+    Path(String),
+}
+
+impl From<StartDirectory> for String {
+    fn from(directory: StartDirectory) -> Self {
+        match directory {
+            StartDirectory::Home => "home".to_owned(),
+            StartDirectory::Last => "last".to_owned(),
+            StartDirectory::Path(path) => path,
+        }
+    }
+}
+
+impl TryFrom<String> for StartDirectory {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        match text.as_str() {
+            "home" => Ok(Self::Home),
+            "last" => Ok(Self::Last),
+            _ if is_directory_path(&text) => Ok(Self::Path(text)),
+            _ => Err(format!(
+                "`{text}` is no start directory: `\"home\"`, `\"last\"`, or a path from `/` or `~`"
+            )),
+        }
+    }
+}
+
+/// The directory that a new window's shell starts in.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum NewDirectory {
+    /// The directory of the program in the window that has the focus.
+    #[default]
+    Inherit,
+    /// The home directory.
+    Home,
+    /// A directory, as the file writes it, from `/` or from `~`.
+    Path(String),
+}
+
+impl From<NewDirectory> for String {
+    fn from(directory: NewDirectory) -> Self {
+        match directory {
+            NewDirectory::Inherit => "inherit".to_owned(),
+            NewDirectory::Home => "home".to_owned(),
+            NewDirectory::Path(path) => path,
+        }
+    }
+}
+
+impl TryFrom<String> for NewDirectory {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        match text.as_str() {
+            "inherit" => Ok(Self::Inherit),
+            "home" => Ok(Self::Home),
+            _ if is_directory_path(&text) => Ok(Self::Path(text)),
+            _ => Err(format!(
+                "`{text}` is no new directory: `\"inherit\"`, `\"home\"`, or a path from `/` or `~`"
+            )),
+        }
+    }
+}
+
+/// Whether `text` is a path that a directory's key takes: from `/`, or
+/// from `~`, the home directory.
+fn is_directory_path(text: &str) -> bool {
+    text.starts_with('/') || text == "~" || text.starts_with("~/")
+}
+
+/// The directory that `path`, of a directory's key, names: from `~`, of
+/// `home`; `None` from `~` without a home directory.
+pub fn expanded(path: &str, home: Option<&Path>) -> Option<PathBuf> {
+    let Some(rest) = path.strip_prefix('~') else {
+        return Some(PathBuf::from(path));
+    };
+    let (home, rest) = (home?, rest.trim_start_matches('/'));
+    Some(if rest.is_empty() {
+        home.to_owned()
+    } else {
+        home.join(rest)
+    })
 }
 
 /// What a window does when its program ends.
@@ -1399,6 +1504,42 @@ mod tests {
 
     fn name(name: &str) -> Option<Name> {
         Some(Name::try_from(name.to_owned()).unwrap())
+    }
+
+    #[test]
+    fn a_window_s_directories_take_their_words_or_a_path() {
+        let window = |text: &str| parse(&format!("[window]\n{text}\n")).unwrap().window;
+        let read = window("start-directory = \"last\"\nnew-directory = \"home\"");
+        assert_eq!(
+            (read.start_directory, read.new_directory),
+            (StartDirectory::Last, NewDirectory::Home)
+        );
+        let read = window("start-directory = \"~/a b\"\nnew-directory = \"/tmp\"");
+        assert_eq!(
+            read.start_directory,
+            StartDirectory::Path("~/a b".to_owned())
+        );
+        assert_eq!(read.new_directory, NewDirectory::Path("/tmp".to_owned()));
+        let default = WindowConfig::default();
+        assert_eq!(
+            (default.start_directory, default.new_directory),
+            (StartDirectory::Home, NewDirectory::Inherit)
+        );
+        // A relative path is no directory's, nor another word.
+        let (at, message) = error("[window]\nstart-directory = \"Projects\"\n");
+        assert_eq!(at, Some((2, 19)));
+        assert!(
+            message.contains("`Projects` is no start directory"),
+            "{message}"
+        );
+        let (_, message) = error("[window]\nnew-directory = \"last\"\n");
+        assert!(message.contains("`last` is no new directory"), "{message}");
+        // `~` is the home directory.
+        let home = Path::new("/Users/me");
+        assert_eq!(expanded("~", Some(home)), Some(home.to_owned()));
+        assert_eq!(expanded("~/a", Some(home)), Some(home.join("a")));
+        assert_eq!(expanded("/tmp", None), Some(PathBuf::from("/tmp")));
+        assert_eq!(expanded("~/a", None), None);
     }
 
     #[test]
@@ -2004,6 +2145,8 @@ mod tests {
                 "rows",
                 "remember-frame",
                 "close-on-exit",
+                "start-directory",
+                "new-directory",
                 "padding-x",
                 "padding-y",
                 "background-opacity",

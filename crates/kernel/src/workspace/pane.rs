@@ -78,6 +78,9 @@ pub struct Environment {
     /// The directory of the app's command, as its bundle has it, if it runs
     /// from one, which the programs' `PATH` takes at its end.
     pub binaries: Option<PathBuf>,
+    /// The directory that the program starts in; the home directory
+    /// without one.
+    pub directory: Option<PathBuf>,
 }
 
 impl Default for Environment {
@@ -87,6 +90,7 @@ impl Default for Environment {
             locale: "en_US.UTF-8".to_owned(),
             terminfo: None,
             binaries: None,
+            directory: None,
         }
     }
 }
@@ -188,6 +192,7 @@ fn pty_options(
     pty.resources_dir.clone_from(&environment.resources);
     pty.terminfo_dir.clone_from(&environment.terminfo);
     pty.binaries_dir.clone_from(&environment.binaries);
+    pty.working_directory.clone_from(&environment.directory);
     pty.fallback_locale.clone_from(&environment.locale);
     pty
 }
@@ -821,6 +826,7 @@ mod tests {
             locale: "it_CH.UTF-8".to_owned(),
             terminfo: Some("/Applications/Lokyr.app/Contents/Resources/terminfo".into()),
             binaries: Some("/Applications/Lokyr.app/Contents/MacOS".into()),
+            directory: Some("/tmp".into()),
         };
         let grid = Grid {
             columns: 80,
@@ -834,6 +840,7 @@ mod tests {
         assert_eq!(options.term, "xterm-lokyr");
         assert_eq!(options.terminfo_dir, environment.terminfo);
         assert_eq!(options.binaries_dir, environment.binaries);
+        assert_eq!(options.working_directory, environment.directory);
         assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
     }

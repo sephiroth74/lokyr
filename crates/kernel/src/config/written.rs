@@ -595,7 +595,7 @@ mod tests {
         assert!(written.starts_with("config_version = 1\n\n[font]\n"));
         assert!(written.contains("\n[font]\n# family: unset, for its default\nsize = 13\n"));
         assert!(written.contains(
-            "\n[window]\ncolumns = 100\nrows = 30\nremember-frame = true\nclose-on-exit = \"clean\"\npadding-x = 4\n"
+            "\n[window]\ncolumns = 100\nrows = 30\nremember-frame = true\nclose-on-exit = \"clean\"\nstart-directory = \"home\"\nnew-directory = \"inherit\"\npadding-x = 4\n"
         ));
         assert!(written.contains("\nlimit = 10\nbudget = 100\n"));
         assert!(

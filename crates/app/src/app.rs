@@ -12,7 +12,7 @@ use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Registry, Value};
 use lokyr_kernel::config::{
     self, AppConfig, AppearanceMode, ClipboardRead, CloseOnExit, Config, ConfirmPaste, LinksConfig,
-    OpenFile, OpenUrl,
+    NewDirectory, OpenFile, OpenUrl, StartDirectory,
 };
 use lokyr_kernel::keymap::{
     self, Binding, Context, Invocation, Keymap, Pressed, Resolved, Resolver, When,
@@ -20,6 +20,7 @@ use lokyr_kernel::keymap::{
 use lokyr_kernel::l10n::{self, Arg, Texts};
 use lokyr_kernel::paste;
 use lokyr_kernel::plugins::{self, Plugins, Request};
+use lokyr_kernel::state;
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
 use lokyr_kernel::workspace::{
@@ -405,6 +406,9 @@ struct Window {
     /// The last part of the directory of the program in its foreground, as
     /// `lokyr`, and that program's name, as `zsh`, which its title shows.
     place: (String, String),
+    /// That directory, whole, as the title last looked, which stays once
+    /// the program ended.
+    directory: Option<PathBuf>,
     /// The title that the platform shows, once the app gave one.
     title_shown: Option<String>,
     /// When its last frame of output came, since its title last looked, for
@@ -522,6 +526,7 @@ impl Window {
             selecting: None,
             page: None,
             place: (String::new(), String::new()),
+            directory: None,
             title_shown: None,
             output_at: None,
             user_title: None,
@@ -598,8 +603,15 @@ pub struct App {
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
     /// Whether a window opened since the app started, after which none
-    /// restores the frame that a window kept.
+    /// restores the frame that a window kept, nor starts in the first
+    /// window's directory.
     opened_one: bool,
+    /// The directory of the app's state, which keeps the directory of the
+    /// last window that closed; `None` keeps nothing, as in the tests.
+    state: Option<PathBuf>,
+    /// The window that took the focus last, which is the one in front as
+    /// the app quits, though the app is not active.
+    front: Option<WindowId>,
     /// The timer of the windows' titles' last look at the programs in
     /// their foreground, after the frames of a burst of output, with the
     /// time that it is for; and how long after a window's last frame of
@@ -703,6 +715,8 @@ impl App {
             title_timer: None,
             title_look: Some(TITLE_LOOK),
             opened_one: false,
+            state: None,
+            front: None,
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -739,6 +753,13 @@ impl App {
     #[cfg(test)]
     fn with_plugin(mut self, name: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
         self.plugins.add(name, plugin);
+        self
+    }
+
+    /// The app, which keeps the directory of the last window that closed in
+    /// `state`, its state's directory, for the next start.
+    pub fn with_state(mut self, state: Option<PathBuf>) -> Self {
+        self.state = state;
         self
     }
 
@@ -1752,6 +1773,10 @@ impl App {
         };
         let remember = window_config.remember_frame && page.is_none();
         let size = self.size_of(platform.screen_scale(), cells);
+        let environment = Environment {
+            directory: self.start_directory(platform),
+            ..self.environment.clone()
+        };
         let attributes = WindowAttributes {
             title: page.clone().unwrap_or_else(|| TITLE.to_owned()),
             size,
@@ -1779,7 +1804,7 @@ impl App {
                 let waker = platform.waker();
                 let pane = Pane::spawn(
                     program,
-                    &self.environment,
+                    &environment,
                     &self.settings(),
                     grid,
                     colors,
@@ -1806,8 +1831,86 @@ impl App {
         }
     }
 
+    /// The directory that a window that opens now starts in: the first
+    /// window's, as the app starts, `start-directory` says; another's,
+    /// `new-directory`. `None` for the home directory, as a directory that
+    /// is not there, or cannot be read, takes too, which the log tells.
+    fn start_directory(&self, platform: &dyn Platform) -> Option<PathBuf> {
+        let home = std::env::home_dir();
+        let (key, chosen) = if self.opened_one {
+            let chosen = match &self.config.window.new_directory {
+                NewDirectory::Home => None,
+                NewDirectory::Inherit => self
+                    .acting
+                    .or_else(|| platform.focused_window())
+                    .and_then(|window| self.directory_of(window)),
+                NewDirectory::Path(path) => config::expanded(path, home.as_deref()),
+            };
+            ("new-directory", chosen)
+        } else {
+            let chosen = match &self.config.window.start_directory {
+                StartDirectory::Home => None,
+                StartDirectory::Last => self.state.as_deref().and_then(state::last_directory),
+                StartDirectory::Path(path) => config::expanded(path, home.as_deref()),
+            };
+            ("start-directory", chosen)
+        };
+        let chosen = chosen?;
+        if !chosen.is_dir() {
+            eprintln!(
+                "lokyr: the window starts in the home directory, as `{key}`'s {} is not a directory that it can enter",
+                chosen.display()
+            );
+            return None;
+        }
+        Some(chosen)
+    }
+
+    /// The directory of the program in `window`'s foreground, or, once it
+    /// ended or where it cannot be read, the one that its title saw last.
+    fn directory_of(&self, window: WindowId) -> Option<PathBuf> {
+        let state = self.windows.get(&window)?;
+        self.workspace
+            .pane(state.pane)
+            .and_then(Pane::working_directory)
+            .or_else(|| state.directory.clone())
+    }
+
+    /// Keeps the directory of `window`, unless it shows a man page, as the
+    /// last window's, for a next start in it.
+    fn keep_directory(&self, window: WindowId) {
+        let Some(kept) = &self.state else {
+            return;
+        };
+        if self
+            .windows
+            .get(&window)
+            .is_none_or(|shown| shown.page.is_some())
+        {
+            return;
+        }
+        if let Some(directory) = self.directory_of(window)
+            && let Err(error) = state::keep_last_directory(kept, &directory)
+        {
+            eprintln!("lokyr: the last window's directory cannot be kept: {error}");
+        }
+    }
+
+    /// Quits, as the directory of the window in front is kept as the last
+    /// window's.
+    fn quit(&mut self, platform: &mut dyn Platform) {
+        if let Some(front) = self.front.or_else(|| platform.focused_window()) {
+            self.keep_directory(front);
+        }
+        platform.quit();
+    }
+
     /// Closes `window`, and quits with the last one.
     fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        self.keep_directory(window);
+        if self.front == Some(window) {
+            self.front = None;
+        }
         // The surface and the session go before the window, and the asks of
         // its program's reads with it.
         if let Some(state) = self.windows.remove(&window) {
@@ -2314,6 +2417,7 @@ impl App {
         // as `sudo`, keeps the one before.
         if let Some(directory) = pane.working_directory() {
             state.place.0 = directory_name(&directory, std::env::home_dir().as_deref());
+            state.directory = Some(directory);
         }
         state.place.1 = pane.foreground_program().unwrap_or_default();
         true
@@ -2696,7 +2800,7 @@ impl App {
         }
         if windows == 0 {
             self.system_quit = false;
-            platform.quit();
+            self.quit(platform);
             return;
         }
         let programs = programs.join(", ");
@@ -3493,7 +3597,7 @@ impl Handler for App {
                     self.quit_ask = None;
                     let system = std::mem::take(&mut self.system_quit);
                     if button == 0 {
-                        platform.quit();
+                        self.quit(platform);
                     } else if system {
                         platform.refuse_quit();
                     }
@@ -3545,6 +3649,7 @@ impl Handler for App {
                     }
                     state.focused = focused;
                     if focused {
+                        self.front = Some(window);
                         state.blink.restart(Instant::now());
                     } else {
                         state.taken.clear();
@@ -5815,6 +5920,129 @@ mod tests {
 
     fn shell(script: &str) -> Program {
         Program::command("/bin/sh", ["-c", script])
+    }
+
+    /// A directory of the test's own, made empty, as the system names it,
+    /// which `pwd` tells, its links resolved.
+    fn real_directory(test: &str) -> PathBuf {
+        std::fs::canonicalize(directory(test)).unwrap()
+    }
+
+    /// The directory that `window`'s shell told as it started, with `pwd`.
+    fn started_in(fake: &mut Fake, app: &mut App, window: WindowId) -> String {
+        run_until(fake, app, |_, app| !row(app, window, 0).is_empty());
+        row(app, window, 0)
+    }
+
+    #[test]
+    fn the_first_window_starts_where_start_directory_says() {
+        let base = real_directory("start-directory");
+        let (last, path, state) = (base.join("last"), base.join("path"), base.join("state"));
+        for made in [&last, &path] {
+            std::fs::create_dir(made).unwrap();
+        }
+        let home = std::env::home_dir().unwrap().display().to_string();
+        let shown = |at: &std::path::Path| at.display().to_string();
+        let gone = base.join("gone").display().to_string();
+        for (directory, kept, expected) in [
+            (StartDirectory::Home, true, home.clone()),
+            (StartDirectory::Last, true, shown(&last)),
+            (StartDirectory::Last, false, home.clone()),
+            (StartDirectory::Path(shown(&path)), true, shown(&path)),
+            (StartDirectory::Path(gone), true, home.clone()),
+        ] {
+            let _ = std::fs::remove_dir_all(&state);
+            if kept {
+                state::keep_last_directory(&state, &last).unwrap();
+            }
+            let mut config = Config::default();
+            config.window.start_directory = directory.clone();
+            let mut fake = Fake::default();
+            let mut app = app(config, shell("pwd; exec sleep 10")).with_state(Some(state.clone()));
+            fake.start(&mut app);
+            let window = fake.windows().next().unwrap();
+            assert_eq!(
+                started_in(&mut fake, &mut app, window),
+                expected,
+                "{directory:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn a_new_window_starts_where_new_directory_says_and_the_last_is_kept() {
+        let base = real_directory("new-directory");
+        let (inherited, path, state) =
+            (base.join("inherit"), base.join("path"), base.join("state"));
+        for made in [&inherited, &path] {
+            std::fs::create_dir(made).unwrap();
+        }
+        let shown = |at: &std::path::Path| at.display().to_string();
+        let home = std::env::home_dir().unwrap().display().to_string();
+        // Each window's shell tells where it started, then goes on in its
+        // own directory, or the first one's, of its program, `sleep`.
+        let script = format!(
+            "pwd; [ \"$PWD\" = {home:?} ] && cd {:?}; exec sleep 10",
+            shown(&inherited)
+        );
+        let mut fake = Fake::default();
+        let mut app = app(Config::default(), shell(&script)).with_state(Some(state.clone()));
+        fake.start(&mut app);
+        let first = fake.windows().next().unwrap();
+        assert_eq!(started_in(&mut fake, &mut app, first), home);
+        run_until(&mut fake, &mut app, |_, app| {
+            app.pane(first).working_directory().as_deref() == Some(inherited.as_path())
+        });
+        fake.send(&mut app, first, WindowEvent::Focused(true));
+        let opened = |fake: &mut Fake, app: &mut App| {
+            let before: Vec<WindowId> = fake.windows().collect();
+            fake.send_app(app, AppEvent::Command(NEW_WINDOW.to_owned()));
+            let window = fake
+                .windows()
+                .find(|window| !before.contains(window))
+                .unwrap();
+            (window, started_in(fake, app, window))
+        };
+        // Of the program in the window that has the focus, by default.
+        let (second, directory) = opened(&mut fake, &mut app);
+        assert_eq!(directory, shown(&inherited));
+        app.config.window.new_directory = NewDirectory::Home;
+        assert_eq!(opened(&mut fake, &mut app).1, home);
+        app.config.window.new_directory = NewDirectory::Path(shown(&path));
+        let (third, directory) = opened(&mut fake, &mut app);
+        assert_eq!(directory, shown(&path));
+        // A window that closes keeps its directory as the last one's; the
+        // one in front, as the app quits, though no window has the focus,
+        // as the app is not active.
+        app.close(&mut fake, second);
+        assert_eq!(state::last_directory(&state), Some(inherited.clone()));
+        fake.send(&mut app, third, WindowEvent::Focused(true));
+        fake.send(&mut app, third, WindowEvent::Focused(false));
+        assert_eq!(fake.focused_window(), None);
+        app.quit(&mut fake);
+        assert!(fake.has_quit());
+        assert_eq!(state::last_directory(&state), Some(path));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn a_window_whose_program_ended_keeps_the_directory_that_its_title_saw() {
+        let base = real_directory("ended-directory");
+        let state = base.join("state");
+        let script = format!("cd {:?}; echo here; sleep 0.5; exit 1", base.display());
+        let mut fake = Fake::default();
+        let mut app = app(Config::default(), shell(&script)).with_state(Some(state.clone()));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            app.windows[&window].directory.as_deref() == Some(base.as_path())
+        });
+        run_until(&mut fake, &mut app, |_, app| app.pane(window).is_kept());
+        assert_eq!(app.pane(window).working_directory(), None);
+        app.close(&mut fake, window);
+        assert_eq!(state::last_directory(&state), Some(base.clone()));
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
