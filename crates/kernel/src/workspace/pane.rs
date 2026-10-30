@@ -29,6 +29,10 @@ const EXIT_WAIT: Duration = Duration::from_secs(1);
 /// SIGWINCH, learns of the steps a few times a second, and of the last one.
 pub const RESIZE_PACE: Duration = Duration::from_millis(50);
 
+/// The shortest time between two looks at what a pane's session told, its
+/// bells and its terminal's events: a frame's at 60 Hz.
+pub const TOLD_PACE: Duration = Duration::from_micros(16_667);
+
 /// A pane's grid: its columns and rows, and the pixels of its cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Grid {
@@ -150,6 +154,8 @@ pub struct Pane {
     through_login: bool,
     /// How many times the bell had rung when the workspace last looked.
     bells: u64,
+    /// When the workspace last took what the session told.
+    told_at: Option<Instant>,
     /// Whether the workspace told that the program's output ended.
     ended_told: bool,
     /// The marked cell, and its line and its link, as
@@ -236,6 +242,7 @@ impl Pane {
             through_login: through_login(program),
             bells: 0,
             ended_told: false,
+            told_at: None,
             marked: Mutex::new(None),
         };
         let mut options = Options::new(pty);
@@ -277,10 +284,18 @@ impl Pane {
         self.id
     }
 
-    /// What the session told since the last look; `None` for a pane whose
-    /// program could not start.
-    pub(super) fn happened(&mut self) -> Option<Happened> {
+    /// When the workspace can take what the session told next: a pace
+    /// after the last time, so that a stream of bells or of events wakes
+    /// the main thread that often at most; `None` before the first.
+    pub(super) fn told_due(&self) -> Option<Instant> {
+        self.told_at.map(|at| at + TOLD_PACE)
+    }
+
+    /// What the session told since the last look, at `now`; `None` for a
+    /// pane whose program could not start.
+    pub(super) fn happened(&mut self, now: Instant) -> Option<Happened> {
         let session = self.session.as_ref()?;
+        self.told_at = Some(now);
         let (events, title, bells) = {
             let mut terminal = session.lock();
             // What the terminal tells from now on wakes the main thread

@@ -99,6 +99,12 @@ impl Surface {
         Ok(Self::with_layer(gpu, layer))
     }
 
+    /// A surface of a layer of its own, in no window, which a test draws
+    /// into as into a window's.
+    pub fn detached(gpu: &Gpu) -> Self {
+        Self::with_layer(gpu, CAMetalLayer::new())
+    }
+
     /// The surface of `layer`, set up for the GPU: BGRA, 8 bits a component,
     /// in sRGB; drawables that only display, two of them, or three with the
     /// build's feature `three-drawables`.

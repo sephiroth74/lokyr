@@ -19,13 +19,14 @@ mod pane;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
-pub use pane::{Environment, Exited, Grid, Pane, RESIZE_PACE, Settings};
+pub use pane::{Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE};
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
@@ -211,6 +212,9 @@ pub struct Workspace {
     /// The tab of each pane.
     tab_of: BTreeMap<PaneId, TabId>,
     events: Vec<Event>,
+    /// The panes whose sessions told something within the pace of their
+    /// last look, which wait for the next.
+    waiting: BTreeSet<PaneId>,
 }
 
 impl Workspace {
@@ -261,6 +265,7 @@ impl Workspace {
             for pane in tab.layout.panes() {
                 self.tab_of.remove(&pane);
                 self.panes.remove(&pane);
+                self.waiting.remove(&pane);
             }
         }
         self.events.push(Event::WindowClosed(window));
@@ -308,13 +313,26 @@ impl Workspace {
         Some(self.tabs.get(&window.active)?.active)
     }
 
-    /// Gathers what the panes' sessions tell, on the main thread, once a
-    /// session woke it: the titles, which the tabs of their active panes
-    /// take, the bells, the writes to the clipboards, the ends of the
-    /// output, and the terminals' other events, as [`Event`]s.
-    pub fn collect(&mut self) {
-        for (&id, pane) in &mut self.panes {
-            let Some(happened) = pane.happened() else {
+    /// Gathers what the sessions of `panes` tell, on the main thread, once
+    /// they woke it, at `now`, and of the panes that waited for their
+    /// turn: the titles, which the tabs of their active panes take, the
+    /// bells, the writes to the clipboards, the ends of the output, and the
+    /// terminals' other events, as [`Event`]s. A pane looked at within
+    /// [`TOLD_PACE`] waits for its turn, as its session wakes the main
+    /// thread for nothing it tells meanwhile; this returns when the first
+    /// that waits has it, for the app to collect again.
+    pub fn collect(&mut self, panes: &[PaneId], now: Instant) -> Option<Instant> {
+        let mut asked: BTreeSet<PaneId> = std::mem::take(&mut self.waiting);
+        asked.extend(panes);
+        for id in asked {
+            let Some(pane) = self.panes.get_mut(&id) else {
+                continue;
+            };
+            if pane.told_due().is_some_and(|due| due > now) {
+                self.waiting.insert(id);
+                continue;
+            }
+            let Some(happened) = pane.happened(now) else {
                 continue;
             };
             // The tab that takes the pane's title and color, as its active
@@ -357,6 +375,15 @@ impl Workspace {
                 self.events.push(Event::Ended(id));
             }
         }
+        self.waiting
+            .iter()
+            .filter_map(|id| self.panes.get(id)?.told_due())
+            .min()
+    }
+
+    /// Every pane's id, for a look at them all.
+    pub fn pane_ids(&self) -> Vec<PaneId> {
+        self.panes.keys().copied().collect()
     }
 
     /// Takes the events that wait, oldest first.

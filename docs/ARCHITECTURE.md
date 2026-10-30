@@ -76,8 +76,8 @@ Workspace
 **From program output to the screen**
 1. The I/O thread reads at most ~64 KiB from the PTY.
 2. It parses that slice while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
-3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux).
-4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it.
+3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux), marking its pane as woken: the main thread looks at the woken panes alone, and asks for their windows' frames alone. A bell or a terminal's event wakes it too, once a frame's time at most: the main thread takes what a pane told no more often, and a timer brings the turn of one that told within it, so that a stream of bells wakes it 60 times a second, not 100 000.
+4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it. A frame whose display list is the one that the window shows already presents nothing.
 5. Shaping, display-list construction and GPU command encoding then run without the lock.
 6. If the pane has synchronized output (mode 2026) enabled, the frame waits for the update to finish or for a timeout.
 

@@ -37,7 +37,8 @@ fn collect_until(workspace: &mut Workspace, done: impl Fn(&[Event]) -> bool) -> 
     let start = Instant::now();
     let mut events = Vec::new();
     loop {
-        workspace.collect();
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
         events.extend(workspace.take_events());
         if done(&events) {
             return events;
@@ -72,20 +73,24 @@ fn the_second_bell_of_a_pane_that_is_not_drawn_arrives() {
     let id = pane.id();
     let mut workspace = Workspace::new();
     workspace.open_window(pane);
-    // The main thread's loop: it collects as it is woken, and draws
+    // The main thread's loop: it collects as it is woken, or as the pane
+    // that waits for its turn has it, as the app's timer does, and draws
     // nothing.
     let mut seen = 0;
     let mut bells = 0;
+    let mut due = None;
     let start = Instant::now();
     while bells < 2 {
         assert!(start.elapsed() < Duration::from_secs(10), "{bells} bells");
         let now = wakes.load(Ordering::SeqCst);
-        if now == seen {
+        let turn = due.is_some_and(|due| Instant::now() >= due);
+        if now == seen && !turn {
             std::thread::sleep(Duration::from_millis(10));
             continue;
         }
         seen = now;
-        workspace.collect();
+        let ids = workspace.pane_ids();
+        due = workspace.collect(&ids, Instant::now());
         let rang = workspace
             .take_events()
             .iter()
@@ -176,7 +181,8 @@ fn the_sessions_events_come_in_as_they_are_collected() {
     // The end, once, and after what the program wrote.
     let ended = events.iter().position(|event| *event == Event::Ended(id));
     assert!(ended > events.iter().position(|event| *event == Event::Bell(id)));
-    workspace.collect();
+    let ids = workspace.pane_ids();
+    workspace.collect(&ids, Instant::now());
     assert!(!workspace.take_events().contains(&Event::Ended(id)));
     // The tab takes its active pane's title.
     let tab = workspace.window(window).unwrap().active_tab();
@@ -244,7 +250,8 @@ fn a_pane_that_cannot_start_tells_nothing() {
     let mut workspace = Workspace::new();
     workspace.open_window(pane);
     workspace.take_events();
-    workspace.collect();
+    let ids = workspace.pane_ids();
+    workspace.collect(&ids, Instant::now());
     assert_eq!(workspace.take_events(), []);
 }
 

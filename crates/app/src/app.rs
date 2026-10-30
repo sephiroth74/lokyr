@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
@@ -26,6 +26,8 @@ use lokyr_kernel::plugins::{self, Plugins, Request};
 use lokyr_kernel::state;
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
+#[cfg(test)]
+use lokyr_kernel::workspace::TOLD_PACE;
 use lokyr_kernel::workspace::{
     self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
 };
@@ -314,6 +316,27 @@ fn variant<'a>(variants: &[String], wanted: &'a str) -> &'a str {
     }
 }
 
+/// What a pane's session wakes the main thread for: that it changed, which
+/// the main thread takes, and how many times it woke it.
+#[derive(Debug, Default)]
+struct PaneWake {
+    woken: AtomicBool,
+    wakes: AtomicU64,
+}
+
+impl PaneWake {
+    /// The session changed, from its threads.
+    fn wake(&self) {
+        self.woken.store(true, Ordering::Release);
+        self.wakes.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Whether it changed since the last take.
+    fn take(&self) -> bool {
+        self.woken.swap(false, Ordering::AcqRel)
+    }
+}
+
 /// The config file, and its watch.
 #[derive(Debug)]
 struct ConfigFile {
@@ -459,6 +482,20 @@ struct Window {
     own_appearance: Option<Option<Appearance>>,
     /// Whether it is hidden or covered, which draws nothing.
     occluded: bool,
+    /// What its surface shows, as its last frame drew it: its size in
+    /// pixels and its scale, the drawing's fonts, the background and the
+    /// items, which a frame of the same presents again for nothing.
+    shown: Option<Shown>,
+}
+
+/// What a window's surface shows.
+#[derive(Debug, PartialEq)]
+struct Shown {
+    pixels: (u32, u32),
+    scale: f64,
+    fonts: u64,
+    background: Color,
+    items: Vec<Item>,
 }
 
 /// `target` as a question shows it: each character that shows nothing,
@@ -575,6 +612,7 @@ impl Window {
             user_title: None,
             own_appearance: None,
             occluded: false,
+            shown: None,
         }
     }
 
@@ -640,6 +678,12 @@ pub struct App {
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
+    /// The timer of the turn of the panes whose sessions told something
+    /// within the pace of their last look, and its time.
+    told_timer: Option<(TimerId, Instant)>,
+    /// What each pane's session wakes the main thread for, which tells the
+    /// panes that changed.
+    pane_wakes: BTreeMap<PaneId, Arc<PaneWake>>,
     /// The timer of the next size that a program learns, at its pace, and
     /// its time.
     resize_timer: Option<(TimerId, Instant)>,
@@ -771,6 +815,8 @@ impl App {
             blink_timer: None,
             label_timer: None,
             exit_timer: None,
+            told_timer: None,
+            pane_wakes: BTreeMap::new(),
             resize_timer: None,
             flash_timer: None,
             scroll_timer: None,
@@ -1979,6 +2025,8 @@ impl App {
             None => self.colors(platform.appearance()),
         };
         let waker = platform.waker();
+        let wake = Arc::new(PaneWake::default());
+        let woken = Arc::clone(&wake);
         let pane = Pane::spawn(
             program,
             environment,
@@ -1987,9 +2035,11 @@ impl App {
             colors,
             &self.texts,
             move || {
+                woken.wake();
                 waker.wake();
             },
         );
+        self.pane_wakes.insert(pane.id(), wake);
         pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
         pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
         let id = pane.id();
@@ -2203,6 +2253,7 @@ impl App {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
+            self.pane_wakes.remove(&state.pane);
             self.workspace.close_window(state.window);
         }
         if self.quick.is_some_and(|(quick, _)| quick == window) {
@@ -2544,6 +2595,22 @@ impl App {
     /// shows as the system's. The tabs keep their programs' colors, which
     /// the windows do not show, and a program's end waits for its status,
     /// which the exits take.
+    /// Gathers what the sessions of `panes` told, and of those that waited
+    /// for their turn, and acts on it; a timer brings the turn of those
+    /// that wait still.
+    fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
+        let due = self.workspace.collect(panes, Instant::now());
+        self.events(platform);
+        if let Some(due) = due
+            && self.told_timer.is_none_or(|(_, at)| at > due)
+        {
+            if let Some((timer, _)) = self.told_timer.take() {
+                platform.cancel_timer(timer);
+            }
+            self.told_timer = Some((platform.start_timer(due), due));
+        }
+    }
+
     fn events(&mut self, platform: &mut dyn Platform) {
         for event in self.workspace.take_events() {
             match event {
@@ -3816,13 +3883,33 @@ impl App {
             return;
         };
         surface.resize(size.pixels.width, size.pixels.height, size.scale);
-        let drawn = drawing
-            .renderer
-            .update_textures(&updates)
-            .and_then(|()| drawing.renderer.draw(surface, &list));
+        // A frame that would show what the surface shows already presents
+        // nothing, and keeps it.
+        let pixels = (size.pixels.width, size.pixels.height);
+        let same = state.shown.as_ref().is_some_and(|shown| {
+            shown.pixels == pixels
+                && shown.scale == size.scale
+                && shown.fonts == drawing.fonts
+                && shown.background == list.background
+                && shown.items == list.items
+        });
+        let drawn = drawing.renderer.update_textures(&updates).and_then(|()| {
+            if same {
+                Ok(false)
+            } else {
+                drawing.renderer.draw(surface, &list)
+            }
+        });
         let presented = match drawn {
             Ok(true) => {
                 state.drawn_at = Some(Instant::now());
+                state.shown = Some(Shown {
+                    pixels,
+                    scale: size.scale,
+                    fonts: drawing.fonts,
+                    background: list.background,
+                    items: list.items,
+                });
                 Some(drawing.renderer.drawable_wait())
             }
             Ok(false) => None,
@@ -3925,8 +4012,15 @@ impl Handler for App {
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
             AppEvent::Wake => {
-                self.workspace.collect();
-                self.events(platform);
+                // The panes whose sessions woke it, alone, and their
+                // windows' frames.
+                let changed: Vec<PaneId> = self
+                    .pane_wakes
+                    .iter()
+                    .filter(|(_, wake)| wake.take())
+                    .map(|(&pane, _)| pane)
+                    .collect();
+                self.collect(platform, &changed);
                 self.exits(platform);
                 // The reading waits for the changes to settle: each change
                 // puts it off.
@@ -3938,9 +4032,15 @@ impl Handler for App {
                     }
                     file.reading = Some(platform.start_timer(Instant::now() + SETTLE));
                 }
-                for &window in self.windows.keys() {
-                    platform.request_frame(window);
+                for pane in changed {
+                    if let Some(window) = self.window_of(pane) {
+                        platform.request_frame(window);
+                    }
                 }
+            }
+            AppEvent::Timer(timer) if self.told_timer.is_some_and(|(told, _)| told == timer) => {
+                self.told_timer = None;
+                self.collect(platform, &[]);
             }
             AppEvent::Timer(timer)
                 if self
@@ -4338,6 +4438,9 @@ impl Handler for App {
                 if let Some(state) = self.windows.get_mut(&window) {
                     state.occluded = occluded;
                     if occluded {
+                        // The next frame draws whole, as the surface lets
+                        // its drawables go.
+                        state.shown = None;
                         let surfaces = [
                             &state.surface,
                             &state.text_layer.surface,
@@ -5963,9 +6066,17 @@ mod tests {
     }
 
     #[test]
-    fn a_wake_asks_each_window_for_a_frame() {
+    fn a_wake_asks_for_the_frames_of_the_panes_that_woke_it() {
         let (mut fake, mut app) = started();
         let window = fake.windows().next().unwrap();
+        if fake.window(window).unwrap().frame_requested {
+            fake.send(&mut app, window, WindowEvent::Frame);
+        }
+        // A wake of nothing that changed asks for nothing.
+        fake.send_app(&mut app, AppEvent::Wake);
+        assert!(!fake.window(window).unwrap().frame_requested);
+        let pane = app.windows[&window].pane;
+        app.pane_wakes[&pane].wake();
         fake.send_app(&mut app, AppEvent::Wake);
         assert!(fake.window(window).unwrap().frame_requested);
         assert!(fake.send(&mut app, window, WindowEvent::Frame));
@@ -10427,5 +10538,104 @@ print -z 'echo typed'
         let window = fake.windows().find(|&opened| opened != quick).unwrap();
         app.close(&mut fake, window);
         assert!(fake.has_quit());
+    }
+
+    #[test]
+    fn a_pane_s_output_asks_for_its_own_window_s_frame_alone() {
+        let (mut fake, mut app, first) = started_running(idle());
+        fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+        let second = fake.windows().find(|&window| window != first).unwrap();
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, second)
+                .iter()
+                .any(|line| line.contains("ready"))
+        });
+        for window in [first, second] {
+            if fake.window(window).unwrap().frame_requested {
+                fake.send(&mut app, window, WindowEvent::Frame);
+            }
+        }
+        // The second's shell echoes a key: its window's frame, not the
+        // first's.
+        fake.send(&mut app, second, typed(KeyCode::KeyX, "x", false));
+        let start = Instant::now();
+        while !screen(&app, second).iter().any(|line| line.ends_with('x')) {
+            assert!(start.elapsed() < Duration::from_secs(10), "no echo");
+            fake.deliver_wake(&mut app);
+            assert!(!fake.window(first).unwrap().frame_requested);
+            if fake.window(second).unwrap().frame_requested {
+                fake.send(&mut app, second, WindowEvent::Frame);
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn a_stream_of_bells_wakes_the_main_thread_at_the_frame_s_pace() {
+        let script = "echo ready; read line; while :; do printf '\\a\\a\\a\\a'; done";
+        let (mut fake, mut app, window) = started_running(shell(script));
+        let pane = app.windows[&window].pane;
+        let wake = Arc::clone(&app.pane_wakes[&pane]);
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        // The main thread as it runs, which takes each wake at once, and a
+        // display of 60 Hz, which draws the window while it shows.
+        let run = |fake: &mut Fake, app: &mut App, drawn: bool| {
+            let before = wake.wakes.load(Ordering::Relaxed);
+            let start = Instant::now();
+            let mut frames = 0;
+            let mut frame_at = start;
+            while start.elapsed() < Duration::from_millis(500) {
+                fake.deliver_wake(app);
+                fake.fire_timers(app, Instant::now());
+                if drawn
+                    && frame_at.elapsed() >= TOLD_PACE
+                    && fake.window(window).unwrap().frame_requested
+                {
+                    fake.send(app, window, WindowEvent::Frame);
+                    frames += 1;
+                    frame_at = Instant::now();
+                }
+            }
+            (wake.wakes.load(Ordering::Relaxed) - before, frames)
+        };
+        // Drawn: a wake a frame for the grid, and one a pace for the bells,
+        // at most.
+        let (wakes, frames) = run(&mut fake, &mut app, true);
+        assert!(app.windows[&window].rang_at.is_some(), "the bell rang");
+        assert!(wakes <= frames + 35, "{wakes} wakes for {frames} frames");
+        // Not drawn: one a pace for the bells.
+        fake.send(&mut app, window, WindowEvent::Occluded(true));
+        let (wakes, _) = run(&mut fake, &mut app, false);
+        assert!(wakes <= 35, "{wakes} wakes hidden");
+    }
+
+    #[test]
+    fn a_frame_with_nothing_new_presents_nothing() {
+        let Ok(drawing) = Drawing::new(FontConfig::default()) else {
+            eprintln!("no Metal device: no frame to present");
+            return;
+        };
+        let mut fake = Fake::default();
+        let mut app = App::new(Some(drawing), unpadded(), None).with_program(idle());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        let surface = Surface::detached(&app.drawing.as_ref().unwrap().gpu);
+        app.windows.get_mut(&window).unwrap().surface = Some(surface);
+        run_until(&mut fake, &mut app, |_, app| {
+            screen(app, window)
+                .iter()
+                .any(|line| line.contains("ready"))
+        });
+        let drawn = |app: &App| app.windows[&window].drawn_at;
+        fake.send(&mut app, window, WindowEvent::Frame);
+        let first = drawn(&app);
+        assert!(first.is_some());
+        // The same again: nothing presents, and the surface keeps it.
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert_eq!(drawn(&app), first);
+        // The focus's cursor is new.
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert_ne!(drawn(&app), first);
     }
 }
