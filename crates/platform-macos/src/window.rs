@@ -260,7 +260,7 @@ impl Window {
         let before = std::mem::replace(&mut self.view.ivars().input.borrow_mut().area, area);
         // The input method asks again where its candidates go.
         if before != area {
-            invalidate_text_area(&self.view);
+            self.view.invalidate_text_area();
         }
     }
 
@@ -696,6 +696,19 @@ define_class!(
 );
 
 impl ContentView {
+    /// Tells the view's input method, while it composes, that the text's
+    /// place on the screen changed, so that its candidates follow it. Only
+    /// then: the input context, which AppKit makes as it is first asked
+    /// for, takes a window of its own.
+    fn invalidate_text_area(&self) {
+        if self.ivars().input.borrow().marked.is_none() {
+            return;
+        }
+        if let Some(context) = self.inputContext() {
+            context.invalidateCharacterCoordinates();
+        }
+    }
+
     /// A view of the size of `frame`, backed by a `CAMetalLayer`, which
     /// tells `shared` the keys of the window `id`.
     fn new(
@@ -1017,9 +1030,7 @@ define_class!(
             if let Some(window) = window_of(notification) {
                 self.keep_frame(&window);
                 self.post(WindowEvent::Resized(size_of(&window)));
-                if let Some(view) = window.contentView() {
-                    invalidate_text_area(&view);
-                }
+                invalidate_text_area_of(&window);
             }
         }
 
@@ -1028,9 +1039,7 @@ define_class!(
             if let Some(window) = window_of(notification) {
                 self.keep_frame(&window);
                 // The candidates of a composition move with the window.
-                if let Some(view) = window.contentView() {
-                    invalidate_text_area(&view);
-                }
+                invalidate_text_area_of(&window);
             }
         }
 
@@ -1246,11 +1255,14 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
     pieces
 }
 
-/// Tells the input method of `view` that the text's place on the screen
-/// changed, so that its candidates follow it.
-fn invalidate_text_area(view: &NSView) {
-    if let Some(context) = view.inputContext() {
-        context.invalidateCharacterCoordinates();
+/// Tells the input method of `window`'s content view that the text's place
+/// on the screen changed, as [`ContentView::invalidate_text_area`] does.
+fn invalidate_text_area_of(window: &NSWindow) {
+    if let Some(view) = window
+        .contentView()
+        .and_then(|view| view.downcast::<ContentView>().ok())
+    {
+        view.invalidate_text_area();
     }
 }
 

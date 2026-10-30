@@ -121,14 +121,20 @@ mod tests {
 
     #[test]
     fn dropped_paths_are_a_shell_s_arguments() {
-        assert_eq!(dropped_paths(["/usr/bin", "/tmp/a,b@c=d"]), "/usr/bin /tmp/a,b@c=d ");
+        assert_eq!(
+            dropped_paths(["/usr/bin", "/tmp/a,b@c=d"]),
+            "/usr/bin /tmp/a,b@c=d "
+        );
         // Spaces, quotes, the shell's own characters, and a single quote.
         assert_eq!(
             dropped_paths(["/tmp/a file.txt", "/tmp/$HOME", "/tmp/it's"]),
             "'/tmp/a file.txt' '/tmp/$HOME' '/tmp/it'\\''s' "
         );
         // Letters of other scripts are plain; a newline is quoted.
-        assert_eq!(dropped_paths(["/tmp/città", "/tmp/a\nb"]), "/tmp/città '/tmp/a\nb' ");
+        assert_eq!(
+            dropped_paths(["/tmp/città", "/tmp/a\nb"]),
+            "/tmp/città '/tmp/a\nb' "
+        );
         assert_eq!(dropped_paths([]), "");
     }
 

@@ -36,7 +36,9 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         bail!("{} is not there: `just bundle` builds it", app.display());
     }
     let signature = output(
-        Command::new("codesign").args(["--display", "--verbose=2"]).arg(&app),
+        Command::new("codesign")
+            .args(["--display", "--verbose=2"])
+            .arg(&app),
         "reading the bundle's signature",
     )?;
     if !developer_id_signed(&signature) {
@@ -55,12 +57,21 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .arg(&zip),
         "zipping the bundle",
     )?;
-    println!("notarize: sending {} to Apple's notary service", app.display());
+    println!(
+        "notarize: sending {} to Apple's notary service",
+        app.display()
+    );
     let submitted = output(
         Command::new("xcrun")
             .args(["notarytool", "submit"])
             .arg(&zip)
-            .args(["--keychain-profile", &profile, "--wait", "--output-format", "json"]),
+            .args([
+                "--keychain-profile",
+                &profile,
+                "--wait",
+                "--output-format",
+                "json",
+            ]),
         "sending the bundle to the notary service",
     );
     let _ = std::fs::remove_file(&zip);
@@ -79,7 +90,9 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         "stapling the ticket",
     )?;
     status(
-        Command::new("xcrun").args(["stapler", "validate"]).arg(&app),
+        Command::new("xcrun")
+            .args(["stapler", "validate"])
+            .arg(&app),
         "checking the stapled ticket",
     )?;
     status(
@@ -88,7 +101,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .arg(&app),
         "assessing the bundle as Gatekeeper does",
     )?;
-    println!("notarize: {} is notarized, its ticket stapled", app.display());
+    println!(
+        "notarize: {} is notarized, its ticket stapled",
+        app.display()
+    );
     Ok(ExitCode::SUCCESS)
 }
 
