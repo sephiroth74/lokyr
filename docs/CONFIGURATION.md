@@ -644,7 +644,7 @@ Hidden, it keeps its shell, its screen and its scrollback, as a window does, and
 
 <sub>Platforms: macOS</sub>
 
-The edge of the screen that the quick terminal comes from, or its centre.
+The edge of the screen that the quick terminal comes from, or its centre, where it fades in and out; it fades too where another display lies past its edge, rather than slide across that display.
 
 | Values | Default |
 |---|---|

@@ -120,7 +120,24 @@ pub struct ScreenRect {
     pub height: f64,
 }
 
+impl ScreenRect {
+    /// Whether it and `other` share some area, more than an edge.
+    pub fn overlaps(&self, other: &ScreenRect) -> bool {
+        self.x < other.x + other.width
+            && other.x < self.x + self.width
+            && self.y < other.y + other.height
+            && other.y < self.y + self.height
+    }
+}
+
 impl QuickPlace {
+    /// Whether the quick window fades in and out, rather than slides: at
+    /// the centre, and where the frame that it slides from, `from`, lies
+    /// over one of the `others` screens, which the slide would cross.
+    pub fn fades(&self, from: ScreenRect, others: &[ScreenRect]) -> bool {
+        self.edge == QuickEdge::Center || others.iter().any(|other| other.overlaps(&from))
+    }
+
     /// The quick window's frames on a screen of the frame `screen`, whose
     /// area for windows, below the menu bar and beside the Dock, is `area`:
     /// the one where it shows, within the area, centred along its edge; and
@@ -282,6 +299,29 @@ mod tests {
         // No taller than the area.
         let shown = rect(1760.0, 25.0, 800.0, 815.0);
         assert_eq!(sized.frames(SCREEN, AREA), (shown, shown));
+    }
+
+    #[test]
+    fn past_an_edge_that_another_screen_touches_it_fades() {
+        // A screen left of this one, the menu bar's, and a laptop's below.
+        let left = rect(0.0, 0.0, 1440.0, 900.0);
+        let below = rect(1440.0, 900.0, 1512.0, 982.0);
+        let others = [left, below];
+        let fades = |edge| {
+            let place = place(edge, Length::Percent(50.0), None);
+            let (_, from) = place.frames(SCREEN, AREA);
+            place.fades(from, &others)
+        };
+        assert!(fades(QuickEdge::Left));
+        assert!(fades(QuickEdge::Bottom));
+        assert!(!fades(QuickEdge::Top));
+        assert!(!fades(QuickEdge::Right));
+        assert!(fades(QuickEdge::Center));
+        // A screen that touches the corner alone, past no edge's frame.
+        let corner = rect(2880.0, 900.0, 800.0, 600.0);
+        let place = place(QuickEdge::Right, Length::Percent(50.0), None);
+        let (_, from) = place.frames(SCREEN, AREA);
+        assert!(!place.fades(from, &[corner]));
     }
 
     #[test]

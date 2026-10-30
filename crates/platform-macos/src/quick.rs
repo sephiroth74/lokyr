@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use block2::RcBlock;
-use lokyr_platform_core::{Easing, QuickEdge, QuickPlace, QuickScreen, ScreenRect};
+use lokyr_platform_core::{Easing, QuickPlace, QuickScreen, ScreenRect};
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly, define_class};
 use objc2_app_kit::{
@@ -119,9 +119,9 @@ impl Quick {
         if hidden {
             let turn = self.next_turn();
             self.place.set(Some(*place));
-            let (shown, from) = match screen(place.screen, mtm) {
+            let (shown, from, fades) = match screen(place.screen, mtm) {
                 Some(screen) => frames(place, &screen),
-                None => (window.frame(), window.frame()),
+                None => (window.frame(), window.frame(), true),
             };
             let spaces = if place.every_space {
                 NSWindowCollectionBehavior::CanJoinAllSpaces
@@ -135,7 +135,6 @@ impl Quick {
             );
             // Over the menu bar and the Dock as it slides, which it passes.
             window.setLevel(NSPopUpMenuWindowLevel);
-            let fades = place.edge == QuickEdge::Center;
             window.setAlphaValue(if fades { 0.0 } else { 1.0 });
             window.setFrame_display(from, false);
             window.makeKeyAndOrderFront(None);
@@ -181,14 +180,16 @@ impl Quick {
         let turn = self.next_turn();
         self.give_focus_back(window);
         let place = self.place.get().unwrap_or_default();
-        let to = match window
+        let (to, fades) = match window
             .screen()
             .or_else(|| screen(place.screen, window.mtm()))
         {
-            Some(screen) => frames(&place, &screen).1,
-            None => window.frame(),
+            Some(screen) => {
+                let (_, to, fades) = frames(&place, &screen);
+                (to, fades)
+            }
+            None => (window.frame(), true),
         };
-        let fades = place.edge == QuickEdge::Center;
         // On another Space, where it does not show, it goes at once.
         let time = if window.isOnActiveSpace() {
             duration(place.animation)
@@ -313,9 +314,11 @@ fn contains(rect: NSRect, point: NSPoint) -> bool {
 }
 
 /// The frames of a quick window of `place` on `screen`, where it shows and
-/// where it slides from, as AppKit places windows.
-fn frames(place: &QuickPlace, screen: &NSScreen) -> (NSRect, NSRect) {
-    let top = NSScreen::screens(screen.mtm())
+/// where it slides from, as AppKit places windows, and whether it fades
+/// rather than slides, as the other screens tell.
+fn frames(place: &QuickPlace, screen: &NSScreen) -> (NSRect, NSRect, bool) {
+    let screens = NSScreen::screens(screen.mtm());
+    let top = screens
         .firstObject()
         .map_or(screen.frame(), |first| first.frame());
     let top = top.origin.y + top.size.height;
@@ -323,7 +326,13 @@ fn frames(place: &QuickPlace, screen: &NSScreen) -> (NSRect, NSRect) {
         on_screens(screen.frame(), top),
         on_screens(screen.visibleFrame(), top),
     );
-    (in_appkit(shown, top), in_appkit(from, top))
+    let others: Vec<ScreenRect> = (0..screens.count())
+        .map(|index| screens.objectAtIndex(index))
+        .filter(|other| !other.isEqual(Some(screen)))
+        .map(|other| on_screens(other.frame(), top))
+        .collect();
+    let fades = place.fades(from, &others);
+    (in_appkit(shown, top), in_appkit(from, top), fades)
 }
 
 /// `rect`, of AppKit's coordinates, whose origin is the bottom left corner
