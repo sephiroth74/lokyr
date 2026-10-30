@@ -141,6 +141,9 @@ pub struct Fake {
     edited: Vec<PathBuf>,
     /// Why the text editor opens nothing, as the next open fails.
     editor_fails: Option<String>,
+    /// Whether the secure entry of the keyboard is on, and how many times
+    /// it changed.
+    secure_input: (bool, usize),
     usage: Option<Usage>,
     revealed: Vec<String>,
     last_id: u64,
@@ -185,6 +188,7 @@ impl Fake {
             opened: Vec::new(),
             edited: Vec::new(),
             editor_fails: None,
+            secure_input: (false, 0),
             usage: None,
             revealed: Vec::new(),
             last_id: 0,
@@ -458,6 +462,12 @@ impl Fake {
         &self.edited
     }
 
+    /// Whether the secure entry of the keyboard is on, as the app last set
+    /// it, and how many times it changed.
+    pub fn secure_input(&self) -> (bool, usize) {
+        self.secure_input
+    }
+
     /// Has the text editor open nothing, for `why`, until it is `None`.
     pub fn fail_editing(&mut self, why: Option<&str>) {
         self.editor_fails = why.map(str::to_owned);
@@ -694,6 +704,12 @@ impl Platform for Fake {
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.pointer_areas = areas.to_vec();
+        }
+    }
+
+    fn set_secure_input(&mut self, on: bool) {
+        if self.secure_input.0 != on {
+            self.secure_input = (on, self.secure_input.1 + 1);
         }
     }
 

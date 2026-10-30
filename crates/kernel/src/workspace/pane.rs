@@ -557,6 +557,15 @@ impl Pane {
         session.foreground_program()
     }
 
+    /// Whether the terminal hides what is typed, as a password's prompt
+    /// does, while the program runs.
+    pub fn hides_input(&self) -> bool {
+        self.session
+            .as_ref()
+            .filter(|_| self.ended.is_none())
+            .is_some_and(Session::hides_input)
+    }
+
     /// How many bytes of output the pane's program has written since it
     /// started.
     pub fn output_bytes(&self) -> u64 {

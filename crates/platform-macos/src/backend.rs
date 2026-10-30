@@ -23,6 +23,7 @@ use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::menu::MenuTarget;
 use crate::notify::Notifier;
+use crate::secure::SecureInput;
 use crate::shared::{Pending, Shared};
 use crate::window::Window;
 use crate::{alert, appearance, definition, menu, open, timer};
@@ -70,6 +71,9 @@ pub(crate) struct Backend {
     /// The notifications, once the app shows one: `None` before, and
     /// outside a bundle.
     notifier: Option<Option<Notifier>>,
+    /// The secure entry of the keyboard, which turns off as the backend
+    /// goes.
+    secure: SecureInput,
 }
 
 impl Backend {
@@ -90,6 +94,7 @@ impl Backend {
             quit: false,
             stopped: false,
             notifier: None,
+            secure: SecureInput::default(),
         }
     }
 
@@ -576,6 +581,10 @@ impl Platform for Backend {
         if let Some(window) = self.windows.get(&window) {
             window.set_pointer_shape(shape);
         }
+    }
+
+    fn set_secure_input(&mut self, on: bool) {
+        self.secure.set(on);
     }
 
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {

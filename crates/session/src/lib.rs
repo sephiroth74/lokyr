@@ -218,6 +218,12 @@ impl Session {
         self.pty.foreground_program()
     }
 
+    /// Whether the terminal hides what is typed, as a password's prompt
+    /// does, as [`Pty::hides_input`] tells.
+    pub fn hides_input(&self) -> bool {
+        self.pty.hides_input()
+    }
+
     /// How many bytes of output the program has written, which the I/O
     /// thread has read, since the session started.
     pub fn output_bytes(&self) -> u64 {

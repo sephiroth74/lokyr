@@ -79,7 +79,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   - progress (OSC 9;4);
   - running process;
   - an AI agent's state: working, waiting or done ([Agents](#agents));
-  - protected input (Secure Keyboard Entry).
+  - protected input (Secure Keyboard Entry), which the window's title shows as a 🔒 until the tabs come.
 - **Close button**: always visible, on hover only, or never. Closing asks for confirmation if a process other than the shell is running.
 
 ### Interaction

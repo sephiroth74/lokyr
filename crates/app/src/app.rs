@@ -71,6 +71,14 @@ const SETTINGS: &str = "app.settings";
 /// hides it.
 const PERFORMANCE: &str = "app.performance";
 
+/// The command that turns Secure Keyboard Entry on for good, until the app
+/// quits, or back to its own way, on at a password's prompt.
+const SECURE_INPUT: &str = "app.secure-keyboard-entry";
+
+/// What stands before the title of the window whose keys Secure Keyboard
+/// Entry keeps from other apps.
+const SECURE_MARK: &str = "🔒 ";
+
 /// The command that opens a window.
 const NEW_WINDOW: &str = "window.new";
 
@@ -633,6 +641,10 @@ pub struct App {
     /// What went wrong that the user is to learn of: the log, and the
     /// notices that the windows show.
     diagnostics: Diagnostics,
+    /// Whether the user turned Secure Keyboard Entry on for good, from the
+    /// menu, and whether it is on, as the platform has it.
+    secure_chosen: bool,
+    secure_on: bool,
     /// The timer of the windows' titles' last look at the programs in
     /// their foreground, after the frames of a burst of output, with the
     /// time that it is for; and how long after a window's last frame of
@@ -739,6 +751,8 @@ impl App {
             state: None,
             front: None,
             diagnostics: Diagnostics::default(),
+            secure_chosen: false,
+            secure_on: false,
             icons: Icons::find(),
             icon_shown: None,
             clipboard_asks: BTreeMap::new(),
@@ -2168,6 +2182,12 @@ impl App {
                     self.show_performance(platform);
                     Ok(())
                 }
+                SECURE_INPUT => {
+                    self.secure_chosen = !self.secure_chosen;
+                    platform.set_command_checked(SECURE_INPUT, self.secure_chosen);
+                    self.settle_secure_input(platform);
+                    Ok(())
+                }
                 NEW_WINDOW => {
                     self.open_window(platform);
                     Ok(())
@@ -2417,14 +2437,47 @@ impl App {
     /// focus.
     fn show_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let title = self.title_of(window);
+        let secure = self.secure_on;
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        let lock = if secure && state.focused {
+            SECURE_MARK
+        } else {
+            ""
+        };
         let mark = if state.bell_marked { BELL_MARK } else { "" };
-        let title = format!("{mark}{title}");
+        let title = format!("{lock}{mark}{title}");
         if state.title_shown.as_ref() != Some(&title) {
             platform.set_title(window, &title);
             state.title_shown = Some(title);
+        }
+    }
+
+    /// Turns Secure Keyboard Entry on while the user chose it, or while the
+    /// program in the window that has the focus hides what is typed, as at
+    /// a password's prompt, which its terminal tells as output comes and
+    /// before each key, never by a timer; off otherwise, and without a
+    /// window that has the focus, as while another app is active. The
+    /// focused window's title shows a lock while it is on.
+    fn settle_secure_input(&mut self, platform: &mut dyn Platform) {
+        let focused = self
+            .windows
+            .iter()
+            .find(|(_, state)| state.focused)
+            .map(|(&window, state)| (window, state.pane));
+        let hides = focused
+            .and_then(|(_, pane)| self.workspace.pane(pane))
+            .is_some_and(Pane::hides_input);
+        let on = focused.is_some() && (self.secure_chosen || hides);
+        if on == self.secure_on {
+            return;
+        }
+        platform.set_secure_input(on);
+        self.secure_on = on;
+        let windows: Vec<WindowId> = self.windows.keys().copied().collect();
+        for window in windows {
+            self.show_title(platform, window);
         }
     }
 
@@ -3344,6 +3397,9 @@ impl App {
             state.own_appearance = Some(own);
         }
         self.refresh_title(platform, window, output);
+        if output && self.windows.get(&window).is_some_and(|state| state.focused) {
+            self.settle_secure_input(platform);
+        }
         if let Some(due) = due {
             self.pace_at(platform, due);
         }
@@ -3813,11 +3869,14 @@ impl Handler for App {
                     } else {
                         state.taken.clear();
                     }
-                    let marked = focused && std::mem::take(&mut state.bell_marked);
-                    platform.request_frame(window);
-                    if marked {
-                        self.show_title(platform, window);
+                    if focused {
+                        state.bell_marked = false;
                     }
+                    platform.request_frame(window);
+                    // Its title takes the lock, or leaves it, and its bell's
+                    // mark goes with the focus.
+                    self.settle_secure_input(platform);
+                    self.show_title(platform, window);
                 }
             }
             // A key goes to the program, and starts the cursor blinking
@@ -3825,6 +3884,9 @@ impl Handler for App {
             // Fn or a Command key that no menu took, closes a window whose
             // program ended.
             WindowEvent::Key(key) => {
+                // The key's own prompt, which no output told, as after a
+                // silent `stty -echo`, is secure from the next key.
+                self.settle_secure_input(platform);
                 let options = keys::options(self.config.keyboard.option_as_meta);
                 let Some(state) = self.windows.get_mut(&window) else {
                     return;
@@ -4362,6 +4424,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
         (SETTINGS, "app-settings", Category::App),
+        (SECURE_INPUT, "app-secure-keyboard-entry", Category::App),
         (PERFORMANCE, "app-performance", Category::View),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
@@ -4465,10 +4528,12 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
         items,
         role,
     };
-    // Settings first, as macOS's apps have it, then the system's items.
+    // Settings first, as macOS's apps have it, and Secure Keyboard Entry,
+    // then the system's items.
+    let first = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command == SETTINGS || command == SECURE_INPUT);
     let mut application = items(&[Category::App])
         .into_iter()
-        .filter(|item| matches!(item, MenuItem::Command { command, .. } if command == SETTINGS))
+        .filter(first)
         .collect::<Vec<_>>();
     if !application.is_empty() {
         application.push(MenuItem::Separator);
@@ -4484,7 +4549,7 @@ fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
     ]);
     let app_commands: Vec<MenuItem> = items(&[Category::App])
         .into_iter()
-        .filter(|item| !matches!(item, MenuItem::Command { command, .. } if command == SETTINGS))
+        .filter(|item| !first(item))
         .collect();
     if !app_commands.is_empty() {
         application.push(MenuItem::Separator);
@@ -4678,6 +4743,7 @@ mod tests {
             menu_items(&fake, 0),
             [
                 "Settings… cmd+,",
+                "Secure Keyboard Entry",
                 "-",
                 "Hide Lokyr cmd+h",
                 "Hide Others alt+cmd+h",
@@ -4804,7 +4870,10 @@ mod tests {
         let (mut fake, mut app, path) = with_file("settings", "");
         std::fs::remove_file(&path).unwrap();
         // The application's menu starts with it, of its key.
-        assert_eq!(menu_items(&fake, 0)[..2], ["Settings… cmd+,", "-"]);
+        assert_eq!(
+            menu_items(&fake, 0)[..3],
+            ["Settings… cmd+,", "Secure Keyboard Entry", "-"]
+        );
         assert_eq!(menu_items(&fake, 0).last().unwrap(), "Quit Lokyr cmd+q");
         // A file that is not there is made of the template, then opens.
         fake.send_app(&mut app, AppEvent::Command(SETTINGS.to_owned()));
@@ -5018,6 +5087,11 @@ mod tests {
                 ),
                 ("app.performance", "Show Performance", Category::View),
                 ("app.quit", "Quit Lokyr", Category::App),
+                (
+                    "app.secure-keyboard-entry",
+                    "Secure Keyboard Entry",
+                    Category::App
+                ),
                 ("app.settings", "Settings…", Category::App),
                 ("pane.look-up", "Look Up", Category::Edit),
                 ("pane.man-page", "Open man Page", Category::Windows),
@@ -6204,6 +6278,68 @@ mod tests {
         app.close(&mut fake, window);
         assert_eq!(state::last_directory(&state), Some(base.clone()));
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn secure_keyboard_entry_follows_a_password_s_prompt_and_the_menu() {
+        let script = "stty -echo; echo ready; read a; stty echo; stty -echo; printf 'Password:'; \
+            read secret; stty echo; echo done; read b; stty -echo; read c; stty echo; read d";
+        let (mut fake, mut app, window) = started_with(shell(script));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "ready");
+        let on = |fake: &Fake| fake.secure_input().0;
+        let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+        // Before the prompt, `read` with its echo off, in canonical mode, is
+        // a password's too.
+        assert!(on(&fake));
+        // At the prompt, which its output tells, on, of a lock in the title.
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| {
+            row(app, window, 1).starts_with("Password:")
+        });
+        assert!(on(&fake));
+        assert!(title(&fake).starts_with(SECURE_MARK), "{}", title(&fake));
+        // Without the focus, off, and the lock goes; back, on again.
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        assert!(!on(&fake) && !title(&fake).starts_with(SECURE_MARK));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        assert!(on(&fake) && title(&fake).starts_with(SECURE_MARK));
+        // After it, as its output tells, off.
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |fake, app| {
+            (0..4).any(|r| row(app, window, r).ends_with("done")) && !on(fake)
+        });
+        assert!(!title(&fake).starts_with(SECURE_MARK));
+        // A prompt that no output tells, as after a silent `stty -echo`, is
+        // seen before the next key.
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| app.pane(window).hides_input());
+        assert!(!on(&fake));
+        fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+        assert!(on(&fake));
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        // The menu's item turns it on for good, ticked, and off again.
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+        run_until(&mut fake, &mut app, |_, app| {
+            !app.pane(window).hides_input()
+        });
+        fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+        assert!(!on(&fake));
+        assert!(!fake.command_checked(SECURE_INPUT));
+        fake.send_app(&mut app, AppEvent::Command(SECURE_INPUT.to_owned()));
+        assert!(on(&fake) && fake.command_checked(SECURE_INPUT));
+        // Never while another app is active, as no window has the focus.
+        fake.send(&mut app, window, WindowEvent::Focused(false));
+        assert!(!on(&fake));
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        assert!(on(&fake));
+        fake.send_app(&mut app, AppEvent::Command(SECURE_INPUT.to_owned()));
+        assert!(!on(&fake) && !fake.command_checked(SECURE_INPUT));
+        // Each change once.
+        assert_eq!(fake.secure_input().1, 14);
     }
 
     #[test]

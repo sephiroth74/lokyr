@@ -754,3 +754,23 @@ fn a_terminal_s_processes_are_its_program_s_and_its_jobs() {
     let _idle = pty.reader().unwrap();
     programs_until(&pty, |programs| programs == ["cat"]);
 }
+
+#[test]
+fn a_password_s_prompt_hides_the_input_and_raw_mode_does_not() {
+    // As a prompt reads a password: no echo, in canonical mode; then the
+    // echo back; then raw mode, as vim's, which echoes itself.
+    let script = "echo shown; read line; stty -echo; echo hidden; read line; \
+        stty echo; echo back; read line; stty raw -echo; echo raw; read line";
+    let pty = spawn(&Options::new(sh(script), "xterm-256color")).unwrap();
+    let mut writer = pty.writer().unwrap();
+    let mut output = Output::new(pty.reader().unwrap());
+    let mut step = |shown: &str, hides: bool| {
+        output.until(shown);
+        assert_eq!(pty.hides_input(), hides, "{shown}");
+        std::io::Write::write_all(&mut writer, b"\r").unwrap();
+    };
+    step("shown", false);
+    step("hidden", true);
+    step("back", false);
+    step("raw", false);
+}

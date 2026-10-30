@@ -365,6 +365,12 @@ pub trait Platform {
     /// the app asks for another.
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape);
 
+    /// Turns the system's secure entry of the keyboard on or off, as the
+    /// app's input is a password's: on the Mac, Secure Keyboard Entry,
+    /// which keeps other apps from reading the keys. Off until the app
+    /// turns it on, and off again as the app ends.
+    fn set_secure_input(&mut self, on: bool);
+
     /// Gives the pointer over each of `areas` of `window`'s content its own
     /// shape, the first area over those after it, and all over the shape
     /// of the rest, in place of the areas before; none until the app asks.

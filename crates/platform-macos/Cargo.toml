@@ -191,6 +191,10 @@ name = "layers"
 harness = false
 
 [[test]]
+name = "secure_input"
+harness = false
+
+[[test]]
 name = "titlebar"
 harness = false
 

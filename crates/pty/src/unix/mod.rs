@@ -209,6 +209,22 @@ impl Pty {
         self.child.as_mut().expect("only the drop takes the child")
     }
 
+    /// Whether the terminal hides what is typed, as a password's prompt
+    /// does: its line discipline echoes nothing, in canonical mode, as
+    /// `getpass` sets it. A program in raw mode, as vim, which echoes
+    /// itself, does not.
+    pub fn hides_input(&self) -> bool {
+        // SAFETY: the struct is plain data, which zeros make valid.
+        let mut settings: libc::termios = unsafe { std::mem::zeroed() };
+        // SAFETY: the master's descriptor, which lives as long as `self`,
+        // and a struct that `tcgetattr` fills in; the master tells the
+        // terminal's settings, which its two sides share.
+        if unsafe { libc::tcgetattr(self.master.as_raw_fd(), &mut settings) } != 0 {
+            return false;
+        }
+        settings.c_lflag & libc::ECHO == 0 && settings.c_lflag & libc::ICANON != 0
+    }
+
     /// The process group in the terminal's foreground: the program's, or
     /// that of a job that it runs; none once the program's session has
     /// ended.

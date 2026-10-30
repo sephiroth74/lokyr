@@ -19,6 +19,7 @@ mod layer;
 mod menu;
 mod notify;
 mod open;
+mod secure;
 mod shared;
 mod text_input;
 mod timer;
