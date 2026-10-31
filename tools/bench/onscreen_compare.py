@@ -7,7 +7,8 @@ a run, with its terminal:
 
 The configs' directory holds `lokyr/config.toml`, `ghostty.conf`,
 `alacritty.toml` and `kitty.conf`; iTerm2 takes the dynamic profile
-`Lokyr Bench`. Lokyr runs through `--bench output`, whose frames' report
+`Lokyr Bench`. `LOKYR_APP` names another bundle of Lokyr than
+`target/Lokyr.app`, as an earlier commit's. Lokyr runs through `--bench output`, whose frames' report
 goes with its runs. A terminal that is not installed is left out.
 """
 import json
@@ -22,10 +23,12 @@ ONSCREEN = os.path.join(HERE, "onscreen.py")
 PYTHON = "/usr/bin/python3"
 WORKLOADS = ["ascii.txt", "seq.txt", "sgr.txt", "cjk.txt"]
 TIMEOUT = 300
+# `LOKYR_APP` names another bundle of Lokyr, as an earlier commit's.
+LOKYR_APP = os.environ.get("LOKYR_APP", os.path.join(ROOT, "target/Lokyr.app"))
 
 
 def lokyr(configs, script):
-    binary = os.path.join(ROOT, "target/Lokyr.app/Contents/MacOS/lokyr")
+    binary = os.path.join(LOKYR_APP, "Contents/MacOS/lokyr")
     env = dict(os.environ, XDG_CONFIG_HOME=configs)
     return [binary, "--bench", "output", "--window", "1920x1080", "--", *script], env
 
@@ -58,7 +61,7 @@ def iterm2(configs, script):
 
 
 TERMINALS = [
-    ("lokyr", lokyr, os.path.join(ROOT, "target/Lokyr.app")),
+    ("lokyr", lokyr, LOKYR_APP),
     ("ghostty", ghostty, "/Applications/Ghostty.app"),
     ("alacritty", alacritty, "/tmp/lokyr/alacritty/src/target/release/osx/Alacritty.app"),
     ("kitty", kitty, "/Applications/kitty.app"),
