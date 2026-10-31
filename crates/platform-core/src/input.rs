@@ -330,6 +330,9 @@ pub struct KeyEvent {
     /// kitty protocol takes it as the key's code, which, with Shift held,
     /// the texts above cannot give.
     pub plain: String,
+    /// When the key went down, repeated or went up, as the system stamped
+    /// it, on the process's monotonic clock; `None` where it does not tell.
+    pub time: Option<std::time::Instant>,
 }
 
 /// What an input method does in a window.

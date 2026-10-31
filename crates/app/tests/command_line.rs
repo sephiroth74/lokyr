@@ -188,3 +188,20 @@ fn a_config_whose_font_fails_starts_with_the_defaults() {
     }
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn the_latency_s_bench_types_its_keys_and_tells_them() {
+    let home = directory("latency");
+    let measured = lokyr(&home, &["--bench", "latency", "--keys", "10"]);
+    assert!(measured.status.success(), "{}", text(&measured.stderr));
+    let line = text(&measured.stdout).trim();
+    assert!(line.starts_with("{\"refresh_ms\":"), "{line}");
+    assert!(line.contains("\"keys\":10,"), "{line}");
+    // Without a GPU, no frame shows a key.
+    if !text(&measured.stderr).contains("without a GPU") {
+        assert!(!line.contains("\"samples\":0,"), "{line}");
+    }
+    let wrong = lokyr(&home, &["--bench", "latency", "--keys", "many"]);
+    assert!(!wrong.status.success());
+    fs::remove_dir_all(home).unwrap();
+}

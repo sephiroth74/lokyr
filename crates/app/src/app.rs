@@ -57,6 +57,7 @@ use lokyr_vt_core::terminal::{
 use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
+use crate::latency::{self, LatencyBench};
 use crate::mouse::{self, Mouse, Pointer, Spot};
 use crate::notice;
 use crate::performance::{self, Performance};
@@ -784,6 +785,8 @@ pub struct App {
     /// window's first frame showed, once it did, which the app prints
     /// before it quits.
     startup_bench: Option<Arc<Mutex<StartupBench>>>,
+    /// The latency's bench, with `--bench latency`.
+    latency_bench: Option<LatencyBench>,
 }
 
 /// The measure of the startup.
@@ -874,6 +877,7 @@ impl App {
             global_keys: Vec::new(),
             global_held: false,
             startup_bench: None,
+            latency_bench: None,
         }
     }
 
@@ -883,6 +887,100 @@ impl App {
     pub fn with_startup_bench(mut self) -> Self {
         self.startup_bench = Some(Arc::default());
         self
+    }
+
+    /// The app that measures the latency of its keys, from each press to
+    /// the frame that shows what it typed, in a window whose program
+    /// echoes them, as a shell does, and prints it as JSON as it quits:
+    /// of `keys` that it types itself, and then quits, or of the user's;
+    /// with `flood`, beside a window that floods its output.
+    pub fn with_latency_bench(mut self, keys: usize, flood: bool) -> Self {
+        self.program = Program::command("/bin/sh", ["-c", "stty raw -echo; exec cat"]);
+        self.latency_bench = Some(LatencyBench {
+            keys,
+            flood,
+            ..LatencyBench::default()
+        });
+        self
+    }
+
+    /// Starts the latency's bench, as its window opened: the window that
+    /// floods, if it has one, and the first key a moment after, for the
+    /// programs to start.
+    fn start_latency_bench(&mut self, platform: &mut dyn Platform) {
+        let measured = self.windows.keys().next().copied();
+        let Some(bench) = &mut self.latency_bench else {
+            return;
+        };
+        bench.window = measured;
+        let flood = bench.flood;
+        if flood {
+            let program = Program::command("/bin/sh", ["-c", "exec yes 'flood flood flood flood'"]);
+            self.open_window_running(platform, &program, None);
+            if let Some(measured) = measured {
+                platform.focus_window(measured);
+            }
+        }
+        if let Some(bench) = &mut self.latency_bench
+            && bench.keys > 0
+        {
+            bench.timer = Some(platform.start_timer(Instant::now() + Duration::from_millis(1500)));
+        }
+    }
+
+    /// The bench's next key, when the last one showed or was given up; or
+    /// its end, once it typed them all.
+    fn latency_step(&mut self, platform: &mut dyn Platform) {
+        let now = Instant::now();
+        let Some(bench) = &mut self.latency_bench else {
+            return;
+        };
+        bench.timer = None;
+        if bench
+            .typed_at
+            .is_some_and(|typed| now.duration_since(typed) > latency::GIVE_UP)
+        {
+            bench.pending = None;
+            bench.typed_at = None;
+        }
+        let waiting = bench.pending.is_some() || bench.typed_at.is_some();
+        if bench.sent < bench.keys {
+            if !waiting && let Some(window) = bench.window {
+                let (code, letter) = latency::key_of(bench.sent);
+                platform.post_key(window, code, &letter.to_string());
+                bench.typed_at = Some(now);
+                bench.sent += 1;
+            }
+            let pause = latency::pause(bench.sent);
+            bench.timer = Some(platform.start_timer(now + pause));
+            return;
+        }
+        if waiting {
+            bench.timer = Some(platform.start_timer(now + Duration::from_millis(50)));
+            return;
+        }
+        self.end_latency_bench(platform);
+        platform.quit();
+    }
+
+    /// Prints the latency's report, once.
+    fn end_latency_bench(&mut self, platform: &mut dyn Platform) {
+        let Some(bench) = self.latency_bench.take() else {
+            return;
+        };
+        let refresh = bench
+            .window
+            .and_then(|window| platform.refresh_interval(window))
+            .unwrap_or(Duration::from_micros(16_667));
+        let samples = bench
+            .samples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        println!(
+            "{}",
+            latency::report(&samples, refresh, bench.flood, bench.keys)
+        );
     }
 
     /// Prints the startup's measure and quits, once the first frame
@@ -2297,6 +2395,7 @@ impl App {
         if let Some(front) = self.front.or_else(|| platform.focused_window()) {
             self.keep_directory(front);
         }
+        self.end_latency_bench(platform);
         platform.quit();
     }
 
@@ -3688,6 +3787,18 @@ impl App {
         if output {
             state.blink.restart(now);
         }
+        // The press that this frame shows, which the latency's bench
+        // measures as the frame shows.
+        let shown_key = match &mut self.latency_bench {
+            Some(bench) if output && bench.window == Some(window) => {
+                bench.typed_at = None;
+                bench
+                    .pending
+                    .take()
+                    .map(|time| (time, Arc::clone(&bench.samples)))
+            }
+            _ => None,
+        };
         // The pointer's moves without a button wake the app only for a
         // program that asked for them all.
         let moves = pane
@@ -3957,6 +4068,16 @@ impl App {
                 && shown.background == list.background
                 && shown.items == list.items
         });
+        if !same && let Some((pressed, samples)) = shown_key {
+            drawing.renderer.on_next_presented(move |ago| {
+                if let Some(shown) = ago.and_then(|ago| Instant::now().checked_sub(ago)) {
+                    samples
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .push(shown.saturating_duration_since(pressed));
+                }
+            });
+        }
         // The startup's measure asks the first frame to tell as it shows.
         if !same
             && let Some(bench) = &self.startup_bench
@@ -4067,7 +4188,7 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
-        if self.startup_bench.is_none() {
+        if self.startup_bench.is_none() && self.latency_bench.is_none() {
             self.take_global_keys(platform);
         }
         self.environment.locale =
@@ -4083,6 +4204,7 @@ impl Handler for App {
         }
         self.open_window(platform);
         self.end_startup_bench(platform);
+        self.start_latency_bench(platform);
     }
 
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -4124,6 +4246,14 @@ impl Handler for App {
                         platform.request_frame(window);
                     }
                 }
+            }
+            AppEvent::Timer(timer)
+                if self
+                    .latency_bench
+                    .as_ref()
+                    .is_some_and(|bench| bench.timer == Some(timer)) =>
+            {
+                self.latency_step(platform);
             }
             AppEvent::Timer(timer) if self.told_timer.is_some_and(|(told, _)| told == timer) => {
                 self.told_timer = None;
@@ -4389,6 +4519,16 @@ impl Handler for App {
             // Fn or a Command key that no menu took, closes a window whose
             // program ended.
             WindowEvent::Key(key) => {
+                // The press that the latency's bench waits to see shown.
+                if let Some(bench) = &mut self.latency_bench
+                    && bench.window == Some(window)
+                    && bench.pending.is_none()
+                    && key.state == KeyState::Pressed
+                    && !key.mods.super_key
+                    && !key.text.is_empty()
+                {
+                    bench.pending = key.time;
+                }
                 // The key's own prompt, which no output told, as after a
                 // silent `stty -echo`, is secure from the next key.
                 self.settle_secure_input(platform);
@@ -8986,6 +9126,7 @@ mod tests {
             text: text.to_owned(),
             unmodified: text.to_owned(),
             plain: text.to_owned(),
+            time: None,
         })
     }
 
@@ -9011,6 +9152,7 @@ mod tests {
             text,
             unmodified: plain.to_owned(),
             plain: plain.to_owned(),
+            time: None,
         })
     }
 

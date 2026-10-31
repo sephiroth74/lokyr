@@ -14,6 +14,8 @@ mod icon;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
+mod latency;
+#[cfg(target_os = "macos")]
 mod mouse;
 #[cfg(target_os = "macos")]
 mod notice;
@@ -35,6 +37,7 @@ use lokyr_kernel::config::{self, Config};
 const USAGE: &str = "\
 Usage: lokyr [--version]
        lokyr --bench startup
+       lokyr --bench latency [--keys <n>] [--flood]
        lokyr +show-config [--default] [--docs]
        lokyr +validate-config [path]";
 
@@ -42,10 +45,18 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
-        [] => run(false),
+        [] => run(Bench::None),
         // From the process's start to the first frame on the display, as
         // JSON, and quits.
-        ["--bench", "startup"] => run(true),
+        ["--bench", "startup"] => run(Bench::Startup),
+        // From each key to the frame that shows it, as JSON, as it quits.
+        ["--bench", "latency", options @ ..] => match latency_options(options) {
+            Some((keys, flood)) => run(Bench::Latency { keys, flood }),
+            None => {
+                eprintln!("{USAGE}");
+                ExitCode::FAILURE
+            }
+        },
         ["--version" | "-V"] => {
             println!("lokyr {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -60,6 +71,33 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// What the app measures of itself, and then quits.
+#[derive(Clone, Copy)]
+enum Bench {
+    /// Nothing: it runs as it does.
+    None,
+    /// Its startup, to its first frame.
+    Startup,
+    /// Its keys' latency: of `keys` that it types itself, or, with none,
+    /// of the user's, until they quit; with `flood`, beside a window that
+    /// floods its output.
+    Latency { keys: usize, flood: bool },
+}
+
+/// The latency's bench's options, `--keys <n>` and `--flood`.
+fn latency_options(options: &[&str]) -> Option<(usize, bool)> {
+    let (mut keys, mut flood) = (0, false);
+    let mut options = options.iter();
+    while let Some(option) = options.next() {
+        match *option {
+            "--keys" => keys = options.next()?.parse().ok()?,
+            "--flood" => flood = true,
+            _ => return None,
+        }
+    }
+    Some((keys, flood))
 }
 
 /// Prints every key of the config, with its value: the config file's, or
@@ -148,9 +186,9 @@ fn check(_: &Config) -> Result<(), String> {
 
 /// Runs the application until it quits: started through a link to its
 /// bundle's binary, from the binary's own path, as its bundle; with
-/// `startup_bench`, until its first frame shows, which it measures.
+/// `bench`, until it measured what that names.
 #[cfg(target_os = "macos")]
-fn run(startup_bench: bool) -> ExitCode {
+fn run(bench: Bench) -> ExitCode {
     use std::os::unix::process::CommandExt;
 
     if let Some(executable) = environment::bundle_executable() {
@@ -209,10 +247,10 @@ fn run(startup_bench: bool) -> ExitCode {
         let app = app::App::new(drawing, config, path)
             .with_state(lokyr_kernel::state::directory())
             .with_diagnostics(diagnostics);
-        if startup_bench {
-            app.with_startup_bench()
-        } else {
-            app
+        match bench {
+            Bench::None => app,
+            Bench::Startup => app.with_startup_bench(),
+            Bench::Latency { keys, flood } => app.with_latency_bench(keys, flood),
         }
     };
     match lokyr_platform_macos::run_with(make) {
@@ -239,7 +277,7 @@ fn config() -> (Config, Option<PathBuf>, Option<String>) {
 
 /// Fails: the target has no platform backend yet.
 #[cfg(not(target_os = "macos"))]
-fn run(_: bool) -> ExitCode {
+fn run(_: Bench) -> ExitCode {
     eprintln!("lokyr: this platform has no backend yet");
     ExitCode::FAILURE
 }

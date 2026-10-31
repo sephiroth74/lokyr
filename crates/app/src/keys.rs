@@ -142,6 +142,7 @@ mod tests {
             text: text.to_owned(),
             unmodified: unmodified.to_owned(),
             plain: plain.to_owned(),
+            time: None,
         }
     }
 

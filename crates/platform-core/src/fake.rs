@@ -172,6 +172,9 @@ pub struct Fake {
     usage: Option<Usage>,
     /// When the fake was made, as the process's start.
     started: SystemTime,
+    /// The keys that the app posted, from the first, which a test sends
+    /// back as the keyboard's.
+    posted_keys: Vec<(WindowId, crate::KeyCode, String)>,
     revealed: Vec<String>,
     /// The keys that the app takes from every app, and those that another
     /// app takes, which the fake refuses.
@@ -222,6 +225,7 @@ impl Fake {
             secure_input: (false, 0),
             usage: None,
             started: SystemTime::now(),
+            posted_keys: Vec::new(),
             revealed: Vec::new(),
             global_keys: Vec::new(),
             taken_keys: Vec::new(),
@@ -507,6 +511,12 @@ impl Fake {
         self.editor_fails = why.map(str::to_owned);
     }
 
+    /// The keys that the app posted, from the first, each with its window
+    /// and its text.
+    pub fn posted_keys(&self) -> &[(WindowId, crate::KeyCode, String)] {
+        &self.posted_keys
+    }
+
     /// The keys that the app takes from every app, as it gave them last.
     pub fn global_keys(&self) -> &[GlobalKey] {
         &self.global_keys
@@ -561,6 +571,10 @@ impl Platform for Fake {
 
     fn process_started(&self) -> Option<SystemTime> {
         Some(self.started)
+    }
+
+    fn post_key(&mut self, window: WindowId, code: crate::KeyCode, text: &str) {
+        self.posted_keys.push((window, code, text.to_owned()));
     }
 
     fn usage(&self) -> Option<Usage> {

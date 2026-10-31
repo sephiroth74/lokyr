@@ -158,6 +158,7 @@ pub(crate) fn backspace() -> KeyEvent {
         text: "\u{7f}".to_owned(),
         unmodified: "\u{7f}".to_owned(),
         plain: "\u{7f}".to_owned(),
+        time: None,
     }
 }
 
@@ -249,6 +250,7 @@ mod tests {
             text: text.to_owned(),
             unmodified: text.to_owned(),
             plain: text.to_owned(),
+            time: None,
         }
     }
 

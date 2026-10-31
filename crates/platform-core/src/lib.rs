@@ -241,6 +241,12 @@ pub trait Platform {
     /// system does not tell.
     fn process_started(&self) -> Option<SystemTime>;
 
+    /// Puts a press of the key `code`, typing `text`, then its release, at
+    /// the end of the app's queue of events, for `window`, as the keyboard
+    /// would, stamped now: a bench's keys, which come back as
+    /// [`WindowEvent::Key`] the way the keyboard's do.
+    fn post_key(&mut self, window: WindowId, code: KeyCode, text: &str);
+
     /// Opens a window, in front of the others, where it takes the focus:
     /// down and to the right of the window that has the focus, or of the
     /// front one of the app's, as the system cascades windows, or in the

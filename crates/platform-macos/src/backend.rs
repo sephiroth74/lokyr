@@ -314,6 +314,35 @@ impl Platform for Backend {
         })
     }
 
+    fn post_key(&mut self, window: WindowId, code: lokyr_platform_core::KeyCode, text: &str) {
+        let Some(window) = self.windows.get(&window) else {
+            return;
+        };
+        let Some(code) = crate::keys::virtual_code(code) else {
+            return;
+        };
+        let app = NSApplication::sharedApplication(self.mtm);
+        let number = window.ns_window().windowNumber();
+        let characters = NSString::from_str(text);
+        for kind in [NSEventType::KeyDown, NSEventType::KeyUp] {
+            let event = NSEvent::keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode(
+                kind,
+                NSPoint::ZERO,
+                NSEventModifierFlags::empty(),
+                objc2_quartz_core::CACurrentMediaTime(),
+                number,
+                None,
+                &characters,
+                &characters,
+                false,
+                code,
+            );
+            if let Some(event) = event {
+                app.postEvent_atStart(&event, false);
+            }
+        }
+    }
+
     fn locales(&self) -> Vec<String> {
         let current = NSLocale::currentLocale();
         // A language without a region takes the system's.

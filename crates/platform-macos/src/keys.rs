@@ -76,7 +76,19 @@ pub(crate) fn key_event(event: &NSEvent) -> Option<KeyEvent> {
         text,
         unmodified,
         plain,
+        time: time_of(event.timestamp()),
     })
+}
+
+/// The instant of an event's `timestamp`, in seconds since the system
+/// started, as Core Animation's clock counts them, on the process's
+/// monotonic clock.
+pub(crate) fn time_of(timestamp: f64) -> Option<std::time::Instant> {
+    let ago = objc2_quartz_core::CACurrentMediaTime() - timestamp;
+    if !ago.is_finite() {
+        return None;
+    }
+    std::time::Instant::now().checked_sub(std::time::Duration::from_secs_f64(ago.max(0.0)))
 }
 
 /// The modifiers that `flags` hold, each Option apart; a flag without its

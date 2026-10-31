@@ -214,6 +214,7 @@ fn input_reaches_the_app_as_it_came() {
             text: "@".to_owned(),
             unmodified: "ò".to_owned(),
             plain: "ò".to_owned(),
+            time: None,
         }),
         WindowEvent::Ime(Ime::Preedit {
             text: "にほ".to_owned(),
