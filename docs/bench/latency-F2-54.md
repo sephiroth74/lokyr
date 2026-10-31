@@ -44,3 +44,19 @@ A build that marked the commit of the frame that shows the key, outside the meas
 - **The echo's frame waits for the display link**: the key's own request of a frame, which starts its cursor's blinking again, takes the frame that is due at once, as the link was paused, and starts the link, so that the echo, a millisecond later, waits for the next refresh. At 120 Hz the wait reaches 16.8 ms, two refreshes, as ProMotion runs the link slower while little changes.
 - **From the commit to the display**, macOS's composition of the window takes about 24 ms at 120 Hz and 32 ms at 60 Hz, as constant as the display's refreshes: 3 frames at 120 Hz, 2 at 60, which no frame drawn at once comes under.
 - [F2-144](../tasks/F2-macos-single-pane.md#f2-144--the-keys-frames-sooner) takes the echo's frame at once, the display link's rate, and the composition's path, as `presentsWithTransaction` shortens it, and measures again; the budget's revision, if the system's part keeps it out of reach, goes to the user.
+
+## After F2-144
+
+The Metal layers present without the display's sync, and a key that the bench posts wakes the main run loop, as the keyboard's does. On commit d69529b, synthetic keys, the window on the main display:
+
+| Rate | Flood | p50 | p99 | p50, frames | p99, frames | Budget |
+|---|---|---|---|---|---|---|
+| 120 Hz | no | 14.5 ms | 34.2 ms | 1.74 | 4.10 | 2 / 4.5 |
+| 120 Hz | yes | 14.2 ms | 32.7 ms | 1.71 | 3.92 | 3 / 5.5 |
+| 60 Hz | no | 21.2 ms | 41.5 ms | 1.27 | 2.49 | 2 / 4.5 |
+| 60 Hz | yes | 21.5 ms | 52.0 ms | 1.29 | 3.12 | 3 / 5.5 |
+
+- **The median halved**, at 120 Hz from 32.2 ms to 14.5, at 60 Hz from 41.7 ms to 21.2: from the commit to the display, 6.7 ms at the median at 120 Hz, where it took 24, and 9.6 at 60, where it took 32. The user saw no torn frame, in a window or in full screen, of a screen that fills and empties in synchronized updates, nor in `less` and `vim`.
+- **The 60 Hz figures** come before the run loop's wake after a posted key, which shortens the tail of the keys' delivery, not their median.
+- **The p99 at 120 Hz**, 4.1 frames, is macOS's composition, which now and then takes 24 ms from the commit to the display: a display link that never stops, which keeps ProMotion at its full rate, made the median worse, 17.6 ms, as the echo's frame waited for its tick, and left the tail; presenting with Core Animation's transaction took a frame more, 48 ms at 60 Hz. The user chose, on 31 October 2026, a p99 of 4.5 frames at 120 Hz.
+- **What was not needed**: a key's own frame, which starts its cursor's blinking again, does not delay the echo's, as the echo's request finds the display link stopped; the wait was the key's delivery to the app.

@@ -18,7 +18,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Metric | Target | How it is measured |
 |---|---|---|
 | First presented frame | Warm, ≤ 35 ms past the first window of a minimal AppKit app, at the median, measured in the same session, as the user chose on 31 October 2026, where a fixed 200 ms could not be measured: the minimal app alone took 193 to 226 ms on one machine on one day; cold, ≤ 1 s at the 90th percentile, after `sudo purge`, as [F2-53](bench/startup-F2-53.md) set it | The process's start → `addPresentedHandler`, with `lokyr-bench startup --first-frame`; for other terminals, `lokyr-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
-| Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
+| Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 4.5, as the user chose on 31 October 2026 from [F2-54's measures](bench/latency-F2-54.md), where macOS's composition now and then takes 24 ms from a frame's commit to the display; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time, with `lokyr --bench latency` |
 | Idle | 0 package idle wakeups/s and ≤ 0.5 interrupt wakeups/s, once the cursor stops blinking (15 s after the last key or output, by default); while it blinks, ≤ 2/s at the default interval, faded or not, and with blinking text, as the window server blinks the cursor's layer and the blinking text's without the app ([ADR 0021](adr/0021-drawables-and-the-cursor-layer.md), [ADR 0023](adr/0023-blinking-text-layer.md)), which F2-55 and F2-125 measure | `lokyr-bench idle`: package idle wakeups, which `top -stats idlew` shows, and interrupt wakeups; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
 | Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `lokyr-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
 | Scrollback | ≤ configured limit + 5%; ≈ 8 B per cell | memory tests in CI |
@@ -40,7 +40,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 - **Cold**: after `sudo purge` on macOS, or after dropping the page cache on Linux. `lokyr-bench startup --cold --warmup 0` runs `sudo purge` before each launch, after a `sudo -v`. Cold, a window shows before its first frame, as the font and the shaders come from the disk: the first window understates the startup.
 
 **Latency**
-- **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`). A p50/p99 histogram is exposed over IPC.
+- **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`) of the first frame with new output after it. `lokyr --bench latency [--keys <n>] [--flood]` opens a window whose program echoes the keys, `cat` in raw mode, and prints a histogram as JSON as it quits: of `n` keys that it posts to its own queue of events, one every 40 to 62 ms, or of the user's; with `--flood`, beside a window that `yes` floods. Later, a p50/p99 histogram is exposed over IPC.
 - **External check**: an occasional run with Typometer or a high-speed camera calibrates the internal measurement.
 
 **Idle**
