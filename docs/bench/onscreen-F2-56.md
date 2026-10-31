@@ -74,6 +74,19 @@ Measured on 2026-10-31, on the bundle of the commit after f21bb1e, as above, of 
 
 ## After F2-147
 
+On screen, on the bundle of 0a3796d, as above, of Lokyr, Ghostty and Alacritty; the raw results are in [after-F2-147.jsonl](onscreen-F2-56/after-F2-147.jsonl). The median of three runs, in MiB/s:
+
+| Workload | Lokyr | After F2-145 | Ghostty | Alacritty | Against the faster |
+|---|---|---|---|---|---|
+| `ascii.txt`, 1 GiB | 290.5 | 293.1 | 295.4 | 167.2 | −1.7% |
+| `seq.txt` | 180.0 | 183.0 | 171.8 | 82.8 | +4.8% |
+| `sgr.txt` | 240.5 | 245.4 | 249.9 | 150.9 | −3.8% |
+| `cjk.txt` | **185.5** | 143.6 | 168.4 | 152.6 | +10.2% |
+
+- **CJK is ahead of Ghostty** by a tenth, where it was 17.8% behind; the other workloads stay within 4% of it, as after F2-145, whose path this does not take.
+- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 564 frames of ASCII, p50 0.28 ms, p99 1.50 at most; 74 of `seq`, 0.29 and 2.05; 89 of SGR, 0.52 and 6.62; 117 of CJK, 0.48 and 21.12, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
+- **A first round**, with the display asleep and the screen locked, drew two frames a run, and was left out: a window that does not show draws nothing, and its terminal reads faster.
+
 Measured on 2026-10-31, on the commit after 74d71b1, against it, of the VT core alone: `lokyr-throughput`, and a harness that feeds a file to the terminal in reads of 64 KiB at 120 × 40, its line feeds after carriage returns as a terminal's ONLCR puts them, the median of five runs.
 
 | Input | Before | After | |
