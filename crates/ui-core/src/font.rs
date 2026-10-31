@@ -5,12 +5,13 @@
 
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
-    FontBackend, FontConfig, GlyphId, Rendering, Resolved, ShapedGlyph, Synthesis, choose_faces,
-    resolve_faces, sprite,
+    FontBackend, FontConfig, GlyphId, Raster, Rendering, Resolved, ShapedGlyph, Synthesis,
+    choose_faces, resolve_faces, sprite,
 };
 use lokyr_vt_core::unicode;
 
@@ -145,6 +146,26 @@ pub struct Font<B> {
     /// the frame that it refused each, so that a frame does not draw them
     /// again at once.
     refused: FastMap<GlyphKey, u64>,
+    /// Whether a glyph that the atlas lacks waits for
+    /// [`Font::draw_pending`], rather than being drawn at once.
+    collecting: bool,
+    /// How long the frame looks up the faces of characters, and how long
+    /// it draws glyphs, at most: past them, those wait for the frames
+    /// after.
+    budget: Option<(Duration, Duration)>,
+    /// The time that the frame spent looking up faces.
+    looking_up: Duration,
+    /// Whether the frame left characters whose faces it had no time to
+    /// look up.
+    lookups_left: bool,
+    /// The glyphs that the atlas lacked while collecting, in the order that
+    /// they were asked for, each once.
+    pending: Vec<(GlyphKey, Raster)>,
+    /// The keys of `pending`.
+    pending_keys: FastMap<GlyphKey, ()>,
+    /// The glyphs that [`Font::draw_pending`] left, as the frame's time for
+    /// glyphs ran out, which the frame shows without.
+    deferred: FastMap<GlyphKey, ()>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -314,6 +335,9 @@ struct Glyphs {
     ids: FastMap<(FaceId, char), Option<GlyphId>>,
     /// The backend's fallback of each face, character, and presentation.
     fallbacks: FastMap<(FaceId, char, Presentation), Option<FaceId>>,
+    /// The face that the cascade gave the emoji of a character that is an
+    /// emoji by default, which draws the others too.
+    emoji: Option<FaceId>,
 }
 
 impl Glyphs {
@@ -334,6 +358,7 @@ impl Glyphs {
             others: FastMap::default(),
             ids: FastMap::default(),
             fallbacks: FastMap::default(),
+            emoji: None,
         }
     }
 }
@@ -380,6 +405,13 @@ impl<B: FontBackend> Font<B> {
             frame: 0,
             this_frame: Box::new([DrawnGlyph::EMPTY; DRAWN_SLOTS]),
             refused: FastMap::default(),
+            collecting: false,
+            budget: None,
+            looking_up: Duration::ZERO,
+            lookups_left: false,
+            pending: Vec::new(),
+            pending_keys: FastMap::default(),
+            deferred: FastMap::default(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -463,11 +495,113 @@ impl<B: FontBackend> Font<B> {
         self.atlas.set_drawing(oldest);
     }
 
-    /// Starts a frame: the glyphs that it uses stay in the atlas.
+    /// Starts a frame: the glyphs that it uses stay in the atlas, and those
+    /// that the frame before left are drawn again.
     pub fn begin_frame(&mut self) {
         self.frame += 1;
         self.atlas.begin_frame();
         self.shaped.begin_frame();
+        self.deferred.clear();
+        self.collecting = false;
+        self.budget = None;
+        self.looking_up = Duration::ZERO;
+        self.lookups_left = false;
+    }
+
+    /// Collects the glyphs that the atlas lacks, which wait for
+    /// [`Font::draw_pending`] rather than being drawn as the layout asks
+    /// for them, leaving their cells empty: so that a frame's layout finds
+    /// the glyphs that it lacks, which the backend then draws together, on
+    /// several threads, before the layout is done again. A glyph that the
+    /// terminal draws itself is drawn at once. Till the frame ends, it looks
+    /// up the faces of the characters that it has not met for `lookups` at
+    /// most, and starts each after: the others wait for the frames after,
+    /// as [`Font::has_deferred`] tells, their cells empty until then; and
+    /// [`Font::draw_pending`] draws glyphs for `drawing` at most. Each
+    /// frame looks up and draws some, however long its layout takes.
+    pub fn collect_missing(&mut self, lookups: Duration, drawing: Duration) {
+        self.collecting = true;
+        self.budget = Some((lookups, drawing));
+    }
+
+    /// Whether the layout found glyphs that the atlas lacks while
+    /// collecting, which [`Font::draw_pending`] draws.
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Ends the collecting, and draws the glyphs that the atlas lacked, as
+    /// many as there is time for until the frame's deadline, on the
+    /// backend's threads, into the atlas. The others wait for the frames
+    /// after: until the next frame begins, the layout leaves their cells
+    /// empty, as [`Font::has_deferred`] tells. Whether it drew any, which a
+    /// layout done again would show.
+    pub fn draw_pending(&mut self) -> bool {
+        self.collecting = false;
+        if self.pending.is_empty() {
+            return false;
+        }
+        let pending = std::mem::take(&mut self.pending);
+        self.pending_keys.clear();
+        let rasters: Vec<Raster> = pending.iter().map(|&(_, raster)| raster).collect();
+        let drawing = self.budget.map_or(Duration::ZERO, |(_, drawing)| drawing);
+        let bitmaps = self
+            .backend
+            .rasterize_many(&rasters, Instant::now() + drawing);
+        let mut drew = false;
+        for ((key, _), bitmap) in pending.into_iter().zip(bitmaps) {
+            match bitmap {
+                Some(bitmap) => {
+                    drew = true;
+                    if self.atlas.insert(key, &bitmap).is_none() {
+                        self.refuse(key);
+                    }
+                }
+                None => {
+                    self.deferred.insert(key, ());
+                }
+            }
+        }
+        drew
+    }
+
+    /// Whether the frame leaves cells empty, of glyphs that it had no time
+    /// to draw, or of characters whose faces it had no time to look up,
+    /// which the next frame draws.
+    pub fn has_deferred(&self) -> bool {
+        !self.deferred.is_empty() || self.lookups_left
+    }
+
+    /// Whether the frame's time for looking up faces has run out, which
+    /// leaves the character asked for to a later frame.
+    fn out_of_time(&mut self) -> bool {
+        let out = self
+            .budget
+            .is_some_and(|(lookups, _)| self.looking_up >= lookups);
+        self.lookups_left |= out;
+        out
+    }
+
+    /// [`Font::look_up`], whose time the frame counts.
+    fn look_up_timed(
+        &mut self,
+        style: usize,
+        character: char,
+        presentation: Presentation,
+    ) -> Option<Found> {
+        let start = Instant::now();
+        let found = self.look_up(style, character, presentation);
+        self.looking_up += start.elapsed();
+        found
+    }
+
+    /// Keeps `key`, which the atlas refused, from being drawn again for a
+    /// while.
+    fn refuse(&mut self, key: GlyphKey) {
+        // The refusals of long ago go, rather than pile up.
+        let frame = self.frame;
+        self.refused.retain(|_, at| frame < *at + REFUSED_FRAMES);
+        self.refused.insert(key, frame);
     }
 
     /// The glyph of `shown`, in its presentation: as text, in the face of
@@ -537,11 +671,29 @@ impl<B: FontBackend> Font<B> {
                     return None;
                 }
                 let antialias = self.config.antialias;
+                let rendering = Rendering { antialias, thin };
+                if found.face != SPRITES {
+                    if self.deferred.contains_key(&key) {
+                        return None;
+                    }
+                    if self.collecting {
+                        if self.pending_keys.insert(key, ()).is_none() {
+                            let raster = Raster {
+                                face: found.face,
+                                glyph: found.glyph,
+                                size: self.pixels,
+                                synthesis: found.synthesis,
+                                rendering,
+                            };
+                            self.pending.push((key, raster));
+                        }
+                        return None;
+                    }
+                }
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
                     sprite::draw(character, &self.cell, antialias)?
                 } else {
-                    let rendering = Rendering { antialias, thin };
                     self.backend.rasterize(
                         found.face,
                         found.glyph,
@@ -551,10 +703,7 @@ impl<B: FontBackend> Font<B> {
                     )
                 };
                 let Some(placement) = self.atlas.insert(key, &bitmap) else {
-                    // The refusals of long ago go, rather than pile up.
-                    let frame = self.frame;
-                    self.refused.retain(|_, at| frame < *at + REFUSED_FRAMES);
-                    self.refused.insert(key, frame);
+                    self.refuse(key);
                     return None;
                 };
                 placement
@@ -797,16 +946,22 @@ impl<B: FontBackend> Font<B> {
             if let Some(known) = *slot {
                 return known;
             }
-            let found = self.look_up(style, character, Presentation::Text);
+            if self.out_of_time() {
+                return None;
+            }
+            let found = self.look_up_timed(style, character, Presentation::Text);
             self.glyphs.ascii[table][character as usize] = Some(found);
             return found;
         }
         if let Some(known) = self.glyphs.others.get(&(table, character, asked)) {
             return *known;
         }
+        if self.out_of_time() {
+            return None;
+        }
         let presentation = asked.unwrap_or_else(|| Presentation::default_of(character));
         let found = self
-            .look_up(style, character, presentation)
+            .look_up_timed(style, character, presentation)
             .map(|found| Found {
                 emoji: presentation == Presentation::Emoji,
                 ..found
@@ -883,13 +1038,31 @@ fn cascade<B: FontBackend>(
         }
         Presentation::Text => None,
     };
-    let fallback = *glyphs
-        .fallbacks
-        .entry((face.id, character, presentation))
-        .or_insert_with(|| {
-            let cluster: String = std::iter::once(character).chain(selector).collect();
-            backend.fallback(face.id, &cluster)
-        });
+    let key = (face.id, character, presentation);
+    let fallback = match glyphs.fallbacks.get(&key) {
+        Some(&known) => known,
+        None => {
+            // An emoji takes the face of the emoji found before, when it has
+            // the character: the cascade, which gives them all that face,
+            // takes about a tenth of a millisecond for each.
+            let emoji = glyphs
+                .emoji
+                .filter(|_| presentation == Presentation::Emoji)
+                .filter(|&emoji| glyph_of(&mut glyphs.ids, backend, emoji, character).is_some());
+            let found = emoji.or_else(|| {
+                let cluster: String = std::iter::once(character).chain(selector).collect();
+                backend.fallback(face.id, &cluster)
+            });
+            if presentation == Presentation::Emoji
+                && glyphs.emoji.is_none()
+                && unicode::has_emoji_presentation(character)
+            {
+                glyphs.emoji = found;
+            }
+            glyphs.fallbacks.insert(key, found);
+            found
+        }
+    };
     let drawing = fallback?;
     let glyph = glyph_of(&mut glyphs.ids, backend, drawing, character)?;
     Some(Found {
@@ -1224,6 +1397,92 @@ mod tests {
             matches!(&updates[0], TextureUpdate::Upload { region, data } if region.width == 14 && data.len() == 14 * 14)
         );
         assert!(font.texture_updates().is_empty());
+    }
+
+    #[test]
+    fn a_frame_collects_the_glyphs_that_it_lacks_and_draws_them_together() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        font.begin_frame();
+        font.collect_missing(Duration::from_secs(60), Duration::from_secs(60));
+        assert_eq!(font.glyph(&shown("b", &style)), None, "it waits");
+        assert_eq!(font.glyph(&shown("c", &style)), None);
+        assert_eq!(font.glyph(&shown("b", &style)), None);
+        // What the terminal draws itself comes at once.
+        assert!(font.glyph(&shown("\u{2500}", &style)).is_some());
+        assert!(font.has_pending());
+        assert!(font.backend.drawn.is_empty());
+        assert!(font.draw_pending());
+        assert!(!font.has_pending());
+        assert!(!font.has_deferred());
+        assert_eq!(font.backend.drawn[&(FaceId(0), 0x62)], 1, "once");
+        assert_eq!(font.backend.drawn[&(FaceId(0), 0x63)], 1);
+        assert!(font.glyph(&shown("b", &style)).is_some());
+        assert_eq!(font.backend.drawn[&(FaceId(0), 0x62)], 1, "from the atlas");
+        assert_eq!(font.texture_updates().len(), 3, "each glyph uploaded once");
+    }
+
+    #[test]
+    fn the_glyphs_that_a_frame_has_no_time_for_wait_for_the_next() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        font.begin_frame();
+        font.collect_missing(Duration::from_secs(60), Duration::ZERO);
+        font.glyph(&shown("b", &style));
+        assert!(!font.draw_pending(), "none drawn");
+        assert!(font.has_deferred());
+        assert_eq!(
+            font.glyph(&shown("b", &style)),
+            None,
+            "its cell stays empty"
+        );
+        assert!(font.backend.drawn.is_empty());
+        font.begin_frame();
+        assert!(!font.has_deferred());
+        assert!(
+            font.glyph(&shown("b", &style)).is_some(),
+            "the next frame draws it"
+        );
+    }
+
+    #[test]
+    fn the_faces_that_a_frame_has_no_time_to_look_up_wait_for_the_next() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        font.begin_frame();
+        font.collect_missing(Duration::from_secs(60), Duration::from_secs(60));
+        // The frame's time for lookups, spent.
+        font.looking_up = Duration::from_secs(60);
+        assert_eq!(font.glyph(&shown("\u{4E2D}", &style)), None);
+        assert!(!font.draw_pending());
+        assert!(font.has_deferred());
+        assert_eq!(font.backend.fallbacks, 0, "not looked up");
+        assert_eq!(
+            font.glyph(&shown("\u{4E2D}", &style)),
+            None,
+            "nor later in the frame"
+        );
+        font.begin_frame();
+        assert!(!font.has_deferred());
+        assert!(
+            font.glyph(&shown("\u{4E2D}", &style)).is_some(),
+            "the next frame finds it"
+        );
+    }
+
+    #[test]
+    fn an_emoji_takes_the_face_of_the_emoji_found_before() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        assert!(font.glyph(&shown("\u{231A}", &style)).is_some());
+        assert_eq!(font.backend.drawn.get(&(EMOJI, 0x231A)), Some(&1));
+        let asked = font.backend.fallbacks;
+        assert!(font.glyph(&shown("\u{26A1}", &style)).is_some());
+        assert_eq!(font.backend.drawn.get(&(EMOJI, 0x26A1)), Some(&1));
+        assert_eq!(font.backend.fallbacks, asked, "without the cascade");
+        // A character that the emoji's face lacks asks the cascade.
+        font.glyph(&shown("\u{E000}\u{FE0F}", &style));
+        assert!(font.backend.fallbacks > asked);
     }
 
     #[test]

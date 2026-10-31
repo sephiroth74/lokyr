@@ -4,6 +4,8 @@
 //! Sizes are in pixels: a size in points times the display's scale. A face
 //! is the same at every size, and the backend makes it at the size asked.
 
+use std::time::Instant;
+
 /// A face that the backend found, as long as the backend lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FaceId(pub u32);
@@ -119,6 +121,21 @@ impl Default for Rendering {
     }
 }
 
+/// A glyph to draw, as [`FontBackend::rasterize`] takes it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Raster {
+    /// The face that draws it.
+    pub face: FaceId,
+    /// The glyph, of that face.
+    pub glyph: GlyphId,
+    /// The size, in pixels.
+    pub size: f32,
+    /// What makes it heavier or slanted.
+    pub synthesis: Synthesis,
+    /// How its coverage is drawn.
+    pub rendering: Rendering,
+}
+
 /// The pixels of a bitmap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BitmapFormat {
@@ -218,4 +235,26 @@ pub trait FontBackend {
         synthesis: Synthesis,
         rendering: Rendering,
     ) -> Bitmap;
+
+    /// Draws the glyphs of `rasters`, as [`FontBackend::rasterize`] draws
+    /// each, as many as there is time for until `deadline`, in their order:
+    /// their bitmaps, and `None` for those that it left, which no call
+    /// started past the deadline. A backend may draw them on several
+    /// threads at once; by default, they are drawn in turn.
+    fn rasterize_many(&mut self, rasters: &[Raster], deadline: Instant) -> Vec<Option<Bitmap>> {
+        rasters
+            .iter()
+            .map(|raster| {
+                (Instant::now() < deadline).then(|| {
+                    self.rasterize(
+                        raster.face,
+                        raster.glyph,
+                        raster.size,
+                        raster.synthesis,
+                        raster.rendering,
+                    )
+                })
+            })
+            .collect()
+    }
 }

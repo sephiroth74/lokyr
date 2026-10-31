@@ -855,3 +855,64 @@ fn a_thin_glyph_covers_less_than_a_smoothed_one() {
     // Font smoothing adds about a third of coverage.
     assert!(thin * 5 < smoothed * 4, "thin {thin}, smoothed {smoothed}");
 }
+
+/// The glyphs of `text` in `face`, at 26 pixels, heavier, slanted or both
+/// in turn.
+fn rasters(backend: &mut CoreText, face: FaceId, text: &str) -> Vec<Raster> {
+    text.chars()
+        .filter_map(|character| backend.glyph(face, character))
+        .enumerate()
+        .map(|(index, glyph)| Raster {
+            face,
+            glyph,
+            size: 26.0,
+            synthesis: Synthesis {
+                bold: index % 2 == 1,
+                italic: index % 3 == 2,
+            },
+            rendering: Rendering::default(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_batch_draws_each_glyph_as_one_at_a_time_would() {
+    let mut backend = CoreText::new();
+    let face = regular(&mut backend, "Menlo");
+    // Fewer glyphs than take threads of their own, and more.
+    for text in ["abc", "The quick brown fox jumps over the lazy dog"] {
+        let rasters = rasters(&mut backend, face, text);
+        let deadline = Instant::now() + std::time::Duration::from_secs(60);
+        let batch = backend.rasterize_many(&rasters, deadline);
+        assert_eq!(batch.len(), rasters.len());
+        for (raster, bitmap) in rasters.iter().zip(batch) {
+            let alone = backend.rasterize(
+                raster.face,
+                raster.glyph,
+                raster.size,
+                raster.synthesis,
+                raster.rendering,
+            );
+            assert_eq!(bitmap.as_ref(), Some(&alone), "{raster:?}");
+        }
+    }
+}
+
+#[test]
+fn a_batch_past_its_deadline_draws_nothing() {
+    let mut backend = CoreText::new();
+    let face = regular(&mut backend, "Menlo");
+    let rasters = rasters(&mut backend, face, "The quick brown fox");
+    let batch = backend.rasterize_many(&rasters, Instant::now());
+    assert!(batch.iter().all(Option::is_none), "{batch:?}");
+}
+
+#[test]
+fn the_warm_up_leaves_the_cascade_to_the_backends() {
+    warm_up("Menlo");
+    warm_up("No Such Family");
+    let mut backend = CoreText::new();
+    let face = regular(&mut backend, "Menlo");
+    let found = backend.fallback(face, "中").expect("a face of Chinese");
+    assert!(backend.glyph(found, '中').is_some());
+}

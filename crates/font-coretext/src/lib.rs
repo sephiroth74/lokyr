@@ -9,10 +9,11 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
+use std::time::Instant;
 
 use lokyr_text_core::{
-    Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, Rendering, ShapedGlyph,
-    Synthesis,
+    Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, Raster, Rendering,
+    ShapedGlyph, Synthesis,
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
@@ -383,6 +384,65 @@ impl FontBackend for CoreText {
             return Bitmap::empty(lokyr_text_core::BitmapFormat::Gray);
         };
         raster::rasterize(&font, glyph, size, synthesis, self.smoothing, rendering)
+    }
+
+    /// Draws the glyphs on up to four threads, the caller's among them, a
+    /// batch of eight glyphs or more, each thread taking the next glyph that
+    /// none has taken; the fonts are made first, on the caller's.
+    fn rasterize_many(&mut self, rasters: &[Raster], deadline: Instant) -> Vec<Option<Bitmap>> {
+        let fonts: Vec<Option<raster::Shared>> = rasters
+            .iter()
+            .map(|raster| {
+                self.font_slanted(raster.face, f64::from(raster.size), raster.synthesis.italic)
+                    .map(raster::Shared)
+            })
+            .collect();
+        raster::rasterize_many(rasters, &fonts, self.smoothing, deadline)
+    }
+}
+
+/// The text that [`warm_up`] gives the system's cascade of fonts: Chinese,
+/// Japanese and Korean, and an emoji.
+const WARM_UP: [&str; 4] = ["中", "か", "한", "\u{1F600}\u{FE0F}"];
+
+/// A sequence that [`warm_up`] shapes in the emoji's face: a family, of
+/// emoji that ZWJs join.
+const WARM_UP_SEQUENCE: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+
+/// Readies the system's cascade of fonts from the regular face of `family`,
+/// and the faces that it gives the text of Chinese, Japanese, Korean and
+/// emoji, as a thread of their own can before a frame shows them: the
+/// cascade's first looks take over a millisecond each, and a face's first
+/// glyph and first shaping tenths of one, where they take microseconds
+/// after. What CoreText loads stays for the process, whose every backend
+/// then finds it: about 4 MB of its memory.
+pub fn warm_up(family: &str) {
+    let mut backend = CoreText::new();
+    let Some(face) = backend
+        .family(family)
+        .and_then(|faces| faces.iter().find(|face| !face.italic).map(|face| face.id))
+    else {
+        return;
+    };
+    for text in WARM_UP {
+        let Some(found) = backend.fallback(face, text) else {
+            continue;
+        };
+        let character = text.chars().next().unwrap_or_default();
+        if let Some(glyph) = backend.glyph(found, character) {
+            backend.rasterize(
+                found,
+                glyph,
+                26.0,
+                Synthesis::default(),
+                Rendering::default(),
+            );
+        }
+        if text.chars().nth(1).is_some() {
+            let mut shaped = Vec::new();
+            let features = Features { ligatures: false };
+            backend.shape(found, 26.0, WARM_UP_SEQUENCE, features, &mut shaped);
+        }
     }
 }
 

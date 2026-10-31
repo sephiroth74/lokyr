@@ -71,6 +71,8 @@ Workspace
 | Reader, one per pane | `read` from the PTY, into a ring of four buffers of 64 KiB, ahead of the parse | Parse, or wait for the main thread |
 | I/O, one per pane | Parsing the reader's batches, grid updates; ending synchronized updates at their deadline | Wait for the main thread, or for the program to read its input |
 | Writer, one per pane | Writing input and replies to the PTY | Wait for the main thread |
+| Glyphs, three beside the main thread, only while a frame draws glyphs that the atlas lacks | Rasterizing a frame's new glyphs with CoreText, 2 ms of them at most | Outlive the frame, or touch the atlas |
+| Font warm-up, once, after the first frame | Readying the system's font fallback and its CJK and emoji faces, about 20 ms | Hold anything that a frame waits for |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
@@ -79,7 +81,7 @@ Workspace
 2. The I/O thread parses a batch while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
 3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux), marking its pane as woken: the main thread looks at the woken panes alone, and asks for their windows' frames alone. A bell or a terminal's event wakes it too, once a frame's time at most: the main thread takes what a pane told no more often, and a timer brings the turn of one that told within it, so that a stream of bells wakes it 60 times a second, not 100 000.
 4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it. A frame whose display list is the one that the window shows already presents nothing. The copy carries the program's input modes, its keyboard's flags and the alternate screen, which the frame reads from it, and a key's contexts too, so that a frame takes a pane's lock once, and a key once more to write; a paste, the mouse and a selection that the app just changed read the terminal under the lock.
-5. Shaping, display-list construction and GPU command encoding then run without the lock.
+5. Shaping, display-list construction and GPU command encoding then run without the lock. The grid's layout collects the glyphs that the atlas lacks rather than drawing each as it comes: CoreText draws them together, on the main thread and three others, for 2 ms at most, and the layout is done again with them. The faces of characters that no frame met before, which the system's fallback gives, are looked up for 2 ms at most too. What is left, of a screen of hundreds of new glyphs, shows as empty cells, and the frames after, which the frame asks for, draw it: a page of new Chinese shows whole in about three frames, where the first frame of it took about 25 ms, and a 4K screen of all-new glyphs in about 0.2 s, where it took 300. After the first frame, a thread readies the fallback, whose first looks take over a millisecond each, and the CJK and emoji faces, about 4 MB of the footprint.
 6. If the pane has synchronized output (mode 2026) enabled, the frame waits for the update to finish or for a timeout.
 
 **From a key press to the program**

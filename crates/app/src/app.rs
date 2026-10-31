@@ -221,6 +221,12 @@ const FALLBACK_TERM: &str = "xterm-256color";
 const TITLE: &str = "Lokyr";
 const BELL_MARK: &str = "🔔 ";
 
+/// How long a frame looks up the faces of characters that it has not met,
+/// at most, and how long it draws the glyphs that the atlas lacks, on the
+/// font's threads: a frame of new glyphs takes up to about 10 ms, within a
+/// refresh at 120 Hz, and a page of them shows whole in a few frames.
+const GLYPHS_BUDGET: (Duration, Duration) = (Duration::from_millis(2), Duration::from_millis(2));
+
 /// What draws the windows: the GPU, its renderer, and the font of the text.
 #[derive(Debug)]
 pub struct Drawing {
@@ -230,6 +236,9 @@ pub struct Drawing {
     /// How many fonts it took, the first one too: a layer draws its cells
     /// again of a new one, whose atlas gives their regions to other pixels.
     fonts: u64,
+    /// Whether a thread readies the system's fallback of fonts, as one does
+    /// once the first frame is drawn.
+    warmed_up: bool,
 }
 
 impl Drawing {
@@ -246,6 +255,7 @@ impl Drawing {
             renderer,
             font,
             fonts: 1,
+            warmed_up: false,
         })
     }
 
@@ -3975,15 +3985,32 @@ impl App {
             colors: selection_colors,
             contains: &contains,
         });
+        // The layout finds the glyphs that the atlas lacks, which the font
+        // draws together, on its threads, for a part of the frame's time at
+        // most, and is done again with them; the cells of those left show
+        // empty until the frames after draw them.
+        let grid_cursor = cursor.filter(|_| !apart);
+        font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
         let mut batch = cells::cells_with(
             snapshot,
             &cell,
             (x, y),
             selection.as_ref(),
-            cursor.filter(|_| !apart),
+            grid_cursor,
             look,
             font,
         );
+        if font.draw_pending() {
+            batch = cells::cells_with(
+                snapshot,
+                &cell,
+                (x, y),
+                selection.as_ref(),
+                grid_cursor,
+                look,
+                font,
+            );
+        }
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
@@ -4240,6 +4267,19 @@ impl App {
         }
         if let (Some(wait), Some(spent), Some(shown)) = (presented, spent, &mut self.performance) {
             shown.frame(window, spent.saturating_sub(wait), wait);
+        }
+        // The glyphs that the frame had no time for, in the next.
+        if drawing.font.has_deferred() {
+            platform.request_frame(window);
+        }
+        // Once the first frame is drawn, a thread readies the system's
+        // fallback of fonts, whose first looks would hold up the first
+        // frame of Chinese, Japanese, Korean or emoji by 10 to 20 ms.
+        if !std::mem::replace(&mut drawing.warmed_up, true) {
+            let family = drawing.font.family().to_owned();
+            let _ = std::thread::Builder::new()
+                .name("font-warm-up".into())
+                .spawn(move || lokyr_font_coretext::warm_up(&family));
         }
     }
 }
