@@ -72,32 +72,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 
 [[package]]
-name = "lokyr-differential"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "lokyr-vt-core",
-]
-
-[[package]]
-name = "lokyr-fuzz"
-version = "0.0.0"
-dependencies = [
- "lokyr-differential",
- "lokyr-vt-core",
- "libfuzzer-sys",
-]
-
-[[package]]
-name = "lokyr-vt-core"
-version = "0.1.0"
-dependencies = [
- "thiserror",
- "unicode-normalization",
-]
-
-[[package]]
 name = "cc"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -236,6 +210,32 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "lokyr-differential"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "lokyr-vt-core",
+]
+
+[[package]]
+name = "lokyr-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "lokyr-differential",
+ "lokyr-vt-core",
+]
+
+[[package]]
+name = "lokyr-vt-core"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "memchr"

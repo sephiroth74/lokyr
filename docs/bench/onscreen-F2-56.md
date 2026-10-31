@@ -71,3 +71,22 @@ Measured on 2026-10-31, on the bundle of the commit after f21bb1e, as above, of 
 - **What it costs**: a thread more for each pane; four buffers where there was one, of which only the pages written are resident, all 256 KiB once a pane has had a flood; on a stream that fills the queue, up to 16 reads that do not wait for each refill, about 8 µs of CPU, where an idle or interactive pane never spins. A key's echo, which goes through both threads, takes as long: at 60 Hz, the median of 200 synthetic keys of `lokyr --bench latency`, 21.1 and 21.6 ms, against 22.6 and 20.8 at f21bb1e, in turn.
 - **A frame's time**, at 3840 × 2224 pixels, of the three runs: 548 frames of ASCII, p50 0.28 ms, p99 1.52 at most; 75 of `seq`, 0.27 and 2.30; 91 of SGR, 0.55 and 5.68; 142 of CJK, 0.57 and 17.41, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
 - **The headless throughput of F1** holds: the VT core did not change.
+
+## After F2-147
+
+Measured on 2026-10-31, on the commit after 74d71b1, against it, of the VT core alone: `lokyr-throughput`, and a harness that feeds a file to the terminal in reads of 64 KiB at 120 × 40, its line feeds after carriage returns as a terminal's ONLCR puts them, the median of five runs.
+
+| Input | Before | After | |
+|---|---|---|---|
+| `cjk.txt` | 163.5 MiB/s | **214.3** | +31% |
+| Its CJK alone | 289 | 322 | +11% |
+| Its emoji of one codepoint | 302 | 335 | +11% |
+| Its ZWJ sequences and skin tones | 119 | 215.5 | +81% |
+| ❤️ and ✔️, VS16 after a narrow pictographic | 89 | 112 | +25% |
+| Its flags | 111 | 144 | +29% |
+| Letters of combining accents | 57 | 77 | +34% |
+
+- **The cause**: the codepoints that join a cluster, a ZWJ, a skin tone, a variation selector, the second of a flag's indicators, took 38% of the time of `cjk.txt`, which takes 0.761 s with them and 0.473 s without, as many lines: each ended the stretch of characters that the terminal writes at once, looked its properties, its width and its segmentation up again, and found the cluster's row in its page five to seven times. The allocations that a first sample of `lokyr-throughput` showed were `alacritty_terminal`'s, which runs in the same process.
+- **The fix**: a codepoint that joins a cluster of the stretch and leaves it as wide stays in the stretch, and goes into the page's grapheme table once the stretch is written; the stretch's buffers are the terminal's own, where each run filled 512 bytes of them anew; a join that changes a cluster's width finds its row once, and a widening too.
+- **Against `alacritty_terminal`**, as `lokyr-throughput` feeds both: `cjk.txt` from 0.58 of its rate to 0.75, 203.0 MiB/s against 271.2. vtebench's scenarios, twice each, keep their rates: `unicode` 408.6 and 406.1 MiB/s against 410.3 and 410.3 before, 1.03 and 1.02 of `alacritty_terminal`'s; the bottom region 0.71 and 0.68, above ADR 0015's 0.6.
+- **The same states**: the terminal, fed whole and a byte at a time, holds the same cells, clusters, styles and cursor after each of 200 000 generated inputs, of emoji, joiners, selectors, flags, margins, insert mode and wraps, and each of the 83 004 of the fuzzers' corpora; and the same as before the change, after each of 182 851 of them. The fuzzers ran ten minutes each, `terminal` and `differential`, without a failure.

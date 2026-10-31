@@ -232,6 +232,21 @@ fn a_flag_that_wraps_stays_one_cluster() {
 }
 
 #[test]
+fn clusters_of_a_run_past_the_grapheme_table_s_room_make_the_page_grow() {
+    // More clusters of two codepoints, in one run, than a page has room
+    // for at first.
+    let clusters = usize::from(crate::page::PAGE_GRAPHEMES) + 20;
+    let cols = u16::try_from(clusters * 2).unwrap();
+    let mut term = Term::new(cols, 1);
+    term.feed("中\u{301}".repeat(clusters));
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    for x in (0..cols).step_by(2) {
+        assert_eq!(page.grapheme(row, x), ['\u{301}'], "at {x}");
+    }
+    assert!(page.capacity().graphemes > crate::page::PAGE_GRAPHEMES);
+}
+
+#[test]
 fn legacy_mode_gives_each_codepoint_its_cell() {
     let options = Options {
         widths: Widths {
@@ -4715,6 +4730,14 @@ const OTHER_TEXT: &[&str] = &[
     "\u{E4}\u{F6}\u{FC}\u{DF}\u{E9}\u{E8}",
     "\u{E9}\u{301}中\u{E0}",
     "\u{1F600}\u{1F600}\u{2764}\u{FE0F}",
+    // Codepoints that join the clusters of a stretch: a skin tone and
+    // sequences that a ZWJ joins, a wide cluster that VS15 narrows, flags,
+    // and a cluster longer than a cell keeps.
+    "中\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB}\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{E9}",
+    "\u{1F600}\u{FE0E}中\u{2714}\u{FE0F}\u{E9}\u{302}",
+    "\u{1F1EE}\u{1F1F9}\u{1F1EF}\u{1F1F5}\u{1F1EE}",
+    "\u{2764}\u{200D}\u{1F525}\u{2714}\u{200D}\u{2714}\u{FE0F}",
+    "\u{E9}\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}\u{307}\u{308}\u{309}\u{30A}\u{30B}\u{30C}\u{30D}\u{30E}\u{30F}\u{310}\u{311}\u{312}\u{313}\u{314}\u{315}\u{316}\u{317}\u{318}\u{319}\u{31A}\u{31B}\u{31C}\u{31D}\u{31E}\u{31F}\u{320}\u{321}中",
 ];
 
 fn read() -> impl Strategy<Value = Vec<u8>> {

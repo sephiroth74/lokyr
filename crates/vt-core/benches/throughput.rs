@@ -1,6 +1,7 @@
 //! The throughput of the parser alone, of the terminal that it drives, on
-//! generated text, plain ASCII, colored output, Japanese text with emoji
-//! and the cursor moved for every character, and of the grid's own
+//! generated text, plain ASCII, colored output, Japanese text with emoji,
+//! clusters of emoji with joiners, skin tones, variation selectors and
+//! flags, and the cursor moved for every character, and of the grid's own
 //! operations: scrolling at the scrollback's limit, and writing rows.
 
 use std::hint::black_box;
@@ -47,6 +48,15 @@ fn unicode() -> Vec<u8> {
     repeated("日本語のテキスト、そして é é 😀 日本語のテキスト、そして é é 😀\r\n".as_bytes())
 }
 
+/// CJK text between emoji of several codepoints each: sequences that a
+/// ZWJ joins, skin tones, variation selectors and flags.
+fn clusters() -> Vec<u8> {
+    repeated(
+        "漢字かなカナ한글中文日本語 🦀🌍✨ 👩🏽\u{200D}💻👨\u{200D}👩\u{200D}👧 ❤\u{FE0F}✔\u{FE0F} 🇮🇹🇯🇵 汉语拼音 東京大阪 서울부산 😀😃😄\r\n"
+            .as_bytes(),
+    )
+}
+
 /// A letter at every cell of a screen of 120 by 40, the cursor moved to
 /// each, as editors redraw.
 fn moves() -> Vec<u8> {
@@ -59,11 +69,12 @@ fn moves() -> Vec<u8> {
     repeated(&screen)
 }
 
-fn inputs() -> [(&'static str, Vec<u8>); 4] {
+fn inputs() -> [(&'static str, Vec<u8>); 5] {
     [
         ("plain", plain()),
         ("colored", colored()),
         ("unicode", unicode()),
+        ("clusters", clusters()),
         ("moves", moves()),
     ]
 }

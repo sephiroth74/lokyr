@@ -303,6 +303,8 @@ pub struct Terminal {
     /// The codepoints of a cluster being normalized, and its normal form,
     /// kept to be reused.
     scratch: (Vec<char>, Vec<char>),
+    /// The buffers of a stretch being printed, kept to be reused.
+    stretch: print::Stretch,
     /// The style that printed text takes.
     pen: Style,
     /// Whether the pen is the default style, which printed text then takes
@@ -500,6 +502,7 @@ impl Terminal {
             widths: options.widths,
             normalization: options.normalization,
             scratch: (Vec::new(), Vec::new()),
+            stretch: print::Stretch::default(),
             pen: Style::DEFAULT,
             pen_default: true,
             pen_id: StyleId::DEFAULT,

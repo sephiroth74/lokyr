@@ -1,6 +1,6 @@
 //! How many cells a character, or a grapheme cluster, takes.
 
-use super::{EastAsianWidth, Mark, Properties, properties};
+use super::{EastAsianWidth, GraphemeBreak, Mark, Properties, properties};
 
 /// How text splits into cells.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -136,6 +136,22 @@ impl Widths {
             return 2;
         }
         width
+    }
+
+    /// Whether `c`, whose properties are `properties`, joining a cluster
+    /// that takes `cells` cells, one or two, as [`Widths::cluster_width`]
+    /// gives them, leaves it as many: a wide cluster narrows only with VS15;
+    /// a narrow one whose first codepoint has a width widens only with
+    /// VS16, with a regional indicator that makes a flag, or with a
+    /// pictographic that a ZWJ joins.
+    pub fn keeps_cells(self, cells: u8, c: char, properties: Properties) -> bool {
+        if cells == 2 {
+            c != TEXT_PRESENTATION
+        } else {
+            c != EMOJI_PRESENTATION
+                && properties.grapheme_break != GraphemeBreak::RegionalIndicator
+                && !properties.extended_pictographic
+        }
     }
 }
 

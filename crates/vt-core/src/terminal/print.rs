@@ -2,7 +2,7 @@
 
 use super::{Cluster, Cursor, Terminal};
 use crate::page::{Cell, Content, Hyperlink, Page, RowFlag, Style, StyleId, Width};
-use crate::unicode::{GraphemeBreak, Mode, Normalization, properties};
+use crate::unicode::{GraphemeBreak, Mode, Normalization, Widths, properties};
 
 /// The most codepoints that a cluster keeps; those that would join it past
 /// them are dropped. Unicode's stream-safe text format allows thirty
@@ -13,6 +13,20 @@ const MAX_CLUSTER: usize = 32;
 
 /// The most characters that [`Terminal::print_char_run`] writes at once.
 const STRETCH: usize = 64;
+
+/// The most codepoints that join the clusters of a stretch as it is
+/// written.
+const JOINS: usize = 64;
+
+/// The buffers of a stretch that [`Terminal::print_char_run`] writes.
+#[derive(Debug, Default)]
+pub(super) struct Stretch {
+    /// Its characters, each with the cells that it takes.
+    chars: Vec<(char, u8)>,
+    /// The codepoints that join its clusters, each with its cluster's
+    /// column from the stretch's start.
+    joins: Vec<(u16, char)>,
+}
 
 /// Whether writing `width` cells from column `x` of a row whose cells are
 /// `cells` goes over a wide character in the two columns from `start`,
@@ -25,6 +39,24 @@ fn over_wide_start(cells: &[Cell], x: u16, width: u16, start: u16) -> bool {
         && cells[usize::from(x.max(start))..usize::from((x + width).min(start + 2))]
             .iter()
             .any(|cell| matches!(cell.width(), Width::Wide | Width::SpacerTail))
+}
+
+/// The width that the cluster at column `x` of row `row` of `page` takes,
+/// as `widths` give it, if its cell has another: wide for a narrow one that
+/// takes two cells now, narrow for a wide one that takes one.
+fn new_width(page: &Page, row: u16, x: u16, widths: Widths) -> Option<Width> {
+    let cell = page.cells(row)[usize::from(x)];
+    let (Content::Char(first) | Content::Grapheme(first)) = cell.content() else {
+        return None;
+    };
+    match (
+        cell.width(),
+        widths.cluster_width(first, page.grapheme(row, x)),
+    ) {
+        (Width::Narrow, 2) => Some(Width::Wide),
+        (Width::Wide, 1) => Some(Width::Narrow),
+        _ => None,
+    }
 }
 
 impl Terminal {
@@ -171,10 +203,11 @@ impl Terminal {
     /// Prints `chars`, as [`Terminal::print_translated`] would print them
     /// one by one, but each stretch of characters that start clusters of
     /// their own, one or two cells wide, and fit in the line, at once, with
-    /// the row's page found once. The others take the path of each
-    /// character: those that join a cluster, or have no width, or do not
-    /// fit, or come with another character set, an open link, insert mode
-    /// or a normal form to put them in.
+    /// the row's page found once, and with the codepoints that join those
+    /// clusters and leave them as wide. The others take the path of each
+    /// character: those that join a cluster otherwise, or have no width, or
+    /// do not fit, or come with another character set, an open link, insert
+    /// mode or a normal form to put them in.
     pub(super) fn print_char_run(&mut self, chars: &[char]) {
         let plain = self.charsets.is_plain()
             && !self.link.is_open()
@@ -186,8 +219,13 @@ impl Terminal {
             }
             return;
         }
-        let mut stretch = [('\0', 0_u8); STRETCH];
-        let (mut len, mut cells) = (0, 0_u16);
+        // The stretch's characters, from the terminal's buffer; the
+        // codepoints that join its clusters, which few runs have, wait in
+        // the terminal's other buffer, out of the loop's way.
+        let mut stretch = std::mem::take(&mut self.stretch.chars);
+        stretch.clear();
+        self.stretch.joins.clear();
+        let mut cells = 0_u16;
         let (mut x, mut end) = (0, 0);
         for &c in chars {
             let properties = properties(c);
@@ -197,7 +235,7 @@ impl Terminal {
                 Mode::Unicode => segmenter.starts_cluster_with(properties),
                 Mode::Legacy => width > 0,
             };
-            if len == 0 {
+            if stretch.is_empty() {
                 let cursor = self.cursor();
                 (x, end) = (cursor.x, self.line_end(cursor.x));
                 if cursor.pending_wrap {
@@ -208,22 +246,44 @@ impl Terminal {
             // `x + cells` never passes `end`, and the sum with the width
             // could pass `u16::MAX` at the last column of the widest screen.
             let fits = u16::from(width) <= end - (x + cells);
-            if !starts || !matches!(width, 1 | 2) || !fits || len == STRETCH {
-                self.write_stretch(x, &stretch[..len], cells, end);
-                (len, cells) = (0, 0);
-                self.print_translated(c);
+            if !starts || !matches!(width, 1 | 2) || !fits || stretch.len() == STRETCH {
+                // A codepoint that joins the stretch's last cluster and
+                // leaves it as wide, as clusters keep their widths in the
+                // legacy mode, joins it as the stretch is written.
+                if !starts
+                    && let Some(&(_, last)) = stretch.last()
+                    && self.stretch.joins.len() < JOINS
+                    && (self.widths.mode == Mode::Legacy
+                        || self.widths.keeps_cells(last, c, properties))
+                {
+                    self.segmenter = segmenter;
+                    self.stretch.joins.push((cells - u16::from(last), c));
+                    continue;
+                }
+                self.write_stretch(x, &stretch, cells, end);
+                cells = 0;
+                stretch.clear();
+                if starts {
+                    self.print_translated(c);
+                } else {
+                    // It joins the cluster before it, as the path of each
+                    // character finds, with the state that it leaves.
+                    self.segmenter = segmenter;
+                    self.join_previous(c);
+                }
                 continue;
             }
             self.segmenter = segmenter;
-            stretch[len] = (c, width);
-            len += 1;
+            stretch.push((c, width));
             cells += u16::from(width);
             if x + cells == end {
-                self.write_stretch(x, &stretch[..len], cells, end);
-                (len, cells) = (0, 0);
+                self.write_stretch(x, &stretch, cells, end);
+                cells = 0;
+                stretch.clear();
             }
         }
-        self.write_stretch(x, &stretch[..len], cells, end);
+        self.write_stretch(x, &stretch, cells, end);
+        self.stretch.chars = stretch;
         if let Some(&last) = chars.last() {
             self.last_printed = Some(last);
         }
@@ -232,7 +292,9 @@ impl Terminal {
     /// Writes `stretch`, characters that take `cells` cells, from column
     /// `x` of the cursor's row, which is where the cursor is, in a line that
     /// ends before column `end`, as [`Terminal::start_cluster`] would write
-    /// them one by one.
+    /// them one by one; then the codepoints that wait to join its clusters,
+    /// at their columns from `x`, which leave them as wide, as
+    /// [`Terminal::join`] would add them.
     fn write_stretch(&mut self, x: u16, stretch: &[(char, u8)], cells: u16, end: u16) {
         let Some(&(_, last_width)) = stretch.last() else {
             return;
@@ -266,6 +328,32 @@ impl Terminal {
             cursor.x = x + cells;
             cursor.pending_wrap = false;
         }
+        if self.stretch.joins.is_empty() {
+            return;
+        }
+        let joins = std::mem::take(&mut self.stretch.joins);
+        let rows = &mut self.screen_mut().rows;
+        let (mut page, mut row) = rows.screen_row_mut(y);
+        for &(offset, c) in &joins {
+            let at = x + offset;
+            // A cluster that has [`MAX_CLUSTER`] codepoints, or a page that
+            // has no room for another and cannot grow, drops `c`.
+            while page.grapheme(row, at).len() + 1 < MAX_CLUSTER {
+                match page.push_codepoint(row, at, c) {
+                    Ok(()) => break,
+                    Err(full) => {
+                        let grown = rows.grow_page(y, full);
+                        (page, row) = rows.screen_row_mut(y);
+                        if grown.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let mut joins = joins;
+        joins.clear();
+        self.stretch.joins = joins;
     }
 
     /// Adds `c` to the cluster that the last character printed started, or,
@@ -445,38 +533,42 @@ impl Terminal {
     /// room for another and cannot grow, drops `c`.
     fn join(&mut self, cluster: Cluster, c: char) {
         let Cluster { x, y } = cluster;
+        let unicode = self.widths.mode == Mode::Unicode;
+        // Without a normal form to put the cluster in, its width is read
+        // from the page that the codepoint went into.
+        let widths = (unicode && self.normalization == Normalization::None).then_some(self.widths);
         let rows = &mut self.screen_mut().rows;
         let joined = loop {
             let (page, row) = rows.screen_row_mut(y);
             if page.grapheme(row, x).len() + 1 >= MAX_CLUSTER {
-                break false;
+                break None;
             }
             match page.push_codepoint(row, x, c) {
-                Ok(()) => break true,
+                Ok(()) => break Some(widths.map(|widths| new_width(page, row, x, widths))),
                 Err(full) => {
                     if rows.grow_page(y, full).is_err() {
-                        break false;
+                        break None;
                     }
                 }
             }
         };
-        if !joined {
-            self.cluster = Some(cluster);
-            return;
-        }
-        self.normalize(cluster);
-        if self.widths.mode == Mode::Unicode {
-            let (page, row) = self.screen().rows.screen_row(y);
-            let cell = page.cells(row)[usize::from(x)];
-            let (Content::Char(first) | Content::Grapheme(first)) = cell.content() else {
-                return;
-            };
-            let width = self.widths.cluster_width(first, page.grapheme(row, x));
-            match (cell.width(), width) {
-                (Width::Narrow, 2) => self.widen(cluster),
-                (Width::Wide, 1) => self.narrow(cluster),
-                _ => {}
+        let width = match joined {
+            None => None,
+            Some(Some(width)) => width,
+            Some(None) => {
+                self.normalize(cluster);
+                if unicode {
+                    let (page, row) = self.screen().rows.screen_row(y);
+                    new_width(page, row, x, self.widths)
+                } else {
+                    None
+                }
             }
+        };
+        match width {
+            Some(Width::Wide) => self.widen(cluster),
+            Some(_) => self.narrow(cluster),
+            None => {}
         }
         self.cluster = Some(cluster);
     }
@@ -489,17 +581,18 @@ impl Terminal {
         if x + 1 >= end {
             return;
         }
-        let head = self.cell(x, y);
         // In insert mode, the second half pushes the rest of the line
         // right, as the cluster's first half did.
         if self.insert {
             self.screen_mut().rows.insert_blanks(y, x + 1, 1, end);
         }
-        self.clear_overlaps(x + 1, y, 1);
-        {
-            let (page, row) = self.screen_mut().rows.screen_row_mut(y);
-            page.set_width(row, x, Width::Wide);
-        }
+        let start = self.margins.left;
+        let (page, row) = self.screen_mut().rows.screen_row_mut(y);
+        let head = page.cells(row)[usize::from(x)];
+        // The second half goes over what was there, as a write would.
+        let over_wide = y > 0 && over_wide_start(page.cells(row), x + 1, 1, start);
+        page.clear_halves(row, x + 1, 1);
+        page.set_width(row, x, Width::Wide);
         // The second half has the style, the protection, the zone and the
         // link of the first.
         let tail = Cell::EMPTY
@@ -507,7 +600,10 @@ impl Terminal {
             .with_style(head.style())
             .with_protected(head.is_protected())
             .with_semantic(head.semantic());
-        self.put(x + 1, y, tail);
+        page.set_cell(row, x + 1, tail);
+        if over_wide {
+            self.clear_spacer_head_above(y, None);
+        }
         if head.has_hyperlink() {
             self.share_link(x, y);
         }

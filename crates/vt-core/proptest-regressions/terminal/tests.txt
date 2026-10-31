@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dc4cfc8f8f24a8e359c83674c26c251fdf971f91cd44736c72050723c65e30d4 # shrinks to cols = 1, rows = 1, scrollback = false, widths = Widths { mode: Unicode, tables: Current, ambiguous_wide: false }, normalization = None, ops = [Resize(4, 1), Feed([32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]), Feed([240, 159, 152, 128, 240, 159, 152, 128, 226, 157, 164, 239, 184, 143])]
+cc 98e688b2d8329461e440d3a12e43c632d22a97a36c132bf598622a50c999d400 # shrinks to cols = 4, rows = 1, scrollback = false, widths = Widths { mode: Legacy, tables: Unicode8, ambiguous_wide: false }, normalization = None, ops = [Feed([240, 159, 152, 128, 240, 159, 152, 128, 226, 157, 164, 239, 184, 143])]
+cc b08a01ed3673b9595b01dd0ae76fb3e3bce769055dbb0e2861df536cf13f58dc # shrinks to cols = 1, rows = 1, scrollback = false, widths = Widths { mode: Unicode, tables: Current, ambiguous_wide: false }, normalization = None, ops = [Feed([240, 159, 135, 174, 240, 159, 135, 185, 240, 159, 135, 175, 240, 159, 135, 181, 240, 159, 135, 174])]
+cc c1de42efaf2615019ddd511abfe4bb322586ec92de03382920f03ab8d8646733 # shrinks to cols = 4, rows = 1, scrollback = false, widths = Widths { mode: Unicode, tables: Current, ambiguous_wide: false }, normalization = None, ops = [Feed([32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]), Feed([32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32]), Feed([195, 169, 204, 129, 204, 130, 204, 131, 204, 132, 204, 133, 204, 134, 204, 135, 204, 136, 204, 137, 204, 138, 204, 139, 204, 140, 204, 141, 204, 142, 204, 143, 204, 144, 204, 145, 204, 146, 204, 147, 204, 148, 204, 149, 204, 150, 204, 151, 204, 152, 204, 153, 204, 154, 204, 155, 204, 156, 204, 157, 204, 158, 204, 159, 204, 160, 204, 161, 228, 184, 173])]
