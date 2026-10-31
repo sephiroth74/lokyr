@@ -177,6 +177,6 @@ The HUD's log, `MTL_HUD_ENABLED` and `MTL_HUD_LOG_ENABLED`, over 10 s of `yes`, 
 
 ## What this leaves
 
-- **Tasks** for the gaps past the budget of throughput: kitty's short CSI sequences, at 0.26 of Ghostty's rate; its unique clusters of several codepoints, at 0.72; vtebench's `scrolling_top_region`, a sixth slower than Ghostty.
-- **The user's choice**: the width of a lone regional indicator, and of a cluster with a vowel sign that spaces.
+- **The gaps past the budget of throughput**, each a task, as the user chose on 31 October 2026: kitty's short CSI sequences, at 0.26 of Ghostty's rate, [F2-150](../tasks/F2-macos-single-pane.md#f2-150--short-csi-sequences-faster); its unique clusters of several codepoints, at 0.72, [F2-151](../tasks/F2-macos-single-pane.md#f2-151--unique-clusters-of-several-codepoints-faster); vtebench's `scrolling_top_region`, a sixth slower than Ghostty, [F2-152](../tasks/F2-macos-single-pane.md#f2-152--vtebenchs-top-region).
+- **The widths**: a lone regional indicator, and a cluster with a vowel sign that spaces, as `wcwidth` 0.9.4 and Ghostty count them, as the user chose: [F2-153](../tasks/F2-macos-single-pane.md#f2-153--widths-as-the-programs-count-them).
 - **The user's part**, which the report waits for: the latency with Typometer, alone and next to a flood, at 60 and 120 Hz, which Lokyr's own measure calibrates; Is It Snappy, 30 takes a terminal; `powermetrics`, of each terminal and of the window server; the MacBook's display at 120 Hz; the smoothness, by eye; vttest's screens.
