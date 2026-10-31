@@ -13,8 +13,8 @@ use crate::{ReadOutcome, Readiness};
 /// What the program writes to the terminal.
 #[derive(Debug)]
 pub struct PtyReader {
-    master: OwnedFd,
-    closed: Arc<OwnedFd>,
+    pub(super) master: OwnedFd,
+    pub(super) closed: Arc<OwnedFd>,
 }
 
 /// What is typed into the terminal, for the program.
@@ -53,6 +53,20 @@ impl PtyReader {
                 // A program that has ended may have left output to read.
                 Ready::Master | Ready::HungUp => {}
             }
+            match self.read_now(buf)? {
+                ReadOutcome::TimedOut => {}
+                outcome => return Ok(outcome),
+            }
+        }
+    }
+
+    /// Reads what the program wrote into `buf`, without waiting for it:
+    /// `TimedOut` while there is nothing to read.
+    pub(super) fn read_now(&mut self, buf: &mut [u8]) -> io::Result<ReadOutcome> {
+        if buf.is_empty() {
+            return Ok(ReadOutcome::Read(0));
+        }
+        loop {
             // SAFETY: `read` writes at most `buf.len()` bytes into `buf`.
             let n =
                 unsafe { libc::read(self.master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
@@ -66,7 +80,8 @@ impl PtyReader {
                         // Once no process has the terminal open, Linux's
                         // master fails with EIO rather than reading the end.
                         Some(libc::EIO) => return Ok(ReadOutcome::End),
-                        Some(libc::EAGAIN | libc::EINTR) => {}
+                        Some(libc::EAGAIN) => return Ok(ReadOutcome::TimedOut),
+                        Some(libc::EINTR) => {}
                         _ => return Err(error),
                     }
                 }
@@ -170,7 +185,7 @@ impl Write for PtyWriter {
 }
 
 /// What a wait found ready.
-enum Ready {
+pub(super) enum Ready {
     /// The master, for the events asked for, or with an error that the
     /// read or the write will tell.
     Master,
@@ -184,7 +199,7 @@ enum Ready {
 
 /// Waits for `master` to have `events`, for `closed` to be ready, or for
 /// `deadline`.
-fn wait(
+pub(super) fn wait(
     master: &OwnedFd,
     closed: &OwnedFd,
     events: libc::c_short,
@@ -204,7 +219,7 @@ fn wait(
 }
 
 /// An entry for `poll`, of `fd` for `events`.
-fn pollfd(fd: &OwnedFd, events: libc::c_short) -> libc::pollfd {
+pub(super) fn pollfd(fd: &OwnedFd, events: libc::c_short) -> libc::pollfd {
     libc::pollfd {
         fd: fd.as_raw_fd(),
         events,
@@ -214,7 +229,7 @@ fn pollfd(fd: &OwnedFd, events: libc::c_short) -> libc::pollfd {
 
 /// Waits for one of `fds` to be ready, or for `deadline`, after which none
 /// is: a deadline that has passed still looks once, without waiting.
-fn poll(fds: &mut [libc::pollfd], deadline: Option<Instant>) -> io::Result<()> {
+pub(super) fn poll(fds: &mut [libc::pollfd], deadline: Option<Instant>) -> io::Result<()> {
     loop {
         let (timeout, last) = match deadline {
             None => (-1, false),

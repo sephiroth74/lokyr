@@ -1,8 +1,10 @@
 //! PTYs on Unix: a pseudo-terminal, and a child that leads its own session
 //! with the PTY as its controlling terminal.
 
+mod ahead;
 mod closing;
 mod io;
+mod wake;
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -14,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 
+pub use ahead::{Batch, Next, ReadAhead};
 pub use io::{PtyReader, PtyWriter};
 
 use crate::{Error, Exit, Options, Program, Size};

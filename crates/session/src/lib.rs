@@ -9,14 +9,14 @@
 mod lock;
 mod queue;
 
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, Write};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use lokyr_pty::{Exit, Pty, PtyReader, PtyWriter, ReadOutcome, Size};
+use lokyr_pty::{Exit, Next, Pty, PtyWriter, ReadAhead, Size};
 use lokyr_vt_core::input::{self, KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{self, ClipboardRequest, Scroll, Snapshot, Terminal};
@@ -109,11 +109,12 @@ impl Shared {
 /// A program running in a terminal: its PTY, the terminal's state, and the
 /// threads that move the bytes between them.
 ///
-/// An I/O thread reads the program's output, at most [`SLICE`] bytes at a
-/// time, and parses each slice under the grid lock, which it hands over,
-/// between two slices, to any thread that waits for it; it also ends a
-/// synchronized update that outlasts its deadline, its read waiting for
-/// that at most. A writer thread writes the keys, the pastes and the
+/// A thread of the PTY's reads the program's output ahead of its parse, so
+/// that the program does not wait for it; an I/O thread parses it, at most
+/// [`SLICE`] bytes at a time, each slice under the grid lock, which it hands
+/// over, between two slices, to any thread that waits for it; it also ends
+/// a synchronized update that outlasts its deadline, its wait for output
+/// lasting until that at most. A writer thread writes the keys, the pastes and the
 /// terminal's replies to the program, so that a program that does not read
 /// its input never keeps its output from being read; the replies that wait
 /// take at most about a MiB, past which the next are dropped. Dropping the session
@@ -136,7 +137,10 @@ impl Session {
     ) -> Result<Self, Error> {
         let size = options.pty.size;
         let pty = lokyr_pty::spawn(&options.pty)?;
-        let reader = pty.reader().map_err(Error::Threads)?;
+        let output = pty
+            .reader()
+            .and_then(|reader| reader.read_ahead(SLICE))
+            .map_err(Error::Threads)?;
         let writer = pty.writer().map_err(Error::Threads)?;
         let shared = Arc::new(Shared {
             terminal: FairMutex::new(Terminal::new(
@@ -158,7 +162,7 @@ impl Session {
             let shared = Arc::clone(&shared);
             thread::Builder::new()
                 .name("session-io".into())
-                .spawn(move || read_output(&shared, reader, sync_timeout))
+                .spawn(move || read_output(&shared, output, sync_timeout))
                 .map_err(Error::Threads)?;
         }
         {
@@ -395,19 +399,18 @@ impl Drop for Session {
     }
 }
 
-/// The I/O thread: reads the program's output and parses it, a slice at a
-/// time, until it ends.
-fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
+/// The I/O thread: parses the program's output, a slice at a time, until it
+/// ends.
+fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
     let _ending = Ending(shared);
     let mut parser = Parser::new();
-    let mut buffer = vec![0; SLICE];
     // The synchronized update under way, by its number, and its deadline.
     let mut update = 0;
     let mut deadline = None;
     loop {
-        // A read past the deadline still takes what is there, so that output
-        // that never stops never times a read out: the deadline is looked
-        // at before each read, rather than left to the read.
+        // A wait past the deadline still takes what is there, so that output
+        // that never stops never times a wait out: the deadline is looked
+        // at before each slice, rather than left to the wait.
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             deadline = None;
             let mut terminal = shared.terminal.lock_in_turn();
@@ -418,15 +421,17 @@ fn read_output(shared: &Shared, mut reader: PtyReader, sync_timeout: Duration) {
                 shared.changed(false);
             }
         }
-        let n = match reader.read_until(&mut buffer, deadline) {
-            Ok(ReadOutcome::Read(n)) => n,
-            Ok(ReadOutcome::TimedOut) => continue,
-            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Ok(ReadOutcome::End) | Err(_) => break,
+        let slice = match output.next(deadline) {
+            Next::Output(slice) => slice,
+            Next::TimedOut => continue,
+            Next::End => break,
         };
+        let n = slice.len();
         let mut terminal = shared.terminal.lock_in_turn();
         let bells = terminal.bells();
-        parser.advance(&mut *terminal, &buffer[..n]);
+        parser.advance(&mut *terminal, &slice);
+        // Its buffer goes back to the reader.
+        drop(slice);
         let told = terminal.has_events() || terminal.bells() != bells;
         if terminal.scroll_on_output() {
             terminal.scroll_viewport(Scroll::Bottom);

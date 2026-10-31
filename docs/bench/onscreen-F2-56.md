@@ -53,3 +53,21 @@ Lokyr's frames as each workload's output draws, in ms, at 3840 × 2224 pixels: t
 - **The throughput**: [F2-145](../tasks/F2-macos-single-pane.md#f2-145--the-outputs-way-from-the-pty) takes the reader's loop, its reads' size and count, the `poll` before each, its thread's priority, and the lock's handovers.
 - **A frame's new glyphs**: [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes the first frames of glyphs that the atlas lacks.
 - **The instrumentation**: the phases are timed with the app's own clock in `--bench output`; `tracing` spans and the signposts that Instruments shows wait for the overlay's and IPC's measures, as no subscriber reads them yet.
+
+## After F2-145
+
+Measured on 2026-10-31, on the bundle of the commit after f21bb1e, as above, of Lokyr, Ghostty and Alacritty alone, which the criterion names: the raw results are in [after-F2-145.jsonl](onscreen-F2-56/after-F2-145.jsonl).
+
+| Workload | Lokyr | Lokyr before | Ghostty | Alacritty | Against the faster |
+|---|---|---|---|---|---|
+| `ascii.txt`, 1 GiB | **293.1** | 117.8 | 301.7 | 167.3 | −2.9% |
+| `seq.txt` | **183.0** | 117.3 | 176.7 | 83.4 | +3.6% |
+| `sgr.txt` | **245.4** | 138.4 | 249.8 | 149.8 | −1.8% |
+| `cjk.txt` | **143.6** | 112.7 | 174.8 | 152.7 | −17.8% |
+
+- **The cause**: one thread read the PTY and parsed what it read, in turn. A macOS terminal queues 1 KiB of output, which every read takes, 98.5% of them 1024 bytes exactly: the program waited, each KiB, for the parse, and the reader for the program's refill, two wakeups a KiB. A reader of `cat`'s output that does nothing else takes 154 MiB/s as Lokyr read, a `poll` then a `read`; 174 reading first, and polling once the queue is empty; 182 with a blocking read; 313 with reads that never wait. With 1 to 3 µs of work a KiB between its reads, as a parse takes, each of the first three takes 134 to 176 MiB/s. The reader's thread at the user-interactive QoS changed nothing, 2.16 s for 256 MiB either way. Ghostty, as `sample` shows, reads on a thread and parses on another.
+- **The fix**: a thread of the PTY's reads into a ring of four buffers of 64 KiB, ahead of the I/O thread's parse, and bridges the refills of a stream that fills the queue, as [ARCHITECTURE.md](../ARCHITECTURE.md#threads-and-data-flow) tells: ASCII, `seq` and SGR come within 3% of Ghostty, `seq` ahead.
+- **CJK is the parse's now**: the I/O thread parses in 98% of the samples, and the reader waits for a free buffer in 54%. The VT core alone, as `lokyr-throughput` feeds it, parses `cjk.txt` at 156.7 MiB/s, where `alacritty_terminal` parses it at 280, 0.56 of it, though vtebench's `unicode` scenario, without emoji of joiners, skin tones and variation selectors, keeps 1.04: the clusters take `print_chars`, the segmenter, `write_stretch` and `join_previous`, and an allocation each, `malloc` and `free` about a seventh of the core's samples.
+- **What it costs**: a thread more for each pane; four buffers where there was one, of which only the pages written are resident, all 256 KiB once a pane has had a flood; on a stream that fills the queue, up to 16 reads that do not wait for each refill, about 8 µs of CPU, where an idle or interactive pane never spins. A key's echo, which goes through both threads, takes as long: at 60 Hz, the median of 200 synthetic keys of `lokyr --bench latency`, 21.1 and 21.6 ms, against 22.6 and 20.8 at f21bb1e, in turn.
+- **A frame's time**, at 3840 × 2224 pixels, of the three runs: 548 frames of ASCII, p50 0.28 ms, p99 1.52 at most; 75 of `seq`, 0.27 and 2.30; 91 of SGR, 0.55 and 5.68; 142 of CJK, 0.57 and 17.41, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
+- **The headless throughput of F1** holds: the VT core did not change.

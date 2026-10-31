@@ -68,14 +68,15 @@ Workspace
 | Thread | Does | Never does |
 |---|---|---|
 | Main (OS event loop) | Input, kernel, native plugins, UI layout, snapshot, shaping, frame submission | Block on I/O or on a Luau plugin |
-| I/O, one per pane | `read` from the PTY, parsing, grid updates; ending synchronized updates at their deadline | Wait for the main thread, or for the program to read its input |
+| Reader, one per pane | `read` from the PTY, into a ring of four buffers of 64 KiB, ahead of the parse | Parse, or wait for the main thread |
+| I/O, one per pane | Parsing the reader's batches, grid updates; ending synchronized updates at their deadline | Wait for the main thread, or for the program to read its input |
 | Writer, one per pane | Writing input and replies to the PTY | Wait for the main thread |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
 **From program output to the screen**
-1. The I/O thread reads at most ~64 KiB from the PTY.
-2. It parses that slice while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
+1. The reader thread reads the PTY into a batch of at most 64 KiB, while the I/O thread parses the one before it, so that the program never waits for the parse. A macOS terminal queues about 1 KiB of output, which a program that writes more fills again within microseconds of each read: a reader that parsed between its reads kept the program waiting through each parse, and waited itself through each refill, a KiB for two wakeups. Once a batch holds a full queue, the reader bridges the refills, with up to 16 reads that do not wait, then waits of 1 ms while the I/O thread has a batch to parse, for 3 ms in all at most, so that a batch holds many refills; less than a full queue, as a shell's echo, goes to the I/O thread at once, and so does what the reader holds as soon as the I/O thread runs out of batches. Past four batches, the reader stops, and the terminal's queue holds the program back.
+2. The I/O thread parses a batch while holding the pane's grid lock, then releases the lock fairly so the renderer never starves.
 3. It marks the rows that changed and, unless it already has, wakes the main thread (a `CFRunLoopSource` on macOS, an `eventfd` on Linux), marking its pane as woken: the main thread looks at the woken panes alone, and asks for their windows' frames alone. A bell or a terminal's event wakes it too, once a frame's time at most: the main thread takes what a pane told no more often, and a timer brings the turn of one that told within it, so that a stream of bells wakes it 60 times a second, not 100 000.
 4. On the display-link tick, the main thread takes the lock, copies only the visible rows that changed (8-byte cells plus the styles they use) and releases it. A frame whose display list is the one that the window shows already presents nothing. The copy carries the program's input modes, its keyboard's flags and the alternate screen, which the frame reads from it, and a key's contexts too, so that a frame takes a pane's lock once, and a key once more to write; a paste, the mouse and a selection that the app just changed read the terminal under the lock.
 5. Shaping, display-list construction and GPU command encoding then run without the lock.

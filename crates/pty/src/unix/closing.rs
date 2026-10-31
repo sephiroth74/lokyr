@@ -39,7 +39,7 @@ pub(super) fn closing() -> io::Result<(Arc<OwnedFd>, Closing)> {
 
 /// Adds the kqueue's user event, or changes it, with `flags` and `fflags`.
 #[cfg(target_os = "macos")]
-fn user_event(queue: &OwnedFd, flags: u16, fflags: u32) -> io::Result<()> {
+pub(super) fn user_event(queue: &OwnedFd, flags: u16, fflags: u32) -> io::Result<()> {
     let event = libc::kevent {
         ident: 0,
         filter: libc::EVFILT_USER,
