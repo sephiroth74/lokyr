@@ -192,6 +192,20 @@ pub trait FontBackend {
     /// the group's faces marked [`FaceInfo::in_group`].
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>>;
 
+    /// The names of the families that the system has, as
+    /// [`FontBackend::family`] takes them, without those that it hides from
+    /// the user, in any order: none by default.
+    fn families(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Whether the glyphs of `face` all take one advance, as its font tells:
+    /// `false` when it cannot tell.
+    fn monospaced(&mut self, face: FaceId) -> bool {
+        let _ = face;
+        false
+    }
+
     /// What `face` measures at `size` pixels.
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics;
 

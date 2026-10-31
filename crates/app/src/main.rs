@@ -34,6 +34,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use lokyr_kernel::config::{self, Config};
+use lokyr_text_core::catalog::{self, Filter};
 
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
@@ -42,7 +43,8 @@ Usage: lokyr [--version]
        lokyr --bench latency [--keys <n>] [--flood]
        lokyr --bench output [--window <width>x<height>] -- <program> [args]
        lokyr +show-config [--default] [--docs]
-       lokyr +validate-config [path]";
+       lokyr +validate-config [path]
+       lokyr +list-fonts [--monospace] [--family <name>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -78,6 +80,13 @@ fn main() -> ExitCode {
         ["+validate-config", path] if !path.starts_with('-') => {
             validate_config(Some(PathBuf::from(path)))
         }
+        ["+list-fonts", options @ ..] => match list_fonts_options(options) {
+            Some(filter) => list_fonts(&filter),
+            None => {
+                eprintln!("{USAGE}");
+                ExitCode::FAILURE
+            }
+        },
         _ => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE
@@ -207,6 +216,75 @@ fn validate_config(path: Option<PathBuf>) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The list of fonts' options, `--monospace` and `--family <name>`.
+fn list_fonts_options<'a>(options: &[&'a str]) -> Option<Filter<'a>> {
+    let mut filter = Filter::default();
+    let mut options = options.iter();
+    while let Some(option) = options.next() {
+        match *option {
+            "--monospace" => filter.monospaced = true,
+            "--family" => filter.family = Some(options.next()?),
+            _ => return None,
+        }
+    }
+    Some(filter)
+}
+
+/// Prints the families of fonts that the system has, each with its styles,
+/// by the names that the config's `family` and `style` take, those that
+/// `filter` keeps; the config's family marked.
+fn list_fonts(filter: &Filter<'_>) -> ExitCode {
+    // A config that does not read leaves its family unmarked.
+    let configured =
+        config::path()
+            .filter(|path| path.exists())
+            .and_then(|path| match Config::read(&path) {
+                Ok(config) => config.font.family.map(|name| name.as_str().to_owned()),
+                Err(error) => {
+                    eprintln!("lokyr: {error}; the list does not mark the config's family");
+                    None
+                }
+            });
+    let Some(families) = fonts(configured.as_deref(), filter) else {
+        eprintln!("lokyr: this platform has no font backend yet");
+        return ExitCode::FAILURE;
+    };
+    if let Some(family) = filter.family
+        && families.is_empty()
+    {
+        let kind = if filter.monospaced {
+            "monospaced family"
+        } else {
+            "family"
+        };
+        eprintln!(
+            "lokyr: no {kind} `{family}` is installed; `lokyr +list-fonts` lists those that are"
+        );
+        return ExitCode::FAILURE;
+    }
+    match catalog::write(&families, &mut std::io::stdout().lock()) {
+        // A reader that stops early, as `head` does, ends the list.
+        Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => {
+            eprintln!("lokyr: the list does not write, {error}");
+            ExitCode::FAILURE
+        }
+        _ => ExitCode::SUCCESS,
+    }
+}
+
+/// The families that CoreText finds, which `filter` keeps.
+#[cfg(target_os = "macos")]
+fn fonts(configured: Option<&str>, filter: &Filter<'_>) -> Option<Vec<catalog::Family>> {
+    let mut backend = lokyr_font_coretext::CoreText::new();
+    Some(catalog::list(&mut backend, configured, filter))
+}
+
+/// No families, without a font backend.
+#[cfg(not(target_os = "macos"))]
+fn fonts(_: Option<&str>, _: &Filter<'_>) -> Option<Vec<catalog::Family>> {
+    None
 }
 
 /// Checks `config` as the app takes it.
@@ -350,6 +428,23 @@ mod tests {
             &["yes"],
         ] {
             assert_eq!(output_options(options), None, "{options:?}");
+        }
+    }
+
+    #[test]
+    fn the_list_of_fonts_takes_the_monospaced_ones_and_a_family() {
+        let filter = |options: &[&str]| {
+            list_fonts_options(options)
+                .map(|filter| (filter.monospaced, filter.family.map(str::to_owned)))
+        };
+        assert_eq!(filter(&[]), Some((false, None)));
+        assert_eq!(filter(&["--monospace"]), Some((true, None)));
+        assert_eq!(
+            filter(&["--family", "SF Mono", "--monospace"]),
+            Some((true, Some("SF Mono".to_owned())))
+        );
+        for options in [&["--family"][..], &["--mono"], &["Menlo"]] {
+            assert_eq!(filter(options), None, "{options:?}");
         }
     }
 }

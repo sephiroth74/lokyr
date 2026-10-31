@@ -21,10 +21,10 @@ use objc2_core_foundation::{
     CFType, CGAffineTransform, CGPoint, Type, kCFTypeSetCallBacks,
 };
 use objc2_core_text::{
-    CTFont, CTFontDescriptor, CTFontOrientation, CTFontSymbolicTraits, CTFontTableOptions, CTLine,
-    CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute,
-    kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey,
-    kCTFontWeightTrait, kCTFontWidthTrait,
+    CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor, CTFontOrientation,
+    CTFontSymbolicTraits, CTFontTableOptions, CTLine, CTRun, kCTFontAttributeName,
+    kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
+    kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -267,6 +267,35 @@ impl FontBackend for CoreText {
             group.clear();
         }
         Some(self.faces_of(&whole, &group, preferred))
+    }
+
+    fn families(&mut self) -> Vec<String> {
+        // SAFETY: a collection without options, and Core Text's constant,
+        // an attribute that descriptors have.
+        let names = unsafe {
+            CTFontCollection::from_available_fonts(None).font_attribute(
+                kCTFontFamilyNameAttribute,
+                CTFontCollectionCopyOptions::Unique,
+            )
+        };
+        // SAFETY: the values of an attribute, CFStrings, or kCFNull for a
+        // descriptor without it.
+        let names = unsafe { names.cast_unchecked::<CFType>() };
+        names
+            .iter()
+            .filter_map(|name| name.downcast::<CFString>().ok())
+            .map(|name| name.to_string())
+            // macOS hides the families whose names start with a dot, as
+            // the system's own.
+            .filter(|name| !name.is_empty() && !name.starts_with('.'))
+            .collect()
+    }
+
+    fn monospaced(&mut self, face: FaceId) -> bool {
+        self.font(face, PROBE_SIZE).is_some_and(|font| {
+            // SAFETY: a font that CoreText made.
+            unsafe { font.symbolic_traits() }.contains(CTFontSymbolicTraits::TraitMonoSpace)
+        })
     }
 
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics {

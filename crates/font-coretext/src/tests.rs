@@ -916,3 +916,38 @@ fn the_warm_up_leaves_the_cascade_to_the_backends() {
     let found = backend.fallback(face, "中").expect("a face of Chinese");
     assert!(backend.glyph(found, '中').is_some());
 }
+
+#[test]
+fn the_list_of_fonts_names_each_style_as_the_config_takes_it() {
+    use lokyr_text_core::catalog::{self, Filter};
+
+    let mut backend = CoreText::new();
+    for family in ["SF Mono", "Menlo"] {
+        let filter = Filter {
+            monospaced: true,
+            family: Some(family),
+        };
+        let listed = catalog::list(&mut backend, Some(family), &filter);
+        let [listed] = listed.as_slice() else {
+            panic!("{family} alone, monospaced: {listed:?}");
+        };
+        assert_eq!(listed.name, family);
+        assert!(listed.configured, "{family} is the config's");
+        assert_eq!(listed.default, family == "SF Mono");
+        assert!(listed.styles.contains(&"Regular".to_owned()), "{listed:?}");
+        for style in &listed.styles {
+            let resolved = resolve_faces(&mut backend, &config(&listed.name, Some(style)));
+            assert!(resolved.is_ok(), "{family} {style}: {resolved:?}");
+        }
+    }
+}
+
+#[test]
+fn the_system_s_families_leave_out_the_hidden_ones() {
+    let families = CoreText::new().families();
+    assert!(
+        families.iter().any(|family| family == "Menlo"),
+        "{families:?}"
+    );
+    assert!(!families.iter().any(|family| family.starts_with('.')));
+}

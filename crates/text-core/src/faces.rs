@@ -136,7 +136,7 @@ const NAMED_WIDTHS: [(&str, f32); 12] = [
 
 /// The width of `face`: its font's, or, where the font tells none, the one
 /// that its style's name tells, as `Condensed` or `Narrow`.
-fn width(face: &FaceInfo) -> f32 {
+pub(crate) fn width(face: &FaceInfo) -> f32 {
     if face.width != 0.0 {
         return face.width;
     }

@@ -26,6 +26,9 @@ Under each key's name, a small line tells the platforms where the key applies: m
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
   - A file with an error prints nothing but the error.
+- **The fonts**: `lokyr +list-fonts` lists the font families that macOS has, each with its styles, by the names that [`family`](#family) and [`style`](#style) take, in the order of their names; it marks the monospaced families, the default one and the config's.
+  - `--monospace` lists the monospaced families alone, and `--family <name>` one family, by its name or a name of some of its faces, as `family` takes it; a name of no family installed exits with 1.
+  - It draws nothing, so that it runs in any terminal and in a pipe, as `lokyr +list-fonts --monospace | less`.
 - **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's styles too.
   - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A family that is not installed, or a language or an icon that Lokyr lacks, only warns, as Lokyr takes the file with its default in their place.
   - Without a config file, the defaults apply, and the check passes; a file that you name must exist.
@@ -176,6 +179,7 @@ The font family, by its name, as Font Book shows it on macOS, such as `"Menlo"` 
 - `"SF Mono"` names the system's monospaced font, which macOS installs under another name.
 - A name that some faces of a family give themselves, as a font and its weight, such as `"CaskaydiaCove NFM SemiBold"`, names the whole family, and takes those faces as the regular text's.
 - A family that is not installed gives the default one, and the notice bar tells it, as the log does. The styles that the file names then do not apply, as they are the missing family's.
+- `lokyr +list-fonts` lists the families that are installed, and `--monospace` those that are monospaced.
 
 ### `size`
 
@@ -197,7 +201,7 @@ The face of the text that has no style, by the name that the font gives it, such
 
 - **Default**: the family's regular face: its upright face nearest to the regular weight, of the normal width when the family has several, such as Condensed faces too. A face whose font tells no width takes the one that its name tells, as Condensed or Narrow. Of faces that still tie, as Hoefler Text's Regular and Ornaments, the one that macOS gives for the family alone.
 - The case, spaces, hyphens and underscores do not matter: `"semi-bold"` is `SemiBold`.
-- A style that the family does not have is an error, which lists the styles that it has.
+- A style that the family does not have is an error, which lists the styles that it has, as `lokyr +list-fonts --family <name>` does.
 
 ### `bold-style`, `italic-style`, `bold-italic-style`
 

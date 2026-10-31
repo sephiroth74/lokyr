@@ -1,16 +1,17 @@
 //! Text pipeline shared by the font backends.
 //!
 //! Defines the [`FontBackend`] trait (discovery, fallback, shaping and
-//! rasterization), the `[font]` section of the configuration, and the choice
-//! of the faces that the styles of text take; and holds the parts that do
-//! not depend on the platform: the shaping cache, the glyph atlas, the
-//! procedurally drawn box-drawing and powerline sprites, and the Unicode
-//! width tables.
+//! rasterization), the `[font]` section of the configuration, the choice
+//! of the faces that the styles of text take, and the list of the families
+//! that the system has; and holds the parts that do not depend on the
+//! platform: the shaping cache, the glyph atlas, the procedurally drawn
+//! box-drawing and powerline sprites, and the Unicode width tables.
 
 #![forbid(unsafe_code)]
 
 mod atlas;
 mod backend;
+pub mod catalog;
 mod cell;
 mod config;
 mod faces;
