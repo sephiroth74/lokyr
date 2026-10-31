@@ -107,12 +107,19 @@ impl Surface {
 
     /// The surface of `layer`, set up for the GPU: BGRA, 8 bits a component,
     /// in sRGB; drawables that only display, two of them, or three with the
-    /// build's feature `three-drawables`.
+    /// build's feature `three-drawables`, presented as soon as they are
+    /// drawn.
     fn with_layer(gpu: &Gpu, layer: Retained<CAMetalLayer>) -> Self {
         layer.setDevice(Some(&gpu.device));
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
         layer.setFramebufferOnly(true);
         layer.setMaximumDrawableCount(DRAWABLES);
+        // A frame goes to the window server as soon as it is drawn, which
+        // composes it at its next refresh, rather than at the layer's own
+        // next refresh first: two frames less from a key to the display,
+        // in a window, where the window server's composition keeps a frame
+        // whole.
+        layer.setDisplaySyncEnabled(false);
         // SAFETY: the name is Core Graphics' constant.
         let srgb = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }));
         layer.setColorspace(srgb.as_deref());
