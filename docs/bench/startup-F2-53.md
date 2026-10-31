@@ -45,7 +45,19 @@ A build marked at each phase, from the bundle, outside the measures, five runs, 
 - **The rest is the system's** but the window's making: AppKit's launch, and the 70 ms from the first frame drawn to the display, which the minimal app's first window takes too.
 - **Outside the bundle**, the app's start takes 19 ms more, as the icon's file is read and shown, where the bundle's own icon shows already.
 
+## After F2-143
+
+[F2-143](../tasks/F2-macos-single-pane.md#f2-143--the-drawing-made-beside-appkits-launch) makes the drawing on a thread of its own as AppKit launches, and the app its own after the launch, which then takes next to nothing. The raw reports are in [startup-F2-53/after-F2-143/](startup-F2-53/after-F2-143/).
+
+| Power | Minimal AppKit app, first window | Lokyr, first frame | The gap |
+|---|---|---|---|
+| Battery | 192.6 ms | 225.2 ms, from 246.9 ms | 32.6 ms |
+| AC | 225.8 ms | 255.4 ms | 29.5 ms |
+
+- **About 20 ms of the 44 came off**: AppKit's launch takes about 105 ms beside the warmup, where it takes 55 ms alone, as both load frameworks at once.
+- **On AC power**, both took longer, with Microsoft Defender scanning each launch at about a fifth of a core, and a load of 4.4: the gap to the minimal app holds, 30 to 33 ms, where the times move by 30 ms.
+
 ## The budgets
 
-- **Warm**: ≤ 200 ms, missed by 47 ms; F2-143 takes the gap.
+- **Warm**: ≤ 200 ms, missed by 25 to 55 ms as the machine's state moves the floor; the user chose, on 31 October 2026, a budget of ≤ 35 ms past the minimal AppKit app's first window, measured in the same session, which Lokyr meets, at 30 to 33 ms.
 - **Cold**: ≤ 1 s for the first frame at the 90th percentile, set from these measures: 906 ms today, on battery, against Ghostty's first window, 837 ms, which understates its first frame.

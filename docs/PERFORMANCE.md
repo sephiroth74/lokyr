@@ -17,7 +17,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 
 | Metric | Target | How it is measured |
 |---|---|---|
-| First presented frame | ≤ 200 ms warm; ≤ 1 s cold, at the 90th percentile, after `sudo purge`, as [F2-53](bench/startup-F2-53.md) set it | The process's start → `addPresentedHandler`, with `lokyr-bench startup --first-frame`; for other terminals, `lokyr-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
+| First presented frame | Warm, ≤ 35 ms past the first window of a minimal AppKit app, at the median, measured in the same session, as the user chose on 31 October 2026, where a fixed 200 ms could not be measured: the minimal app alone took 193 to 226 ms on one machine on one day; cold, ≤ 1 s at the 90th percentile, after `sudo purge`, as [F2-53](bench/startup-F2-53.md) set it | The process's start → `addPresentedHandler`, with `lokyr-bench startup --first-frame`; for other terminals, `lokyr-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
 | Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
 | Idle | 0 package idle wakeups/s and ≤ 0.5 interrupt wakeups/s, once the cursor stops blinking (15 s after the last key or output, by default); while it blinks, ≤ 2/s at the default interval, faded or not, and with blinking text, as the window server blinks the cursor's layer and the blinking text's without the app ([ADR 0021](adr/0021-drawables-and-the-cursor-layer.md), [ADR 0023](adr/0023-blinking-text-layer.md)), which F2-55 and F2-125 measure | `lokyr-bench idle`: package idle wakeups, which `top -stats idlew` shows, and interrupt wakeups; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
 | Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `lokyr-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
@@ -31,6 +31,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 
 **Startup**
 - **Lokyr**: `lokyr --bench startup` records when the process started (`proc_pidinfo`) and when the drawable's first `addPresentedHandler` fires. It then exits and prints JSON. `lokyr-bench startup --app target/Lokyr.app --first-frame` runs it 10 times after 2 warmup runs, and summarizes it as below.
+- **The floor**: `lokyr-bench startup --app <minimal app>`, in the same session, as the warm budget is the gap to it: a minimal AppKit app that opens one empty window, as the F0 spike's `Spike.app`. A scanner that looks at each launch, as an antivirus's, and the power source move both together.
 - **Any app**: `lokyr-bench startup --app <path> [--runs <n>] [--warmup <n>]`:
   - launches the app through LaunchServices, as the Dock does, 10 times after 2 warmup runs;
   - times its first window on screen from the process start, by polling the window server. This approximates the first presented frame, and works for any terminal;
