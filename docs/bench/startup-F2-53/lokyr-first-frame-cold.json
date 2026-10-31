@@ -1,0 +1,74 @@
+{
+  "app": "/Users/taacral1/Documents/git/sephiroth74/rust/lokyr/target/Lokyr.app",
+  "executable": "/Users/taacral1/Documents/git/sephiroth74/rust/lokyr/target/Lokyr.app/Contents/MacOS/lokyr",
+  "warmup": 0,
+  "runs": [
+    {
+      "pid": 19716,
+      "from_start_ms": 902.6,
+      "from_request_ms": 905.6
+    },
+    {
+      "pid": 19737,
+      "from_start_ms": 910.6,
+      "from_request_ms": 913.5
+    },
+    {
+      "pid": 19759,
+      "from_start_ms": 870.9,
+      "from_request_ms": 873.6
+    },
+    {
+      "pid": 19784,
+      "from_start_ms": 905.5,
+      "from_request_ms": 908.2
+    },
+    {
+      "pid": 19808,
+      "from_start_ms": 725.8,
+      "from_request_ms": 727.2
+    },
+    {
+      "pid": 19831,
+      "from_start_ms": 893.0,
+      "from_request_ms": 894.4
+    },
+    {
+      "pid": 19855,
+      "from_start_ms": 897.4,
+      "from_request_ms": 900.1
+    },
+    {
+      "pid": 19877,
+      "from_start_ms": 532.2,
+      "from_request_ms": 533.5
+    },
+    {
+      "pid": 19900,
+      "from_start_ms": 865.1,
+      "from_request_ms": 867.9
+    },
+    {
+      "pid": 19922,
+      "from_start_ms": 715.8,
+      "from_request_ms": 716.7
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 532.2,
+      "p10": 532.2,
+      "median": 881.95,
+      "p90": 905.5,
+      "max": 910.6
+    },
+    "from_request_ms": {
+      "min": 533.5,
+      "p10": 533.5,
+      "median": 884.0,
+      "p90": 908.2,
+      "max": 913.5
+    },
+    "spread": 0.423
+  }
+}

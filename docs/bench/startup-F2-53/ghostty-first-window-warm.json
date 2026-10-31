@@ -1,0 +1,74 @@
+{
+  "app": "/Applications/Ghostty.app",
+  "executable": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 17908,
+      "from_start_ms": 277.9,
+      "from_request_ms": 312.5
+    },
+    {
+      "pid": 17929,
+      "from_start_ms": 290.3,
+      "from_request_ms": 324.3
+    },
+    {
+      "pid": 17942,
+      "from_start_ms": 281.8,
+      "from_request_ms": 319.6
+    },
+    {
+      "pid": 17962,
+      "from_start_ms": 280.7,
+      "from_request_ms": 318.4
+    },
+    {
+      "pid": 17976,
+      "from_start_ms": 293.1,
+      "from_request_ms": 327.3
+    },
+    {
+      "pid": 17989,
+      "from_start_ms": 305.8,
+      "from_request_ms": 341.0
+    },
+    {
+      "pid": 18010,
+      "from_start_ms": 279.0,
+      "from_request_ms": 313.9
+    },
+    {
+      "pid": 18024,
+      "from_start_ms": 286.6,
+      "from_request_ms": 322.5
+    },
+    {
+      "pid": 18046,
+      "from_start_ms": 285.1,
+      "from_request_ms": 319.7
+    },
+    {
+      "pid": 18059,
+      "from_start_ms": 283.5,
+      "from_request_ms": 317.9
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 277.9,
+      "p10": 277.9,
+      "median": 284.3,
+      "p90": 293.1,
+      "max": 305.8
+    },
+    "from_request_ms": {
+      "min": 312.5,
+      "p10": 312.5,
+      "median": 319.65,
+      "p90": 327.3,
+      "max": 341.0
+    },
+    "spread": 0.053
+  }
+}

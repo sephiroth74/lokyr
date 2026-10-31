@@ -17,7 +17,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 
 | Metric | Target | How it is measured |
 |---|---|---|
-| First presented frame | ≤ 200 ms warm; cold: set in F2, after measuring with `sudo purge` | Launch mach time → `addPresentedHandler`; for other terminals, `lokyr-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
+| First presented frame | ≤ 200 ms warm; ≤ 1 s cold, at the 90th percentile, after `sudo purge`, as [F2-53](bench/startup-F2-53.md) set it | The process's start → `addPresentedHandler`, with `lokyr-bench startup --first-frame`; for other terminals, `lokyr-bench startup`, which times the first window on screen; `wp_presentation` on Linux |
 | Key → presented frame, at 120 Hz | p50 ≤ 2 frames, p99 ≤ 3; one extra frame allowed next to a pane flooding output | `NSEvent.timestamp` → presentation time |
 | Idle | 0 package idle wakeups/s and ≤ 0.5 interrupt wakeups/s, once the cursor stops blinking (15 s after the last key or output, by default); while it blinks, ≤ 2/s at the default interval, faded or not, and with blinking text, as the window server blinks the cursor's layer and the blinking text's without the app ([ADR 0021](adr/0021-drawables-and-the-cursor-layer.md), [ADR 0023](adr/0023-blinking-text-layer.md)), which F2-55 and F2-125 measure | `lokyr-bench idle`: package idle wakeups, which `top -stats idlew` shows, and interrupt wakeups; `powermetrics`; `voluntary_ctxt_switches` deltas on Linux |
 | Footprint excluding GPU memory | ≤ 35 MB with 1 window and 1 pane; ≤ 1 MB per additional pane; ≤ 2 MB per active Luau plugin; back to baseline ±2 MB after closing tabs | `lokyr-bench memory`: `phys_footprint` minus the GPU categories of `footprint`; on Linux PSS and heaptrack, never RSS |
@@ -30,13 +30,13 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 ## How to measure
 
 **Startup**
-- **Lokyr**: `lokyr --bench startup` records when the process started (`proc_pidinfo`) and when the drawable's first `addPresentedHandler` fires. It then exits and prints JSON. Warm runs use `hyperfine`, with warmup runs.
+- **Lokyr**: `lokyr --bench startup` records when the process started (`proc_pidinfo`) and when the drawable's first `addPresentedHandler` fires. It then exits and prints JSON. `lokyr-bench startup --app target/Lokyr.app --first-frame` runs it 10 times after 2 warmup runs, and summarizes it as below.
 - **Any app**: `lokyr-bench startup --app <path> [--runs <n>] [--warmup <n>]`:
   - launches the app through LaunchServices, as the Dock does, 10 times after 2 warmup runs;
   - times its first window on screen from the process start, by polling the window server. This approximates the first presented frame, and works for any terminal;
   - prints the median, the 90th percentile and the spread: the range from the 10th to the 90th percentile, as a fraction of the median;
   - needs the app not to be running, and the app takes the focus at every launch.
-- **Cold**: after `sudo purge` on macOS, or after dropping the page cache on Linux. With `lokyr-bench`, run `sudo purge` before each `startup --runs 1 --warmup 0`.
+- **Cold**: after `sudo purge` on macOS, or after dropping the page cache on Linux. `lokyr-bench startup --cold --warmup 0` runs `sudo purge` before each launch, after a `sudo -v`. Cold, a window shows before its first frame, as the font and the shaders come from the disk: the first window understates the startup.
 
 **Latency**
 - **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`). A p50/p99 histogram is exposed over IPC.
