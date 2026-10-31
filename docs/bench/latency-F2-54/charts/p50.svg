@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="238" viewBox="0 0 680 238" role="img" aria-label="A key to its frame on screen, the median">
+
+<style>
+  .surface { fill: #fcfcfb; }
+  .primary { fill: #0b0b0b; }
+  .secondary { fill: #52514e; }
+  .muted { fill: #898781; }
+  .grid { stroke: #e1e0d9; }
+  .base { stroke: #c3c2b7; }
+  .accent { fill: #2a78d6; }
+  .context { fill: #898781; }
+  .accent-line { stroke: #2a78d6; }
+  .context-line { stroke: #898781; }
+  .ring { stroke: #fcfcfb; }
+  .budget { stroke: #52514e; }
+  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tick { font-variant-numeric: tabular-nums; }
+  @media (prefers-color-scheme: dark) {
+    .surface { fill: #1a1a19; }
+    .primary { fill: #f0efec; }
+    .secondary { fill: #c3c2b7; }
+    .muted { fill: #898781; }
+    .grid { stroke: #2c2c2a; }
+    .base { stroke: #383835; }
+    .accent { fill: #3987e5; }
+    .context { fill: #6f6e69; }
+    .accent-line { stroke: #3987e5; }
+    .context-line { stroke: #6f6e69; }
+    .ring { stroke: #1a1a19; }
+    .budget { stroke: #c3c2b7; }
+  }
+</style>
+
+<rect class="surface" width="680" height="238" rx="8"/>
+<text class="primary" x="16" y="26" font-size="15" font-weight="600">A key to its frame on screen, the median</text>
+<text class="secondary" x="16" y="45" font-size="12">200 synthetic keys each, milliseconds; fewer is better</text>
+<circle class="context" cx="22" cy="64" r="5"/>
+<text class="secondary" x="32" y="68" font-size="12">8917140, before</text>
+<circle class="accent" cx="149" cy="64" r="5"/>
+<text class="secondary" x="159" y="68" font-size="12">d69529b, after</text>
+<line class="budget" x1="269" y1="57" x2="269" y2="71" stroke-width="2"/>
+<text class="secondary" x="277" y="68" font-size="12">budget</text>
+<line class="grid" x1="118.0" y1="78" x2="118.0" y2="198" stroke-width="1"/>
+<text class="muted tick" x="118.0" y="213" font-size="11" text-anchor="middle">0</text>
+<line class="grid" x1="282.0" y1="78" x2="282.0" y2="198" stroke-width="1"/>
+<text class="muted tick" x="282.0" y="213" font-size="11" text-anchor="middle">20</text>
+<line class="grid" x1="446.0" y1="78" x2="446.0" y2="198" stroke-width="1"/>
+<text class="muted tick" x="446.0" y="213" font-size="11" text-anchor="middle">40</text>
+<line class="grid" x1="610.0" y1="78" x2="610.0" y2="198" stroke-width="1"/>
+<text class="muted tick" x="610.0" y="213" font-size="11" text-anchor="middle">60</text>
+<line class="base" x1="118" y1="78" x2="118" y2="198" stroke-width="1"/>
+<text class="secondary" x="108" y="97.0" font-size="12" text-anchor="end">120 Hz</text>
+<line class="budget" x1="254.6" y1="84.0" x2="254.6" y2="102.0" stroke-width="2"><title>120 Hz, budget: 16.7 ms</title></line>
+<line class="context-line" x1="381.7" y1="93.0" x2="236.6" y2="93.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="381.7" cy="93.0" r="5" stroke-width="2"><title>120 Hz, 8917140, before: 32.2 ms</title></circle>
+<circle class="accent ring" cx="236.6" cy="93.0" r="5" stroke-width="2"><title>120 Hz, d69529b, after: 14.5 ms</title></circle>
+<text class="primary tick" x="226.6" y="97.0" font-size="12" font-weight="600" text-anchor="end">14.5</text>
+<text class="secondary" x="108" y="127.0" font-size="12" text-anchor="end">120 Hz, flood</text>
+<line class="budget" x1="322.9" y1="114.0" x2="322.9" y2="132.0" stroke-width="2"><title>120 Hz, flood, budget: 25.0 ms</title></line>
+<line class="context-line" x1="356.9" y1="123.0" x2="234.6" y2="123.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="356.9" cy="123.0" r="5" stroke-width="2"><title>120 Hz, flood, 8917140, before: 29.1 ms</title></circle>
+<circle class="accent ring" cx="234.6" cy="123.0" r="5" stroke-width="2"><title>120 Hz, flood, d69529b, after: 14.2 ms</title></circle>
+<text class="primary tick" x="224.6" y="127.0" font-size="12" font-weight="600" text-anchor="end">14.2</text>
+<text class="secondary" x="108" y="157.0" font-size="12" text-anchor="end">60 Hz</text>
+<line class="budget" x1="391.4" y1="144.0" x2="391.4" y2="162.0" stroke-width="2"><title>60 Hz, budget: 33.3 ms</title></line>
+<line class="context-line" x1="459.6" y1="153.0" x2="292.2" y2="153.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="459.6" cy="153.0" r="5" stroke-width="2"><title>60 Hz, 8917140, before: 41.7 ms</title></circle>
+<circle class="accent ring" cx="292.2" cy="153.0" r="5" stroke-width="2"><title>60 Hz, d69529b, after: 21.2 ms</title></circle>
+<text class="primary tick" x="282.2" y="157.0" font-size="12" font-weight="600" text-anchor="end">21.2</text>
+<text class="secondary" x="108" y="187.0" font-size="12" text-anchor="end">60 Hz, flood</text>
+<line class="budget" x1="528.1" y1="174.0" x2="528.1" y2="192.0" stroke-width="2"><title>60 Hz, flood, budget: 50.0 ms</title></line>
+<line class="context-line" x1="460.1" y1="183.0" x2="294.5" y2="183.0" stroke-width="2" stroke-linecap="round"/>
+<circle class="context ring" cx="460.1" cy="183.0" r="5" stroke-width="2"><title>60 Hz, flood, 8917140, before: 41.7 ms</title></circle>
+<circle class="accent ring" cx="294.5" cy="183.0" r="5" stroke-width="2"><title>60 Hz, flood, d69529b, after: 21.5 ms</title></circle>
+<text class="primary tick" x="284.5" y="187.0" font-size="12" font-weight="600" text-anchor="end">21.5</text>
+</svg>

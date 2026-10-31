@@ -1,0 +1,5 @@
+{
+ "note": "The server of one iTerm2 session, which its window started, measured apart: the idle measure of iTerm2 counted the app's processes alone",
+ "name": "iTermServer-3.7.6",
+ "footprint_without_gpu": 2228680
+}

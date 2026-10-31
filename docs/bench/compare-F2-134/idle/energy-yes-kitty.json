@@ -1,0 +1,25 @@
+{
+  "duration_s": 10.003883583,
+  "processes": [
+    {
+      "pid": 91622,
+      "name": "kitty",
+      "joules": 78.745788737,
+      "milliwatts": 7871.521902835401
+    },
+    {
+      "pid": 91624,
+      "name": "kitten",
+      "joules": 0.0,
+      "milliwatts": 0.0
+    },
+    {
+      "pid": 91627,
+      "name": "kitten",
+      "joules": 0.005497395,
+      "milliwatts": 0.5495260869830536
+    }
+  ],
+  "joules": 78.751286132,
+  "milliwatts": 7872.071428922386
+}

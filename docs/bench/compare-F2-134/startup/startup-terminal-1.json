@@ -1,0 +1,49 @@
+{
+  "app": "/System/Applications/Utilities/Terminal.app",
+  "executable": "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal",
+  "warmup": 1,
+  "runs": [
+    {
+      "pid": 88773,
+      "from_start_ms": 356.2,
+      "from_request_ms": 388.2
+    },
+    {
+      "pid": 88799,
+      "from_start_ms": 319.8,
+      "from_request_ms": 355.8
+    },
+    {
+      "pid": 88817,
+      "from_start_ms": 331.0,
+      "from_request_ms": 365.0
+    },
+    {
+      "pid": 88841,
+      "from_start_ms": 335.4,
+      "from_request_ms": 369.1
+    },
+    {
+      "pid": 88860,
+      "from_start_ms": 325.0,
+      "from_request_ms": 346.0
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 319.8,
+      "p10": 319.8,
+      "median": 331.0,
+      "p90": 356.2,
+      "max": 356.2
+    },
+    "from_request_ms": {
+      "min": 346.0,
+      "p10": 346.0,
+      "median": 365.0,
+      "p90": 388.2,
+      "max": 388.2
+    },
+    "spread": 0.11
+  }
+}

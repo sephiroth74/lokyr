@@ -1,6 +1,6 @@
 //! Measurement tools for the Lokyr performance budgets.
 //!
-//! Probes for memory footprint, idle wakeups and startup time, usable on
+//! Probes for memory footprint, idle wakeups, startup time and energy, usable on
 //! Lokyr and on other terminals for comparison.
 
 // `deny` rather than `forbid`: reading other processes' statistics and
@@ -8,6 +8,8 @@
 // call sites is allowed explicitly.
 #![deny(unsafe_code)]
 
+#[cfg(target_os = "macos")]
+mod energy;
 #[cfg(target_os = "macos")]
 mod footprint;
 #[cfg(target_os = "macos")]
@@ -38,6 +40,8 @@ fn main() -> ExitCode {
         Some("idle") => idle::run(args),
         #[cfg(target_os = "macos")]
         Some("startup") => startup::run(args),
+        #[cfg(target_os = "macos")]
+        Some("energy") => energy::run(args),
         Some(probe) => {
             eprintln!("error: unknown probe `{probe}`\n");
             print_help();
@@ -59,8 +63,13 @@ fn print_help() {
          memory; prints JSON, sizes in bytes\n  \
          idle --pid <pid> [--interval <ms>] [--duration <s>]\n      \
          count how often a process wakes up, over 60 s by default; prints JSON\n  \
-         startup --app <path> [--runs <n>] [--warmup <n>] [--first-frame] [--cold]\n      \
+         startup --app <path> [--runs <n>] [--warmup <n>] [--first-frame] [--cold]\n         \
+         [--env <name>=<value>]...\n      \
          time an app's first window over 10 runs, after 2 warmup runs; the app\n      \
-         must not be running, and opens and quits once per run; prints JSON"
+         must not be running, and opens and quits once per run, with the\n      \
+         environment given; prints JSON\n  \
+         energy --pid <pid> [--pid <pid>]... [--duration <s>]\n      \
+         the energy that processes spend, as the kernel bills it, over 10 s by\n      \
+         default; prints JSON, in joules and milliwatts, and their sum"
     );
 }

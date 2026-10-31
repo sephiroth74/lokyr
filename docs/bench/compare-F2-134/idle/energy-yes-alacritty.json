@@ -1,0 +1,13 @@
+{
+  "duration_s": 10.009163084,
+  "processes": [
+    {
+      "pid": 91566,
+      "name": "alacritty",
+      "joules": 51.416661848,
+      "milliwatts": 5136.959145984078
+    }
+  ],
+  "joules": 51.416661848,
+  "milliwatts": 5136.959145984078
+}

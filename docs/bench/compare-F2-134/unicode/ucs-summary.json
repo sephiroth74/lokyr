@@ -1,0 +1,296 @@
+{
+ "alacritty": {
+  "unicode_wide_results": [
+   480,
+   506
+  ],
+  "emoji_zwj_results": [
+   10,
+   1445
+  ],
+  "emoji_vs16_results": [
+   213,
+   426
+  ],
+  "emoji_vs15_results": [
+   0,
+   158
+  ],
+  "narrow_results": [
+   5570,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   0,
+   26
+  ],
+  "languages": [
+   63,
+   85
+  ],
+  "language_graphemes": [
+   5558,
+   6589
+  ]
+ },
+ "ghostty": {
+  "unicode_wide_results": [
+   505,
+   506
+  ],
+  "emoji_zwj_results": [
+   1445,
+   1445
+  ],
+  "emoji_vs16_results": [
+   426,
+   426
+  ],
+  "emoji_vs15_results": [
+   158,
+   158
+  ],
+  "narrow_results": [
+   5590,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   26,
+   26
+  ],
+  "languages": [
+   83,
+   85
+  ],
+  "language_graphemes": [
+   6557,
+   6589
+  ]
+ },
+ "iterm2": {
+  "unicode_wide_results": [
+   505,
+   506
+  ],
+  "emoji_zwj_results": [
+   1445,
+   1445
+  ],
+  "emoji_vs16_results": [
+   426,
+   426
+  ],
+  "emoji_vs15_results": [
+   0,
+   158
+  ],
+  "narrow_results": [
+   5594,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   26,
+   26
+  ],
+  "languages": [
+   74,
+   85
+  ],
+  "language_graphemes": [
+   363,
+   474
+  ]
+ },
+ "kitty": {
+  "unicode_wide_results": [
+   506,
+   506
+  ],
+  "emoji_zwj_results": [
+   1445,
+   1445
+  ],
+  "emoji_vs16_results": [
+   417,
+   426
+  ],
+  "emoji_vs15_results": [
+   158,
+   158
+  ],
+  "narrow_results": [
+   5572,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   26,
+   26
+  ],
+  "languages": [
+   60,
+   85
+  ],
+  "language_graphemes": [
+   705,
+   3788
+  ]
+ },
+ "lokyr": {
+  "unicode_wide_results": [
+   480,
+   506
+  ],
+  "emoji_zwj_results": [
+   1445,
+   1445
+  ],
+  "emoji_vs16_results": [
+   426,
+   426
+  ],
+  "emoji_vs15_results": [
+   158,
+   158
+  ],
+  "narrow_results": [
+   5595,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   0,
+   26
+  ],
+  "languages": [
+   57,
+   85
+  ],
+  "language_graphemes": [
+   2894,
+   6589
+  ]
+ },
+ "terminal": {
+  "unicode_wide_results": [
+   480,
+   506
+  ],
+  "emoji_zwj_results": [
+   0,
+   1445
+  ],
+  "emoji_vs16_results": [
+   213,
+   426
+  ],
+  "emoji_vs15_results": [
+   0,
+   158
+  ],
+  "narrow_results": [
+   5500,
+   5595
+  ],
+  "ri_results": [
+   259,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   0,
+   26
+  ],
+  "languages": [
+   62,
+   85
+  ],
+  "language_graphemes": [
+   5334,
+   6589
+  ]
+ },
+ "wezterm": {
+  "unicode_wide_results": [
+   278,
+   506
+  ],
+  "emoji_zwj_results": [
+   1445,
+   1445
+  ],
+  "emoji_vs16_results": [
+   213,
+   426
+  ],
+  "emoji_vs15_results": [
+   0,
+   158
+  ],
+  "narrow_results": [
+   5581,
+   5595
+  ],
+  "ri_results": [
+   262,
+   262
+  ],
+  "sfz_results": [
+   5,
+   5
+  ],
+  "sri_results": [
+   0,
+   26
+  ],
+  "languages": [
+   61,
+   85
+  ],
+  "language_graphemes": [
+   1167,
+   2175
+  ]
+ }
+}

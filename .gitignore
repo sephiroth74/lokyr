@@ -18,6 +18,9 @@ target/
 # macOS
 .DS_Store
 
+# Python's bytecode, of the benches' scripts
+__pycache__/
+
 # Editors and IDEs
 .idea/
 .vscode/

@@ -56,6 +56,14 @@ The Metal layers present without the display's sync, and a key that the bench po
 | 60 Hz | no | 21.2 ms | 41.5 ms | 1.27 | 2.49 | 2 / 4.5 |
 | 60 Hz | yes | 21.5 ms | 52.0 ms | 1.29 | 3.12 | 3 / 5.5 |
 
+![The median of a key to its frame on screen, before and after: at 120 Hz 32.2 ms to 14.5, next to a flood 29.1 to 14.2; at 60 Hz 41.7 to 21.2, next to a flood 41.7 to 21.5; the budgets 16.7, 25.0, 33.3 and 50.0 ms](latency-F2-54/charts/p50.svg)
+
+![The 99th percentile of a key to its frame on screen, before and after: at 120 Hz 41.1 ms to 34.2, next to a flood 32.4 to 32.7; at 60 Hz 49.5 to 41.5, next to a flood 49.4 to 52.0; the budgets 37.5, 45.8, 75.0 and 91.7 ms](latency-F2-54/charts/p99.svg)
+
+![200 keys at 120 Hz by the frames they took to show: before, 20 in 3 frames, 116 in 4 and 63 in 5; after, 10 in 1 frame, 127 in 2, 55 in 3, 5 in 4 and 2 in 5](latency-F2-54/charts/frames-120hz.svg)
+
+The charts come of the raw reports, through `python3 tools/bench/report_charts.py latency`.
+
 - **The median halved**, at 120 Hz from 32.2 ms to 14.5, at 60 Hz from 41.7 ms to 21.2: from the commit to the display, 6.7 ms at the median at 120 Hz, where it took 24, and 9.6 at 60, where it took 32. The user saw no torn frame, in a window or in full screen, of a screen that fills and empties in synchronized updates, nor in `less` and `vim`.
 - **The 60 Hz figures** come before the run loop's wake after a posted key, which shortens the tail of the keys' delivery, not their median.
 - **The p99 at 120 Hz**, 4.1 frames, is macOS's composition, which now and then takes 24 ms from the commit to the display: a display link that never stops, which keeps ProMotion at its full rate, made the median worse, 17.6 ms, as the echo's frame waited for its tick, and left the tail; presenting with Core Animation's transaction took a frame more, 48 ms at 60 Hz. The user chose, on 31 October 2026, a p99 of 4.5 frames at 120 Hz.

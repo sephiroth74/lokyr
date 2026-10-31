@@ -1,0 +1,49 @@
+{
+  "app": "/Applications/WezTerm.app",
+  "executable": "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui",
+  "warmup": 1,
+  "runs": [
+    {
+      "pid": 88589,
+      "from_start_ms": 361.8,
+      "from_request_ms": 408.1
+    },
+    {
+      "pid": 88601,
+      "from_start_ms": 341.7,
+      "from_request_ms": 401.8
+    },
+    {
+      "pid": 88615,
+      "from_start_ms": 415.9,
+      "from_request_ms": 475.7
+    },
+    {
+      "pid": 88623,
+      "from_start_ms": 353.3,
+      "from_request_ms": 408.6
+    },
+    {
+      "pid": 88642,
+      "from_start_ms": 351.4,
+      "from_request_ms": 409.8
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 341.7,
+      "p10": 341.7,
+      "median": 353.3,
+      "p90": 415.9,
+      "max": 415.9
+    },
+    "from_request_ms": {
+      "min": 401.8,
+      "p10": 401.8,
+      "median": 408.6,
+      "p90": 475.7,
+      "max": 475.7
+    },
+    "spread": 0.21
+  }
+}

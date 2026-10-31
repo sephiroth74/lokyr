@@ -1,0 +1,16 @@
+# Ghostty under F2-134's conditions. Its scrollback counts bytes: 10 MB.
+# Its defaults that the measures depend on: window-vsync = true.
+font-family = Menlo
+font-size = 13
+font-feature = -calt
+font-feature = -liga
+window-width = 120
+window-height = 40
+background-opacity = 1
+background-blur = false
+cursor-style-blink = false
+scrollback-limit = 10000000
+window-save-state = never
+shell-integration = none
+confirm-close-surface = false
+quit-after-last-window-closed = true

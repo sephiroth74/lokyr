@@ -96,20 +96,23 @@ enum Bench {
     /// floods its output.
     Latency { keys: usize, flood: bool },
     /// Its frames' time as `program`'s output draws, in a window of `size`
-    /// points, 1920 by 1080 without it.
+    /// points, or of the config's columns and rows without it.
     Output {
-        size: (f64, f64),
+        size: Option<Points>,
         program: Vec<String>,
     },
 }
 
+/// A window's size, in points.
+type Points = (f64, f64);
+
 /// The output's bench's options, `[--window <width>x<height>] -- <program>
 /// [args]`.
-fn output_options(options: &[&str]) -> Option<((f64, f64), Vec<String>)> {
-    let (mut size, mut rest) = ((1920.0, 1080.0), options);
+fn output_options(options: &[&str]) -> Option<(Option<Points>, Vec<String>)> {
+    let (mut size, mut rest) = (None, options);
     if let ["--window", window, others @ ..] = rest {
         let (width, height) = window.split_once('x')?;
-        size = (width.parse().ok()?, height.parse().ok()?);
+        size = Some((width.parse().ok()?, height.parse().ok()?));
         rest = others;
     }
     match rest {
@@ -289,10 +292,7 @@ fn run(bench: Bench) -> ExitCode {
                 let (command, args) = program.split_first().expect("a program");
                 app.with_output_bench(
                     lokyr_pty::Program::command(command, args),
-                    lokyr_platform_core::Size {
-                        width: size.0,
-                        height: size.1,
-                    },
+                    size.map(|(width, height)| lokyr_platform_core::Size { width, height }),
                 )
             }
         }
@@ -324,4 +324,32 @@ fn config() -> (Config, Option<PathBuf>, Option<String>) {
 fn run(_: Bench) -> ExitCode {
     eprintln!("lokyr: this platform has no backend yet");
     ExitCode::FAILURE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_output_s_bench_takes_a_window_of_points_or_the_config_s() {
+        assert_eq!(
+            output_options(&["--window", "800x600", "--", "cat", "file"]),
+            Some((
+                Some((800.0, 600.0)),
+                vec!["cat".to_owned(), "file".to_owned()]
+            ))
+        );
+        assert_eq!(
+            output_options(&["--", "yes"]),
+            Some((None, vec!["yes".to_owned()]))
+        );
+        for options in [
+            &[][..],
+            &["--"],
+            &["--window", "800", "--", "yes"],
+            &["yes"],
+        ] {
+            assert_eq!(output_options(options), None, "{options:?}");
+        }
+    }
 }

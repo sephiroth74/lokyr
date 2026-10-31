@@ -1,0 +1,19 @@
+{
+  "duration_s": 10.010065834,
+  "processes": [
+    {
+      "pid": 91745,
+      "name": "iTerm2",
+      "joules": 135.36404583,
+      "milliwatts": 13522.792764281834
+    },
+    {
+      "pid": 91758,
+      "name": "pidinfo",
+      "joules": 0.003228063,
+      "milliwatts": 0.3224816952787286
+    }
+  ],
+  "joules": 135.367273893,
+  "milliwatts": 13523.115245977111
+}

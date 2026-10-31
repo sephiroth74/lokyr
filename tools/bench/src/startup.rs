@@ -44,6 +44,9 @@ struct Options {
     first_frame: bool,
     /// Whether the file cache is emptied before each run.
     cold: bool,
+    /// What each run of the app finds in its environment, as a config's
+    /// directory.
+    env: Vec<(String, String)>,
 }
 
 /// One launch of the app.
@@ -100,9 +103,9 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
             purge()?;
         }
         if options.first_frame {
-            first_frame(&executable)
+            first_frame(&executable, &options.env)
         } else {
-            launch(&app, &executable)
+            launch(&app, &executable, &options.env)
         }
     };
     for n in 1..=options.warmup {
@@ -129,12 +132,13 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
 }
 
 /// Parses `--app <path> [--runs <n>] [--warmup <n>] [--first-frame]
-/// [--cold]`.
+/// [--cold] [--env <name>=<value>]...`.
 fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
     let mut app = None;
     let mut runs = DEFAULT_RUNS;
     let mut warmup = DEFAULT_WARMUP;
     let (mut first_frame, mut cold) = (false, false);
+    let mut env = Vec::new();
     while let Some(arg) = args.next() {
         let mut value = || {
             args.next()
@@ -156,6 +160,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
             "--warmup" => warmup = count(value()?)?,
             "--first-frame" => first_frame = true,
             "--cold" => cold = true,
+            "--env" => {
+                let value = value()?;
+                let (name, setting) = value
+                    .split_once('=')
+                    .with_context(|| format!("`{value}` is not a <name>=<value>"))?;
+                env.push((name.to_owned(), setting.to_owned()));
+            }
             other => bail!("unknown argument `{other}`"),
         }
     }
@@ -165,6 +176,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
         warmup,
         first_frame,
         cold,
+        env,
     })
 }
 
@@ -186,10 +198,11 @@ fn purge() -> Result<()> {
 /// Starts Lokyr's `executable` once, with `--bench startup`, which prints
 /// how long its first frame took to show from the process's start, and
 /// quits.
-fn first_frame(executable: &Path) -> Result<Run> {
+fn first_frame(executable: &Path, env: &[(String, String)]) -> Result<Run> {
     let requested = Instant::now();
     let mut child = Command::new(executable)
         .args(["--bench", "startup"])
+        .envs(env.iter().map(|(name, value)| (name, value)))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
@@ -242,12 +255,17 @@ fn bundle(app: &Path) -> Result<(PathBuf, PathBuf)> {
     Ok((app, executable))
 }
 
-/// Launches the app once, times its first window, then quits it.
-fn launch(app: &Path, executable: &Path) -> Result<Run> {
+/// Launches the app once, with `env` in its environment, times its first
+/// window, then quits it.
+fn launch(app: &Path, executable: &Path, env: &[(String, String)]) -> Result<Run> {
     let requested = Instant::now();
     let status = Command::new("/usr/bin/open")
         .arg("-a")
         .arg(app)
+        .args(
+            env.iter()
+                .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .status()
@@ -401,7 +419,28 @@ mod tests {
                 warmup: 2,
                 first_frame: false,
                 cold: false,
+                env: Vec::new(),
             }
+        );
+    }
+
+    #[test]
+    fn an_environment_for_each_run() {
+        let parsed = options(&[
+            "--app",
+            "x.app",
+            "--env",
+            "XDG_CONFIG_HOME=/tmp/a=b",
+            "--env",
+            "EMPTY=",
+        ])
+        .unwrap();
+        assert_eq!(
+            parsed.env,
+            [
+                ("XDG_CONFIG_HOME".to_owned(), "/tmp/a=b".to_owned()),
+                ("EMPTY".to_owned(), String::new())
+            ]
         );
     }
 
@@ -430,6 +469,7 @@ mod tests {
             &["--app", "x.app", "--runs", "0"],
             &["--app", "x.app", "--runs", "many"],
             &["--app", "x.app", "--hot"],
+            &["--app", "x.app", "--env", "NAME"],
         ] {
             assert!(options(args).is_err(), "{args:?}");
         }

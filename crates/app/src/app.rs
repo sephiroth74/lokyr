@@ -922,12 +922,13 @@ impl App {
     }
 
     /// The app that measures its frames' time on the CPU, by their phases,
-    /// as `program`'s output draws in a window of `size` points, and
-    /// prints it as JSON, and quits, as the program ends.
-    pub fn with_output_bench(mut self, program: Program, size: Size) -> Self {
+    /// as `program`'s output draws in a window of `size` points, or of the
+    /// config's columns and rows without one, and prints it as JSON, and
+    /// quits, as the program ends.
+    pub fn with_output_bench(mut self, program: Program, size: Option<Size>) -> Self {
         self.program = program;
         self.output_bench = Some(OutputBench::default());
-        self.bench_size = Some(size);
+        self.bench_size = size;
         self
     }
 

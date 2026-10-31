@@ -1,0 +1,13 @@
+{
+  "duration_s": 10.000358916,
+  "processes": [
+    {
+      "pid": 91839,
+      "name": "Terminal",
+      "joules": 65.258654352,
+      "milliwatts": 6525.631219854509
+    }
+  ],
+  "joules": 65.258654352,
+  "milliwatts": 6525.631219854509
+}

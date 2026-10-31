@@ -1,0 +1,15 @@
+# Alacritty under F2-134's conditions; it has no ligatures.
+[font]
+size = 13
+normal = { family = "Menlo" }
+
+[window]
+dimensions = { columns = 120, lines = 40 }
+opacity = 1.0
+blur = false
+
+[cursor]
+style = { blinking = "Never" }
+
+[scrolling]
+history = 10000

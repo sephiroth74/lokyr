@@ -1,0 +1,13 @@
+{
+  "duration_s": 10.009721417,
+  "processes": [
+    {
+      "pid": 91439,
+      "name": "lokyr",
+      "joules": 110.241542824,
+      "milliwatts": 11013.44765067801
+    }
+  ],
+  "joules": 110.241542824,
+  "milliwatts": 11013.44765067801
+}

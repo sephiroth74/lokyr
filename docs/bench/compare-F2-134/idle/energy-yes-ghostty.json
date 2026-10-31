@@ -1,0 +1,13 @@
+{
+  "duration_s": 10.000555625,
+  "processes": [
+    {
+      "pid": 91506,
+      "name": "ghostty",
+      "joules": 105.326301824,
+      "milliwatts": 10532.044995649927
+    }
+  ],
+  "joules": 105.326301824,
+  "milliwatts": 10532.044995649927
+}

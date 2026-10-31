@@ -1,0 +1,49 @@
+{
+  "app": "/private/tmp/lokyr/alacritty/src/target/release/osx/Alacritty.app",
+  "executable": "/private/tmp/lokyr/alacritty/src/target/release/osx/Alacritty.app/Contents/MacOS/alacritty",
+  "warmup": 1,
+  "runs": [
+    {
+      "pid": 88431,
+      "from_start_ms": 345.7,
+      "from_request_ms": 375.7
+    },
+    {
+      "pid": 88438,
+      "from_start_ms": 369.7,
+      "from_request_ms": 401.8
+    },
+    {
+      "pid": 88452,
+      "from_start_ms": 347.9,
+      "from_request_ms": 379.9
+    },
+    {
+      "pid": 88459,
+      "from_start_ms": 324.4,
+      "from_request_ms": 356.4
+    },
+    {
+      "pid": 88467,
+      "from_start_ms": 310.6,
+      "from_request_ms": 332.0
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 310.6,
+      "p10": 310.6,
+      "median": 345.7,
+      "p90": 369.7,
+      "max": 369.7
+    },
+    "from_request_ms": {
+      "min": 332.0,
+      "p10": 332.0,
+      "median": 375.7,
+      "p90": 401.8,
+      "max": 401.8
+    },
+    "spread": 0.171
+  }
+}

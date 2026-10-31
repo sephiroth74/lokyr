@@ -1,0 +1,13 @@
+{
+  "duration_s": 10.001258208,
+  "processes": [
+    {
+      "pid": 91689,
+      "name": "wezterm-gui",
+      "joules": 85.675761947,
+      "milliwatts": 8566.498351024276
+    }
+  ],
+  "joules": 85.675761947,
+  "milliwatts": 8566.498351024276
+}

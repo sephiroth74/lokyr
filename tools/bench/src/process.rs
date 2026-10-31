@@ -166,6 +166,36 @@ fn path(pid: libc::pid_t) -> io::Result<PathBuf> {
     Ok(PathBuf::from(OsString::from_vec(buffer)))
 }
 
+/// The kernel's record of version 6, as `<sys/resource.h>` has
+/// `rusage_info_v6`, which the `libc` crate lacks: its UUID, then 56
+/// counters of 64 bits.
+#[repr(C)]
+struct RusageV6 {
+    uuid: [u8; 16],
+    counters: [u64; 56],
+}
+
+/// Where `ri_energy_nj` is among the record's counters, after `ri_pcycles`.
+const ENERGY_NJ: usize = 40;
+
+/// The energy that `pid` has spent since it started, in nanojoules, as the
+/// kernel bills it to the process, `ri_energy_nj`.
+pub fn energy(pid: libc::pid_t) -> io::Result<u64> {
+    let mut info = MaybeUninit::<RusageV6>::zeroed();
+    // SAFETY: `info` is writable and sized for `rusage_info_v6`, the struct
+    // that `RUSAGE_INFO_V6` asks the kernel to fill in, whose layout
+    // `RusageV6` has. `zeroed` already made every field a valid integer.
+    #[allow(unsafe_code)]
+    let (status, info) = unsafe {
+        let status = libc::proc_pid_rusage(pid, 6, info.as_mut_ptr().cast());
+        (status, info.assume_init())
+    };
+    if status != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.counters[ENERGY_NJ])
+}
+
 /// The kernel's resource usage record for `pid`.
 fn rusage(pid: libc::pid_t) -> io::Result<libc::rusage_info_v4> {
     let mut info = MaybeUninit::<libc::rusage_info_v4>::zeroed();
@@ -190,6 +220,17 @@ mod tests {
 
     fn own_pid() -> libc::pid_t {
         libc::pid_t::try_from(std::process::id()).expect("PIDs fit in a pid_t")
+    }
+
+    #[test]
+    fn its_own_energy_grows_with_its_work() {
+        let before = energy(own_pid()).unwrap();
+        let mut sum = 0_u64;
+        for n in 0..50_000_000_u64 {
+            sum = sum.wrapping_add(std::hint::black_box(n));
+        }
+        std::hint::black_box(sum);
+        assert!(energy(own_pid()).unwrap() > before);
     }
 
     #[test]

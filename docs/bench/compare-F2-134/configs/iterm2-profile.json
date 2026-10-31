@@ -1,0 +1,17 @@
+{"Profiles": [{
+  "Name": "Lokyr Bench",
+  "Guid": "lokyr-bench-f2-134",
+  "Normal Font": "Menlo-Regular 13",
+  "Columns": 120,
+  "Rows": 40,
+  "ASCII Ligatures": false,
+  "Non-ASCII Ligatures": false,
+  "Blur": false,
+  "Transparency": 0,
+  "Blinking Cursor": false,
+  "Scrollback Lines": 10000,
+  "Unlimited Scrollback": false,
+  "Close Sessions On End": true,
+  "Prompt Before Closing 2": 0,
+  "Custom Command": "No"
+}]}
