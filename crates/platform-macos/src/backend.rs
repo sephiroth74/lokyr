@@ -341,6 +341,11 @@ impl Platform for Backend {
                 app.postEvent_atStart(&event, false);
             }
         }
+        // The main run loop takes the keys at once, as a key of the
+        // keyboard's wakes it, where a posted event waits for its next wake.
+        if let Some(main) = objc2_core_foundation::CFRunLoop::main() {
+            main.wake_up();
+        }
     }
 
     fn locales(&self) -> Vec<String> {
