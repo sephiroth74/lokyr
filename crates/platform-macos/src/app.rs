@@ -26,6 +26,15 @@ use crate::wake::WakeSource;
 ///
 /// It must be called from the process's main thread, once.
 pub fn run(handler: impl Handler + 'static) -> Result<(), Error> {
+    run_with(move || handler)
+}
+
+/// Starts the application as [`run`] does, with the handler that `make`
+/// gives once the application has launched, before [`Handler::started`]:
+/// what the caller starts beside the launch, as on a thread of its own,
+/// `make` can wait for. A panic of `make` ends the application, as the
+/// handler's does.
+pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Result<(), Error> {
     let mtm = MainThreadMarker::new()
         .ok_or_else(|| Error::Start("the application must run on the main thread".to_owned()))?;
     let app = NSApplication::sharedApplication(mtm);
@@ -35,7 +44,8 @@ pub fn run(handler: impl Handler + 'static) -> Result<(), Error> {
     NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
 
     let wake = WakeSource::install()?;
-    let shared = Shared::new(mtm, Box::new(handler), wake.waker());
+    let make = Box::new(move || Box::new(make()) as Box<dyn Handler>);
+    let shared = Shared::new(mtm, make, wake.waker());
     wake.set_target(&shared);
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));

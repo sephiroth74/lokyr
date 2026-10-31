@@ -22,6 +22,9 @@ use objc2_app_kit::NSModalResponse;
 use crate::alert;
 use crate::backend::Backend;
 
+/// What makes the application's handler, as it starts.
+pub(crate) type MakeHandler = Box<dyn FnOnce() -> Box<dyn Handler>>;
+
 /// Something for the handler, which waits its turn.
 pub(crate) enum Pending {
     /// The application finished launching.
@@ -49,6 +52,9 @@ pub(crate) struct Shared {
     /// takes meanwhile.
     dispatching: Cell<bool>,
     handler: RefCell<Option<Box<dyn Handler>>>,
+    /// What makes the handler, once the application has launched, before
+    /// it starts.
+    make: RefCell<Option<MakeHandler>>,
     backend: RefCell<Backend>,
     /// The panic of a call of the handler, which ends the application and
     /// goes on once `run` returns.
@@ -67,11 +73,12 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    pub(crate) fn new(mtm: MainThreadMarker, handler: Box<dyn Handler>, waker: Waker) -> Rc<Self> {
+    pub(crate) fn new(mtm: MainThreadMarker, make: MakeHandler, waker: Waker) -> Rc<Self> {
         Rc::new_cyclic(|shared: &Weak<Self>| Self {
             queue: RefCell::new(VecDeque::new()),
             dispatching: Cell::new(false),
-            handler: RefCell::new(Some(handler)),
+            handler: RefCell::new(None),
+            make: RefCell::new(Some(make)),
             backend: RefCell::new(Backend::new(mtm, shared.clone(), waker)),
             panic: RefCell::new(None),
             modals: Cell::new(0),
@@ -168,8 +175,21 @@ impl Shared {
         }
     }
 
-    /// Hands `pending` to the handler, whose panic ends the application.
+    /// Hands `pending` to the handler, whose panic ends the application:
+    /// the one made as the application starts.
     fn call(&self, pending: Pending) {
+        if matches!(pending, Pending::Started)
+            && let Some(make) = self.make.borrow_mut().take()
+        {
+            match panic::catch_unwind(AssertUnwindSafe(make)) {
+                Ok(handler) => *self.handler.borrow_mut() = Some(handler),
+                Err(payload) => {
+                    self.panic.borrow_mut().get_or_insert(payload);
+                    self.backend.borrow_mut().quit_now();
+                    return;
+                }
+            }
+        }
         let mut handler = self.handler.borrow_mut();
         let Some(handler) = handler.as_deref_mut() else {
             return;

@@ -166,37 +166,56 @@ fn run(startup_bench: bool) -> ExitCode {
     use lokyr_kernel::commands::Code;
     use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 
-    let mut diagnostics = Diagnostics::default();
-    let invalid = |error: &str| {
-        let text = format!("{error}; none of the config applies, and the app takes the defaults");
-        Diagnostic::new(Code::InvalidConfig, text, About::Config)
-    };
     let (mut config, path, error) = config();
-    if let Some(error) = error {
-        diagnostics.report(invalid(&error));
-    }
-    let drawing = match app::Drawing::new(config.font.clone()) {
-        Ok(drawing) => Some(drawing),
-        // A config whose font fails is as invalid as one that does not read.
-        Err(error) if config.font != Config::default().font => {
-            diagnostics.report(invalid(&error));
-            config = Config::default();
-            app::Drawing::new(config.font.clone())
-                .inspect_err(|error| eprintln!("lokyr: {error}"))
-                .ok()
+    // The GPU and the font take tens of milliseconds the first time in a
+    // process, the next nearly nothing: a thread makes them, and lets them
+    // go, as AppKit launches, and the app makes its own once it has.
+    let warming = {
+        let font = config.font.clone();
+        std::thread::Builder::new()
+            .name("drawing-warmup".into())
+            .spawn(move || drop(app::Drawing::new(font)))
+            .ok()
+    };
+    let make = move || {
+        if let Some(warming) = warming {
+            let _ = warming.join();
         }
-        Err(error) => {
-            eprintln!("lokyr: {error}");
-            None
+        let mut diagnostics = Diagnostics::default();
+        let invalid = |error: &str| {
+            let text =
+                format!("{error}; none of the config applies, and the app takes the defaults");
+            Diagnostic::new(Code::InvalidConfig, text, About::Config)
+        };
+        if let Some(error) = error {
+            diagnostics.report(invalid(&error));
+        }
+        let drawing = match app::Drawing::new(config.font.clone()) {
+            Ok(drawing) => Some(drawing),
+            // A config whose font fails is as invalid as one that does not
+            // read.
+            Err(error) if config.font != Config::default().font => {
+                diagnostics.report(invalid(&error));
+                config = Config::default();
+                app::Drawing::new(config.font.clone())
+                    .inspect_err(|error| eprintln!("lokyr: {error}"))
+                    .ok()
+            }
+            Err(error) => {
+                eprintln!("lokyr: {error}");
+                None
+            }
+        };
+        let app = app::App::new(drawing, config, path)
+            .with_state(lokyr_kernel::state::directory())
+            .with_diagnostics(diagnostics);
+        if startup_bench {
+            app.with_startup_bench()
+        } else {
+            app
         }
     };
-    let mut app = app::App::new(drawing, config, path)
-        .with_state(lokyr_kernel::state::directory())
-        .with_diagnostics(diagnostics);
-    if startup_bench {
-        app = app.with_startup_bench();
-    }
-    match lokyr_platform_macos::run(app) {
+    match lokyr_platform_macos::run_with(make) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lokyr: {error}");

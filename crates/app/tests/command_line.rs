@@ -164,3 +164,27 @@ fn the_startup_s_measure_tells_the_first_frame_and_quits() {
     assert!(line.starts_with("{\"pid\":"), "{line}");
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn a_config_whose_font_fails_starts_with_the_defaults() {
+    let home = directory("failing-font");
+    fs::create_dir_all(home.join("lokyr")).unwrap();
+    fs::write(
+        home.join("lokyr/config.toml"),
+        "[font]\nstyle = \"No Such Style\"\n",
+    )
+    .unwrap();
+    let measured = lokyr(&home, &["--bench", "startup"]);
+    assert!(measured.status.success(), "{}", text(&measured.stderr));
+    // Its first frame shows, of the defaults, as the log tells, unless no
+    // GPU draws one.
+    let stderr = text(&measured.stderr);
+    if !stderr.contains("without a GPU") {
+        assert!(
+            text(&measured.stdout).contains("first_frame_ms"),
+            "{stderr}"
+        );
+        assert!(stderr.contains("the app takes the defaults"), "{stderr}");
+    }
+    fs::remove_dir_all(home).unwrap();
+}

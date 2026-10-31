@@ -28,4 +28,4 @@ mod timer;
 mod wake;
 mod window;
 
-pub use app::run;
+pub use app::{run, run_with};
