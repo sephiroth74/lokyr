@@ -24,7 +24,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | UI | Provide view trees for slots | tab bar, find bar, status bar segments | F3 |
 | Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
 | Themes | Register themes and importers | `.itermcolors`, base16 | F3 |
-| Config | A `[plugins.<name>]` section with a JSON schema and migrations | `[plugins.tabs] position = "top"` | F3 |
+| Config | A `[plugins.<name>]` section with a JSON schema and migrations, or a file of the plugin's own, which is [open](ROADMAP.md#open-questions) | `[plugins.tabs] position = "top"` | F3 |
 | Storage | Persistent per-plugin state | search history | F4 |
 | System | Clipboard, notifications, opening URLs and files, processes, network, global hotkeys (with capabilities) | notify when a command finishes | F4+ |
 | Protocols | Handlers for rare OSC/DCS/APC sequences | iTerm2's OSC 1337 | F5 |
@@ -439,6 +439,39 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 - depend only on `plugin-sdk`;
 - use `#![forbid(unsafe_code)]`, with clippy `disallowed-methods` on, so they follow the same rules as Luau plugins;
 - pass the conformance suite.
+
+## Reference third-party plugins
+
+Plugins that we write as a third party would, in Luau, in a repository of their own made with `sleip new`, published to the registry and installed with `sleip add`: they go through the sandbox, the capabilities, the consent and the limits, and find where the API falls short before other authors do.
+
+| Plugin | Role | Phase |
+|---|---|---|
+| `snap` | An image of a terminal's text, as VS Code's CodeSnap makes of code | F4 |
+
+### `snap`
+
+As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap):
+
+- **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and, once shell integration marks the commands, in F5a, `snap.output`, a command with its output. Each opens a preview in the `window-overlay` slot, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
+- **The image**: the text with its colors, styles and the terminal's font, in a frame as a macOS window's, with its three buttons and a title, the pane's; rounded corners, a shadow, padding and a background around it. The host draws it: an `image` service renders cells offscreen, with the terminal's own renderer, so that the image is what the window shows, and returns a PNG, at the display's scale or another. Any plugin can use the service, without a capability.
+- **Its config**, after CodeSnap's settings:
+
+| Key | Values | Default | What it does |
+|---|---|---|---|
+| `background` | a color | the theme's background, darker | The color around the window |
+| `transparent-background` | `true`, `false` | `false` | No background around the window |
+| `shadow` | `true`, `false` | `true` | A shadow under the window |
+| `padding` | points | `32` | The space around the window |
+| `rounded-corners` | `true`, `false` | `true` | The window's corners rounded or square |
+| `window-controls` | `true`, `false` | `true` | The window's three buttons |
+| `title` | `true`, `false` | `true` | The pane's title in the window's bar |
+| `target` | `container`, `window` | `container` | The image of the window with its background, or of the window alone |
+| `action` | `save`, `copy`, `both` | `copy` | What the shutter does |
+| `folder` | a path | `~/Pictures/Lokyr` | Where `save` writes the PNG |
+| `scale` | `1`, `2`, `3` | the display's | The pixels of a point |
+
+- **Capabilities**: `terminal-read`, for the cells; `clipboard-write`, for `copy`; `fs-write` of its folder, for `save`. Sleip shows them at install, and the app asks for each on first use.
+- **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file's write of bytes; and a config of the plugin's own, whose form is an [open question](ROADMAP.md#open-questions).
 
 ## Distribution
 

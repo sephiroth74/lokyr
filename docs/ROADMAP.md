@@ -133,6 +133,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - `add` from a path, from git, and then from the registry;
   - the shared `pkg-model` formats.
 - **`plugin-manager` plugin**: the in-app UI for Sleip.
+- **`snap`**, a [reference third-party plugin](PLUGIN-SYSTEM.md#reference-third-party-plugins), as VS Code's CodeSnap: an image of the selection, of the screen or of a command's output, in a window's frame; written in Luau as a third party would, published to the registry, with its own config, its capabilities, and the host's `image` service.
 - **Registry v0** (static), ed25519 signatures, templates, a guide for plugin authors.
 
 **Exit**:
@@ -245,6 +246,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | Question | When to decide |
 |---|---|
 | Which themes to bundle, after checking their licenses | F3 |
+| How a plugin exposes its own config: a `[plugins.<name>]` section of `config.toml` with the plugin's JSON schema, as the [extension points](PLUGIN-SYSTEM.md#extension-points) have it, or a file of its own, as `plugins/<name>.toml` beside it; its reload, its errors in the notice, and its place in the guide | F3, with the plugins' config, before `snap` in F4 |
 | Hosting for registry v0 (GitHub Pages/Releases or object storage) | F4 |
 | How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
