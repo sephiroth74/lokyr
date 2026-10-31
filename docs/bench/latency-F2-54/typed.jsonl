@@ -1,0 +1,4 @@
+{"refresh_ms":8.33,"flood":false,"keys":0,"samples":352,"latency_ms":{"min":25.47,"p50":30.78,"p90":34.51,"p99":36.04,"max":41.24},"frames":{"p50":3.69,"p99":4.32},"histogram":{"4":284,"5":68}}
+{"refresh_ms":8.33,"flood":true,"keys":0,"samples":312,"latency_ms":{"min":24.79,"p50":29.07,"p90":30.58,"p99":34.22,"max":38.50},"frames":{"p50":3.49,"p99":4.11},"histogram":{"3":10,"4":296,"5":6}}
+{"refresh_ms":16.67,"flood":false,"keys":0,"samples":257,"latency_ms":{"min":32.85,"p50":42.36,"p90":49.71,"p99":125.20,"max":385.97},"frames":{"p50":2.54,"p99":7.51},"histogram":{"2":3,"3":236,"4":14,"8":2,"17":1,"24":1}}
+{"refresh_ms":16.67,"flood":true,"keys":0,"samples":292,"latency_ms":{"min":26.35,"p50":44.84,"p90":56.07,"p99":59.35,"max":60.01},"frames":{"p50":2.69,"p99":3.56},"histogram":{"2":46,"3":167,"4":79}}
