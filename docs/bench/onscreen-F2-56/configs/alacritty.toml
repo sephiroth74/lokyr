@@ -1,0 +1,5 @@
+[font]
+size = 13
+normal = { family = "Menlo" }
+[window]
+dimensions = { columns = 245, lines = 67 }

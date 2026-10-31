@@ -20,6 +20,8 @@ mod mouse;
 #[cfg(target_os = "macos")]
 mod notice;
 #[cfg(target_os = "macos")]
+mod output_bench;
+#[cfg(target_os = "macos")]
 mod performance;
 #[cfg(target_os = "macos")]
 mod quick;
@@ -38,6 +40,7 @@ const USAGE: &str = "\
 Usage: lokyr [--version]
        lokyr --bench startup
        lokyr --bench latency [--keys <n>] [--flood]
+       lokyr --bench output [--window <width>x<height>] -- <program> [args]
        lokyr +show-config [--default] [--docs]
        lokyr +validate-config [path]";
 
@@ -50,6 +53,15 @@ fn main() -> ExitCode {
         // JSON, and quits.
         ["--bench", "startup"] => run(Bench::Startup),
         // From each key to the frame that shows it, as JSON, as it quits.
+        // Each frame's time on the CPU as a program's output draws, as JSON,
+        // as the program ends.
+        ["--bench", "output", rest @ ..] => match output_options(rest) {
+            Some((size, program)) => run(Bench::Output { size, program }),
+            None => {
+                eprintln!("{USAGE}");
+                ExitCode::FAILURE
+            }
+        },
         ["--bench", "latency", options @ ..] => match latency_options(options) {
             Some((keys, flood)) => run(Bench::Latency { keys, flood }),
             None => {
@@ -74,7 +86,6 @@ fn main() -> ExitCode {
 }
 
 /// What the app measures of itself, and then quits.
-#[derive(Clone, Copy)]
 enum Bench {
     /// Nothing: it runs as it does.
     None,
@@ -84,6 +95,29 @@ enum Bench {
     /// of the user's, until they quit; with `flood`, beside a window that
     /// floods its output.
     Latency { keys: usize, flood: bool },
+    /// Its frames' time as `program`'s output draws, in a window of `size`
+    /// points, 1920 by 1080 without it.
+    Output {
+        size: (f64, f64),
+        program: Vec<String>,
+    },
+}
+
+/// The output's bench's options, `[--window <width>x<height>] -- <program>
+/// [args]`.
+fn output_options(options: &[&str]) -> Option<((f64, f64), Vec<String>)> {
+    let (mut size, mut rest) = ((1920.0, 1080.0), options);
+    if let ["--window", window, others @ ..] = rest {
+        let (width, height) = window.split_once('x')?;
+        size = (width.parse().ok()?, height.parse().ok()?);
+        rest = others;
+    }
+    match rest {
+        ["--", program @ ..] if !program.is_empty() => {
+            Some((size, program.iter().map(ToString::to_string).collect()))
+        }
+        _ => None,
+    }
 }
 
 /// The latency's bench's options, `--keys <n>` and `--flood`.
@@ -251,6 +285,16 @@ fn run(bench: Bench) -> ExitCode {
             Bench::None => app,
             Bench::Startup => app.with_startup_bench(),
             Bench::Latency { keys, flood } => app.with_latency_bench(keys, flood),
+            Bench::Output { size, program } => {
+                let (command, args) = program.split_first().expect("a program");
+                app.with_output_bench(
+                    lokyr_pty::Program::command(command, args),
+                    lokyr_platform_core::Size {
+                        width: size.0,
+                        height: size.1,
+                    },
+                )
+            }
         }
     };
     match lokyr_platform_macos::run_with(make) {

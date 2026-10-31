@@ -205,3 +205,33 @@ fn the_latency_s_bench_types_its_keys_and_tells_them() {
     assert!(!wrong.status.success());
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn the_output_s_bench_times_the_frames_of_a_program_s_output() {
+    let home = directory("output");
+    let measured = lokyr(
+        &home,
+        &[
+            "--bench",
+            "output",
+            "--window",
+            "640x400",
+            "--",
+            "/bin/sh",
+            "-c",
+            "seq 1 20000",
+        ],
+    );
+    assert!(measured.status.success(), "{}", text(&measured.stderr));
+    let line = text(&measured.stdout).trim();
+    assert!(line.starts_with("{\"pixels\":["), "{line}");
+    assert!(line.contains("\"total_ms\":{\"p50\":"), "{line}");
+    for wrong in [
+        &["--bench", "output"][..],
+        &["--bench", "output", "--"][..],
+        &["--bench", "output", "--window", "640", "--", "/bin/echo"][..],
+    ] {
+        assert!(!lokyr(&home, wrong).status.success(), "{wrong:?}");
+    }
+    fs::remove_dir_all(home).unwrap();
+}

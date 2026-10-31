@@ -60,6 +60,7 @@ use crate::keys;
 use crate::latency::{self, LatencyBench};
 use crate::mouse::{self, Mouse, Pointer, Spot};
 use crate::notice;
+use crate::output_bench::{self, OutputBench, Phases};
 use crate::performance::{self, Performance};
 use crate::quick;
 use crate::size_label;
@@ -787,6 +788,10 @@ pub struct App {
     startup_bench: Option<Arc<Mutex<StartupBench>>>,
     /// The latency's bench, with `--bench latency`.
     latency_bench: Option<LatencyBench>,
+    /// The output's bench, with `--bench output`, and the size of its
+    /// window's content, in points.
+    output_bench: Option<OutputBench>,
+    bench_size: Option<Size>,
 }
 
 /// The measure of the startup.
@@ -878,6 +883,8 @@ impl App {
             global_held: false,
             startup_bench: None,
             latency_bench: None,
+            output_bench: None,
+            bench_size: None,
         }
     }
 
@@ -902,6 +909,27 @@ impl App {
             ..LatencyBench::default()
         });
         self
+    }
+
+    /// The app that measures its frames' time on the CPU, by their phases,
+    /// as `program`'s output draws in a window of `size` points, and
+    /// prints it as JSON, and quits, as the program ends.
+    pub fn with_output_bench(mut self, program: Program, size: Size) -> Self {
+        self.program = program;
+        self.output_bench = Some(OutputBench::default());
+        self.bench_size = Some(size);
+        self
+    }
+
+    /// Prints the output's report, of `window`'s pixels, once.
+    fn end_output_bench(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(bench) = self.output_bench.take() else {
+            return;
+        };
+        let pixels = platform
+            .window_size(window)
+            .map_or((0, 0), |size| (size.pixels.width, size.pixels.height));
+        println!("{}", output_bench::report(&bench.frames, pixels));
     }
 
     /// Starts the latency's bench, as its window opened: the window that
@@ -2135,8 +2163,10 @@ impl App {
                 u32::from(window_config.rows.count()),
             ),
         };
-        let remember = window_config.remember_frame && page.is_none();
-        let size = self.size_of(platform.screen_scale(), cells);
+        let remember = window_config.remember_frame && page.is_none() && self.bench_size.is_none();
+        let size = self
+            .bench_size
+            .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
         let environment = Environment {
             directory: self.start_directory(platform),
             ..self.environment.clone()
@@ -2446,6 +2476,7 @@ impl App {
         let now = Instant::now();
         let close = self.config.window.close_on_exit;
         let mut closing = Vec::new();
+        let mut ended = Vec::new();
         let mut waiting = false;
         for (&window, state) in &self.windows {
             let Some(pane) = self.workspace.pane_mut(state.pane) else {
@@ -2455,15 +2486,27 @@ impl App {
             let page = state.page.is_some();
             let close = if page { CloseOnExit::Never } else { close };
             match pane.exited(close, now, &self.texts) {
-                Some(Exited::Close) => closing.push(window),
+                Some(Exited::Close) => {
+                    closing.push(window);
+                    ended.push(window);
+                }
                 Some(Exited::Keep) => {
                     if page {
                         pane.scroll(Scroll::Top);
                     }
                     platform.request_frame(window);
+                    ended.push(window);
                 }
                 None => waiting |= pane.is_waiting(),
             }
+        }
+        // The output's bench ends with its program.
+        if self.output_bench.is_some()
+            && let Some(&window) = ended.first()
+        {
+            self.end_output_bench(platform, window);
+            platform.quit();
+            return;
         }
         for window in closing {
             self.close(platform, window);
@@ -3763,7 +3806,8 @@ impl App {
     fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         // The frame's time, which the performance's panel tells, the wait
         // for the display's drawable apart from the CPU's.
-        let started = self.performance.is_some().then(Instant::now);
+        let started =
+            (self.performance.is_some() || self.output_bench.is_some()).then(Instant::now);
         let grid = self.grid(size);
         let (left, top) = self.origin(size);
         let now = Instant::now();
@@ -3784,6 +3828,7 @@ impl App {
         }
         // Output starts the cursor blinking again, on, as a key does.
         let output = pane.update();
+        let copied = started.map(|_| Instant::now());
         if output {
             state.blink.restart(now);
         }
@@ -3954,6 +3999,7 @@ impl App {
             });
         // Over a backdrop, what the cells leave shows it, and the titlebar
         // too, unless the config keeps it opaque.
+        let laid_out = started.map(|_| Instant::now());
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
         let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar;
         let mut items: Vec<Item> = opaque_bar
@@ -4053,6 +4099,7 @@ impl App {
             items,
             frame: drawing.font.atlas_frame(),
         };
+        let listed = started.map(|_| Instant::now());
         let updates = drawing.font.texture_updates();
         let Some(surface) = &state.surface else {
             return;
@@ -4124,6 +4171,31 @@ impl App {
         };
         // The frame's time ends here: the layers draw seldom, apart.
         let spent = started.map(|started| started.elapsed());
+        // The output's bench: the CPU's time, but the wait for a drawable.
+        if let (
+            Some(bench),
+            Some(started),
+            Some(copied),
+            Some(laid_out),
+            Some(listed),
+            Some(wait),
+        ) = (
+            &mut self.output_bench,
+            started,
+            copied,
+            laid_out,
+            listed,
+            presented,
+        ) {
+            let ended = Instant::now();
+            bench.frames.push(Phases {
+                snapshot: copied.duration_since(started),
+                layout: laid_out.duration_since(copied),
+                list: listed.duration_since(laid_out),
+                encode: ended.duration_since(listed).saturating_sub(wait),
+                total: ended.duration_since(started).saturating_sub(wait),
+            });
+        }
         // The cursor's cells, into their layer, which the platform places
         // over the grid's cell, and blinks.
         let (left, top) = (f64::from(x), f64::from(y));
