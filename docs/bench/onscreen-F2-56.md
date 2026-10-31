@@ -20,15 +20,15 @@ The median of three runs, in MiB/s:
 
 | Workload | Lokyr | Ghostty | Alacritty | kitty | iTerm2 |
 |---|---|---|---|---|---|
-| `ascii.txt`, 1 GiB | 120.1 | **330.2** | 139.8 | 88.1 | |
-| `seq.txt` | 130.9 | **143.3** | 30.5 | 18.5 | |
-| `sgr.txt` | 135.6 | **264.0** | 149.1 | none | |
-| `cjk.txt` | 110.4 | 139.9 | **163.3** | 103.2 | |
+| `ascii.txt`, 1 GiB | 117.8 | **301.4** | 168.1 | 107.5 | 105.8 |
+| `seq.txt` | 117.3 | **171.5** | 84.4 | 18.7 | 86.2 |
+| `sgr.txt` | 138.4 | **252.7** | 150.5 | none | 26.7 |
+| `cjk.txt` | 112.7 | **175.6** | 150.6 | 113.6 | 8.1 |
 
-- **The runs agree** within 5% each.
-- **Lokyr is behind** the faster of Ghostty and Alacritty by 64% in ASCII, 49% in SGR, 32% in CJK, and 9% in `seq`, within the 10%.
-- **kitty gave no result of `sgr.txt`** in 300 s, three times: its answer to the query did not come.
-- **iTerm2** waits for its window, which AppleScript opens, while the Mac is awake.
+- **The runs agree** within 5% each, but Ghostty's second of `seq`, 10% slower, and iTerm2's first of `sgr`, 11.3.
+- **Lokyr is behind Ghostty** by 61% in ASCII, 32% in `seq`, 45% in SGR and 36% in CJK, past the 10%; it is ahead of kitty and iTerm2 but in CJK, where it ties kitty.
+- **kitty gave no result of `sgr.txt`** in 300 s, three times: its answer to the query did not come. **iTerm2** gave two runs of ASCII and of `seq` of three, its window opened by AppleScript.
+- **A first round**, which `onscreen.py` ran with the terminal raw, its output too, so that each line feed went down without going back to the line's start, was left out: the lines stepped across the screen, as no `cat` shows them.
 
 ## A frame's time on the CPU
 
@@ -36,13 +36,13 @@ Lokyr's frames as each workload's output draws, in ms, at 3840 × 2224 pixels: t
 
 | Workload | Frames | p50 | p90 | p99 | Longest | The p99's largest phase |
 |---|---|---|---|---|---|---|
-| `ascii.txt` | 1390 | 0.24 | 0.27 | 0.33 | 2.62 | the layout, 0.23 |
-| `seq.txt` | 102 | 0.26 | 0.30 | 2.08 | 2.08 | the layout, 1.56 |
-| `sgr.txt` | 159 | 0.41 | 0.48 | 5.62 | 5.62 | the layout, 4.91 |
-| `cjk.txt` | 183 | 0.29 | 0.48 | 17.78 | 17.78 | the layout, 16.46 |
+| `ascii.txt` | 1317 | 0.24 | 0.27 | 0.38 | 2.74 | the layout, 0.26 |
+| `seq.txt` | 116 | 0.24 | 0.28 | 1.95 | 1.95 | the layout, 1.50 |
+| `sgr.txt` | 157 | 0.44 | 0.57 | 5.47 | 5.47 | the layout, 4.80 |
+| `cjk.txt` | 193 | 0.29 | 0.48 | 18.75 | 18.75 | the layout, 18.26 |
 
 - **A frame of the steady output** takes a quarter of a millisecond to half a millisecond, a tenth of the budget, at 4K.
-- **The first frames of glyphs that the atlas lacks** take 2 to 18 ms, all in the layout, which shapes and rasterizes them: hundreds of CJK characters and emoji, or bold faces. With a few dozen frames a run, the p99 is these frames, past the budget in SGR and CJK.
+- **The first frames of glyphs that the atlas lacks** take 2 to 19 ms, all in the layout, which shapes and rasterizes them: hundreds of CJK characters and emoji, or bold faces. With a few dozen frames a run, the p99 is these frames, past the budget in SGR and CJK.
 
 ## Where the throughput goes
 

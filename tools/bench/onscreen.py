@@ -35,7 +35,9 @@ def main():
     fd = os.open("/dev/tty", os.O_RDWR)
     saved = termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        # No echo, and the answer read as it comes, but the output as a
+        # terminal takes it, a line feed of a carriage return too.
+        tty.setcbreak(fd)
         for _ in range(runs):
             start = time.perf_counter()
             subprocess.run(["/bin/cat", path], stdout=fd, check=True)
