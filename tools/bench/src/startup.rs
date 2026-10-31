@@ -6,6 +6,12 @@
 //! The probe then quits the app, and waits for it to go away before the next
 //! run. Warmup runs come first and are not counted. Prints JSON on standard
 //! output, every run then a summary, and progress on standard error.
+//!
+//! With `--first-frame`, the app is Lokyr, which times itself: each run
+//! starts its executable with `--bench startup`, which tells when its first
+//! frame showed on the display, from the process's start, and quits. With
+//! `--cold`, `sudo purge` empties the file cache before each run, as a
+//! `sudo -v` beforehand allows.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -34,6 +40,10 @@ struct Options {
     app: PathBuf,
     runs: u32,
     warmup: u32,
+    /// Whether the app is Lokyr, which times its first frame itself.
+    first_frame: bool,
+    /// Whether the file cache is emptied before each run.
+    cold: bool,
 }
 
 /// One launch of the app.
@@ -81,16 +91,27 @@ struct Report {
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let options = parse(args)?;
     let (app, executable) = bundle(&options.app)?;
-    if !process::pids_of(&executable)?.is_empty() {
+    // Lokyr's runs are processes of their own, beside any that runs.
+    if !options.first_frame && !process::pids_of(&executable)?.is_empty() {
         bail!("{} is already running: quit it first", app.display());
     }
+    let once = || {
+        if options.cold {
+            purge()?;
+        }
+        if options.first_frame {
+            first_frame(&executable)
+        } else {
+            launch(&app, &executable)
+        }
+    };
     for n in 1..=options.warmup {
-        let run = launch(&app, &executable)?;
+        let run = once()?;
         eprintln!("warmup {n}/{}: {:.1} ms", options.warmup, run.from_start_ms);
     }
     let mut runs = Vec::new();
     for n in 1..=options.runs {
-        let run = launch(&app, &executable)?;
+        let run = once()?;
         eprintln!("run {n}/{}: {:.1} ms", options.runs, run.from_start_ms);
         runs.push(run);
     }
@@ -107,11 +128,13 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Parses `--app <path> [--runs <n>] [--warmup <n>]`.
+/// Parses `--app <path> [--runs <n>] [--warmup <n>] [--first-frame]
+/// [--cold]`.
 fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
     let mut app = None;
     let mut runs = DEFAULT_RUNS;
     let mut warmup = DEFAULT_WARMUP;
+    let (mut first_frame, mut cold) = (false, false);
     while let Some(arg) = args.next() {
         let mut value = || {
             args.next()
@@ -131,6 +154,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
                 }
             }
             "--warmup" => warmup = count(value()?)?,
+            "--first-frame" => first_frame = true,
+            "--cold" => cold = true,
             other => bail!("unknown argument `{other}`"),
         }
     }
@@ -138,7 +163,60 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options> {
         app: app.context("`--app <path>` is required")?,
         runs,
         warmup,
+        first_frame,
+        cold,
     })
+}
+
+/// Empties the file cache, as `sudo purge` does, without asking for the
+/// password, which a `sudo -v` beforehand gave.
+fn purge() -> Result<()> {
+    let status = Command::new("/usr/bin/sudo")
+        .args(["-n", "/usr/sbin/purge"])
+        .stdin(Stdio::null())
+        .status()
+        .context("cannot run sudo")?;
+    if !status.success() {
+        bail!("`sudo purge` failed: run `sudo -v` first, for the password");
+    }
+    thread::sleep(SETTLE);
+    Ok(())
+}
+
+/// Starts Lokyr's `executable` once, with `--bench startup`, which prints
+/// how long its first frame took to show from the process's start, and
+/// quits.
+fn first_frame(executable: &Path) -> Result<Run> {
+    let requested = Instant::now();
+    let mut child = Command::new(executable)
+        .args(["--bench", "startup"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("cannot start {}", executable.display()))?;
+    let mut line = String::new();
+    std::io::BufRead::read_line(
+        &mut std::io::BufReader::new(child.stdout.take().context("its output")?),
+        &mut line,
+    )?;
+    let told = requested.elapsed();
+    let status = child.wait()?;
+    let measure = parse_first_frame(&line)
+        .with_context(|| format!("no measure in `{}`, {status}", line.trim()))?;
+    thread::sleep(SETTLE);
+    Ok(Run {
+        pid: measure.0,
+        from_start_ms: measure.1,
+        from_request_ms: milliseconds(told),
+    })
+}
+
+/// The pid and the first frame's milliseconds of Lokyr's line, as
+/// `{"pid":123,"first_frame_ms":182.4}`.
+fn parse_first_frame(line: &str) -> Option<(libc::pid_t, f64)> {
+    let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let pid = libc::pid_t::try_from(value.get("pid")?.as_i64()?).ok()?;
+    Some((pid, value.get("first_frame_ms")?.as_f64()?))
 }
 
 /// The app bundle at `app`, made absolute, and its executable, which its
@@ -321,8 +399,21 @@ mod tests {
                 app: PathBuf::from("/Applications/Foo.app"),
                 runs: 10,
                 warmup: 2,
+                first_frame: false,
+                cold: false,
             }
         );
+    }
+
+    #[test]
+    fn lokyr_s_own_measure_of_a_cold_start() {
+        let parsed = options(&["--app", "x.app", "--first-frame", "--cold"]).unwrap();
+        assert!(parsed.first_frame && parsed.cold);
+        assert_eq!(
+            parse_first_frame("{\"pid\":123,\"first_frame_ms\":182.4}\n"),
+            Some((123, 182.4))
+        );
+        assert_eq!(parse_first_frame("lokyr: no GPU\n"), None);
     }
 
     #[test]
@@ -338,7 +429,7 @@ mod tests {
             &["--app"],
             &["--app", "x.app", "--runs", "0"],
             &["--app", "x.app", "--runs", "many"],
-            &["--app", "x.app", "--cold"],
+            &["--app", "x.app", "--hot"],
         ] {
             assert!(options(args).is_err(), "{args:?}");
         }

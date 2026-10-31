@@ -23,7 +23,7 @@ use objc2_metal::{
     MTLResourceOptions, MTLScissorRect, MTLSize, MTLStorageMode, MTLStoreAction, MTLTexture,
     MTLTextureDescriptor, MTLTextureUsage,
 };
-use objc2_quartz_core::CAMetalDrawable;
+use objc2_quartz_core::{CACurrentMediaTime, CAMetalDrawable};
 
 use crate::{Error, Gpu, Surface};
 
@@ -114,7 +114,23 @@ pub struct MetalRenderer {
     /// The commands of the last uploads, which the tests wait for.
     #[cfg(test)]
     uploaded: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
+    /// What the next drawable that shows calls, once it shows.
+    on_presented: Option<OnPresented>,
 }
+
+/// What the next drawable calls as it shows.
+struct OnPresented(Presented);
+
+impl std::fmt::Debug for OnPresented {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OnPresented")
+    }
+}
+
+/// What a drawable calls as it shows on the display, from the display's
+/// thread, with how long ago it showed; or `None`, for a frame that the
+/// display skipped.
+pub type Presented = Box<dyn FnOnce(Option<Duration>) + Send>;
 
 impl MetalRenderer {
     /// A renderer of `gpu`, whose atlas's textures start at `coverage` and
@@ -145,6 +161,7 @@ impl MetalRenderer {
             drawable_wait: Duration::ZERO,
             #[cfg(test)]
             uploaded: None,
+            on_presented: None,
         })
     }
 
@@ -337,6 +354,13 @@ impl MetalRenderer {
         self.present(target, list, false)
     }
 
+    /// Calls `presented` as the next drawable that the renderer draws, of
+    /// any surface, shows on the display, from the display's thread, with
+    /// how long ago it showed, or `None` if the display skipped it.
+    pub fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
+        self.on_presented = Some(OnPresented(Box::new(presented)));
+    }
+
     /// Draws `list` into the next drawable of `target`, and presents it,
     /// its GPU's time counted when `timed`. Whether it drew: no drawable
     /// comes from a layer that was never sized, nor when every drawable is
@@ -354,6 +378,9 @@ impl MetalRenderer {
             return Ok(false);
         };
         let (commands, buffers) = self.encode(&drawable.texture(), list)?;
+        if let Some(OnPresented(presented)) = self.on_presented.take() {
+            tell_presented(&drawable, presented);
+        }
         // A layer that presents with the transaction shows the drawable as
         // Core Animation commits it, once the GPU has the commands.
         if target.layer.presentsWithTransaction() {
@@ -536,6 +563,32 @@ const SMALLEST: usize = 64 * 1024;
 /// Where a draw's instances start in their buffer: a multiple of this, as
 /// a vertex buffer's offset is on every GPU of Metal's.
 const ALIGNMENT: usize = 256;
+
+/// Has `drawable` call `presented` as it shows, with how long ago it
+/// showed, as the display's clock tells, or `None` for a frame that the
+/// display skipped.
+fn tell_presented(drawable: &ProtocolObject<dyn CAMetalDrawable>, presented: Presented) {
+    let presented = std::sync::Mutex::new(Some(presented));
+    let handler = block2::RcBlock::new(
+        move |drawable: NonNull<ProtocolObject<dyn objc2_metal::MTLDrawable>>| {
+            // SAFETY: the drawable that Metal hands its handler, which lives
+            // through the call.
+            let shown = unsafe { drawable.as_ref() }.presentedTime();
+            // Core Animation's clock is the presented time's.
+            let ago = (shown > 0.0)
+                .then(|| Duration::from_secs_f64((CACurrentMediaTime() - shown).max(0.0)));
+            let taken = presented
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(presented) = taken {
+                presented(ago);
+            }
+        },
+    );
+    // SAFETY: a block of the handler's signature, which Metal copies.
+    unsafe { drawable.addPresentedHandler(block2::RcBlock::as_ptr(&handler)) };
+}
 
 /// A frame that the GPU may still be drawing: its list's `frame`, its
 /// commands, and the buffers of its instances, which the GPU reads until it
@@ -1269,6 +1322,26 @@ mod tests {
         ]));
         assert!(renderer.draw(&surface, &large).unwrap());
         assert!(renderer.made.get() > made);
+    }
+
+    #[test]
+    fn the_next_drawable_tells_as_it_shows_once() {
+        let Some((gpu, mut renderer)) = renderer() else {
+            return;
+        };
+        let surface = Surface::with_layer(&gpu, CAMetalLayer::new());
+        surface.resize(64, 32, 1.0);
+        let (sender, told) = std::sync::mpsc::channel();
+        renderer.on_next_presented(move |ago| {
+            let _ = sender.send(ago);
+        });
+        assert!(renderer.draw(&surface, &list()).unwrap());
+        assert!(renderer.draw(&surface, &list()).unwrap());
+        // A layer in no window shows nothing: the display skips its frame.
+        let ago = told.recv_timeout(Duration::from_secs(5));
+        assert!(ago.is_ok(), "{ago:?}");
+        // The second frame tells nothing.
+        assert!(told.recv_timeout(Duration::from_millis(500)).is_err());
     }
 
     #[test]

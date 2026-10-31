@@ -143,3 +143,24 @@ fn a_wrong_command_line_tells_the_usage() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn the_startup_s_measure_tells_the_first_frame_and_quits() {
+    let home = directory("startup");
+    let measured = lokyr(&home, &["--bench", "startup"]);
+    assert!(measured.status.success(), "{}", text(&measured.stderr));
+    let line = text(&measured.stdout).trim();
+    // Without a GPU, no frame shows, which it tells instead.
+    if line.is_empty() {
+        assert!(text(&measured.stderr).contains("without a GPU"));
+        return;
+    }
+    let ms: f64 = line
+        .split("\"first_frame_ms\":")
+        .nth(1)
+        .and_then(|rest| rest.trim_end_matches('}').parse().ok())
+        .unwrap_or_else(|| panic!("no measure in {line}"));
+    assert!(ms > 0.0 && ms < 30_000.0, "{line}");
+    assert!(line.starts_with("{\"pid\":"), "{line}");
+    fs::remove_dir_all(home).unwrap();
+}

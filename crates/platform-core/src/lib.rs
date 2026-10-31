@@ -13,7 +13,7 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 mod event;
 #[cfg(any(test, feature = "fake"))]
@@ -236,6 +236,10 @@ pub trait Platform {
     /// What the process has used of the machine so far, as the system
     /// counts it; none where the system does not tell.
     fn usage(&self) -> Option<Usage>;
+
+    /// When the process started, as the system recorded it; none where the
+    /// system does not tell.
+    fn process_started(&self) -> Option<SystemTime>;
 
     /// Opens a window, in front of the others, where it takes the focus:
     /// down and to the right of the window that has the focus, or of the

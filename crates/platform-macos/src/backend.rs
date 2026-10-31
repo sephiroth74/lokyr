@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::rc::{Rc, Weak};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Layer, LayerPlace,
@@ -294,6 +294,23 @@ impl Platform for Backend {
             idle_wakeups: info.ri_pkg_idle_wkups,
             interrupt_wakeups: info.ri_interrupt_wkups,
             footprint: info.ri_phys_footprint,
+        })
+    }
+
+    fn process_started(&self) -> Option<SystemTime> {
+        let pid = libc::pid_t::try_from(std::process::id()).ok()?;
+        // SAFETY: the struct is plain data, which zeros make valid.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = i32::try_from(size_of::<libc::proc_bsdinfo>()).ok()?;
+        // SAFETY: `proc_pidinfo` fills in at most `size` bytes of the
+        // flavor's struct, `proc_bsdinfo`, which `info` is.
+        let written = unsafe {
+            libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size)
+        };
+        (written == size).then(|| {
+            SystemTime::UNIX_EPOCH
+                + Duration::from_secs(info.pbi_start_tvsec)
+                + Duration::from_micros(info.pbi_start_tvusec)
         })
     }
 

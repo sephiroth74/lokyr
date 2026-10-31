@@ -59,7 +59,7 @@ fn print_help() {
          memory; prints JSON, sizes in bytes\n  \
          idle --pid <pid> [--interval <ms>] [--duration <s>]\n      \
          count how often a process wakes up, over 60 s by default; prints JSON\n  \
-         startup --app <path> [--runs <n>] [--warmup <n>]\n      \
+         startup --app <path> [--runs <n>] [--warmup <n>] [--first-frame] [--cold]\n      \
          time an app's first window over 10 runs, after 2 warmup runs; the app\n      \
          must not be running, and opens and quits once per run; prints JSON"
     );

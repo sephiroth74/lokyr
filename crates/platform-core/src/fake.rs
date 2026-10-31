@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
@@ -170,6 +170,8 @@ pub struct Fake {
     /// it changed.
     secure_input: (bool, usize),
     usage: Option<Usage>,
+    /// When the fake was made, as the process's start.
+    started: SystemTime,
     revealed: Vec<String>,
     /// The keys that the app takes from every app, and those that another
     /// app takes, which the fake refuses.
@@ -219,6 +221,7 @@ impl Fake {
             editor_fails: None,
             secure_input: (false, 0),
             usage: None,
+            started: SystemTime::now(),
             revealed: Vec::new(),
             global_keys: Vec::new(),
             taken_keys: Vec::new(),
@@ -554,6 +557,10 @@ impl Platform for Fake {
 
     fn screen_scale(&self) -> f64 {
         self.scale
+    }
+
+    fn process_started(&self) -> Option<SystemTime> {
+        Some(self.started)
     }
 
     fn usage(&self) -> Option<Usage> {

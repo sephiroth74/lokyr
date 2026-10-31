@@ -34,6 +34,7 @@ use lokyr_kernel::config::{self, Config};
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
 Usage: lokyr [--version]
+       lokyr --bench startup
        lokyr +show-config [--default] [--docs]
        lokyr +validate-config [path]";
 
@@ -41,7 +42,10 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
-        [] => run(),
+        [] => run(false),
+        // From the process's start to the first frame on the display, as
+        // JSON, and quits.
+        ["--bench", "startup"] => run(true),
         ["--version" | "-V"] => {
             println!("lokyr {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -143,9 +147,10 @@ fn check(_: &Config) -> Result<(), String> {
 }
 
 /// Runs the application until it quits: started through a link to its
-/// bundle's binary, from the binary's own path, as its bundle.
+/// bundle's binary, from the binary's own path, as its bundle; with
+/// `startup_bench`, until its first frame shows, which it measures.
 #[cfg(target_os = "macos")]
-fn run() -> ExitCode {
+fn run(startup_bench: bool) -> ExitCode {
     use std::os::unix::process::CommandExt;
 
     if let Some(executable) = environment::bundle_executable() {
@@ -185,9 +190,12 @@ fn run() -> ExitCode {
             None
         }
     };
-    let app = app::App::new(drawing, config, path)
+    let mut app = app::App::new(drawing, config, path)
         .with_state(lokyr_kernel::state::directory())
         .with_diagnostics(diagnostics);
+    if startup_bench {
+        app = app.with_startup_bench();
+    }
     match lokyr_platform_macos::run(app) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -212,7 +220,7 @@ fn config() -> (Config, Option<PathBuf>, Option<String>) {
 
 /// Fails: the target has no platform backend yet.
 #[cfg(not(target_os = "macos"))]
-fn run() -> ExitCode {
+fn run(_: bool) -> ExitCode {
     eprintln!("lokyr: this platform has no backend yet");
     ExitCode::FAILURE
 }

@@ -4,8 +4,8 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use lokyr_font_coretext::CoreText;
@@ -780,6 +780,19 @@ pub struct App {
     /// the app open without windows.
     global_keys: Vec<(keymap::Combo, Invocation)>,
     global_held: bool,
+    /// The measure of the startup, with `--bench startup`: when the first
+    /// window's first frame showed, once it did, which the app prints
+    /// before it quits.
+    startup_bench: Option<Arc<Mutex<StartupBench>>>,
+}
+
+/// The measure of the startup.
+#[derive(Debug, Default)]
+struct StartupBench {
+    /// Whether a frame will tell when it shows.
+    asked: bool,
+    /// When the first frame showed.
+    shown: Option<std::time::SystemTime>,
 }
 
 impl App {
@@ -860,7 +873,58 @@ impl App {
             quick: None,
             global_keys: Vec::new(),
             global_held: false,
+            startup_bench: None,
         }
+    }
+
+    /// The app that measures its startup, from the process's start to its
+    /// first window's first frame on the display, prints it as JSON, and
+    /// quits.
+    pub fn with_startup_bench(mut self) -> Self {
+        self.startup_bench = Some(Arc::default());
+        self
+    }
+
+    /// Prints the startup's measure and quits, once the first frame
+    /// showed; quits at once without a drawing, which shows no frame.
+    fn end_startup_bench(&mut self, platform: &mut dyn Platform) {
+        let Some(bench) = &self.startup_bench else {
+            return;
+        };
+        if self.drawing.is_none() {
+            eprintln!("lokyr: no frame shows without a GPU, and so no startup to measure");
+            self.startup_bench = None;
+            platform.quit();
+            return;
+        }
+        let (asked, shown) = {
+            let bench = bench.lock().unwrap_or_else(PoisonError::into_inner);
+            (bench.asked, bench.shown)
+        };
+        let Some(shown) = shown else {
+            // The display skipped the frame: the windows draw again, whole.
+            if !asked {
+                for (&window, state) in &mut self.windows {
+                    state.shown = None;
+                    platform.request_frame(window);
+                }
+            }
+            return;
+        };
+        let started = platform.process_started();
+        let Some(elapsed) = started.and_then(|started| shown.duration_since(started).ok()) else {
+            eprintln!("lokyr: the process's start cannot be read, and so the startup");
+            self.startup_bench = None;
+            platform.quit();
+            return;
+        };
+        println!(
+            "{{\"pid\":{},\"first_frame_ms\":{:.1}}}",
+            std::process::id(),
+            elapsed.as_secs_f64() * 1000.0
+        );
+        self.startup_bench = None;
+        platform.quit();
     }
 
     /// The app, with `plugin`, by its `name`, after the built-in ones.
@@ -3893,6 +3957,25 @@ impl App {
                 && shown.background == list.background
                 && shown.items == list.items
         });
+        // The startup's measure asks the first frame to tell as it shows.
+        if !same
+            && let Some(bench) = &self.startup_bench
+            && !std::mem::replace(
+                &mut bench.lock().unwrap_or_else(PoisonError::into_inner).asked,
+                true,
+            )
+        {
+            let (bench, waker) = (Arc::clone(bench), platform.waker());
+            drawing.renderer.on_next_presented(move |ago| {
+                let mut bench = bench.lock().unwrap_or_else(PoisonError::into_inner);
+                match ago {
+                    Some(ago) => bench.shown = std::time::SystemTime::now().checked_sub(ago),
+                    // A frame that the display skipped: the next tells.
+                    None => bench.asked = false,
+                }
+                waker.wake();
+            });
+        }
         let drawn = drawing.renderer.update_textures(&updates).and_then(|()| {
             if same {
                 Ok(false)
@@ -3984,7 +4067,9 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
-        self.take_global_keys(platform);
+        if self.startup_bench.is_none() {
+            self.take_global_keys(platform);
+        }
         self.environment.locale =
             environment::utf8_locale(&self.preferred, &environment::system_locales());
         if let Some(file) = &mut self.config_file {
@@ -3997,6 +4082,7 @@ impl Handler for App {
             file.watch(platform);
         }
         self.open_window(platform);
+        self.end_startup_bench(platform);
     }
 
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -4012,6 +4098,7 @@ impl Handler for App {
             // What woke the application changed what a window shows, ended
             // its program, or changed the config file.
             AppEvent::Wake => {
+                self.end_startup_bench(platform);
                 // The panes whose sessions woke it, alone, and their
                 // windows' frames.
                 let changed: Vec<PaneId> = self
