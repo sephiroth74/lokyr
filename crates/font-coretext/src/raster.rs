@@ -45,10 +45,10 @@ unsafe impl Send for Shared {}
 unsafe impl Sync for Shared {}
 
 /// The glyphs of `rasters`, each in its font of `fonts`, drawn as
-/// [`rasterize`] draws them, as many as there is time for until `deadline`:
-/// on several threads, for a batch of a few, each taking the next glyph
-/// that none has taken; `None` for those that none started by the deadline.
-/// A glyph without its font is empty.
+/// [`rasterize`] draws them, as many as there is time for until `deadline`,
+/// and the first one whatever the time: on several threads, for a batch of
+/// a few, each taking the next glyph that none has taken; `None` for those
+/// that none started by the deadline. A glyph without its font is empty.
 pub(crate) fn rasterize_many(
     rasters: &[Raster],
     fonts: &[Option<Shared>],
@@ -56,9 +56,14 @@ pub(crate) fn rasterize_many(
     deadline: Instant,
 ) -> Vec<Option<Bitmap>> {
     let next = AtomicUsize::new(0);
-    let work = || {
+    // The caller's thread starts its first glyph before it reads the time,
+    // so that a batch's setup, which the deadline counts, never leaves it
+    // without one.
+    let work = |first: bool| {
         let mut drawn = Vec::new();
-        while Instant::now() < deadline {
+        let mut started = !first;
+        while !started || Instant::now() < deadline {
+            started = true;
             let index = next.fetch_add(1, Ordering::Relaxed);
             let Some(raster) = rasters.get(index) else {
                 break;
@@ -90,7 +95,7 @@ pub(crate) fn rasterize_many(
             .filter_map(|_| {
                 thread::Builder::new()
                     .name("glyphs".into())
-                    .spawn_scoped(scope, work)
+                    .spawn_scoped(scope, || work(false))
                     .ok()
             })
             .collect();
@@ -99,7 +104,7 @@ pub(crate) fn rasterize_many(
                 bitmaps[index] = Some(bitmap);
             }
         };
-        place(work());
+        place(work(true));
         for helper in helpers {
             // A thread that panicked leaves its glyphs for a later batch.
             if let Ok(drawn) = helper.join() {

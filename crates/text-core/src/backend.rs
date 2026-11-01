@@ -206,6 +206,14 @@ pub trait FontBackend {
         false
     }
 
+    /// Whether `face` is the system's last resort, which draws a box of its
+    /// block for any character that no other face has, as the cascade gives
+    /// it: `false` when it cannot tell.
+    fn last_resort(&mut self, face: FaceId) -> bool {
+        let _ = face;
+        false
+    }
+
     /// What `face` measures at `size` pixels.
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics;
 
@@ -251,15 +259,17 @@ pub trait FontBackend {
     ) -> Bitmap;
 
     /// Draws the glyphs of `rasters`, as [`FontBackend::rasterize`] draws
-    /// each, as many as there is time for until `deadline`, in their order:
-    /// their bitmaps, and `None` for those that it left, which no call
-    /// started past the deadline. A backend may draw them on several
-    /// threads at once; by default, they are drawn in turn.
+    /// each, as many as there is time for until `deadline`, in their order,
+    /// and the first one whatever the time: their bitmaps, and `None` for
+    /// those that it left, which no call started past the deadline. A
+    /// backend may draw them on several threads at once; by default, they
+    /// are drawn in turn.
     fn rasterize_many(&mut self, rasters: &[Raster], deadline: Instant) -> Vec<Option<Bitmap>> {
         rasters
             .iter()
-            .map(|raster| {
-                (Instant::now() < deadline).then(|| {
+            .enumerate()
+            .map(|(index, raster)| {
+                (index == 0 || Instant::now() < deadline).then(|| {
                     self.rasterize(
                         raster.face,
                         raster.glyph,

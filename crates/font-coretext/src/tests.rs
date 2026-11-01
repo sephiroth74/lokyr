@@ -899,12 +899,15 @@ fn a_batch_draws_each_glyph_as_one_at_a_time_would() {
 }
 
 #[test]
-fn a_batch_past_its_deadline_draws_nothing() {
+fn a_batch_past_its_deadline_draws_its_first_glyph_alone() {
     let mut backend = CoreText::new();
     let face = regular(&mut backend, "Menlo");
     let rasters = rasters(&mut backend, face, "The quick brown fox");
     let batch = backend.rasterize_many(&rasters, Instant::now());
-    assert!(batch.iter().all(Option::is_none), "{batch:?}");
+    assert!(batch[0].is_some(), "the first, whatever the time");
+    // The helpers read the time first, and start none.
+    let drawn = batch.iter().filter(|bitmap| bitmap.is_some()).count();
+    assert_eq!(drawn, 1, "{batch:?}");
 }
 
 #[test]

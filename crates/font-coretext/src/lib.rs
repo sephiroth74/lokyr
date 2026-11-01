@@ -36,6 +36,11 @@ const PROBE_SIZE: f64 = 12.0;
 /// default family is named so, rather than by its hidden name.
 const SF_MONO: &str = "SF Mono";
 
+/// The PostScript name of macOS's last resort, which the cascade gives for
+/// a character that no other font has, as the private planes' first, and
+/// which draws a box of the character's block.
+const LAST_RESORT: &str = "LastResort";
+
 /// The bits of the OS/2 table's selection that mark a face bold and oblique.
 const FS_SELECTION_BOLD: u16 = 1 << 5;
 const FS_SELECTION_OBLIQUE: u16 = 1 << 9;
@@ -289,6 +294,13 @@ impl FontBackend for CoreText {
             // the system's own.
             .filter(|name| !name.is_empty() && !name.starts_with('.'))
             .collect()
+    }
+
+    fn last_resort(&mut self, face: FaceId) -> bool {
+        self.font(face, PROBE_SIZE).is_some_and(|font| {
+            // SAFETY: a font that CoreText made.
+            unsafe { font.post_script_name() }.to_string() == LAST_RESORT
+        })
     }
 
     fn monospaced(&mut self, face: FaceId) -> bool {

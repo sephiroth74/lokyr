@@ -338,6 +338,10 @@ struct Glyphs {
     /// The face that the cascade gave the emoji of a character that is an
     /// emoji by default, which draws the others too.
     emoji: Option<FaceId>,
+    /// The faces that the cascade gave characters of the private use areas,
+    /// but the last resort, which draw the others of them that they have: a
+    /// family of icons, as a Nerd Font, has them all.
+    private: Vec<FaceId>,
 }
 
 impl Glyphs {
@@ -359,6 +363,7 @@ impl Glyphs {
             ids: FastMap::default(),
             fallbacks: FastMap::default(),
             emoji: None,
+            private: Vec::new(),
         }
     }
 }
@@ -576,9 +581,10 @@ impl<B: FontBackend> Font<B> {
     /// Whether the frame's time for looking up faces has run out, which
     /// leaves the character asked for to a later frame.
     fn out_of_time(&mut self) -> bool {
+        // A budget of none still starts the frame's first lookup.
         let out = self
             .budget
-            .is_some_and(|(lookups, _)| self.looking_up >= lookups);
+            .is_some_and(|(lookups, _)| self.looking_up > lookups);
         self.lookups_left |= out;
         out
     }
@@ -1050,10 +1056,33 @@ fn cascade<B: FontBackend>(
                 .emoji
                 .filter(|_| presentation == Presentation::Emoji)
                 .filter(|&emoji| glyph_of(&mut glyphs.ids, backend, emoji, character).is_some());
-            let found = emoji.or_else(|| {
+            // A character of the private use areas takes a face that drew
+            // another of them, when it has it: the cascade, which searches
+            // every installed font for them, takes about 22 ms for each of
+            // the icons of a Nerd Font's plane, and gives the last resort's
+            // box for those of the first plane.
+            let private = presentation == Presentation::Text && is_private(character);
+            let mut known = None;
+            if private {
+                for &face in &glyphs.private {
+                    if glyph_of(&mut glyphs.ids, backend, face, character).is_some() {
+                        known = Some(face);
+                        break;
+                    }
+                }
+            }
+            let found = emoji.or(known).or_else(|| {
                 let cluster: String = std::iter::once(character).chain(selector).collect();
                 backend.fallback(face.id, &cluster)
             });
+            if private
+                && let Some(drawing) = found
+                && !glyphs.private.contains(&drawing)
+                && !backend.last_resort(drawing)
+                && glyph_of(&mut glyphs.ids, backend, drawing, character).is_some()
+            {
+                glyphs.private.push(drawing);
+            }
             if presentation == Presentation::Emoji
                 && glyphs.emoji.is_none()
                 && unicode::has_emoji_presentation(character)
@@ -1075,6 +1104,15 @@ fn cascade<B: FontBackend>(
         glyph,
         emoji: false,
     })
+}
+
+/// Whether `character` is of the private use areas, whose characters each
+/// font gives meanings of its own, as the icons of the Nerd Fonts.
+fn is_private(character: char) -> bool {
+    matches!(
+        u32::from(character),
+        0xE000..=0xF8FF | 0xF_0000..=0xF_FFFD | 0x10_0000..=0x10_FFFD
+    )
 }
 
 /// The first of `faces` that has `character`, with its glyph.
@@ -1164,6 +1202,17 @@ mod tests {
     /// The face that its shaping takes for a cluster of a keycap's mark.
     const KEYCAPS: FaceId = FaceId(6);
 
+    /// A face of icons of the private use area, U+E100 to U+E1FF and
+    /// U+F000 to U+F0FF, which Mono lacks.
+    const ICONS: FaceId = FaceId(10);
+
+    /// The last resort, which has every character.
+    const LAST_RESORT: FaceId = FaceId(11);
+
+    fn is_icon(character: char) -> bool {
+        matches!(character, '\u{E100}'..='\u{E1FF}' | '\u{F000}'..='\u{F0FF}')
+    }
+
     /// A backend of two families: Mono, of a regular and a bold face, which
     /// lack `A`, ✔, ⌚ and CJK, and Wide, of one face, which lacks `A` and
     /// U+E0A0; and of a cascade of a face that draws CJK, one of emoji, for
@@ -1243,11 +1292,17 @@ mod tests {
         fn glyph(&mut self, face: FaceId, character: char) -> Option<GlyphId> {
             *self.looked_up.entry((face, character)).or_default() += 1;
             let has = match face {
+                ICONS => is_icon(character),
+                LAST_RESORT => true,
                 CJK => is_cjk(character),
                 EMOJI => character != '\u{E000}',
                 SYMBOLS => !is_cjk(character) && character != '\u{231A}',
                 WIDE => character != 'A' && character != '\u{E0A0}',
-                _ => !matches!(character, 'A' | '\u{2714}' | '\u{231A}') && !is_cjk(character),
+                _ => {
+                    !matches!(character, 'A' | '\u{2714}' | '\u{231A}')
+                        && !is_cjk(character)
+                        && !is_icon(character)
+                }
             };
             u16::try_from(u32::from(character))
                 .ok()
@@ -1258,13 +1313,24 @@ mod tests {
         fn fallback(&mut self, _: FaceId, cluster: &str) -> Option<FaceId> {
             self.fallbacks += 1;
             self.asked.push(cluster.to_owned());
+            let first = cluster.chars().next();
             if cluster.contains('\u{FE0F}') {
                 Some(EMOJI)
             } else if cluster.contains('\u{FE0E}') {
                 Some(SYMBOLS)
+            } else if first.is_some_and(|c| ('\u{E100}'..='\u{E1FF}').contains(&c)) {
+                // As macOS's cascade gives the private use area's first
+                // plane.
+                Some(LAST_RESORT)
+            } else if first.is_some_and(is_icon) {
+                Some(ICONS)
             } else {
-                cluster.chars().next().filter(|&c| is_cjk(c)).map(|_| CJK)
+                first.filter(|&c| is_cjk(c)).map(|_| CJK)
             }
+        }
+
+        fn last_resort(&mut self, face: FaceId) -> bool {
+            face == LAST_RESORT
         }
 
         fn substitutes(&mut self, face: FaceId) -> bool {
@@ -1430,18 +1496,20 @@ mod tests {
         font.begin_frame();
         font.collect_missing(Duration::from_secs(60), Duration::ZERO);
         font.glyph(&shown("b", &style));
-        assert!(!font.draw_pending(), "none drawn");
+        font.glyph(&shown("c", &style));
+        // The first one whatever the time, which leaves the other.
+        assert!(font.draw_pending(), "one drawn");
         assert!(font.has_deferred());
         assert_eq!(
-            font.glyph(&shown("b", &style)),
+            font.glyph(&shown("c", &style)),
             None,
             "its cell stays empty"
         );
-        assert!(font.backend.drawn.is_empty());
+        assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x63)), None);
         font.begin_frame();
         assert!(!font.has_deferred());
         assert!(
-            font.glyph(&shown("b", &style)).is_some(),
+            font.glyph(&shown("c", &style)).is_some(),
             "the next frame draws it"
         );
     }
@@ -1452,8 +1520,8 @@ mod tests {
         let style = Style::DEFAULT;
         font.begin_frame();
         font.collect_missing(Duration::from_secs(60), Duration::from_secs(60));
-        // The frame's time for lookups, spent.
-        font.looking_up = Duration::from_secs(60);
+        // The frame's time for lookups, spent, and past.
+        font.looking_up = Duration::from_secs(61);
         assert_eq!(font.glyph(&shown("\u{4E2D}", &style)), None);
         assert!(!font.draw_pending());
         assert!(font.has_deferred());
@@ -1484,6 +1552,43 @@ mod tests {
         // A character that the emoji's face lacks asks the cascade.
         font.glyph(&shown("\u{E000}\u{FE0F}", &style));
         assert!(font.backend.fallbacks > asked);
+    }
+
+    #[test]
+    fn an_icon_takes_the_face_of_the_icons_found_before_but_the_last_resort() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        let face = |font: &mut Font<Squares>, text: &str| {
+            font.find(0, text.chars().next().unwrap(), Presentation::asked(text))
+                .map(|found| found.face)
+        };
+        // The cascade gives the last resort, which draws no other.
+        assert_eq!(face(&mut font, "\u{E100}"), Some(LAST_RESORT));
+        assert_eq!(font.backend.fallbacks, 1);
+        assert_eq!(face(&mut font, "\u{F001}"), Some(ICONS));
+        assert_eq!(font.backend.fallbacks, 2);
+        // The icons' face draws the others, of either plane, without the
+        // cascade.
+        assert_eq!(face(&mut font, "\u{F002}"), Some(ICONS));
+        assert_eq!(face(&mut font, "\u{E101}"), Some(ICONS));
+        assert_eq!(font.backend.fallbacks, 2);
+        assert!(font.glyph(&shown("\u{F003}", &style)).is_some());
+        assert_eq!(font.backend.fallbacks, 2);
+    }
+
+    #[test]
+    fn a_budget_of_no_time_still_looks_one_face_up() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let style = Style::DEFAULT;
+        font.begin_frame();
+        font.collect_missing(Duration::ZERO, Duration::ZERO);
+        // Two characters that the frame has not met: the first is looked up.
+        font.glyph(&shown("\u{4E2D}", &style));
+        font.glyph(&shown("\u{4E2E}", &style));
+        assert_eq!(font.backend.fallbacks, 1);
+        assert!(font.has_deferred());
+        // And drawn, whatever the drawing's budget.
+        assert!(font.draw_pending());
     }
 
     #[test]
@@ -2114,6 +2219,42 @@ mod system {
             dark: false,
         };
         font.glyph(&shown).map(|glyph| glyph.region.texture)
+    }
+
+    /// The frames, of a frame's budgets, that show a screen of 30 icons of a
+    /// Nerd Font's plane, each other, which SF Mono lacks: each one's time.
+    /// Run by hand, with the Nerd Fonts installed: `cargo test -p
+    /// lokyr-ui-core icons_frames -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn icons_frames() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        let icons: Vec<String> = (0..30u32)
+            .map(|n| char::from_u32(0xF_0001 + n * 37).unwrap().to_string())
+            .collect();
+        let mut frames = Vec::new();
+        loop {
+            let start = Instant::now();
+            font.begin_frame();
+            font.collect_missing(Duration::from_millis(2), Duration::from_millis(2));
+            for icon in &icons {
+                texture_of(&mut font, icon);
+            }
+            if font.draw_pending() {
+                for icon in &icons {
+                    texture_of(&mut font, icon);
+                }
+            }
+            frames.push(start.elapsed());
+            if !font.has_deferred() || frames.len() > 100 {
+                break;
+            }
+        }
+        let ms: Vec<String> = frames
+            .iter()
+            .map(|frame| format!("{:.2}", frame.as_secs_f64() * 1000.0))
+            .collect();
+        println!("{} frames, ms: {}", frames.len(), ms.join(" "));
     }
 
     #[test]
