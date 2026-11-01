@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use lokyr_kernel::commands::ErrorCategory;
 use lokyr_kernel::diagnostics::About;
-use lokyr_kernel::workspace::Grid;
+use lokyr_kernel::workspace::{Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
     PointerArea, PointerShape, Size, WindowId, WindowSize,
@@ -18,7 +18,10 @@ use lokyr_platform_core::{
 use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
 };
+use lokyr_text_core::CellMetrics;
 use lokyr_ui_core::pane::{CursorLook, TextLook};
+use lokyr_ui_core::text::TextConfig;
+use lokyr_ui_core::theme::SelectionColors;
 use lokyr_ui_core::theme::Variant;
 use lokyr_ui_core::{cursor, pane as cells};
 use lokyr_vt_core::terminal::MouseTracking;
@@ -27,8 +30,12 @@ use super::menus::menu_context;
 use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
 use crate::output_bench::Phases;
-use crate::window::{Shown, WindowLayer};
+use crate::window::{PaneView, Shown, WindowLayer};
 use crate::{notice, performance, size_label};
+
+/// The room between the two parts of a split, in points, which their
+/// divider takes.
+const DIVIDER: f64 = 1.0;
 
 impl<B: Backend> App<B> {
     /// Asks every window for a frame.
@@ -127,6 +134,88 @@ impl<B: Backend> App<B> {
     pub(super) fn origin(&self, size: WindowSize) -> (u32, u32) {
         let (x, y) = self.padding(size.scale);
         (x, y + size.bar_pixels())
+    }
+
+    /// The room of a window of `size` that its panes share, in pixels from
+    /// its content's top left corner: past the padding, and below the
+    /// titlebar.
+    fn content(&self, size: WindowSize) -> Rect {
+        let (x, y) = self.padding(size.scale);
+        let below = size.pixels.height.saturating_sub(size.bar_pixels());
+        Rect {
+            x: i32::try_from(x).unwrap_or(i32::MAX),
+            y: i32::try_from(y + size.bar_pixels()).unwrap_or(i32::MAX),
+            width: size.pixels.width.saturating_sub(2 * x),
+            height: below.saturating_sub(2 * y),
+        }
+    }
+
+    /// Lays out the panes of `window`'s active tab in its content, of
+    /// `size`: each its room and its grid, which the window keeps for its
+    /// frame, its hits and its input method; the zoomed pane alone while
+    /// one is.
+    pub(super) fn lay_out_panes(&mut self, window: WindowId, size: WindowSize) -> Vec<PaneView> {
+        let content = self.content(size);
+        let (width, height) = self.cell_pixels(size.scale);
+        let Some(state) = self.windows.get(&window) else {
+            return Vec::new();
+        };
+        let tab = self
+            .workspace
+            .window(state.window)
+            .and_then(|shown| self.workspace.tab(shown.active_tab()));
+        let rooms = match tab {
+            Some(tab) => {
+                let divider = (DIVIDER * size.scale).round() as u32;
+                pane_rects(
+                    tab.layout(),
+                    tab.zoomed(),
+                    content,
+                    (width, height),
+                    divider,
+                )
+            }
+            None => vec![(state.pane, content)],
+        };
+        let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
+        let views: Vec<PaneView> = rooms
+            .into_iter()
+            .map(|(pane, rect)| PaneView {
+                pane,
+                rect,
+                grid: Grid {
+                    columns: fit(rect.width, width),
+                    rows: fit(rect.height, height),
+                    cell_width: pixels(width),
+                    cell_height: pixels(height),
+                },
+            })
+            .collect();
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.views.clone_from(&views);
+        }
+        views
+    }
+
+    /// Where `pane` of `window` has its grid's first cell, in pixels from
+    /// the content's top left corner, as the last frame laid it out; the
+    /// window's own grid's, of `size`, before it did.
+    pub(super) fn pane_origin(
+        &self,
+        window: WindowId,
+        pane: PaneId,
+        size: WindowSize,
+    ) -> (u32, u32) {
+        self.windows
+            .get(&window)
+            .and_then(|state| state.views.iter().find(|view| view.pane == pane))
+            .map_or_else(
+                || self.origin(size),
+                |view| {
+                    let at = |pixels: i32| u32::try_from(pixels).unwrap_or(0);
+                    (at(view.rect.x), at(view.rect.y))
+                },
+            )
     }
 
     /// The room between the grid and the window's edges, in pixels on a
@@ -289,16 +378,45 @@ impl<B: Backend> App<B> {
         // for the display's drawable apart from the CPU's.
         let started =
             (self.performance.is_some() || self.output_bench.is_some()).then(Instant::now);
-        let grid = self.grid(size);
-        let (left, top) = self.origin(size);
         let now = Instant::now();
+        // Each pane of the active tab in its room.
+        let views = self.lay_out_panes(window, size);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane_mut(state.pane) else {
+        // The pane with the keyboard, or the one zoomed over it.
+        let Some(&PaneView {
+            pane: active,
+            rect,
+            grid,
+        }) = views
+            .iter()
+            .find(|view| view.pane == state.pane)
+            .or_else(|| views.first())
+        else {
             return;
         };
-        let due = pane.resize(grid, now);
+        let at = |pixels: i32| u32::try_from(pixels).unwrap_or(0);
+        let (left, top) = (at(rect.x), at(rect.y));
+        // Each pane's program learns its grid, and the others' output shows
+        // in this frame too.
+        let mut due = None;
+        for view in &views {
+            let Some(pane) = self.workspace.pane_mut(view.pane) else {
+                continue;
+            };
+            let told = pane.resize(view.grid, now);
+            due = match (due, told) {
+                (Some(due), Some(told)) => Some(std::cmp::min(due, told)),
+                (due, told) => due.or(told),
+            };
+            if view.pane != active {
+                pane.update();
+            }
+        }
+        let Some(pane) = self.workspace.pane_mut(active) else {
+            return;
+        };
         // A resize that changes the grid shows its size, a moment.
         let resized = state
             .grid_drawn
@@ -406,7 +524,7 @@ impl<B: Backend> App<B> {
             .windows
             .get(&window)
             .filter(|state| state.focused)
-            .and_then(|state| self.workspace.pane(state.pane))
+            .and_then(|_| self.workspace.pane(active))
             .map(|pane| menu_context(pane.snapshot()));
         if let Some(context) = context {
             self.settle_menu(platform, &context);
@@ -424,7 +542,7 @@ impl<B: Backend> App<B> {
         else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.pane(active) else {
             return;
         };
         if state.surface.is_none() || state.occluded {
@@ -461,6 +579,16 @@ impl<B: Backend> App<B> {
         // most, and is done again with them; the cells of those left show
         // empty until the frames after draw them.
         let grid_cursor = cursor.filter(|_| !apart);
+        // The other panes, each at its room's corner.
+        let others: Vec<(&Pane, (i32, i32))> = views
+            .iter()
+            .filter(|view| view.pane != active)
+            .filter_map(|view| Some((self.workspace.pane(view.pane)?, (view.rect.x, view.rect.y))))
+            .collect();
+        let hollow = CursorLook {
+            shape: CursorShape::Hollow,
+            thickness: config.thickness(&cell, size.scale as f32),
+        };
         font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
         let mut batch = cells::cells_with(
             snapshot,
@@ -471,6 +599,7 @@ impl<B: Backend> App<B> {
             look,
             font,
         );
+        let mut other_batches = other_cells(&others, &cell, selection_colors, hollow, text, font);
         if font.draw_pending() {
             batch = cells::cells_with(
                 snapshot,
@@ -481,6 +610,7 @@ impl<B: Backend> App<B> {
                 look,
                 font,
             );
+            other_batches = other_cells(&others, &cell, selection_colors, hollow, text, font);
         }
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
@@ -506,6 +636,7 @@ impl<B: Backend> App<B> {
             .into_iter()
             .collect();
         items.push(Item::Cells(batch));
+        items.extend(other_batches.into_iter().map(Item::Cells));
         // The notice, across the content's top, under the titlebar.
         state.notice = self.diagnostics.shown().map(|shown| {
             let label = match (&shown.about, shown.category()) {
@@ -761,6 +892,133 @@ impl<B: Backend> App<B> {
                 .spawn(move || B::warm_up(&family));
         }
     }
+}
+
+/// The cells of `panes`, the panes of a window but the one with the
+/// keyboard, each at its origin, of `cell`: its selection in `colors`, its
+/// cursor `cursor`, as an unfocused window's, and its text as `text` has it
+/// look, steady, as the text that blinks blinks in the pane with the
+/// keyboard alone.
+fn other_cells(
+    panes: &[(&Pane, (i32, i32))],
+    cell: &CellMetrics,
+    colors: SelectionColors,
+    cursor: CursorLook,
+    text: TextConfig,
+    font: &mut dyn cells::Glyphs,
+) -> Vec<CellBatch> {
+    let look = TextLook {
+        config: text,
+        blink_shown: true,
+    };
+    panes
+        .iter()
+        .map(|(pane, origin)| {
+            let snapshot = pane.snapshot();
+            let selected = snapshot.selection();
+            let contains =
+                |column: u16, row: u16| selected.is_some_and(|shown| shown.contains(column, row));
+            let selection = selected.map(|_| cells::Selection {
+                colors,
+                contains: &contains,
+            });
+            cells::cells_with(
+                snapshot,
+                cell,
+                *origin,
+                selection.as_ref(),
+                Some(cursor),
+                look,
+                font,
+            )
+        })
+        .collect()
+}
+
+/// The cells of `cell` pixels that `pixels` hold, one at least.
+fn fit(pixels: u32, cell: u32) -> u16 {
+    (pixels / cell.max(1)).clamp(1, u32::from(u16::MAX)) as u16
+}
+
+/// The rooms of the panes of `layout` in `area`, in pixels: a split's first
+/// part takes its share of the area less `divider`, the pixels between the
+/// parts, cut at a whole cell of `cell`, its width or its height, so that
+/// its grid fills it, and the second the rest, past the divider; `zoomed`,
+/// while one is, takes the whole area. In the layout's order.
+pub(super) fn pane_rects(
+    layout: &Layout,
+    zoomed: Option<PaneId>,
+    area: Rect,
+    cell: (u32, u32),
+    divider: u32,
+) -> Vec<(PaneId, Rect)> {
+    if let Some(zoomed) = zoomed.filter(|&pane| layout.contains(pane)) {
+        return vec![(zoomed, area)];
+    }
+    let mut rooms = Vec::new();
+    split_rooms(layout, area, cell, divider, &mut rooms);
+    rooms
+}
+
+fn split_rooms(
+    layout: &Layout,
+    area: Rect,
+    cell: (u32, u32),
+    divider: u32,
+    rooms: &mut Vec<(PaneId, Rect)>,
+) {
+    let share = layout.share();
+    let Layout::Split {
+        direction,
+        first,
+        second,
+        ..
+    } = layout
+    else {
+        if let Layout::Leaf(pane) = layout {
+            rooms.push((*pane, area));
+        }
+        return;
+    };
+    let share = share.unwrap_or(0.5);
+    let (length, step) = match direction {
+        Direction::Horizontal => (area.width, cell.0.max(1)),
+        Direction::Vertical => (area.height, cell.1.max(1)),
+    };
+    let room = length.saturating_sub(divider);
+    // Whole cells for the first part, of one cell at least, and as many as
+    // leave the second one, if the room has two.
+    let cells = (f64::from(room) * share / f64::from(step)).round() as u32;
+    let most = (room / step).saturating_sub(1).max(1);
+    let first_length = (cells.clamp(1, most) * step).min(room);
+    let second_length = room - first_length;
+    let past = i32::try_from(first_length + divider).unwrap_or(i32::MAX);
+    let (first_area, second_area) = match direction {
+        Direction::Horizontal => (
+            Rect {
+                width: first_length,
+                ..area
+            },
+            Rect {
+                x: area.x.saturating_add(past),
+                width: second_length,
+                ..area
+            },
+        ),
+        Direction::Vertical => (
+            Rect {
+                height: first_length,
+                ..area
+            },
+            Rect {
+                y: area.y.saturating_add(past),
+                height: second_length,
+                ..area
+            },
+        ),
+    };
+    split_rooms(first, first_area, cell, divider, rooms);
+    split_rooms(second, second_area, cell, divider, rooms);
 }
 
 /// The titlebar of a window of `size`, over its content's top, opaque in

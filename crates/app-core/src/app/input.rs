@@ -227,12 +227,13 @@ impl<B: Backend> App<B> {
         window: WindowId,
         position: Point,
     ) -> Option<Pointer> {
-        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
+        let id = self.windows.get(&window)?.pane;
+        let pane = self.workspace.pane(id)?;
         let size = platform.window_size(window)?;
         Some(mouse::pointer(
             position,
             size.scale,
-            self.origin(size),
+            self.pane_origin(window, id, size),
             pane.grid(),
         ))
     }
@@ -470,7 +471,10 @@ impl<B: Backend> App<B> {
         let Some(pointer) = self.pointer(platform, window, position) else {
             return;
         };
-        let (_, top) = self.origin(size);
+        let Some(id) = self.windows.get(&window).map(|state| state.pane) else {
+            return;
+        };
+        let (_, top) = self.pane_origin(window, id, size);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };

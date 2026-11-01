@@ -6,11 +6,11 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use lokyr_kernel::keymap::Resolver;
-use lokyr_kernel::workspace::{self, PaneId};
+use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape,
 };
-use lokyr_render_core::{CellBatch, Color, Item, Surface as _};
+use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
@@ -69,6 +69,9 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) window: workspace::WindowId,
     /// Its pane, which runs its program, and what that shows.
     pub(crate) pane: PaneId,
+    /// Where its active tab's panes lie, as its last frame laid them out:
+    /// the zoomed one alone while one is.
+    pub(crate) views: Vec<PaneView>,
     /// The text that the input method composes, shown at the cursor.
     pub(crate) preedit: Option<Preedit>,
     /// Whether it has the keyboard's focus.
@@ -145,6 +148,18 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) shown: Option<Shown>,
 }
 
+/// Where a pane of a window lies, as a frame laid it out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PaneView {
+    /// The pane.
+    pub(crate) pane: PaneId,
+    /// Its room, in pixels from the window's content's top left corner,
+    /// which its grid fills from its top left corner, of whole cells.
+    pub(crate) rect: Rect,
+    /// Its grid, of the cells that its room holds.
+    pub(crate) grid: Grid,
+}
+
 /// What a window's surface shows.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Shown {
@@ -195,6 +210,7 @@ impl<B: Backend> Window<B> {
             cursor_layer: WindowLayer::new(surfaces.cursor),
             window,
             pane,
+            views: Vec::new(),
             preedit: None,
             focused,
             blink: Blink::new(now),

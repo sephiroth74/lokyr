@@ -228,7 +228,7 @@ impl<B: Backend> App<B> {
         // A selection that starts above the view, or below it, shows at its
         // edge.
         let row = row.clamp(0, i64::from(grid.rows.saturating_sub(1))) as f64;
-        let (left, top) = self.origin(size);
+        let (left, top) = self.pane_origin(window, state.pane, size);
         let baseline = self
             .drawing
             .as_ref()

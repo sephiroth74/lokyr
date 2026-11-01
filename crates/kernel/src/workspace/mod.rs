@@ -85,7 +85,7 @@ impl WindowId {
 impl PaneId {
     /// The id of the number `id`, as a plugin's handle gives it, which may
     /// be no pane's.
-    pub(crate) fn of(id: u64) -> Self {
+    pub fn of(id: u64) -> Self {
         Self(id)
     }
 }

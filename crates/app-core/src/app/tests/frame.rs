@@ -1,6 +1,10 @@
 //! The tests of the windows' frames, their cursors' and blinking text's layers, and the grid's geometry.
 
+use lokyr_kernel::workspace::{Direction, Environment, Layout, Pane, Settings, Side};
+use lokyr_render_core::CellBatch;
+
 use super::*;
+use crate::app::frame::pane_rects;
 
 /// A program that shows `hello world` and `second line`, then `ready`.
 fn selecting_program() -> Program {
@@ -628,4 +632,123 @@ fn a_frame_and_a_key_lock_the_pane_once_each() {
         0,
         "Command's key, which the program does not take"
     );
+}
+
+#[test]
+fn a_tab_s_panes_share_its_room_in_whole_cells() {
+    let id = |n| lokyr_kernel::workspace::PaneId::of(n);
+    let area = Rect {
+        x: 4,
+        y: 10,
+        width: 800,
+        height: 400,
+    };
+    let cell = (8, 16);
+    // One pane takes the whole room.
+    let one = Layout::Leaf(id(1));
+    assert_eq!(pane_rects(&one, None, area, cell, 2), [(id(1), area)]);
+    // Three split alike: a third each, past the dividers, the first parts
+    // of whole cells.
+    let mut three = Layout::Leaf(id(1));
+    three.split(id(1), Direction::Horizontal, id(2), Side::Second);
+    three.split(id(2), Direction::Horizontal, id(3), Side::Second);
+    let rooms = pane_rects(&three, None, area, cell, 2);
+    let widths: Vec<u32> = rooms.iter().map(|(_, rect)| rect.width).collect();
+    assert_eq!(widths, [264, 264, 268]);
+    let lefts: Vec<i32> = rooms.iter().map(|(_, rect)| rect.x).collect();
+    assert_eq!(lefts, [4, 4 + 264 + 2, 4 + 264 + 2 + 264 + 2]);
+    assert!(
+        rooms
+            .iter()
+            .all(|(_, rect)| rect.y == 10 && rect.height == 400)
+    );
+    // Over each other, the same way down.
+    let mut stacked = Layout::Leaf(id(1));
+    stacked.split(id(1), Direction::Vertical, id(2), Side::Second);
+    let rooms = pane_rects(&stacked, None, area, cell, 2);
+    assert_eq!(
+        rooms
+            .iter()
+            .map(|(_, rect)| (rect.y, rect.height))
+            .collect::<Vec<_>>(),
+        [(10, 192), (10 + 192 + 2, 206)]
+    );
+    // A zoomed pane takes the whole room.
+    assert_eq!(
+        pane_rects(&three, Some(id(2)), area, cell, 2),
+        [(id(2), area)]
+    );
+    // A user's ratio, within the room.
+    let mut ratio = stacked.clone();
+    ratio.set_ratio(&[], Some(lokyr_kernel::workspace::Ratio::new(0.25)));
+    let rooms = pane_rects(&ratio, None, area, cell, 2);
+    assert_eq!(rooms[0].1.height, 96);
+}
+
+#[test]
+fn a_window_of_two_panes_draws_both_each_in_its_room() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(idle());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    // The tests' layout: a second pane beside the first.
+    let first = app.windows[&window].pane;
+    let grid = app.pane(window).grid();
+    let pane = Pane::spawn(
+        &idle(),
+        &Environment::default(),
+        &Settings::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+        &app.texts,
+        || {},
+    );
+    let second = app
+        .workspace
+        .split(first, Direction::Horizontal, pane, Side::Second)
+        .unwrap();
+    let drawn = |fake: &mut Fake, app: &mut App| {
+        fake.send(app, window, WindowEvent::Frame);
+        let views = app.windows[&window].views.clone();
+        let shown = app.windows[&window].shown.as_ref().expect("a frame");
+        let batches: Vec<CellBatch> = shown
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Cells(batch) => Some(batch.clone()),
+                _ => None,
+            })
+            .collect();
+        (views, batches)
+    };
+    let (views, batches) = drawn(&mut fake, &mut app);
+    assert_eq!(
+        views.iter().map(|view| view.pane).collect::<Vec<_>>(),
+        [first, second]
+    );
+    // Each pane's program has its grid, and its cells are drawn in its
+    // room, the keyboard's pane with its cursor, the other's hollow.
+    for (view, batch) in views.iter().zip(&batches) {
+        assert_eq!(app.workspace.pane(view.pane).unwrap().grid(), view.grid);
+        assert_eq!((batch.x, batch.y), (view.rect.x, view.rect.y));
+        assert_eq!(
+            (batch.columns, batch.rows),
+            (view.grid.columns, view.grid.rows)
+        );
+    }
+    assert!(views[1].rect.x > views[0].rect.x + i32::try_from(views[0].rect.width).unwrap());
+    let shape = |batch: &CellBatch| batch.cursor.map(|cursor| cursor.shape);
+    assert!(shape(&batches[0]).is_some_and(|shape| shape != CursorShape::Hollow));
+    assert_eq!(shape(&batches[1]), Some(CursorShape::Hollow));
+    // The window resized, each pane's grid follows.
+    let before = views;
+    fake.send(&mut app, window, WindowEvent::Resized(points(300.0, 200.0)));
+    let (views, _) = drawn(&mut fake, &mut app);
+    for (view, old) in views.iter().zip(&before) {
+        assert!(view.grid.columns < old.grid.columns, "{view:?} {old:?}");
+        assert_eq!(app.workspace.pane(view.pane).unwrap().grid(), view.grid);
+    }
 }
