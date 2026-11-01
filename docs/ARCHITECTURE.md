@@ -8,7 +8,7 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
 2. **One API for every plugin.** First-party plugins use the same interfaces as third-party ones, through a Rust front end instead of a Luau one. If one of our own features cannot be written with the public SDK, the SDK is what's missing something ([ADR 0003](adr/0003-native-and-wasm-plugins.md), [ADR 0012](adr/0012-luau-plugins.md)).
 3. **No wasted work.** When nothing changes there are no frames, timers or wakeups. Anything that is not visible or not installed costs nothing, and that includes the Luau runtime.
 4. **Native where it matters, our own where we need control.** Windows, menus, IME and accessibility are native on each OS. The chrome and the rendering are ours, and identical everywhere ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)).
-5. **No networking in the app.** Downloading and installing is Sleip's job ([ADR 0008](adr/0008-separate-package-manager.md)). The MCP server speaks over stdio, through the IPC socket ([ADR 0017](adr/0017-mcp-and-agents.md)).
+5. **No networking code of the app's own.** Downloading and installing is Sleip's job ([ADR 0008](adr/0008-separate-package-manager.md)). The plugins' network goes through the app, which checks it, to Sleip's helper, so that no response from the network is parsed in the process that sees what the user types; Sparkle's updater is the app's one network client ([ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)). The MCP server speaks over stdio, through the IPC socket ([ADR 0017](adr/0017-mcp-and-agents.md)).
 6. **Budgets are requirements.** Timings and memory have numeric targets that CI checks ([PERFORMANCE.md](PERFORMANCE.md)).
 
 ## Layers
@@ -23,7 +23,7 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
 │ tabs · splits · search · themes ·       │ read from disk, activated only when needed     │
 │ theme-iterm2 · core-actions · palette   │                                                │
 ├─────────────────────────────────────────┴────────────────────────────────────────────────┤
-│ plugin-sdk ── HostApi (kernel, native)  │  plugin-host-luau (Luau VMs → same HostApi)   │
+│ plugin-sdk ── HostApi messages (native) │  plugin-host-luau (Luau VMs → same messages)  │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
 │ KERNEL: workspace + layout tree · commands · keymap · event bus · config                 │
 │         services: search · decorations · triggers                                        │
@@ -58,7 +58,7 @@ Workspace
 
 - **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a tree whose leaves are panes, a single leaf until splits come. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them.
 - **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model. Its types are plain data, apart from the sessions; they take serde's derives with the first that serializes them, IPC in F3b.
-- **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly.
+- **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly: their changes are requests, which the host applies in order as their calls return ([ADR 0028](adr/0028-plugin-calls-as-messages.md)).
 - **Identifiers** are opaque `u64` values, never reused during the life of the process: windows, tabs and panes take theirs from one counter of the process.
 - **Diagnostics**: `kernel::diagnostics`. What goes wrong that the user is to learn of, a config that does not read, a font that is not installed, a plugin that is disabled or a command that fails, is a diagnostic of a code, whose hundreds tell its category ([ADR 0019](adr/0019-commands-errors-and-permissions.md)), and of a text. The sink writes each to the log, and keeps those that the user can act on, the config's and the font's, the failures and the faults, for the notice bar across the top of the windows, the latest first, until a fix or a click takes it away; later the audit log and MCP take them too.
 - **Mechanism vs. policy for splits**: the kernel provides the tree operations (split, resize, zoom). The `splits` plugin decides **when and how** to use them: commands, dividers, mouse interaction. Without that plugin every tab has exactly one pane.
@@ -75,7 +75,7 @@ Workspace
 | Drawing warm-up, once, as the app launches | Making the GPU's pipelines and the font, and letting them go, while AppKit launches, so that the app's own take nearly nothing | Outlive the launch |
 | Font warm-up, once, after the first frame | Readying the system's font fallback and its CJK and emoji faces, about 20 ms | Hold anything of the app's; a frame's first lookup of a CJK face, within those 20 ms, can wait for CoreText's cascade, which the thread fills |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
-| Plugin workers, one per native plugin that asks for one (F3) | Every call of that plugin, its renders too, by copies and messages, as the executor's | Hold a lock of the kernel's, or a pane's |
+| Plugin workers, one per native plugin that asks for one (F3) | Every call of that plugin, its renders too, by messages, as the executor's | Hold a lock of the kernel's, or a pane's: a read of much text runs on a host worker |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
 **From program output to the screen**
@@ -116,7 +116,7 @@ lokyr/
 │   ├── pty/               fork+exec, resize; no RawFd in the API (ConPTY later)
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
-│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services; implements HostApi
+│   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services, shell integration's scripts and marks; serves the HostApi's messages
 │   ├── app-core/          the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over a `Backend`, its GPU's Renderer and Surface and its FontBackend; tested with the fake platform and a fake drawing
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
@@ -129,14 +129,15 @@ lokyr/
 │   ├── render-gl/         (F7) glow + khronos-egl (GL 3.3 / GLES 3)
 │   ├── font-coretext/     objc2-core-text (discovery, fallback, shaping, rasterization)
 │   ├── font-freetype/     (F7) fontconfig + freetype-rs + harfrust
-│   ├── plugin-sdk/        the plugin API (HostApi and its types) and its Rust front end; no internal dependencies
+│   ├── plugin-sdk/        the plugin API (the HostApi's messages and their types, the view tree's data) and its Rust front end; no internal dependencies
 │   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
 │   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/ quick-terminal/
-│   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
-│   └── (F5) shell-integration/ blocks/ tmux-cc/ triggers/ images/ …
+│   ├── keymap-macos/ command-palette/ progress/ command-header/ copy-mode/
+│   ├── plugin-manager/ (F4) keymap-linux/ (F7)
+│   └── (F5) blocks/ tmux-cc/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml
 ├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
 ├── registry/              registry-server (v1) + index specification
@@ -155,7 +156,7 @@ app ─┬─▶ app-core ─▶ kernel
      │           ├─▶ search ───▶ vt-core
      │           ├─▶ ui-core ──┬─▶ text-core
      │           │             └─▶ render-core
-     │           ├─▶ plugin-sdk                      (the kernel implements HostApi)
+     │           ├─▶ plugin-sdk                      (the kernel serves the HostApi's messages)
      │           └─▶ pkg-model
      ├─▶ platform-{macos|wayland|x11} ─▶ platform-core
      ├─▶ render-{metal|gl} ─▶ render-core
@@ -176,7 +177,7 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
 | Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |
-| HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code in the app | `cargo-deny` (`bans` + `wrappers`) |
+| HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code of the app's own; Sparkle's updater, a framework, is its one network client | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
 | Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | `xtask check-deps` (`backends-only-in-app`) |
 | Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job, and `xtask check-deps` on Linux's dependencies |

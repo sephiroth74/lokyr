@@ -46,15 +46,15 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Encodings other than UTF-8 | UTF-8 only in the MVP; other encodings per profile, as a conversion in the session | [VT-CORE](VT-CORE.md#session-session) | F5b |
 | iTerm2 theme compatibility | `theme-iterm2` plugin: `.itermcolors`, light/dark variants, color spaces | [UI-AND-FEATURES](UI-AND-FEATURES.md#iterm2-themes) | F3 |
 | Customizable iTerm2-style tabs | `tabs` plugin, drawn in the titlebar by our UI engine; native tabs disabled | [UI-AND-FEATURES](UI-AND-FEATURES.md#tabs) | F3 |
-| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md) | F3–F4 |
+| Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette; the calls are messages, and the plugins' UI is data that the host draws | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md), [ADR 0028](adr/0028-plugin-calls-as-messages.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
-| Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client ([ADR 0026](adr/0026-app-updates.md)) | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
-| Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its sequences and `lokyr +notify`, on its tab | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3 |
+| Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client ([ADR 0026](adr/0026-app-updates.md)); the plugins' network goes through the app, which checks it, to Sleip's helper | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
+| Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its title and its sequences, on its tab; `lokyr +notify` and the agents' hooks with F3b's IPC | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3b |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
 | Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
-| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed on the repository's GitHub releases; the versions of ADR 0027 | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md) | F3 |
+| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed at `lokyr.dev`; the versions of ADR 0027, a build's number growing with each release | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md), [ADR 0029](adr/0029-update-feed-and-releases.md) | F3 |
 
 ## Architecture decisions
 
@@ -62,7 +62,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 |---|---|---|
 | [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted; its wasmtime reasons outdated by 0012 |
 | [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
-| [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012 |
+| [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012; the calls as messages, per 0028 |
 | [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011; a font of symbols before the system's fallback, per 0025 |
@@ -85,8 +85,10 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
 | [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
 | [0025](adr/0025-symbols-font.md) | A font of symbols in the binary, Symbols Nerd Font Mono, for the icons of the private use areas that the configured font lacks | Accepted; amends 0006 |
-| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008 |
-| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions |
+| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008; its feed at the project's address, per 0029 |
+| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions; F3's blocks' minors in their new order, per 0029 |
+| [0028](adr/0028-plugin-calls-as-messages.md) | The plugins' calls as messages, with every plugin's changes queued, and their UI as data, whose widgets keep their state in the host | Accepted; amends 0003 |
+| [0029](adr/0029-update-feed-and-releases.md) | The updates' feed at `lokyr.dev`, builds' numbers that grow with each release, Sparkle in the app, and the distribution as F3's second block | Accepted; amends 0026 and 0027 |
 
 ## Glossary
 

@@ -7,15 +7,16 @@ This document covers our UI engine and the features the MVP cannot ship without:
 `ui-core` is our small, platform-independent toolkit ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)). It draws all of the chrome on the GPU, into the same drawable as the panes.
 
 **View tree and layout**
-- Plugins describe their UI as a view tree, which the host stores as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#the-luau-api)).
+- Plugins describe their UI as a view tree, plain data of `plugin-sdk`'s types, which the host stores as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#the-luau-api) and [ADR 0028](adr/0028-plugin-calls-as-messages.md)).
+- A widget that holds state keeps it in the host, by the node's key, which it requires: a text field's text, caret, selection and composition, a list's scroll and selection. Its plugin learns of the changes through events, whatever its thread or language, so that no key goes through the plugin and back.
 - `taffy` computes the layout, using a subset of flexbox: direction, gap, padding, alignment, sizes, grow.
 - Each new tree is diffed against the previous one by `key`, so only the changed parts are laid out and turned into display-list entries again.
 
 **Widgets**: those that the chrome and F3's plugins need, as the user chose on 1 November 2026. A plugin describes its UI with them and the host draws it: no plugin draws pixels or opens a native window, so that its UI takes the theme, the focus, the input method and accessibility, costs the frame no more than the host allows, and no plugin can pass itself off as the system.
 - container, text, icon, spacer, separator;
-- text field with IME, selection and clipboard;
+- text field with IME, selection and clipboard, whose text the host holds;
 - button and toggle;
-- virtualized list, and scroll area;
+- virtualized list, of flat items and a row's template, and scroll area;
 - tooltip;
 - `progress`, of four states, normal, error, paused and indeterminate, whose indeterminate state the window server animates, on a layer of its own as the cursor's blinking, without frames of the app's;
 - floating panels, anchored to a cell, the cursor or the pointer, with the keyboard's focus inside them;
@@ -127,14 +128,14 @@ The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Gh
 
 ## The command's sticky header
 
-The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in the `pane-header` slot, over OSC 133's marks.
+The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in the `pane-overlay` slot, over the grid's top rows, which it takes no row of, so that the grid keeps its size as it shows and hides, over OSC 133's marks.
 - As the scroll goes up past a command, the header gives way to the command before it; down, to the next.
 - A click on it scrolls to the command.
 - The actions on a command's output, to copy it, select it, tell its details, run it again, fold it or share it, come with F5a's blocks.
 
 ## Splits
 
-The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands, the dividers and the interaction. Without the plugin, every tab has exactly one pane.
+The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands and the interaction; the host draws the dividers from the layout tree, in the theme's tokens, and gives their drags to the plugin. Without the plugin, every tab has exactly one pane.
 
 ```
 LayoutTree = Split { direction: horizontal | vertical, ratio, a: LayoutTree, b: LayoutTree }
@@ -323,7 +324,7 @@ Left out: downloads with scp (i), as the app has no networking code ([ADR 0008](
 AI agents that run in a pane, such as Claude Code, Codex, Gemini CLI, OpenCode or Aider, are recognized, and can drive the terminal ([ADR 0017](adr/0017-mcp-and-agents.md)).
 
 - **Presence**: the pane's foreground program, by its name, from a list in the config.
-- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, its hooks call `lokyr +notify`; `lokyr +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
+- **State**: working, waiting or done, from the agent's notifications (OSC 9 and 777), the bell and its progress (OSC 9;4). For an exact state, from F3b, through its IPC, its hooks call `lokyr +notify`, and `lokyr +agent-hooks <agent>` prints the lines that its config takes, which the app never writes itself.
 - **Where it shows**: on the pane's tab (F3), and as a notification while the window has no focus (F2).
 - **MCP** (F3b): `lokyr +mcp` gives agents tools to list the panes, read them, open tabs and splits, run commands and wait for their exit codes, and type, within the scope of [SECURITY.md](SECURITY.md#mcp).
 

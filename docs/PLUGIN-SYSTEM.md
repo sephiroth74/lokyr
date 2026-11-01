@@ -25,8 +25,8 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
 | Themes | Register themes and importers | `.itermcolors`, base16 | F3 |
 | Config | A `[plugins.<name>]` section with a JSON schema and migrations, or a file of the plugin's own, which is [open](ROADMAP.md#open-questions) | `[plugins.tabs] position = "top"` | F3 |
-| Storage | Persistent per-plugin state | search history | F4 |
-| System | Clipboard, notifications, opening URLs and files, processes, network, global hotkeys (with capabilities) | notify when a command finishes | F4+ |
+| Storage | Persistent per-plugin state | search history | F3 |
+| System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, from F4 (with capabilities) | notify when a command finishes | F3–F4 |
 | Protocols | Handlers for rare OSC/DCS/APC sequences | iTerm2's OSC 1337 | F5 |
 | Triggers | Regexes over completed lines, with batched callbacks | highlight `ERROR` in red | F5b |
 
@@ -37,31 +37,35 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | `tab-bar` | One, chosen in the config | The tab bar |
 | `status-bar` | Many (ordered segments) | Status information |
 | `window-strip` | Many | A thin strip across the window's top, under the titlebar or the tab bar: the programs' progress |
-| `pane-header` | One | Pane titles in splits, and the command's sticky header |
-| `pane-overlay` | Many | Find bar, hints |
+| `pane-header` | One | Pane titles in splits |
+| `pane-overlay` | Many | Find bar, hints, the command's sticky header, which takes no row of the grid |
 | `window-overlay` | Many | Command palette, notifications |
 | `popup` | Many | Custom menus and tooltips |
 | `sidebar` | Many (F5+) | Side panels |
 
+The dividers between panes are no slot's: the host draws them from the layout tree, in the theme's tokens, and gives their drags to `splits`, which decides what they do.
+
 ## Execution model
 
-Native and Luau plugins follow the same rules, so they behave the same way.
+Native and Luau plugins follow the same rules, so they behave the same way ([ADR 0028](adr/0028-plugin-calls-as-messages.md)).
 
-- **Short, synchronous calls**:
-  - The kernel calls into the plugin (`activate`, `on_event`, `on_command`, `render`, `on_ui_event`), and the plugin calls kernel services.
+- **Short calls, of messages**:
+  - The kernel calls into the plugin (`activate`, `on_event`, `on_command`, `render`, `on_ui_event`), and the plugin sends the host requests, each with its identity and the capability that it needs, which the host answers.
   - Long-running work goes to asynchronous host services (search, timers, processes), whose results come back as events.
+- **Reads at the host's time**: a request reads the main thread's state as the host handles it; an id that is gone gives `not-found`. A read of much text runs on a thread of the host's, which holds a pane's lock as briefly as a frame's copy.
+- **Writes queued, for every plugin**: what a plugin changes, the kernel's state and the app's, the host applies in order as the plugin's call returns, on the main thread as on a worker and in Luau; plugins never change the state in place.
 - **Owned data**: plugins receive copies, never references into kernel state.
 - **No re-entrancy**: events generated during a callback are queued and delivered only after the callback returns.
 - **No threads of their own, no blocking I/O**: time is provided by the host, through timers and `tick` events that are sent only on request.
 - **Filtered, batched events**: the kernel delivers only the events a plugin subscribed to, batched per frame.
 - **Rendering**:
   - `render(slot)` is called only when the plugin asks for an update (`request_render`) or the theme changes. The result is cached.
-  - Native plugins run on the main thread, unless their manifest asks for a thread of their own, `thread = "worker"`, as the user chose on 1 November 2026: each such plugin then has a thread of the host's, which makes all its calls, its renders too, with the same copies and messages as a Luau plugin's, and the host takes their results on the main thread before the next frame; a watchdog logs a native call that takes long, and stops none, as the plugins are ours. The main thread stays for the plugins that must answer at once, as the tab bar's. Luau plugins run on the plugin executor, with a deadline per call.
+  - Native plugins run on the main thread, unless their manifest asks for a thread of their own, `thread = "worker"`, as the user chose on 1 November 2026: each such plugin then has a thread of the host's, which makes all its calls, its renders too, with the same messages as a Luau plugin's, and the host takes their results on the main thread as they are ready, never waiting for them; a call of the main thread's plugins that takes long is logged as it returns, and stopped by nothing, as the plugins are ours. The main thread stays for the plugins that must answer at once, as the tab bar's. Luau plugins run on the plugin executor, with a deadline per call.
   - If a Luau plugin misses its deadline, the last valid view tree stays on screen.
 
 ## One API, two front ends
 
-The API is defined once, in Rust: the `HostApi` trait and its types live in `plugin-sdk`, and the kernel implements the trait. Each tier reaches it through its own front end.
+The API is defined once, in Rust: a protocol of requests, responses and events, whose types live in `plugin-sdk`, and which the kernel serves ([ADR 0028](adr/0028-plugin-calls-as-messages.md)). Each tier reaches it through its own front end.
 
 **Rust**, for first-party plugins:
 
@@ -131,13 +135,13 @@ end
 return Search
 ```
 
-- **Rust front end**: `Cx` calls `&mut dyn HostApi`, an object-safe trait. `export_plugin!(T)` generates a registration function, which `xtask gen-dist` wires into the app.
+- **Rust front end**: `Cx`'s methods make the requests, which the host serves in place for a plugin of the main thread and through a channel for a worker's. `export_plugin!(T)` generates a registration function, which `xtask gen-dist` wires into the app.
   - The host's API and the `Plugin` trait come with `plugin-sdk`'s `unstable` feature while they grow.
   - A command's calls come to the plugin's `on_command`, by the command's name, as in Luau: only data crosses the boundary, never code or references into the kernel's state. A table of handlers, one a command, can come later inside the SDK, over `on_command`, without changing the host.
-  - What changes the app, as opening or closing a window, quitting, the font's size or running another command, comes once the plugin's call returns; a command that runs commands goes 16 deep at most.
+  - What changes the kernel or the app, as a tab's title, opening or closing a window, quitting, the font's size or running another command, comes once the plugin's call returns, in its order; a command that runs commands goes 16 deep at most.
   - The plugins' bindings come after the app's and before the user's `[keys]`, which win over them.
 - **Luau front end**:
-  - `plugin-host-luau` binds the same `HostApi` to Luau.
+  - `plugin-host-luau` binds the same messages to Luau.
   - The bindings and the Luau type definitions are generated from the Rust types where possible.
   - The semantics are implemented once, in the kernel, behind both front ends.
 - **Names**: the Luau API uses the Rust names (`request_render`, `on_event`), so the two front ends read the same and share one reference.
@@ -155,7 +159,7 @@ return Search
 - **Errors**: host calls that can fail return their result, or `nil` and an error, as Lua's standard library does. A Lua error raised by a callback ends the call, and counts as a plugin failure.
 - **Data**:
   - Small values are plain tables, possibly nested: command arguments, view trees, events.
-  - The host stores view trees as a flat arena of nodes and diffs them between renders.
+  - The host stores view trees as a flat arena of nodes and diffs them between renders. A node that holds state, as a text field or a list, has a key, by which the host keeps its state, its text, caret, selection and composition, its scroll; the plugin learns of changes through events, and sets a field's text through a request. A large list is data, its items flat with a row's template, which the host instantiates for the rows that show.
   - Bulk data uses buffers. For example, a highlighter returns its spans in one `buffer`, which the host reads in one copy: reading 100000 spans from tables costs 6–7 ms, against about 1.5 ms through Lua's C API ([F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes)).
 - **Handles to host objects**: windows, tabs and panes are opaque integer ids, as in the Rust front end.
 - **Plugin-defined events**: `custom` events carry a name, a schema id and a plain value. The host encodes the value as CBOR for Rust plugins.
@@ -213,19 +217,26 @@ type Style = {
     corner_radius: number?,
 }
 
--- A view is a tree of nodes; the host flattens it into its arena.
+-- A view is a tree of nodes; the host flattens it into its arena. A node
+-- that holds state, an input or a list, needs its key, by which the host
+-- keeps that state; an input's text is the host's, which events tell.
 type Node = {
     key: number?,
-    kind: "container" | "text" | "icon" | "input" | "spacer",
+    kind: "container" | "text" | "icon" | "input" | "list" | "spacer",
     text: string?, -- for text and icon nodes
-    value: string?, -- for input nodes
     placeholder: string?,
+    items: { ListItem }?, -- for list nodes, flat
+    row: Node?, -- for list nodes: the template of a row
     style: Style?,
     children: { Node }?,
     role: string?,
     label: string?,
 }
 type View = Node
+
+-- A list's item: its key, and the texts that its row's template shows, by
+-- their places in it.
+type ListItem = { key: number, texts: { string } }
 
 type Line = { text: string, wrapped: boolean }
 
@@ -247,8 +258,13 @@ type Event =
 type UiEvent = {
     slot: string,
     key: number,
-    kind: "click" | "double-click" | "hover-enter" | "hover-leave" | "context-menu" | "input-changed" | "submit",
-    text: string?,
+    kind: "click" | "double-click" | "hover-enter" | "hover-leave" | "context-menu"
+        | "input-changed" | "submit" | "focus" | "blur" | "scroll"
+        | "drag-start" | "drag-move" | "drag-end" | "accessibility-action",
+    text: string?, -- an input's text, as the host holds it
+    item: number?, -- a list's item
+    position: { x: number, y: number }?, -- a drag's, from its start
+    action: string?, -- VoiceOver's: "press", "focus", "set-value", …
 }
 
 type Cx = {
@@ -375,9 +391,10 @@ type Plugin = {
 - **Enforcement**:
   - Every host function exists in every plugin. Without the capability it returns a `denied` error, so a plugin can treat a capability as optional and request it at the moment it's needed.
   - The VM itself reaches nothing outside the computation: it has no `io`, `os` or `debug` library, and its `require` stays inside the package. Files, processes and the network exist only as host functions, limited to the granted paths and hosts.
-- **Networking without an HTTP client in the app**:
-  - Requests from plugins with `net:<host>` go through a helper process started on demand (`sleip net-helper`), which enforces the host allowlist.
-  - The app itself still contains no HTTP/TLS client ([ADR 0008](adr/0008-separate-package-manager.md)).
+- **The app as the plugins' gateway to the network**, from F4:
+  - A plugin has no network of its own: a request with `net:<host>` goes to the app, which checks its capability and its host against the allowlist, and logs it.
+  - The connection runs in a helper process started on demand, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowlist too, so that no response from the network is parsed in the process that sees what the user types.
+  - Lokyr's own code contains no HTTP/TLS client; Sparkle's updater is the app's one network client ([ADR 0008](adr/0008-separate-package-manager.md), [ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)).
 - **First-party plugins** are trusted code and don't go through capabilities, but they are still limited to the SDK.
 
 ## Lifecycle
@@ -431,10 +448,11 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
-| `shell-integration`, `blocks` | Prompt marks, command + output blocks | F5a |
+| `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal's policy, which the app holds in F2 | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
-| `command-header` | The command whose output the view shows, at the pane's top, over OSC 133's marks, as iTerm2's | F3 |
+| `command-header` | The command whose output the view shows, at the pane's top, in the `pane-overlay` slot, over OSC 133's marks, as iTerm2's | F3 |
+| `copy-mode` | The keyboard's selection over the screen and the scrollback, as tmux's and vim's | F3 |
 | `tmux-cc`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `images` | Inline images | F5c |
 

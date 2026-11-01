@@ -12,6 +12,7 @@ A terminal sees everything that is typed and printed, passwords included. That m
 | Tampered packages | An archive altered on the CDN, or a compromised publisher account |
 | Local processes | Another user's process trying to drive the terminal through the IPC socket |
 | AI agents | An agent that reads output it cannot trust, and is told by it to type into another pane through the MCP server (prompt injection) |
+| The update channel | A feed or a DMG altered on its host, or a signing key stolen, to install another app over Lokyr's |
 
 Out of scope: a process running as the same user with full privileges. It could read the terminal's memory anyway.
 
@@ -38,7 +39,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 - **Luau sandbox**: one VM per plugin, with only the libraries that compute, a memory limit and a deadline per call. A plugin that fails or misses its deadline is disabled.
 - **Sources only**: packages carry Luau sources, never bytecode, and the host compiles every script itself.
 - **Audit log**: capability requests and grants are recorded and can be reviewed.
-- **Networking** goes through a helper process (`sleip net-helper`) that enforces the allowed hosts. The app has no HTTP client.
+- **Networking**, from F4: a plugin has none of its own; its requests go to the app, which checks their capability and their hosts, and logs them, then to a helper process, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowed hosts too and parses the responses outside the app's process. Lokyr's own code has no HTTP client; Sparkle's updater is the app's one network client ([ADR 0026](adr/0026-app-updates.md)).
 - **First-party plugins** are our own code, reviewed and limited to the SDK.
 
 ## Packages and the registry
@@ -78,7 +79,8 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
   - The release profile uses `panic = "unwind"`, with `catch_unwind` at the boundary of native plugins. A faulty plugin is disabled while the terminal keeps running.
   - A panic inside the core is still a bug to fix, not a handled case.
 - **Crashes**:
-  - An out-of-process crash handler (e.g. `crash-handler` + `minidumper`) writes a minidump.
+  - A panic writes its backtrace to the app's log file, with the version, from F3; macOS's own crash reports keep the others, and Help › Report an Issue opens an issue of the repository with the version and the system's.
+  - An out-of-process crash handler (e.g. `crash-handler` + `minidumper`) writes a minidump, later.
   - dSYMs are archived for every release, for symbolication.
   - Nothing is uploaded automatically: the user decides whether to attach a minidump to a report.
 - **Sessions**: windows, tabs, layouts and cwds are saved periodically and on quit, so they can be restored after a crash or an update.
@@ -105,4 +107,5 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
 
 - `cargo-deny` checks advisories, allowed licenses, banned crates and allowed sources.
 - The toolchain is pinned in `rust-toolchain.toml`, and `Cargo.lock` is committed.
-- Release builds come from CI, with an SBOM attached (e.g. `cargo-cyclonedx`).
+- Release builds come from `just release`, on the maintainer's Mac, which holds the signing identities and the updates' key, from a commit that CI checked; each carries an SBOM (e.g. `cargo-cyclonedx`) and the notices of its third-party licenses.
+- **Updates** ([ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)): the feed, at `https://lokyr.dev/appcast.xml`, is signed with EdDSA, whose private key stays in the maintainer's keychain, with a copy offline; Sparkle checks that signature and Apple's of the new app before it replaces the old one, and reaches only the feed's and the releases' addresses. Each release's dSYMs are kept, to read its crashes.
