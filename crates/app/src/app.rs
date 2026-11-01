@@ -884,6 +884,7 @@ impl App {
                     terminfo: environment::terminfo(resources.as_deref()),
                     resources,
                     binaries: environment::binaries(),
+                    version: crate::VERSION.to_owned(),
                     ..Environment::default()
                 }
             },

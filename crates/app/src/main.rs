@@ -36,6 +36,10 @@ use std::process::ExitCode;
 use lokyr_kernel::config::{self, Config};
 use lokyr_text_core::catalog::{self, Filter};
 
+/// Lokyr's version: the crate's, with the date of the commit that it was
+/// built from, as `0.1.0-20261101`.
+const VERSION: &str = env!("LOKYR_VERSION");
+
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
 Usage: lokyr [--version]
@@ -72,7 +76,7 @@ fn main() -> ExitCode {
             }
         },
         ["--version" | "-V"] => {
-            println!("lokyr {}", env!("CARGO_PKG_VERSION"));
+            println!("lokyr {VERSION}");
             ExitCode::SUCCESS
         }
         ["+show-config", flags @ ..] => show_config(flags),

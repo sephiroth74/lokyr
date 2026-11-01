@@ -111,6 +111,9 @@ pub struct Options {
     pub program: Program,
     /// The value of `TERM`, which says what the terminal can do.
     pub term: String,
+    /// The terminal's version, which the program finds in
+    /// `TERM_PROGRAM_VERSION`: the crate's by default.
+    pub version: String,
     /// The directory that the program starts in: the user's home directory
     /// if `None`.
     pub working_directory: Option<PathBuf>,
@@ -140,6 +143,7 @@ impl Options {
         Self {
             program,
             term: term.into(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
             working_directory: None,
             resources_dir: None,
             terminfo_dir: None,

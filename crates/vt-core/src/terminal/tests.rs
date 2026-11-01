@@ -2467,6 +2467,17 @@ fn xtversion_reports_the_name_and_version() {
 }
 
 #[test]
+fn xtversion_reports_the_version_that_the_embedder_gives_through_a_reset() {
+    let options = Options {
+        version: "1.2.3-20261101".to_owned(),
+        ..Options::default()
+    };
+    let mut term = Term::with(10, 1, options);
+    term.feed("\x1bc\x1b[>q");
+    assert_eq!(replies(&mut term), "\x1bP>|lokyr 1.2.3-20261101\x1b\\");
+}
+
+#[test]
 fn xtwinops_reports_the_sizes_it_knows() {
     let mut term = Term::new(80, 24);
     term.feed("\x1b[18t\x1b[14t\x1b[16t");

@@ -136,10 +136,18 @@ fn a_wrong_command_line_tells_the_usage() {
         assert_eq!(failed.status.code(), Some(1), "{args:?}");
         assert!(text(&failed.stderr).starts_with("Usage: lokyr"), "{args:?}");
     }
+    // The crate's version, with the date of the commit built, in UTC.
     let version = lokyr(&home, &["--version"]);
+    let committed = Command::new("git")
+        .args(["log", "-1", "--date=format-local:%Y%m%d", "--format=%cd"])
+        .env("TZ", "UTC")
+        .output()
+        .unwrap();
+    let date = text(&committed.stdout).trim().to_owned();
+    assert_eq!(date.len(), 8, "{date}");
     assert_eq!(
         text(&version.stdout),
-        format!("lokyr {}\n", env!("CARGO_PKG_VERSION"))
+        format!("lokyr {}-{date}\n", env!("CARGO_PKG_VERSION"))
     );
     fs::remove_dir_all(home).unwrap();
 }

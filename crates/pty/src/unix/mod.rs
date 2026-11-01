@@ -1108,7 +1108,7 @@ fn environment(
     set("TERM", options.term.clone().into());
     set("COLORTERM", "truecolor".into());
     set("TERM_PROGRAM", "lokyr".into());
-    set("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION").into());
+    set("TERM_PROGRAM_VERSION", options.version.clone().into());
     // The terminal's own entry, which the app keeps, where programs would
     // not otherwise find it.
     if matches!(options.term.as_str(), "xterm-lokyr" | "lokyr")
@@ -1656,6 +1656,7 @@ mod tests {
     #[test]
     fn the_environment_describes_this_terminal() {
         let mut options = Options::new(Program::command("sh", ["-c", "true"]), "xterm-256color");
+        options.version = "1.2.3-20261101".to_owned();
         options.resources_dir = Some("/Applications/Lokyr.app/Contents/Resources".into());
         options.env = vars(&[("EDITOR", "vi"), ("COLORTERM", "24bit")]);
         let inherited = vars(&[
@@ -1671,10 +1672,7 @@ mod tests {
         assert_eq!(get(&env, "PATH"), Some("/usr/bin:/bin"));
         assert_eq!(get(&env, "TERM"), Some("xterm-256color"));
         assert_eq!(get(&env, "TERM_PROGRAM"), Some("lokyr"));
-        assert_eq!(
-            get(&env, "TERM_PROGRAM_VERSION"),
-            Some(env!("CARGO_PKG_VERSION"))
-        );
+        assert_eq!(get(&env, "TERM_PROGRAM_VERSION"), Some("1.2.3-20261101"));
         assert_eq!(
             get(&env, "LOKYR_RESOURCES_DIR"),
             Some("/Applications/Lokyr.app/Contents/Resources")

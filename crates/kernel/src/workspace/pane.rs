@@ -86,6 +86,10 @@ pub struct Environment {
     /// The directory that the program starts in; the home directory
     /// without one.
     pub directory: Option<PathBuf>,
+    /// The app's version, which the programs find in
+    /// `TERM_PROGRAM_VERSION` and which XTVERSION reports: this crate's by
+    /// default.
+    pub version: String,
 }
 
 impl Default for Environment {
@@ -96,6 +100,7 @@ impl Default for Environment {
             terminfo: None,
             binaries: None,
             directory: None,
+            version: env!("CARGO_PKG_VERSION").to_owned(),
         }
     }
 }
@@ -204,6 +209,7 @@ fn pty_options(
     pty.binaries_dir.clone_from(&environment.binaries);
     pty.working_directory.clone_from(&environment.directory);
     pty.fallback_locale.clone_from(&environment.locale);
+    pty.version.clone_from(&environment.version);
     pty
 }
 
@@ -255,6 +261,9 @@ impl Pane {
         // the cursor keys, unless they say otherwise.
         options.terminal.alternate_scroll = true;
         settings.term.clone_into(&mut options.terminal.term);
+        environment
+            .version
+            .clone_into(&mut options.terminal.version);
         options.terminal.widths = settings.widths;
         options.terminal.normalization = settings.normalization;
         options.terminal.scrollback = settings.scrollback.clone();
@@ -899,6 +908,7 @@ mod tests {
             terminfo: Some("/Applications/Lokyr.app/Contents/Resources/terminfo".into()),
             binaries: Some("/Applications/Lokyr.app/Contents/MacOS".into()),
             directory: Some("/tmp".into()),
+            version: "1.2.3-20261101".to_owned(),
         };
         let grid = Grid {
             columns: 80,
@@ -913,6 +923,7 @@ mod tests {
         assert_eq!(options.terminfo_dir, environment.terminfo);
         assert_eq!(options.binaries_dir, environment.binaries);
         assert_eq!(options.working_directory, environment.directory);
+        assert_eq!(options.version, "1.2.3-20261101");
         assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
     }

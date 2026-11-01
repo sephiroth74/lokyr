@@ -143,10 +143,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         fs::write(directory.join("InfoPlist.strings"), localized_plist(usages))
             .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
     }
-    let version = env!("CARGO_PKG_VERSION");
+    let version = told_version(&binary)?;
     fs::write(
         app.join("Contents/Info.plist"),
-        info_plist(version, &catalogs)?,
+        info_plist(&version, &catalogs)?,
     )
     .context("writing the Info.plist")?;
     let identity = identity()?;
@@ -248,9 +248,35 @@ fn plist(pairs: &[(String, String)], high_resolution: bool) -> String {
     plist
 }
 
-/// The `Info.plist` of the app at `version`, with the usage strings of
-/// the source's catalog and the languages of `catalogs`.
+/// The version that the app's `binary` tells, as `lokyr --version` prints
+/// it, the crate's with the date of its commit: `0.1.0-20261101`.
+fn told_version(binary: &Path) -> Result<String> {
+    let output = Command::new(binary)
+        .arg("--version")
+        .output()
+        .with_context(|| format!("running {} --version", binary.display()))?;
+    let told = String::from_utf8_lossy(&output.stdout);
+    told.trim()
+        .strip_prefix("lokyr ")
+        .map(str::to_owned)
+        .with_context(|| format!("{} --version told `{}`", binary.display(), told.trim()))
+}
+
+/// The bundle's versions of the app's `version`, the crate's with a date:
+/// the crate's, of three numbers as macOS has it, and the date, the build's
+/// number, so that About Lokyr shows `0.1.0 (20261101)`.
+fn bundle_versions(version: &str) -> Result<(&str, &str)> {
+    version
+        .split_once('-')
+        .filter(|(_, date)| date.len() == 8 && date.bytes().all(|byte| byte.is_ascii_digit()))
+        .with_context(|| format!("the version `{version}` has no date"))
+}
+
+/// The `Info.plist` of the app at `version`, the crate's with a date, with
+/// the usage strings of the source's catalog and the languages of
+/// `catalogs`.
 fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>) -> Result<String> {
+    let (short, date) = bundle_versions(version)?;
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
@@ -259,8 +285,8 @@ fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>)
         ("CFBundleInfoDictionaryVersion", "6.0".to_owned()),
         ("CFBundleName", NAME.to_owned()),
         ("CFBundlePackageType", "APPL".to_owned()),
-        ("CFBundleShortVersionString", version.to_owned()),
-        ("CFBundleVersion", version.to_owned()),
+        ("CFBundleShortVersionString", short.to_owned()),
+        ("CFBundleVersion", date.to_owned()),
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
     ];
@@ -452,12 +478,24 @@ mod tests {
     }
 
     #[test]
+    fn the_bundle_s_versions_are_the_crate_s_and_the_date() {
+        assert_eq!(
+            bundle_versions("0.1.0-20261101").unwrap(),
+            ("0.1.0", "20261101")
+        );
+        for version in ["0.1.0", "0.1.0-dev", "0.1.0-2026110", "0.1.0-2026110x"] {
+            assert!(bundle_versions(version).is_err(), "{version}");
+        }
+    }
+
+    #[test]
     fn the_info_plist_has_the_keys_of_the_bundle() {
-        let plist = info_plist("1.2.3", &catalogs()).unwrap();
+        let plist = info_plist("1.2.3-20261101", &catalogs()).unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
             ("CFBundleExecutable", "lokyr"),
             ("CFBundleShortVersionString", "1.2.3"),
+            ("CFBundleVersion", "20261101"),
             ("LSMinimumSystemVersion", "26.0"),
             ("CFBundleIconFile", "AppIcon"),
             (
@@ -538,7 +576,7 @@ mod tests {
     #[test]
     fn the_info_plist_is_one_that_macos_reads() {
         let path = std::env::temp_dir().join(format!("lokyr-info-{}.plist", std::process::id()));
-        fs::write(&path, info_plist("1.2.3", &catalogs()).unwrap()).unwrap();
+        fs::write(&path, info_plist("1.2.3-20261101", &catalogs()).unwrap()).unwrap();
         let lint = Command::new("plutil")
             .arg("-lint")
             .arg(&path)

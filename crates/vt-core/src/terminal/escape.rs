@@ -178,6 +178,7 @@ impl Terminal {
             widths: self.configured_widths,
             normalization: self.normalization,
             term: std::mem::take(&mut self.term),
+            version: std::mem::take(&mut self.version),
             title_reports: self.title_reports,
             clipboard_reads: self.clipboard_reads,
             rectangle_checksums: self.rectangle_checksums,

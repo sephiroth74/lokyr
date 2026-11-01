@@ -59,6 +59,9 @@ pub struct Options {
     /// The `TERM` that programs see, which XTGETTCAP reports as `TN`:
     /// `xterm-256color` by default.
     pub term: String,
+    /// The version that XTVERSION reports after the terminal's name: the
+    /// crate's by default.
+    pub version: String,
     /// Whether programs may read the title back (CSI 20 t and 21 t), the
     /// classic way of injecting text into a shell: off by default.
     pub title_reports: bool,
@@ -97,6 +100,7 @@ impl Default for Options {
             widths: Widths::default(),
             normalization: Normalization::default(),
             term: "xterm-256color".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
             title_reports: false,
             clipboard_reads: false,
             rectangle_checksums: false,
@@ -393,6 +397,8 @@ pub struct Terminal {
     reply_bytes: usize,
     /// The `TERM` that programs see.
     term: String,
+    /// The version that XTVERSION reports.
+    version: String,
     /// Whether programs may read the title back.
     title_reports: bool,
     /// Whether programs may ask to read the clipboard.
@@ -540,6 +546,7 @@ impl Terminal {
             replies: Vec::new(),
             reply_bytes: 0,
             term: options.term,
+            version: options.version,
             title_reports: options.title_reports,
             clipboard_reads: options.clipboard_reads,
             rectangle_checksums: options.rectangle_checksums,
