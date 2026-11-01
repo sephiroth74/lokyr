@@ -112,7 +112,7 @@ The median time of a scenario's samples, in milliseconds; less is better. vteben
 | `sync_medium_cells` | **4** | 4 | 9 | 14 | 46 | 361 | 44 |
 | `unicode` | **3** | 3 | 6 | 7 | 20 | 34 | 59 |
 
-- Lokyr is the fastest, or as fast as the fastest, in every scenario but **`scrolling_top_region`**, 14 ms against Ghostty's 12, a sixth more, past the budget.
+- Lokyr is the fastest, or as fast as the fastest, in every scenario but **`scrolling_top_region`**, 14 ms against Ghostty's 12, a sixth more, past the budget. Its setup reads the rows of terminfo, 24, as its `tput lines` writes to a pipe, so that its region is rows 2 to 24 of 40; [F2-152](../tasks/F2-macos-single-pane.md#f2-152--vtebenchs-top-region) brought it to 12.0 ms, Ghostty's.
 - iTerm2 took only two samples of some scenarios in five seconds.
 
 ### `cat` of 1 GiB

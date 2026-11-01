@@ -12,8 +12,8 @@ use crate::page::Cell;
 /// The most rows outside a scroll region that the alternate screen moves
 /// back after it scrolls whole: with more, as vtebench's top region of 23
 /// rows of 40, the region's own rotation is the faster, as 120 by 40 cells
-/// measure it: 8 rows outside, the two ways as fast; 1, the whole screen's
-/// 25% faster; 17, the region's 8%.
+/// measure it: 1 row outside, the whole screen's way 25% faster; 8, 4 to
+/// 9% faster; 17, the region's 43% faster.
 const FEW_OUTSIDE: u16 = 8;
 
 impl Terminal {

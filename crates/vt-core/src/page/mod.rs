@@ -901,6 +901,33 @@ impl Page {
     /// [`Page::rotate_rows`], for more than two rows, or by more than one.
     fn rotate_more_rows(&mut self, rows: Range<u16>, n: u16, down: bool) {
         let range = usize::from(rows.start)..usize::from(rows.end);
+        if n == 1 {
+            // By one, as a line feed scrolls a region: each row's slot and
+            // metadata move together, the metadata marked dirty as it moves,
+            // in one pass rather than three.
+            let (slots, metadata) = (&mut self.slots[range.clone()], &mut self.rows[range]);
+            let last = slots.len() - 1;
+            let moved = |mut row: Row| {
+                row.set(RowFlag::Dirty, true);
+                row
+            };
+            if down {
+                let (slot, row) = (slots[last], metadata[last]);
+                for i in (1..=last).rev() {
+                    slots[i] = slots[i - 1];
+                    metadata[i] = moved(metadata[i - 1]);
+                }
+                (slots[0], metadata[0]) = (slot, moved(row));
+            } else {
+                let (slot, row) = (slots[0], metadata[0]);
+                for i in 0..last {
+                    slots[i] = slots[i + 1];
+                    metadata[i] = moved(metadata[i + 1]);
+                }
+                (slots[last], metadata[last]) = (slot, moved(row));
+            }
+            return;
+        }
         rotate(&mut self.slots[range.clone()], n, down);
         rotate(&mut self.rows[range.clone()], n, down);
         for row in &mut self.rows[range] {

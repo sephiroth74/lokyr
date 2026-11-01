@@ -882,6 +882,7 @@ impl PageList {
     /// The node and its rows that hold the screen's rows from `top` to
     /// `bottom`, if one page holds them all, so that a scroll region moves
     /// them in one rotation of the page's rows.
+    #[inline]
     fn rows_in_one_page(&self, top: u16, bottom: u16) -> Option<(u32, Range<u16>)> {
         let (node, first) = self.locate(top);
         let last = first.checked_add(bottom - top)?;
@@ -936,10 +937,16 @@ impl PageList {
     }
 
     /// Loses the pins in row `row` of node `node`.
+    #[inline]
     fn lose_row_pins(&mut self, node: u32, row: u16) {
-        if self.nodes[node as usize].pins.is_empty() {
-            return;
+        if !self.nodes[node as usize].pins.is_empty() {
+            self.lose_pins_of_row(node, row);
         }
+    }
+
+    /// [`PageList::lose_row_pins`], of a node that has pins.
+    #[inline(never)]
+    fn lose_pins_of_row(&mut self, node: u32, row: u16) {
         for pin in self.nodes[node as usize].pins.take_row(&self.pins, row) {
             self.pins.lose(pin);
         }
