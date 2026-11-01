@@ -31,8 +31,9 @@ impl std::fmt::Debug for Watcher {
 }
 
 /// The directories that a watch of the config looks at, and the entries in
-/// them that count, each by its directory's real path, which FSEvents tells,
-/// and its name.
+/// them that count, each by its directory's path and its name: the path as
+/// watched, which inotify tells, and, where a link stands for it, its real
+/// one, which FSEvents tells.
 #[derive(Debug, PartialEq, Eq)]
 struct Targets {
     watched: Vec<PathBuf>,
@@ -43,7 +44,7 @@ impl Watcher {
     /// Watches the config file at `path`, and calls `changed`, from the
     /// watch's thread, when the file, its link's target or its directory
     /// changes: an entry of a watched directory, by its directory and its
-    /// name, as FSEvents tells the real paths, or a watched directory that
+    /// name, as watched or by its real path, or a watched directory that
     /// goes; the changes deeper in the directories that it watches count
     /// for nothing.
     pub fn new(path: &Path, changed: impl Fn() + Send + 'static) -> Result<Self, Error> {
@@ -151,15 +152,15 @@ fn targets(path: &Path) -> Targets {
         names.push(name.to_owned());
     }
     // A directory that a link stands for, as GNU Stow folds one, by its
-    // target.
-    let entries = watched
-        .iter()
-        .zip(names)
-        .map(|(directory, name)| {
-            let real = fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
-            (real, name)
-        })
-        .collect();
+    // target too.
+    let mut entries = Vec::new();
+    for (directory, name) in watched.iter().zip(names) {
+        let real = fs::canonicalize(directory).unwrap_or_else(|_| directory.clone());
+        if real != *directory {
+            entries.push((directory.clone(), name.clone()));
+        }
+        entries.push((real, name));
+    }
     Targets { watched, entries }
 }
 
@@ -365,6 +366,27 @@ mod tests {
         fs::write(packages[1].join("config.toml"), "[font]\n").unwrap();
         assert!(changed(&receiver));
         drop(watcher);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn a_directory_link_s_entries_count_by_its_path_and_its_target_s() {
+        // inotify tells an event by the path watched, FSEvents by the real
+        // one.
+        let home = scratch("entries");
+        let package = home.join("one").join("lokyr");
+        fs::create_dir_all(&package).unwrap();
+        fs::create_dir_all(home.join("config")).unwrap();
+        let directory = home.join("config").join("lokyr");
+        std::os::unix::fs::symlink(&package, &directory).unwrap();
+        let entries = targets(&directory.join("config.toml")).entries;
+        let name = OsString::from("config.toml");
+        assert!(
+            entries.contains(&(directory.clone(), name.clone())),
+            "{entries:?}"
+        );
+        let real = fs::canonicalize(&package).unwrap();
+        assert!(entries.contains(&(real, name)), "{entries:?}");
         fs::remove_dir_all(home).unwrap();
     }
 

@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Where macOS keeps its locales, a directory each.
+#[cfg(target_os = "macos")]
 const LOCALES: &str = "/usr/share/locale";
 
 /// The encoding of the locales that the app gives.
@@ -107,7 +108,9 @@ fn terminfo_in(bundled: Option<PathBuf>, source: PathBuf) -> Option<PathBuf> {
         .find(|directory| has(directory))
 }
 
-/// The UTF-8 locales that the system has, by their names, in order.
+/// The UTF-8 locales that the system has, by their names, in order: on
+/// macOS, the directories of `/usr/share/locale`.
+#[cfg(target_os = "macos")]
 pub(crate) fn system_locales() -> Vec<String> {
     let Ok(entries) = fs::read_dir(Path::new(LOCALES)) else {
         return Vec::new();
@@ -118,6 +121,34 @@ pub(crate) fn system_locales() -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// The UTF-8 locales that the system has, by their names, in order: those
+/// that `locale -a` lists, as glibc compiles them into an archive rather
+/// than a directory of each.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn system_locales() -> Vec<String> {
+    let Ok(listed) = std::process::Command::new("locale").arg("-a").output() else {
+        return Vec::new();
+    };
+    utf8_names(String::from_utf8_lossy(&listed.stdout).lines())
+}
+
+/// The UTF-8 locales of `names`, as `locale -a` writes them, `en_US.utf8`,
+/// in the form that the app gives, `en_US.UTF-8`, which glibc takes too,
+/// in order; those of a modifier, as `ca_ES.utf8@valencia`, left out.
+#[cfg(any(test, not(target_os = "macos")))]
+fn utf8_names<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut found: Vec<String> = names
+        .filter_map(|name| {
+            let (locale, codeset) = name.trim().split_once('.')?;
+            matches!(codeset.to_ascii_lowercase().as_str(), "utf8" | "utf-8")
+                .then(|| format!("{locale}{UTF8}"))
+        })
+        .collect();
+    found.sort();
+    found.dedup();
+    found
 }
 
 /// The language of `locale`, as `it` of `it_CH`.
@@ -359,10 +390,24 @@ mod tests {
     #[test]
     fn the_system_has_utf8_locales() {
         let available = system_locales();
-        assert!(
-            available.iter().any(|name| name == "en_US.UTF-8"),
-            "{available:?}"
-        );
+        assert!(!available.is_empty());
         assert!(available.iter().all(|name| name.ends_with(UTF8)));
+        // macOS has every language's; a Linux system, those that it
+        // generated, `C.UTF-8` at least.
+        if cfg!(target_os = "macos") {
+            assert!(
+                available.iter().any(|name| name == "en_US.UTF-8"),
+                "{available:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn locale_s_list_reads_as_the_app_names_its_locales() {
+        let listed = "C\nC.utf8\nPOSIX\nen_US.utf8\nde_DE.UTF-8\nca_ES.utf8@valencia\nja_JP.eucjp\nen_US.utf8\n";
+        assert_eq!(
+            utf8_names(listed.lines()),
+            ["C.UTF-8", "de_DE.UTF-8", "en_US.UTF-8"]
+        );
     }
 }

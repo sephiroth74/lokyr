@@ -129,7 +129,7 @@ pub(crate) struct Window<B: Backend> {
     /// The title that the platform shows, once the app gave one.
     pub(crate) title_shown: Option<String>,
     /// When its last frame of output came, since its title last looked, for
-    /// the titles' timer to look once more [`TITLE_LOOK`] after it.
+    /// the titles' timer to look once more `TITLE_LOOK` after it.
     pub(crate) output_at: Option<Instant>,
     /// The title that the user gave it, which takes the place of its
     /// program's and of its own.
