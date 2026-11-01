@@ -37,7 +37,13 @@ fn commit_time() -> Option<u64> {
             .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
     };
     let seconds = git(&["log", "-1", "--format=%ct"])?.parse().ok()?;
-    let mut moved = vec!["HEAD".to_owned(), "packed-refs".to_owned()];
+    // The reflog of `HEAD` takes a line at each commit, as a branch's ref
+    // in `packed-refs` alone, after `git gc`, does not change its file.
+    let mut moved = vec![
+        "HEAD".to_owned(),
+        "logs/HEAD".to_owned(),
+        "packed-refs".to_owned(),
+    ];
     moved.extend(git(&["symbolic-ref", "-q", "HEAD"]));
     for name in moved {
         // A file that does not exist would run the script at every build.
