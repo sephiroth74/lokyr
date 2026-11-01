@@ -95,13 +95,17 @@ pub struct GlyphKey {
     pub synthesis: Synthesis,
     /// Whether it is drawn of thin strokes.
     pub thin: bool,
+    /// Whether it spans two columns: a drawing of the terminal's in a wide
+    /// cell, which takes both; no other glyph.
+    pub wide: bool,
 }
 
 /// A key hashes as two words rather than a word a field, as every glyph of
 /// a frame looks one up.
 impl Hash for GlyphKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let flags = u64::from(self.synthesis.bold) << 2
+        let flags = u64::from(self.wide) << 3
+            | u64::from(self.synthesis.bold) << 2
             | u64::from(self.synthesis.italic) << 1
             | u64::from(self.thin);
         state.write_u64(u64::from(self.face.0) << 32 | u64::from(self.glyph.0) << 16 | flags);
@@ -196,6 +200,7 @@ impl DrawnGlyph {
                 italic: false,
             },
             thin: false,
+            wide: false,
         },
         glyph: AtlasGlyph {
             region: AtlasRegion {
@@ -699,23 +704,27 @@ impl<B: FontBackend> Font<B> {
     /// to fit the cell, in its middle.
     fn draw(&mut self, found: Found, thin: bool, wide: bool) -> Option<AtlasGlyph> {
         if !found.fitted {
-            return self.draw_at(found, self.pixels, thin);
+            // The terminal's drawings take a wide cell's two columns.
+            let spans = wide && found.face == SPRITES;
+            return self.draw_at(found, self.pixels, thin, spans);
         }
         let size = self.fitted_pixels(found.face, wide);
-        let glyph = self.draw_at(found, size, thin)?;
+        let glyph = self.draw_at(found, size, thin, false)?;
         Some(self.in_the_middle(glyph.region, wide))
     }
 
     /// The glyph `found` at `size` in the atlas, of thin strokes when
-    /// `thin`, drawn into it the first time, antialiased as the
+    /// `thin`, across two columns when `wide`, which the terminal's drawings
+    /// alone take, drawn into it the first time, antialiased as the
     /// configuration says.
-    fn draw_at(&mut self, found: Found, size: f32, thin: bool) -> Option<AtlasGlyph> {
+    fn draw_at(&mut self, found: Found, size: f32, thin: bool, wide: bool) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
             size: size.to_bits(),
             synthesis: found.synthesis,
             thin,
+            wide,
         };
         let slot = DrawnGlyph::slot(&key);
         let drawn = self.this_frame[slot];
@@ -754,7 +763,11 @@ impl<B: FontBackend> Font<B> {
                 }
                 let bitmap = if found.face == SPRITES {
                     let character = char::from_u32(u32::from(found.glyph.0))?;
-                    sprite::draw(character, &self.cell, antialias)?
+                    let cell = CellMetrics {
+                        width: self.cell.width * if wide { 2 } else { 1 },
+                        ..self.cell
+                    };
+                    sprite::draw(character, &cell, antialias)?
                 } else {
                     self.backend.rasterize(
                         found.face,
@@ -2182,6 +2195,38 @@ mod tests {
             font.find(0, '\u{E0B0}', None).map(|found| found.face),
             Some(WIDE)
         );
+    }
+
+    #[test]
+    fn the_terminal_s_drawings_of_a_wide_cell_take_both_columns() {
+        // As `ambiguous-width = 2` gives box drawing, blocks and the
+        // powerline's symbols.
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let cell = font.cell;
+        for character in ["\u{2500}", "\u{2588}", "\u{E0B0}"] {
+            let narrow = font.glyph(&shown(character, &Style::DEFAULT)).unwrap();
+            assert_eq!(narrow.region.width, cell.width, "{character}");
+            let two = CellText {
+                wide: true,
+                ..shown(character, &Style::DEFAULT)
+            };
+            let wide = font.glyph(&two).unwrap();
+            assert_eq!(wide.region.width, 2 * cell.width, "{character}");
+            assert_eq!(wide.left, narrow.left, "{character}");
+        }
+        // In a run, each cell's own.
+        let cells =
+            [(0, false), (3, true)].map(|(start, wide)| crate::pane::RunCell { start, wide });
+        let run = Run {
+            text: "\u{2500}\u{2500}",
+            cells: &cells,
+            style: &Style::DEFAULT,
+            dark: false,
+        };
+        let mut out = Vec::new();
+        font.lay_out(&run, &mut out);
+        let widths: Vec<_> = out.iter().map(|placed| placed.glyph.region.width).collect();
+        assert_eq!(widths, [cell.width, 2 * cell.width]);
     }
 
     /// Whether the fake backend drew `glyph` of `face` thin, at its last

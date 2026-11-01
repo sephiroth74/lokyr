@@ -768,6 +768,7 @@ The cells of an East Asian Ambiguous character, as `α`, `→` and `○`.
 
 - `2` suits programs and fonts that draw them wide, as some of China, Japan and Korea do; most programs count them as 1.
 - The icons of Nerd Fonts, in Unicode's private area, are ambiguous too: with `2`, a prompt that shows them, as oh-my-posh's and Powerlevel10k's do, takes more cells than the shell counts, and the line that you type goes wrong, its characters doubled or out of place.
+- Box drawing, the block elements and the powerline symbols are ambiguous too: with `2`, those that Lokyr draws span both cells, so that lines meet and arrows keep their shape.
 - It applies to the text that comes after the change, in the open windows too.
 
 ### `normalization`
