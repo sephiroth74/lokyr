@@ -64,7 +64,9 @@ fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<Vec<u8>> {
 /// Whether the app told that no frame showed, without a GPU, or with a
 /// display that sleeps or that the machine lacks, as some CI's.
 fn showed_no_frame(stderr: &str) -> bool {
-    stderr.contains("without a GPU") || stderr.contains("no frame showed on the display")
+    stderr.contains("without a GPU")
+        || stderr.contains("no Metal device")
+        || stderr.contains("no frame showed on the display")
 }
 
 fn text(bytes: &[u8]) -> &str {

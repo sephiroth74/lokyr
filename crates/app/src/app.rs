@@ -1032,7 +1032,9 @@ impl App {
         platform.quit();
     }
 
-    /// Prints the latency's report, once.
+    /// Prints the latency's report, once; of keys that it typed and none
+    /// showed in a frame whose time the display told, as on a display that
+    /// tells none, it says so.
     fn end_latency_bench(&mut self, platform: &mut dyn Platform) {
         let Some(bench) = self.latency_bench.take() else {
             return;
@@ -1046,6 +1048,9 @@ impl App {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
+        if bench.keys > 0 && samples.is_empty() {
+            eprintln!("lokyr: no frame showed on the display, and so no latency to measure");
+        }
         println!(
             "{}",
             latency::report(&samples, refresh, bench.flood, bench.keys)
@@ -1075,9 +1080,7 @@ impl App {
                     .is_empty()
         });
         if !shown {
-            eprintln!(
-                "lokyr: no frame showed on the display in {seconds} s, and so no latency to measure"
-            );
+            eprintln!("lokyr: no frame showed on the display in {seconds} s");
             self.end_latency_bench(platform);
             platform.quit();
         }
