@@ -2314,6 +2314,11 @@ fn prompt_through_a_drag(command: &str, expected: &[&str]) {
 
 #[test]
 fn a_zsh_prompt_draws_once_through_a_drag() {
+    // A system without zsh, as some Linux's.
+    if !std::path::Path::new("/bin/zsh").exists() {
+        eprintln!("zsh is not installed: the test checks nothing");
+        return;
+    }
     let directory = directory("zsh-prompt");
     let rc = format!(
         r#"{PROMPT_OUTPUT}PROMPT=$'%{{\e]133;D;0\a\e]133;A\a%}}'"$first"$'\n> %{{\e]133;B\a%}}'
