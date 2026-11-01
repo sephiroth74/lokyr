@@ -280,6 +280,24 @@ fn the_output_s_bench_times_the_frames_of_a_program_s_output() {
     let line = text(&measured.stdout).trim();
     assert!(line.starts_with("{\"pixels\":["), "{line}");
     assert!(line.contains("\"total_ms\":{\"p50\":"), "{line}");
+    // A program that cannot start ends the bench, failing.
+    let missing = lokyr(
+        &home,
+        &[
+            "--bench",
+            "output",
+            "--window",
+            "640x400",
+            "--",
+            "/no/such/program",
+        ],
+    );
+    assert_eq!(missing.status.code(), Some(1), "{}", text(&missing.stderr));
+    assert!(
+        text(&missing.stderr).contains("the output's program cannot start"),
+        "{}",
+        text(&missing.stderr)
+    );
     for wrong in [
         &["--bench", "output"][..],
         &["--bench", "output", "--"][..],

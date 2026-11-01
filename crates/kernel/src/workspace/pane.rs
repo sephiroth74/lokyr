@@ -839,6 +839,12 @@ impl Pane {
         names
     }
 
+    /// Whether its program started: a pane whose program could not start
+    /// shows why, and never tells an exit.
+    pub fn started(&self) -> bool {
+        self.session.is_some()
+    }
+
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept

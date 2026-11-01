@@ -361,6 +361,12 @@ impl MetalRenderer {
         self.on_presented = Some(OnPresented(Box::new(presented)));
     }
 
+    /// Forgets the call that [`Renderer::on_next_presented`] left, as a
+    /// frame that drew nothing leaves it to no other surface's drawable.
+    pub fn forget_next_presented(&mut self) {
+        self.on_presented = None;
+    }
+
     /// Draws `list` into the next drawable of `target`, and presents it,
     /// its GPU's time counted when `timed`. Whether it drew: no drawable
     /// comes from a layer that was never sized, nor when every drawable is

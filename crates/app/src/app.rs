@@ -943,6 +943,25 @@ impl App {
         self
     }
 
+    /// Ends the output's bench, and the app, failing, when its program
+    /// could not start, which then tells no exit.
+    fn end_output_bench_unstarted(&mut self, platform: &mut dyn Platform) {
+        if self.output_bench.is_none() {
+            return;
+        }
+        let started = self.windows.values().any(|state| {
+            self.workspace
+                .pane(state.pane)
+                .is_some_and(lokyr_kernel::workspace::Pane::started)
+        });
+        if !started {
+            eprintln!("lokyr: the output's program cannot start, and so no frames to measure");
+            crate::BENCH_FAILED.store(true, Ordering::Relaxed);
+            self.output_bench = None;
+            platform.quit();
+        }
+    }
+
     /// Prints the output's report, of `window`'s pixels, once.
     fn end_output_bench(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(bench) = self.output_bench.take() else {
@@ -2216,7 +2235,10 @@ impl App {
                 u32::from(window_config.rows.count()),
             ),
         };
-        let remember = window_config.remember_frame && page.is_none() && self.bench_size.is_none();
+        // A bench's window takes its own size, or the config's grid, never
+        // the frame that the last window left.
+        let remember =
+            window_config.remember_frame && page.is_none() && self.output_bench.is_none();
         let size = self
             .bench_size
             .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
@@ -2516,6 +2538,9 @@ impl App {
             return;
         }
         if self.windows.is_empty() {
+            // The latency's bench of the user's keys tells them as its
+            // window closes.
+            self.end_latency_bench(platform);
             platform.quit();
         } else if self.windows.len() == 1 && self.quick.is_some_and(|(_, shown)| !shown) {
             self.ask_quit(platform, false);
@@ -4239,6 +4264,14 @@ impl App {
                 None
             }
         };
+        // A frame that drew nothing leaves its benches' call to no other
+        // surface's drawable, and the startup's asks the next frame.
+        if presented.is_none() && !same {
+            drawing.renderer.forget_next_presented();
+            if let Some(bench) = &self.startup_bench {
+                bench.lock().unwrap_or_else(PoisonError::into_inner).asked = false;
+            }
+        }
         // The frame's time ends here: the layers draw seldom, apart.
         let spent = started.map(|started| started.elapsed());
         // The output's bench: the CPU's time, but the wait for a drawable.
@@ -4343,7 +4376,11 @@ impl Handler for App {
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);
-        if self.startup_bench.is_none() && self.latency_bench.is_none() {
+        // The benches leave the user's global keys to the user's Lokyr.
+        if self.startup_bench.is_none()
+            && self.latency_bench.is_none()
+            && self.output_bench.is_none()
+        {
             self.take_global_keys(platform);
         }
         self.environment.locale =
@@ -4358,6 +4395,7 @@ impl Handler for App {
             file.watch(platform);
         }
         self.open_window(platform);
+        self.end_output_bench_unstarted(platform);
         self.end_startup_bench(platform);
         self.start_latency_bench(platform);
         if self.startup_bench.is_some() || self.latency_bench.is_some() {
@@ -6592,6 +6630,49 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::Focused(false));
         let (shape, blink) = app.cursor(&mut fake, window, Instant::now()).unwrap();
         assert_eq!((shape, blink), (CursorShape::Hollow, None));
+    }
+
+    #[test]
+    fn the_output_bench_of_a_program_that_cannot_start_ends_failing() {
+        let mut fake = Fake::default();
+        let program = Program::command("/no/such/program", Vec::<String>::new());
+        let mut bench = app(Config::default(), quiet()).with_output_bench(program, None);
+        fake.start(&mut bench);
+        assert!(fake.has_quit());
+        assert!(bench.output_bench.is_none());
+        assert!(crate::BENCH_FAILED.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn the_output_bench_s_window_takes_the_config_s_grid_not_the_frame_kept() {
+        let mut config = unpadded();
+        config.window.remember_frame = true;
+        let mut fake = Fake::default();
+        let mut bench = App::new(None, config, None).with_output_bench(quiet(), None);
+        fake.start(&mut bench);
+        let window = fake.windows().next().unwrap();
+        let shown = fake.window(window).unwrap();
+        assert!(!shown.remember && !shown.restore);
+        // 200 columns of 4 points and 62 rows of 8.
+        assert_eq!(
+            shown.size.points,
+            Size {
+                width: 800.0,
+                height: 496.0
+            }
+        );
+        assert!(!fake.has_quit());
+    }
+
+    #[test]
+    fn the_latency_bench_of_the_user_s_keys_tells_them_as_its_last_window_closes() {
+        let mut fake = Fake::default();
+        let mut bench = app(Config::default(), quiet()).with_latency_bench(0, false);
+        fake.start(&mut bench);
+        let window = fake.windows().next().unwrap();
+        bench.close(&mut fake, window);
+        assert!(bench.latency_bench.is_none(), "its report printed");
+        assert!(fake.has_quit());
     }
 
     #[test]

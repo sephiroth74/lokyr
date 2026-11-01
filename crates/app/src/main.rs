@@ -32,6 +32,7 @@ mod watch;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use lokyr_kernel::config::{self, Config};
 use lokyr_text_core::catalog::{self, Filter};
@@ -39,6 +40,10 @@ use lokyr_text_core::catalog::{self, Filter};
 /// Lokyr's version: the crate's, with the date of the commit that it was
 /// built from, as `0.1.0-20261101`.
 const VERSION: &str = env!("LOKYR_VERSION");
+
+/// Whether a bench could not measure what it was asked to, which the exit
+/// code tells.
+static BENCH_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// How the app is started, which a wrong command line tells.
 const USAGE: &str = "\
@@ -383,6 +388,7 @@ fn run(bench: Bench) -> ExitCode {
         }
     };
     match lokyr_platform_macos::run_with(make) {
+        Ok(()) if BENCH_FAILED.load(Ordering::Relaxed) => ExitCode::FAILURE,
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("lokyr: {error}");
