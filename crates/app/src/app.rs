@@ -221,6 +221,10 @@ const FALLBACK_TERM: &str = "xterm-256color";
 const TITLE: &str = "Lokyr";
 const BELL_MARK: &str = "🔔 ";
 
+/// How long the startup's and the latency's benches wait for a frame on
+/// the display, as one that sleeps, or a machine without one, shows none.
+const BENCH_DEADLINE: Duration = Duration::from_secs(15);
+
 /// How long a frame starts looking up the faces of characters that it has
 /// not met, and how long it draws the glyphs that the atlas lacks, on the
 /// font's threads: a frame of new glyphs takes up to about 10 ms, within a
@@ -690,6 +694,9 @@ pub struct App {
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
+    /// The timer past which the startup's and the latency's benches give up
+    /// waiting for a frame on the display.
+    bench_deadline: Option<TimerId>,
     /// The timer of the turn of the panes whose sessions told something
     /// within the pace of their last look, and its time.
     told_timer: Option<(TimerId, Instant)>,
@@ -848,6 +855,7 @@ impl App {
             blink_timer: None,
             label_timer: None,
             exit_timer: None,
+            bench_deadline: None,
             told_timer: None,
             pane_wakes: BTreeMap::new(),
             resize_timer: None,
@@ -1023,6 +1031,37 @@ impl App {
             "{}",
             latency::report(&samples, refresh, bench.flood, bench.keys)
         );
+    }
+
+    /// Ends the startup's bench, and the latency's of the keys that it types,
+    /// as the display showed no frame of them in [`BENCH_DEADLINE`], as on
+    /// a display asleep or a machine without one: each says so, the
+    /// latency's report of no samples, and the app quits. The latency of
+    /// the user's own keys, or of keys that showed, goes on.
+    fn give_up_benches(&mut self, platform: &mut dyn Platform) {
+        let seconds = BENCH_DEADLINE.as_secs();
+        if self.startup_bench.take().is_some() {
+            eprintln!(
+                "lokyr: no frame showed on the display in {seconds} s, and so no startup to measure"
+            );
+            platform.quit();
+            return;
+        }
+        let shown = self.latency_bench.as_ref().is_none_or(|bench| {
+            bench.keys == 0
+                || !bench
+                    .samples
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .is_empty()
+        });
+        if !shown {
+            eprintln!(
+                "lokyr: no frame showed on the display in {seconds} s, and so no latency to measure"
+            );
+            self.end_latency_bench(platform);
+            platform.quit();
+        }
     }
 
     /// Prints the startup's measure and quits, once the first frame
@@ -4321,6 +4360,9 @@ impl Handler for App {
         self.open_window(platform);
         self.end_startup_bench(platform);
         self.start_latency_bench(platform);
+        if self.startup_bench.is_some() || self.latency_bench.is_some() {
+            self.bench_deadline = Some(platform.start_timer(Instant::now() + BENCH_DEADLINE));
+        }
     }
 
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -4370,6 +4412,10 @@ impl Handler for App {
                     .is_some_and(|bench| bench.timer == Some(timer)) =>
             {
                 self.latency_step(platform);
+            }
+            AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
+                self.bench_deadline = None;
+                self.give_up_benches(platform);
             }
             AppEvent::Timer(timer) if self.told_timer.is_some_and(|(told, _)| told == timer) => {
                 self.told_timer = None;
@@ -6546,6 +6592,23 @@ mod tests {
         fake.send(&mut app, window, WindowEvent::Focused(false));
         let (shape, blink) = app.cursor(&mut fake, window, Instant::now()).unwrap();
         assert_eq!((shape, blink), (CursorShape::Hollow, None));
+    }
+
+    #[test]
+    fn the_benches_give_up_without_a_frame_on_the_display() {
+        let start = Instant::now();
+        let mut fake = Fake::default();
+        let mut typing = app(Config::default(), quiet()).with_latency_bench(10, false);
+        fake.start(&mut typing);
+        assert!(fake.timers().any(|(_, at)| at >= start + BENCH_DEADLINE));
+        typing.give_up_benches(&mut fake);
+        assert!(fake.has_quit());
+        // The user's own keys go on.
+        let mut fake = Fake::default();
+        let mut users = app(Config::default(), quiet()).with_latency_bench(0, false);
+        fake.start(&mut users);
+        users.give_up_benches(&mut fake);
+        assert!(!fake.has_quit());
     }
 
     #[test]
@@ -9663,7 +9726,9 @@ mod tests {
         // Its text scrolled into the scrollback, which a clear takes away,
         // it runs nothing, though links came to every row around its own,
         // which a resize that a pane puts off can move by one.
-        let rows = app.pane(window).grid().rows;
+        // The rows that the snapshot has, which a resize put off leaves one
+        // short of the grid's.
+        let rows = app.pane(window).snapshot().rows();
         let y = (0..rows)
             .find(|&r| row(&app, window, r) == "https://lokyr.dev/y")
             .unwrap();

@@ -2,8 +2,15 @@
 //! check of a config file, as scripts run them.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
+
+/// How long a run of the app may take, past which the test ends it and
+/// fails, rather than hold CI's runner until its job's limit.
+const DEADLINE: Duration = Duration::from_secs(120);
 
 /// A directory of the test's own, empty, as `XDG_CONFIG_HOME`.
 fn directory(test: &str) -> PathBuf {
@@ -14,13 +21,50 @@ fn directory(test: &str) -> PathBuf {
     directory
 }
 
-/// Runs the app with `args`, its config in `config_home`.
+/// Runs the app with `args`, its config in `config_home`, for
+/// [`DEADLINE`] at most.
 fn lokyr(config_home: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_lokyr"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_lokyr"))
         .args(args)
         .env("XDG_CONFIG_HOME", config_home)
-        .output()
-        .unwrap()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdout = drain(child.stdout.take().unwrap());
+    let stderr = drain(child.stderr.take().unwrap());
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if start.elapsed() > DEADLINE {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("lokyr {args:?} ran past {DEADLINE:?}");
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    Output {
+        status,
+        stdout: stdout.join().unwrap(),
+        stderr: stderr.join().unwrap(),
+    }
+}
+
+/// The bytes of `pipe`, read to its end on a thread of their own.
+fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = pipe.read_to_end(&mut bytes);
+        bytes
+    })
+}
+
+/// Whether the app told that no frame showed, without a GPU, or with a
+/// display that sleeps or that the machine lacks, as some CI's.
+fn showed_no_frame(stderr: &str) -> bool {
+    stderr.contains("without a GPU") || stderr.contains("no frame showed on the display")
 }
 
 fn text(bytes: &[u8]) -> &str {
@@ -158,9 +202,10 @@ fn the_startup_s_measure_tells_the_first_frame_and_quits() {
     let measured = lokyr(&home, &["--bench", "startup"]);
     assert!(measured.status.success(), "{}", text(&measured.stderr));
     let line = text(&measured.stdout).trim();
-    // Without a GPU, no frame shows, which it tells instead.
+    // Without a GPU, or a display that shows its frames, no frame shows,
+    // which it tells instead.
     if line.is_empty() {
-        assert!(text(&measured.stderr).contains("without a GPU"));
+        assert!(showed_no_frame(text(&measured.stderr)));
         return;
     }
     let ms: f64 = line
@@ -185,9 +230,9 @@ fn a_config_whose_font_fails_starts_with_the_defaults() {
     let measured = lokyr(&home, &["--bench", "startup"]);
     assert!(measured.status.success(), "{}", text(&measured.stderr));
     // Its first frame shows, of the defaults, as the log tells, unless no
-    // GPU draws one.
+    // GPU draws one or no display shows it.
     let stderr = text(&measured.stderr);
-    if !stderr.contains("without a GPU") {
+    if !showed_no_frame(stderr) {
         assert!(
             text(&measured.stdout).contains("first_frame_ms"),
             "{stderr}"
@@ -205,8 +250,9 @@ fn the_latency_s_bench_types_its_keys_and_tells_them() {
     let line = text(&measured.stdout).trim();
     assert!(line.starts_with("{\"refresh_ms\":"), "{line}");
     assert!(line.contains("\"keys\":10,"), "{line}");
-    // Without a GPU, no frame shows a key.
-    if !text(&measured.stderr).contains("without a GPU") {
+    // Without a GPU, or a display that shows its frames, no frame shows a
+    // key.
+    if !showed_no_frame(text(&measured.stderr)) {
         assert!(!line.contains("\"samples\":0,"), "{line}");
     }
     let wrong = lokyr(&home, &["--bench", "latency", "--keys", "many"]);

@@ -455,13 +455,14 @@ fn the_replies_to_a_program_that_never_reads_wait_up_to_a_limit() {
     // stream of DA1 queries, without a read.
     let script = r#"stty raw -echo; q=$(printf '\033[c'); exec yes "$q""#;
     let session = Session::spawn(&sh(script), || {}).unwrap();
-    // Thousands of slices, whose replies would take MiBs.
+    // 8 MiB of queries, whose replies, two and a half times their bytes,
+    // would take twenty times the limit, whatever the slices' sizes.
     let start = Instant::now();
-    while session.slices() < 5000 {
+    while session.output_bytes() < 8 << 20 {
         assert!(
             start.elapsed() < Duration::from_secs(30),
-            "{} slices",
-            session.slices()
+            "{} bytes",
+            session.output_bytes()
         );
         thread::sleep(Duration::from_millis(10));
     }

@@ -26,7 +26,10 @@ jobs:
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
-    timeout-minutes: 30
+    # A run takes 3 to 4 minutes; GitHub bills a macOS runner's minute as
+    # ten of the account's, so that a test that hangs costs no more than
+    # this.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,6 +58,7 @@ jobs:
       - run: just clippy
       - run: just build
       - run: just test
+        timeout-minutes: 5
       # Signed ad hoc, as the runner has no Developer ID.
       - run: just bundle
 
@@ -65,7 +69,7 @@ jobs:
     # differential tests, and the tasks', as terminfo's, with Ubuntu's tic.
     name: linux
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,7 +94,7 @@ jobs:
     # rise of more than 3% fails.
     name: instructions
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
