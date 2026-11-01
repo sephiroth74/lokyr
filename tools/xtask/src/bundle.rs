@@ -23,8 +23,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail, ensure};
 
-#[path = "../../../crates/app/build/stamp.rs"]
-mod stamp;
+#[path = "../../../crates/app/build/version.rs"]
+mod version;
 
 /// The bundle's identifier, which follows the terminal's name.
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
@@ -322,7 +322,7 @@ fn bundle_versions(version: &str, moment: u64) -> Result<(&str, String)> {
         numbers.len() == 3 && numbers.iter().all(|number| digits(number)),
         "the version `{version}` is not of three numbers"
     );
-    let number = stamp::stamp(moment);
+    let number = version::stamp(moment);
     match suffix {
         None => {}
         Some(date) if date.len() == 8 && digits(date) => ensure!(
@@ -597,12 +597,12 @@ mod tests {
 
     #[test]
     fn the_build_s_moment_is_told_to_the_minute_in_utc() {
-        assert_eq!(stamp::stamp(0), "197001010000");
-        assert_eq!(stamp::stamp(MOMENT + 59), "202611011530");
+        assert_eq!(version::stamp(0), "197001010000");
+        assert_eq!(version::stamp(MOMENT + 59), "202611011530");
         // A leap day's last minute, and the first day after a century's
         // leap February.
-        assert_eq!(stamp::stamp(1_709_251_140), "202402292359");
-        assert_eq!(stamp::stamp(951_868_800), "200003010000");
+        assert_eq!(version::stamp(1_709_251_140), "202402292359");
+        assert_eq!(version::stamp(951_868_800), "200003010000");
     }
 
     #[test]
@@ -628,6 +628,39 @@ mod tests {
             "0.2.0-rc.x",
         ] {
             assert!(bundle_versions(version, MOMENT).is_err(), "{version}");
+        }
+    }
+
+    #[test]
+    fn a_nightly_s_a_candidate_s_and_a_release_s_versions_reach_the_bundle() {
+        for (release, told, short) in [
+            (None, "1.2.3-20261101", "1.2.3"),
+            (Some("1.2.3-rc.2"), "1.2.3-rc.2", "1.2.3"),
+            (Some("1.2.3-rc.10"), "1.2.3-rc.10", "1.2.3"),
+            (Some("1.2.3"), "1.2.3", "1.2.3"),
+        ] {
+            let version = version::version("1.2.3", release, MOMENT).unwrap();
+            assert_eq!(version, told, "{release:?}");
+            let (bundled, number) = bundle_versions(&version, MOMENT).unwrap();
+            assert_eq!(
+                (bundled, number.as_str()),
+                (short, "202611011530"),
+                "{release:?}"
+            );
+        }
+        // Of other numbers than the crate's, or of another form.
+        for release in [
+            "1.2.4",
+            "1.2.3-rc.",
+            "1.2.3-rc.x",
+            "1.2.3-beta.1",
+            "1.2.3-rc.1-x",
+            "1.2",
+        ] {
+            assert!(
+                version::version("1.2.3", Some(release), MOMENT).is_err(),
+                "{release}"
+            );
         }
     }
 
