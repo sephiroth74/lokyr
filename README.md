@@ -1,10 +1,135 @@
-# Lokyr
+<p align="center">
+  <img src="crates/app/resources/icons/lokyr-jormungandr.svg" alt="Lokyr's icon" width="128">
+</p>
 
-A fast, lightweight terminal emulator for macOS, written in Rust and built around its own plugin system: tabs, splits, search and themes are all plugins. Third-party plugins are Luau scripts that run in a sandbox, installed by Sleip, a separate package manager.
+<h1 align="center">Lokyr</h1>
 
-> Lokyr is the terminal, and Sleip its package manager ([ADR 0018](docs/adr/0018-names-lokyr-and-sleip.md)). The project is in its third phase, F2: the headless terminal core is done, and the macOS app, with a window of one pane, is under way.
+<p align="center">
+  <b>A fast terminal for macOS, written in Rust, where every visible feature is a plugin.</b>
+  <br>
+  Third-party plugins are sandboxed Luau scripts, installed by <b>Sleip</b>, its package manager.
+</p>
 
-To learn more, start with the [documentation](docs/README.md), then read the [roadmap](docs/ROADMAP.md) and the [task breakdown](docs/tasks/README.md). The settings are in the [configuration guide](docs/CONFIGURATION.md).
+<p align="center">
+  <a href="#why-lokyr">Why Lokyr</a> ·
+  <a href="#status">Status</a> ·
+  <a href="#performance">Performance</a> ·
+  <a href="#building">Building</a> ·
+  <a href="docs/README.md">Documentation</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="#supporting-lokyr">Support</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sephiroth74/lokyr/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sephiroth74/lokyr/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="macOS 26 or later, Apple Silicon" src="https://img.shields.io/badge/macOS-26%2B%20·%20Apple%20Silicon-lightgrey">
+  <img alt="Rust 1.99" src="https://img.shields.io/badge/Rust-1.99-orange">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+> [!IMPORTANT]
+> **Lokyr is not ready for daily use yet.** Its terminal core is done, and its macOS app, a window of one pane, is being finished; tabs, splits and plugins come next. See the [status](#status).
+
+<p align="center">
+  <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
+</p>
+
+## Why Lokyr
+
+- **A small core, and plugins for the rest.** The tab bar, splits, search, themes and the command palette are plugins, on the same API that third parties get. The core keeps the terminal itself: the screen, the input, the rendering. Leave a plugin out, and Lokyr is a terminal without it.
+- **Plugins you can trust.** A third-party plugin is Luau source, in a VM of its own, with a memory limit and a deadline. It reaches the screen, the clipboard, files or the network only through the capabilities that it declares, which Sleip shows at install and Lokyr asks for on first use. The app itself contains no networking code.
+- **Fast where you feel it.** Its own VT core, with 8-byte cells and a paged grid; a Metal renderer, one surface per window; a frame of steady output in about a quarter of a millisecond at 4K. It is measured against six other terminals, each change against the builds before it, and the numbers are [in the repository](docs/bench/).
+- **Native on macOS.** An AppKit window, CoreText shaping and font fallback, input methods, Secure Keyboard Entry, a quick terminal on a global key, and English and Italian.
+- **Ready for agents.** Lokyr will be an [MCP server](docs/adr/0017-mcp-and-agents.md): an agent works in its own pane and the panes it opens, and the tabs show what each agent is doing.
+
+## Status
+
+Lokyr is built in phases, each with exit criteria that are measured, not assumed ([roadmap](docs/ROADMAP.md)):
+
+| Phase | What it brings | Status |
+|---|---|---|
+| F0 | Foundations: the workspace, CI, the measuring tools, the plugin runtime chosen | ✅ |
+| F1 | The headless terminal core, checked against xterm, `alacritty_terminal` and fuzzers | ✅ |
+| F2 | The macOS app, a window of one pane | 🚧 |
+| F3 | The macOS MVP: tabs, splits, search, themes, the command palette | |
+| F3b | MCP and agents | |
+| F4 | Third-party plugins in Luau, Sleip and its registry | |
+| F5 | Shell integration, iTerm2's power features, images | |
+| F6 | 1.0 | |
+| F7 | Linux | |
+
+## Performance
+
+Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. The [full report](docs/bench/compare-F2-134.md) has every measure, its method and its limits.
+
+<p align="center">
+  <img src="docs/bench/compare-F2-134/charts/startup.svg" alt="Startup to the first window: Lokyr 256 ms, Ghostty 331, Terminal.app 340, Alacritty 349, WezTerm 394, kitty 672, iTerm2 794" width="680">
+  <img src="docs/bench/compare-F2-134/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 25.0 MB, Alacritty 31.3, Terminal.app 34.8, WezTerm 37.2, Ghostty 40.0, kitty 97.3, iTerm2 136.5" width="680">
+  <img src="docs/bench/compare-F2-134/charts/wakeups.svg" alt="Wakeups at rest a second: Alacritty 0.37, Lokyr 0.38, Terminal.app 0.38, WezTerm 1.35, iTerm2 8.18, Ghostty 16.57, kitty 20.08" width="680">
+  <img src="docs/bench/compare-F2-134/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 306 MiB/s, Lokyr 296, Alacritty 170, kitty 147, iTerm2 51, WezTerm 45, Terminal.app 40" width="680">
+  <img src="docs/bench/compare-F2-134/charts/energy.svg" alt="Energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3" width="680">
+</p>
+
+<!-- The latency joins the charts as the report has it. -->
+
+## What works today
+
+<p align="center">
+  <img src="docs/images/lokyr-htop.png" alt="htop in a Lokyr window of 100 by 30 cells, with the tree of the window's own processes: lokyr, login, bash and htop" width="760">
+</p>
+
+- ✅ A window of one pane, drawn with Metal, at the display's refresh rate, its frames only when something changed.
+- ✅ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
+- ✅ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
+- ✅ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.
+- ✅ Selection, copy on select, paste with a check of what it holds, drag and drop of files.
+- ✅ A quick terminal on a global key, from any edge of the screen.
+- ✅ Notifications, the bell, smooth cursor blinking that the window server draws.
+- ✅ A config in TOML, applied as it is saved, its errors shown in the window.
+
+## Building
+
+Lokyr needs macOS 26 or later on Apple Silicon, Xcode 27 with its Metal toolchain, and [just](https://github.com/casey/just). `rust-toolchain.toml` pins Rust.
+
+```sh
+git clone https://github.com/sephiroth74/lokyr.git
+cd lokyr
+just bundle             # target/Lokyr.app
+open target/Lokyr.app
+```
+
+`just ci` runs what CI runs: formatting and clippy, the build and the tests, the Linux check of the portable crates, the dependencies' licenses, the comments and the docs' links, and the bundle.
+
+## Configuration
+
+Lokyr reads `~/.config/lokyr/config.toml`, and applies it as you save it. `lokyr +show-config --default --docs` prints every key with its default; the [configuration guide](docs/CONFIGURATION.md) explains each.
+
+```toml
+[font]
+family = "JetBrains Mono"
+size = 14
+
+[window]
+background-opacity = 0.9
+background-blur = 20
+
+[quick-terminal]
+position = "top"
+```
+
+## Documentation
+
+- [The documentation's index](docs/README.md), with the requirements and the decisions.
+- [Architecture](docs/ARCHITECTURE.md): the crates, the threads, the frame's way.
+- [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
+- [Performance](docs/PERFORMANCE.md): the budgets, and the [measures](docs/bench/).
+- [The decisions](docs/adr/README.md), one record each.
+
+## Supporting Lokyr
+
+If you like Lokyr, or what it aims for, a coffee helps to keep it going:
+
+<a href="https://www.buymeacoffee.com/sephiroth74"><img alt="Buy me a coffee" src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=sephiroth74&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00"></a>
 
 ## Contributing
 
