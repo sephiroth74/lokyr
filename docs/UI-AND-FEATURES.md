@@ -138,9 +138,13 @@ The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2:
 The `splits` plugin. Each tab's layout tree lives in the kernel, because session restore, IPC and tmux -CC need it too. The plugin provides the commands and the interaction; the host draws the dividers from the layout tree, in the theme's tokens, and gives their drags to the plugin. Without the plugin, every tab has exactly one pane.
 
 ```
-LayoutTree = Split { direction: horizontal | vertical, ratio, a: LayoutTree, b: LayoutTree }
+LayoutTree = Split { direction: horizontal | vertical, ratio?, first: LayoutTree, second: LayoutTree }
            | Leaf(PaneId)
 plus an optional zoomed pane
+
+A split without a ratio shares its room by its parts' panes along its
+direction, so that three panes split alike take a third each; a divider's
+drag gives it a ratio, between 5% and 95%, which `splits.equalize` takes away.
 ```
 
 | Command | macOS (same as iTerm2) |

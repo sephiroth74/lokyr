@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4d089b4769fea336648db85ab54dad9b9ca40bf78f007b7e4053a4f0831fd140 # shrinks to operations = [Split { target: 0, vertical: false, first: true }, Split { target: 7621539536763500711, vertical: true, first: false }, Ratio { target: 0, share: 0.0 }]

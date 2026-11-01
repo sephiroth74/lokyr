@@ -122,6 +122,106 @@ fn a_window_opens_with_one_tab_whose_layout_is_its_pane() {
 }
 
 #[test]
+fn tabs_open_show_move_and_close_with_their_windows() {
+    let mut workspace = Workspace::new();
+    let first = workspace.open_window(pane("sleep 10"));
+    let one = workspace.window(first).unwrap().active_tab();
+    let two = workspace.open_tab(first, pane("sleep 10"), 99).unwrap();
+    let tabs = |workspace: &Workspace, window| workspace.window(window).unwrap().tabs().to_vec();
+    // A new tab goes last, and the window shows the one that it showed.
+    assert_eq!(tabs(&workspace, first), [one, two]);
+    assert_eq!(workspace.window(first).unwrap().active_tab(), one);
+    assert!(workspace.activate_tab(two));
+    assert_eq!(workspace.window(first).unwrap().active_tab(), two);
+    // Reordered, then out to a window of its own, which shows it.
+    assert!(workspace.move_tab(two, first, 0));
+    assert_eq!(tabs(&workspace, first), [two, one]);
+    workspace.take_events();
+    let second = workspace.tab_to_new_window(one).unwrap();
+    assert_eq!(workspace.take_events(), [Event::WindowOpened(second)]);
+    assert_eq!(tabs(&workspace, second), [one]);
+    assert_eq!(workspace.tab(one).unwrap().window(), second);
+    assert_eq!(workspace.window(second).unwrap().active_tab(), one);
+    // A tab alone in its window stays there.
+    assert_eq!(workspace.tab_to_new_window(one), Some(second));
+    // Back, and the window that it leaves without tabs closes.
+    assert!(workspace.move_tab(one, first, 99));
+    assert_eq!(workspace.take_events(), [Event::WindowClosed(second)]);
+    assert_eq!(tabs(&workspace, first), [two, one]);
+    assert_eq!(workspace.window(first).unwrap().active_tab(), two);
+    // Closed, with their panes: the shown one gives way to the one after
+    // it, or before it, and the last one closes the window.
+    let panes = workspace.tab(two).unwrap().layout().panes();
+    assert!(workspace.close_tab(two));
+    assert!(workspace.pane(panes[0]).is_none());
+    assert_eq!(workspace.window(first).unwrap().active_tab(), one);
+    assert!(workspace.close_tab(one));
+    assert_eq!(workspace.take_events(), [Event::WindowClosed(first)]);
+    assert!(workspace.window(first).is_none());
+    assert!(!workspace.close_tab(one));
+}
+
+#[test]
+fn panes_split_zoom_close_and_move_with_their_tabs() {
+    let mut workspace = Workspace::new();
+    let a = pane("sleep 10");
+    let a_id = a.id();
+    let window = workspace.open_window(a);
+    let tab = workspace.window(window).unwrap().active_tab();
+    let b = workspace
+        .split(a_id, Direction::Horizontal, pane("sleep 10"), Side::Second)
+        .unwrap();
+    let layout = |workspace: &Workspace, tab| workspace.tab(tab).unwrap().layout().clone();
+    assert_eq!(layout(&workspace, tab).panes(), [a_id, b]);
+    assert_eq!(workspace.tab_of(b), Some(tab));
+    // The keyboard stays where it was; a zoom ends with a split.
+    assert_eq!(workspace.active_pane(window), Some(a_id));
+    assert!(workspace.zoom(tab, Some(b)));
+    assert_eq!(workspace.tab(tab).unwrap().zoomed(), Some(b));
+    let c = workspace
+        .split(b, Direction::Vertical, pane("sleep 10"), Side::Second)
+        .unwrap();
+    assert_eq!(workspace.tab(tab).unwrap().zoomed(), None);
+    // A closed pane's room to its sibling, and the keyboard to the
+    // sibling's nearest pane.
+    assert!(workspace.focus_pane(c));
+    assert!(workspace.zoom(tab, Some(c)));
+    assert!(workspace.close_pane(c));
+    assert!(workspace.pane(c).is_none());
+    assert_eq!(workspace.active_pane(window), Some(b));
+    assert_eq!(workspace.tab(tab).unwrap().zoomed(), None);
+    assert_eq!(
+        layout(&workspace, tab),
+        Layout::Split {
+            direction: Direction::Horizontal,
+            ratio: None,
+            first: Box::new(Layout::Leaf(a_id)),
+            second: Box::new(Layout::Leaf(b)),
+        }
+    );
+    // Resized, then equalized.
+    assert!(workspace.resize_pane(a_id, Edge::Right, 0.2));
+    assert!((layout(&workspace, tab).share().unwrap() - 0.7).abs() < 1e-9);
+    assert!(workspace.equalize(tab));
+    assert_eq!(layout(&workspace, tab).share(), Some(0.5));
+    // Out to a tab of its own, then a pane alone to a window of its own,
+    // with its tab.
+    let other = workspace.pane_to_new_tab(b, window, 99).unwrap();
+    assert_eq!(layout(&workspace, tab), Layout::Leaf(a_id));
+    assert_eq!(layout(&workspace, other), Layout::Leaf(b));
+    workspace.take_events();
+    let moved = workspace.pane_to_new_window(a_id).unwrap();
+    assert_eq!(workspace.take_events(), [Event::WindowOpened(moved)]);
+    assert_eq!(workspace.tab_of(a_id), Some(tab));
+    assert_eq!(workspace.window(moved).unwrap().tabs(), [tab]);
+    // A tab's last pane closes it, and a window's last tab the window.
+    assert!(workspace.close_pane(b));
+    assert_eq!(workspace.take_events(), [Event::WindowClosed(window)]);
+    assert!(workspace.tab(other).is_none());
+    assert_eq!(workspace.tab_of(b), None);
+}
+
+#[test]
 fn ids_are_never_reused() {
     let mut workspace = Workspace::new();
     let first = workspace.open_window(pane("sleep 10"));

@@ -24,5 +24,8 @@ serde.workspace = true
 toml_edit = { workspace = true, features = ["display"] }
 unic-langid.workspace = true
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

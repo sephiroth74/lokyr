@@ -49,14 +49,14 @@ This document describes Lokyr as a whole. Each subsystem has its own document wi
 ```
 Workspace
 └── Window (id, screen, size, appearance)
-    └── Tab (id, title, color, active pane)
+    └── Tab (id, title, color, active pane, zoomed pane)
         └── LayoutTree
-            ├── Split { direction, ratio, a, b }
+            ├── Split { direction, ratio, first, second }
             └── Leaf(PaneId)
                 └── Pane (id, profile, cwd) ──▶ Session (pty + process + VT state)
 ```
 
-- **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a tree whose leaves are panes, a single leaf until splits come. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them.
+- **Where it is**: `kernel::workspace`. A `Workspace` holds the windows, the tabs and the panes, each pane with its session; a tab's layout is a binary tree whose leaves are panes. A split shares its room by its ratio, which a divider's drag gives, or, without one, by its parts' panes along its direction, so that panes split alike take a part each, three of them a third. The workspace's operations are mechanisms, which plugins call: tabs opened, closed, shown, reordered and moved between windows; panes split, closed, focused, resized, equalized, zoomed, and moved to a tab or a window of their own; a tab that loses its last pane closes, and a window its last tab. The app keeps, for each window of the platform, what is the platform's and the drawing's (its surface, the input method's composition, the cursor's blinking, the mouse), and the ids of its window and pane in the workspace. The sessions' events, the titles, which the tabs of their active panes take, the bells, the writes to the clipboards, the ends of the output and the terminals' others, come in on the main thread, as `Workspace::collect` gathers them once a session woke it, and wait as the workspace's `Event`s until the app takes them.
 - **Serializable**: the whole model can be serialized. Session restore, IPC, tmux -CC and the E2E tests all use the same model. Its types are plain data, apart from the sessions; they take serde's derives with the first that serializes them, IPC in F3b.
 - **Changes go through commands**: every change is a kernel command, and each one emits an event (`tab-created`, `pane-focused`, `layout-changed`, …). Plugins never mutate state directly: their changes are requests, which the host applies in order as their calls return ([ADR 0028](adr/0028-plugin-calls-as-messages.md)).
 - **Identifiers** are opaque `u64` values, never reused during the life of the process: windows, tabs and panes take theirs from one counter of the process.
