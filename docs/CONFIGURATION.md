@@ -450,6 +450,7 @@ Whether the cursor fades out and in as it blinks, rather than switching, and how
 
 - `"custom"` takes [`fade-in`, `fade-out`](#fade-in-fade-out), [`fade-in-curve`, `fade-out-curve`](#fade-in-curve-fade-out-curve) and [`visible`, `hidden`](#visible-hidden), whose defaults are Breathing's.
 - With Reduce motion on, in System Settings › Accessibility › Display on macOS, the cursor switches rather than fading, at each fade's middle.
+- What it costs: the window server composes the window at each refresh of a fade, while Lokyr itself does no more work. Measured on an M5 Pro, fades over half of the cycle, of 100, 500, 500 and 100 ms, took about a fifth of a core of the window server's CPU more, and fades over a sixth of it, about a twelfth; the cost grows with the share of the cycle that fades, from 21 % for `"subtle"` to 64 % for `"breathing"`. It lasts while the cursor blinks, in the window that has the focus, until [`blink-timeout`](#blink-timeout). A cursor that switches, the default, costs nothing measurable.
 
 ### `fade-in`, `fade-out`
 

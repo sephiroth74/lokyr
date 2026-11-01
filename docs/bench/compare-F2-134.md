@@ -1,6 +1,6 @@
 # Lokyr against the other terminals (F2-134)
 
-Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle of commit fe0cbe0, with this task's change of `lokyr --bench output`, which takes the config's columns and rows without `--window` and through which `compare.py` runs each measure's program in Lokyr, against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions. The raw results, the configs and each terminal's reports are in [compare-F2-134/](compare-F2-134/); `python3 tools/bench/compare.py` takes the measures again, and `python3 tools/bench/report_charts.py compare` draws the charts from the raw results.
+Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle of commit fe0cbe0, with this task's change of `lokyr --bench output`, which takes the config's columns and rows without `--window` and through which `compare.py` runs each measure's program in Lokyr, against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions. The raw results, the configs and each terminal's reports are in [compare-F2-134/](compare-F2-134/); `python3 tools/bench/compare.py` takes the measures again, and `python3 tools/bench/report_charts.py compare` draws the charts from the raw results. The user's own part came on 2026-11-01, on the bundle of commit 193ca38, after F2-152: the latency with Typometer, `powermetrics`, the smoothness by eye and vttest's screens.
 
 ## In short
 
@@ -12,6 +12,9 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 | `cat` of 1 GiB on screen | 296 MiB/s | 2nd | Ghostty, 306 MiB/s |
 | The CPU's energy to show that GiB | 17.3 J | 1st | kitty, 41.1 J |
 | kitty's benchmark, short CSI sequences | 58 MB/s | 4th | Ghostty, 221 MB/s |
+| A key to its echo at 120 Hz, median, of 5 | 21.2 ms | 1st | iTerm2, 21.3 ms |
+| A key to its echo at 120 Hz, p99, of 5 | 32.2 ms | 3rd | Alacritty, 25.8 ms |
+| A key to its echo at 60 Hz, median, of 5 | 22.8 ms | 2nd | Alacritty, 21.2 ms |
 
 ![Startup to the first window, median of 10 runs: Lokyr 256 ms, Ghostty 331, Terminal.app 340, Alacritty 349, WezTerm 394, kitty 672, iTerm2 794](compare-F2-134/charts/startup.svg)
 
@@ -22,6 +25,10 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 ![Throughput of cat of 1 GiB on screen, median of 5 runs: Ghostty 306 MiB/s, Lokyr 296, Alacritty 170, kitty 147, iTerm2 51, WezTerm 45, Terminal.app 40](compare-F2-134/charts/throughput.svg)
 
 ![The CPU's energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3](compare-F2-134/charts/energy.svg)
+
+![Latency at 120 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.6 and 25.8 ms, kitty 21.8 and 29.6, Lokyr 21.2 and 32.2, iTerm2 21.3 and 45.0, Ghostty 24.8 and 47.7](compare-F2-134/charts/latency-120hz.svg)
+
+![Latency at 60 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.2 and 47.9 ms, Lokyr 22.8 and 50.3, kitty 32.0 and 50.5, iTerm2 35.8 and 50.6, Ghostty 33.1 and 64.7](compare-F2-134/charts/latency-60hz.svg)
 
 ## Conditions
 
@@ -133,6 +140,32 @@ Lokyr is at 0.97 of Ghostty's rate, within the budget.
 
 The first session of throughput, at 15:28, ran Lokyr first. Its first run of kitty's benchmark matched the figures above; from the second on, every test fell by a third or more, ASCII to 211 MB/s, short CSI sequences to 26, vtebench's scenarios took three to five times as long, and `cat` ran at 62 MiB/s. Lokyr used the same CPU throughout, about 1.1 to 1.3 cores, as `powermetrics` saw. No state of the terminal explained it: neither vtebench, the alternate screen, each of the benchmark's tests in turn, two whole runs of it, nor the app hidden or in the background slowed it again. A fourth session measured Lokyr again, with Ghostty as the control, whose figures matched the first session's within 2%; the tables above are that session's, and the first one's are in [throughput/lokyr-disturbed/](compare-F2-134/throughput/lokyr-disturbed/).
 
+## Latency
+
+Typometer, built from its maintained fork, typed 200 keys into each terminal, which ran `cat > /dev/null`, so that the terminal's echo of each key was the line discipline's, and timed each from its key to the change of the window's pixels that it reads from the screen: alone, and with a second window of the same terminal beside it, flooded by `yes`. At 60 Hz on the main display, and at 120 Hz on the MacBook's own, through ProMotion; WezTerm and Terminal.app were not measured. The raw results are in [latency/](compare-F2-134/latency/). The median, the 90th and the 99th percentiles, by the nearest rank, in milliseconds; less is better:
+
+| Terminal | 60 Hz, median | p90 | p99 | 120 Hz, median | p90 | p99 |
+|---|---|---|---|---|---|---|
+| **Lokyr** | 22.8 ms | 49.1 | 50.3 | **21.2 ms** | 25.2 | 32.2 |
+| Ghostty | 33.1 ms | 50.0 | 64.7 | 24.8 ms | 41.9 | 47.7 |
+| Alacritty | 21.2 ms | 29.4 | 47.9 | 21.6 ms | 23.8 | 25.8 |
+| kitty | 32.0 ms | 48.3 | 50.5 | 21.8 ms | 24.1 | 29.6 |
+| iTerm2 | 35.8 ms | 47.9 | 50.6 | 21.3 ms | 40.6 | 45.0 |
+
+| Terminal, next to a flood | 60 Hz, median | p90 | p99 | 120 Hz, median | p90 | p99 |
+|---|---|---|---|---|---|---|
+| **Lokyr** | 19.9 ms | 34.0 | 43.2 | 16.7 ms | 20.1 | 24.3 |
+| Ghostty | 32.3 ms | 40.8 | 43.8 | 21.0 ms | 28.8 | 34.1 |
+| Alacritty | 16.1 ms | 26.5 | 38.5 | 16.2 ms | 18.5 | 20.8 |
+| kitty | 16.5 ms | 28.6 | 37.5 | 16.3 ms | 19.0 | 21.9 |
+| iTerm2 | 16.5 ms | 29.3 | 40.6 | 18.2 ms | 35.6 | 40.4 |
+
+- **At 120 Hz**, Lokyr has the lowest median of the five, and its p99, 32.2 ms, comes third, after Alacritty's and kitty's: 24 of its 200 keys took more than three frames, 25 ms, where 5 of Alacritty's and 11 of kitty's did, 41 of iTerm2's and 94 of Ghostty's.
+- **At 60 Hz, alone**, a third of Lokyr's keys took a frame more than Alacritty's: 69 of 200 past two frames, 33.3 ms, where 14 of Alacritty's did, and 98 of kitty's and of Ghostty's, 148 of iTerm2's; hence its p90 of 49.1 ms, against Alacritty's 29.4.
+- **Next to a flood**, every terminal's keys came sooner, at both rates, likely as the window server, which composes the screen at each refresh for the flooded window, has no rest to wake from.
+- **Lokyr's own measure** of [F2-54](latency-F2-54.md#after-f2-144), from the key's event to the frame's presentation, gave 21.2 ms at the median and 41.5 at p99 at 60 Hz, 14.5 and 34.2 at 120 Hz, on commit d69529b. Typometer's medians of Lokyr are 1.6 ms longer at 60 Hz and 6.7 ms at 120 Hz: its keys go through the system's queue of events, and its end is its capture of the screen, a path that bounds every terminal alike, as four of the five medians at 120 Hz fall between 21.2 and 21.8 ms. The budget is that measure's, p50 ≤ 2 frames and p99 ≤ 4.5 at 120 Hz, which Lokyr keeps; by Typometer too, its p99 at 120 Hz is 3.9 frames.
+- **Is It Snappy**, of a camera at 240 frames a second, needs an iPhone, which the user has not: not measured.
+
 ## Energy
 
 `lokyr-bench energy`, which reads the energy that the kernel bills each process, `ri_energy_nj` of `proc_pid_rusage`, and needs no administrator, over `cat` of 1 GiB in each terminal, all of them in one session: the same bytes in each, whatever its rate. The kernel bills the CPU's energy alone: four seconds of a Metal loop that keeps the GPU busy add 0.02 J to a process's count, where a second of the CPU's work adds about 6 J, as the review after F2-148 measured. The figures leave out each terminal's own drawing on the GPU.
@@ -151,6 +184,55 @@ The first session of throughput, at 15:28, ran Lokyr first. Its first run of kit
 - The GPU's work and the window server's composition are each terminal's cost too, and these figures leave them out: `powermetrics`, which reads them, needs an administrator, and is the user's part.
 - iTerm2's rate moved between sessions, from 10 to 103 MiB/s in a new window, and 51 in the window of the throughput's session.
 - Ten seconds of `yes`, in the first session, are not comparable across terminals, whose rates differ: they are in [idle/](compare-F2-134/idle/).
+
+### `powermetrics`
+
+The user recorded `powermetrics`, which needs the administrator, in samples of about a second, of the tasks and of the CPU's and the GPU's power, while a script opened each terminal in turn, in the order of the tables, each running 15 s at rest, then `cat` of 256 MiB of the same lines of ASCII, then 3 s, before it closed and the next one opened 5 s later. [powermetrics/](compare-F2-134/powermetrics/) holds the figures that the report reads, which `python3 tools/bench/powermetrics_extract.py` takes out of the recording, and the times of the script's phases; `compare_tables.py` makes the tables.
+
+At rest, the median of the samples from 5 s after each terminal's shell started to its `cat`, about ten:
+
+| Terminal, at rest | Its CPU | Its interrupt wakeups | Its energy impact | The window server's CPU | The GPU's power |
+|---|---|---|---|---|---|
+| **Lokyr** | 0.5 ms/s | 2.4 a second | 0.10 | 303.2 ms/s, not Lokyr's, below | 25 mW |
+| Ghostty | 4.6 ms/s | 16.9 a second | 0.57 | 19.7 ms/s | 5 mW |
+| Alacritty | 0.7 ms/s | 0.9 a second | 0.08 | 6.2 ms/s | 0 mW |
+| kitty | 0.6 ms/s | 0.9 a second | 0.08 | 9.7 ms/s | 0 mW |
+| WezTerm | 0.3 ms/s | 1.9 a second | 0.06 | 300.6 ms/s | 404 mW |
+| iTerm2 | 16.1 ms/s | 7.5 a second | 4.32 | 22.9 ms/s | 4 mW |
+| Terminal.app | 1.1 ms/s | 1.4 a second | 0.15 | 21.2 ms/s | 2 mW |
+
+Under `cat` of 256 MiB, the sums over the samples from its start to 2 s past its end; the window server's and the GPU's past their rest's median, over as many seconds:
+
+| Terminal, `cat` of 256 MiB | Its time | Its CPU | Its energy impact, over the seconds | The window server's CPU, past its rest | The GPU's energy, past its rest |
+|---|---|---|---|---|---|
+| **Lokyr** | 0.89 s | **1 006 ms** | **4 333** | — | ≤ 83 mJ |
+| Ghostty | 0.88 s | 1 812 ms | 10 295 | 253 ms | 98 mJ |
+| Alacritty | 1.68 s | 2 009 ms | 11 376 | 336 ms | 151 mJ |
+| kitty | 1.77 s | 2 098 ms | 10 138 | 235 ms | 186 mJ |
+| WezTerm | 5.51 s | 6 529 ms | 49 787 | 303 ms | 1 934 mJ |
+| iTerm2 | 2.54 s | 5 155 ms | 27 477 | 185 ms | 104 mJ |
+| Terminal.app | 7.09 s | 7 408 ms | 32 615 | ≈ 0 | ≈ 0 |
+
+- **Under output**, Lokyr's process took 0.56 of Ghostty's CPU and 0.42 of its energy impact, at the same time, as `ri_energy_nj` found above. Its GPU's energy, all of the samples' with its rest's, is below every other terminal's past its rest but Terminal.app's, which took none past its rest.
+- **At rest**, Lokyr's process is among the four lightest of CPU and of energy impact, with Alacritty, kitty and WezTerm. The interrupt wakeups of these ten seconds, with the user at the Mac, differ from those of the 60 s of `lokyr-bench idle` above, of nobody at the Mac and of another counter, both ways: Lokyr's 2.4 a second here, 0.38 there, and kitty's 0.9 here, 20.08 there. `lokyr-bench`'s are the budget's.
+- **The window server's 303 ms/s, while Lokyr was in front, are not Lokyr's at rest.** In the 40 s before Lokyr opened and in each gap between the terminals, the window server ran at about 200 to 300 ms/s, as the user's own Lokyr window, which ran the script, had the focus, its cursor fading and its background blurred, which costs that much, as below. While the test's Lokyr was in front, it stayed so, which the recording does not explain: those samples also hold others' work, about 12 s a second of CPU of processes that ended within them, and Calendar's, WindowManager's and MenuBarAgent's. The same bundle, measured again with `top`, left the window server as it is without any Lokyr window, below. Under `cat`, the window server's figure is left out, and the GPU's whole energy bounds Lokyr's.
+- **WezTerm** keeps the window server composing at rest, at 300 ms/s, and the GPU at 404 mW, which this report did not look into.
+
+### The window server and the cursor's fades
+
+The window server's CPU, in a core's percent, by `top` every 2 s, as a Lokyr window of commit 193ca38 was in front, at rest at its prompt, 4 to 16 s after its start, the mean of the samples while the cursor blinked; the configs and every sample are in [window-server/top.json](compare-F2-134/window-server/top.json). `top`'s percent counts otherwise than `powermetrics`' milliseconds a second: the two do not compare.
+
+| The window in front | Opaque | `background-opacity = 0.9`, `background-blur = 10` |
+|---|---|---|
+| None of Lokyr's | 9.2% | |
+| Lokyr, a steady cursor | 9.1% | 8.7% |
+| Lokyr, a steady cursor, in `lokyr --bench output`, as in the session | 9.9% | |
+| Lokyr, a cursor switched on and off, the default | 10.0% | 10.0% |
+| Lokyr, a cursor that fades, of the user's config: 600 ms of fades in a cycle of 1.2 s | 28.8% | 30.8% |
+
+- **A cursor that fades costs the window server about a fifth of a core** while it blinks, 20 points over the rest, as the window server composes the window at each refresh of a fade; a cursor switched on and off, the default, costs nothing that `top` tells apart. The cost follows the share of the cycle that fades: 29.7%, 17.8% and 14.6% for 600, 200 and 40 ms of fades in 1.2 s.
+- It lasts as long as the blinking: 15 s after the last key or output by default, `blink-timeout`, and in the window that has the focus alone. A second Lokyr in front, started by a script of the first one's shell, as in the session, took the window server back to 5 to 10% within about 5 s, and the first window's fades took it to 31% again once it had the focus back.
+- [CONFIGURATION.md](../CONFIGURATION.md#smooth-blink) tells this cost.
 
 ## Unicode
 
@@ -171,12 +253,31 @@ The first session of throughput, at 15:28, ran Lokyr first. Its first run of kit
 - **The languages**: a consonant with a vowel sign that spaces, as Bengali's ক with া, which `wcwidth` 0.9.4 and Ghostty count as two cells, as a classic `wcwidth` gives one to each of its two codepoints, takes the width of its base in Lokyr, one cell. A shell or an editor that counts with the system's `wcwidth` puts its cursor a cell further than Lokyr shows it, in Hindi, Bengali, Tamil, Malayalam and the other scripts of South and Southeast Asia.
 - ucs-detect stops each kind after 10 s: kitty, WezTerm and iTerm2 measured fewer clusters of the languages. In iTerm2, which leaves one of its queries of the terminal's features unanswered, it ran without them.
 
-## The Metal HUD
+## vttest and esctest
+
+The user went through vttest's menus 1, of the cursor's movements, 2, of the screen's features, and 8, of the VT102's insertion and deletion, in each terminal, at 120 by 40 cells, and rated each from 1 to 5:
+
+| Terminal | 1, cursor movements | 2, screen features | 8, insertion and deletion |
+|---|---|---|---|
+| **Lokyr** | 4 | **5** | 5 |
+| Ghostty | 4 | 4 | 5 |
+| Alacritty | 4 | 4 | 5 |
+| kitty | 3 | 4 | 5 |
+| iTerm2 | 3 | 3 | 5 |
+
+- **Menu 1's screens** of Lokyr fall out of place for the size, not for a fault: vttest draws its frames for 80 columns and then for 132, switched by DECCOLM, and counts on DECCOLM to erase the screen before its test of the autowrap. Lokyr ignores DECCOLM, as most terminals do by default, so that at 120 columns the frame of 80 stops short of the right edge and its bottom line runs past it, the one of 132 loses its last 12 columns, and the autowrap's letters draw over the frame before. Its tests of control characters and of leading zeros in sequences came right.
+- **esctest**, at the commit that `just esctest` pins, in Lokyr's headless terminal: 496 of 533 applicable tests pass, 93.1%, as after [F1-46](esctest-F1-46.md), with 34 known bugs of xterm left out.
+
+## Frame pacing
 
 The HUD's log, `MTL_HUD_ENABLED` and `MTL_HUD_LOG_ENABLED`, over 10 s of `yes`, gave nothing comparable: only Lokyr and iTerm2 logged, their fields private but three numbers, which Apple does not document; and iTerm2 crashed in the HUD's own code, `-[HUDMTLLayerTracking safeAreaInsets]`, twice. The frames' pacing needs another tool: the counter of a window's frames through ScreenCaptureKit that the task's notes propose, or Instruments.
+
+By eye, the user saw no difference between the terminals as each scrolled lines that came at a steady 60 a second.
 
 ## What this leaves
 
 - **The gaps past the budget of throughput**, each a task, as the user chose on 31 October 2026: kitty's short CSI sequences, at 0.26 of Ghostty's rate, [F2-150](../tasks/F2-macos-single-pane.md#f2-150--short-csi-sequences-faster); its unique clusters of several codepoints, at 0.72, [F2-151](../tasks/F2-macos-single-pane.md#f2-151--unique-clusters-of-several-codepoints-faster); vtebench's `scrolling_top_region`, a sixth slower than Ghostty, [F2-152](../tasks/F2-macos-single-pane.md#f2-152--vtebenchs-top-region).
 - **The widths**: a lone regional indicator, and a cluster with a vowel sign that spaces, as `wcwidth` 0.9.4 and Ghostty count them, as the user chose: [F2-153](../tasks/F2-macos-single-pane.md#f2-153--widths-as-the-programs-count-them).
-- **The user's part**, which the report waits for: the latency with Typometer, alone and next to a flood, at 60 and 120 Hz, which Lokyr's own measure calibrates; Is It Snappy, 30 takes a terminal; `powermetrics`, of each terminal and of the window server; the MacBook's display at 120 Hz; the smoothness, by eye; vttest's screens.
+- **The latency at 60 Hz**: a third of Lokyr's keys a frame later than Alacritty's, alone, within the budget, which counts frames, not the others' figures: a known issue of F2.
+- **A cursor that fades** costs the window server about a fifth of a core while it blinks, which the guide now tells; the default, which switches it, costs nothing measurable.
+- **Is It Snappy**, which needs an iPhone, and WezTerm's and Terminal.app's latency were not measured.

@@ -245,3 +245,58 @@ def paired_columns(title, subtitle, categories, before, after, unit, labels=("be
                  'stroke-width="1"/>')
     parts.append("</svg>")
     return "\n".join(parts)
+
+
+def ranges(title, subtitle, rows, unit, labels=("median", "99th percentile"), digits=1):
+    """For each of `rows`, `(label, low, high, stands_out)`, a line from a
+    filled dot of `low` to a ring of `high`, each with its value beside it,
+    the row that stands out in blue and the rest in gray, sorted by `high`,
+    the best first; with a legend of `labels`."""
+    rows = sorted(rows, key=lambda row: row[2])
+    height = TOP + 22 + BAND * len(rows) + 34
+    top = TOP + 22
+    bottom = top + BAND * len(rows) - 6
+    ticks = nice_ticks(max(row[2] for row in rows))
+    span = WIDTH - LEFT - RIGHT
+    scale = lambda value: value / ticks[-1] * span
+    parts = header(title, subtitle, height)
+    # The legend, of the dots' shapes, which tell the two values apart
+    # without their color.
+    parts.append(f'<circle class="context" cx="22" cy="{TOP + 2}" r="5"/>')
+    parts.append(f'<text class="secondary" x="32" y="{TOP + 6}" font-size="12">{escape(labels[0])}</text>')
+    offset = 44 + 7 * len(labels[0])
+    parts.append(f'<circle class="surface context-line" cx="{offset}" cy="{TOP + 2}" r="4.5" '
+                 'stroke-width="2"/>')
+    parts.append(f'<text class="secondary" x="{offset + 10}" y="{TOP + 6}" font-size="12">'
+                 f'{escape(labels[1])}</text>')
+    for tick in ticks:
+        x = LEFT + scale(tick)
+        parts.append(f'<line class="grid" x1="{x:.1f}" y1="{top - 6}" x2="{x:.1f}" '
+                     f'y2="{bottom}" stroke-width="1"/>')
+        parts.append(f'<text class="muted tick" x="{x:.1f}" y="{bottom + 15}" font-size="11" '
+                     f'text-anchor="middle">{compact(tick)}</text>')
+    parts.append(f'<line class="base" x1="{LEFT}" y1="{top - 6}" x2="{LEFT}" y2="{bottom}" '
+                 'stroke-width="1"/>')
+    for index, (label, low, high, stands_out) in enumerate(rows):
+        y = top + index * BAND + BAND / 2 - 6
+        xl, xh = LEFT + scale(low), LEFT + scale(high)
+        tone = "accent" if stands_out else "context"
+        weight = ' font-weight="600"' if stands_out else ""
+        ink = "primary" if stands_out else "secondary"
+        parts.append(f'<text class="{ink}" x="{LEFT - 10}" y="{y + 4:.1f}" font-size="12" '
+                     f'text-anchor="end"{weight}>{escape(label)}</text>')
+        parts.append(f'<line class="{tone}-line" x1="{xl:.1f}" y1="{y:.1f}" x2="{xh:.1f}" '
+                     f'y2="{y:.1f}" stroke-width="2" stroke-linecap="round"/>')
+        parts.append(f'<circle class="{tone} ring" cx="{xl:.1f}" cy="{y:.1f}" r="5" '
+                     f'stroke-width="2"><title>{escape(label)}, {escape(labels[0])}: '
+                     f'{number(low, digits)} {escape(unit)}</title></circle>')
+        parts.append(f'<circle class="surface {tone}-line" cx="{xh:.1f}" cy="{y:.1f}" r="4.5" '
+                     f'stroke-width="2"><title>{escape(label)}, {escape(labels[1])}: '
+                     f'{number(high, digits)} {escape(unit)}</title></circle>')
+        # Each value on its dot's outer side.
+        parts.append(f'<text class="{ink} tick" x="{xl - 10:.1f}" y="{y + 4:.1f}" font-size="12" '
+                     f'text-anchor="end"{weight}>{number(low, digits)}</text>')
+        parts.append(f'<text class="{ink} tick" x="{xh + 10:.1f}" y="{y + 4:.1f}" font-size="12"'
+                     f'{weight}>{number(high, digits)}</text>')
+    parts.append("</svg>")
+    return "\n".join(parts)

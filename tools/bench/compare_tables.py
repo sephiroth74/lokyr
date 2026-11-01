@@ -4,6 +4,7 @@ its raw results, in Markdown:
 
     python3 tools/bench/compare_tables.py
 """
+import csv
 import glob
 import json
 import math
@@ -141,12 +142,100 @@ def unicode():
               + f" | {whole} of {languages} | {100 * right / clusters:.1f}% of {clusters} |")
 
 
+def latency():
+    cases = report_charts.typometer()
+    for flood in ("", "-flood"):
+        print(f"\n| Terminal{', next to a flood' if flood else ''} | 60 Hz, median | p90 | p99 "
+              "| 120 Hz, median | p90 | p99 |\n|---|---|---|---|---|---|---|")
+        for key, name in TERMINALS:
+            if key not in cases["60" + flood]:
+                continue
+            rank = report_charts.nearest_rank
+            cells = [f"{statistics.median(values):.1f} ms | {rank(values, 90):.1f} "
+                     f"| {rank(values, 99):.1f}"
+                     for values in (cases[rate + flood][key] for rate in ("60", "120"))]
+            print(f"| {name} | " + " | ".join(cells) + " |")
+
+
+def powermetrics():
+    """Each terminal's rest and `cat`, of the samples of `powermetrics` and
+    the times of the sequence: at rest, the median of the samples from 5 s
+    after its shell started to its `cat`; under `cat`, the sums over the
+    samples from its start to 2 s past its end, the window server's and the
+    GPU's less their rest's median."""
+    root = os.path.join(ROOT, "powermetrics")
+    phases = {}
+    with open(os.path.join(root, "sequence.log")) as file:
+        for line in file:
+            parts = line.split()
+            if len(parts) == 3:
+                phases[(parts[1], parts[2])] = float(parts[0])
+    with open(os.path.join(root, "samples.csv")) as file:
+        samples = [{key: float(value) if value else 0.0 for key, value in row.items()}
+                   for row in csv.DictReader(file)]
+    for sample in samples:
+        sample["end"] = sample["start"] + sample["elapsed_ms"] / 1000
+        sample["tasks"] = []
+    with open(os.path.join(root, "tasks.csv")) as file:
+        for row in csv.DictReader(file):
+            start = float(row["start"])
+            # The task's sample, of the same start.
+            sample = min(samples, key=lambda sample: abs(sample["start"] - start))
+            sample["tasks"].append(row)
+    of = lambda sample, who, field: sum(float(task[field]) for task in sample["tasks"]
+                                        if who(task))
+    windows = lambda start, end: [(sample, min(end, sample["end"]) - max(start, sample["start"]))
+                                  for sample in samples
+                                  if min(end, sample["end"]) > max(start, sample["start"])]
+    server = lambda task: task["process"] == "WindowServer"
+    print("\n| Terminal, at rest | Its CPU | Its interrupt wakeups | Its energy impact "
+          "| The window server's CPU | The GPU's power |\n|---|---|---|---|---|---|")
+    rests = {}
+    for key, name in TERMINALS:
+        own = lambda task, key=key: task["terminal"] == key
+        inside = [sample for sample in samples if sample["start"] >= phases[(key, "idle")] + 5
+                  and sample["end"] <= phases[(key, "cat")]]
+        median = lambda value: statistics.median(value(sample) for sample in inside)
+        rests[key] = (median(lambda s: of(s, server, "cpu_ms_per_s")),
+                      median(lambda s: s["gpu_mw"]))
+        print(f"| {name} | {median(lambda s: of(s, own, 'cpu_ms_per_s')):.1f} ms/s "
+              f"| {median(lambda s: of(s, own, 'interrupt_wakeups_per_s')):.1f} a second "
+              f"| {median(lambda s: of(s, own, 'energy_impact')):.2f} "
+              f"| {rests[key][0]:.1f} ms/s | {rests[key][1]:.0f} mW |")
+    print("\n| Terminal, `cat` of 256 MiB | Its time | Its CPU | Its energy impact, over the "
+          "seconds | The window server's CPU, past its rest | The GPU's energy, past its rest "
+          "|\n|---|---|---|---|---|---|")
+    # A rest that others' work disturbed, whose median is no baseline: the
+    # window server's figure is left out, and the GPU's whole energy is its
+    # bound.
+    disturbed = {"lokyr"}
+    spaced = lambda value: f"{value:,.0f}".replace(",", " ")
+    past = lambda value, unit: f"{spaced(value)} {unit}" if value > 0 else "≈ 0"
+    for key, name in TERMINALS:
+        own = lambda task, key=key: task["terminal"] == key
+        start, end = phases[(key, "cat")], phases[(key, "end")] + 2
+        parts = windows(start, end)
+        total = lambda value: sum(value(sample) * overlap for sample, overlap in parts)
+        if key in disturbed:
+            server_cpu = "—"
+            gpu = f"≤ {spaced(total(lambda s: s['gpu_mw']))} mJ"
+        else:
+            server_cpu = past(total(lambda s: of(s, server, "cpu_ms_per_s"))
+                              - rests[key][0] * (end - start), "ms")
+            gpu = past(total(lambda s: s["gpu_mw"]) - rests[key][1] * (end - start), "mJ")
+        print(f"| {name} | {phases[(key, 'end')] - phases[(key, 'cat')]:.2f} s "
+              f"| {spaced(total(lambda s: of(s, own, 'cpu_ms_per_s')))} ms "
+              f"| {spaced(total(lambda s: of(s, own, 'energy_impact')))} "
+              f"| {server_cpu} | {gpu} |")
+
+
 def main():
     for title, table in [("Startup", startup), ("At rest", idle),
                          ("kitty's benchmark", lambda: kitten("kitten")),
                          ("kitty's benchmark, rendering", lambda: kitten("kitten-render")),
                          ("vtebench", vtebench), ("cat and energy", throughput_and_energy),
-                         ("Unicode", unicode)]:
+                         ("Unicode", unicode), ("Latency, Typometer", latency),
+                         ("powermetrics", powermetrics)]:
         print(f"\n## {title}\n")
         table()
 

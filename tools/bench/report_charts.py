@@ -2,8 +2,10 @@
 `python3 tools/bench/report_charts.py [report...]`, all of them without
 an argument.
 """
+import csv
 import json
 import os
+import statistics
 import sys
 
 import charts
@@ -91,6 +93,29 @@ def compare_figures():
     return figures
 
 
+def typometer():
+    """Typometer's keys, of each terminal, in milliseconds: `{case:
+    {terminal: [ms]}}`, the cases `60`, `60-flood`, `120` and
+    `120-flood`."""
+    cases = {}
+    for name in ["60", "60-flood", "120"]:
+        with open(os.path.join(BENCH, f"compare-F2-134/latency/typometer-{name}.csv")) as file:
+            rows = list(csv.reader(file))
+        for column, title in enumerate(rows[0]):
+            # Typometer's own names of its runs, as `typo-kitty-60-flood`.
+            _, terminal, *case = title.lower().split("-")
+            values = [float(row[column]) for row in rows[1:] if row[column].strip()]
+            cases.setdefault("-".join(case), {})[terminal] = values
+    return cases
+
+
+def nearest_rank(values, percent):
+    """The `percent`th percentile of `values` by its nearest rank, the
+    ceil(percent n / 100)th, in integers."""
+    values = sorted(values)
+    return values[-(-len(values) * percent // 100) - 1]
+
+
 def compare():
     """Lokyr against the other terminals of macOS."""
     figures = compare_figures()
@@ -113,6 +138,15 @@ def compare():
         "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
         "less is better",
         rows("energy"), "J", digits=1))
+    cases = typometer()
+    for rate in ("60", "120"):
+        save(f"{root}/latency-{rate}hz.svg", charts.ranges(
+            f"Latency at {rate} Hz",
+            "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "
+            "less is better",
+            [(name, statistics.median(cases[rate][key]),
+              nearest_rank(cases[rate][key], 99), key == "lokyr")
+             for key, name in TERMINALS if key in cases[rate]], "ms"))
 
 
 REPORTS = {"latency": latency, "compare": compare}
