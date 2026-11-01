@@ -263,7 +263,7 @@ The plugin API has its own version, `plugin-sdk`'s, experimental until its 1.0 (
 | How `sleip check` type-checks Luau: Luau's analyzer is C++, to embed or to ship as `luau-analyze` ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
-| Buying the domains of [ADR 0018](adr/0018-names-lokyr-and-sleip.md): `lokyr.dev`, `lokyr.sh`, `lokyr.app`, and the registry's, `pkg.lokyr.dev` | Before F4 |
+| Buying the domains of [ADR 0018](adr/0018-names-lokyr-and-sleip.md) that are left, `lokyr.sh` and `lokyr.app`; `lokyr.dev`, of the updates' feed and of the registry's `pkg.lokyr.dev`, the user bought on 1 November 2026 | Before F4 |
 | Lokyr's and Sleip's marks, in the US, Europe and elsewhere, checked by hand ([ADR 0018](adr/0018-names-lokyr-and-sleip.md)) | Before the first public release, 1.0.0 |
 | The names in Homebrew and other registries | Before the first public release, 1.0.0 |
 | Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
