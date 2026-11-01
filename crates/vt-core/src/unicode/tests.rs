@@ -512,6 +512,59 @@ fn emoji_presentation_sets_the_width_of_a_cluster() {
 }
 
 #[test]
+fn a_cluster_counted_as_its_codepoints_come_takes_its_width() {
+    // Each codepoint's change alone, from the base's cells, gives the
+    // whole cluster's width.
+    let joined = |text: &str, widths: Widths| -> Vec<u8> {
+        clusters(text)
+            .iter()
+            .map(|cluster| {
+                let base = cluster[0];
+                cluster[1..]
+                    .iter()
+                    .fold(widths.char_width(base), |cells, &c| {
+                        widths.joined_cells(cells, c, crate::unicode::properties(c), || base)
+                    })
+            })
+            .collect()
+    };
+    for text in [
+        "e\u{301}a",
+        "中\u{301}",
+        "\u{2764}\u{FE0F}",
+        "\u{231A}\u{FE0E}",
+        "1\u{FE0F}\u{20E3}",
+        "1\u{20E3}",
+        "\u{1F1EE}\u{1F1F9}",
+        "\u{1F1EE}",
+        "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}",
+        "\u{263A}\u{200D}\u{1F469}",
+        "\u{1F44D}\u{1F3FD}",
+        "a\u{FE0F}",
+        "\u{915}\u{93E}",
+        "\u{915}\u{94D}\u{937}\u{93F}",
+        "\u{995}\u{9BE}",
+        "\u{E17}\u{E35}\u{E48}",
+        "\u{FF76}\u{FF9E}",
+        "a\u{1F3FD}",
+    ] {
+        for widths in [CURRENT, UNICODE_8] {
+            assert_eq!(
+                joined(text, widths),
+                unicode_widths(text, widths),
+                "{text:?} {widths:?}"
+            );
+        }
+    }
+    // A variation selector reads the cluster's base.
+    let base = || '\u{2764}';
+    let vs16 = crate::unicode::properties('\u{FE0F}');
+    assert_eq!(CURRENT.joined_cells(1, '\u{FE0F}', vs16, base), 2);
+    assert_eq!(CURRENT.joined_cells(1, '\u{FE0F}', vs16, || 'a'), 1);
+    assert_eq!(UNICODE_8.joined_cells(1, '\u{FE0F}', vs16, base), 1);
+}
+
+#[test]
 fn unicode_8_knew_no_emoji_presentation() {
     let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
     assert_eq!(unicode_widths(family, UNICODE_8), [1]);

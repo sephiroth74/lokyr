@@ -59,6 +59,34 @@ fn new_width(page: &Page, row: u16, x: u16, widths: Widths) -> Option<Width> {
     }
 }
 
+/// The width that `c`, which just joined the cluster at column `x` of row
+/// `row` of `page`, gives it, if its cell has another, as
+/// [`Widths::joined_cells`] counts it: the codepoint alone, and the
+/// cluster's base for a variation selector.
+fn joined_width(page: &Page, row: u16, x: u16, widths: Widths, c: char) -> Option<Width> {
+    let cell = page.cells(row)[usize::from(x)];
+    let (Content::Char(first) | Content::Grapheme(first)) = cell.content() else {
+        return None;
+    };
+    let cells = match cell.width() {
+        Width::Narrow => 1,
+        Width::Wide => 2,
+        _ => return None,
+    };
+    // The base, the first codepoint that has a width.
+    let base = || {
+        std::iter::once(first)
+            .chain(page.grapheme(row, x).iter().copied())
+            .find(|&c| widths.char_width(c) > 0)
+            .unwrap_or(first)
+    };
+    match (cells, widths.joined_cells(cells, c, properties(c), base)) {
+        (1, 2) => Some(Width::Wide),
+        (2, 1) => Some(Width::Narrow),
+        _ => None,
+    }
+}
+
 impl Terminal {
     /// Prints `c`: it joins the cluster before it, or starts one in the
     /// cells at the cursor. A codepoint of no width that starts a cluster
@@ -251,16 +279,33 @@ impl Terminal {
             if !starts || !matches!(width, 1 | 2) || !fits || stretch.len() == STRETCH {
                 // A codepoint that joins the stretch's last cluster and
                 // leaves it as wide, as clusters keep their widths in the
-                // legacy mode, joins it as the stretch is written.
+                // legacy mode, joins it as the stretch is written; one that
+                // widens a narrow one, as a vowel sign that spaces, makes it
+                // wide in the stretch, as the path of each character would:
+                // its line has room for the second cell, as a stretch that
+                // reaches the line's end is written at once.
                 if !starts
-                    && let Some(&(_, last)) = stretch.last()
+                    && let Some(&(base, last)) = stretch.last()
                     && self.stretch.joins.len() < JOINS
-                    && (self.widths.mode == Mode::Legacy
-                        || self.widths.keeps_cells(last, c, properties))
                 {
-                    self.segmenter = segmenter;
-                    self.stretch.joins.push((cells - u16::from(last), c));
-                    continue;
+                    let after = match self.widths.mode {
+                        Mode::Legacy => last,
+                        Mode::Unicode => {
+                            self.widths
+                                .joined_cells_of(last, c, properties, width, || base)
+                        }
+                    };
+                    let widens = after == 2 && last == 1;
+                    if after == last || widens {
+                        if widens && let Some(entry) = stretch.last_mut() {
+                            debug_assert!(x + cells < end, "a narrow cluster's second cell");
+                            entry.1 = 2;
+                            cells += 1;
+                        }
+                        self.segmenter = segmenter;
+                        self.stretch.joins.push((cells - u16::from(after), c));
+                        continue;
+                    }
                 }
                 self.write_stretch(x, &stretch, cells, end);
                 cells = 0;
@@ -401,13 +446,15 @@ impl Terminal {
     /// that join that cluster too, to it, as [`Terminal::join_previous`]
     /// would add them one by one; and returns how many of `rest` it added.
     /// Those that leave the cluster's cells as many, whether it takes one or
-    /// two, go into the page at once, its width worked out once: combining
-    /// marks, as most clusters of several codepoints have.
+    /// two, go into the page at once, and change no width: combining marks,
+    /// as most clusters of several codepoints have.
     #[inline(never)]
     fn join_previous_run(&mut self, c: char, rest: &[char]) -> usize {
         let widths = self.widths;
         let keeps = |c: char, properties| {
-            widths.keeps_cells(1, c, properties) && widths.keeps_cells(2, c, properties)
+            let width = widths.char_width_with(c, properties);
+            widths.keeps_cells_of(1, c, properties, width)
+                && widths.keeps_cells_of(2, c, properties, width)
         };
         if rest.is_empty() || !keeps(c, properties(c)) {
             self.join_previous(c);
@@ -473,7 +520,9 @@ impl Terminal {
                 break Ok(None);
             }
             match page.push_codepoints(row, x, added) {
-                Ok(()) => break Ok(unicode.then(|| new_width(page, row, x, widths)).flatten()),
+                // Codepoints that leave the cluster's cells as many change
+                // no width, as they would one by one.
+                Ok(()) => break Ok(None),
                 Err(full) => {
                     if rows.grow_page(y, full).is_err() {
                         break Err(());
@@ -682,7 +731,7 @@ impl Terminal {
                 break None;
             }
             match page.push_codepoint(row, x, c) {
-                Ok(()) => break Some(widths.map(|widths| new_width(page, row, x, widths))),
+                Ok(()) => break Some(widths.map(|widths| joined_width(page, row, x, widths, c))),
                 Err(full) => {
                     if rows.grow_page(y, full).is_err() {
                         break None;

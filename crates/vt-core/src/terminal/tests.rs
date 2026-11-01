@@ -4815,6 +4815,10 @@ const OTHER_TEXT: &[&str] = &[
     "\u{300}\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}\u{307}\u{308}\u{309}\u{30A}\u{30B}\u{30C}\u{30D}\u{30E}\u{30F}\u{310}\u{311}\u{312}\u{313}\u{314}\u{315}\u{316}\u{317}\u{318}\u{319}\u{31A}\u{31B}\u{31C}\u{31D}\u{31E}\u{31F}\u{320}\u{321}\u{322}\u{323}",
     // Runs that the terminal writes in stretches, past the line's end.
     "中文字符串",
+    // Syllables whose vowel signs that space, and conjuncts, widen the
+    // stretch's last cluster, up to the line's end.
+    "\u{915}\u{93E}\u{915}\u{93F}\u{915}\u{94D}\u{937}\u{915}\u{941}\u{995}\u{9BE}",
+    "\u{938}\u{94D}\u{924}\u{94D}\u{930}\u{2764}\u{FE0F}\u{915}\u{93E}",
     "\u{E4}\u{F6}\u{FC}\u{DF}\u{E9}\u{E8}",
     "\u{E9}\u{301}中\u{E0}",
     "\u{1F600}\u{1F600}\u{2764}\u{FE0F}",

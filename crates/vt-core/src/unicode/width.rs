@@ -69,6 +69,7 @@ impl Widths {
     /// The cells that `c`, whose properties are `properties`, takes on its
     /// own, as [`Widths::char_width`] counts them, for a caller that has
     /// looked them up already.
+    #[inline]
     pub fn char_width_with(self, c: char, properties: Properties) -> u8 {
         // The Hangul fillers are default ignorable, but `wcwidth` gives them
         // the cells that fonts draw them in.
@@ -77,15 +78,15 @@ impl Widths {
             || matches!(properties.mark, Some(Mark::Nonspacing | Mark::Enclosing))
             || properties.format
             || (properties.default_ignorable && !filler);
-        let current = self.mode == Mode::Unicode && self.tables == Tables::Current;
-        if c == '\u{AD}' || (current && is_prepended_concatenation_mark(c)) {
+        if c == '\u{AD}' {
             return 1;
         }
         if zero {
-            return 0;
-        }
-        if current && properties.grapheme_break == GraphemeBreak::RegionalIndicator {
-            return 2;
+            return if properties.format {
+                self.format_width(c)
+            } else {
+                0
+            };
         }
         let east_asian = match self.tables {
             Tables::Current => properties.east_asian_width,
@@ -94,8 +95,38 @@ impl Widths {
         match east_asian {
             EastAsianWidth::Wide => 2,
             EastAsianWidth::Ambiguous if self.ambiguous_wide => 2,
+            // A regional indicator's East Asian width is neutral.
+            EastAsianWidth::Ambiguous | EastAsianWidth::Narrow
+                if properties.grapheme_break == GraphemeBreak::RegionalIndicator =>
+            {
+                self.regional_indicator_width()
+            }
             EastAsianWidth::Ambiguous | EastAsianWidth::Narrow => 1,
         }
+    }
+
+    /// Whether the unicode mode counts with the current tables, which give
+    /// some characters the cells of `wcwidth` 0.9 rather than Markus Kuhn's.
+    fn counts_as_current(self) -> bool {
+        self.mode == Mode::Unicode && self.tables == Tables::Current
+    }
+
+    /// The cells of `c`, a format character: one for a prepended
+    /// concatenation mark, which shows, with the current tables of the
+    /// unicode mode; none otherwise. Apart, out of the way of the text that
+    /// most programs print.
+    #[cold]
+    #[inline(never)]
+    fn format_width(self, c: char) -> u8 {
+        u8::from(is_prepended_concatenation_mark(c) && self.counts_as_current())
+    }
+
+    /// The cells of a regional indicator: two with the current tables of the
+    /// unicode mode, one otherwise.
+    #[cold]
+    #[inline(never)]
+    fn regional_indicator_width(self) -> u8 {
+        if self.counts_as_current() { 2 } else { 1 }
     }
 
     /// The cells that a grapheme cluster takes: `first`, its first
@@ -165,9 +196,61 @@ impl Widths {
     /// them. Marks that do not space, joiners, variation selectors and the
     /// Hangul vowels and final consonants have no width.
     pub fn spaces_in_cluster(self, c: char, properties: Properties) -> bool {
-        self.char_width_with(c, properties) > 0
-            && !matches!(c, '\u{1F3FB}'..='\u{1F3FF}')
-            && properties.grapheme_break != GraphemeBreak::Prepend
+        spaces_with_width(self.char_width_with(c, properties), c, properties)
+    }
+
+    /// The cells that a cluster takes once `c`, whose properties are
+    /// `properties`, joins it, from `cells`, one or two, as a terminal that
+    /// reads each codepoint as it comes counts them, as Ghostty does: a
+    /// codepoint that takes cells of its own, [`Widths::spaces_in_cluster`],
+    /// makes two; VS16 after a pictographic or a keycap base makes two, and
+    /// VS15 after one makes one, `base` giving the cluster's base for them
+    /// alone; anything else leaves it as many. The tables of Unicode 8 knew
+    /// no emoji presentation, and leave it as many too. A cluster built a
+    /// codepoint at a time takes the cells of [`Widths::cluster_width`] but
+    /// where the room for a second cell lacked as it widened.
+    pub fn joined_cells(
+        self,
+        cells: u8,
+        c: char,
+        properties: Properties,
+        base: impl FnOnce() -> char,
+    ) -> u8 {
+        self.joined_cells_of(
+            cells,
+            c,
+            properties,
+            self.char_width_with(c, properties),
+            base,
+        )
+    }
+
+    /// [`Widths::joined_cells`], for a caller that has `width`, the cells
+    /// that `c` takes on its own, as [`Widths::char_width_with`] gives them.
+    #[inline]
+    pub fn joined_cells_of(
+        self,
+        cells: u8,
+        c: char,
+        properties: Properties,
+        width: u8,
+        base: impl FnOnce() -> char,
+    ) -> u8 {
+        if self.tables == Tables::Unicode8 {
+            return cells;
+        }
+        match c {
+            EMOJI_PRESENTATION | TEXT_PRESENTATION => {
+                let base = base();
+                if is_emoji_base(base) {
+                    if c == EMOJI_PRESENTATION { 2 } else { 1 }
+                } else {
+                    cells
+                }
+            }
+            _ if spaces_with_width(width, c, properties) => 2,
+            _ => cells,
+        }
     }
 
     /// Whether `c`, whose properties are `properties`, joining a cluster
@@ -178,15 +261,37 @@ impl Widths {
     /// pictographic that a ZWJ joins, or with a codepoint that takes cells
     /// of its own in it.
     pub fn keeps_cells(self, cells: u8, c: char, properties: Properties) -> bool {
+        self.keeps_cells_of(cells, c, properties, self.char_width_with(c, properties))
+    }
+
+    /// [`Widths::keeps_cells`], for a caller that has `width`, the cells
+    /// that `c` takes on its own, as [`Widths::char_width_with`] gives them.
+    #[inline]
+    pub fn keeps_cells_of(self, cells: u8, c: char, properties: Properties, width: u8) -> bool {
         if cells == 2 {
             c != TEXT_PRESENTATION
         } else {
             c != EMOJI_PRESENTATION
                 && properties.grapheme_break != GraphemeBreak::RegionalIndicator
                 && !properties.extended_pictographic
-                && !self.spaces_in_cluster(c, properties)
+                && !spaces_with_width(width, c, properties)
         }
     }
+}
+
+/// Whether `c`, which takes `width` cells on its own, takes cells of its
+/// own after a cluster's base, as [`Widths::spaces_in_cluster`] tells.
+#[inline]
+fn spaces_with_width(width: u8, c: char, properties: Properties) -> bool {
+    width > 0
+        && !matches!(c, '\u{1F3FB}'..='\u{1F3FF}')
+        && properties.grapheme_break != GraphemeBreak::Prepend
+}
+
+/// Whether emoji presentation reads `base`: a pictographic, or the base of
+/// a keycap.
+fn is_emoji_base(base: char) -> bool {
+    properties(base).extended_pictographic || is_keycap_base(base)
 }
 
 /// The characters that a keycap sequence starts with: `#`, `*` and digits.
