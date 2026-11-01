@@ -98,17 +98,21 @@ impl<T: Copy + Default, const CHUNK: usize> Arena<T, CHUNK> {
         self.first_free = self.first_free.min(span.chunk);
     }
 
-    /// Makes `span` one item longer, in place if its last chunk has room or
-    /// the chunk after it is free. `None` if it cannot grow in place.
-    pub(crate) fn grow_in_place(&mut self, span: Span) -> Option<Span> {
-        let len = span.len.checked_add(1)?;
+    /// Makes `span` `more` items longer, in place if its last chunk has
+    /// room or the chunks after it are free. `None` if it cannot grow in
+    /// place.
+    pub(crate) fn grow_in_place(&mut self, span: Span, more: u16) -> Option<Span> {
+        let len = span.len.checked_add(more)?;
         let (before, after) = (Self::chunks_for(span.len), Self::chunks_for(len));
         if after > before {
             let next = span.chunk + before;
-            if next >= self.chunks || self.is_used(next) {
+            let count = after - before;
+            if next.checked_add(count)? > self.chunks
+                || (next..next + count).any(|chunk| self.is_used(chunk))
+            {
                 return None;
             }
-            self.mark(next, 1, true);
+            self.mark(next, count, true);
         }
         Some(Span { len, ..span })
     }
@@ -214,17 +218,38 @@ mod tests {
     fn a_run_grows_in_place_while_it_can() {
         let mut arena = Bytes::new(3);
         let mut a = arena.alloc(3).unwrap();
-        a = arena.grow_in_place(a).unwrap();
+        a = arena.grow_in_place(a, 1).unwrap();
         assert_eq!(a.len, 4);
         // The next chunk is free, so the run takes it.
-        a = arena.grow_in_place(a).unwrap();
+        a = arena.grow_in_place(a, 1).unwrap();
         assert_eq!(a.len, 5);
         let b = arena.alloc(1).unwrap();
         assert_eq!(b.chunk, 2);
         for _ in 0..3 {
-            a = arena.grow_in_place(a).unwrap();
+            a = arena.grow_in_place(a, 1).unwrap();
         }
-        assert_eq!(arena.grow_in_place(a), None, "the next chunk is taken");
+        assert_eq!(arena.grow_in_place(a, 1), None, "the next chunk is taken");
+    }
+
+    #[test]
+    fn a_run_grows_in_place_by_several_chunks_while_they_are_free() {
+        let mut arena = Bytes::new(4);
+        let a = arena.alloc(2).unwrap();
+        let b = arena.alloc(1).unwrap();
+        arena.free(b);
+        let grown = arena.grow_in_place(a, 9).unwrap();
+        assert_eq!((grown.chunk, grown.len), (0, 11), "three chunks of 4");
+        assert_eq!(arena.used_chunks(), 3);
+        assert_eq!(arena.grow_in_place(grown, 6), None, "past the arena");
+        let c = arena.alloc(4).unwrap();
+        assert_eq!(c.chunk, 3);
+        let full = arena.grow_in_place(grown, 1).unwrap();
+        assert_eq!(full.len, 12, "the last chunk had room");
+        assert_eq!(
+            arena.grow_in_place(full, 1),
+            None,
+            "the next chunk is taken"
+        );
     }
 
     #[test]
@@ -260,14 +285,14 @@ mod tests {
     enum Op {
         Alloc(u16),
         Free(usize),
-        Grow(usize),
+        Grow(usize, u16),
     }
 
     fn op() -> impl Strategy<Value = Op> {
         prop_oneof![
             3 => (1_u16..40).prop_map(Op::Alloc),
             2 => any::<usize>().prop_map(Op::Free),
-            2 => any::<usize>().prop_map(Op::Grow),
+            2 => (any::<usize>(), 1_u16..20).prop_map(|(index, more)| Op::Grow(index, more)),
         ]
     }
 
@@ -313,19 +338,20 @@ mod tests {
                         let (span, _) = runs.swap_remove(index % runs.len());
                         arena.free(span);
                     }
-                    Op::Grow(index) if !runs.is_empty() => {
+                    Op::Grow(index, more) if !runs.is_empty() => {
                         let index = index % runs.len();
                         let (span, mut bytes) = runs[index].clone();
                         let grown = arena
-                            .grow_in_place(span)
-                            .or_else(|| arena.relocate(span, span.len + 1));
+                            .grow_in_place(span, more)
+                            .or_else(|| arena.relocate(span, span.len + more));
                         if let Some(grown) = grown {
-                            bytes.extend(fill(1));
-                            *arena.get_mut(grown).last_mut().unwrap() = bytes[bytes.len() - 1];
+                            let added = fill(usize::from(more));
+                            arena.get_mut(grown)[bytes.len()..].copy_from_slice(&added);
+                            bytes.extend(added);
                             runs[index] = (grown, bytes);
                         }
                     }
-                    Op::Free(_) | Op::Grow(_) => {}
+                    Op::Free(_) | Op::Grow(..) => {}
                 }
                 // Runs never overlap, and keep what they hold.
                 let mut owner = vec![None; usize::from(chunks)];

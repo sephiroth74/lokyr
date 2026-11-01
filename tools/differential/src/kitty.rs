@@ -3,8 +3,8 @@
 //! (<https://github.com/kovidgoyal/kitty/blob/v0.49.2/tools/cmd/benchmark/main.go>):
 //! to a TTY in raw mode, whose line feeds stay as they are, on the alternate
 //! screen, each repetition of a test's data inside a synchronized update.
-//! The data is random in kitty's, of a seed of its own each run; here, of a
-//! fixed seed, the same bytes each time.
+//! The data that is random in kitty's, of a seed of its own each run, comes
+//! here of a fixed seed, the same bytes each time.
 
 /// A test of kitty's benchmark: what the kitten writes before its first
 /// repetition, and a repetition, its data and what follows it.
@@ -21,7 +21,10 @@ pub struct Test {
 
 /// The tests that are rebuilt.
 pub fn tests() -> Vec<Test> {
-    vec![test("CSI codes with few chars", csi())]
+    vec![
+        test("Unique multi-codepoint Unicode cells", unique_clusters()),
+        test("CSI codes with few chars", csi()),
+    ]
 }
 
 /// The kitten's writes around `data`, as it runs a test without
@@ -41,6 +44,24 @@ fn test(name: &'static str, data: Vec<u8>) -> Test {
         setup,
         payload,
     }
+}
+
+/// "Unique multi-codepoint Unicode cells": 256 Ki clusters, each an `a`
+/// and three combining marks of the 112 from U+0300, the marks the digits
+/// of the cluster's number, so that no two clusters are alike.
+fn unique_clusters() -> Vec<u8> {
+    const CELLS: u32 = 256 * 1024;
+    const MARKS: u32 = 0x70;
+    let mut out = String::with_capacity(CELLS as usize * 7);
+    for cell in 0..CELLS {
+        out.push('a');
+        let mut q = cell;
+        for _ in 0..3 {
+            out.push(char::from_u32(0x300 + q % MARKS).expect("a combining mark"));
+            q /= MARKS;
+        }
+    }
+    out.into_bytes()
 }
 
 /// The printable characters of kitty's random text, and its controls.
@@ -93,6 +114,18 @@ impl Random {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_unique_clusters_are_kittys() {
+        let data = unique_clusters();
+        assert_eq!(data.len(), 256 * 1024 * 7);
+        // The first cluster's marks are the digits of 0, the second's of 1.
+        assert!(data.starts_with("a\u{300}\u{300}\u{300}a\u{301}\u{300}\u{300}".as_bytes()));
+        let text = String::from_utf8(data).expect("UTF-8");
+        let clusters: std::collections::HashSet<&str> =
+            text.split('a').filter(|marks| !marks.is_empty()).collect();
+        assert_eq!(clusters.len(), 256 * 1024, "no two alike");
+    }
 
     #[test]
     fn the_csi_test_is_the_same_each_time_and_of_kittys_size() {

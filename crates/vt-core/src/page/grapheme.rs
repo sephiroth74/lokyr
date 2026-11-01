@@ -63,7 +63,7 @@ impl GraphemeTable {
     /// Adds `c` to the codepoints of `cell`.
     pub(crate) fn push(&mut self, cell: u32, c: char) -> Result<(), TableFull> {
         let span = match self.spans.get(cell) {
-            Some(span) => match self.codepoints.grow_in_place(span) {
+            Some(span) => match self.codepoints.grow_in_place(span, 1) {
                 Some(grown) => grown,
                 None => {
                     let len = span.len.checked_add(1).ok_or(TableFull::Graphemes)?;
@@ -80,6 +80,36 @@ impl GraphemeTable {
             return Err(TableFull::Graphemes);
         }
         self.codepoints.get_mut(span)[usize::from(span.len) - 1] = c;
+        Ok(())
+    }
+
+    /// Adds `codepoints` to those of `cell`, at once: its entry found and
+    /// its run grown once.
+    pub(crate) fn extend(&mut self, cell: u32, codepoints: &[char]) -> Result<(), TableFull> {
+        if codepoints.is_empty() {
+            return Ok(());
+        }
+        let more = u16::try_from(codepoints.len()).map_err(|_| TableFull::Graphemes)?;
+        let span = match self.spans.get(cell) {
+            Some(span) => match self.codepoints.grow_in_place(span, more) {
+                Some(grown) => grown,
+                None => {
+                    let len = span.len.checked_add(more).ok_or(TableFull::Graphemes)?;
+                    self.codepoints
+                        .relocate(span, len)
+                        .ok_or(TableFull::Graphemes)?
+                }
+            },
+            None => self.codepoints.alloc(more).ok_or(TableFull::Graphemes)?,
+        };
+        if self.spans.insert(cell, span).is_err() {
+            // Only a new cell can find the map full, and its run is new too.
+            self.codepoints.free(span);
+            return Err(TableFull::Graphemes);
+        }
+        let all = self.codepoints.get_mut(span);
+        let start = all.len() - codepoints.len();
+        all[start..].copy_from_slice(codepoints);
         Ok(())
     }
 
@@ -149,6 +179,49 @@ mod tests {
         assert_eq!(table.get(0)[0], 'a');
         assert_eq!(&table.get(0)[1..], marks);
         assert_eq!(table.get(1), ['b']);
+    }
+
+    #[test]
+    fn several_codepoints_go_in_at_once_as_one_by_one() {
+        let marks: Vec<char> = ('\u{300}'..='\u{30A}').collect();
+        let (mut at_once, mut one_by_one) = (GraphemeTable::new(8), GraphemeTable::new(8));
+        for table in [&mut at_once, &mut one_by_one] {
+            // A neighbour right after the first chunk, so the cluster must
+            // move to grow past it.
+            table.push(0, 'a').unwrap();
+            table.push(1, 'b').unwrap();
+        }
+        at_once.extend(0, &marks[..3]).unwrap();
+        at_once.extend(0, &marks[3..]).unwrap();
+        at_once.extend(5, &marks[..2]).unwrap();
+        at_once.extend(6, &[]).unwrap();
+        for &mark in &marks {
+            one_by_one.push(0, mark).unwrap();
+        }
+        for &mark in &marks[..2] {
+            one_by_one.push(5, mark).unwrap();
+        }
+        for cell in [0, 1, 5, 6] {
+            assert_eq!(at_once.get(cell), one_by_one.get(cell), "cell {cell}");
+        }
+        assert_eq!(at_once.len(), 3, "nothing for no codepoints");
+    }
+
+    #[test]
+    fn codepoints_that_find_no_room_leave_the_entry_as_it_was() {
+        let mut table = GraphemeTable::new(2);
+        table.push(0, 'a').unwrap();
+        table.push(1, 'b').unwrap();
+        // Two chunks of four: cell 0's run cannot pass four codepoints.
+        assert_eq!(
+            table.extend(0, &['x', 'y', 'z', 'w']),
+            Err(TableFull::Graphemes)
+        );
+        assert_eq!(table.get(0), ['a']);
+        table.extend(0, &['x', 'y', 'z']).unwrap();
+        assert_eq!(table.get(0), ['a', 'x', 'y', 'z']);
+        assert_eq!(table.extend(2, &['c', 'd']), Err(TableFull::Graphemes));
+        assert_eq!(table.len(), 2);
     }
 
     #[test]

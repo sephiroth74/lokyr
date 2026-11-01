@@ -165,7 +165,7 @@ vtebench:
         echo {{ vtebench_commit }} > "$dir/.commit"
     fi
 
-# Count the instructions of vtebench's scenarios, of kitty's test of CSI sequences and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. When `base` has no counts to take, as a base without the package `lokyr-differential`, from before the rename, the commit is counted twice, the second time against the first, with a warning; without `base`, once.
+# Count the instructions of vtebench's scenarios, of kitty's tests of CSI sequences and of unique clusters, and of text as `cat` prints it, with callgrind (Linux, with Valgrind; installs gungraun-runner), and fail on a rise of more than 3% from the counts of commit `base`, which a worktree of it takes first. When `base` has no counts to take, as a base without the package `lokyr-differential`, from before the rename, the commit is counted twice, the second time against the first, with a warning; without `base`, once.
 instructions base="": _valgrind vtebench
     #!/usr/bin/env bash
     set -euo pipefail

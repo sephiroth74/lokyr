@@ -354,6 +354,35 @@ impl Page {
         Ok(())
     }
 
+    /// Adds `codepoints` to the grapheme of the cell at column `x` of row
+    /// `y`, at once, as [`Page::push_codepoint`] adds them one by one.
+    /// Without room for them all, it adds none.
+    pub fn push_codepoints(
+        &mut self,
+        y: u16,
+        x: u16,
+        codepoints: &[char],
+    ) -> Result<(), TableFull> {
+        if codepoints.is_empty() {
+            return Ok(());
+        }
+        let index = self.cell_index(y, x);
+        let cell = self.cells[index];
+        let first = match cell.content() {
+            Content::Char(first) | Content::Grapheme(first) => first,
+            content => {
+                debug_assert!(false, "{content:?} has no character to add to");
+                return Ok(());
+            }
+        };
+        self.graphemes.extend(Self::key(index), codepoints)?;
+        self.cells[index] = cell.with_content(Content::Grapheme(first));
+        let row = self.row_mut(y);
+        row.set(RowFlag::Graphemes, true);
+        row.set(RowFlag::Dirty, true);
+        Ok(())
+    }
+
     /// Replaces the codepoints of the cluster at column `x` of row `y`, a
     /// cell that holds a character, with `first` and `rest`, as
     /// normalization does. The cell keeps its style, width and flags.

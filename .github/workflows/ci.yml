@@ -89,9 +89,10 @@ jobs:
 
   instructions:
     # The instructions that the VT core takes for vtebench's scenarios, for
-    # kitty's test of CSI sequences and for text as `cat` prints it, which
-    # callgrind counts on Linux, against those of the commit that the push
-    # or the pull request starts from: a rise of more than 3% fails.
+    # kitty's tests of CSI sequences and of unique clusters, and for text as
+    # `cat` prints it, which callgrind counts on Linux, against those of the
+    # commit that the push or the pull request starts from: a rise of more
+    # than 3% fails.
     name: instructions
     runs-on: ubuntu-latest
     timeout-minutes: 15

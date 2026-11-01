@@ -228,7 +228,8 @@ impl Terminal {
         self.stretch.joins.clear();
         let mut cells = 0_u16;
         let (mut x, mut end) = (0, 0);
-        for &c in chars {
+        let mut rest = chars.iter();
+        while let Some(&c) = rest.next() {
             let properties = properties(c);
             let width = self.widths.char_width_with(c, properties);
             let mut segmenter = self.segmenter;
@@ -268,9 +269,12 @@ impl Terminal {
                     self.print_translated(c);
                 } else {
                     // It joins the cluster before it, as the path of each
-                    // character finds, with the state that it leaves.
+                    // character finds, with the state that it leaves, and so
+                    // may the codepoints after it.
                     self.segmenter = segmenter;
-                    self.join_previous(c);
+                    let after = rest.as_slice();
+                    let more = self.join_previous_run(c, after);
+                    rest = after[more..].iter();
                 }
                 continue;
             }
@@ -329,19 +333,35 @@ impl Terminal {
             cursor.x = x + cells;
             cursor.pending_wrap = false;
         }
-        if self.stretch.joins.is_empty() {
-            return;
+        if !self.stretch.joins.is_empty() {
+            self.write_joins(x, y);
         }
+    }
+
+    /// Adds the codepoints that wait to join the clusters of the stretch
+    /// written from column `x` of row `y`, at their columns from `x`, which
+    /// leave them as wide, as [`Terminal::join`] would add them.
+    #[inline(never)]
+    fn write_joins(&mut self, x: u16, y: u16) {
         let joins = std::mem::take(&mut self.stretch.joins);
         let rows = &mut self.screen_mut().rows;
         let (mut page, mut row) = rows.screen_row_mut(y);
-        for &(offset, c) in &joins {
-            let at = x + offset;
-            // A cluster that has [`MAX_CLUSTER`] codepoints, or a page that
-            // has no room for another and cannot grow, drops `c`.
-            while page.grapheme(row, at).len() + 1 < MAX_CLUSTER {
-                match page.push_codepoint(row, at, c) {
-                    Ok(()) => break,
+        // The codepoints of each cluster go in together, those of one column
+        // following one another.
+        for cluster in joins.chunk_by(|a, b| a.0 == b.0) {
+            let at = x + cluster[0].0;
+            let mut codepoints = [char::default(); MAX_CLUSTER];
+            for (slot, &(_, c)) in codepoints.iter_mut().zip(cluster) {
+                *slot = c;
+            }
+            let codepoints = &codepoints[..cluster.len().min(MAX_CLUSTER)];
+            // Those past the most that a cluster keeps are dropped.
+            let room = (MAX_CLUSTER - 1).saturating_sub(page.grapheme(row, at).len());
+            let added = &codepoints[..codepoints.len().min(room)];
+            let mut together = !added.is_empty();
+            while together {
+                match page.push_codepoints(row, at, added) {
+                    Ok(()) => together = false,
                     Err(full) => {
                         let grown = rows.grow_page(y, full);
                         (page, row) = rows.screen_row_mut(y);
@@ -351,10 +371,127 @@ impl Terminal {
                     }
                 }
             }
+            if !together {
+                continue;
+            }
+            // A page that has no room for them all and cannot grow takes
+            // them one by one, as long as it has room.
+            for &c in added {
+                while page.grapheme(row, at).len() + 1 < MAX_CLUSTER {
+                    match page.push_codepoint(row, at, c) {
+                        Ok(()) => break,
+                        Err(full) => {
+                            let grown = rows.grow_page(y, full);
+                            (page, row) = rows.screen_row_mut(y);
+                            if grown.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
         let mut joins = joins;
         joins.clear();
         self.stretch.joins = joins;
+    }
+
+    /// Adds `c`, a codepoint that joins the cluster before it, whose state
+    /// the segmenter has taken, and the codepoints at the start of `rest`
+    /// that join that cluster too, to it, as [`Terminal::join_previous`]
+    /// would add them one by one; and returns how many of `rest` it added.
+    /// Those that leave the cluster's cells as many, whether it takes one or
+    /// two, go into the page at once, its width worked out once: combining
+    /// marks, as most clusters of several codepoints have.
+    #[inline(never)]
+    fn join_previous_run(&mut self, c: char, rest: &[char]) -> usize {
+        let widths = self.widths;
+        let keeps = |c: char, properties| {
+            widths.keeps_cells(1, c, properties) && widths.keeps_cells(2, c, properties)
+        };
+        if rest.is_empty() || !keeps(c, properties(c)) {
+            self.join_previous(c);
+            return 0;
+        }
+        let mut segmenter = self.segmenter;
+        let mut more = 0;
+        for &next in rest {
+            let properties = properties(next);
+            let mut after = segmenter;
+            let joins = match widths.mode {
+                Mode::Unicode => !after.starts_cluster_with(properties),
+                Mode::Legacy => widths.char_width_with(next, properties) == 0,
+            };
+            if !joins || !keeps(next, properties) {
+                break;
+            }
+            segmenter = after;
+            more += 1;
+        }
+        if more == 0 {
+            self.join_previous(c);
+            return 0;
+        }
+        self.segmenter = segmenter;
+        if let Some(cluster) = self.cluster.or_else(|| self.character_left_of_cursor()) {
+            // Those past the most that a cluster keeps would be dropped.
+            let mut codepoints = [c; MAX_CLUSTER];
+            let count = (1 + more).min(MAX_CLUSTER);
+            codepoints[1..count].copy_from_slice(&rest[..count - 1]);
+            self.join_all(cluster, &codepoints[..count]);
+        }
+        more
+    }
+
+    /// Adds `codepoints` to the cluster at `cluster`, as [`Terminal::join`]
+    /// would add them one by one, at once: codepoints that leave its cells
+    /// as many, whether it takes one or two, without a normal form to put it
+    /// in. A cluster whose first codepoint has no width, as a prepended
+    /// character, or a page that has no room for them all, takes them one
+    /// by one.
+    fn join_all(&mut self, cluster: Cluster, codepoints: &[char]) {
+        let Cluster { x, y } = cluster;
+        let widths = self.widths;
+        let unicode = widths.mode == Mode::Unicode;
+        let rows = &mut self.screen_mut().rows;
+        let width = loop {
+            let (page, row) = rows.screen_row_mut(y);
+            if unicode {
+                let (Content::Char(first) | Content::Grapheme(first)) =
+                    page.cells(row)[usize::from(x)].content()
+                else {
+                    break Err(());
+                };
+                if widths.char_width(first) == 0 {
+                    break Err(());
+                }
+            }
+            // Those past the most that a cluster keeps are dropped.
+            let room = (MAX_CLUSTER - 1).saturating_sub(page.grapheme(row, x).len());
+            let added = &codepoints[..codepoints.len().min(room)];
+            if added.is_empty() {
+                break Ok(None);
+            }
+            match page.push_codepoints(row, x, added) {
+                Ok(()) => break Ok(unicode.then(|| new_width(page, row, x, widths)).flatten()),
+                Err(full) => {
+                    if rows.grow_page(y, full).is_err() {
+                        break Err(());
+                    }
+                }
+            }
+        };
+        match width {
+            Ok(Some(Width::Wide)) => self.widen(cluster),
+            Ok(Some(_)) => self.narrow(cluster),
+            Ok(None) => {}
+            Err(()) => {
+                for &c in codepoints {
+                    self.join(cluster, c);
+                }
+            }
+        }
+        self.cluster = Some(cluster);
     }
 
     /// Adds `c` to the cluster that the last character printed started, or,

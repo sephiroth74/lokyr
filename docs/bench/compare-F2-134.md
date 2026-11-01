@@ -102,6 +102,7 @@ Without `--render`, MB/s, the median of 3 runs; more is better:
 - The benchmark waits for an answer that iTerm2 never gives, and was left out of iTerm2's measures.
 - Lokyr is within 10% of Ghostty in four tests of six. **Short CSI sequences**, at 0.26 of Ghostty's rate, and **unique clusters of several codepoints**, at 0.72, are past the budget of throughput, within 10% of the faster of Ghostty and Alacritty.
 - [F2-150](../tasks/F2-macos-single-pane.md#f2-150--short-csi-sequences-faster) brought short CSI sequences to 233 MB/s, 1.05 of Ghostty's 222 in the same session, whose figures are in [throughput/after-F2-150/](compare-F2-134/throughput/after-F2-150/): a fifth of the test's pieces end with REP, which printed its 100 copies one at a time.
+- [F2-151](../tasks/F2-macos-single-pane.md#f2-151--unique-clusters-of-several-codepoints-faster) brought unique clusters of several codepoints to 111.6 MB/s, 1.07 of Ghostty's 104.0 in the same session, whose figures are in [throughput/after-F2-151/](compare-F2-134/throughput/after-F2-151/): each cluster's three combining marks joined it one by one, each looking the cluster up again.
 
 ### vtebench
 

@@ -4786,6 +4786,17 @@ const OTHER_TEXT: &[&str] = &[
     "\u{1F1EE}",
     "中",
     "\u{1F600}",
+    // Codepoints that join the cluster before their run, together: marks
+    // after a base that came in another run, VS15 and a keycap's mark among
+    // them, after a prepended character, and past the most that a cluster
+    // keeps.
+    "\u{301}\u{302}\u{303}",
+    "\u{E9}\u{301}\u{302}",
+    "中\u{301}\u{FE0E}\u{302}",
+    "\u{2764}\u{301}\u{FE0F}\u{302}\u{303}",
+    "\u{20E3}\u{301}\u{302}",
+    "\u{600}\u{301}\u{302}",
+    "\u{300}\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}\u{307}\u{308}\u{309}\u{30A}\u{30B}\u{30C}\u{30D}\u{30E}\u{30F}\u{310}\u{311}\u{312}\u{313}\u{314}\u{315}\u{316}\u{317}\u{318}\u{319}\u{31A}\u{31B}\u{31C}\u{31D}\u{31E}\u{31F}\u{320}\u{321}\u{322}\u{323}",
     // Runs that the terminal writes in stretches, past the line's end.
     "中文字符串",
     "\u{E4}\u{F6}\u{FC}\u{DF}\u{E9}\u{E8}",
