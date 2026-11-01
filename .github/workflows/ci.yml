@@ -118,7 +118,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes valgrind
       - name: Count the instructions against the base commit's
         env:
-          # A branch's first push, which has no commit before it, against
-          # main.
-          BASE: ${{ github.event.pull_request.base.sha || (github.event.created && 'origin/main') || github.event.before }}
+          # A branch's first push, which has no commit before it, and a
+          # forced one, whose commit before no ref reaches, against main.
+          BASE: ${{ github.event.pull_request.base.sha || ((github.event.created || github.event.forced) && 'origin/main') || github.event.before }}
         run: just instructions "$BASE"
