@@ -745,12 +745,7 @@ impl PageList {
             "rows {top} to {bottom}"
         );
         let n = n.min(bottom + 1 - top);
-        if let Some((node, rows)) = self.rows_in_one_page(top, bottom) {
-            for row in rows.start..rows.start + n {
-                self.lose_row_pins(node, row);
-            }
-            self.page_at_mut(node).rotate_rows_up(rows.clone(), n);
-            self.rotate_pins(node, rows, n, false);
+        if self.rotate_rows_up_in_page(top, bottom, n) {
             return;
         }
         for y in top..top + n {
@@ -759,6 +754,23 @@ impl PageList {
         for y in top + n..=bottom {
             self.move_into_empty(y, y - n);
         }
+    }
+
+    /// Moves the rows from `top` to `bottom` of the screen up `n` rows, as
+    /// [`PageList::shift_rows_up`] does, when one page holds them, in one
+    /// rotation of its rows: whether it did, which it does not when they
+    /// span two pages.
+    pub fn rotate_rows_up_in_page(&mut self, top: u16, bottom: u16, n: u16) -> bool {
+        let n = n.min(bottom + 1 - top);
+        let Some((node, rows)) = self.rows_in_one_page(top, bottom) else {
+            return false;
+        };
+        for row in rows.start..rows.start + n {
+            self.lose_row_pins(node, row);
+        }
+        self.page_at_mut(node).rotate_rows_up(rows.clone(), n);
+        self.rotate_pins(node, rows, n, false);
+        true
     }
 
     /// Moves the rows from `top` to `bottom` of the screen `n` rows down,

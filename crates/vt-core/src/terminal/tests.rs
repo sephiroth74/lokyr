@@ -1440,6 +1440,46 @@ fn the_alternate_screen_scrolls_a_region_as_the_primary_one_does() {
 }
 
 #[test]
+fn the_alternate_screen_scrolls_a_region_of_many_rows_out_as_the_primary_one_does() {
+    // Regions that leave more than a few rows out, which the alternate
+    // screen scrolls by their own rows, or as a whole where they span two
+    // pages, which rows of 1000 cells, a few dozen to a page, make them do
+    // at some places of the screen among its pages.
+    let rows_of_a_page = usize::from(crate::page::Capacity::standard(1000).rows);
+    let around = rows_of_a_page - 40;
+    for scrolled in [
+        0,
+        around - 1,
+        around,
+        around + 1,
+        around + 20,
+        rows_of_a_page,
+    ] {
+        for (top, bottom) in [(2, 24), (10, 30)] {
+            let mut primary = Term::new(1000, 40);
+            let mut alternate = Term::new(1000, 40);
+            alternate.feed("\x1b[?1049h");
+            let before: String = (0..40 + scrolled).map(|n| format!("p{n}\r\n")).collect();
+            primary.feed(&before);
+            alternate.feed(&before);
+            let lines: String = (0..100).map(|n| format!("r{n}\r\n")).collect();
+            let steps = [
+                format!("\x1b[{top};{bottom}r\x1b[{bottom};1H"),
+                lines,
+                "\x1b[3S".to_owned(),
+            ];
+            for (step, text) in steps.iter().enumerate() {
+                primary.feed(text);
+                alternate.feed(text);
+                let at = format!("rows {top} to {bottom}, {scrolled} scrolled, step {step}");
+                assert_eq!(alternate.screen(), primary.screen(), "{at}");
+                assert_eq!(alternate.cursor(), primary.cursor(), "{at}");
+            }
+        }
+    }
+}
+
+#[test]
 fn lf_outside_the_region_moves_down_to_the_last_row() {
     let mut term = numbered_rows();
     term.feed("\x1b[2;3r\x1b[4;1H\n");

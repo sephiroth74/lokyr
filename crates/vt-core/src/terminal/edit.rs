@@ -9,6 +9,13 @@ use std::ops::Range;
 use super::{Cursor, Terminal};
 use crate::page::Cell;
 
+/// The most rows outside a scroll region that the alternate screen moves
+/// back after it scrolls whole: with more, as vtebench's top region of 23
+/// rows of 40, the region's own rotation is the faster, as 120 by 40 cells
+/// measure it: 8 rows outside, the two ways as fast; 1, the whole screen's
+/// 25% faster; 17, the region's 8%.
+const FEW_OUTSIDE: u16 = 8;
+
 impl Terminal {
     /// ICH: inserts `n` erased cells at the cursor; the cells from there
     /// move right, and those that pass the right margin are dropped.
@@ -169,9 +176,15 @@ impl Terminal {
             && self.rows - (bottom - top + 1) < bottom - top + 1
         {
             // The alternate screen shows no scrollback, so the whole screen
-            // may scroll, and the fewer rows outside the region move back.
+            // may scroll, and the fewer rows outside the region move back;
+            // but past a few of them, the region's own rotation is the
+            // faster, when one page holds it, which no whole scroll moves.
             let n = n.min(bottom - top + 1);
-            self.screen_mut().rows.scroll_rows_up(top, bottom, n);
+            let outside = self.rows - (bottom - top + 1);
+            let rows = &mut self.screen_mut().rows;
+            if outside <= FEW_OUTSIDE || !rows.rotate_rows_up_in_page(top, bottom, n) {
+                rows.scroll_rows_up(top, bottom, n);
+            }
             self.fill_new_rows(bottom + 1 - n..bottom + 1);
         } else {
             self.shift_rows_up(top, bottom, n);
