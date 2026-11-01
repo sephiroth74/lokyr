@@ -156,6 +156,17 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .with_context(|| format!("writing the {language} InfoPlist.strings"))?;
     }
     let version = told_version(&binary)?;
+    // The binary of this build, not one of another day or release.
+    let release = std::env::var("LOKYR_RELEASE")
+        .ok()
+        .filter(|release| !release.is_empty());
+    let built = version::version(env!("CARGO_PKG_VERSION"), release.as_deref(), moment)
+        .map_err(anyhow::Error::msg)?;
+    ensure!(
+        version == built,
+        "{} tells `{version}`, where this build gives `{built}`: a binary of another build",
+        binary.display()
+    );
     fs::write(
         app.join("Contents/Info.plist"),
         info_plist(&version, moment, &catalogs)?,
