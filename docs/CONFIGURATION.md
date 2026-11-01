@@ -267,7 +267,7 @@ Whether Lokyr draws these characters itself, at the cell's size and to the pixel
 | `true`, `false` | `true` |
 
 - Drawn by Lokyr, lines meet across cells without a gap, blocks tile, and the powerline symbols fill the cell's height, whatever the font and `line-height`.
-- `false` takes the font's glyphs, or, where the font lacks them, those of Symbols Nerd Font Mono, which Lokyr holds; some fonts draw their own as a look of their own.
+- `false` takes the font's glyphs, and, for the powerline symbols that the font lacks, Lokyr's own, so that they fill the cell still; box drawing that the font lacks comes from another font of the system's. Some fonts draw their own as a look of their own.
 - The other icons of Nerd Fonts come from the font, or from Symbols Nerd Font Mono where the font lacks them.
 
 ### `antialias`

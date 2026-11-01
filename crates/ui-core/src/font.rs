@@ -1052,14 +1052,8 @@ impl<B: FontBackend> Font<B> {
         // configuration has it.
         let drawn = (self.config.builtin_box_drawing && sprite::is_box_drawing(character))
             || (self.config.builtin_powerline && sprite::is_powerline(character));
-        if drawn && let Ok(code) = u16::try_from(u32::from(character)) {
-            return Some(Found {
-                face: SPRITES,
-                synthesis: Synthesis::default(),
-                glyph: GlyphId(code),
-                emoji: false,
-                fitted: false,
-            });
+        if drawn && let Some(found) = in_sprites(character) {
+            return Some(found);
         }
         let family = face_of(&self.resolved.faces, style);
         let own = match &self.non_ascii {
@@ -1074,6 +1068,14 @@ impl<B: FontBackend> Font<B> {
                 .or_else(|| in_faces(&mut glyphs.ids, backend, &faces, character))
                 .or_else(|| cascade(glyphs, backend, own, character, text)),
             Presentation::Text => in_faces(&mut glyphs.ids, backend, &faces, character)
+                // A powerline symbol that the fonts lack, which the
+                // symbols' font, fitted to the cell's width, would draw
+                // short of its height.
+                .or_else(|| {
+                    sprite::is_powerline(character)
+                        .then(|| in_sprites(character))
+                        .flatten()
+                })
                 .or_else(|| in_symbols(&mut glyphs.ids, backend, character))
                 .or_else(|| cascade(glyphs, backend, own, character, text))
                 .or_else(|| {
@@ -1198,6 +1200,17 @@ fn in_symbols<B: FontBackend>(
     })
 }
 
+/// The glyph of `character` that the terminal draws itself.
+fn in_sprites(character: char) -> Option<Found> {
+    u16::try_from(u32::from(character)).ok().map(|code| Found {
+        face: SPRITES,
+        synthesis: Synthesis::default(),
+        glyph: GlyphId(code),
+        emoji: false,
+        fitted: false,
+    })
+}
+
 /// The first of `faces` that has `character`, with its glyph.
 fn in_faces<B: FontBackend>(
     ids: &mut FastMap<(FaceId, char), Option<GlyphId>>,
@@ -1305,8 +1318,8 @@ mod tests {
     }
 
     /// A backend of two families: Mono, of a regular and a bold face, which
-    /// lack `A`, ✔, ⌚ and CJK, and Wide, of one face, which lacks `A` and
-    /// U+E0A0; and of a cascade of a face that draws CJK, one of emoji, for
+    /// lack `A`, ✔, ⌚ and CJK, and Wide, of one face, which lacks `A`,
+    /// U+E0A0 and U+E0B1; and of a cascade of a face that draws CJK, one of emoji, for
     /// a cluster with VS16, and one of symbols, for a cluster with VS15.
     /// Their glyphs are their characters' codes, drawn as squares of the
     /// size.
@@ -1396,7 +1409,7 @@ mod tests {
                 CJK => is_cjk(character),
                 EMOJI => character != '\u{E000}',
                 SYMBOLS => !is_cjk(character) && character != '\u{231A}',
-                WIDE => character != 'A' && character != '\u{E0A0}',
+                WIDE => !matches!(character, 'A' | '\u{E0A0}' | '\u{E0B1}'),
                 _ => {
                     !matches!(character, 'A' | '\u{2714}' | '\u{231A}')
                         && !is_cjk(character)
@@ -2155,6 +2168,20 @@ mod tests {
         font.glyph(&shown("\u{E0B0}", &Style::DEFAULT)).unwrap();
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0x2500)), Some(&1));
         assert_eq!(font.backend.drawn.get(&(FaceId(0), 0xE0B0)), Some(&1));
+        // A powerline symbol that the font lacks, the terminal's, before
+        // the symbols' font, which would draw it short of the cell.
+        let config = FontConfig {
+            family: Some(lokyr_text_core::Name::try_from("Wide".to_owned()).unwrap()),
+            builtin_powerline: false,
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 1.0).unwrap();
+        let found = font.find(0, '\u{E0B1}', None).map(|found| found.face);
+        assert_eq!(found, Some(SPRITES));
+        assert_eq!(
+            font.find(0, '\u{E0B0}', None).map(|found| found.face),
+            Some(WIDE)
+        );
     }
 
     /// Whether the fake backend drew `glyph` of `face` thin, at its last
