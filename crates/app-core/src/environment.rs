@@ -52,7 +52,7 @@ fn binaries_of(executable: &Path) -> Option<PathBuf> {
 /// manager's link in its `bin`: macOS takes the main bundle, and the
 /// identifier that the notifications need, from that path, so that the app
 /// runs as its bundle only from the bundle's own.
-pub(crate) fn bundle_executable() -> Option<PathBuf> {
+pub fn bundle_executable() -> Option<PathBuf> {
     linked_bundle_executable(&std::env::current_exe().ok()?)
 }
 

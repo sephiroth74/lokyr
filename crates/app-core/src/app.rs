@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use lokyr_font_coretext::CoreText;
 use lokyr_kernel::commands::{
     Args, Category, Code, Command, Error, ErrorCategory, Kind, Registry, Value,
 };
@@ -40,11 +39,11 @@ use lokyr_platform_core::{
 };
 use lokyr_platform_core::{Blink as PlatformBlink, Easing, Layer, LayerPlace};
 use lokyr_pty::Program;
-use lokyr_render_core::{CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer};
-use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
+use lokyr_render_core::{
+    CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
+};
 use lokyr_text_core::FontConfig;
-use lokyr_ui_core::cursor::{self, Blink};
-use lokyr_ui_core::font::Font;
+use lokyr_ui_core::cursor;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Preedit, TextLook};
 use lokyr_ui_core::theme::{Theme, Variant};
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
@@ -54,11 +53,12 @@ use lokyr_vt_core::terminal::{
     SelectionUnit,
 };
 
+use crate::drawing::{self, Backend, Drawing};
 use crate::environment;
 use crate::icon::Icons;
 use crate::keys;
 use crate::latency::{self, LatencyBench};
-use crate::mouse::{self, Mouse, Pointer, Spot};
+use crate::mouse::{self, Pointer, Spot};
 use crate::notice;
 use crate::output_bench::{self, OutputBench, Phases};
 use crate::performance::{self, Performance};
@@ -66,6 +66,7 @@ use crate::quick;
 use crate::size_label;
 
 use crate::watch::Watcher;
+use crate::window::{Selecting, Shown, Surfaces, Window, WindowLayer};
 
 /// The command that quits.
 const QUIT: &str = "app.quit";
@@ -231,86 +232,12 @@ const BENCH_DEADLINE: Duration = Duration::from_secs(15);
 /// refresh at 60 Hz, and a page of them shows whole in a few frames.
 const GLYPHS_BUDGET: (Duration, Duration) = (Duration::from_millis(2), Duration::from_millis(2));
 
-/// What draws the windows: the GPU, its renderer, and the font of the text.
-#[derive(Debug)]
-pub struct Drawing {
-    gpu: Gpu,
-    renderer: MetalRenderer,
-    font: Font<CoreText>,
-    /// How many fonts it took, the first one too: a layer draws its cells
-    /// again of a new one, whose atlas gives their regions to other pixels.
-    fonts: u64,
-    /// Whether a thread readies the system's fallback of fonts, as one does
-    /// once the first frame is drawn.
-    warmed_up: bool,
-}
-
-impl Drawing {
-    /// The system's GPU, and the font that `config` gives, which tells of a
-    /// family that is not installed.
-    pub fn new(config: FontConfig) -> Result<Self, String> {
-        let gpu = Gpu::new().map_err(|error| error.to_string())?;
-        let font = font(config)?;
-        let (coverage, color) = font.texture_sizes();
-        let renderer =
-            MetalRenderer::new(&gpu, coverage, color).map_err(|error| error.to_string())?;
-        Ok(Self {
-            gpu,
-            renderer,
-            font,
-            fonts: 1,
-            warmed_up: false,
-        })
-    }
-
-    /// Takes the font that `config` gives, with an atlas of its own, and a
-    /// renderer of the atlas's textures, in place of those before; or, if
-    /// it fails, keeps them.
-    fn set_font(&mut self, config: FontConfig) -> Result<(), String> {
-        let font = font(config)?;
-        let (coverage, color) = font.texture_sizes();
-        let renderer =
-            MetalRenderer::new(&self.gpu, coverage, color).map_err(|error| error.to_string())?;
-        self.font = font;
-        self.renderer = renderer;
-        self.fonts += 1;
-        Ok(())
-    }
-
-    /// What the font lacks of the config's: a family that is not
-    /// installed, of the text or of the text past ASCII, and the one that
-    /// it takes instead.
-    fn missing(&self) -> Option<String> {
-        let taken = self.font.family();
-        let missing = |family: &str, of: &str| {
-            format!("the font family `{family}` is not installed; the {of} takes `{taken}`")
-        };
-        let text = self
-            .font
-            .missing_family()
-            .map(|family| missing(family, "text"));
-        let past_ascii = self
-            .font
-            .missing_non_ascii_family()
-            .map(|family| missing(family, "text past ASCII"));
-        match (text, past_ascii) {
-            (Some(text), Some(past)) => Some(format!("{text}; {past}")),
-            (text, past) => text.or(past),
-        }
-    }
-}
-
-/// The font that `config` gives.
-fn font(config: FontConfig) -> Result<Font<CoreText>, String> {
-    Font::new(CoreText::new(), config, 1.0).map_err(|error| error.to_string())
-}
-
 /// Checks `config` as the app takes it, without applying it: its font,
 /// whose failure fails the whole config, and its icon and its language,
 /// which the log tells of when they are not Lokyr's, and whose defaults
 /// then show.
-pub(crate) fn check(config: &Config) -> Result<(), String> {
-    font(config.font.clone())?;
+pub fn check<B: Backend>(config: &Config) -> Result<(), String> {
+    drawing::font::<B>(config.font.clone())?;
     texts(&config.app.language, &[]);
     if let Some(icons) = Icons::find() {
         variant(&icons.variants(), &config.app.icon);
@@ -379,141 +306,6 @@ impl ConfigFile {
     }
 }
 
-/// A layer of a window, over its grid, which the window server blinks.
-#[derive(Debug, Default)]
-struct WindowLayer {
-    /// What the app draws into, where the platform has the layer.
-    surface: Option<Surface>,
-    /// Where the app placed it last, and how it blinks: `None` while it is
-    /// hidden.
-    place: Option<LayerPlace>,
-    /// The cells that it shows, at what scale, and of which of the
-    /// drawing's fonts, which a frame draws again only as they change.
-    drawn: Option<(CellBatch, f64, u64)>,
-}
-
-impl WindowLayer {
-    fn new(surface: Option<Surface>) -> Self {
-        Self {
-            surface,
-            ..Self::default()
-        }
-    }
-
-    /// Lets the layer's drawables go, all of them, as a frame of a pixel
-    /// takes the place of the one that it shows; the next cells that it
-    /// shows draw again.
-    fn release(&mut self) {
-        let Some(surface) = &self.surface else {
-            return;
-        };
-        surface.release();
-        if let Err(error) = surface.clear(Color::default().with_alpha(0.0)) {
-            eprintln!("lokyr: {error}");
-        }
-        self.drawn = None;
-    }
-}
-
-/// A window that the app opened.
-#[derive(Debug)]
-struct Window {
-    /// What it draws into, once the app draws and the platform has a layer.
-    surface: Option<Surface>,
-    /// The layers of its text that blinks, over the grid, and of its
-    /// cursor's cells, over everything.
-    text_layer: WindowLayer,
-    cursor_layer: WindowLayer,
-    /// The workspace's window that it shows.
-    window: workspace::WindowId,
-    /// Its pane, which runs its program, and what that shows.
-    pane: PaneId,
-    /// The text that the input method composes, shown at the cursor.
-    preedit: Option<Preedit>,
-    /// Whether it has the keyboard's focus.
-    focused: bool,
-    /// The clock of its cursor's blinking.
-    blink: Blink,
-    /// Whether its cursor blinked at its last frame.
-    blinking: bool,
-    /// Until when it flashes for its bell.
-    flash_until: Option<Instant>,
-    /// When its last bell acted.
-    rang_at: Option<Instant>,
-    /// When its program's last notification showed.
-    notified_at: Option<Instant>,
-    /// Whether its title shows that its bell rang while it had no focus.
-    bell_marked: bool,
-    /// The backdrop that the platform has for it, while it is translucent.
-    backdrop: Option<Backdrop>,
-    /// The mouse over it.
-    mouse: Mouse,
-    /// Whether the platform tells the pointer's moves without a button, as
-    /// a program asked for them.
-    mouse_moves: bool,
-    /// How the pointer looks over it, as the platform has it.
-    pointer: PointerShape,
-    /// The sequence of keys under way, as the keymap resolves it.
-    resolver: Resolver,
-    /// The keys of the sequence under way, which go to the program if the
-    /// next key does not go on with it.
-    held_back: Vec<KeyEvent>,
-    /// The keys whose presses the keymap took, whose releases go nowhere,
-    /// each once.
-    taken: Vec<KeyCode>,
-    /// The selection that the mouse makes, or made last, which Shift's click
-    /// extends.
-    selecting: Option<Selecting>,
-    /// The title of the man page that it shows, as `man ls`, when it shows
-    /// one: it takes the man page's colors, and keeps the page once `man`
-    /// has ended.
-    page: Option<String>,
-    /// The last part of the directory of the program in its foreground, as
-    /// `lokyr`, and that program's name, as `zsh`, which its title shows.
-    place: (String, String),
-    /// That directory, whole, as the title last looked, which stays once
-    /// the program ended.
-    directory: Option<PathBuf>,
-    /// Whether the user resizes it, dragging its edge; when it drew last;
-    /// the grid's size that it drew last, its columns and rows; and until
-    /// when the label of its grid's size shows, after the grid changed.
-    live_resize: bool,
-    drawn_at: Option<Instant>,
-    grid_drawn: Option<(u16, u16)>,
-    size_label: Option<Instant>,
-    /// Where its last frame drew the notice's bar and its close, in pixels,
-    /// and the pointer's areas that the platform has of them, in points.
-    notice: Option<notice::Rects>,
-    pointer_areas: Vec<PointerArea>,
-    /// The title that the platform shows, once the app gave one.
-    title_shown: Option<String>,
-    /// When its last frame of output came, since its title last looked, for
-    /// the titles' timer to look once more [`TITLE_LOOK`] after it.
-    output_at: Option<Instant>,
-    /// The title that the user gave it, which takes the place of its
-    /// program's and of its own.
-    user_title: Option<String>,
-    /// The appearance of its own that the platform has for it, once the
-    /// app gave one: `None` for the app's.
-    own_appearance: Option<Option<Appearance>>,
-    /// Whether it is hidden or covered, which draws nothing.
-    occluded: bool,
-    /// What its surface shows, as its last frame drew it: its size in
-    /// pixels and its scale, the drawing's fonts, the background and the
-    /// items, which a frame of the same presents again for nothing.
-    shown: Option<Shown>,
-}
-
-/// What a window's surface shows.
-#[derive(Debug, PartialEq)]
-struct Shown {
-    pixels: (u32, u32),
-    scale: f64,
-    fonts: u64,
-    background: Color,
-    items: Vec<Item>,
-}
-
 /// `target` as a question shows it: each character that shows nothing,
 /// or that turns the text's direction, as `\u{202E}`, so that the target
 /// reads as it is.
@@ -565,99 +357,11 @@ enum Chosen {
     File(OpenFile),
 }
 
-/// A selection that the mouse's left button makes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Selecting {
-    /// Where the press started it.
-    anchor: Spot,
-    /// Where the pointer is, or was as the button went up.
-    last: Spot,
-    shape: SelectionShape,
-    unit: SelectionUnit,
-    /// Whether the button is down.
-    held: bool,
-    /// How many rows past the grid's top, negative, or bottom, positive,
-    /// the pointer is, which scrolls the view.
-    beyond: i64,
-}
-
-impl Window {
-    fn new(
-        (surface, text_surface, cursor_surface): (
-            Option<Surface>,
-            Option<Surface>,
-            Option<Surface>,
-        ),
-        (window, pane): (workspace::WindowId, PaneId),
-        focused: bool,
-        now: Instant,
-    ) -> Self {
-        Self {
-            surface,
-            text_layer: WindowLayer::new(text_surface),
-            cursor_layer: WindowLayer::new(cursor_surface),
-            window,
-            pane,
-            preedit: None,
-            focused,
-            blink: Blink::new(now),
-            blinking: false,
-            flash_until: None,
-            rang_at: None,
-            notified_at: None,
-            bell_marked: false,
-            backdrop: None,
-            mouse: Mouse::default(),
-            mouse_moves: false,
-            pointer: PointerShape::Arrow,
-            resolver: Resolver::new(),
-            held_back: Vec::new(),
-            taken: Vec::new(),
-            selecting: None,
-            page: None,
-            place: (String::new(), String::new()),
-            directory: None,
-            notice: None,
-            live_resize: false,
-            drawn_at: None,
-            grid_drawn: None,
-            size_label: None,
-            pointer_areas: Vec::new(),
-            title_shown: None,
-            output_at: None,
-            user_title: None,
-            own_appearance: None,
-            occluded: false,
-            shown: None,
-        }
-    }
-
-    /// Takes the press of the key at `code` for the keymap, so that its
-    /// release goes nowhere.
-    fn take(&mut self, code: KeyCode) {
-        if !self.taken.contains(&code) {
-            self.taken.push(code);
-        }
-    }
-
-    /// Ends the sequence under way, and gives back its keys, for the
-    /// program, whose releases go to it too, as the keymap no longer takes
-    /// their presses.
-    fn end_sequence(&mut self) -> Vec<KeyEvent> {
-        self.resolver = Resolver::new();
-        let keys = std::mem::take(&mut self.held_back);
-        for key in &keys {
-            self.taken.retain(|&code| code != key.code);
-        }
-        keys
-    }
-}
-
 /// The application, which opens a window when it starts, and quits with its
 /// last window or from its menu.
 #[derive(Debug)]
-pub struct App {
-    drawing: Option<Drawing>,
+pub struct App<B: Backend> {
+    drawing: Option<Drawing<B>>,
     theme: Theme,
     /// The program that a new window runs.
     program: Program,
@@ -685,7 +389,7 @@ pub struct App {
     /// The windows, their tabs and panes.
     workspace: Workspace,
     /// The platform's windows, each with what the app keeps of it.
-    windows: BTreeMap<WindowId, Window>,
+    windows: BTreeMap<WindowId, Window<B>>,
     /// The timer of the next change of a blinking cursor, and its time.
     blink_timer: Option<(TimerId, Instant)>,
     /// The timer of the end of the first label of a grid's size that ends,
@@ -822,11 +526,11 @@ struct StartupBench {
     shown: Option<std::time::SystemTime>,
 }
 
-impl App {
+impl<B: Backend> App<B> {
     /// An application that draws its windows with `drawing`, or nothing
     /// without it, with `config`, which it reads again from `path`, its
     /// file, when that changes.
-    pub fn new(drawing: Option<Drawing>, config: Config, path: Option<PathBuf>) -> Self {
+    pub fn new(drawing: Option<Drawing<B>>, config: Config, path: Option<PathBuf>) -> Self {
         let mut plugins = Plugins::new();
         plugins.add("core-actions", Box::new(lokyr_core_actions::CoreActions));
         plugins.add("links", Box::new(lokyr_links::Links));
@@ -894,7 +598,7 @@ impl App {
                     terminfo: environment::terminfo(resources.as_deref()),
                     resources,
                     binaries: environment::binaries(),
-                    version: crate::VERSION.to_owned(),
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
                     ..Environment::default()
                 }
             },
@@ -907,6 +611,13 @@ impl App {
             output_bench: None,
             bench_size: None,
         }
+    }
+
+    /// The app whose programs learn `version` as Lokyr's, in place of the
+    /// crate's: the app's own, with the date of its commit.
+    pub fn with_version(mut self, version: &str) -> Self {
+        self.environment.version = version.to_owned();
+        self
     }
 
     /// The app that measures its startup, from the process's start to its
@@ -2280,11 +1991,11 @@ impl App {
         (program, page): (&Program, Option<String>),
         environment: &Environment,
     ) {
-        let surfaces = (
-            self.surface(platform, window),
-            self.layer_surface(platform, window, Layer::BlinkingText),
-            self.layer_surface(platform, window, Layer::Cursor),
-        );
+        let surfaces = Surfaces {
+            window: self.surface(platform, window),
+            text: self.layer_surface(platform, window, Layer::BlinkingText),
+            cursor: self.layer_surface(platform, window, Layer::Cursor),
+        };
         let focused = platform.focused_window() == Some(window);
         let size = platform
             .window_size(window)
@@ -3734,10 +3445,12 @@ impl App {
 
     /// The surface of `window`, if the app draws and the platform has a
     /// layer for it.
-    fn surface(&self, platform: &dyn Platform, window: WindowId) -> Option<Surface> {
+    fn surface(&self, platform: &dyn Platform, window: WindowId) -> Option<B::Surface> {
         let drawing = self.drawing.as_ref()?;
         let handle = platform.window_handle(window)?;
-        Surface::new(&drawing.gpu, handle)
+        drawing
+            .backend
+            .surface(handle)
             .inspect_err(|error| eprintln!("lokyr: {error}"))
             .ok()
     }
@@ -3749,10 +3462,12 @@ impl App {
         platform: &dyn Platform,
         window: WindowId,
         layer: Layer,
-    ) -> Option<Surface> {
+    ) -> Option<B::Surface> {
         let drawing = self.drawing.as_ref()?;
         let handle = platform.layer_handle(window, layer)?;
-        Surface::new(&drawing.gpu, handle)
+        drawing
+            .backend
+            .surface(handle)
             .inspect_err(|error| eprintln!("lokyr: {error}"))
             .ok()
     }
@@ -4358,12 +4073,12 @@ impl App {
             let family = drawing.font.family().to_owned();
             let _ = std::thread::Builder::new()
                 .name("font-warm-up".into())
-                .spawn(move || lokyr_font_coretext::warm_up(&family));
+                .spawn(move || B::warm_up(&family));
         }
     }
 }
 
-impl Handler for App {
+impl<B: Backend> Handler for App<B> {
     fn started(&mut self, platform: &mut dyn Platform) {
         self.preferred = platform.locales();
         self.texts = texts(&self.config.app.language, &self.preferred);
@@ -5173,11 +4888,11 @@ fn sized(font: &FontConfig, size: Option<f32>) -> FontConfig {
 /// they are and as their margin on each side, their batch's corner, at a
 /// corner in pixels of the content, of `scale`, blinking as `blink` says.
 /// `None` hides the layer.
-fn show_layer(
+fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
-    drawing: &mut Drawing,
+    drawing: &mut Drawing<B>,
     (window, layer): (WindowId, Layer),
-    state: &mut WindowLayer,
+    state: &mut WindowLayer<B>,
     shown: Option<(CellBatch, (f64, f64))>,
     scale: f64,
     blink: Option<PlatformBlink>,
@@ -5563,6 +5278,11 @@ mod tests {
     use lokyr_ui_core::cursor::CursorConfig;
 
     use super::*;
+    use crate::fakes;
+
+    /// The app of the tests, which draws with the tests' drawing, if at all.
+    type App = super::App<fakes::Gpu>;
+    type Drawing = super::Drawing<fakes::Gpu>;
 
     /// A program that runs until its terminal hangs up, and writes nothing.
     fn quiet() -> Program {
@@ -6327,6 +6047,44 @@ mod tests {
     }
 
     #[test]
+    fn a_window_s_state_follows_it_from_its_opening_to_its_closing() {
+        let drawing = Drawing::new(FontConfig::default()).unwrap();
+        let mut fake = Fake::default();
+        let mut app = App::new(Some(drawing), unpadded(), None).with_program(idle());
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        // Its window and pane in the workspace.
+        let state = &app.windows[&window];
+        let (opened, pane) = (state.window, state.pane);
+        assert_eq!(app.workspace.active_pane(opened), Some(pane));
+        assert!(!state.focused);
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        assert!(app.windows[&window].focused);
+        // A frame of its size and scale, into its surface, which the fake
+        // platform does not give.
+        app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+        let shown = |app: &App| {
+            let shown = app.windows[&window].shown.as_ref().expect("a frame");
+            (shown.pixels, shown.scale)
+        };
+        let frames = |app: &App| {
+            let surface = app.windows[&window].surface.as_ref().unwrap();
+            surface.frames.load(std::sync::atomic::Ordering::Relaxed)
+        };
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert_eq!(frames(&app), 1);
+        fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+        fake.send(&mut app, window, WindowEvent::Frame);
+        assert_eq!(shown(&app), ((800, 600), 2.0));
+        assert_eq!(frames(&app), 2);
+        // Closed, with its state and its workspace's window.
+        fake.send(&mut app, window, WindowEvent::CloseRequested);
+        assert!(app.windows.is_empty());
+        assert!(app.workspace.window(opened).is_none());
+        assert!(app.workspace.pane(pane).is_none());
+    }
+
+    #[test]
     fn closing_the_last_window_quits() {
         let (mut fake, mut app, window) = started_running(idle());
         fake.send(&mut app, window, WindowEvent::CloseRequested);
@@ -6697,10 +6455,7 @@ mod tests {
 
     #[test]
     fn a_new_font_has_the_layers_draw_their_cells_again() {
-        // A machine without a GPU, as some CI's, draws nothing.
-        let Ok(mut drawing) = Drawing::new(FontConfig::default()) else {
-            return;
-        };
+        let mut drawing = Drawing::new(FontConfig::default()).unwrap();
         assert_eq!(drawing.fonts, 1);
         drawing.set_font(FontConfig::default()).unwrap();
         assert_eq!(drawing.fonts, 2);
@@ -10465,10 +10220,7 @@ mod tests {
         let family = |name: &str| Some(name.to_owned().try_into().unwrap());
         let mut config = Config::default();
         config.font.family = family("No Such Family 42");
-        // A machine without a GPU, as some CI's, draws nothing.
-        let Ok(drawing) = Drawing::new(config.font.clone()) else {
-            return;
-        };
+        let drawing = Drawing::new(config.font.clone()).unwrap();
         let mut fake = Fake::default();
         let mut app = App::new(Some(drawing), config, None).with_program(quiet());
         fake.start(&mut app);
@@ -11105,16 +10857,12 @@ print -z 'echo typed'
 
     #[test]
     fn a_frame_with_nothing_new_presents_nothing() {
-        let Ok(drawing) = Drawing::new(FontConfig::default()) else {
-            eprintln!("no Metal device: no frame to present");
-            return;
-        };
+        let drawing = Drawing::new(FontConfig::default()).unwrap();
         let mut fake = Fake::default();
         let mut app = App::new(Some(drawing), unpadded(), None).with_program(idle());
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
-        let surface = Surface::detached(&app.drawing.as_ref().unwrap().gpu);
-        app.windows.get_mut(&window).unwrap().surface = Some(surface);
+        app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
         run_until(&mut fake, &mut app, |_, app| {
             screen(app, window)
                 .iter()

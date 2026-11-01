@@ -117,10 +117,10 @@ lokyr/
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
 │   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services; implements HostApi
-│   ├── app-core/          (F3) the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over Renderer and FontBackend
+│   ├── app-core/          the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over a `Backend`, its GPU's Renderer and Surface and its FontBackend; tested with the fake platform and a fake drawing
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
-│   ├── render-core/       Renderer trait, display-list types, shaders
+│   ├── render-core/       Renderer and Surface traits, display-list types, shaders
 │   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance
 │   ├── platform-macos/    AppKit via objc2 (NSWindow, NSPanel, NSView + CAMetalLayer, NSTextInputClient, NSMenu), Carbon's hot keys
 │   ├── platform-wayland/  (F7) smithay-client-toolkit + calloop, our own CSD
@@ -149,7 +149,7 @@ lokyr/
 ### Crate dependencies
 
 ```
-app ─┬─▶ app-core ─▶ kernel                         (F3)
+app ─┬─▶ app-core ─▶ kernel
      ├─▶ kernel ─┬─▶ session ─┬─▶ vt-core
      │           │            └─▶ pty
      │           ├─▶ search ───▶ vt-core
@@ -178,8 +178,8 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 | Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |
 | HTTP/TLS (`hyper`, `reqwest`, `rustls`, …) only in `sleip/*` | No networking code in the app | `cargo-deny` (`bans` + `wrappers`) |
 | No async runtime (`tokio`, `async-std`, …) in the app | Fewer threads, less memory, fewer dependencies | `cargo-deny` |
-| Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | review and `xtask check-deps` |
-| Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job |
+| Only `app` picks the backends, via `cfg(target_os)` | Core crates stay portable | `xtask check-deps` (`backends-only-in-app`) |
+| Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job, and `xtask check-deps` on Linux's dependencies |
 
 The platform, render and font traits are deliberately thin. They describe what the macOS backend needs rather than a lowest common denominator, and the Linux backends will extend them in F7.
 

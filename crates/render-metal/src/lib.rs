@@ -81,6 +81,44 @@ pub struct Surface {
     queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
 }
 
+impl lokyr_render_core::Surface for Surface {
+    type Error = Error;
+
+    /// Sizes the drawables to the window's content, `width` by `height`
+    /// pixels at `scale`.
+    fn resize(&self, width: u32, height: u32, scale: f64) {
+        self.layer.setContentsScale(scale);
+        self.layer
+            .setDrawableSize(CGSize::new(f64::from(width), f64::from(height)));
+    }
+
+    /// Has the frames to come show with Core Animation's transaction, as
+    /// the window's live resize changes its frame, so that the content
+    /// follows its edge, rather than as the GPU finishes them.
+    fn set_presents_with_transaction(&self, with: bool) {
+        self.layer.setPresentsWithTransaction(with);
+    }
+
+    /// Lets the window's drawables go, as for a window that does not show,
+    /// but the one that shows its last frame: the layer takes drawables of
+    /// a pixel, which it makes as the next frame asks, in place of those of
+    /// the window's size, until the next [`Surface::resize`]. In a window,
+    /// it lets go at once of those that do not show, and keeps the one that
+    /// does until a frame takes its place: a new layer alone would let that
+    /// one go too, and the window would show again empty until it drew. A
+    /// size of nothing would change nothing, as the layer ignores it.
+    fn release(&self) {
+        self.layer.setDrawableSize(CGSize::new(1.0, 1.0));
+    }
+
+    /// Draws a frame of one color, and presents it. Returns whether it did:
+    /// no drawable comes from a layer that was never sized, nor when every
+    /// drawable is in use for a second.
+    fn clear(&self, color: Color) -> Result<bool, Error> {
+        Ok(self.encode_clear(color)?.is_some())
+    }
+}
+
 impl Surface {
     /// The surface of the window that `handle` names: an AppKit view backed
     /// by a `CAMetalLayer`, which the surface retains, so that it outlives
@@ -129,40 +167,6 @@ impl Surface {
         }
     }
 
-    /// Sizes the drawables to the window's content, `width` by `height`
-    /// pixels at `scale`.
-    pub fn resize(&self, width: u32, height: u32, scale: f64) {
-        self.layer.setContentsScale(scale);
-        self.layer
-            .setDrawableSize(CGSize::new(f64::from(width), f64::from(height)));
-    }
-
-    /// Has the frames to come show with Core Animation's transaction, as
-    /// the window's live resize changes its frame, so that the content
-    /// follows its edge, rather than as the GPU finishes them.
-    pub fn set_presents_with_transaction(&self, with: bool) {
-        self.layer.setPresentsWithTransaction(with);
-    }
-
-    /// Lets the window's drawables go, as for a window that does not show,
-    /// but the one that shows its last frame: the layer takes drawables of
-    /// a pixel, which it makes as the next frame asks, in place of those of
-    /// the window's size, until the next [`Surface::resize`]. In a window,
-    /// it lets go at once of those that do not show, and keeps the one that
-    /// does until a frame takes its place: a new layer alone would let that
-    /// one go too, and the window would show again empty until it drew. A
-    /// size of nothing would change nothing, as the layer ignores it.
-    pub fn release(&self) {
-        self.layer.setDrawableSize(CGSize::new(1.0, 1.0));
-    }
-
-    /// Draws a frame of one color, and presents it. Returns whether it did:
-    /// no drawable comes from a layer that was never sized, nor when every
-    /// drawable is in use for a second.
-    pub fn clear(&self, color: Color) -> Result<bool, Error> {
-        Ok(self.encode_clear(color)?.is_some())
-    }
-
     /// Encodes and commits a frame of one color, and returns its command
     /// buffer.
     fn encode_clear(
@@ -195,6 +199,7 @@ impl Surface {
 
 #[cfg(test)]
 mod tests {
+    use lokyr_render_core::Surface as _;
     use objc2_metal::MTLCommandBufferStatus;
     use raw_window_handle::WebWindowHandle;
 

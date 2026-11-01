@@ -93,7 +93,7 @@ const ENTITLEMENTS: [&str; 7] = [
 
 /// The app's catalogs, a directory each language, relative to the workspace
 /// root.
-const LOCALES: &str = "crates/app/resources/locales";
+const LOCALES: &str = "crates/app-core/resources/locales";
 
 /// The symbols' font that the binary holds, with its license and its
 /// icons' licenses, which the bundle carries.

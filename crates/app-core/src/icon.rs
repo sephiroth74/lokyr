@@ -37,7 +37,7 @@ impl Icons {
         {
             return Some(Self::new(directory, true));
         }
-        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/icons");
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/resources/icons");
         directory.is_dir().then(|| Self::new(directory, false))
     }
 

@@ -684,22 +684,35 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 name = "lokyr-app"
 version = "0.2.0"
 dependencies = [
- "lokyr-core-actions",
+ "lokyr-app-core",
  "lokyr-font-coretext",
  "lokyr-kernel",
- "lokyr-links",
  "lokyr-platform-core",
  "lokyr-platform-macos",
  "lokyr-plugin-host-luau",
  "lokyr-pty",
  "lokyr-render-core",
  "lokyr-render-metal",
- "lokyr-session",
+ "lokyr-text-core",
+ "lokyr-ui-core",
+ "lokyr-vt-core",
+ "png",
+]
+
+[[package]]
+name = "lokyr-app-core"
+version = "0.2.0"
+dependencies = [
+ "lokyr-core-actions",
+ "lokyr-kernel",
+ "lokyr-links",
+ "lokyr-platform-core",
+ "lokyr-pty",
+ "lokyr-render-core",
  "lokyr-text-core",
  "lokyr-ui-core",
  "lokyr-vt-core",
  "notify",
- "png",
 ]
 
 [[package]]

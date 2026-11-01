@@ -387,6 +387,52 @@ pub trait Renderer {
     fn drawable_wait(&self) -> Duration {
         Duration::ZERO
     }
+
+    /// Draws `list` into `target`, as [`Renderer::draw`] does, but for its
+    /// GPU's time, which [`Renderer::take_gpu_times`] leaves out: a layer's
+    /// frame, of a few cells, apart from the windows' frames.
+    fn draw_untimed(
+        &mut self,
+        target: &Self::Target,
+        list: &DisplayList,
+    ) -> Result<bool, Self::Error> {
+        self.draw(target, list)
+    }
+
+    /// Calls `presented` as the next frame that the renderer draws, into
+    /// any target, shows on the display, from any thread, with how long ago
+    /// it showed, or `None` if the display skipped it; a backend that does
+    /// not learn when its frames show never calls it.
+    fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
+        let _ = presented;
+    }
+
+    /// Forgets the call that [`Renderer::on_next_presented`] left, as a
+    /// frame that drew nothing leaves it to no other target.
+    fn forget_next_presented(&mut self) {}
+}
+
+/// What a renderer draws a window's frames into, or a layer's of it.
+pub trait Surface {
+    /// What can fail.
+    type Error;
+
+    /// Sizes it to the window's content, `width` by `height` pixels at
+    /// `scale`.
+    fn resize(&self, width: u32, height: u32, scale: f64);
+
+    /// Has the frames to come show with the window's own changes of size, as
+    /// the user resizes it, so that the content follows its edge, rather
+    /// than as the GPU finishes them.
+    fn set_presents_with_transaction(&self, with: bool);
+
+    /// Lets the memory of its frames go, as for a window that does not
+    /// show, but the frame that shows, until the next
+    /// [`Surface::resize`].
+    fn release(&self);
+
+    /// Draws a frame of one color, and presents it. Returns whether it did.
+    fn clear(&self, color: Color) -> Result<bool, Self::Error>;
 }
 
 #[cfg(test)]

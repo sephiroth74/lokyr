@@ -344,29 +344,23 @@ impl Renderer for MetalRenderer {
     fn drawable_wait(&self) -> Duration {
         self.drawable_wait
     }
-}
 
-impl MetalRenderer {
-    /// Draws `list` into `target`, as [`Renderer::draw`] does, but for its
-    /// GPU's time, which [`Renderer::take_gpu_times`] leaves out: a layer's
-    /// frame, of a few cells, apart from the windows' frames.
-    pub fn draw_untimed(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
+    fn draw_untimed(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, Error> {
         self.present(target, list, false)
     }
 
-    /// Calls `presented` as the next drawable that the renderer draws, of
-    /// any surface, shows on the display, from the display's thread, with
-    /// how long ago it showed, or `None` if the display skipped it.
-    pub fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
+    /// Calls `presented` from the display's thread, as the next drawable
+    /// that the renderer draws, of any surface, shows.
+    fn on_next_presented(&mut self, presented: impl FnOnce(Option<Duration>) + Send + 'static) {
         self.on_presented = Some(OnPresented(Box::new(presented)));
     }
 
-    /// Forgets the call that [`Renderer::on_next_presented`] left, as a
-    /// frame that drew nothing leaves it to no other surface's drawable.
-    pub fn forget_next_presented(&mut self) {
+    fn forget_next_presented(&mut self) {
         self.on_presented = None;
     }
+}
 
+impl MetalRenderer {
     /// Draws `list` into the next drawable of `target`, and presents it,
     /// its GPU's time counted when `timed`. Whether it drew: no drawable
     /// comes from a layer that was never sized, nor when every drawable is
@@ -1055,6 +1049,7 @@ fn make_texture(
 
 #[cfg(test)]
 mod tests {
+    use lokyr_render_core::Surface as _;
     use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
     use objc2_quartz_core::CAMetalLayer;
 

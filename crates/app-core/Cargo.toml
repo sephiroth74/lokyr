@@ -1,0 +1,28 @@
+[package]
+name = "lokyr-app-core"
+description = "The Lokyr terminal's window controller, portable across platforms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+lokyr-core-actions.workspace = true
+lokyr-kernel.workspace = true
+lokyr-links.workspace = true
+lokyr-platform-core.workspace = true
+lokyr-pty.workspace = true
+lokyr-render-core.workspace = true
+lokyr-text-core.workspace = true
+lokyr-ui-core.workspace = true
+lokyr-vt-core.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+lokyr-platform-core = { workspace = true, features = ["fake"] }
+
+[lints]
+workspace = true

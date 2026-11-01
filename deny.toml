@@ -50,7 +50,7 @@ deny = [
     { crate = "openssl", reason = "TLS is provided by rustls" },
     { crate = "async-std", reason = "the only async runtime is tokio, in Sleip" },
     # Plugins and libraries reach the kernel only through the plugin SDK.
-    { crate = "lokyr-kernel", wrappers = ["lokyr-app"], reason = "only the app may depend on the kernel" },
+    { crate = "lokyr-kernel", wrappers = ["lokyr-app", "lokyr-app-core"], reason = "only the app and its window controller may depend on the kernel" },
     # Luau, a C++ runtime, stays behind the plugin host and its feature.
     { crate = "mlua", wrappers = ["lokyr-plugin-host-luau"], reason = "only the plugin host may embed Luau" },
     # Only the differential tests compare the VT core against alacritty_terminal:
