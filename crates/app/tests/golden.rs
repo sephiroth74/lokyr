@@ -77,8 +77,11 @@ impl Drawing {
             size: Size::try_from(POINTS).unwrap(),
             ..FontConfig::default()
         };
-        // The system's default, which smooths fonts.
-        let font = Font::new(CoreText::with_font_smoothing(true), config, scale).unwrap();
+        // The system's default, which smooths fonts; Han's characters in
+        // Simplified Chinese's faces, as the images have them, whatever the
+        // system's languages, which choose Japanese's or Chinese's.
+        let fonts = CoreText::with_font_smoothing(true).with_language("zh-Hans");
+        let font = Font::new(fonts, config, scale).unwrap();
         let (coverage, color) = font.texture_sizes();
         let renderer = MetalRenderer::new(&gpu, coverage, color).unwrap();
         Some(Self {

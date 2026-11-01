@@ -77,6 +77,10 @@ pub struct CoreText {
     smoothing: bool,
     /// The face of the symbols' font, once loaded, if it loads.
     symbols: Option<Option<FaceId>>,
+    /// The language whose faces the fallback takes, where languages that
+    /// share a script draw it differently; `None` for the system's
+    /// preferred languages.
+    language: Option<CFRetained<CFString>>,
 }
 
 impl Default for CoreText {
@@ -102,7 +106,18 @@ impl CoreText {
             substitutes: HashMap::new(),
             smoothing,
             symbols: None,
+            language: None,
         }
+    }
+
+    /// The backend whose fallback takes the faces of `language`, a BCP 47
+    /// tag, as `zh-Hans`, rather than those of the system's preferred
+    /// languages, which choose the faces of Han's characters, Chinese's or
+    /// Japanese's, whatever the text's own language.
+    #[must_use]
+    pub fn with_language(mut self, language: &str) -> Self {
+        self.language = Some(CFString::from_str(language));
+        self
     }
 
     /// The face `face` at `size`, if the backend found it.
@@ -376,8 +391,10 @@ impl FontBackend for CoreText {
         };
         // SAFETY: a font that CoreText made, and a range of the string's
         // own length. CoreText gives the font of its cascade that draws the
-        // most of the string, the font itself when no other does.
-        let found = unsafe { font.for_string(&string, range) };
+        // most of the string, the font itself when no other does, of the
+        // language given or of the system's.
+        let found =
+            unsafe { font.for_string_with_language(&string, range, self.language.as_deref()) };
         // SAFETY: fonts that CoreText made.
         let (name, own) = unsafe { (found.post_script_name(), font.post_script_name()) };
         if name.to_string() == own.to_string() {

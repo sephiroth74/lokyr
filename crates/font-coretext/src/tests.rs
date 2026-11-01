@@ -297,6 +297,21 @@ fn the_cascade_draws_what_a_face_lacks() {
 }
 
 #[test]
+fn the_fallback_takes_the_faces_of_the_language_given() {
+    // Han's characters: Simplified Chinese's PingFang, Japanese's Hiragino,
+    // whatever the system's languages.
+    for (language, family) in [("zh-Hans", "PingFangSC"), ("ja", "HiraginoSans")] {
+        let mut backend = CoreText::new().with_language(language);
+        let face = regular(&mut backend, "Menlo");
+        let found = backend.fallback(face, "日").expect("a face of Han");
+        let font = backend.font(found, PROBE_SIZE).unwrap();
+        // SAFETY: a font that CoreText made.
+        let name = unsafe { font.post_script_name() }.to_string();
+        assert!(name.starts_with(family), "{language}: {name}");
+    }
+}
+
+#[test]
 fn a_missing_family_falls_back_to_sf_mono() {
     let mut backend = CoreText::new();
     let resolved = resolve_faces(
