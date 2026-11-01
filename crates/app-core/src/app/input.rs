@@ -1,0 +1,808 @@
+//! The input of the windows: their keys, the input method's composition,
+//! the mouse's buttons, moves and wheel, the selection that it makes, and
+//! what is dropped on them, each routed to its window's pane.
+
+use std::time::Instant;
+
+use lokyr_kernel::commands::Value;
+use lokyr_kernel::keymap::{Invocation, Pressed, Resolved, Resolver};
+use lokyr_kernel::workspace::Pane;
+use lokyr_kernel::{keymap, paste};
+use lokyr_platform_core::{
+    Dropped, Ime, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point, ScrollDelta,
+    ScrollPhase, WindowId,
+};
+use lokyr_ui_core::pane::Preedit;
+use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
+use lokyr_vt_core::terminal::{
+    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit,
+};
+
+use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, context};
+use crate::drawing::Backend;
+use crate::mouse::{Pointer, Spot};
+use crate::window::Selecting;
+use crate::{keys, mouse};
+
+impl<B: Backend> App<B> {
+    /// A key of `window`: the press that the latency's bench waits for;
+    /// a man page's keys, which scroll it; a key of a window whose program
+    /// ended, which closes it; and the others, which the keymap runs as
+    /// commands, holds back as a sequence under way, or gives the program.
+    pub(super) fn key(&mut self, platform: &mut dyn Platform, window: WindowId, key: &KeyEvent) {
+        // The press that the latency's bench waits to see shown.
+        if let Some(bench) = &mut self.latency_bench
+            && bench.window == Some(window)
+            && bench.pending.is_none()
+            && key.state == KeyState::Pressed
+            && !key.mods.super_key
+            && !key.text.is_empty()
+        {
+            bench.pending = key.time;
+        }
+        // The key's own prompt, which no output told, as after a
+        // silent `stty -echo`, is secure from the next key.
+        self.settle_secure_input(platform);
+        let options = keys::options(self.config.keyboard.option_as_meta);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let pressed = key.state != KeyState::Released;
+        // A man page's keys scroll it, and close nothing.
+        if pane.is_kept() && state.page.is_some() {
+            if pressed && let Some(scroll) = page_scroll(key) {
+                pane.scroll(scroll);
+                platform.request_frame(window);
+            }
+            return;
+        }
+        if pane.is_kept() {
+            if pressed && closes(key) {
+                self.close(platform, window);
+            }
+            return;
+        }
+        if pressed {
+            state.blink.restart(Instant::now());
+            platform.request_frame(window);
+        }
+        match self.resolve_key(window, key) {
+            Taken::Run(invocation) => {
+                self.run(platform, &invocation.command, invocation.args);
+            }
+            Taken::Held => {}
+            Taken::Program(keys) => {
+                let Some(pane) = self
+                    .windows
+                    .get(&window)
+                    .and_then(|state| self.workspace.pane(state.pane))
+                else {
+                    return;
+                };
+                give(pane, &keys, options);
+            }
+        }
+    }
+
+    /// The input method's text: composed, shown at the cursor, or
+    /// typed, sent to the program, after the keys of a sequence under
+    /// way, which it ends. A composition that starts brings the view
+    /// back to the screen, and the cursor's blinking on, as typing
+    /// does.
+    pub(super) fn ime(&mut self, platform: &mut dyn Platform, window: WindowId, ime: Ime) {
+        let options = keys::options(self.config.keyboard.option_as_meta);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        // On a window whose program ended, what the input method
+        // composes does not show, and its commit closes it, as a key
+        // does.
+        if pane.is_kept() {
+            if matches!(ime, Ime::Commit(_)) {
+                self.close(platform, window);
+            }
+            return;
+        }
+        let composes = match &ime {
+            Ime::Preedit { text, .. } => !text.is_empty(),
+            Ime::Commit(_) => true,
+        };
+        if composes && state.resolver.is_pending() {
+            give(pane, &state.end_sequence(), options);
+        }
+        match ime {
+            Ime::Preedit { text, selection } => {
+                if !text.is_empty() && state.preedit.is_none() {
+                    pane.scroll(Scroll::Bottom);
+                    state.blink.restart(Instant::now());
+                }
+                state.preedit = (!text.is_empty()).then_some(Preedit {
+                    text,
+                    cursor: selection.start,
+                });
+            }
+            Ime::Commit(text) => {
+                state.preedit = None;
+                pane.text(&text);
+                state.blink.restart(Instant::now());
+            }
+        }
+        platform.request_frame(window);
+    }
+
+    /// A drop on `window`: files paste their paths, as a shell's
+    /// arguments; text pastes as a paste does.
+    pub(super) fn dropped(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        dropped: Dropped,
+    ) {
+        let text = match dropped {
+            Dropped::Files(paths) => {
+                let paths: Vec<String> = paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect();
+                paste::dropped_paths(paths.iter().map(String::as_str))
+            }
+            Dropped::Text(text) => text,
+        };
+        self.paste_into(platform, window, text);
+    }
+
+    /// What the keymap does with `key`, in `window`: runs a command, holds
+    /// the key back as a sequence goes on, or gives it to the program,
+    /// after the keys of a sequence that it did not go on with. A release
+    /// of a key that the keymap took goes nowhere, but for a key of the
+    /// sequence under way, whose release waits with it.
+    fn resolve_key(&mut self, window: WindowId, key: &KeyEvent) -> Taken {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return Taken::Held;
+        };
+        if key.state == KeyState::Released {
+            if let Some(at) = state.taken.iter().position(|&code| code == key.code) {
+                state.taken.remove(at);
+                if state.held_back.iter().any(|held| held.code == key.code) {
+                    state.held_back.push(key.clone());
+                }
+                return Taken::Held;
+            }
+            return Taken::Program(vec![key.clone()]);
+        }
+        // A key of the sequence under way, held, waits for the next.
+        if key.state == KeyState::Repeated
+            && state.resolver.is_pending()
+            && state.taken.contains(&key.code)
+        {
+            return Taken::Held;
+        }
+        let event = keys::terminal_key(key);
+        let pressed = event.as_ref().and_then(|event| {
+            Pressed::key(event.key, binding_mods(key.mods), key.code.base_layout())
+        });
+        // A modifier or a lock alone neither takes a binding nor ends a
+        // sequence; another key that the keymap does not name, as the
+        // keypad's, ends it, and goes to the program after its keys.
+        let Some(pressed) = pressed else {
+            let unnamed = event.is_some_and(|event| !is_modifier(event.key));
+            let mut keys = if unnamed {
+                state.end_sequence()
+            } else {
+                Vec::new()
+            };
+            keys.push(key.clone());
+            return Taken::Program(keys);
+        };
+        let context = context(self.workspace.pane(state.pane));
+        match state.resolver.press(&self.keymap, pressed, &context) {
+            Resolved::Run(invocation) => {
+                state.held_back.clear();
+                state.take(key.code);
+                Taken::Run(invocation)
+            }
+            Resolved::Pending => {
+                state.held_back.push(key.clone());
+                state.take(key.code);
+                Taken::Held
+            }
+            Resolved::Program { .. } => {
+                let mut keys = state.end_sequence();
+                keys.push(key.clone());
+                Taken::Program(keys)
+            }
+        }
+    }
+
+    /// Where `position` is in the cells of `window`.
+    pub(super) fn pointer(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<Pointer> {
+        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
+        let size = platform.window_size(window)?;
+        Some(mouse::pointer(
+            position,
+            size.scale,
+            self.origin(size),
+            pane.grid(),
+        ))
+    }
+
+    /// A button of the mouse went down or up over `window`: the program
+    /// learns of it, as its mouse modes have it, at the screen's row, and
+    /// not of a press above the screen, in a view scrolled up. Shift keeps
+    /// a press for the terminal, which selects with it; a release goes to
+    /// the program whenever it learned of the press, so that no button stays
+    /// down for it.
+    pub(super) fn mouse_button(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (button, pressed, clicks): (MouseButton, bool, u32),
+        position: Point,
+        mods: Modifiers,
+    ) {
+        let Some(button) = mouse::button(button) else {
+            return;
+        };
+        // A press on the notice's close closes the notice; one on the rest
+        // of its bar does nothing, as the bar covers the text under it.
+        match self.on_notice(platform, window, position) {
+            Some(close) if pressed => {
+                if close {
+                    self.diagnostics.dismiss();
+                    self.request_frames(platform);
+                }
+                return;
+            }
+            _ => {}
+        }
+        // A press that a binding takes starts no selection, and reaches no
+        // program, which then learns of no release.
+        if button == lokyr_vt_core::input::MouseButton::Left
+            && pressed
+            && clicks <= 1
+            && self.click(platform, window, position, mods)
+        {
+            return;
+        }
+        // The right button, or the left one with Control, opens the context
+        // menu where the terminal keeps the click.
+        let menu_button = match button {
+            lokyr_vt_core::input::MouseButton::Right => true,
+            lokyr_vt_core::input::MouseButton::Left => mods.control,
+            _ => false,
+        };
+        if pressed && menu_button && self.keeps_click(window, mods) {
+            self.context_menu(platform, window, position);
+            return;
+        }
+        if button == lokyr_vt_core::input::MouseButton::Left && self.selects(window, pressed, mods)
+        {
+            if pressed {
+                self.select_press(platform, window, position, (mods, clicks));
+            } else {
+                self.select_release(platform, window);
+            }
+            return;
+        }
+        if pressed && mods.shift {
+            return;
+        }
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self
+            .workspace
+            .pane(state.pane)
+            .filter(|pane| !pane.is_kept())
+        else {
+            return;
+        };
+        let on_screen =
+            mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height);
+        if pressed {
+            let Some(pointer) = on_screen else {
+                return;
+            };
+            state.mouse.moved(pointer, true);
+            if pane.mouse(&mouse_event(MouseAction::Press(button), mods, pointer)) {
+                state.mouse.press(button);
+            }
+        } else if state.mouse.release(button) {
+            let pointer = on_screen.unwrap_or(mouse::at_top(pointer));
+            state.mouse.moved(pointer, true);
+            pane.mouse(&mouse_event(MouseAction::Release(button), mods, pointer));
+        }
+    }
+
+    /// Runs the command that the keymap binds the left button's click with
+    /// `mods` to, as it goes down at `position` over `window`, which has the
+    /// focus, before the selection and the program: the column and the row
+    /// of the cell under the pointer, in the view, become its `column` and
+    /// `row` arguments, if it takes them. Whether a command was bound.
+    fn click(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+        mods: Modifiers,
+    ) -> bool {
+        if platform.focused_window() != Some(window) {
+            return false;
+        }
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return false;
+        };
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        let context = context(self.workspace.pane(state.pane));
+        let Resolved::Run(mut invocation) =
+            Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
+        else {
+            return false;
+        };
+        if let Some(command) = self.commands.get(&invocation.command) {
+            for (name, value) in [("column", pointer.col), ("row", pointer.row)] {
+                if command.params.iter().any(|param| param.name == name) {
+                    invocation
+                        .args
+                        .entry(name.to_owned())
+                        .or_insert(Value::Integer(i64::from(value)));
+                }
+            }
+        }
+        self.run(platform, &invocation.command, invocation.args);
+        true
+    }
+
+    /// Whether the left button's press, `pressed`, or its release, with
+    /// `mods`, over `window` selects: a press that the terminal keeps; a
+    /// release that ends a selection.
+    fn selects(&self, window: WindowId, pressed: bool, mods: Modifiers) -> bool {
+        if pressed {
+            return self.keeps_click(window, mods);
+        }
+        self.windows
+            .get(&window)
+            .and_then(|state| state.selecting)
+            .is_some_and(|selecting| selecting.held)
+    }
+
+    /// Whether a press with `mods` over `window` stays with the terminal:
+    /// where no program takes the mouse, or with Shift.
+    fn keeps_click(&self, window: WindowId, mods: Modifiers) -> bool {
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        mods.shift
+            || self.workspace.pane(state.pane).is_none_or(|pane| {
+                pane.is_kept()
+                    || pane
+                        .input_modes()
+                        .is_none_or(|modes| modes.mouse_tracking == MouseTracking::None)
+            })
+    }
+
+    /// Starts a selection at `position`, as the left button goes down with
+    /// `mods`, of its `clicks` in a row: a click starts one of cells, which
+    /// selects nothing until the pointer moves, and takes the selection that
+    /// was there away; a double click selects the word, a triple click the
+    /// line; Option makes a rectangle; Shift, where no program takes it,
+    /// extends the last selection to the pointer.
+    fn select_press(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+        (mods, clicks): (Modifiers, u32),
+    ) {
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let grid = pane.grid();
+        let spot = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        let tracking = !pane.is_kept()
+            && pane
+                .input_modes()
+                .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None);
+        match &mut state.selecting {
+            Some(selecting) if mods.shift && !tracking && clicks <= 1 => {
+                selecting.last = spot;
+                selecting.held = true;
+            }
+            slot => {
+                let unit = match clicks {
+                    2 => SelectionUnit::Word,
+                    3.. => SelectionUnit::Line,
+                    _ => SelectionUnit::Cell,
+                };
+                let rectangle = (mods.left_alt || mods.right_alt) && unit == SelectionUnit::Cell;
+                // The terminal keeps the anchor, which moves with its text.
+                pane.anchor_selection((spot.col, spot.row + pane.view_offset() as i64));
+                *slot = Some(Selecting {
+                    anchor: spot,
+                    last: spot,
+                    shape: if rectangle {
+                        SelectionShape::Rectangle
+                    } else {
+                        SelectionShape::Cells
+                    },
+                    unit,
+                    held: true,
+                    beyond: 0,
+                });
+            }
+        }
+        if let Some(selecting) = &mut state.selecting {
+            show_selection(pane, selecting);
+        }
+        platform.request_frame(window);
+    }
+
+    /// The pointer dragged a selection to `position`: the selection takes
+    /// the cells to it, and the view scrolls while it is past the grid's
+    /// top or bottom.
+    fn select_drag(&mut self, platform: &mut dyn Platform, window: WindowId, position: Point) {
+        let Some(size) = platform.window_size(window) else {
+            return;
+        };
+        let scale = size.scale;
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let (_, top) = self.origin(size);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let Some(selecting) = &mut state.selecting else {
+            return;
+        };
+        let grid = pane.grid();
+        selecting.last = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        selecting.beyond = mouse::beyond(position.y, scale, top, grid);
+        show_selection(pane, selecting);
+        platform.request_frame(window);
+        if selecting.beyond != 0 && self.scroll_timer.is_none() {
+            self.scroll_timer = Some(platform.start_timer(Instant::now() + SELECTION_SCROLL));
+        }
+    }
+
+    /// The left button went up, which ends the selection that it made:
+    /// with `copy-on-select`, its text goes to the clipboard.
+    fn select_release(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if let Some(selecting) = &mut state.selecting {
+            selecting.held = false;
+            selecting.beyond = 0;
+        }
+        if self.config.clipboard.copy_on_select
+            && let Some(text) = self
+                .workspace
+                .pane(state.pane)
+                .and_then(Pane::selection_text)
+            && !text.is_empty()
+        {
+            platform.set_clipboard_text(&text);
+        }
+    }
+
+    /// The views under selections dragged past their grid scroll a step,
+    /// of a row for each row that the pointer is past it, and the
+    /// selections take the rows that come; the timer goes on while a view
+    /// still scrolls.
+    pub(super) fn scroll_selections(&mut self, platform: &mut dyn Platform) {
+        self.scroll_timer = None;
+        let mut scrolled = false;
+        for (&window, state) in &mut self.windows {
+            let Some(selecting) = &mut state.selecting else {
+                continue;
+            };
+            if !selecting.held || selecting.beyond == 0 {
+                continue;
+            }
+            let Some(pane) = self.workspace.pane(state.pane) else {
+                continue;
+            };
+            let rows = usize::try_from(selecting.beyond.unsigned_abs())
+                .unwrap_or(usize::MAX)
+                .min(SELECTION_SCROLL_ROWS);
+            let before = pane.view_offset();
+            pane.scroll(if selecting.beyond < 0 {
+                Scroll::Up(rows)
+            } else {
+                Scroll::Down(rows)
+            });
+            let offset = pane.view_offset();
+            // The pointer stays past the edge, on the row that the view
+            // brings under it.
+            let edge = if selecting.beyond < 0 {
+                0
+            } else {
+                i64::from(pane.grid().rows) - 1
+            };
+            selecting.last.row = edge - offset as i64;
+            show_selection(pane, selecting);
+            platform.request_frame(window);
+            scrolled |= offset != before;
+        }
+        if scrolled {
+            self.scroll_timer = Some(platform.start_timer(Instant::now() + SELECTION_SCROLL));
+        }
+    }
+
+    /// The pointer moved over `window`: a program that asked learns of it,
+    /// once a cell, or a pixel for reports in pixels, at the screen's row,
+    /// and not above the screen.
+    pub(super) fn mouse_moved(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+        mods: Modifiers,
+    ) {
+        let dragging = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.selecting)
+            .is_some_and(|selecting| selecting.held);
+        if dragging {
+            self.select_drag(platform, window, position);
+            return;
+        }
+        if mods.shift {
+            return;
+        }
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self
+            .workspace
+            .pane(state.pane)
+            .filter(|pane| !pane.is_kept())
+        else {
+            return;
+        };
+        let Some(modes) = pane.input_modes() else {
+            return;
+        };
+        if modes.mouse_tracking == MouseTracking::None {
+            return;
+        }
+        let offset = pane.snapshot().offset();
+        let Some(pointer) = mouse::on_screen(pointer, offset, pane.grid().cell_height) else {
+            return;
+        };
+        let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
+        if state.mouse.moved(pointer, pixels) {
+            let action = MouseAction::Motion(state.mouse.held());
+            pane.mouse(&mouse_event(action, mods, pointer));
+        }
+    }
+
+    /// The wheel or the trackpad scrolled over `window`, by `scroll`'s delta
+    /// in its phase: each whole step goes to a program that takes the
+    /// wheel, as the cursor keys on the alternate screen; otherwise, and
+    /// with Shift, it moves the view through the scrollback.
+    pub(super) fn scroll(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (delta, phase): (ScrollDelta, Option<ScrollPhase>),
+        position: Point,
+        mods: Modifiers,
+    ) {
+        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+            return;
+        };
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let row_points = f64::from(pane.grid().cell_height) / scale;
+        let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        // A step that the program takes over the scrollback goes to it at
+        // the screen's top row.
+        let pointer = mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height)
+            .unwrap_or(mouse::at_top(pointer));
+        let to_program = !mods.shift && !pane.is_kept();
+        // A binding of a step takes it first, before the program and the
+        // view.
+        let context = context(Some(pane));
+        let bound = |wheel| match Resolver::new().press(
+            &self.keymap,
+            Pressed::wheel(wheel, binding_mods(mods)),
+            &context,
+        ) {
+            Resolved::Run(invocation) => Some(invocation),
+            _ => None,
+        };
+        let mut runs = Vec::new();
+        let mut view: i64 = 0;
+        let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
+        let up_bound = bound(wheel);
+        for _ in 0..up.unsigned_abs() {
+            if let Some(invocation) = &up_bound {
+                runs.push(invocation.clone());
+                continue;
+            }
+            let event = mouse_event(MouseAction::Wheel(wheel), mods, pointer);
+            if !(to_program && pane.mouse(&event)) {
+                view += i64::from(up.signum());
+            }
+        }
+        let wheel = if across > 0 {
+            Wheel::Left
+        } else {
+            Wheel::Right
+        };
+        let across_bound = bound(wheel);
+        for _ in 0..across.unsigned_abs() {
+            if let Some(invocation) = &across_bound {
+                runs.push(invocation.clone());
+            } else if to_program {
+                pane.mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer));
+            }
+        }
+        if view != 0 {
+            let rows = usize::try_from(view.unsigned_abs()).unwrap_or(usize::MAX);
+            pane.scroll(if view > 0 {
+                Scroll::Up(rows)
+            } else {
+                Scroll::Down(rows)
+            });
+            platform.request_frame(window);
+        }
+        for invocation in runs {
+            self.run(platform, &invocation.command, invocation.args);
+        }
+    }
+}
+
+/// Gives `keys` to the program of `pane`, in their order, with the
+/// keyboard's `options`.
+fn give(pane: &Pane, keys: &[KeyEvent], options: KeyOptions) {
+    for key in keys {
+        if let Some(event) = keys::terminal_key(key) {
+            pane.key(&event, options);
+        }
+    }
+}
+
+/// Whether `key` is a modifier or a lock, which no binding takes.
+fn is_modifier(key: Key) -> bool {
+    matches!(
+        key,
+        Key::Modifier(_) | Key::CapsLock | Key::ScrollLock | Key::NumLock
+    )
+}
+
+/// What the keymap does with a key.
+enum Taken {
+    /// It runs a command.
+    Run(Invocation),
+    /// It holds the key back, or takes its release.
+    Held,
+    /// It gives these keys to the program, in their order.
+    Program(Vec<KeyEvent>),
+}
+
+/// The modifiers of `mods`, as bindings name them.
+fn binding_mods(mods: Modifiers) -> keymap::Mods {
+    keymap::Mods {
+        cmd: mods.super_key,
+        ctrl: mods.control,
+        alt: mods.left_alt || mods.right_alt,
+        shift: mods.shift,
+    }
+}
+
+/// How `key` scrolls a man page that its window keeps, as a pager's keys
+/// do: the arrows by a row, Space and the page keys by a page, Home and
+/// End to the page's ends.
+fn page_scroll(key: &lokyr_platform_core::KeyEvent) -> Option<Scroll> {
+    use lokyr_vt_core::input::Key;
+    if key.mods.super_key {
+        return None;
+    }
+    Some(match keys::terminal_key(key)?.key {
+        Key::Up => Scroll::Up(1),
+        Key::Down => Scroll::Down(1),
+        Key::PageUp => Scroll::PageUp,
+        Key::PageDown | Key::Char(' ') => Scroll::PageDown,
+        Key::Home => Scroll::Top,
+        Key::End => Scroll::Bottom,
+        _ => return None,
+    })
+}
+
+/// Whether `key` closes a window whose program ended: a key that types or
+/// acts, not a modifier, a lock, Fn, nor a key with Command, which the
+/// app's shortcuts have.
+fn closes(key: &lokyr_platform_core::KeyEvent) -> bool {
+    use lokyr_vt_core::input::Key;
+    !key.mods.super_key
+        && keys::terminal_key(key).is_some_and(|key| {
+            !matches!(
+                key.key,
+                Key::Modifier(_) | Key::CapsLock | Key::NumLock | Key::ScrollLock
+            )
+        })
+}
+
+/// The terminal's mouse event of `action`, with `mods`, at `pointer`.
+fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseEvent {
+    MouseEvent {
+        action,
+        mods: keys::mods(mods),
+        col: pointer.col,
+        row: pointer.row,
+        x: pointer.x,
+        y: pointer.y,
+    }
+}
+
+/// Shows `selecting`'s selection in `pane`: the cells between its spots,
+/// or the words or the lines that they are in; none, as after a click. Its
+/// anchor is where the terminal keeps it, which output moves with its text.
+pub(super) fn show_selection(pane: &Pane, selecting: &mut Selecting) {
+    let offset = pane.view_offset() as i64;
+    // The anchor where its text is now, which output, or a reflow, can
+    // have moved; its side of its cell kept.
+    if let Some((col, row)) = pane.selection_anchor() {
+        let side = selecting
+            .anchor
+            .boundary
+            .saturating_sub(selecting.anchor.col);
+        selecting.anchor = Spot {
+            row: row - offset,
+            col,
+            boundary: col + side,
+        };
+    }
+    let (anchor, last) = (selecting.anchor, selecting.last);
+    let cells = match (selecting.shape, selecting.unit) {
+        (SelectionShape::Rectangle, _) => mouse::rectangle_cells(anchor, last),
+        (SelectionShape::Cells, SelectionUnit::Cell) => {
+            mouse::dragged_cells(anchor, last, pane.grid().columns)
+        }
+        (SelectionShape::Cells, _) => Some(((anchor.col, anchor.row), (last.col, last.row))),
+    };
+    let view = |(col, row): (u16, i64)| (col, row + offset);
+    match cells {
+        Some((from, to)) => pane.select(view(from), view(to), selecting.shape, selecting.unit),
+        None => pane.clear_selection(),
+    }
+}
