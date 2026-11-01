@@ -326,16 +326,29 @@ fn escaped(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Copies the symbols' font's license and its icons' licenses, of `fonts`,
-/// into `resources`' `licenses/symbols-nerd-font`, as the binary holds the
-/// font.
+/// Copies the symbols' font's license, the notices of its icons' sets, and
+/// the texts of the sets' licenses in its `licenses`, of `fonts`, into
+/// `resources`' `licenses/symbols-nerd-font`, in the same places, as the
+/// binary holds the font.
 fn copy_font_licenses(fonts: &Path, resources: &Path) -> Result<()> {
     let licenses = resources.join("licenses/symbols-nerd-font");
-    fs::create_dir_all(&licenses).with_context(|| format!("making {}", licenses.display()))?;
+    let sets = licenses.join("licenses");
+    fs::create_dir_all(&sets).with_context(|| format!("making {}", sets.display()))?;
     for name in ["LICENSE", "README.md"] {
         let path = fonts.join(name);
         fs::copy(&path, licenses.join(name))
             .with_context(|| format!("copying {}", path.display()))?;
+    }
+    let texts = fonts.join("licenses");
+    let entries = fs::read_dir(&texts).with_context(|| format!("reading {}", texts.display()))?;
+    for entry in entries {
+        let path = entry
+            .with_context(|| format!("reading {}", texts.display()))?
+            .path();
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        fs::copy(&path, sets.join(name)).with_context(|| format!("copying {}", path.display()))?;
     }
     Ok(())
 }
@@ -506,6 +519,11 @@ mod tests {
         assert!(license.starts_with("The MIT License"), "{license}");
         let notices = fs::read_to_string(licenses.join("README.md")).unwrap();
         assert!(notices.contains("| Font Awesome |"), "{notices}");
+        // The sets' licenses, which a copy of their icons carries.
+        let text = |name: &str| fs::read_to_string(licenses.join("licenses").join(name)).unwrap();
+        assert!(text("apache-2.0.txt").contains("Apache License"));
+        assert!(text("pomicons.txt").contains("SIL Open Font License"));
+        assert!(text("codicons.txt").starts_with("Attribution 4.0 International"));
         fs::remove_dir_all(resources).unwrap();
     }
 

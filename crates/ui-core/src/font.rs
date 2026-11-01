@@ -123,6 +123,10 @@ pub struct Font<B> {
     /// when it is not installed.
     missing_non_ascii: Option<String>,
     pixels: f32,
+    /// The sizes in pixels at which the symbols' font fits a cell of one
+    /// column and one of two, once a frame asked for them, as its icons are
+    /// an em wide.
+    fitted: [Option<f32>; 2],
     /// The display's scale.
     scale: f32,
     /// Which styles take their faces.
@@ -314,6 +318,9 @@ struct Found {
     synthesis: Synthesis,
     glyph: GlyphId,
     emoji: bool,
+    /// Whether the glyph is the symbols' font's, which draws at the size
+    /// that fits its cell, in the cell's middle.
+    fitted: bool,
 }
 
 /// Where each style finds each character that it was asked for, in its
@@ -399,6 +406,7 @@ impl<B: FontBackend> Font<B> {
             backend,
             config,
             pixels,
+            fitted: [None; 2],
             scale,
             text: TextConfig::default(),
             cell,
@@ -457,8 +465,42 @@ impl<B: FontBackend> Font<B> {
             return;
         }
         self.pixels = pixels;
+        self.fitted = [None; 2];
         let metrics = self.backend.metrics(self.resolved.faces.regular.id, pixels);
         self.cell = CellMetrics::new(&metrics, &self.config);
+    }
+
+    /// The size in pixels at which `face`, the symbols' font, fits a cell,
+    /// of two columns when `wide`: its advance at the text's size brought
+    /// down to the cell's width, or the text's size if it fits already.
+    fn fitted_pixels(&mut self, face: FaceId, wide: bool) -> f32 {
+        let fitted = &mut self.fitted[usize::from(wide)];
+        if let Some(pixels) = *fitted {
+            return pixels;
+        }
+        let advance = self.backend.metrics(face, self.pixels).advance;
+        let width = (self.cell.width * if wide { 2 } else { 1 }) as f32;
+        let pixels = if advance > width {
+            self.pixels * width / advance
+        } else {
+            self.pixels
+        };
+        *fitted = Some(pixels);
+        pixels
+    }
+
+    /// The glyph of `region` in the middle of its cell, of two columns when
+    /// `wide`, across and down.
+    fn in_the_middle(&self, region: AtlasRegion, wide: bool) -> AtlasGlyph {
+        let half = |cell: u32, glyph: u32| (i64::from(cell) - i64::from(glyph)) / 2;
+        let left = half(self.cell.width * if wide { 2 } else { 1 }, region.width);
+        let below_top = half(self.cell.height, region.height);
+        AtlasGlyph {
+            region,
+            left: i32::try_from(left).unwrap_or(0),
+            // The top edge's rows above the baseline.
+            top: i32::try_from(i64::from(self.cell.baseline) - below_top).unwrap_or(0),
+        }
     }
 
     /// Takes `text`'s choice of which styles take their faces: bold text
@@ -624,7 +666,7 @@ impl<B: FontBackend> Font<B> {
         let character = shown.text.chars().next()?;
         let found = self.find(style, character, Presentation::asked(shown.text))?;
         let found = self.sequence(found, shown.text);
-        self.draw(found, self.thin(shown.dark))
+        self.draw(found, self.thin(shown.dark), shown.wide)
     }
 
     /// The glyph of `found`, an emoji, of the whole `cluster`, when the
@@ -652,13 +694,26 @@ impl<B: FontBackend> Font<B> {
         }
     }
 
-    /// The glyph `found` in the atlas, of thin strokes when `thin`, drawn
-    /// into it the first time, antialiased as the configuration says.
-    fn draw(&mut self, found: Found, thin: bool) -> Option<AtlasGlyph> {
+    /// The glyph `found` in the atlas, of thin strokes when `thin`, for a
+    /// cell of two columns when `wide`: a glyph of the symbols' font drawn
+    /// to fit the cell, in its middle.
+    fn draw(&mut self, found: Found, thin: bool, wide: bool) -> Option<AtlasGlyph> {
+        if !found.fitted {
+            return self.draw_at(found, self.pixels, thin);
+        }
+        let size = self.fitted_pixels(found.face, wide);
+        let glyph = self.draw_at(found, size, thin)?;
+        Some(self.in_the_middle(glyph.region, wide))
+    }
+
+    /// The glyph `found` at `size` in the atlas, of thin strokes when
+    /// `thin`, drawn into it the first time, antialiased as the
+    /// configuration says.
+    fn draw_at(&mut self, found: Found, size: f32, thin: bool) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
-            size: self.pixels.to_bits(),
+            size: size.to_bits(),
             synthesis: found.synthesis,
             thin,
         };
@@ -688,7 +743,7 @@ impl<B: FontBackend> Font<B> {
                             let raster = Raster {
                                 face: found.face,
                                 glyph: found.glyph,
-                                size: self.pixels,
+                                size,
                                 synthesis: found.synthesis,
                                 rendering,
                             };
@@ -704,7 +759,7 @@ impl<B: FontBackend> Font<B> {
                     self.backend.rasterize(
                         found.face,
                         found.glyph,
-                        self.pixels,
+                        size,
                         found.synthesis,
                         rendering,
                     )
@@ -772,7 +827,7 @@ impl<B: FontBackend> Font<B> {
             // An emoji, and a glyph that the terminal draws, alone.
             if found.emoji || found.face == SPRITES {
                 let found = self.sequence(found, run.cluster(index));
-                if let Some(glyph) = self.draw(found, thin) {
+                if let Some(glyph) = self.draw(found, thin, run.cells[index].wide) {
                     out.push(RunGlyph {
                         cell: index,
                         glyph,
@@ -802,7 +857,8 @@ impl<B: FontBackend> Font<B> {
                 self.shape_cells(run, (index, end), found, text, thin, out);
             } else {
                 for (cell, found) in cells.iter().enumerate().take(end).skip(index) {
-                    if let Some(glyph) = found.and_then(|found| self.draw(found, thin)) {
+                    let wide = run.cells[cell].wide;
+                    if let Some(glyph) = found.and_then(|found| self.draw(found, thin, wide)) {
                         out.push(RunGlyph {
                             cell,
                             glyph,
@@ -883,9 +939,10 @@ impl<B: FontBackend> Font<B> {
                     synthesis: Synthesis::default(),
                     glyph: glyph.glyph,
                     emoji: false,
+                    fitted: false,
                 }
             };
-            if let Some(atlas) = self.draw(drawn, thin) {
+            if let Some(atlas) = self.draw(drawn, thin, run.cells[cell].wide) {
                 out.push(RunGlyph {
                     cell,
                     glyph: atlas,
@@ -1001,6 +1058,7 @@ impl<B: FontBackend> Font<B> {
                 synthesis: Synthesis::default(),
                 glyph: GlyphId(code),
                 emoji: false,
+                fitted: false,
             });
         }
         let family = face_of(&self.resolved.faces, style);
@@ -1105,6 +1163,7 @@ fn cascade<B: FontBackend>(
         },
         glyph,
         emoji: false,
+        fitted: false,
     })
 }
 
@@ -1119,7 +1178,8 @@ fn is_private(character: char) -> bool {
 
 /// The glyph of `character`, of the private use areas, in the symbols'
 /// font, which draws the icons that the configured font lacks, as a Nerd
-/// Font would, upright and of its own weight.
+/// Font of one cell's icons would, upright and of its own weight, fitted
+/// to its cell.
 fn in_symbols<B: FontBackend>(
     ids: &mut FastMap<(FaceId, char), Option<GlyphId>>,
     backend: &mut B,
@@ -1134,6 +1194,7 @@ fn in_symbols<B: FontBackend>(
         synthesis: Synthesis::default(),
         glyph,
         emoji: false,
+        fitted: true,
     })
 }
 
@@ -1150,6 +1211,7 @@ fn in_faces<B: FontBackend>(
             synthesis: face.synthesis,
             glyph,
             emoji: false,
+            fitted: false,
         })
     })
 }
@@ -1231,7 +1293,7 @@ mod tests {
     /// The last resort, which has every character.
     const LAST_RESORT: FaceId = FaceId(11);
 
-    /// The symbols' font, of U+E200 to U+E2FF, which Mono lacks.
+    /// The symbols' font, of U+E200 to U+E2FF, which Mono lacks, and of ✔.
     const SYMBOLS_FONT: FaceId = FaceId(12);
 
     fn is_symbol(character: char) -> bool {
@@ -1309,11 +1371,18 @@ mod tests {
             })
         }
 
-        fn metrics(&mut self, _: FaceId, size: f32) -> FaceMetrics {
+        fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics {
+            // The symbols' font is of icons wider than a cell, as Symbols
+            // Nerd Font's are at the text's size.
+            let advance = if face == SYMBOLS_FONT {
+                size
+            } else {
+                size * 0.6
+            };
             FaceMetrics {
                 ascent: size * 0.8,
                 descent: size * 0.2,
-                advance: size * 0.6,
+                advance,
                 ..FaceMetrics::default()
             }
         }
@@ -1323,7 +1392,7 @@ mod tests {
             let has = match face {
                 ICONS => is_icon(character),
                 LAST_RESORT => true,
-                SYMBOLS_FONT => is_symbol(character),
+                SYMBOLS_FONT => is_symbol(character) || character == '\u{2714}',
                 CJK => is_cjk(character),
                 EMOJI => character != '\u{E000}',
                 SYMBOLS => !is_cjk(character) && character != '\u{231A}',
@@ -1628,6 +1697,82 @@ mod tests {
         // cascade.
         assert_eq!(font.find(0, 'A', None), None);
         assert_eq!(font.backend.fallbacks, 1);
+    }
+
+    #[test]
+    fn the_symbols_font_s_icon_is_drawn_to_fit_its_cell_in_its_middle() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let cell = font.cell;
+        let glyph = font.glyph(&shown("\u{E201}", &Style::DEFAULT)).unwrap();
+        // Drawn at the size at which its advance is the cell's width.
+        let &(_, key) = font.drawn.last().unwrap();
+        // Its advance at the text's size is that size.
+        let size = cell.width as f32;
+        assert_eq!(key.size, size.to_bits());
+        let side = size as u32 / 2;
+        assert_eq!((glyph.region.width, glyph.region.height), (side, side));
+        assert_eq!(glyph.left, ((cell.width - side) / 2) as i32);
+        let below_top = (cell.height - side) / 2;
+        assert_eq!(glyph.top, cell.baseline as i32 - below_top as i32);
+        // A cell of two columns, as an ambiguous character's can be, holds
+        // it at the text's size, in the middle of both.
+        let two = CellText {
+            wide: true,
+            ..shown("\u{E201}", &Style::DEFAULT)
+        };
+        let glyph = font.glyph(&two).unwrap();
+        let &(_, key) = font.drawn.last().unwrap();
+        assert_eq!(key.size, font.pixels.to_bits());
+        let side = font.pixels as u32 / 2;
+        assert_eq!(glyph.left, ((2 * cell.width - side) / 2) as i32);
+        let wide_left = glyph.left;
+        // In a run, shaped, each cell's own columns.
+        let cells = [(0, false), (1, false), (4, true)]
+            .map(|(start, wide)| crate::pane::RunCell { start, wide });
+        let run = Run {
+            text: "a\u{E201}\u{E201}",
+            cells: &cells,
+            style: &Style::DEFAULT,
+            dark: false,
+        };
+        let mut out = Vec::new();
+        font.lay_out(&run, &mut out);
+        let lefts: Vec<_> = out.iter().map(|placed| placed.glyph.left).collect();
+        let narrow_left = ((cell.width - cell.width / 2) / 2) as i32;
+        assert_eq!(lefts, [1, narrow_left, wide_left]);
+        // The configured font's glyph keeps its size and its place.
+        let text = font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+        let &(_, key) = font.drawn.last().unwrap();
+        assert_eq!(key.size, font.pixels.to_bits());
+        assert_eq!((text.left, text.top), (1, (font.pixels as u32 / 2) as i32));
+    }
+
+    #[test]
+    fn the_symbols_font_draws_only_the_private_use_areas() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        // ✔, of text presentation, which the symbols' font has too, is the
+        // cascade's.
+        let found = font.find(0, '\u{2714}', None).map(|found| found.face);
+        assert_ne!(found, Some(SYMBOLS_FONT));
+        assert_eq!(
+            font.backend.looked_up.get(&(SYMBOLS_FONT, '\u{2714}')),
+            None
+        );
+    }
+
+    #[test]
+    fn the_configured_font_s_icon_is_its_own() {
+        let config = FontConfig {
+            family: Some(lokyr_text_core::Name::try_from("Wide".to_owned()).unwrap()),
+            ..FontConfig::default()
+        };
+        let mut font = Font::new(Squares::default(), config, 2.0).unwrap();
+        let found = font.find(0, '\u{E201}', None).unwrap();
+        assert_eq!(found.face, WIDE);
+        let glyph = font.glyph(&shown("\u{E201}", &Style::DEFAULT)).unwrap();
+        let &(_, key) = font.drawn.last().unwrap();
+        assert_eq!(key.size, font.pixels.to_bits());
+        assert_eq!(glyph.left, 1);
     }
 
     #[test]
@@ -2320,6 +2465,26 @@ mod system {
         for icon in ['\u{F015}', '\u{E606}', '\u{F0001}'] {
             let found = font.find(0, icon, None).expect("a face");
             assert_eq!(found.face, symbols, "U+{:X}", u32::from(icon));
+            // Within its cell, across, in its middle, but for the pixel that
+            // the bitmap keeps past the outline on each side, and one of
+            // rounding.
+            let text = icon.to_string();
+            let shown = CellText {
+                text: &text,
+                style: &Style::DEFAULT,
+                wide: false,
+                dark: false,
+            };
+            let glyph = font.glyph(&shown).expect("a glyph");
+            let right = glyph.left + glyph.region.width as i32;
+            let width = font.cell.width as i32;
+            assert!(glyph.left >= -2, "U+{:X}: {glyph:?}", u32::from(icon));
+            assert!(right <= width + 2, "U+{:X}: {glyph:?}", u32::from(icon));
+            assert!(
+                (glyph.left - (width - right)).abs() <= 1,
+                "U+{:X}",
+                u32::from(icon)
+            );
         }
     }
 

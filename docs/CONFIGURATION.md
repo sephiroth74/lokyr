@@ -167,7 +167,7 @@ A character that the font lacks, such as Japanese text, takes the font that macO
 - **Emoji**, such as ⚡, ☕ or 🦀, take Apple Color Emoji, in their own colors, even when the font has a plain form of them.
 - **Symbols that have an emoji too**, such as ✔, ⚠, ℹ or ❤, stay text: the font's, or another font's that has them as text, in the color that the program gives them.
 - **A variation selector** after the character chooses otherwise: U+FE0F asks for the emoji, as in ❤️, and U+FE0E for the text, as in ⚡︎. A symbol that no font has in the form asked takes the other.
-- **Icons of the Nerd Fonts**, which prompts and tools such as `eza --icons` show, take the font's own when it is a Nerd Font, and otherwise Symbols Nerd Font Mono, which Lokyr includes, so that they show with any font, a Nerd Font installed or not.
+- **Icons of the Nerd Fonts**, which prompts and tools such as `eza --icons` show, take the font's own when it is a Nerd Font, and otherwise Symbols Nerd Font Mono, which Lokyr includes, so that they show with any font, a Nerd Font installed or not. Its icons are drawn smaller where they would be wider than their cell, in its middle, so that they leave the next cell alone.
 
 ### `family`
 
