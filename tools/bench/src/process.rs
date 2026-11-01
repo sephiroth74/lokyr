@@ -230,7 +230,21 @@ mod tests {
             sum = sum.wrapping_add(std::hint::black_box(n));
         }
         std::hint::black_box(sum);
-        assert!(energy(own_pid()).unwrap() > before);
+        let after = energy(own_pid()).unwrap();
+        // A virtual machine, as CI's, may keep no energy: the counter reads
+        // nothing there.
+        if after == 0 {
+            return;
+        }
+        assert!(after > before);
+    }
+
+    #[test]
+    fn the_record_has_the_layout_of_rusage_info_v6() {
+        // `<sys/resource.h>`'s `rusage_info_v6`: 464 bytes, `ri_energy_nj`
+        // at the 336th.
+        assert_eq!(std::mem::size_of::<RusageV6>(), 464);
+        assert_eq!(16 + ENERGY_NJ * 8, 336);
     }
 
     #[test]

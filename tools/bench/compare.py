@@ -9,7 +9,9 @@ terminal reads the user's.
 `<configs>` holds `lokyr/`, `ghostty/`, `alacritty/`, `kitty/` and
 `wezterm/`, as an XDG config directory does, and `iterm2-profile.json`;
 `<out>` takes each measure's results; `<terminals>`, as `lokyr,ghostty`,
-keeps those alone. The measures:
+keeps those alone. A measure ends each terminal that it launches, every
+process of its bundle: it refuses to start while one of them runs, and
+must run from a terminal that it does not measure. The measures:
 
 - `check`: each terminal's grid, as `stty size` tells it, and its shell's
   prompt, which must be 40 rows of 120 columns and the system's.
@@ -58,7 +60,9 @@ FLOOD = "yes & flood=$!; sleep {seconds}; kill $flood"
 
 XDG = "/tmp/lokyr/compare-xdg"
 ZDOTDIR = "/tmp/lokyr/compare-zdotdir"
-SAVED = "/tmp/lokyr/compare-saved"
+# The user's settings of iTerm2 and Terminal.app, which `setup` saves and
+# `restore` puts back: where a restart, which clears /tmp, keeps them.
+SAVED = os.path.expanduser("~/Library/Application Support/lokyr-bench/compare-saved")
 WORK = "/tmp/lokyr/compare-work"
 
 ITERM_PROFILE = "Lokyr Bench"
@@ -209,31 +213,56 @@ def restore():
 ITERM_SERVERS = os.path.expanduser("~/Library/Application Support/iTerm2/iTermServer-")
 
 
+LIBC = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+
+
+def executables():
+    """Each process's executable, by its pid, as the kernel tells its path,
+    not as `ps` tells its `argv[0]`, which a process sets as it likes."""
+    count = LIBC.proc_listallpids(None, 0)
+    pids = (ctypes.c_int * (count + 64))()
+    count = LIBC.proc_listallpids(pids, ctypes.sizeof(pids)) // ctypes.sizeof(ctypes.c_int)
+    path = ctypes.create_string_buffer(4096)
+    found = {}
+    for pid in pids[:count]:
+        if pid > 0 and LIBC.proc_pidpath(pid, path, len(path)) > 0:
+            found[pid] = path.value.decode(errors="replace")
+    return found
+
+
 def processes_of(app, servers=False):
     """The processes whose executables are in the bundle `app`, and, with
     `servers`, iTerm2's servers of its sessions."""
-    out = run(["ps", "-A", "-o", "pid=,comm="], capture_output=True, text=True).stdout
     inside = os.path.realpath(app) + "/"
     pids = []
-    for line in out.splitlines():
-        pid, _, command = line.strip().partition(" ")
-        command = command.strip()
-        mine = command.startswith(inside) or command.startswith(app + "/")
-        server = servers and app.endswith("iTerm.app") and command.startswith(ITERM_SERVERS)
+    for pid, executable in executables().items():
+        mine = executable.startswith(inside)
+        server = servers and app.endswith("iTerm.app") and executable.startswith(ITERM_SERVERS)
         if mine or server:
-            pids.append(int(pid))
-    return pids
+            pids.append(pid)
+    return sorted(pids)
 
 
 def energy_nj(pid):
     """The energy that `pid` has spent, in nanojoules, as the kernel bills
     it, `ri_energy_nj` of `rusage_info_v6`, the 41st counter after its
-    UUID."""
-    libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    UUID; `None` for a process that ended."""
     buffer = (ctypes.c_uint64 * 60)()
-    if libc.proc_pid_rusage(pid, 6, ctypes.byref(buffer)) != 0:
-        return 0
+    if LIBC.proc_pid_rusage(pid, 6, ctypes.byref(buffer)) != 0:
+        return None
     return buffer[2 + 40]
+
+
+def refuse_running(chosen):
+    """Ends the run, before it measures anything, when a terminal that it
+    measures runs already, which its measures would end, as they end each
+    terminal that they launch."""
+    running = [name for name, app, _ in chosen if processes_of(app)]
+    if running:
+        sys.exit(f"compare.py: {', '.join(running)} running: quit "
+                 f"{'it' if len(running) == 1 else 'them'} first, as the measures end every "
+                 "process of the terminals that they measure, and run this from a terminal "
+                 "that they do not measure")
 
 
 def quit_app(app):
@@ -267,9 +296,10 @@ def open_app(app):
 def startup(out, chosen):
     env = [arg for name, value in environment().items() for arg in ("--env", f"{name}={value}")]
     for round_ in range(2):
-        order = chosen[round_ % len(chosen):] + chosen[: round_ % len(chosen)]
-        if round_ % 2:
-            order.reverse()
+        # Each round in another order, Lokyr's place too: reversed, then
+        # turned.
+        base = list(reversed(chosen)) if round_ % 2 else list(chosen)
+        order = base[round_ % len(base):] + base[: round_ % len(base)]
         for name, app, _ in order:
             quit_app(app)
             result = os.path.join(out, f"startup-{name}-{round_ + 1}.json")
@@ -468,9 +498,15 @@ def energycat(out, chosen):
         pids = processes_of(app)
         before = {pid: energy_nj(pid) for pid in pids}
         ended = wait_for(done, 600)
-        joules = sum(energy_nj(pid) - first for pid, first in before.items()) / 1e9
+        after = {pid: energy_nj(pid) for pid in pids}
+        # A process that ended meanwhile leaves its energy untold, rather
+        # than its whole life's counted against the others'.
+        gone = [pid for pid in pids if before[pid] is None or after[pid] is None]
+        joules = sum(after[pid] - before[pid] for pid in pids if pid not in gone) / 1e9
+        if gone:
+            log(name, "processes ended during the measure:", gone)
         with open(os.path.join(out, f"energycat-{name}.json"), "w") as file:
-            json.dump({"pids": pids, "joules": joules, "ended": ended}, file)
+            json.dump({"pids": pids, "joules": joules, "ended": ended, "gone": gone}, file)
         if process is not None:
             try:
                 process.wait(timeout=10)
@@ -525,6 +561,7 @@ def main():
     if measure == "setup":
         setup(configs)
         return
+    refuse_running(chosen)
     {
         "check": check,
         "startup": startup,

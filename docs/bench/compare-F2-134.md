@@ -43,19 +43,19 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 
 ## Startup
 
-`lokyr-bench startup`, which launches each terminal through LaunchServices and times its first window on screen from the process's start, a run to warm up and five, twice, the other terminals' order turned between the rounds, while Lokyr came first in both, as the review after F2-148 found; and Lokyr's own first frame, as its presented handler tells it. The spread is the range from the 10th to the 90th percentile, interpolated between the runs, as a fraction of the median.
+`lokyr-bench startup`, which launches each terminal through LaunchServices and times its first window on screen from the process's start, a run to warm up and five, twice, the other terminals' order turned between the rounds, while Lokyr came first in both, as the review after F2-148 found; and Lokyr's own first frame, as its presented handler tells it. The spread is the range from the 10th to the 90th percentile, as a fraction of the median, by `lokyr-bench`'s ranks, the 2nd and the 9th of ten runs; `python3 tools/bench/compare_tables.py` makes this table and the others of their raw results.
 
 | Terminal | Median | p90 | Spread | Fastest | Slowest |
 |---|---|---|---|---|---|
-| **Lokyr** | **256.2 ms** | 260.2 | 0.12 | 211.9 | 278.3 |
-| Ghostty | 330.6 ms | 344.3 | 0.13 | 283.4 | 361.9 |
-| Terminal.app | 339.6 ms | 377.2 | 0.16 | 319.8 | 397.5 |
-| Alacritty | 349.0 ms | 368.6 | 0.13 | 310.6 | 369.7 |
-| WezTerm | 394.3 ms | 416.5 | 0.17 | 341.7 | 422.1 |
-| kitty | 671.7 ms | 683.1 | 0.03 | 659.2 | 696.1 |
-| iTerm2 | 794.2 ms | 1 207.8 | 0.64 | 695.0 | 1 250.7 |
+| **Lokyr** | **256.2 ms** | 258.2 | 0.10 | 211.9 | 278.3 |
+| Ghostty | 330.6 ms | 342.3 | 0.12 | 283.4 | 361.9 |
+| Terminal.app | 339.6 ms | 375.0 | 0.15 | 319.8 | 397.5 |
+| Alacritty | 349.0 ms | 368.5 | 0.13 | 310.6 | 369.7 |
+| WezTerm | 394.3 ms | 415.9 | 0.16 | 341.7 | 422.1 |
+| kitty | 671.7 ms | 681.6 | 0.03 | 659.2 | 696.1 |
+| iTerm2 | 794.2 ms | 1 203.0 | 0.64 | 695.0 | 1 250.7 |
 
-Lokyr's first frame, as its presented handler tells it, in runs of its own, came at 235.1 ms at the median, p90 253.8.
+Lokyr's first frame, as its presented handler tells it, in runs of its own, came at 235.1 ms at the median, p90 253.8, a spread of 0.14.
 
 ## At rest
 

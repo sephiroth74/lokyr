@@ -207,11 +207,26 @@ fn first_frame(executable: &Path, env: &[(String, String)]) -> Result<Run> {
         .stdout(Stdio::piped())
         .spawn()
         .with_context(|| format!("cannot start {}", executable.display()))?;
-    let mut line = String::new();
-    std::io::BufRead::read_line(
-        &mut std::io::BufReader::new(child.stdout.take().context("its output")?),
-        &mut line,
-    )?;
+    // Its line, read on a thread of its own, for the timeout at most: a
+    // window that never draws, as on a display asleep, tells nothing.
+    let output = child.stdout.take().context("its output")?;
+    let (sent, line) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut line = String::new();
+        let read = std::io::BufRead::read_line(&mut std::io::BufReader::new(output), &mut line);
+        let _ = sent.send(read.map(|_| line));
+    });
+    let line = match line.recv_timeout(TIMEOUT) {
+        Ok(read) => read?,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!(
+                "{} told no first frame in {TIMEOUT:?}",
+                executable.display()
+            );
+        }
+    };
     let told = requested.elapsed();
     let status = child.wait()?;
     let measure = parse_first_frame(&line)
@@ -373,7 +388,7 @@ fn summarize(runs: &[Run]) -> Option<Summary> {
 impl Distribution {
     /// The distribution of `values`, or `None` if there are none. The median
     /// of an even number of values is the mean of the two middle ones; the
-    /// percentiles are nearest ranks.
+    /// percentiles are nearest ranks, the 10th the 90th's mirror.
     fn of(values: impl Iterator<Item = f64>) -> Option<Self> {
         let mut sorted: Vec<f64> = values.collect();
         if sorted.is_empty() {
@@ -388,9 +403,12 @@ impl Distribution {
         } else {
             sorted[n / 2]
         };
-        // Nearest ranks, counted from 1: ceil(0.1 n) and ceil(0.9 n).
-        let p10 = sorted[n.div_ceil(10) - 1];
-        let p90 = sorted[(9 * n).div_ceil(10) - 1];
+        // The 90th percentile's nearest rank, counted from 1, ceil(0.9 n),
+        // and the 10th's the same from the other end, n + 1 - ceil(0.9 n),
+        // so that of ten runs neither is the fastest's or the slowest's.
+        let high = (9 * n).div_ceil(10);
+        let p10 = sorted[n - high];
+        let p90 = sorted[high - 1];
         Some(Self {
             min: sorted[0],
             p10,
@@ -485,7 +503,7 @@ mod tests {
             distribution,
             Distribution {
                 min: 300.0,
-                p10: 300.0,
+                p10: 305.0,
                 median: 317.5,
                 p90: 335.0,
                 max: 400.0,
@@ -509,10 +527,11 @@ mod tests {
         });
         let summary = summarize(&runs).unwrap();
         assert_eq!(summary.from_start_ms.median, 281.7);
-        assert_eq!(summary.from_start_ms.p10, 272.1);
+        // Neither the fastest run nor the slowest.
+        assert_eq!(summary.from_start_ms.p10, 279.7);
         assert_eq!(summary.from_start_ms.p90, 292.0);
         // The full range would be 10.3% of the median, because of the slow run.
-        assert_eq!(summary.spread, 0.071);
+        assert_eq!(summary.spread, 0.044);
         assert_eq!(summary.from_request_ms.min, 292.1);
     }
 

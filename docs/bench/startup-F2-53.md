@@ -18,14 +18,14 @@ Measured on 2026-10-31 with `lokyr-bench startup`, on the bundle of commit fd89e
 
 | App | Measure | Warm, median | Warm, p90 | Warm spread | Cold, median | Cold, p90 | Cold spread |
 |---|---|---|---|---|---|---|---|
-| Lokyr | First frame | 246.9 ms | 271.3 ms | 20.8% | 882.0 ms | 905.5 ms | 42.3% |
-| Lokyr | First window | 245.7 ms | 252.3 ms | 13.0% | 616.3 ms | 681.6 ms | 36.6% |
-| Ghostty | First window | 284.3 ms | 293.1 ms | 5.3% | 801.8 ms | 836.8 ms | 28.6% |
-| Minimal AppKit app | First window | 192.6 ms | 197.1 ms | 7.6% | | | |
+| Lokyr | First frame | 246.9 ms | 271.3 ms | 14.0% | 882.0 ms | 905.5 ms | 21.5% |
+| Lokyr | First window | 245.7 ms | 252.3 ms | 9.8% | 616.3 ms | 681.6 ms | 19.4% |
+| Ghostty | First window | 284.3 ms | 293.1 ms | 5.0% | 801.8 ms | 836.8 ms | 27.8% |
+| Minimal AppKit app | First window | 192.6 ms | 197.1 ms | 4.5% | | | |
 
 - **Warm**, Lokyr's first frame takes 246.9 ms, past the budget of 200 ms by 47 ms; the minimal AppKit app's first window takes 192.6 ms on this machine today, 176 ms in F0 on AC power, so that Lokyr's own work is about 54 ms. Lokyr's first window and its first frame come together, warm: the window shows with its frame.
 - **Cold**, the first frame takes 882 ms, and the first window 616 ms: the window shows before its first frame, as the font's files and the shaders come from the disk, so that the first window understates the startup, cold, for Lokyr as for the other terminals. Ghostty's first window takes 802 ms cold, 284 ms warm, 331 ms in F0.
-- **The spread** of the cold runs, 29 to 42%, is the file cache's: what `purge` leaves, and what the system reads again meanwhile.
+- **The spread** of the cold runs, 19 to 28%, is the file cache's: what `purge` leaves, and what the system reads again meanwhile. The spreads are of the central runs, the 2nd to the 9th of ten, as the review after F2-148 had `lokyr-bench` take them, where its 10th percentile was the fastest run, and a single fast run, of 532 ms, made Lokyr's first frame's cold spread 42.3%.
 
 ## Where the warm startup goes
 
