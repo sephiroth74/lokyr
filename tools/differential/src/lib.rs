@@ -18,12 +18,14 @@
 //!
 //! [`vtebench`] rebuilds vtebench's scenarios, which `lokyr-throughput`
 //! times against `alacritty_terminal`'s, and whose instructions the
-//! `instructions` benchmark counts.
+//! `instructions` benchmark counts; [`kitty`], the tests of kitty's
+//! benchmark, which `lokyr-throughput` times too.
 
 #![forbid(unsafe_code)]
 
 mod cause;
 mod explore;
+pub mod kitty;
 pub mod vtebench;
 
 pub use cause::Cause;

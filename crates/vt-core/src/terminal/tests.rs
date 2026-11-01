@@ -4502,6 +4502,15 @@ impl Handler for OneByOne<'_> {
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], final_byte: u8) {
+        // REP, as the last character printed, again and again.
+        if intermediates.is_empty() && final_byte == b'b' {
+            if let Some(c) = self.0.last_printed() {
+                for _ in 0..params.value_or(0, 1) {
+                    self.0.print(c);
+                }
+            }
+            return;
+        }
         self.0.csi_dispatch(params, intermediates, final_byte);
     }
 
@@ -4707,6 +4716,7 @@ const OTHER_TEXT: &[&str] = &[
     "\x1b[S",
     "\x1b[2T",
     "\x1b[3b",
+    "\x1b[300b",
     "\x1b[2;3r",
     "\x1b[r",
     "\x1b[s",

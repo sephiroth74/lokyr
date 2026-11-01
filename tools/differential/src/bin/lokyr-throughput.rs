@@ -7,6 +7,8 @@
 //!   names, and the line feeds that a PTY turns into CR LF. As vtebench
 //!   does, each sample resets the terminal and runs the setup, which the
 //!   time leaves out, then the payload, repeated to 1 MiB at least;
+//! - the tests of kitty's benchmark that are rebuilt, each sample a reset
+//!   and the kitten's setup, untimed, then a repetition of its data;
 //! - files, as `cat` would print them, their line ends already CR LF.
 //!
 //! It prints a table of the median of each core's runs, in MiB/s, and of
@@ -22,7 +24,8 @@ use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::Processor;
 use anyhow::{Context, Result, bail};
-use lokyr_differential::vtebench::{COLS, READ, ROWS, Scenario, onlcr, samples, scenarios};
+use lokyr_differential::kitty;
+use lokyr_differential::vtebench::{COLS, READ, ROWS, onlcr, samples, scenarios};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{Options, Terminal};
 
@@ -41,7 +44,8 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let (mut vtebench, mut runs, mut files, mut write_cat) = (None, 5, Vec::new(), None);
+    let (mut vtebench, mut kitty, mut runs, mut files, mut write_cat) =
+        (None, false, 5, Vec::new(), None);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--vtebench" => {
@@ -49,6 +53,7 @@ fn run() -> Result<()> {
                     args.next().context("--vtebench needs a directory")?,
                 ));
             }
+            "--kitty" => kitty = true,
             "--runs" => {
                 runs = args
                     .next()
@@ -63,9 +68,10 @@ fn run() -> Result<()> {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage: lokyr-throughput [--vtebench <checkout>] [--runs <n>] [<file>...]\n       \
+                    "usage: lokyr-throughput [--vtebench <checkout>] [--kitty] [--runs <n>] [<file>...]\n       \
                      lokyr-throughput --write-cat <path>\n\n  \
                      --vtebench <checkout>  measure vtebench's scenarios, with the data of that checkout\n  \
+                     --kitty                measure the tests of kitty's benchmark that are rebuilt\n  \
                      --runs <n>             how many runs each median takes, 5 by default\n  \
                      --write-cat <path>     write a file of 1 GiB to measure: the repository's Rust\n                         \
                      sources, repeated, their lines ended by CR LF"
@@ -91,10 +97,27 @@ fn run() -> Result<()> {
             let bytes = SAMPLES * samples.len();
             let (lokyr, alacritty) = medians(
                 runs,
-                || time_scenario(&mut LokyrCore::new(), &scenario, &samples),
-                || time_scenario(&mut AlacrittyCore::new(), &scenario, &samples),
+                || time_scenario(&mut LokyrCore::new(), &scenario.setup, &samples),
+                || time_scenario(&mut AlacrittyCore::new(), &scenario.setup, &samples),
             );
             row(&mut table, scenario.name, bytes, lokyr, alacritty);
+        }
+    }
+    if kitty {
+        for test in kitty::tests() {
+            let bytes = SAMPLES * test.payload.len();
+            let (lokyr, alacritty) = medians(
+                runs,
+                || time_scenario(&mut LokyrCore::new(), &test.setup, &test.payload),
+                || time_scenario(&mut AlacrittyCore::new(), &test.setup, &test.payload),
+            );
+            row(
+                &mut table,
+                &format!("kitty: {}", test.name),
+                bytes,
+                lokyr,
+                alacritty,
+            );
         }
     }
     for file in files {
@@ -168,14 +191,14 @@ fn time_bytes(core: &mut impl Core, bytes: &[u8]) -> (usize, Duration) {
     (bytes.len(), start.elapsed())
 }
 
-/// Runs a sample of `scenario` on `core` as a warm-up, as vtebench does,
-/// then [`SAMPLES`] samples, each a reset and the setup, untimed, then
-/// `samples`, timed, and returns the time of those.
-fn time_scenario(core: &mut impl Core, scenario: &Scenario, samples: &[u8]) -> (usize, Duration) {
+/// Runs a sample on `core` as a warm-up, as vtebench does, then
+/// [`SAMPLES`] samples, each a reset and `setup`, untimed, then `samples`,
+/// timed, and returns the time of those.
+fn time_scenario(core: &mut impl Core, setup: &[u8], samples: &[u8]) -> (usize, Duration) {
     let mut total = Duration::ZERO;
     for sample in 0..=SAMPLES {
         core.feed(b"\x1bc");
-        for read in scenario.setup.chunks(READ) {
+        for read in setup.chunks(READ) {
             core.feed(read);
         }
         let time = time_bytes(core, samples).1;

@@ -196,9 +196,21 @@ impl Terminal {
         self.shift_rows_down(self.margins.top, self.margins.bottom, n);
     }
 
-    /// REP: prints the last character printed `n` more times.
+    /// REP: prints the last character printed `n` more times. Printable
+    /// ASCII goes as a run of text does, a stretch of a row at a time.
     pub(super) fn repeat(&mut self, n: u16) {
-        if let Some(c) = self.last_printed {
+        let Some(c) = self.last_printed else {
+            return;
+        };
+        if (' '..='~').contains(&c) {
+            let run = [c as u8; 256];
+            let mut left = usize::from(n);
+            while left > 0 {
+                let part = left.min(run.len());
+                self.print_ascii_run(&run[..part]);
+                left -= part;
+            }
+        } else {
             for _ in 0..n {
                 self.print_translated(c);
             }

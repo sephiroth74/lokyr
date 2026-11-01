@@ -1,7 +1,8 @@
-//! The instructions that the VT core takes for vtebench's scenarios, and for
-//! text as `cat` prints it, as callgrind counts them through gungraun: one
-//! sample of each, fed in reads of 64 KiB, after the reset and the setup,
-//! which the count leaves out. Valgrind runs on Linux only.
+//! The instructions that the VT core takes for vtebench's scenarios, for the
+//! test of kitty's benchmark of CSI sequences between few characters, and
+//! for text as `cat` prints it, as callgrind counts them through gungraun:
+//! one sample of each, fed in reads of 64 KiB, after the reset and the
+//! setup, which the count leaves out. Valgrind runs on Linux only.
 //!
 //! The scenarios read vtebench's data files from the checkout that
 //! `LOKYR_VTEBENCH` names, or else from `target/vtebench`, which `just
@@ -16,6 +17,7 @@ use std::hint::black_box;
 use std::path::PathBuf;
 
 use gungraun::prelude::*;
+use lokyr_differential::kitty;
 use lokyr_differential::vtebench::{self, COLS, READ, ROWS};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{Options, Terminal};
@@ -28,10 +30,17 @@ struct Prepared {
 }
 
 /// The scenario called `name`, the terminal reset and the setup fed, and
-/// a sample of it to feed; `cat` is text as `cat` prints it.
+/// a sample of it to feed; `cat` is text as `cat` prints it, and
+/// `kitty_csi` a repetition of kitty's test of CSI sequences.
 fn prepared(name: &str) -> Prepared {
     let (setup, sample) = if name == "cat" {
         (Vec::new(), cat())
+    } else if name == "kitty_csi" {
+        let test = kitty::tests()
+            .into_iter()
+            .find(|test| test.name == "CSI codes with few chars")
+            .expect("kitty's test of CSI sequences");
+        (test.setup, test.payload)
     } else {
         let dir = std::env::var_os("LOKYR_VTEBENCH").map_or_else(
             || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/vtebench"),
@@ -100,6 +109,7 @@ fn feed(prepared: &mut Prepared, bytes: &[u8]) {
 #[bench::scrolling_top_small_region(args = ("scrolling_top_small_region"), setup = prepared)]
 #[bench::sync_medium_cells(args = ("sync_medium_cells"), setup = prepared)]
 #[bench::unicode(args = ("unicode"), setup = prepared)]
+#[bench::kitty_csi(args = ("kitty_csi"), setup = prepared)]
 #[bench::cat(args = ("cat"), setup = prepared)]
 fn sample(mut prepared: Prepared) -> Prepared {
     let sample = std::mem::take(&mut prepared.sample);
