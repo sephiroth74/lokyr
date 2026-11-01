@@ -191,34 +191,34 @@ Typometer, built from its maintained fork, typed 200 keys into each terminal, wh
 
 The user recorded `powermetrics`, which needs the administrator, in samples of about a second, of the tasks and of the CPU's and the GPU's power, while a script opened each terminal in turn, in the order of the tables, each running 15 s at rest, then `cat` of 256 MiB of the same lines of ASCII, then 3 s, before it closed and the next one opened 5 s later. [powermetrics/](compare-F2-134/powermetrics/) holds the figures that the report reads, which `python3 tools/bench/powermetrics_extract.py` takes out of the recording, and the times of the script's phases; `compare_tables.py` makes the tables.
 
-At rest, the median of the samples from 5 s after each terminal's shell started to its `cat`, about ten:
+At rest, the median of the samples from 5 s after each terminal's shell started to its `cat`, about ten. `powermetrics` stamps a sample at its end, which the figures take, as of the fix of the review at F2's end; they had taken the stamps for the samples' starts, a second off:
 
 | Terminal, at rest | Its CPU | Its interrupt wakeups | Its energy impact | The window server's CPU | The GPU's power |
 |---|---|---|---|---|---|
-| **Lokyr** | 0.5 ms/s | 2.4 a second | 0.10 | 303.2 ms/s, not Lokyr's, below | 25 mW |
-| Ghostty | 4.6 ms/s | 16.9 a second | 0.57 | 19.7 ms/s | 5 mW |
-| Alacritty | 0.7 ms/s | 0.9 a second | 0.08 | 6.2 ms/s | 0 mW |
-| kitty | 0.6 ms/s | 0.9 a second | 0.08 | 9.7 ms/s | 0 mW |
-| WezTerm | 0.3 ms/s | 1.9 a second | 0.06 | 300.6 ms/s | 404 mW |
-| iTerm2 | 16.1 ms/s | 7.5 a second | 4.32 | 22.9 ms/s | 4 mW |
-| Terminal.app | 1.1 ms/s | 1.4 a second | 0.15 | 21.2 ms/s | 2 mW |
+| **Lokyr** | 0.5 ms/s | 2.4 a second | 0.10 | 276.2 ms/s, not Lokyr's, below | 16 mW |
+| Ghostty | 4.6 ms/s | 16.0 a second | 0.57 | 19.7 ms/s | 5 mW |
+| Alacritty | 0.7 ms/s | 0.5 a second | 0.08 | 7.1 ms/s | 0 mW |
+| kitty | 0.5 ms/s | 0.9 a second | 0.07 | 9.5 ms/s | 0 mW |
+| WezTerm | 0.2 ms/s | 1.9 a second | 0.04 | 307.9 ms/s | 406 mW |
+| iTerm2 | 16.1 ms/s | 7.5 a second | 3.64 | 22.9 ms/s | 4 mW |
+| Terminal.app | 0.7 ms/s | 0.9 a second | 0.08 | 15.3 ms/s | 1 mW |
 
-Under `cat` of 256 MiB, the sums over the samples from its start to 2 s past its end; the window server's and the GPU's past their rest's median, over as many seconds:
+Under `cat` of 256 MiB, the sums over the whole samples that overlap its start to 2 s past its end, as a sample's rates are its whole length's, whatever part of it the `cat` took; the window server's and the GPU's past their rest's median, over those samples' length:
 
 | Terminal, `cat` of 256 MiB | Its time | Its CPU | Its energy impact, over the seconds | The window server's CPU, past its rest | The GPU's energy, past its rest |
 |---|---|---|---|---|---|
-| **Lokyr** | 0.89 s | **1 006 ms** | **4 333** | — | ≤ 83 mJ |
-| Ghostty | 0.88 s | 1 812 ms | 10 295 | 253 ms | 98 mJ |
-| Alacritty | 1.68 s | 2 009 ms | 11 376 | 336 ms | 151 mJ |
-| kitty | 1.77 s | 2 098 ms | 10 138 | 235 ms | 186 mJ |
-| WezTerm | 5.51 s | 6 529 ms | 49 787 | 303 ms | 1 934 mJ |
-| iTerm2 | 2.54 s | 5 155 ms | 27 477 | 185 ms | 104 mJ |
-| Terminal.app | 7.09 s | 7 408 ms | 32 615 | ≈ 0 | ≈ 0 |
+| **Lokyr** | 0.89 s | **1 006 ms** | **4 333** | — | ≤ 98 mJ |
+| Ghostty | 0.88 s | 1 816 ms | 10 296 | 269 ms | 101 mJ |
+| Alacritty | 1.68 s | 2 010 ms | 11 376 | 365 ms | 162 mJ |
+| kitty | 1.77 s | 2 098 ms | 10 138 | 264 ms | 210 mJ |
+| WezTerm | 5.51 s | 6 529 ms | 49 787 | 220 ms | 1 920 mJ |
+| iTerm2 | 2.54 s | 5 199 ms | 27 486 | 218 ms | 136 mJ |
+| Terminal.app | 7.09 s | 7 410 ms | 32 615 | 4 ms | 2 mJ |
 
-- **Under output**, Lokyr's process took 0.56 of Ghostty's CPU and 0.42 of its energy impact, at the same time, as `ri_energy_nj` found above. Its GPU's energy, all of the samples' with its rest's, is below every other terminal's past its rest but Terminal.app's, which took none past its rest.
-- **At rest**, Lokyr's process is among the four lightest of CPU and of energy impact, with Alacritty, kitty and WezTerm. The interrupt wakeups of these ten seconds, with the user at the Mac, differ from those of the 60 s of `lokyr-bench idle` above, of nobody at the Mac and of another counter, both ways: Lokyr's 2.4 a second here, 0.38 there, and kitty's 0.9 here, 20.08 there. `lokyr-bench`'s are the budget's.
-- **The window server's 303 ms/s, while Lokyr was in front, are not Lokyr's at rest.** In the 40 s before Lokyr opened and in each gap between the terminals, the window server ran at about 200 to 300 ms/s, as the user's own Lokyr window, which ran the script, had the focus, its cursor fading and its background blurred, which costs that much, as below. While the test's Lokyr was in front, it stayed so, which the recording does not explain: those samples also hold others' work, about 12 s a second of CPU of processes that ended within them, and Calendar's, WindowManager's and MenuBarAgent's. The same bundle, measured again with `top`, left the window server as it is without any Lokyr window, below. Under `cat`, the window server's figure is left out, and the GPU's whole energy bounds Lokyr's.
-- **WezTerm** keeps the window server composing at rest, at 300 ms/s, and the GPU at 404 mW, which this report did not look into.
+- **Under output**, Lokyr's process took 0.55 of Ghostty's CPU and 0.42 of its energy impact, at the same time, as `ri_energy_nj` found above. Its GPU's energy, all of the samples' with its rest's, 98 mJ at most, is below every other terminal's past its rest, Ghostty's 101 mJ just above it, but Terminal.app's, which took 2 mJ past its rest.
+- **At rest**, Lokyr's process is light, as every terminal's but Ghostty's and iTerm2's: of CPU, second with kitty, at 0.5 ms/s, after WezTerm's 0.2; of energy impact, fifth, at 0.10, against 0.04 to 0.08 of WezTerm, kitty, Alacritty and Terminal.app: medians of ten samples, of a few milliseconds of CPU each. The interrupt wakeups of these ten seconds, with the user at the Mac, differ from those of the 60 s of `lokyr-bench idle` above, of nobody at the Mac and of another counter, both ways: Lokyr's 2.4 a second here, 0.38 there, and kitty's 0.9 here, 20.08 there. `lokyr-bench`'s are the budget's.
+- **The window server's 276 ms/s, while Lokyr was in front, are not Lokyr's at rest.** In the 40 s before Lokyr opened and in each gap between the terminals, the window server ran at about 200 to 300 ms/s, with peaks to 470, as the user's own Lokyr window, which ran the script, had the focus, its cursor fading and its background blurred, which costs that much, as below. While the test's Lokyr was in front, it stayed so, which the recording does not explain; Calendar, WindowManager and MenuBarAgent ran in its first samples too. The same bundle, measured again with `top`, left the window server as it is without any Lokyr window, below. Under `cat`, the window server's figure is left out, and the GPU's whole energy bounds Lokyr's.
+- **WezTerm** keeps the window server composing at rest, at 308 ms/s, and the GPU at 406 mW, which this report did not look into.
 
 ### The window server and the cursor's fades
 

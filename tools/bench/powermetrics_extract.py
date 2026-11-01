@@ -11,10 +11,11 @@ terminal opens, rests, starts and ends its `cat`, and closes. `<out>` gets
 rows of WindowServer and of the processes of the terminals that the log
 names, those that started while it ran.
 
-Each sample's header tells its start to the second, and its length to the
-hundredth of a millisecond: the starts are those of the first sample
-plus the lengths before, which the headers' seconds bound within a
-millisecond.
+Each sample's header tells its end to the second, as powermetrics stamps
+a sample once it has it, and its length to the hundredth of a
+millisecond: the starts are those of the first sample plus the lengths
+before, which the headers' seconds, less the lengths up to their sample's
+end, bound within some milliseconds.
 """
 import csv
 import datetime
@@ -64,13 +65,16 @@ def samples_of(path):
             elif section == "gpu" and (busy := re.match(r"GPU HW active residency:\s+([\d.]+)%",
                                                         line)):
                 samples[-1]["gpu_active"] = float(busy.group(1))
-    # The first sample's start, which every header's second bounds.
+    # The first sample's start, which every header's second bounds: the
+    # second of the sample's end, the lengths up to it before.
     low, high, before = -float("inf"), float("inf"), 0.0
     for sample in samples:
-        low = max(low, sample["second"] - before)
-        high = min(high, sample["second"] + 1 - before)
         sample["before"] = before
         before += sample["elapsed_ms"] / 1000
+        low = max(low, sample["second"] - before)
+        high = min(high, sample["second"] + 1 - before)
+    if low > high:
+        sys.exit(f"{path}: the headers' seconds fit no start of the first sample")
     first = (low + high) / 2
     for sample in samples:
         sample["start"] = first + sample["before"]

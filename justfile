@@ -81,6 +81,10 @@ check-comments:
 check-links:
     cargo xtask check-links
 
+# Test the measuring tools of tools/bench, which compare the terminals and read powermetrics' recordings (macOS).
+test-bench-tools:
+    python3 -m unittest discover -s tools/bench
+
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps check-comments check-links bundle
 

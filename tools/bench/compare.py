@@ -17,7 +17,8 @@ must run from a terminal that it does not measure. The measures:
   prompt, which must be 40 rows of 120 columns and the system's.
 - `setup`: the configs into an XDG directory; iTerm2's dynamic profile and
   a profile of Terminal.app, as their defaults, the user's settings of
-  both saved first, which `restore` puts back.
+  both saved first, unless a `setup` saved them already, which `restore`
+  puts back, and then removes.
 - `startup`: each terminal's first window, with `lokyr-bench startup`, a
   run to warm up and five, twice, the terminals' order turning; and
   Lokyr's first frame.
@@ -189,19 +190,32 @@ def setup_terminal():
 
 
 def restore():
+    """Puts the user's settings back, and removes those that `setup` saved
+    once they are back, so that a later `setup` saves the settings of that
+    day."""
     guid = os.path.join(SAVED, "iterm2-default-guid")
     if os.path.exists(guid):
         with open(guid) as file:
             value = file.read().strip()
-        if value:
-            run(["defaults", "write", "com.googlecode.iterm2", "Default Bookmark Guid", value])
+        # A default that iTerm2 did not have is none again.
+        command = (["defaults", "write", "com.googlecode.iterm2", "Default Bookmark Guid", value]
+                   if value else
+                   ["defaults", "delete", "com.googlecode.iterm2", "Default Bookmark Guid"])
+        if run(command).returncode == 0:
+            os.remove(guid)
     if os.path.exists(ITERM_DYNAMIC):
         os.remove(ITERM_DYNAMIC)
     terminal = os.path.join(SAVED, "com.apple.Terminal.plist")
     if os.path.exists(terminal):
         run(["osascript", "-e", 'quit app "Terminal"'])
         time.sleep(2)
-        run(["defaults", "import", "com.apple.Terminal", terminal])
+        if run(["defaults", "import", "com.apple.Terminal", terminal]).returncode == 0:
+            os.remove(terminal)
+    left = os.listdir(SAVED) if os.path.isdir(SAVED) else []
+    if left:
+        sys.exit(f"compare.py: {', '.join(left)} not put back, in {SAVED}")
+    if os.path.isdir(SAVED):
+        os.rmdir(SAVED)
     log("restored iTerm2's and Terminal.app's settings")
 
 
@@ -221,7 +235,8 @@ def executables():
     not as `ps` tells its `argv[0]`, which a process sets as it likes."""
     count = LIBC.proc_listallpids(None, 0)
     pids = (ctypes.c_int * (count + 64))()
-    count = LIBC.proc_listallpids(pids, ctypes.sizeof(pids)) // ctypes.sizeof(ctypes.c_int)
+    # The number of pids, where `proc_listpids` tells bytes.
+    count = LIBC.proc_listallpids(pids, ctypes.sizeof(pids))
     path = ctypes.create_string_buffer(4096)
     found = {}
     for pid in pids[:count]:
@@ -302,16 +317,25 @@ def startup(out, chosen):
         order = base[round_ % len(base):] + base[: round_ % len(base)]
         for name, app, _ in order:
             quit_app(app)
-            result = os.path.join(out, f"startup-{name}-{round_ + 1}.json")
             log("startup", name, round_ + 1)
-            with open(result, "w") as file:
-                run([BENCH, "startup", "--app", app, "--runs", "5", "--warmup", "1", *env],
-                    stdout=file, stderr=subprocess.DEVNULL)
+            argv = [BENCH, "startup", "--app", app, "--runs", "5", "--warmup", "1", *env]
+            startup_run(argv, os.path.join(out, f"startup-{name}-{round_ + 1}.json"))
             if name == "lokyr":
-                result = os.path.join(out, f"startup-lokyr-first-frame-{round_ + 1}.json")
-                with open(result, "w") as file:
-                    run([BENCH, "startup", "--app", app, "--runs", "5", "--warmup", "1",
-                         "--first-frame", *env], stdout=file, stderr=subprocess.DEVNULL)
+                startup_run([*argv, "--first-frame"],
+                            os.path.join(out, f"startup-lokyr-first-frame-{round_ + 1}.json"))
+
+
+def startup_run(argv, result):
+    """Runs `lokyr-bench startup` as `argv` says, into `result`: a run that
+    fails writes no file, which the tables would read, and tells why."""
+    done = run(argv, capture_output=True, text=True)
+    if done.returncode != 0 or not done.stdout.strip():
+        log("startup failed:", os.path.basename(result), done.stderr.strip()[-500:])
+        if os.path.exists(result):
+            os.remove(result)
+        return
+    with open(result, "w") as file:
+        file.write(done.stdout)
 
 
 def idle(out, chosen):

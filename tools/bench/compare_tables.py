@@ -161,8 +161,10 @@ def powermetrics():
     """Each terminal's rest and `cat`, of the samples of `powermetrics` and
     the times of the sequence: at rest, the median of the samples from 5 s
     after its shell started to its `cat`; under `cat`, the sums over the
-    samples from its start to 2 s past its end, the window server's and the
-    GPU's less their rest's median."""
+    whole samples that overlap its start to 2 s past its end, as a sample's
+    rates are its whole length's, whatever part of it the `cat` took; the
+    window server's and the GPU's less their rest's median over those
+    samples' length."""
     root = os.path.join(ROOT, "powermetrics")
     phases = {}
     with open(os.path.join(root, "sequence.log")) as file:
@@ -184,9 +186,8 @@ def powermetrics():
             sample["tasks"].append(row)
     of = lambda sample, who, field: sum(float(task[field]) for task in sample["tasks"]
                                         if who(task))
-    windows = lambda start, end: [(sample, min(end, sample["end"]) - max(start, sample["start"]))
-                                  for sample in samples
-                                  if min(end, sample["end"]) > max(start, sample["start"])]
+    overlapping = lambda start, end: [sample for sample in samples
+                                      if min(end, sample["end"]) > max(start, sample["start"])]
     server = lambda task: task["process"] == "WindowServer"
     print("\n| Terminal, at rest | Its CPU | Its interrupt wakeups | Its energy impact "
           "| The window server's CPU | The GPU's power |\n|---|---|---|---|---|---|")
@@ -214,15 +215,16 @@ def powermetrics():
     for key, name in TERMINALS:
         own = lambda task, key=key: task["terminal"] == key
         start, end = phases[(key, "cat")], phases[(key, "end")] + 2
-        parts = windows(start, end)
-        total = lambda value: sum(value(sample) * overlap for sample, overlap in parts)
+        parts = overlapping(start, end)
+        length = sum(sample["elapsed_ms"] / 1000 for sample in parts)
+        total = lambda value: sum(value(sample) * sample["elapsed_ms"] / 1000 for sample in parts)
         if key in disturbed:
             server_cpu = "—"
             gpu = f"≤ {spaced(total(lambda s: s['gpu_mw']))} mJ"
         else:
             server_cpu = past(total(lambda s: of(s, server, "cpu_ms_per_s"))
-                              - rests[key][0] * (end - start), "ms")
-            gpu = past(total(lambda s: s["gpu_mw"]) - rests[key][1] * (end - start), "mJ")
+                              - rests[key][0] * length, "ms")
+            gpu = past(total(lambda s: s["gpu_mw"]) - rests[key][1] * length, "mJ")
         print(f"| {name} | {phases[(key, 'end')] - phases[(key, 'cat')]:.2f} s "
               f"| {spaced(total(lambda s: of(s, own, 'cpu_ms_per_s')))} ms "
               f"| {spaced(total(lambda s: of(s, own, 'energy_impact')))} "
