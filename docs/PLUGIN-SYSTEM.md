@@ -36,7 +36,8 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 |---|---|---|
 | `tab-bar` | One, chosen in the config | The tab bar |
 | `status-bar` | Many (ordered segments) | Status information |
-| `pane-header` | One | Pane titles in splits |
+| `window-strip` | Many | A thin strip across the window's top, under the titlebar or the tab bar: the programs' progress |
+| `pane-header` | One | Pane titles in splits, and the command's sticky header |
 | `pane-overlay` | Many | Find bar, hints |
 | `window-overlay` | Many | Command palette, notifications |
 | `popup` | Many | Custom menus and tooltips |
@@ -51,11 +52,11 @@ Native and Luau plugins follow the same rules, so they behave the same way.
   - Long-running work goes to asynchronous host services (search, timers, processes), whose results come back as events.
 - **Owned data**: plugins receive copies, never references into kernel state.
 - **No re-entrancy**: events generated during a callback are queued and delivered only after the callback returns.
-- **No threads, no blocking I/O**: time is provided by the host, through timers and `tick` events that are sent only on request.
+- **No threads of their own, no blocking I/O**: time is provided by the host, through timers and `tick` events that are sent only on request.
 - **Filtered, batched events**: the kernel delivers only the events a plugin subscribed to, batched per frame.
 - **Rendering**:
   - `render(slot)` is called only when the plugin asks for an update (`request_render`) or the theme changes. The result is cached.
-  - Native plugins run on the main thread. Luau plugins run on the plugin executor, with a deadline per call.
+  - Native plugins run on the main thread, unless their manifest asks for a thread of their own, `thread = "worker"`, as the user chose on 1 November 2026: each such plugin then has a thread of the host's, which makes all its calls, its renders too, with the same copies and messages as a Luau plugin's, and the host takes their results on the main thread before the next frame; a watchdog logs a native call that takes long, and stops none, as the plugins are ours. The main thread stays for the plugins that must answer at once, as the tab bar's. Luau plugins run on the plugin executor, with a deadline per call.
   - If a Luau plugin misses its deadline, the last valid view tree stays on screen.
 
 ## One API, two front ends
@@ -432,6 +433,8 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
 | `shell-integration`, `blocks` | Prompt marks, command + output blocks | F5a |
 | `quick-terminal` | The quick terminal's policy, which the app holds in F2 | F3 |
+| `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
+| `command-header` | The command whose output the view shows, at the pane's top, over OSC 133's marks, as iTerm2's | F3 |
 | `tmux-cc`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `images` | Inline images | F5c |
 

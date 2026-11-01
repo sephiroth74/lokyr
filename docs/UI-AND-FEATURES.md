@@ -11,11 +11,16 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - `taffy` computes the layout, using a subset of flexbox: direction, gap, padding, alignment, sizes, grow.
 - Each new tree is diffed against the previous one by `key`, so only the changed parts are laid out and turned into display-list entries again.
 
-**Widgets**: only the minimum the chrome needs.
-- container, text, icon, spacer;
+**Widgets**: those that the chrome and F3's plugins need, as the user chose on 1 November 2026. A plugin describes its UI with them and the host draws it: no plugin draws pixels or opens a native window, so that its UI takes the theme, the focus, the input method and accessibility, costs the frame no more than the host allows, and no plugin can pass itself off as the system.
+- container, text, icon, spacer, separator;
 - text field with IME, selection and clipboard;
-- virtualized list;
-- menus. Context menus are native `NSMenu`s on macOS and drawn by us on Linux.
+- button and toggle;
+- virtualized list, and scroll area;
+- tooltip;
+- `progress`, of four states, normal, error, paused and indeterminate, whose indeterminate state the window server animates, on a layer of its own as the cursor's blinking, without frames of the app's;
+- floating panels, anchored to a cell, the cursor or the pointer, with the keyboard's focus inside them;
+- menus. Context menus and the menu bar are native `NSMenu`s on macOS, to which plugins add their items, and drawn by us on Linux; menus drawn by `ui-core` serve inside panels alone, as a find bar's choice.
+- A canvas of drawing primitives, for a plugin's own graphics, comes with F4's Luau API.
 
 **Focus and IME**
 - Focus belongs to exactly one element: a pane or a text field.
@@ -113,6 +118,19 @@ close-button = "hover"    # always | hover | never
 min-width = 120
 max-width = 260
 ```
+
+## The programs' progress
+
+The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Ghostty: a program's progress, of OSC 9;4, as Gradle's, which the VT core reads.
+- **Where**: a thin bar in the `window-strip` slot, across the window's top under the titlebar, and on the tab of its pane with the `tabs` plugin.
+- **States**: normal, in the accent's color, with its percentage; error, red; paused, yellow; indeterminate, which moves without frames of the app's; and none, which takes the bar away.
+
+## The command's sticky header
+
+The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in the `pane-header` slot, over OSC 133's marks.
+- As the scroll goes up past a command, the header gives way to the command before it; down, to the next.
+- A click on it scrolls to the command.
+- The actions on a command's output, to copy it, select it, tell its details, run it again, fold it or share it, come with F5a's blocks.
 
 ## Splits
 

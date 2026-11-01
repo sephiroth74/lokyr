@@ -41,8 +41,8 @@ use lokyr_text_core::catalog::{self, Filter};
 /// built from, as `0.1.0-20261101`.
 const VERSION: &str = env!("LOKYR_VERSION");
 
-/// Whether a bench could not measure what it was asked to, which the exit
-/// code tells.
+/// Whether the output bench could not start its program, which the exit
+/// code tells; the other benches that give up tell it on stderr alone.
 static BENCH_FAILED: AtomicBool = AtomicBool::new(false);
 
 /// How the app is started, which a wrong command line tells.

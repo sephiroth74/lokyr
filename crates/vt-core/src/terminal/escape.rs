@@ -160,9 +160,10 @@ impl Terminal {
     /// it was made with, the normalization, the `TERM`, the title and
     /// clipboard reports, the link schemes, the window's operations,
     /// whether output scrolls the view to the screen, whether alternate
-    /// scroll starts on, the cell size and the theme. It keeps the working directory too, which
-    /// describes the shell rather than the terminal, and what it knows of
-    /// the window and the display.
+    /// scroll starts on, the cell size, the theme and the version that
+    /// XTVERSION tells. It keeps the working directory too, which describes
+    /// the shell rather than the terminal, and what it knows of the window
+    /// and the display.
     /// The bells that rang and the synchronized updates stay counted, and
     /// the replies and events not yet taken stay queued, with events for
     /// the titles, the tab color, the colors and the size that RIS

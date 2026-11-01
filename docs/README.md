@@ -50,10 +50,11 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
 | Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
-| Plugin fetching separate from the app | The `lokyr` binary contains no networking code, enforced in CI | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
+| Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client ([ADR 0026](adr/0026-app-updates.md)) | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
 | Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its sequences and `lokyr +notify`, on its tab | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3 |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
 | Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
+| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed on the repository's GitHub releases; the versions of ADR 0027 | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md) | F3 |
 
 ## Architecture decisions
 
@@ -66,9 +67,9 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011; a font of symbols before the system's fallback, per 0025 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
-| [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012 |
+| [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012; the app's updates through Sparkle, its one network client, per 0026 |
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
-| [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before 0.1 |
+| [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before the first public release, 1.0.0, per 0027 |
 | [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted; Intel question settled by 0013 |
 | [0012](adr/0012-luau-plugins.md) | Third-party plugins in Luau, with its native code generator | Accepted |
 | [0013](adr/0013-platform-baseline.md) | Platform baseline: macOS 26 or later, Apple Silicon only | Accepted |
@@ -84,6 +85,8 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
 | [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
 | [0025](adr/0025-symbols-font.md) | A font of symbols in the binary, Symbols Nerd Font Mono, for the icons of the private use areas that the configured font lacks | Accepted; amends 0006 |
+| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008 |
+| [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions |
 
 ## Glossary
 

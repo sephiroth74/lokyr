@@ -33,7 +33,7 @@
 
 <rect class="surface" width="680" height="268" rx="8"/>
 <text class="primary" x="16" y="26" font-size="15" font-weight="600">Latency at 60 Hz</text>
-<text class="secondary" x="16" y="45" font-size="12">A key to its echo on screen, Typometer, 200 keys; less is better</text>
+<text class="secondary" x="16" y="45" font-size="12">A key to its echo on screen, in ms, of 200 keys of Typometer&#x27;s, the window alone; less is better</text>
 <circle class="context" cx="22" cy="64" r="5"/>
 <text class="secondary" x="32" y="68" font-size="12">median</text>
 <circle class="surface context-line" cx="86" cy="64" r="4.5" stroke-width="2"/>

@@ -13,13 +13,13 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | F0 Foundations | Workspace, CI, dependency rules, ADRs, budget harness, notarized plugin-runtime spikes | CI green; ADRs approved; plugin runtime decided | 2–3 weeks |
 | F1 Headless VT core | `vt-core`, `pty`, `session`, `search` engine, `lokyr-replay`, fuzzing and differential tests | Compatibility and throughput measured (see below) | 8–12 weeks |
 | F2 macOS, single pane | macOS platform, CoreText fonts, Metal rendering, minimal kernel, `core-actions` | Used as the main terminal for a week | 8–12 weeks |
-| F3 **macOS MVP** | Full kernel, native SDK, `ui-core`, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, windows restored with their directories, the Finder's service | Every must-have requirement in place | 12–16 weeks |
+| F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle, and the first public release, 1.0.0 | Every must-have requirement in place | 12–16 weeks |
 | F3b MCP and agents | IPC and the remote CLI, the MCP server `lokyr +mcp` and its tools, the agents' hooks | Agents drive panes over MCP, within their scope | 4–5 weeks |
 | F4 Plugin ecosystem | Luau host, Luau API, Sleip, registry v0 | Publishing and installing work end to end | 8–10 weeks |
 | F5a Shell integration and blocks | Warp-style blocks, the last command's output, ssh integration | Verified in zsh, bash and fish, including over ssh | 3–5 weeks |
 | F5b iTerm2 power features | tmux -CC, triggers, profiles, broadcast, the scrollback restored | tmux -CC workflows on par with iTerm2 | 8–11 weeks |
 | F5c Graphics and kitty protocols | kitty graphics, sixel, iTerm2 images, hints and URLs | `kitten icat`, `imgcat` and `chafa` work | 6–8 weeks |
-| F6 Release 1.0 | Hardening, docs, stable plugin API 1.0 | The 1.0 criteria (see [Versions](#versions)) | — |
+| F6 Plugin API 1.0 and hardening | Hardening, docs, stable plugin API 1.0 | The plugin API 1.0's criteria (see [Versions](#versions)) | — |
 | F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — | — |
 
 ## Phases in detail
@@ -81,12 +81,16 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 ### F3 — macOS MVP
 
 - **Full kernel**: workspace, layout tree, events, search and decoration services.
-- **Plugin plumbing**: the `HostApi` draft, `plugin-sdk` with the Rust front end, `export_plugin!`, `xtask gen-dist`.
-- **`ui-core`**: view tree, layout, IME text field, lists, menus, AccessKit, with the panes' text and cursor for VoiceOver, which came from F2 as the user chose on 30 October 2026.
+- **The window's controller, portable**: `app-core`, a crate between the kernel and the app, takes from the app the windows' and the panes' state, input's routing, the gestures, the confirmations, the layout's geometry and the frame's composition, generic over the renderer and the fonts' backend, as F2's [architecture review](tasks/F2-macos-single-pane.md#the-architecture-review-for-f3) asked; the app keeps `main` and the backends.
+- **Plugin plumbing**: the `HostApi` draft, `plugin-sdk` with the Rust front end, `export_plugin!`, `xtask gen-dist`. Native plugins run on the main thread, or on a thread of their own as their manifest asks, `thread = "worker"`; the Luau plugins of F4 on the plugin executor ([PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#execution-model)).
+- **`ui-core`**: view tree, layout, AccessKit, with the panes' text and cursor for VoiceOver, which came from F2 as the user chose on 30 October 2026; the widgets that F3's plugins need, as the user chose on 1 November 2026: the IME text field, buttons, toggles, virtualized lists, scroll areas, tooltips, separators and a `progress` element, whose indeterminate state the window server animates; floating panels anchored to a cell, the cursor or the pointer, with the keyboard's focus. A plugin describes its UI and the host draws it: no plugin draws pixels or opens a native window. The menus stay native; a canvas of drawing primitives comes with F4's Luau API.
 - **Plugins**: `tabs`, `splits`, `search`, `themes`, `theme-iterm2`, `keymap-macos`, `command-palette`; `links`, which comes in F2, underlines the link under the pointer while ⌘ is held, with the API's events and decorations.
 - **Basic OSC 7 and 133**: cwd inheritance for splits, and marks.
 - **The context menu's items of the plugins**: the splits', the tabs', the man page index, a web search, a link's address ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **Agents**: the presence and the state of the AI agents that run in a pane, working, waiting or done, on its tab ([ADR 0017](adr/0017-mcp-and-agents.md)).
+- **The programs' progress** (OSC 9;4), as the user asked on 1 November 2026: the `progress` plugin, in a strip under the titlebar, and on the tab with the `tabs` plugin, in four states, normal, error, paused and indeterminate.
+- **The command's sticky header**, moved from F5a as the user asked on 1 November 2026, iTerm2's: the command whose output the view shows stays at the pane's top, and gives way to the one before it as the scroll reaches it; a click scrolls to the command. A plugin, over OSC 133's marks; the actions on a command's output stay F5a's.
+- **Distribution**, moved from F6 as the user asked on 1 November 2026: a DMG, signed, notarized and stapled, of `xtask dmg`; updates through Sparkle 2, from a signed feed on the repository's GitHub releases ([ADR 0026](adr/0026-app-updates.md)); `just release`; the versions of [ADR 0027](adr/0027-version-numbers.md). F3 ends with the repository made public and the first public release, 1.0.0.
 - **Cursor options**: smooth movement, `snappy` or `gliding` ([UI-AND-FEATURES](UI-AND-FEATURES.md#cursor)); the shape, the blink interval and smooth blinking come in F2.
 
 - **What every terminal's users expect**, as a search of the major terminals' trackers found on 30 October 2026, which the user took:
@@ -105,6 +109,11 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 - the whole iTerm2-Color-Schemes collection imports, Light/Dark keys and color spaces included;
 - IME works in the find bar;
 - every cursor option applies on hot reload, and with smooth blinking and movement on, the latency and idle budgets still hold;
+- a plugin's floating panel, the find bar with its options, works with the keyboard, the input method and VoiceOver;
+- Gradle's progress shows under the titlebar and on its tab;
+- the sticky header follows the commands through a scroll;
+- a plugin on a thread of its own slows no frame;
+- the notarized DMG installs, and Sparkle updates one release to the next;
 - budgets green.
 
 ### F3b — MCP and agents
@@ -145,9 +154,8 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 - **OSC 133 marks**, past F3's jumps and notices: select the output of the last command.
 - **Warp-style blocks**:
-  - command and output grouped together;
-  - a sticky header while scrolling;
-  - actions: copy, rerun, collapse, in the context menu too, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
+  - command and output grouped together, past F3's sticky header;
+  - actions: copy, select, the command's details, rerun, collapse, share, from the sticky header's menu and the context menu, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 - **ssh integration**: installs the terminfo on the remote host, or falls back to `xterm-256color` automatically.
 
 ### F5b — iTerm2 power features
@@ -169,12 +177,12 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - semantic history: ⌘-click on `file:line` opens the editor;
   - smart selection, with its actions in the context menu, and Quick Look for a link ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
 
-### F6 — Release 1.0
+### F6 — Plugin API 1.0 and hardening
 
 - Stabilize the plugin API as 1.0, in both front ends.
 - Complete the docs: user guide, plugin author guide, reference.
 - Fix bugs and harden; reconfirm the license ([ADR 0010](adr/0010-mit-license.md)) and the final names.
-- **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and, if Lokyr goes through Homebrew, a cask whose `binary` stanza links it in Homebrew's `bin`.
+- **Distribution**, as the user asked on 29 October 2026: the menu's Install Command Line Tool…, which links `lokyr` to the bundle's executable in a directory of the `PATH`; and, if Lokyr goes through Homebrew, a cask whose `binary` stanza links it in Homebrew's `bin`. The DMG and the updates came in F3.
 
 ### F7 — After 1.0
 
@@ -201,14 +209,18 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 
 ## Versions
 
+As the user chose on 1 November 2026 ([ADR 0027](adr/0027-version-numbers.md)): releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidates `X.Y.Z-rc.N`.
+
 | Version | Contents |
 |---|---|
-| 0.1 | macOS MVP (F3) |
-| 0.2 | MCP and agents (F3b) |
-| 0.3 | Luau plugins and Sleip (F4) |
-| 0.4–0.6 | F5a, F5b, F5c |
-| 1.0 | macOS only. Stable plugin API 1.0, complete docs, no open critical bug for three months |
-| 1.x | Linux (F7), registry v1 |
+| 0.2–0.9 | F3's blocks, on its branch: 0.2 the architecture, 0.3 `ui-core`, 0.4 the plugins' plumbing, 0.5 the plugins, 0.6 the daily features, 0.7 the distribution; a fix takes the patch |
+| 1.0.0 | macOS MVP (F3), the first public release, the repository made public |
+| 1.1 | MCP and agents (F3b) |
+| 2.0 | Luau plugins and Sleip (F4), as the plugins' contract changes; semantic versioning from here: patch, minor and major |
+| 2.x | F5a, F5b, F5c, and the plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months |
+| later | Linux (F7), registry v1 |
+
+The plugin API has its own version, `plugin-sdk`'s, experimental until its 1.0 ([PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#versioning)).
 
 ## First code files
 
@@ -252,8 +264,8 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
 | An atomic store for the watchdog's interrupt in the vendored Luau, or Luau's guarantee that the race is harmless ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | The buffers for bulk data between the host and Luau plugins, and how the Luau type definitions are generated from the Rust types ([ADR 0012](adr/0012-luau-plugins.md)) | F4 |
 | Buying the domains of [ADR 0018](adr/0018-names-lokyr-and-sleip.md): `lokyr.dev`, `lokyr.sh`, `lokyr.app`, and the registry's, `pkg.lokyr.dev` | Before F4 |
-| Lokyr's and Sleip's marks, in the US, Europe and elsewhere, checked by hand ([ADR 0018](adr/0018-names-lokyr-and-sleip.md)) | Before the public 0.1 |
-| The names in Homebrew and other registries | Before the public 0.1 |
+| Lokyr's and Sleip's marks, in the US, Europe and elsewhere, checked by hand ([ADR 0018](adr/0018-names-lokyr-and-sleip.md)) | Before the first public release, 1.0.0 |
+| The names in Homebrew and other registries | Before the first public release, 1.0.0 |
 | Branch protection on `main`: a ruleset that requires the `macos` and `linux` CI checks | When the repository goes public |
-| License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the public 0.1 |
+| License: MIT or dual MIT/Apache-2.0 ([ADR 0010](adr/0010-mit-license.md)) | Before the first public release, 1.0.0 |
 | Flatpak for Linux, where the sandbox makes launching host shells awkward | F7 |

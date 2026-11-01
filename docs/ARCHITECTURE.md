@@ -75,6 +75,7 @@ Workspace
 | Drawing warm-up, once, as the app launches | Making the GPU's pipelines and the font, and letting them go, while AppKit launches, so that the app's own take nearly nothing | Outlive the launch |
 | Font warm-up, once, after the first frame | Readying the system's font fallback and its CJK and emoji faces, about 20 ms | Hold anything of the app's; a frame's first lookup of a CJK face, within those 20 ms, can wait for CoreText's cascade, which the thread fills |
 | Plugin executor | Calls into third-party plugins, with a deadline per call; its watchdog runs only while a plugin executes | Sit on the output path |
+| Plugin workers, one per native plugin that asks for one (F3) | Every call of that plugin, its renders too, by copies and messages, as the executor's | Hold a lock of the kernel's, or a pane's |
 | Workers | Search, reflow of very large scrollbacks | Hold the grid lock for long |
 
 **From program output to the screen**
@@ -116,6 +117,7 @@ lokyr/
 │   ├── session/           pty + vt-core + I/O thread, snapshots for the renderer
 │   ├── search/            literal and regex search over the grid
 │   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services; implements HostApi
+│   ├── app-core/          (F3) the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over Renderer and FontBackend
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
 │   ├── render-core/       Renderer trait, display-list types, shaders
@@ -130,7 +132,7 @@ lokyr/
 │   ├── plugin-sdk/        the plugin API (HostApi and its types) and its Rust front end; no internal dependencies
 │   ├── plugin-host-luau/  Luau host (mlua): one VM per plugin, the Luau front end, capabilities, limits (behind a feature)
 │   ├── pkg-model/         plugin.toml, plugins.toml/.lock, index format, dist (shared by app, sleip, registry)
-│   └── app/               the `lokyr` binary: kernel + backends for the target + distribution
+│   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
 │   ├── core-actions/ links/ tabs/ splits/ search/ themes/ theme-iterm2/ quick-terminal/
 │   ├── keymap-macos/ command-palette/ plugin-manager/ keymap-linux/ (F7)
@@ -147,7 +149,8 @@ lokyr/
 ### Crate dependencies
 
 ```
-app ─┬─▶ kernel ─┬─▶ session ─┬─▶ vt-core
+app ─┬─▶ app-core ─▶ kernel                         (F3)
+     ├─▶ kernel ─┬─▶ session ─┬─▶ vt-core
      │           │            └─▶ pty
      │           ├─▶ search ───▶ vt-core
      │           ├─▶ ui-core ──┬─▶ text-core
@@ -169,7 +172,7 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 |---|---|---|
 | `vt-core` and `search` do not depend on UI, platform or plugins | Headless tests, fuzzing, reuse | `xtask check-deps` |
 | `plugin-sdk` depends on no other workspace crate | The SDK must be publishable and usable on its own | `xtask check-deps` |
-| Only `app` depends on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
+| Only `app` and `app-core` depend on `kernel` | Plugins must not be able to bypass the SDK | `cargo-deny` (`wrappers`) |
 | `plugins/*` depend only on `plugin-sdk`, plus a whitelist of utility crates | Proves the public API is sufficient | `xtask check-deps` |
 | First-party plugins use `#![forbid(unsafe_code)]`; clippy `disallowed-methods` forbids threads, blocking I/O and clocks | They follow the same rules as Luau plugins | clippy in CI |
 | Luau (`mlua`) only in `plugin-host-luau` | The C++ runtime stays behind one crate and one feature | `cargo-deny` (`wrappers`) |

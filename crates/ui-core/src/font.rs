@@ -538,10 +538,10 @@ impl<B: FontBackend> Font<B> {
 
     /// Ends the collecting, and draws the glyphs that the atlas lacked, as
     /// many as there is time for in the `drawing` that the collecting was
-    /// given, from this call, on the backend's threads, into the atlas. The others wait for the frames
-    /// after: until the next frame begins, the layout leaves their cells
-    /// empty, as [`Font::has_deferred`] tells. Whether it drew any, which a
-    /// layout done again would show.
+    /// given, from this call, on the backend's threads, into the atlas. The
+    /// others wait for the frames after: until the next frame begins, the
+    /// layout leaves their cells empty, as [`Font::has_deferred`] tells.
+    /// Whether it drew any, which a layout done again would show.
     pub fn draw_pending(&mut self) -> bool {
         self.collecting = false;
         if self.pending.is_empty() {

@@ -2235,8 +2235,8 @@ impl App {
                 u32::from(window_config.rows.count()),
             ),
         };
-        // A bench's window takes its own size, or the config's grid, never
-        // the frame that the last window left.
+        // The output bench's window takes its own size, or the config's
+        // grid, never the frame that the last window left.
         let remember =
             window_config.remember_frame && page.is_none() && self.output_bench.is_none();
         let size = self

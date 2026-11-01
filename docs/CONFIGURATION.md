@@ -223,7 +223,7 @@ The family of every character past ASCII, such as `"Hiragino Sans"` for Japanese
 
 - **Default**: the text's own family.
 - Its faces follow the weights of the text's: bold text takes its bold face. The styles that `style` and the other keys name are the text's family's, not this one's.
-- A character that this family lacks takes the text's own family, and then the font that macOS gives for it: the icons of a Nerd Font, such as those of a shell's prompt, stay the font's.
+- A character that this family lacks takes the text's own family, then, for an icon of the private use areas, Symbols Nerd Font Mono, which Lokyr holds, and then the font that macOS gives for it: the icons of a Nerd Font, such as those of a shell's prompt, stay the font's.
 - A family that is not installed leaves that text to the text's family, and the notice bar tells it, as the log does.
 
 ### `line-height`, `cell-width`
@@ -267,8 +267,8 @@ Whether Lokyr draws these characters itself, at the cell's size and to the pixel
 | `true`, `false` | `true` |
 
 - Drawn by Lokyr, lines meet across cells without a gap, blocks tile, and the powerline symbols fill the cell's height, whatever the font and `line-height`.
-- `false` takes the font's glyphs, or those of the font that macOS gives for them; some fonts draw their own as a look of their own.
-- The other icons of Nerd Fonts always come from the font.
+- `false` takes the font's glyphs, or, where the font lacks them, those of Symbols Nerd Font Mono, which Lokyr holds; some fonts draw their own as a look of their own.
+- The other icons of Nerd Fonts come from the font, or from Symbols Nerd Font Mono where the font lacks them.
 
 ### `antialias`
 
