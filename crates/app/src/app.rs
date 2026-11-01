@@ -221,10 +221,10 @@ const FALLBACK_TERM: &str = "xterm-256color";
 const TITLE: &str = "Lokyr";
 const BELL_MARK: &str = "🔔 ";
 
-/// How long a frame looks up the faces of characters that it has not met,
-/// at most, and how long it draws the glyphs that the atlas lacks, on the
+/// How long a frame starts looking up the faces of characters that it has
+/// not met, and how long it draws the glyphs that the atlas lacks, on the
 /// font's threads: a frame of new glyphs takes up to about 10 ms, within a
-/// refresh at 120 Hz, and a page of them shows whole in a few frames.
+/// refresh at 60 Hz, and a page of them shows whole in a few frames.
 const GLYPHS_BUDGET: (Duration, Duration) = (Duration::from_millis(2), Duration::from_millis(2));
 
 /// What draws the windows: the GPU, its renderer, and the font of the text.
@@ -786,11 +786,12 @@ pub struct App {
     budget: Arc<Budget>,
     /// The quick terminal's window, once it opened, and whether it shows.
     quick: Option<(WindowId, bool)>,
-    /// The config's global keys that the platform took, by the indices
-    /// that their presses tell, with the commands that they run; and
-    /// whether the system gave the app one of them at least, which keeps
-    /// the app open without windows.
+    /// The config's global keys that the Mac's keyboards have, by the
+    /// indices that their presses tell, with the commands that they run,
+    /// those that another app holds too.
     global_keys: Vec<(keymap::Combo, Invocation)>,
+    /// Whether the system gave the app one of the global keys at least,
+    /// which keeps the app open without windows.
     global_held: bool,
     /// The measure of the startup, with `--bench startup`: when the first
     /// window's first frame showed, once it did, which the app prints
@@ -798,9 +799,10 @@ pub struct App {
     startup_bench: Option<Arc<Mutex<StartupBench>>>,
     /// The latency's bench, with `--bench latency`.
     latency_bench: Option<LatencyBench>,
-    /// The output's bench, with `--bench output`, and the size of its
-    /// window's content, in points.
+    /// The output's bench, with `--bench output`.
     output_bench: Option<OutputBench>,
+    /// The size of the output bench's window's content, in points, that
+    /// `--window` gives.
     bench_size: Option<Size>,
 }
 
@@ -2805,14 +2807,6 @@ impl App {
         }
     }
 
-    /// Takes the workspace's events. A program's write to the clipboard
-    /// puts its text there, and the primary selection, which macOS lacks,
-    /// takes nothing; its read asks the user, once at a time for each pane.
-    /// A window takes the title of its active tab, which its program's
-    /// gives; a bell does what `[bell]` says, and a program's notification
-    /// shows as the system's. The tabs keep their programs' colors, which
-    /// the windows do not show, and a program's end waits for its status,
-    /// which the exits take.
     /// Gathers what the sessions of `panes` told, and of those that waited
     /// for their turn, and acts on it; a timer brings the turn of those
     /// that wait still.
@@ -2829,6 +2823,14 @@ impl App {
         }
     }
 
+    /// Takes the workspace's events. A program's write to the clipboard
+    /// puts its text there, and the primary selection, which macOS lacks,
+    /// takes nothing; its read asks the user, once at a time for each pane.
+    /// A window takes the title of its active tab, which its program's
+    /// gives; a bell does what `[bell]` says, and a program's notification
+    /// shows as the system's. The tabs keep their programs' colors, which
+    /// the windows do not show, and a program's end waits for its status,
+    /// which the exits take.
     fn events(&mut self, platform: &mut dyn Platform) {
         for event in self.workspace.take_events() {
             match event {

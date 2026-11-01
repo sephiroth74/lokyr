@@ -203,8 +203,9 @@ impl Terminal {
     /// Prints `chars`, as [`Terminal::print_translated`] would print them
     /// one by one, but each stretch of characters that start clusters of
     /// their own, one or two cells wide, and fit in the line, at once, with
-    /// the row's page found once, and with the codepoints that join those
-    /// clusters and leave them as wide. The others take the path of each
+    /// the row's page found once for the stretch and once for its joins,
+    /// and with the codepoints that join those clusters and leave them as
+    /// wide. The others take the path of each
     /// character: those that join a cluster otherwise, or have no width, or
     /// do not fit, or come with another character set, an open link, insert
     /// mode or a normal form to put them in.

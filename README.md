@@ -67,7 +67,7 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
   <img src="docs/bench/compare-F2-134/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 25.0 MB, Alacritty 31.3, Terminal.app 34.8, WezTerm 37.2, Ghostty 40.0, kitty 97.3, iTerm2 136.5" width="680">
   <img src="docs/bench/compare-F2-134/charts/wakeups.svg" alt="Wakeups at rest a second: Alacritty 0.37, Lokyr 0.38, Terminal.app 0.38, WezTerm 1.35, iTerm2 8.18, Ghostty 16.57, kitty 20.08" width="680">
   <img src="docs/bench/compare-F2-134/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 306 MiB/s, Lokyr 296, Alacritty 170, kitty 147, iTerm2 51, WezTerm 45, Terminal.app 40" width="680">
-  <img src="docs/bench/compare-F2-134/charts/energy.svg" alt="Energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3" width="680">
+  <img src="docs/bench/compare-F2-134/charts/energy.svg" alt="The CPU's energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3" width="680">
 </p>
 
 <!-- The latency joins the charts as the report has it. -->

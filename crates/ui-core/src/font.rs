@@ -513,10 +513,11 @@ impl<B: FontBackend> Font<B> {
     /// for them, leaving their cells empty: so that a frame's layout finds
     /// the glyphs that it lacks, which the backend then draws together, on
     /// several threads, before the layout is done again. A glyph that the
-    /// terminal draws itself is drawn at once. Till the frame ends, it looks
-    /// up the faces of the characters that it has not met for `lookups` at
-    /// most, and starts each after: the others wait for the frames after,
-    /// as [`Font::has_deferred`] tells, their cells empty until then; and
+    /// terminal draws itself is drawn at once. Till the frame ends, it
+    /// starts looking up the faces of the characters that it has not met
+    /// while it has spent less than `lookups` on them, so that one lookup
+    /// can outlast the budget: the others wait for the frames after, as
+    /// [`Font::has_deferred`] tells, their cells empty until then; and
     /// [`Font::draw_pending`] draws glyphs for `drawing` at most. Each
     /// frame looks up and draws some, however long its layout takes.
     pub fn collect_missing(&mut self, lookups: Duration, drawing: Duration) {
@@ -531,8 +532,8 @@ impl<B: FontBackend> Font<B> {
     }
 
     /// Ends the collecting, and draws the glyphs that the atlas lacked, as
-    /// many as there is time for until the frame's deadline, on the
-    /// backend's threads, into the atlas. The others wait for the frames
+    /// many as there is time for in the `drawing` that the collecting was
+    /// given, from this call, on the backend's threads, into the atlas. The others wait for the frames
     /// after: until the next frame begins, the layout leaves their cells
     /// empty, as [`Font::has_deferred`] tells. Whether it drew any, which a
     /// layout done again would show.

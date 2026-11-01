@@ -26,9 +26,10 @@ keeps those alone. The measures:
   rendering, three times each, but in iTerm2, which never answers the
   query that ends its tests; vtebench, and `cat` of 1 GiB ended with a
   query of the cursor, five times.
-- `energy`: each terminal's energy over 10 s of `yes`.
+- `energy`: each terminal's energy over 10 s of `yes`, the CPU's alone,
+  as the kernel bills it.
 - `energycat`: each terminal's energy over `cat` of 1 GiB, which takes
-  the same bytes in each, in joules a GiB.
+  the same bytes in each, in joules a GiB, the CPU's alone.
 - `hud`: the Metal HUD's log of each terminal over 10 s of scrolling.
 - `ucs`: `ucs-detect`'s report of each terminal; without the queries of
   the terminal's features in iTerm2, which leaves one unanswered.

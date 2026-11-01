@@ -24,7 +24,8 @@ const MARGIN: CGFloat = 1.0;
 
 /// How many threads draw a batch of glyphs at most, the caller's among
 /// them: past four, CoreGraphics, which draws a glyph's rows on threads of
-/// its own and keeps a cache of their outlines, draws them no sooner.
+/// its own and keeps a cache of their outlines, draws them little sooner,
+/// 1 200 glyphs in 6 ms on twelve where four take 7.5 to 8.
 const THREADS: usize = 4;
 
 /// The fewest glyphs that take more threads than the caller's: a thread's

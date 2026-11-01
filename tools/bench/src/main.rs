@@ -69,7 +69,7 @@ fn print_help() {
          must not be running, and opens and quits once per run, with the\n      \
          environment given; prints JSON\n  \
          energy --pid <pid> [--pid <pid>]... [--duration <s>]\n      \
-         the energy that processes spend, as the kernel bills it, over 10 s by\n      \
-         default; prints JSON, in joules and milliwatts, and their sum"
+         the energy that processes' CPU spends, as the kernel bills it, over\n      \
+         10 s by default; prints JSON, in joules and milliwatts, and their sum"
     );
 }

@@ -10,7 +10,7 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 | Memory at rest, without the GPU's | 25.0 MB | 1st | Alacritty, 31.3 MB |
 | Interrupt wakeups at rest | 0.38 a second | 2nd, with Terminal.app | Alacritty, 0.37 |
 | `cat` of 1 GiB on screen | 296 MiB/s | 2nd | Ghostty, 306 MiB/s |
-| Energy to show that GiB | 17.3 J | 1st | kitty, 41.1 J |
+| The CPU's energy to show that GiB | 17.3 J | 1st | kitty, 41.1 J |
 | kitty's benchmark, short CSI sequences | 58 MB/s | 4th | Ghostty, 221 MB/s |
 
 ![Startup to the first window, median of 10 runs: Lokyr 256 ms, Ghostty 331, Terminal.app 340, Alacritty 349, WezTerm 394, kitty 672, iTerm2 794](compare-F2-134/charts/startup.svg)
@@ -21,7 +21,7 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 
 ![Throughput of cat of 1 GiB on screen, median of 5 runs: Ghostty 306 MiB/s, Lokyr 296, Alacritty 170, kitty 147, iTerm2 51, WezTerm 45, Terminal.app 40](compare-F2-134/charts/throughput.svg)
 
-![Energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3](compare-F2-134/charts/energy.svg)
+![The CPU's energy to show cat of 1 GiB: Lokyr 17.3 J, kitty 41.1, Alacritty 41.9, Ghostty 43.1, iTerm2 107.9, Terminal.app 124.3, WezTerm 196.3](compare-F2-134/charts/energy.svg)
 
 ## Conditions
 
@@ -43,7 +43,7 @@ Measured on 2026-10-31, in five sessions between 14:54 and 22:30, on the bundle 
 
 ## Startup
 
-`lokyr-bench startup`, which launches each terminal through LaunchServices and times its first window on screen from the process's start, a run to warm up and five, twice, the terminals' order turned between the rounds; and Lokyr's own first frame, as its presented handler tells it.
+`lokyr-bench startup`, which launches each terminal through LaunchServices and times its first window on screen from the process's start, a run to warm up and five, twice, the other terminals' order turned between the rounds, while Lokyr came first in both, as the review after F2-148 found; and Lokyr's own first frame, as its presented handler tells it. The spread is the range from the 10th to the 90th percentile, interpolated between the runs, as a fraction of the median.
 
 | Terminal | Median | p90 | Spread | Fastest | Slowest |
 |---|---|---|---|---|---|
@@ -68,11 +68,11 @@ Each terminal alone, 10 s after its start, then 60 s of `lokyr-bench idle` and o
 | Alacritty | alacritty | 0 | 0.37 | 31.3 MB | 52.1 MB | 0.07 mW |
 | kitty | kitty, two kittens | 0 | 20.08 | 97.3 MB | 41.9 MB | 0.15 mW |
 | WezTerm | wezterm-gui | 0 | 1.35 | 37.2 MB | 56.9 MB | 0.09 mW |
-| iTerm2 | iTerm2, pidinfo, the session's server | 0.02 | 8.18 | 136.5 MB | 184.4 MB | 5.45 mW |
+| iTerm2 | iTerm2 and pidinfo; and the session's server, in its footprint alone | 0.02 | 8.18 | 136.5 MB | 184.4 MB | 5.45 mW |
 | Terminal.app | Terminal | 0 | 0.38 | 34.8 MB | 15.2 MB | 0.07 mW |
 
 - Lokyr is within its [budgets](../PERFORMANCE.md#budgets): no package idle wakeup, 0.38 interrupt wakeups a second, of ≤ 0.5, and 25.0 MB, of ≤ 35.
-- iTerm2's figure has the server of its session, 2.2 MB, which [idle/iterm2-server.json](compare-F2-134/idle/iterm2-server.json) measured apart, as iTerm2's servers live outside its bundle.
+- iTerm2's footprint has the server of its session, 2.2 MB, which [idle/iterm2-server.json](compare-F2-134/idle/iterm2-server.json) measured apart, as iTerm2's servers live outside its bundle; its wakeups and its energy leave the server out.
 
 ## Throughput
 
@@ -135,7 +135,7 @@ The first session of throughput, at 15:28, ran Lokyr first. Its first run of kit
 
 ## Energy
 
-`lokyr-bench energy`, which reads the energy that the kernel bills each process, `ri_energy_nj` of `proc_pid_rusage`, and needs no administrator, over `cat` of 1 GiB in each terminal, all of them in one session: the same bytes in each, whatever its rate.
+`lokyr-bench energy`, which reads the energy that the kernel bills each process, `ri_energy_nj` of `proc_pid_rusage`, and needs no administrator, over `cat` of 1 GiB in each terminal, all of them in one session: the same bytes in each, whatever its rate. The kernel bills the CPU's energy alone: four seconds of a Metal loop that keeps the GPU busy add 0.02 J to a process's count, where a second of the CPU's work adds about 6 J, as the review after F2-148 measured. The figures leave out each terminal's own drawing on the GPU.
 
 | Terminal | A GiB | At |
 |---|---|---|
@@ -147,8 +147,8 @@ The first session of throughput, at 15:28, ran Lokyr first. Its first run of kit
 | Terminal.app | 124.3 J | 38.7 MiB/s |
 | WezTerm | 196.3 J | 44.0 MiB/s |
 
-- Lokyr spends 0.4 of Ghostty's energy at the same rate.
-- The window server's composition is each terminal's cost too, and these figures leave it out: `powermetrics`, which reads it, needs an administrator, and is the user's part.
+- Lokyr's CPU spends 0.4 of Ghostty's energy at the same rate.
+- The GPU's work and the window server's composition are each terminal's cost too, and these figures leave them out: `powermetrics`, which reads them, needs an administrator, and is the user's part.
 - iTerm2's rate moved between sessions, from 10 to 103 MiB/s in a new window, and 51 in the window of the throughput's session.
 - Ten seconds of `yes`, in the first session, are not comparable across terminals, whose rates differ: they are in [idle/](compare-F2-134/idle/).
 

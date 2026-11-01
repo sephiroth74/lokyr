@@ -65,8 +65,8 @@ def nice_ticks(top, count=5):
 
 
 def number(value, digits):
-    """`value` with `digits` decimals, its halves rounded up, as the
-    reports' tables round them."""
+    """`value` with `digits` decimals, its halves rounded away from
+    zero."""
     scaled = math.floor(abs(value) * 10 ** digits + 0.5) / 10 ** digits
     return f"{math.copysign(scaled, value):,.{digits}f}"
 

@@ -110,7 +110,8 @@ def compare():
         "Throughput", "cat of 1 GiB of ASCII lines, on screen, median of 5 runs; "
         "more is better", rows("cat"), "MiB/s", order="descending"))
     save(f"{root}/energy.svg", charts.bars(
-        "Energy", "Joules that the terminal spends to show cat of 1 GiB; less is better",
+        "CPU energy", "Joules that the terminal's CPU spends to show cat of 1 GiB; "
+        "less is better",
         rows("energy"), "J", digits=1))
 
 

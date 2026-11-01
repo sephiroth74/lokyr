@@ -5,8 +5,9 @@
 
 - `ascii.txt`, 1 GiB of lines of ASCII text, as `cat` of a log shows them;
 - `seq.txt`, `seq 1 10000000`'s output;
-- `sgr.txt`, 128 MiB of lines whose every character changes its colors,
-  foreground and background, of the 256's and of 24-bit ones, and bold;
+- `sgr.txt`, 128 MiB of lines whose every character changes its
+  foreground color, of the 256's or a 24-bit one, and every third its
+  background too and its weight to bold, the others' back to normal;
 - `cjk.txt`, 128 MiB of lines of CJK, two columns each, and emoji, of
   their variation selectors, joiners and skin tones.
 """

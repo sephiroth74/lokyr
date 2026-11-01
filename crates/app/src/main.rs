@@ -58,7 +58,6 @@ fn main() -> ExitCode {
         // From the process's start to the first frame on the display, as
         // JSON, and quits.
         ["--bench", "startup"] => run(Bench::Startup),
-        // From each key to the frame that shows it, as JSON, as it quits.
         // Each frame's time on the CPU as a program's output draws, as JSON,
         // as the program ends.
         ["--bench", "output", rest @ ..] => match output_options(rest) {
@@ -68,6 +67,7 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // From each key to the frame that shows it, as JSON, as it quits.
         ["--bench", "latency", options @ ..] => match latency_options(options) {
             Some((keys, flood)) => run(Bench::Latency { keys, flood }),
             None => {

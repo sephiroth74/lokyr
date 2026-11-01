@@ -46,11 +46,13 @@ const SPINS: usize = 16;
 const REFILL: Duration = Duration::from_millis(1);
 
 /// How long a batch waits for refills, in all, before it goes to the
-/// parser regardless: well under a frame.
+/// parser regardless, give or take a wait for a refill: well under a
+/// frame.
 const BUDGET: Duration = Duration::from_millis(3);
 
 /// The program's output, read ahead of its parse on a thread of its own,
-/// as [`PtyReader::read_ahead`] starts it. Dropping it stops the reads.
+/// as [`PtyReader::read_ahead`] starts it. Dropping it stops the reads at
+/// the next output, or as the PTY drops.
 #[derive(Debug)]
 pub struct ReadAhead {
     shared: Arc<Shared>,
@@ -83,8 +85,9 @@ struct Shared {
     ready: Condvar,
     /// Signalled when a buffer comes back, and when the parser goes.
     room: Condvar,
-    /// Given when the parser has taken every batch while the reader waits
-    /// for a refill, so that the reader hands over what it has at once.
+    /// Given when the parser has done with its last batch while the reader
+    /// waits for a refill, so that the reader hands over what it has at
+    /// once.
     hurry: Wake,
 }
 
@@ -108,7 +111,8 @@ impl PtyReader {
     /// Reads the program's output on a thread of its own, into a few
     /// buffers of `size` bytes, ahead of the parse, which takes each in
     /// turn through [`ReadAhead::next`]: the reads stop once the output
-    /// ends, the PTY drops, or the [`ReadAhead`] does.
+    /// ends or the PTY drops, or, after the [`ReadAhead`] drops, at the
+    /// next output.
     pub fn read_ahead(self, size: usize) -> io::Result<ReadAhead> {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {

@@ -118,7 +118,7 @@ impl Shared {
 /// terminal's replies to the program, so that a program that does not read
 /// its input never keeps its output from being read; the replies that wait
 /// take at most about a MiB, past which the next are dropped. Dropping the session
-/// hangs the program up, ends both threads, and closes the terminal.
+/// hangs the program up, ends its threads, and closes the terminal.
 pub struct Session {
     shared: Arc<Shared>,
     pty: Pty,

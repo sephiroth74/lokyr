@@ -116,9 +116,9 @@ impl Surface {
         layer.setMaximumDrawableCount(DRAWABLES);
         // A frame goes to the window server as soon as it is drawn, which
         // composes it at its next refresh, rather than at the layer's own
-        // next refresh first: two frames less from a key to the display,
-        // in a window, where the window server's composition keeps a frame
-        // whole.
+        // next refresh first: about 17 ms less from a key to the display,
+        // two frames at 120 Hz and one at 60, in a window, where the window
+        // server's composition keeps a frame whole.
         layer.setDisplaySyncEnabled(false);
         // SAFETY: the name is Core Graphics' constant.
         let srgb = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }));

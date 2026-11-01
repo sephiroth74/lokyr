@@ -1,6 +1,8 @@
 //! `lokyr-bench energy`: how much energy processes spend over a while, as
 //! the kernel bills it to each, `ri_energy_nj` of `proc_pid_rusage`, which
-//! needs no administrator, where `powermetrics` does.
+//! needs no administrator, where `powermetrics` does. The kernel bills the
+//! CPU's energy alone: the GPU's work of the processes, which a loop of
+//! Metal's on an M5 Pro shows, adds next to nothing to it.
 //!
 //! Reads each process's counter at the start and at the end of the
 //! duration, then prints JSON: each process's energy, in joules, and its
