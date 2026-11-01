@@ -38,7 +38,7 @@ use lokyr_kernel::config::{self, Config};
 use lokyr_text_core::catalog::{self, Filter};
 
 /// Lokyr's version: the crate's, with the date of the commit that it was
-/// built from, as `0.1.0-20261101`.
+/// built from, as `0.2.0-20261101`.
 const VERSION: &str = env!("LOKYR_VERSION");
 
 /// Whether the output bench could not start its program, which the exit

@@ -1,7 +1,8 @@
 [package]
 name = "lokyr-plugin-sdk"
 description = "The Lokyr plugin API and its Rust SDK"
-version.workspace = true
+# The plugin API's own version, apart from the app's.
+version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

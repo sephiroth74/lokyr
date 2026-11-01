@@ -19,8 +19,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitCode};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
+
+#[path = "../../../crates/app/build/stamp.rs"]
+mod stamp;
 
 /// The bundle's identifier, which follows the terminal's name.
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";
@@ -112,9 +116,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .join("../..")
         .canonicalize()
         .context("the workspace's root")?;
+    let moment = build_moment(&root)?;
     run_command(
         Command::new(env!("CARGO"))
             .args(["build", "--release", "--locked", "-p", "lokyr-app"])
+            // The version's date, of the moment of the bundle's number.
+            .env("SOURCE_DATE_EPOCH", moment.to_string())
             .args(
                 features
                     .iter()
@@ -151,7 +158,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let version = told_version(&binary)?;
     fs::write(
         app.join("Contents/Info.plist"),
-        info_plist(&version, &catalogs)?,
+        info_plist(&version, moment, &catalogs)?,
     )
     .context("writing the Info.plist")?;
     let identity = identity()?;
@@ -254,7 +261,7 @@ fn plist(pairs: &[(String, String)], high_resolution: bool) -> String {
 }
 
 /// The version that the app's `binary` tells, as `lokyr --version` prints
-/// it, the crate's with the date of its commit: `0.1.0-20261101`.
+/// it, the crate's with the date of its commit: `0.2.0-20261101`.
 fn told_version(binary: &Path) -> Result<String> {
     let output = Command::new(binary)
         .arg("--version")
@@ -267,21 +274,79 @@ fn told_version(binary: &Path) -> Result<String> {
         .with_context(|| format!("{} --version told `{}`", binary.display(), told.trim()))
 }
 
-/// The bundle's versions of the app's `version`, the crate's with a date:
-/// the crate's, of three numbers as macOS has it, and the date, the build's
-/// number, so that About Lokyr shows `0.1.0 (20261101)`.
-fn bundle_versions(version: &str) -> Result<(&str, &str)> {
-    version
-        .split_once('-')
-        .filter(|(_, date)| date.len() == 8 && date.bytes().all(|byte| byte.is_ascii_digit()))
-        .with_context(|| format!("the version `{version}` has no date"))
+/// The moment of the build, in seconds since the epoch, as the app's build
+/// script takes it: `SOURCE_DATE_EPOCH`'s, when it is set, or else the time
+/// of HEAD's commit, or else, for a source without git, now.
+fn build_moment(root: &Path) -> Result<u64> {
+    if let Ok(given) = std::env::var("SOURCE_DATE_EPOCH") {
+        return given
+            .trim()
+            .parse()
+            .with_context(|| format!("SOURCE_DATE_EPOCH is `{given}`, not seconds"));
+    }
+    let committed = Command::new("git")
+        .args(["log", "-1", "--format=%ct"])
+        .current_dir(root)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8_lossy(&output.stdout).trim().parse().ok());
+    match committed {
+        Some(seconds) => Ok(seconds),
+        None => Ok(SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("the clock is before 1970")?
+            .as_secs()),
+    }
 }
 
-/// The `Info.plist` of the app at `version`, the crate's with a date, with
-/// the usage strings of the source's catalog and the languages of
-/// `catalogs`.
-fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>) -> Result<String> {
-    let (short, date) = bundle_versions(version)?;
+/// Whether `text` is of digits alone, one at least.
+fn digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// The bundle's versions of the app's `version`, built at `moment`, in
+/// seconds since the epoch: the short one, its three numbers without the
+/// suffix of a build's date or of a candidate, as macOS shows it, `0.2.0`
+/// of `0.2.0-20261101` and `1.0.0` of `1.0.0-rc.2`; and the build's number,
+/// its moment in UTC to the minute, `202611011530`, which grows from one
+/// commit to the next, as the updates compare it. About Lokyr shows
+/// `0.2.0 (202611011530)`.
+fn bundle_versions(version: &str, moment: u64) -> Result<(&str, String)> {
+    let (short, suffix) = match version.split_once('-') {
+        Some((short, suffix)) => (short, Some(suffix)),
+        None => (version, None),
+    };
+    let numbers: Vec<&str> = short.split('.').collect();
+    ensure!(
+        numbers.len() == 3 && numbers.iter().all(|number| digits(number)),
+        "the version `{version}` is not of three numbers"
+    );
+    let number = stamp::stamp(moment);
+    match suffix {
+        None => {}
+        Some(date) if date.len() == 8 && digits(date) => ensure!(
+            number.starts_with(date),
+            "the version `{version}` is of another day than the build, {number}"
+        ),
+        Some(candidate) if candidate.strip_prefix("rc.").is_some_and(digits) => {}
+        Some(other) => {
+            bail!(
+                "the version `{version}` has a suffix of neither a date nor a candidate, `{other}`"
+            )
+        }
+    }
+    Ok((short, number))
+}
+
+/// The `Info.plist` of the app at `version`, built at `moment`, with the
+/// usage strings of the source's catalog and the languages of `catalogs`.
+fn info_plist(
+    version: &str,
+    moment: u64,
+    catalogs: &BTreeMap<String, Vec<(String, String)>>,
+) -> Result<String> {
+    let (short, number) = bundle_versions(version, moment)?;
     let mut keys = vec![
         ("CFBundleDevelopmentRegion", "en".to_owned()),
         ("CFBundleDisplayName", NAME.to_owned()),
@@ -291,7 +356,7 @@ fn info_plist(version: &str, catalogs: &BTreeMap<String, Vec<(String, String)>>)
         ("CFBundleName", NAME.to_owned()),
         ("CFBundlePackageType", "APPL".to_owned()),
         ("CFBundleShortVersionString", short.to_owned()),
-        ("CFBundleVersion", date.to_owned()),
+        ("CFBundleVersion", number),
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
     ];
@@ -527,25 +592,53 @@ mod tests {
         fs::remove_dir_all(resources).unwrap();
     }
 
+    /// 1 November 2026, at 15:30 UTC.
+    const MOMENT: u64 = 1_793_547_000;
+
     #[test]
-    fn the_bundle_s_versions_are_the_crate_s_and_the_date() {
-        assert_eq!(
-            bundle_versions("0.1.0-20261101").unwrap(),
-            ("0.1.0", "20261101")
-        );
-        for version in ["0.1.0", "0.1.0-dev", "0.1.0-2026110", "0.1.0-2026110x"] {
-            assert!(bundle_versions(version).is_err(), "{version}");
+    fn the_build_s_moment_is_told_to_the_minute_in_utc() {
+        assert_eq!(stamp::stamp(0), "197001010000");
+        assert_eq!(stamp::stamp(MOMENT + 59), "202611011530");
+        // A leap day's last minute, and the first day after a century's
+        // leap February.
+        assert_eq!(stamp::stamp(1_709_251_140), "202402292359");
+        assert_eq!(stamp::stamp(951_868_800), "200003010000");
+    }
+
+    #[test]
+    fn the_bundle_s_versions_are_the_short_one_and_the_build_s_moment() {
+        for (version, short) in [
+            ("0.2.0-20261101", "0.2.0"),
+            ("1.0.0-rc.2", "1.0.0"),
+            ("1.0.0-rc.10", "1.0.0"),
+            ("1.0.0", "1.0.0"),
+        ] {
+            let (told, number) = bundle_versions(version, MOMENT).unwrap();
+            assert_eq!(told, short, "{version}");
+            assert_eq!(number, "202611011530", "{version}");
+        }
+        for version in [
+            "0.2.0-20261102",
+            "0.2",
+            "0.2.0.1",
+            "0.x.0",
+            "0.2.0-dev",
+            "0.2.0-2026110",
+            "0.2.0-rc.",
+            "0.2.0-rc.x",
+        ] {
+            assert!(bundle_versions(version, MOMENT).is_err(), "{version}");
         }
     }
 
     #[test]
     fn the_info_plist_has_the_keys_of_the_bundle() {
-        let plist = info_plist("1.2.3-20261101", &catalogs()).unwrap();
+        let plist = info_plist("1.2.3-20261101", MOMENT, &catalogs()).unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
             ("CFBundleExecutable", "lokyr"),
             ("CFBundleShortVersionString", "1.2.3"),
-            ("CFBundleVersion", "20261101"),
+            ("CFBundleVersion", "202611011530"),
             ("LSMinimumSystemVersion", "26.0"),
             ("CFBundleIconFile", "AppIcon"),
             (
@@ -626,7 +719,11 @@ mod tests {
     #[test]
     fn the_info_plist_is_one_that_macos_reads() {
         let path = std::env::temp_dir().join(format!("lokyr-info-{}.plist", std::process::id()));
-        fs::write(&path, info_plist("1.2.3-20261101", &catalogs()).unwrap()).unwrap();
+        fs::write(
+            &path,
+            info_plist("1.2.3-20261101", MOMENT, &catalogs()).unwrap(),
+        )
+        .unwrap();
         let lint = Command::new("plutil")
             .arg("-lint")
             .arg(&path)
@@ -646,6 +743,9 @@ mod tests {
             String::from_utf8(output.stdout).unwrap().trim().to_owned()
         };
         assert_eq!(extract("CFBundleIdentifier"), IDENTIFIER);
+        assert_eq!(extract("CFBundleShortVersionString"), "1.2.3");
+        // The build's number, of twelve digits.
+        assert_eq!(extract("CFBundleVersion"), "202611011530");
         assert_eq!(extract("NSHighResolutionCapable"), "true");
         assert_eq!(
             extract("NSLocalNetworkUsageDescription"),

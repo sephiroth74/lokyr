@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # A phase's branch too, whose pushes cost the same minutes as main's.
+    branches: [main, f3]
   pull_request:
 
 permissions:
@@ -117,5 +118,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes valgrind
       - name: Count the instructions against the base commit's
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A branch's first push, which has no commit before it, against
+          # main.
+          BASE: ${{ github.event.pull_request.base.sha || (github.event.created && 'origin/main') || github.event.before }}
         run: just instructions "$BASE"
