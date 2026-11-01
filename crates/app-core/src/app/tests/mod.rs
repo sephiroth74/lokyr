@@ -1,12 +1,21 @@
+use lokyr_kernel::l10n::Arg;
 use lokyr_platform_core::fake::{Fake, FakeDefinition};
-use lokyr_platform_core::{Dropped, Ime, KeyEvent, KeyState, Modifiers, MouseButton, ScrollDelta};
+use lokyr_platform_core::{
+    Dropped, Ime, KeyCode, KeyEvent, KeyState, MenuItem, MenuRole, Modifiers, MouseButton,
+    ScrollDelta, Shortcut, ShortcutKey,
+};
 use lokyr_ui_core::cursor::CursorConfig;
 use lokyr_ui_core::pane::Preedit;
 
+use super::asks::{invisible, shown};
+use super::menus::{main_menu, man_page, man_program, shortened};
 use super::*;
 use crate::fakes;
 
+mod asks;
 mod input;
+mod menus;
+mod notices;
 
 /// The app of the tests, which draws with the tests' drawing, if at all.
 type App = super::App<fakes::Gpu>;
@@ -27,95 +36,6 @@ fn started() -> (Fake, App) {
     let mut app = app(Config::default(), quiet());
     fake.start(&mut app);
     (fake, app)
-}
-
-#[test]
-fn starting_opens_a_window_under_the_menus_of_the_commands() {
-    let (fake, _) = started();
-    let windows: Vec<_> = fake.windows().collect();
-    assert_eq!(windows.len(), 1);
-    // Of 100 columns of 4 points and 30 rows of 8, with 4 of padding at
-    // each edge.
-    assert_eq!(
-        fake.window(windows[0]).unwrap().size.points,
-        Size {
-            width: 408.0,
-            height: 248.0
-        }
-    );
-    let menu = fake.main_menu().unwrap();
-    let titles: Vec<&str> = menu.menus.iter().map(|menu| menu.title.as_str()).collect();
-    assert_eq!(titles, ["Lokyr", "Shell", "Edit", "View", "Window", "Help"]);
-    let roles: Vec<Option<MenuRole>> = menu.menus.iter().map(|menu| menu.role).collect();
-    assert_eq!(
-        roles,
-        [
-            None,
-            None,
-            None,
-            None,
-            Some(MenuRole::Window),
-            Some(MenuRole::Help)
-        ]
-    );
-    assert_eq!(
-        menu_items(&fake, 0),
-        [
-            "Settings… cmd+,",
-            "Secure Keyboard Entry",
-            "-",
-            "Hide Lokyr cmd+h",
-            "Hide Others alt+cmd+h",
-            "Show All",
-            "-",
-            "Quit Lokyr cmd+q"
-        ]
-    );
-    assert_eq!(
-        menu_items(&fake, 1),
-        [
-            "New Window cmd+n",
-            "Close Window cmd+w",
-            "Set Title… shift+cmd+i",
-            "Quick Terminal"
-        ]
-    );
-    assert_eq!(
-        menu_items(&fake, 2),
-        [
-            "Copy cmd+c",
-            "Paste cmd+v",
-            "-",
-            "Select All cmd+a",
-            "Clear cmd+k"
-        ]
-    );
-    // The commands that take an argument that they need have no item,
-    // as `links.open` and `pane.send-text`.
-    assert_eq!(
-        menu_items(&fake, 3),
-        [
-            "Bigger cmd+=",
-            "Smaller cmd+-",
-            "Default Size cmd+0",
-            "-",
-            "Scroll Up a Line cmd+ArrowUp",
-            "Scroll Down a Line cmd+ArrowDown",
-            "Scroll Up a Page cmd+PageUp",
-            "Scroll Down a Page cmd+PageDown",
-            "Scroll to the Top cmd+Home",
-            "Scroll to the Bottom cmd+End",
-            "-",
-            "Appearance",
-            "-",
-            "Show Performance"
-        ]
-    );
-    assert_eq!(
-        menu_items(&fake, 4),
-        ["Minimize cmd+m", "Zoom", "-", "Bring All to Front"]
-    );
-    assert!(menu_items(&fake, 5).is_empty());
 }
 
 /// The items of the main menu's menu `index` that `fake` has: each
@@ -156,38 +76,6 @@ fn menu_items(fake: &Fake, index: usize) -> Vec<String> {
             MenuItem::Submenu(menu) => menu.title.clone(),
         })
         .collect()
-}
-
-#[test]
-fn the_menus_follow_the_keys_of_the_config() {
-    let keys = concat!(
-        "\"cmd+n\" = false\n",
-        "\"cmd+y\" = \"window.new\"\n",
-        "\"cmd+j\" = { command = \"pane.clear\", when = \"selection\" }\n",
-        "\"cmd+w\" = \"pane.select-all\"\n",
-    );
-    let (fake, _, _) = bound(keys, reader(""));
-    // A binding's key, the one that a key bound later takes away, and
-    // one that holds in a context alone, which no item shows.
-    assert_eq!(
-        menu_items(&fake, 1),
-        [
-            "New Window cmd+y",
-            "Close Window",
-            "Set Title… shift+cmd+i",
-            "Quick Terminal"
-        ]
-    );
-    assert_eq!(
-        menu_items(&fake, 2),
-        [
-            "Copy cmd+c",
-            "Paste cmd+v",
-            "-",
-            "Select All cmd+a",
-            "Clear cmd+k"
-        ]
-    );
 }
 
 #[test]
@@ -354,111 +242,6 @@ fn the_performance_s_panel_shows_from_the_menu_and_the_config() {
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
-#[test]
-fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
-    let (mut fake, mut app, _, _) = with_tester();
-    assert_eq!(menu_items(&fake, 1)[0], "New Window cmd+n");
-    app.run(&mut fake, "test.bind", Args::new());
-    assert_eq!(menu_items(&fake, 1)[0], "New Window");
-    assert!(menu_items(&fake, 3).contains(&"test.size cmd+n".to_owned()));
-    // A config that takes Command-W away, as it reloads.
-    let (mut fake, mut app, path) = with_file("menu-keys", "");
-    assert_eq!(menu_items(&fake, 1)[1], "Close Window cmd+w");
-    std::fs::write(&path, "[keys]\n\"cmd+w\" = false\n").unwrap();
-    change(&mut fake, &mut app);
-    assert_eq!(menu_items(&fake, 1)[1], "Close Window");
-    let _ = std::fs::remove_dir_all(path.parent().unwrap());
-}
-
-#[test]
-fn copy_s_item_is_enabled_with_a_selection_alone() {
-    let (mut fake, mut app, window) = focused_with(reader(""));
-    fake.send(&mut app, window, WindowEvent::Frame);
-    assert!(!fake.command_enabled("pane.copy"));
-    assert!(fake.command_enabled("pane.paste"));
-    fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
-    fake.send(&mut app, window, WindowEvent::Frame);
-    assert!(fake.command_enabled("pane.copy"));
-    // A click takes the selection away.
-    let none = Modifiers::NONE;
-    fake.send(&mut app, window, click(true, cell(2, 1), none, 1));
-    fake.send(&mut app, window, click(false, cell(2, 1), none, 1));
-    fake.send(&mut app, window, WindowEvent::Frame);
-    assert!(!fake.command_enabled("pane.copy"));
-}
-
-#[test]
-fn the_app_s_commands_register_with_their_categories_and_titles() {
-    let registry = commands(&Texts::new("en", &CATALOGS), &Plugins::new());
-    let registered: Vec<(&str, &str, Category)> = registry
-        .commands()
-        .map(|command| {
-            (
-                command.name.as_str(),
-                command.title.as_str(),
-                command.category,
-            )
-        })
-        .collect();
-    assert_eq!(
-        registered,
-        [
-            ("app.appearance-dark", "Dark Appearance", Category::View),
-            ("app.appearance-light", "Light Appearance", Category::View),
-            (
-                "app.appearance-system",
-                "Automatic Appearance",
-                Category::View
-            ),
-            ("app.performance", "Show Performance", Category::View),
-            ("app.quit", "Quit Lokyr", Category::App),
-            (
-                "app.secure-keyboard-entry",
-                "Secure Keyboard Entry",
-                Category::App
-            ),
-            ("app.settings", "Settings…", Category::App),
-            ("pane.look-up", "Look Up", Category::Edit),
-            ("pane.man-page", "Open man Page", Category::Windows),
-            ("window.close", "Close Window", Category::Windows),
-            ("window.new", "New Window", Category::Windows),
-            ("window.set-title", "Set Title…", Category::Windows),
-            (
-                "window.toggle-quick-terminal",
-                "Quick Terminal",
-                Category::Windows
-            ),
-        ]
-    );
-    let texts = Texts::new("en", &CATALOGS);
-    let menu = main_menu(&registry, &Keymap::default(), &texts);
-    let titles: Vec<&str> = menu.menus[1]
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            MenuItem::Command { title, .. } => Some(title.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        titles,
-        ["New Window", "Close Window", "Set Title…", "Quick Terminal"]
-    );
-    // A command that takes no argument rejects one, and does nothing.
-    let mut args = Args::new();
-    args.insert(
-        "now".to_owned(),
-        lokyr_kernel::commands::Value::Boolean(true),
-    );
-    let error = registry.check(QUIT, args.clone()).unwrap_err();
-    assert_eq!(error.code.number(), 102);
-    let (mut fake, mut app, _) = started_running(idle());
-    app.run(&mut fake, QUIT, args);
-    assert!(!fake.has_quit());
-    app.run(&mut fake, QUIT, Args::new());
-    assert!(fake.has_quit());
-}
-
 /// The titles of the main menu that `fake` has that the app's catalogs
 /// give: the shell's first item, the application's first and last, and
 /// the edit's menu.
@@ -480,42 +263,6 @@ fn menu_titles(fake: &Fake) -> Vec<String> {
         title(menus[0].items.last().unwrap()),
         menus[2].title.clone(),
     ]
-}
-
-#[test]
-fn the_menus_take_the_config_s_language_and_change_with_it() {
-    let (mut fake, mut app, path) = with_file("language", "[app]\nlanguage = \"it\"\n");
-    assert_eq!(
-        menu_titles(&fake),
-        [
-            "Nuova finestra",
-            "Nascondi Lokyr",
-            "Esci da Lokyr",
-            "Composizione"
-        ]
-    );
-    assert_eq!(menu_items(&fake, 0)[0], "Impostazioni… cmd+,");
-    // The plugins' commands too, from their own catalogs.
-    assert_eq!(
-        menu_items(&fake, 2),
-        [
-            "Copia cmd+c",
-            "Incolla cmd+v",
-            "-",
-            "Seleziona tutto cmd+a",
-            "Cancella cmd+k"
-        ]
-    );
-    assert_eq!(menu_items(&fake, 3)[0], "Aumenta cmd+=");
-    std::fs::write(&path, "[app]\nlanguage = \"en\"\n").unwrap();
-    change(&mut fake, &mut app);
-    assert_eq!(
-        menu_titles(&fake),
-        ["New Window", "Hide Lokyr", "Quit Lokyr", "Edit"]
-    );
-    assert_eq!(menu_items(&fake, 2)[0], "Copy cmd+c");
-    assert_eq!(app.texts.language(), "en");
-    let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
 /// The commands of the View menu's Appearance, and whether each one's
@@ -613,28 +360,6 @@ fn the_appearance_follows_the_config_and_the_menu() {
     std::fs::write(&path, "[app]\nappearance = \"system\"\n").unwrap();
     change(&mut fake, &mut app);
     assert_eq!(fake.own_appearance(), None);
-    let _ = std::fs::remove_dir_all(path.parent().unwrap());
-}
-
-#[test]
-fn the_appearance_s_menu_is_in_the_config_s_language() {
-    let (fake, _app, path) = with_file("appearance-it", "[app]\nlanguage = \"it\"\n");
-    let view = &fake.main_menu().unwrap().menus[3];
-    let Some(menu) = view.items.iter().find_map(|item| match item {
-        MenuItem::Submenu(menu) => Some(menu),
-        _ => None,
-    }) else {
-        panic!("{view:?}");
-    };
-    assert_eq!(menu.title, "Aspetto");
-    assert_eq!(
-        appearances(&fake),
-        [
-            ("Automatico".to_owned(), true),
-            ("Chiaro".to_owned(), false),
-            ("Scuro".to_owned(), false)
-        ]
-    );
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
@@ -818,148 +543,6 @@ fn closing_the_last_window_quits() {
     fake.send(&mut app, window, WindowEvent::CloseRequested);
     assert_eq!(fake.windows().count(), 0);
     assert!(fake.has_quit());
-}
-
-#[test]
-fn closing_a_window_whose_program_runs_asks_first() {
-    let (mut fake, mut app, window) = started_running(shell("echo ready; exec sleep 30"));
-    run_until(&mut fake, &mut app, |_, app| {
-        app.pane(window).running().as_deref() == Some("sleep")
-    });
-    // The close button, then ⌘W: one question, cancelled.
-    fake.send(&mut app, window, WindowEvent::CloseRequested);
-    fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
-    assert_eq!(fake.alerts().len(), 1);
-    let open = &fake.alerts()[0];
-    assert_eq!(open.window, Some(window));
-    assert_eq!(open.alert.message, app.texts.text("close-running-message"));
-    assert_eq!(
-        open.alert.detail,
-        app.texts
-            .text_with("close-running-detail", &[("program", Arg::Text("sleep"))])
-    );
-    assert_eq!(
-        open.alert.buttons,
-        [
-            app.texts.text("close-running-close"),
-            app.texts.text("close-running-cancel")
-        ]
-    );
-    let id = open.id;
-    fake.answer_alert(&mut app, id, 1);
-    assert_eq!(fake.windows().count(), 1);
-    // Confirmed, it closes, and the app quits with its last window.
-    fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
-    let id = fake.alerts()[0].id;
-    fake.answer_alert(&mut app, id, 0);
-    assert_eq!(fake.windows().count(), 0);
-    assert!(fake.has_quit());
-}
-
-#[test]
-fn closing_a_window_asks_for_a_job_behind_the_shell() {
-    // A job in the background, behind a shell that reads, as at its
-    // prompt.
-    let (mut fake, mut app, window) = started_running(shell("sleep 30 & echo ready; read line"));
-    run_until(&mut fake, &mut app, |_, app| {
-        app.pane(window).running().as_deref() == Some("sleep")
-    });
-    fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
-    assert_eq!(fake.alerts().len(), 1);
-    assert_eq!(
-        fake.alerts()[0].alert.detail,
-        app.texts
-            .text_with("close-running-detail", &[("program", Arg::Text("sleep"))])
-    );
-}
-
-#[test]
-fn quitting_while_programs_run_asks_and_the_system_waits_for_the_answer() {
-    let (mut fake, mut app, busy) = started_running(shell("echo ready; exec sleep 30"));
-    run_until(&mut fake, &mut app, |_, app| {
-        app.pane(busy).running().as_deref() == Some("sleep")
-    });
-    // Another window, whose shell waits: it runs nothing.
-    app.program = idle();
-    app.run(&mut fake, NEW_WINDOW, Args::new());
-    // ⌘Q: a question without a window, cancelled.
-    fake.send(&mut app, busy, command_key(KeyCode::KeyQ, "q"));
-    assert_eq!(fake.alerts().len(), 1);
-    let open = &fake.alerts()[0];
-    assert_eq!(open.window, None);
-    assert_eq!(
-        open.alert.detail,
-        app.texts.text_with(
-            "quit-running-detail",
-            &[
-                ("windows", Arg::Number(1)),
-                ("programs", Arg::Text("sleep"))
-            ]
-        )
-    );
-    let id = open.id;
-    fake.answer_alert(&mut app, id, 1);
-    assert!(!fake.has_quit());
-    assert_eq!(fake.quit_refusals(), 0);
-    // The system's request: cancelled, it is refused; a second one
-    // while the question is open waits for the same answer.
-    fake.send_app(&mut app, AppEvent::QuitRequested);
-    fake.send_app(&mut app, AppEvent::QuitRequested);
-    assert_eq!(fake.alerts().len(), 1);
-    let id = fake.alerts()[0].id;
-    fake.answer_alert(&mut app, id, 1);
-    assert_eq!(fake.quit_refusals(), 1);
-    assert!(!fake.has_quit());
-    // The system's request while ⌘Q's question is open takes its
-    // answer.
-    fake.send(&mut app, busy, command_key(KeyCode::KeyQ, "q"));
-    fake.send_app(&mut app, AppEvent::QuitRequested);
-    assert_eq!(fake.alerts().len(), 1);
-    let id = fake.alerts()[0].id;
-    fake.answer_alert(&mut app, id, 1);
-    assert_eq!(fake.quit_refusals(), 2);
-    // Confirmed, the app quits.
-    fake.send_app(&mut app, AppEvent::QuitRequested);
-    let id = fake.alerts()[0].id;
-    fake.answer_alert(&mut app, id, 0);
-    assert!(fake.has_quit());
-    assert_eq!(fake.quit_refusals(), 2);
-}
-
-#[test]
-fn programs_of_several_windows_take_one_question() {
-    let (mut fake, mut app, first) = started_running(shell("echo ready; exec sleep 30"));
-    app.run(&mut fake, NEW_WINDOW, Args::new());
-    app.program = shell("echo ready; exec cat");
-    app.run(&mut fake, NEW_WINDOW, Args::new());
-    run_until(&mut fake, &mut app, |_, app| {
-        app.windows
-            .values()
-            .filter(|state| {
-                app.workspace
-                    .pane(state.pane)
-                    .and_then(Pane::running)
-                    .is_some()
-            })
-            .count()
-            == 3
-    });
-    fake.send(&mut app, first, command_key(KeyCode::KeyQ, "q"));
-    assert_eq!(
-        fake.alerts()[0].alert.detail,
-        app.texts.text_with(
-            "quit-running-detail",
-            &[
-                ("windows", Arg::Number(3)),
-                ("programs", Arg::Text("sleep, cat"))
-            ]
-        )
-    );
-    // A program whose name is not known is "a program".
-    assert_eq!(
-        app.program_name(String::new()),
-        app.texts.text("program-unknown")
-    );
 }
 
 #[test]
@@ -1944,325 +1527,9 @@ fn moved(at: Point, mods: Modifiers) -> WindowEvent {
     WindowEvent::MouseMoved { position: at, mods }
 }
 
-/// A drag of the left button from `from` to `to`, with `mods`.
-fn select_drag(
-    fake: &mut Fake,
-    app: &mut App,
-    window: WindowId,
-    (from, to): (Point, Point),
-    mods: Modifiers,
-) {
-    fake.send(app, window, click(true, from, mods, 1));
-    fake.send(app, window, moved(to, mods));
-    fake.send(app, window, click(false, to, mods, 1));
-}
-
 /// The text that `window`'s pane selects, as the terminal has it.
 fn selected_text(app: &App, window: WindowId) -> Option<String> {
     app.pane(window).selection_text()
-}
-
-/// The app without padding, its window running a program that shows two
-/// lines, `hello world` and `second line`, then `ready`, of `config`'s
-/// `[clipboard]`.
-fn selecting(clipboard: &str, modes: &str) -> (Fake, App, WindowId) {
-    let mut config = Config::parse(
-        &format!("[clipboard]\n{clipboard}"),
-        std::path::Path::new("config.toml"),
-    )
-    .unwrap();
-    config.window = unpadded().window;
-    let program = shell(&format!(
-        "stty raw -echo; printf 'hello world\\r\\nsecond line\\r\\n{modes}'; echo ready; cat -v"
-    ));
-    let mut fake = Fake::default();
-    let mut app = app(config, program);
-    fake.start(&mut app);
-    let window = fake.windows().next().unwrap();
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
-    (fake, app, window)
-}
-
-/// The last context menu that the app opened, over `window`: where, its
-/// items' titles, `-` for a line, and its dimmed commands.
-fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<String>) {
-    let (over, position, menu) = fake.context_menus().last().expect("a context menu");
-    assert_eq!(*over, window);
-    let items = menu
-        .items
-        .iter()
-        .map(|item| match item {
-            MenuItem::Command {
-                title, shortcut, ..
-            } => {
-                assert_eq!(*shortcut, None, "{title}");
-                title.clone()
-            }
-            MenuItem::Separator => "-".to_owned(),
-            other => panic!("{other:?}"),
-        })
-        .collect();
-    (*position, items, menu.dimmed.clone())
-}
-
-/// A press and a release of the right button at `at`, with `mods`.
-fn right_click(fake: &mut Fake, app: &mut App, window: WindowId, at: Point, mods: Modifiers) {
-    fake.send(app, window, press(MouseButton::Right, true, at, mods));
-    fake.send(app, window, press(MouseButton::Right, false, at, mods));
-}
-
-#[test]
-fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
-    let (mut fake, mut app, window) = selecting("", "");
-    let none = Modifiers::NONE;
-    // On a word, which it selects; its program has no link there.
-    right_click(&mut fake, &mut app, window, cell(8, 0), none);
-    assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
-    let (position, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(position, cell(8, 0));
-    assert_eq!(
-        items,
-        [
-            "Open Link",
-            "Open man Page for “world”",
-            "-",
-            "Look Up “world”",
-            "-",
-            "Copy",
-            "Paste",
-            "-",
-            "Select All",
-            "Clear"
-        ]
-    );
-    assert_eq!(dimmed, ["links.open"]);
-    // Within the selection, which stays.
-    select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
-    right_click(&mut fake, &mut app, window, cell(1, 0), none);
-    assert_eq!(selected_text(&app, window).as_deref(), Some("hel"));
-    assert_eq!(context_menu(&fake, window).1[3], "Look Up “hel”");
-    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
-    // On a blank cell, which takes it away, and dims Copy and Look Up.
-    right_click(&mut fake, &mut app, window, cell(5, 0), none);
-    assert_eq!(selected_text(&app, window), None);
-    assert!(app.windows[&window].selecting.is_none());
-    assert_eq!(
-        context_menu(&fake, window).1[1..4],
-        ["Open man Page", "-", "Look Up"]
-    );
-    assert_eq!(
-        context_menu(&fake, window).2,
-        ["links.open", "pane.man-page", "pane.look-up", "pane.copy"]
-    );
-    // A Control click opens it too, and starts no selection that the
-    // pointer would drag.
-    let control = Modifiers {
-        control: true,
-        ..none
-    };
-    fake.send(&mut app, window, click(true, cell(2, 1), control, 1));
-    fake.send(&mut app, window, moved(cell(9, 1), control));
-    fake.send(&mut app, window, click(false, cell(9, 1), control, 1));
-    assert_eq!(selected_text(&app, window).as_deref(), Some("second"));
-    assert_eq!(context_menu(&fake, window).0, cell(2, 1));
-    assert_eq!(fake.context_menus().len(), 4);
-    // Its items run in its window's pane, which has no focus.
-    assert_eq!(fake.focused_window(), None);
-    let chosen = |name: &str| WindowEvent::ContextCommand(name.to_owned());
-    fake.send(&mut app, window, chosen("pane.copy"));
-    assert_eq!(fake.clipboard_text().as_deref(), Some("second"));
-    fake.send(&mut app, window, chosen("pane.select-all"));
-    assert!(
-        selected_text(&app, window).is_some_and(|text| text.starts_with("hello world\n")),
-        "{:?}",
-        selected_text(&app, window)
-    );
-}
-
-#[test]
-fn look_up_shows_the_definition_of_the_selection_of_one_line() {
-    let (mut fake, mut app, window) = selecting("", "");
-    let none = Modifiers::NONE;
-    let look_up = |fake: &mut Fake, app: &mut App| {
-        fake.send(app, window, WindowEvent::ContextCommand(LOOK_UP.to_owned()));
-    };
-    right_click(&mut fake, &mut app, window, cell(8, 0), none);
-    look_up(&mut fake, &mut app);
-    // Over the word's first cell, at its baseline, in a window of
-    // cells 4 points wide and 8 high, without the drawing's font.
-    assert_eq!(
-        fake.definitions(),
-        [FakeDefinition {
-            window,
-            text: "world".to_owned(),
-            baseline: Point { x: 24.0, y: 6.0 },
-            font: None,
-        }]
-    );
-    // A selection of two lines has none, and its item names nothing.
-    select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(5, 1)), none);
-    right_click(&mut fake, &mut app, window, cell(2, 0), none);
-    let (_, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(items[3], "Look Up");
-    assert!(dimmed.contains(&LOOK_UP.to_owned()), "{dimmed:?}");
-    look_up(&mut fake, &mut app);
-    assert_eq!(fake.definitions().len(), 1);
-    // On the second row, without the space before it, at the cell after
-    // the space.
-    select_drag(&mut fake, &mut app, window, (cell(6, 1), cell(12, 1)), none);
-    right_click(&mut fake, &mut app, window, cell(8, 1), none);
-    look_up(&mut fake, &mut app);
-    let last = fake.definitions().last().unwrap();
-    assert_eq!(
-        (last.text.as_str(), last.baseline),
-        ("line", Point { x: 28.0, y: 14.0 })
-    );
-}
-
-#[test]
-fn the_man_page_of_the_selection_opens_in_a_window_of_its_own() {
-    let (mut fake, mut app, window) = selecting("", "");
-    // A man that tells its arguments, gives an empty title, prints a
-    // page of 100 lines, and ends.
-    let directory = std::env::temp_dir().join(format!("lokyr-man-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).unwrap();
-    let man = directory.join("man");
-    std::fs::write(
-        &man,
-        "#!/bin/sh\necho \"man $*\"\nprintf '\\033]2;\\007'\ni=1\nwhile [ $i -le 100 ]; do echo \"line $i\"; i=$((i+1)); done\n",
-    )
-    .unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&man, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    app.man = Some(man);
-    let none = Modifiers::NONE;
-    let open = |fake: &mut Fake, app: &mut App| {
-        fake.send(
-            app,
-            window,
-            WindowEvent::ContextCommand(MAN_PAGE.to_owned()),
-        );
-    };
-    right_click(&mut fake, &mut app, window, cell(8, 0), none);
-    open(&mut fake, &mut app);
-    let opened: Vec<WindowId> = fake.windows().filter(|&other| other != window).collect();
-    let [page] = opened[..] else {
-        panic!("one window more: {opened:?}");
-    };
-    // Of 80 columns and 48 rows, cells 4 points wide and 8 high, its
-    // title the page's, in the man page's colors.
-    let shown = fake.window(page).unwrap();
-    assert_eq!(shown.title, "man world — 80×48");
-    // Light, as the app is; it neither keeps its frame nor restores
-    // one.
-    assert_eq!(shown.appearance, None);
-    assert!(!shown.remember && !shown.restore && !shown.restore_size);
-    assert_eq!(
-        shown.size.points,
-        Size {
-            width: 320.0,
-            height: 384.0
-        }
-    );
-    let grid = app.pane(page).grid();
-    assert_eq!((grid.columns, grid.rows), (80, 48));
-    let yellow = app.theme.man_page.colors.background;
-    assert_eq!(background(&mut fake, &mut app, page), yellow);
-    // Once `man` has ended, the window keeps the page, from its top.
-    run_until(&mut fake, &mut app, |_, app| {
-        app.pane(page).is_kept() && row(app, page, 0) == "man -P ul -- world"
-    });
-    assert!(fake.windows().any(|other| other == page));
-    assert_eq!(row(&app, page, 1), "line 1");
-    // An empty title of the program's leaves the page's.
-    assert_eq!(fake.window(page).unwrap().title, "man world — 80×48");
-    // A pager's keys scroll it, and others do nothing.
-    fake.send(&mut app, page, typed(KeyCode::ArrowDown, "", false));
-    fake.send(&mut app, page, WindowEvent::Frame);
-    assert_eq!(row(&app, page, 0), "line 1");
-    fake.send(&mut app, page, typed(KeyCode::KeyQ, "q", false));
-    fake.send(&mut app, page, typed(KeyCode::End, "", false));
-    fake.send(&mut app, page, WindowEvent::Frame);
-    assert!(fake.windows().any(|other| other == page));
-    assert_eq!(app.pane(page).view_offset(), 0);
-    // The appearance leaves its colors, and its title reads over them:
-    // dark, in the light appearance of its own.
-    fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
-    assert_eq!(background(&mut fake, &mut app, page), yellow);
-    assert_ne!(background(&mut fake, &mut app, window), yellow);
-    assert_eq!(
-        fake.window(page).unwrap().appearance,
-        Some(Appearance::Light)
-    );
-    assert_eq!(fake.window(window).unwrap().appearance, None);
-    // Two words name no page: the item is dimmed, and names nothing.
-    select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(11, 0)), none);
-    right_click(&mut fake, &mut app, window, cell(2, 0), none);
-    let (_, items, dimmed) = context_menu(&fake, window);
-    assert_eq!(items[1], "Open man Page");
-    assert!(dimmed.contains(&MAN_PAGE.to_owned()), "{dimmed:?}");
-    assert_eq!(items[3], "Look Up “hello world”");
-    open(&mut fake, &mut app);
-    assert_eq!(fake.windows().count(), 2);
-    let _ = std::fs::remove_dir_all(directory);
-}
-
-#[test]
-fn a_man_page_s_name_takes_its_section_and_no_option() {
-    let args = |text: &str| man_page(text).map(|args| args.join(" "));
-    for (text, wanted) in [
-        ("ls", "-- ls"),
-        ("ls(1)", "-- 1 ls"),
-        ("File::Spec(3pm)", "-- 3pm File::Spec"),
-        ("c++", "-- c++"),
-        ("git-commit", "-- git-commit"),
-        ("pthread_create(3)", "-- 3 pthread_create"),
-        ("printf(n)", "-- n printf"),
-    ] {
-        assert_eq!(args(text).as_deref(), Some(wanted), "{text}");
-    }
-    for text in [
-        "-P",
-        ".",
-        "..",
-        "./x.1",
-        "a/b",
-        "a b",
-        "x;rm",
-        "$(x)",
-        "ls(",
-        "(1)",
-        "ls()",
-        "ls(x)",
-        "ls(123456789)",
-        "",
-        &"a".repeat(MAN_PAGE_NAME + 1),
-    ] {
-        assert_eq!(args(text), None, "{text}");
-    }
-    assert!(man_page(&"a".repeat(MAN_PAGE_NAME)).is_some());
-    // Through the login shell, which takes them as they are.
-    let args = man_page("ls(1)").unwrap();
-    assert_eq!(
-        man_program(None, &args),
-        Program::LoginCommand {
-            command: "exec man -P ul -- 1 ls".into()
-        }
-    );
-    assert_eq!(
-        man_program(Some(std::path::Path::new("/bin/echo")), &args),
-        Program::command("/bin/echo", ["-P", "ul", "--", "1", "ls"])
-    );
-}
-
-#[test]
-fn a_title_shortens_past_its_characters() {
-    assert_eq!(shortened("abcdef", 3), "abc…");
-    assert_eq!(shortened("abc", 3), "abc");
-    assert_eq!(shortened("àèìòù", 2), "àè…");
-    assert_eq!(shortened("", 2), "");
 }
 
 /// The app without padding, its window running `seq 1 100`, which
@@ -2312,108 +1579,6 @@ fn started_with(program: Program) -> (Fake, App, WindowId) {
 
 fn shows(app: &App, window: WindowId, text: &str) -> bool {
     screen(app, window).iter().any(|line| line.contains(text))
-}
-
-/// The app without padding, of a config whose `[clipboard]` reads
-/// `read`, its window running `program`, once it shows `ready`.
-fn with_clipboard(read: &str, program: Program) -> (Fake, App, WindowId) {
-    let mut config = Config::parse(
-        &format!("[clipboard]\nread = \"{read}\"\n"),
-        std::path::Path::new("config.toml"),
-    )
-    .unwrap();
-    config.window = unpadded().window;
-    let mut fake = Fake::default();
-    let mut app = app(config, program);
-    fake.start(&mut app);
-    let window = fake.windows().next().unwrap();
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
-    (fake, app, window)
-}
-
-#[test]
-fn a_program_s_write_reaches_the_clipboard() {
-    // `hello` to the clipboard, then `other` to the primary selection
-    // alone, which macOS lacks.
-    let program = shell(
-        "printf '\\033]52;c;aGVsbG8=\\a'; printf '\\033]52;p;b3RoZXI=\\a'; echo ready; sleep 10",
-    );
-    let (mut fake, mut app, _) = with_clipboard("never", program);
-    run_until(&mut fake, &mut app, |fake, _| {
-        fake.clipboard_text().as_deref() == Some("hello")
-    });
-    let pause = Instant::now() + Duration::from_millis(300);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert_eq!(fake.clipboard_text().as_deref(), Some("hello"));
-}
-
-/// A program that reads the clipboard once it reads a byte, and shows
-/// the answer.
-fn clipboard_reader() -> Program {
-    shell(
-        "stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\033]52;c;?\\a'; done & cat -v",
-    )
-}
-
-#[test]
-fn a_read_gets_no_answer_unless_the_user_allows_it() {
-    // Off by default: no alert, no answer.
-    let (mut fake, mut app, window) = with_clipboard("never", clipboard_reader());
-    fake.set_clipboard_text("secret");
-    fake.send(&mut app, window, key());
-    let pause = Instant::now() + Duration::from_millis(400);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert!(fake.alerts().is_empty());
-    assert!(!shows(&app, window, "52;"), "{:?}", screen(&app, window));
-    // Asked: refused, then allowed; a read while the alert is open asks
-    // nothing more.
-    let (mut fake, mut app, window) = with_clipboard("ask", clipboard_reader());
-    fake.set_clipboard_text("secret");
-    for allowed in [false, true] {
-        fake.send(&mut app, window, key());
-        run_until(&mut fake, &mut app, |fake, _| !fake.alerts().is_empty());
-        fake.send(&mut app, window, key());
-        let pause = Instant::now() + Duration::from_millis(300);
-        run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-        assert_eq!(fake.alerts().len(), 1);
-        let open = &fake.alerts()[0];
-        assert_eq!(open.window, Some(window));
-        assert_eq!(
-            open.alert.buttons,
-            [
-                app.texts.text("clipboard-read-deny"),
-                app.texts.text("clipboard-read-allow")
-            ]
-        );
-        let id = open.id;
-        fake.answer_alert(&mut app, id, usize::from(allowed));
-        if !allowed {
-            let pause = Instant::now() + Duration::from_millis(300);
-            run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-            assert!(!shows(&app, window, "52;"), "{:?}", screen(&app, window));
-        }
-    }
-    run_until(&mut fake, &mut app, |_, app| {
-        shows(app, window, "^[]52;c;c2VjcmV0^G")
-    });
-    let shown = screen(&app, window).concat();
-    assert_eq!(shown.matches("52;").count(), 1, "{shown:?}");
-}
-
-#[test]
-fn a_config_that_asks_applies_to_the_open_windows() {
-    let (mut fake, mut app, window) = with_clipboard("never", clipboard_reader());
-    let mut asking = app.config.clone();
-    asking.clipboard.read = ClipboardRead::Ask;
-    app.apply(&mut fake, asking);
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-    // A window that closes takes its ask with it, once its program's
-    // question, as `cat` runs, is answered.
-    fake.send(&mut app, window, WindowEvent::CloseRequested);
-    let close = fake.alerts().last().unwrap().id;
-    fake.answer_alert(&mut app, close, 0);
-    assert!(app.clipboard_asks.is_empty());
 }
 
 /// The app without padding, of the config `text`, its window running
@@ -2644,51 +1809,6 @@ fn a_window_takes_the_appearance_of_its_background_where_it_is_not_the_app_s() {
 }
 
 #[test]
-fn a_title_of_the_user_s_takes_the_place_of_the_window_s_own() {
-    let program = shell("stty raw -echo; echo ready; cat");
-    let (mut fake, mut app, window) = configured("", program);
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
-    let own = app.title_of(window);
-    let ask = |fake: &mut Fake, app: &mut App| {
-        fake.send(app, window, command_key_shift(KeyCode::KeyI, "i"));
-        let open = fake.alerts().last().expect("the question").clone();
-        assert_eq!(open.window, Some(window));
-        open
-    };
-    // The question holds nothing at first; its title, trimmed.
-    let open = ask(&mut fake, &mut app);
-    assert_eq!(open.alert.input.as_deref(), Some(""));
-    assert_eq!(open.alert.buttons, ["Set", "Cancel"]);
-    // A second ask waits for the first's answer.
-    fake.send_app(&mut app, AppEvent::Command(SET_TITLE.to_owned()));
-    assert_eq!(fake.alerts().len(), 1);
-    fake.answer_alert_typed(&mut app, open.id, (0, false), Some("  build  "));
-    assert_eq!(title(&fake), "build — 200×62");
-    // A program's title stays behind it.
-    app.pane(window).text("\u{1b}]2;prompt\u{7}");
-    let pause = Instant::now() + Duration::from_millis(200);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert_eq!(title(&fake), "build — 200×62");
-    // Asked again, it holds the user's; cancelled, it stays.
-    let open = ask(&mut fake, &mut app);
-    assert_eq!(open.alert.input.as_deref(), Some("build"));
-    fake.answer_alert_typed(&mut app, open.id, (1, false), Some("other"));
-    assert_eq!(title(&fake), "build — 200×62");
-    // Emptied, the window's own comes back, of the program's title.
-    let open = ask(&mut fake, &mut app);
-    fake.answer_alert_typed(&mut app, open.id, (0, false), Some(" "));
-    assert_eq!(title(&fake), "prompt — bash — 200×62");
-    assert_ne!(own, title(&fake));
-}
-
-/// The press of Command and Shift and the key of `letter`.
-fn command_key_shift(code: KeyCode, letter: &str) -> WindowEvent {
-    let mods = Modifiers { shift: true, ..CMD };
-    key_event(code, letter, mods, true)
-}
-
-#[test]
 fn a_window_takes_its_program_s_title() {
     let program = shell(
         "stty raw -echo; printf '\\033]2;x\\a'; echo ready; head -c 1 >/dev/null; printf '\\033]2;\\a'; sleep 10",
@@ -2709,141 +1829,6 @@ fn a_window_takes_its_program_s_title() {
     run_until(&mut fake, &mut app, |fake, app| {
         !title(fake).starts_with('x') && title(fake) == app.title_of(window)
     });
-}
-
-/// A program that rings its bell at each key, twice the second time
-/// within a fifth of a second.
-fn ringer() -> Program {
-    shell(
-        "stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\a'; sleep 0.05; printf '\\a'; done",
-    )
-}
-
-#[test]
-fn a_bell_flashes_a_window_with_the_focus_and_marks_one_without() {
-    let (mut fake, mut app, window) = configured("", ringer());
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |_, app| {
-        app.windows[&window].flash_until.is_some()
-    });
-    // The flash ends with its timer.
-    run_until(&mut fake, &mut app, |_, app| {
-        app.windows[&window].flash_until.is_none()
-    });
-    assert_eq!((fake.alert_sounds(), fake.attention_requests()), (0, 0));
-    assert!(!fake.window(window).unwrap().title.starts_with(BELL_MARK));
-    // Without the focus: a bounce and the mark, once for the two bells,
-    // until the window takes the focus. The bells of the first key are
-    // a fifth of a second behind.
-    let pause = Instant::now() + Duration::from_millis(250);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, app| {
-        fake.window(window).unwrap().title == format!("🔔 {}", app.title_of(window))
-    });
-    let pause = Instant::now() + Duration::from_millis(300);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert_eq!(fake.attention_requests(), 1);
-    assert!(app.windows[&window].flash_until.is_none());
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    assert_eq!(fake.window(window).unwrap().title, app.title_of(window));
-}
-
-#[test]
-fn the_bell_s_config_chooses_what_it_does() {
-    let config = "[bell]\nsound = true\nflash = false\nbounce = false\nmark-title = false\n";
-    let (mut fake, mut app, window) = configured(config, ringer());
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| fake.alert_sounds() == 1);
-    assert!(app.windows[&window].flash_until.is_none());
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    let pause = Instant::now() + Duration::from_millis(250);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| fake.alert_sounds() == 2);
-    let pause = Instant::now() + Duration::from_millis(300);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert_eq!(fake.alert_sounds(), 2, "one sound for the two bells");
-    assert_eq!(fake.attention_requests(), 0);
-    assert!(!fake.window(window).unwrap().title.starts_with(BELL_MARK));
-    assert!(app.windows[&window].flash_until.is_none());
-}
-
-/// A program that sends a notification of OSC 9 and one of OSC 777 at
-/// each key.
-fn notifier() -> Program {
-    shell(
-        "stty raw -echo; printf '\\033]2;agent\\a'; echo ready; while :; do head -c 1 >/dev/null; printf '\\033]9;waiting\\a'; printf '\\033]777;notify;Done;all tests pass\\a'; done",
-    )
-}
-
-#[test]
-fn a_notification_shows_for_a_window_without_the_focus() {
-    let (mut fake, mut app, window) = configured("", notifier());
-    // Not while the window has the focus.
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    fake.send(&mut app, window, key());
-    let pause = Instant::now() + Duration::from_millis(300);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    assert!(fake.notifications().is_empty());
-    // Without it, the first of the two, its title the window's, as
-    // OSC 9 gives none; the second within the pause shows nothing.
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| {
-        !fake.notifications().is_empty()
-    });
-    let pause = Instant::now() + Duration::from_millis(300);
-    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-    let shown = fake.notifications();
-    assert_eq!(shown.len(), 1, "{shown:?}");
-    assert_eq!(
-        (
-            shown[0].window,
-            shown[0].title.as_str(),
-            shown[0].body.as_str()
-        ),
-        (window, "agent", "waiting")
-    );
-    // A click brings the window forward.
-    fake.send_app(&mut app, AppEvent::NotificationClicked(window));
-    assert_eq!(fake.focus_requests(), [window]);
-    // A window that closed is not asked for.
-    fake.send_app(&mut app, AppEvent::NotificationClicked(WindowId::new(999)));
-    assert_eq!(fake.focus_requests(), [window]);
-}
-
-#[test]
-fn a_notification_without_a_title_takes_the_user_s() {
-    let (mut fake, mut app, window) = configured("", notifier());
-    app.windows.get_mut(&window).unwrap().user_title = Some("build".to_owned());
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| {
-        !fake.notifications().is_empty()
-    });
-    assert_eq!(fake.notifications()[0].title, "build");
-}
-
-#[test]
-fn a_notification_s_title_and_text_show_their_start() {
-    let long = "x".repeat(5000);
-    let program = shell(&format!(
-        "stty raw -echo; echo ready; head -c 1 >/dev/null; printf '\\033]777;notify;{long};{long}\\a'; sleep 10"
-    ));
-    let (mut fake, mut app, window) = configured("", program);
-    fake.send(&mut app, window, key());
-    run_until(&mut fake, &mut app, |fake, _| {
-        !fake.notifications().is_empty()
-    });
-    let shown = &fake.notifications()[0];
-    assert_eq!(
-        (shown.title.chars().count(), shown.body.chars().count()),
-        (NOTIFICATION_TITLE, NOTIFICATION_BODY)
-    );
 }
 
 /// The characters of the view's row `row` of `window`, each by its
@@ -3591,105 +2576,6 @@ fn focused_with(program: Program) -> (Fake, App, WindowId) {
     (fake, app, window)
 }
 
-#[test]
-fn the_context_menu_opens_the_link_at_its_cell() {
-    let (mut fake, mut app, window, _) = pasting(
-        "context",
-        "[links]\nurls = \"open\"\n",
-        shell(concat!(
-            "stty raw -echo; printf 'see https://lokyr.dev/x here\\r\\n'; ",
-            "echo ready; cat -v"
-        )),
-    );
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    // On the URL, which names no man page.
-    right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, [MAN_PAGE]);
-    right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
-    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
-    // The item takes the cell that the menu opened on.
-    right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-    let chosen = WindowEvent::ContextCommand("links.open".to_owned());
-    fake.send(&mut app, window, chosen);
-    assert_eq!(fake.opened(), ["https://lokyr.dev/x"]);
-}
-
-#[test]
-fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
-    let (mut fake, mut app, window, _) = pasting(
-        "context-moved",
-        "[links]\nurls = \"ask\"\n",
-        shell(concat!(
-            "stty -echo; printf 'see https://lokyr.dev/x here\\n'; echo ready; ",
-            "read line; seq 1 70; echo https://lokyr.dev/y; echo done; read line; ",
-            "yes https://lokyr.dev/z | head -100; echo https://lokyr.dev/z/end; read line"
-        )),
-    );
-    let chosen = || WindowEvent::ContextCommand("links.open".to_owned());
-    // The program's last line written whole, its newline too, which a
-    // read of the terminal can bring after the line.
-    let ended = |app: &App, last: &str| {
-        let at = app.pane(window).snapshot().cursor().position;
-        at.x == 0 && at.y > 0 && row(app, window, at.y - 1) == last
-    };
-    fake.send(&mut app, window, WindowEvent::Focused(false));
-    right_click(&mut fake, &mut app, window, cell(10, 0), Modifiers::NONE);
-    assert!(
-        !context_menu(&fake, window)
-            .2
-            .contains(&"links.open".to_owned())
-    );
-    // Output scrolls the URL out of the view while the menu is open.
-    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-    run_until(&mut fake, &mut app, |_, app| ended(app, "done"));
-    assert_ne!(row(&app, window, 0), "see https://lokyr.dev/x here");
-    fake.send(&mut app, window, chosen());
-    // The question is the menu's window's, which has no focus.
-    let [ask] = fake.alerts() else {
-        panic!("one question: {:?}", fake.alerts());
-    };
-    assert_eq!(
-        (ask.window, ask.alert.detail.as_str()),
-        (Some(window), "https://lokyr.dev/x")
-    );
-    fake.answer_alert_with(&mut app, ask.id, 1, false);
-    // The menu's item runs once.
-    fake.send(&mut app, window, chosen());
-    assert!(fake.alerts().is_empty());
-    // Its text scrolled into the scrollback, which a clear takes away,
-    // it runs nothing, though links came to every row around its own,
-    // which a resize that a pane puts off can move by one.
-    // The rows that the snapshot has, which a resize put off leaves one
-    // short of the grid's.
-    let rows = app.pane(window).snapshot().rows();
-    let y = (0..rows)
-        .find(|&r| row(&app, window, r) == "https://lokyr.dev/y")
-        .unwrap();
-    right_click(&mut fake, &mut app, window, cell(10, y), Modifiers::NONE);
-    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-    run_until(&mut fake, &mut app, |_, app| {
-        ended(app, "https://lokyr.dev/z/end")
-    });
-    app.pane(window).clear_scrollback();
-    let around: Vec<String> = (y.saturating_sub(2)..rows)
-        .map(|r| row(&app, window, r))
-        .collect();
-    assert!(
-        row(&app, window, y).starts_with("https://lokyr.dev/z"),
-        "row {y} of {rows}, the cursor at {:?}: {around:?}",
-        app.pane(window).snapshot().cursor().position
-    );
-    fake.send(&mut app, window, chosen());
-    assert!(fake.alerts().is_empty() && fake.opened().is_empty());
-}
-
-/// Opens with Command-click what `window` shows at `col` of its first
-/// row.
-fn cmd_click(fake: &mut Fake, app: &mut App, window: WindowId, col: u16) {
-    fake.send(app, window, click(true, cell(col, 0), CMD, 1));
-    fake.send(app, window, click(false, cell(col, 0), CMD, 1));
-}
-
 /// A program that shows a URL at column 0, a file at 20, a program at
 /// 31 and a directory at 45.
 fn links() -> Program {
@@ -3698,312 +2584,6 @@ fn links() -> Program {
         "printf 'https://lokyr.dev/x /etc/hosts /usr/bin/true /usr\\r\\n'; ",
         "echo ready; cat -v"
     ))
-}
-
-#[test]
-fn a_link_asks_first_and_the_config_keeps_the_answer() {
-    let (mut fake, mut app, window, path) = pasting("links", "# mine\n", links());
-    let shown = |fake: &Fake| {
-        let open = &fake.alerts()[0];
-        assert_eq!(open.window, Some(window));
-        (
-            open.alert.message.clone(),
-            open.alert.detail.clone(),
-            open.alert.buttons.clone(),
-            open.alert.suppression.clone().unwrap(),
-        )
-    };
-    // A URL: Open or Cancel.
-    cmd_click(&mut fake, &mut app, window, 2);
-    let url = (
-        "Open this link?".to_owned(),
-        "https://lokyr.dev/x".to_owned(),
-        vec!["Open".to_owned(), "Cancel".to_owned()],
-        "Don't ask again for links".to_owned(),
-    );
-    assert_eq!(shown(&fake), url);
-    // Ticked, but cancelled: nothing changes.
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
-    // A file: Open, Show in Finder, or Cancel.
-    cmd_click(&mut fake, &mut app, window, 22);
-    let file = (
-        "Open this file?".to_owned(),
-        "/etc/hosts".to_owned(),
-        vec![
-            "Open".to_owned(),
-            "Show in Finder".to_owned(),
-            "Cancel".to_owned(),
-        ],
-        "Don't ask again for files".to_owned(),
-    );
-    assert_eq!(shown(&fake), file);
-    fake.answer_alert(&mut app, fake.alerts()[0].id, 1);
-    // A program shows in the Finder, and a directory opens, without a
-    // question.
-    cmd_click(&mut fake, &mut app, window, 33);
-    cmd_click(&mut fake, &mut app, window, 46);
-    assert!(fake.alerts().is_empty());
-    assert_eq!(fake.opened(), ["/usr"]);
-    assert_eq!(fake.revealed(), ["/etc/hosts", "/usr/bin/true"]);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "# mine\n");
-    // Ticked, the answer goes into the config, and the next one opens
-    // without a question, before the file's reload too.
-    cmd_click(&mut fake, &mut app, window, 2);
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
-    cmd_click(&mut fake, &mut app, window, 22);
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
-    let written = std::fs::read_to_string(&path).unwrap();
-    assert!(written.starts_with("# mine\n"), "{written}");
-    let links = Config::read(&path).unwrap().links;
-    assert_eq!((links.urls, links.files), (OpenUrl::Open, OpenFile::Reveal));
-    cmd_click(&mut fake, &mut app, window, 2);
-    cmd_click(&mut fake, &mut app, window, 22);
-    assert!(fake.alerts().is_empty());
-    assert_eq!(
-        fake.opened()[1..],
-        ["https://lokyr.dev/x", "https://lokyr.dev/x"]
-    );
-    assert_eq!(fake.revealed()[2..], ["/etc/hosts", "/etc/hosts"]);
-    // Opening a file, ticked, keeps `open`.
-    std::fs::write(&path, "").unwrap();
-    app.apply(&mut fake, Config::default());
-    cmd_click(&mut fake, &mut app, window, 22);
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
-    assert_eq!(fake.opened().last().map(String::as_str), Some("/etc/hosts"));
-    assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
-    assert!(app.links_chosen == (None, None));
-}
-
-#[test]
-fn a_window_that_closes_drops_its_link_s_question() {
-    let (mut fake, mut app, window, _) = pasting("link-close", "", links());
-    cmd_click(&mut fake, &mut app, window, 2);
-    assert_eq!(app.open_asks.len(), 1);
-    app.run(&mut fake, NEW_WINDOW, Args::new());
-    fake.send(&mut app, window, WindowEvent::CloseRequested);
-    let close = fake.alerts().last().unwrap().id;
-    fake.answer_alert(&mut app, close, 0);
-    assert!(app.open_asks.is_empty());
-}
-
-#[test]
-fn a_link_s_question_shows_its_invisible_characters_escaped() {
-    assert_eq!(
-        shown("https://lokyr.dev/\u{202E}gpj.exe\u{200B}x\u{7}é"),
-        "https://lokyr.dev/\\u{202E}gpj.exe\\u{200B}x\\u{7}é"
-    );
-    assert_eq!(shown("/Users/x/日本 文書.txt"), "/Users/x/日本 文書.txt");
-    for c in [
-        '\u{2066}',
-        '\u{2069}',
-        '\u{2028}',
-        '\u{FEFF}',
-        '\u{E0041}',
-        '\u{FE0F}',
-    ] {
-        assert!(invisible(c), "{c:?}");
-    }
-    for c in ['a', ' ', '/', 'é', '日', '😀'] {
-        assert!(!invisible(c), "{c:?}");
-    }
-}
-
-#[test]
-fn a_link_s_answer_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
-    let text = "[font]\nsise = 14\n";
-    let (mut fake, mut app, window, path) = pasting("bad-links", text, links());
-    cmd_click(&mut fake, &mut app, window, 2);
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
-    cmd_click(&mut fake, &mut app, window, 22);
-    fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-    assert_eq!(
-        app.links_chosen,
-        (Some(OpenUrl::Open), Some(OpenFile::Open))
-    );
-    // A reload of the file does not bring the questions back.
-    app.apply(&mut fake, Config::default());
-    cmd_click(&mut fake, &mut app, window, 2);
-    cmd_click(&mut fake, &mut app, window, 22);
-    assert!(fake.alerts().is_empty());
-    assert_eq!(fake.opened().len(), 4);
-}
-
-/// The app without padding, of the config file `text`, its window
-/// running `program`, focused, once it shows `ready`; a file that does
-/// not read gives the defaults.
-fn pasting(test: &str, text: &str, program: Program) -> (Fake, App, WindowId, PathBuf) {
-    let directory = std::env::temp_dir().join(format!("lokyr-paste-{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("config.toml");
-    std::fs::write(&path, text).unwrap();
-    let mut config = Config::read(&path).unwrap_or_default();
-    config.window = unpadded().window;
-    let mut fake = Fake::default();
-    let mut app = App::new(None, config, Some(path.clone())).with_program(program);
-    fake.start(&mut app);
-    let window = fake.windows().next().unwrap();
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
-    fake.send(&mut app, window, WindowEvent::Focused(true));
-    (fake, app, window, path)
-}
-
-/// Pastes `text` with Command-V into `window`.
-fn paste_key(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) {
-    fake.set_clipboard_text(text);
-    fake.send(app, window, command_key(KeyCode::KeyV, "v"));
-}
-
-#[test]
-fn copy_and_paste_go_through_the_clipboard_and_several_lines_ask() {
-    let (mut fake, mut app, window) = focused_with(reader(""));
-    // The pane's text, to its cursor's row.
-    fake.send(&mut app, window, command_key(KeyCode::KeyA, "a"));
-    fake.send(&mut app, window, command_key(KeyCode::KeyC, "c"));
-    assert_eq!(fake.clipboard_text().as_deref(), Some("ready\n"));
-    // A line pastes at once, and a line with its line break without it.
-    paste_key(&mut fake, &mut app, window, "hello");
-    paste_key(&mut fake, &mut app, window, "ls\n");
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "hellols"));
-    assert!(fake.alerts().is_empty());
-    // Several lines ask first, once at a time: cancelled, pasted, and
-    // pasted as one line.
-    for button in [2, 0, 1] {
-        paste_key(&mut fake, &mut app, window, "a\nb\n");
-        paste_key(&mut fake, &mut app, window, "a\nb\n");
-        assert_eq!(fake.alerts().len(), 1);
-        let open = &fake.alerts()[0];
-        assert_eq!(open.window, Some(window));
-        assert_eq!(
-            open.alert.message,
-            app.texts
-                .text_with("paste-lines-message", &[("lines", Arg::Number(2))])
-        );
-        assert!(
-            open.alert.detail.ends_with("\n\na\nb"),
-            "{}",
-            open.alert.detail
-        );
-        assert_eq!(
-            open.alert.buttons,
-            [
-                app.texts.text("paste-lines-paste"),
-                app.texts.text("paste-lines-one-line"),
-                app.texts.text("paste-lines-cancel")
-            ]
-        );
-        assert_eq!(
-            open.alert.suppression,
-            Some(app.texts.text("paste-lines-dont-ask"))
-        );
-        let id = open.id;
-        fake.answer_alert(&mut app, id, button);
-        if button == 2 {
-            let pause = Instant::now() + Duration::from_millis(300);
-            run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
-            assert!(
-                !shows(&app, window, "hellolsa"),
-                "{:?}",
-                screen(&app, window)
-            );
-        }
-    }
-    // The line breaks reach the program as Return; as one line, a
-    // space for each, but the last.
-    run_until(&mut fake, &mut app, |_, app| {
-        shows(app, window, "hellolsa^Mb^Ma b")
-    });
-    // The question asked nothing of the config.
-    assert_eq!(app.config.clipboard.confirm_paste, ConfirmPaste::Auto);
-}
-
-#[test]
-fn a_program_that_asks_for_bracketed_paste_takes_line_breaks_at_once() {
-    let (mut fake, mut app, window) = focused_with(reader("\\033[?2004h"));
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    assert!(fake.alerts().is_empty());
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[200~a"));
-    // Always asks, there too, and for a line with its line break.
-    let (mut fake, mut app, window, _) = pasting(
-        "always",
-        "[clipboard]\nconfirm-paste = \"always\"\n",
-        reader("\\033[?2004h"),
-    );
-    paste_key(&mut fake, &mut app, window, "ls\n");
-    assert_eq!(fake.alerts().len(), 1);
-    // Never asks nothing.
-    let (mut fake, mut app, window, _) = pasting(
-        "never",
-        "[clipboard]\nconfirm-paste = \"never\"\n",
-        reader(""),
-    );
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    assert!(fake.alerts().is_empty());
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "a^Mb"));
-}
-
-#[test]
-fn don_t_ask_again_writes_the_config() {
-    let (mut fake, mut app, window, path) =
-        pasting("again", "# mine\n[font]\nsize = 14\n", reader(""));
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    let id = fake.alerts()[0].id;
-    // Ticked, but cancelled: nothing changes.
-    fake.answer_alert_with(&mut app, id, 2, true);
-    assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        "# mine\n[font]\nsize = 14\n"
-    );
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    let id = fake.alerts()[0].id;
-    fake.answer_alert_with(&mut app, id, 0, true);
-    let written = std::fs::read_to_string(&path).unwrap();
-    assert!(
-        written.starts_with("# mine\n[font]\nsize = 14\n"),
-        "{written}"
-    );
-    assert_eq!(
-        Config::read(&path).unwrap().clipboard.confirm_paste,
-        ConfirmPaste::Never
-    );
-    // The next paste pastes, before the file's reload too.
-    paste_key(&mut fake, &mut app, window, "c\nd");
-    assert!(fake.alerts().is_empty());
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "a^Mbc^Md"));
-    assert!(!app.pastes_unconfirmed);
-}
-
-#[test]
-fn don_t_ask_again_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
-    let text = "[font]\nsise = 14\n";
-    let (mut fake, mut app, window, path) = pasting("bad", text, reader(""));
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    let id = fake.alerts()[0].id;
-    fake.answer_alert_with(&mut app, id, 1, true);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-    assert!(app.pastes_unconfirmed);
-    // A reload of the file does not bring the question back.
-    app.apply(&mut fake, Config::default());
-    paste_key(&mut fake, &mut app, window, "c\nd");
-    assert!(fake.alerts().is_empty());
-    run_until(&mut fake, &mut app, |_, app| shows(app, window, "a bc^Md"));
-}
-
-#[test]
-fn a_window_that_closes_drops_its_paste_s_question() {
-    let (mut fake, mut app, window) = focused_with(reader(""));
-    paste_key(&mut fake, &mut app, window, "a\nb");
-    let id = fake.alerts()[0].id;
-    app.run(&mut fake, NEW_WINDOW, Args::new());
-    // Its program, `cat`, runs: the question, answered.
-    fake.send(&mut app, window, WindowEvent::CloseRequested);
-    let close = fake.alerts().last().unwrap().id;
-    fake.answer_alert(&mut app, close, 0);
-    assert!(app.paste_asks.is_empty());
-    // A late answer reaches nothing.
-    fake.answer_alert(&mut app, id, 0);
-    assert_eq!(fake.windows().count(), 1);
 }
 
 #[test]
@@ -4080,123 +2660,6 @@ fn a_reloaded_config_binds_its_keys_anew() {
     fake.send(&mut app, window, key_event(KeyCode::KeyN, "n", CMD, true));
     assert_eq!(fake.windows().count(), 2);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
-}
-
-#[test]
-fn an_invalid_config_shows_its_notice_until_one_that_reads() {
-    let (mut fake, mut app, path) = with_file("notice", "[font]\nsize = 14\n");
-    let window = fake.windows().next().unwrap();
-    assert_eq!(app.diagnostics.shown(), None);
-    // The error, of its line, and nothing of the file applies.
-    std::fs::write(&path, "[font]\nsize = 15\nbogus = 1\n").unwrap();
-    fake.send(&mut app, window, WindowEvent::Frame);
-    change(&mut fake, &mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
-    assert_eq!(
-        (shown.code, &shown.about),
-        (Code::InvalidConfig, &About::Config)
-    );
-    assert!(shown.text.contains("config.toml:3:1: "), "{}", shown.text);
-    assert!(shown.text.ends_with("and the one in force stays"));
-    assert_eq!(app.config.font.size.points(), 14.0);
-    assert!(fake.window(window).unwrap().frame_requested);
-    // Another error takes its place; a config that reads takes it away.
-    std::fs::write(&path, "[font]\nsize = 1000\n").unwrap();
-    change(&mut fake, &mut app);
-    let again = app.diagnostics.shown().cloned().expect("a notice");
-    assert_ne!(again.text, shown.text);
-    std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
-    change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
-    assert_eq!(app.config.font.size.points(), 16.0);
-    // Back to the config in force, as after an error, takes it away too.
-    std::fs::write(&path, "bogus = 1\n").unwrap();
-    change(&mut fake, &mut app);
-    std::fs::write(&path, "[font]\nsize = 16\n").unwrap();
-    change(&mut fake, &mut app);
-    assert_eq!(app.diagnostics.shown(), None);
-    let _ = std::fs::remove_dir_all(path.parent().unwrap());
-}
-
-#[test]
-fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
-    let family = |name: &str| Some(name.to_owned().try_into().unwrap());
-    let mut config = Config::default();
-    config.font.family = family("No Such Family 42");
-    let drawing = Drawing::new(config.font.clone()).unwrap();
-    let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), config, None).with_program(quiet());
-    fake.start(&mut app);
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
-    assert_eq!(
-        (shown.code, &shown.about),
-        (Code::Unavailable, &About::Font)
-    );
-    assert!(
-        shown
-            .text
-            .starts_with("the font family `No Such Family 42` is not installed; the text takes `")
-    );
-    // A family that is there takes it away.
-    let mut config = app.config.clone();
-    config.font.family = family("Menlo");
-    app.apply(&mut fake, config);
-    assert_eq!(app.diagnostics.shown(), None);
-}
-
-#[test]
-fn a_failure_shows_its_notice_and_a_click_on_the_bar_closes_it() {
-    let (mut fake, mut app, window, _) = with_tester();
-    // A command that the caller named wrongly goes to the log alone.
-    app.run(&mut fake, "test.nothing", Args::new());
-    assert_eq!(app.diagnostics.shown(), None);
-    // A plugin that panics: a fault, which disables it.
-    app.run(&mut fake, "test.boom", Args::new());
-    let shown = app.diagnostics.shown().cloned().expect("a notice");
-    assert_eq!(shown.code, Code::Fault);
-    assert!(
-        shown.text.contains("panicked: on purpose"),
-        "{}",
-        shown.text
-    );
-    // Where the bar was drawn, a press on its close closes it; on the
-    // rest of it, nothing; neither reaches the program, nor starts a
-    // selection.
-    let rect = |x, width| Rect {
-        x,
-        y: 56,
-        width,
-        height: 40,
-    };
-    let rects = notice::Rects {
-        bar: rect(0, 800),
-        close: rect(780, 20),
-    };
-    app.windows.get_mut(&window).unwrap().notice = Some(rects);
-    let scale = fake.window(window).unwrap().size.scale;
-    let at = |x: f64, y: f64| Point {
-        x: x / scale,
-        y: y / scale,
-    };
-    let press = |position| WindowEvent::MouseButton {
-        button: lokyr_platform_core::MouseButton::Left,
-        pressed: true,
-        clicks: 1,
-        position,
-        mods: Modifiers::NONE,
-    };
-    fake.send(&mut app, window, press(at(10.0, 70.0)));
-    assert!(app.diagnostics.shown().is_some());
-    assert!(app.windows[&window].selecting.is_none());
-    fake.send(&mut app, window, press(at(790.0, 70.0)));
-    assert_eq!(app.diagnostics.shown(), None);
-    assert!(app.windows[&window].selecting.is_none());
-    // A failure of a command shows too; a press below the bar leaves it.
-    let failed = Diagnostic::new(Code::Failed, "it failed", About::Other);
-    app.report(&mut fake, failed);
-    fake.send(&mut app, window, press(at(10.0, 120.0)));
-    assert!(app.diagnostics.shown().is_some());
-    assert!(app.windows[&window].selecting.is_some());
 }
 
 #[test]
@@ -4674,45 +3137,6 @@ fn a_pane_s_output_asks_for_its_own_window_s_frame_alone() {
 }
 
 #[test]
-fn a_stream_of_bells_wakes_the_main_thread_at_the_frame_s_pace() {
-    let script = "echo ready; read line; while :; do printf '\\a\\a\\a\\a'; done";
-    let (mut fake, mut app, window) = started_running(shell(script));
-    let pane = app.windows[&window].pane;
-    let wake = Arc::clone(&app.pane_wakes[&pane]);
-    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
-    // The main thread as it runs, which takes each wake at once, and a
-    // display of 60 Hz, which draws the window while it shows.
-    let run = |fake: &mut Fake, app: &mut App, drawn: bool| {
-        let before = wake.wakes.load(Ordering::Relaxed);
-        let start = Instant::now();
-        let mut frames = 0;
-        let mut frame_at = start;
-        while start.elapsed() < Duration::from_millis(500) {
-            fake.deliver_wake(app);
-            fake.fire_timers(app, Instant::now());
-            if drawn
-                && frame_at.elapsed() >= TOLD_PACE
-                && fake.window(window).unwrap().frame_requested
-            {
-                fake.send(app, window, WindowEvent::Frame);
-                frames += 1;
-                frame_at = Instant::now();
-            }
-        }
-        (wake.wakes.load(Ordering::Relaxed) - before, frames)
-    };
-    // Drawn: a wake a frame for the grid, and one a pace for the bells,
-    // at most.
-    let (wakes, frames) = run(&mut fake, &mut app, true);
-    assert!(app.windows[&window].rang_at.is_some(), "the bell rang");
-    assert!(wakes <= frames + 35, "{wakes} wakes for {frames} frames");
-    // Not drawn: one a pace for the bells.
-    fake.send(&mut app, window, WindowEvent::Occluded(true));
-    let (wakes, _) = run(&mut fake, &mut app, false);
-    assert!(wakes <= 35, "{wakes} wakes hidden");
-}
-
-#[test]
 fn a_frame_with_nothing_new_presents_nothing() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
@@ -4757,4 +3181,93 @@ fn a_frame_and_a_key_lock_the_pane_once_each() {
         0,
         "Command's key, which the program does not take"
     );
+}
+
+/// The app without padding, of the config file `text`, its window
+/// running `program`, focused, once it shows `ready`; a file that does
+/// not read gives the defaults.
+fn pasting(test: &str, text: &str, program: Program) -> (Fake, App, WindowId, PathBuf) {
+    let directory = std::env::temp_dir().join(format!("lokyr-paste-{test}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    let mut config = Config::read(&path).unwrap_or_default();
+    config.window = unpadded().window;
+    let mut fake = Fake::default();
+    let mut app = App::new(None, config, Some(path.clone())).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    (fake, app, window, path)
+}
+
+/// Opens with Command-click what `window` shows at `col` of its first
+/// row.
+fn cmd_click(fake: &mut Fake, app: &mut App, window: WindowId, col: u16) {
+    fake.send(app, window, click(true, cell(col, 0), CMD, 1));
+    fake.send(app, window, click(false, cell(col, 0), CMD, 1));
+}
+
+/// A drag of the left button from `from` to `to`, with `mods`.
+fn select_drag(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    (from, to): (Point, Point),
+    mods: Modifiers,
+) {
+    fake.send(app, window, click(true, from, mods, 1));
+    fake.send(app, window, moved(to, mods));
+    fake.send(app, window, click(false, to, mods, 1));
+}
+
+/// The app without padding, its window running a program that shows two
+/// lines, `hello world` and `second line`, then `ready`, of `config`'s
+/// `[clipboard]`.
+fn selecting(clipboard: &str, modes: &str) -> (Fake, App, WindowId) {
+    let mut config = Config::parse(
+        &format!("[clipboard]\n{clipboard}"),
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    let program = shell(&format!(
+        "stty raw -echo; printf 'hello world\\r\\nsecond line\\r\\n{modes}'; echo ready; cat -v"
+    ));
+    let mut fake = Fake::default();
+    let mut app = app(config, program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    (fake, app, window)
+}
+
+/// The last context menu that the app opened, over `window`: where, its
+/// items' titles, `-` for a line, and its dimmed commands.
+fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<String>) {
+    let (over, position, menu) = fake.context_menus().last().expect("a context menu");
+    assert_eq!(*over, window);
+    let items = menu
+        .items
+        .iter()
+        .map(|item| match item {
+            MenuItem::Command {
+                title, shortcut, ..
+            } => {
+                assert_eq!(*shortcut, None, "{title}");
+                title.clone()
+            }
+            MenuItem::Separator => "-".to_owned(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    (*position, items, menu.dimmed.clone())
+}
+
+/// A press and a release of the right button at `at`, with `mods`.
+fn right_click(fake: &mut Fake, app: &mut App, window: WindowId, at: Point, mods: Modifiers) {
+    fake.send(app, window, press(MouseButton::Right, true, at, mods));
+    fake.send(app, window, press(MouseButton::Right, false, at, mods));
 }

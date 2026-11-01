@@ -1,0 +1,499 @@
+//! The questions that the app asks before it acts: closing a window whose
+//! program runs, quitting, a window's title, a paste of several lines, a
+//! link to open, a program's read of the clipboard; and their answers.
+
+use lokyr_kernel::config::{ConfirmPaste, LinksConfig, OpenFile, OpenUrl};
+use lokyr_kernel::l10n::Arg;
+use lokyr_kernel::workspace::{Pane, PaneId};
+use lokyr_kernel::{config, paste};
+use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, TargetKind, WindowId};
+use lokyr_vt_core::terminal::ClipboardRequest;
+
+use super::{App, PREVIEW};
+use crate::drawing::Backend;
+
+impl<B: Backend> App<B> {
+    /// The answer to the question of `alert`: its `button`, from the first,
+    /// whether the user asked that it be not asked again, and the text
+    /// given. A program's read of the clipboard: its second button allows
+    /// it.
+    pub(super) fn alert_closed(
+        &mut self,
+        platform: &mut dyn Platform,
+        alert: AlertId,
+        (button, suppressed): (usize, bool),
+        text: Option<&str>,
+    ) {
+        if let Some((pane, request)) = self.clipboard_asks.remove(&alert)
+            && button == 1
+            && let Some(pane) = self.workspace.pane(pane)
+        {
+            pane.reply_clipboard(request, &platform.clipboard_text().unwrap_or_default());
+        }
+        if let Some(window) = self.close_asks.remove(&alert)
+            && button == 0
+        {
+            self.close(platform, window);
+        }
+        // The title given, or the window's own, for none.
+        if let Some(window) = self.title_asks.remove(&alert)
+            && button == 0
+            && let Some(state) = self.windows.get_mut(&window)
+        {
+            state.user_title = text
+                .map(str::trim)
+                .filter(|title| !title.is_empty())
+                .map(str::to_owned);
+            self.show_title(platform, window);
+        }
+        if self.quit_ask == Some(alert) {
+            self.quit_ask = None;
+            let system = std::mem::take(&mut self.system_quit);
+            if button == 0 {
+                self.quit(platform);
+            } else if system {
+                platform.refuse_quit();
+            }
+        }
+        if let Some((_, asked)) = self.open_asks.remove(&alert) {
+            self.answer_open(platform, asked, button, suppressed);
+        }
+        // Paste, as one line, or cancel.
+        if let Some((pane, text)) = self.paste_asks.remove(&alert)
+            && button < 2
+        {
+            if let Some(pane) = self.workspace.pane(pane) {
+                match button {
+                    0 => pane.paste(&text),
+                    _ => pane.paste(&paste::one_line(&text)),
+                }
+            }
+            if suppressed {
+                self.stop_confirming_pastes();
+            }
+        }
+    }
+
+    /// Whether a question of the app's is open on `window`.
+    pub(super) fn asks_on(&self, window: WindowId) -> bool {
+        let pane = self.windows.get(&window).map(|state| state.pane);
+        self.close_asks.values().any(|&asked| asked == window)
+            || self.title_asks.values().any(|&asked| asked == window)
+            || self
+                .open_asks
+                .values()
+                .any(|(asked, _)| *asked == Some(window))
+            || self
+                .clipboard_asks
+                .values()
+                .any(|(asked, _)| Some(*asked) == pane)
+            || self
+                .paste_asks
+                .values()
+                .any(|(asked, _)| Some(*asked) == pane)
+    }
+
+    /// Asks the user, with an alert on its window, whether `pane`'s
+    /// program can read the clipboard, as `request` asks: the default
+    /// button refuses. A read that comes while the pane's ask is open gets
+    /// no answer.
+    pub(super) fn ask_clipboard_read(
+        &mut self,
+        platform: &mut dyn Platform,
+        pane: PaneId,
+        request: ClipboardRequest,
+    ) {
+        if self
+            .clipboard_asks
+            .values()
+            .any(|(asking, _)| *asking == pane)
+        {
+            return;
+        }
+        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+            return;
+        };
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("clipboard-read-message"),
+            detail: self.texts.text("clipboard-read-detail"),
+            buttons: vec![
+                self.texts.text("clipboard-read-deny"),
+                self.texts.text("clipboard-read-allow"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.clipboard_asks.insert(alert, (pane, request));
+    }
+
+    /// Pastes `text` into `window`'s program as a paste of the clipboard
+    /// does: bracketed where the program asks, and asking first where
+    /// `confirm-paste` says so.
+    pub(super) fn paste_into(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        text: String,
+    ) {
+        let Some(id) = self.windows.get(&window).map(|state| state.pane) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(id) else {
+            return;
+        };
+        let bracketed = pane
+            .input_modes()
+            .is_some_and(|modes| modes.bracketed_paste);
+        let confirm = if self.pastes_unconfirmed {
+            ConfirmPaste::Never
+        } else {
+            self.config.clipboard.confirm_paste
+        };
+        match paste::decide(&text, bracketed, confirm) {
+            paste::Paste::Now(text) => pane.paste(&text),
+            paste::Paste::Ask => self.ask_paste(platform, id, text),
+        }
+    }
+
+    /// Asks the user to confirm a paste of `text` into `pane`, whose
+    /// program takes its line breaks as Return: an alert in its window,
+    /// with the text's first lines as they would reach the program. A
+    /// paste while one waits for its answer goes.
+    pub(super) fn ask_paste(&mut self, platform: &mut dyn Platform, pane: PaneId, text: String) {
+        if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
+            return;
+        }
+        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+            return;
+        };
+        let lines = i64::try_from(paste::lines(&text)).unwrap_or(i64::MAX);
+        let (most, width) = PREVIEW;
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self
+                .texts
+                .text_with("paste-lines-message", &[("lines", Arg::Number(lines))]),
+            detail: format!(
+                "{}\n\n{}",
+                self.texts.text("paste-lines-detail"),
+                paste::preview(&text, most, width)
+            ),
+            buttons: vec![
+                self.texts.text("paste-lines-paste"),
+                self.texts.text("paste-lines-one-line"),
+                self.texts.text("paste-lines-cancel"),
+            ],
+            suppression: Some(self.texts.text("paste-lines-dont-ask")),
+            input: None,
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.paste_asks.insert(alert, (pane, text));
+    }
+
+    /// Opens `target`, a URL or an absolute path, as a plugin asked, and as
+    /// `[links]` says: a URL or a file asks the user first, by default,
+    /// showing it in full; a directory opens, and a program shows in the
+    /// file manager, never running.
+    pub(super) fn open_target(&mut self, platform: &mut dyn Platform, target: String) {
+        let links = self.links();
+        let opened = match platform.target_kind(&target) {
+            Ok(kind @ TargetKind::Url) if links.urls == OpenUrl::Ask => {
+                self.ask_open(platform, target, kind);
+                return;
+            }
+            Ok(kind @ TargetKind::File) if links.files == OpenFile::Ask => {
+                self.ask_open(platform, target, kind);
+                return;
+            }
+            Ok(TargetKind::File) if links.files == OpenFile::Reveal => platform.reveal(&target),
+            // A program shows in the file manager.
+            Ok(_) => platform.open(&target),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = opened {
+            eprintln!("lokyr: {error}");
+        }
+    }
+
+    /// What links do: the config's `[links]`, or what the user chose where
+    /// the config could not keep it.
+    fn links(&self) -> LinksConfig {
+        let (urls, files) = self.links_chosen;
+        LinksConfig {
+            urls: urls.unwrap_or(self.config.links.urls),
+            files: files.unwrap_or(self.config.links.files),
+        }
+    }
+
+    /// Asks the user whether to open `target`, a URL or a file, of `kind`,
+    /// on the window that the commands run in, or the one that has the
+    /// focus: a file can show in the file manager instead.
+    fn ask_open(&mut self, platform: &mut dyn Platform, target: String, kind: TargetKind) {
+        let file = kind == TargetKind::File;
+        let (message, dont_ask) = if file {
+            ("open-file-message", "open-file-dont-ask")
+        } else {
+            ("open-url-message", "open-url-dont-ask")
+        };
+        let mut buttons = vec![self.texts.text("open-open")];
+        if file {
+            buttons.push(self.texts.text("open-reveal"));
+        }
+        buttons.push(self.texts.text("open-cancel"));
+        let alert = Alert {
+            style: AlertStyle::Informational,
+            message: self.texts.text(message),
+            detail: shown(&target),
+            buttons,
+            suppression: Some(self.texts.text(dont_ask)),
+            input: None,
+        };
+        let window = self.acting.or_else(|| platform.focused_window());
+        let alert = platform.show_alert(window, &alert);
+        self.open_asks.insert(alert, (window, (target, kind)));
+    }
+
+    /// The user answered the question before opening `target`, of `kind`,
+    /// with `button`, its checkbox ticked when `suppressed`: it opens, or
+    /// shows in the file manager, and, ticked, the config keeps the answer.
+    fn answer_open(
+        &mut self,
+        platform: &mut dyn Platform,
+        (target, kind): (String, TargetKind),
+        button: usize,
+        suppressed: bool,
+    ) {
+        let (done, chosen) = match (kind, button) {
+            (TargetKind::File, 0) => (platform.open(&target), Chosen::File(OpenFile::Open)),
+            (TargetKind::File, 1) => (platform.reveal(&target), Chosen::File(OpenFile::Reveal)),
+            (_, 0) => (platform.open(&target), Chosen::Url(OpenUrl::Open)),
+            _ => return,
+        };
+        if let Err(error) = done {
+            eprintln!("lokyr: {error}");
+        }
+        if suppressed {
+            self.remember_opening(chosen);
+        }
+    }
+
+    /// Keeps `chosen`, what links do, as the user answered without wanting
+    /// to be asked again: the config file takes it, or, if it cannot, it
+    /// lasts until the app quits.
+    fn remember_opening(&mut self, chosen: Chosen) {
+        let (key, value) = match chosen {
+            Chosen::Url(urls) => {
+                self.config.links.urls = urls;
+                ("urls", "open")
+            }
+            Chosen::File(files) => {
+                self.config.links.files = files;
+                (
+                    "files",
+                    if files == OpenFile::Reveal {
+                        "reveal"
+                    } else {
+                        "open"
+                    },
+                )
+            }
+        };
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "links", key, value)
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file, without a home directory".to_owned()),
+        };
+        if let Err(error) = written {
+            eprintln!("lokyr: {error}");
+            eprintln!("lokyr: links {key} {value} until Lokyr quits");
+            match chosen {
+                Chosen::Url(urls) => self.links_chosen.0 = Some(urls),
+                Chosen::File(files) => self.links_chosen.1 = Some(files),
+            }
+        }
+    }
+
+    /// Asks the user for a title of `window`, which takes the place of its
+    /// program's and of its own, in a field that holds the one that the
+    /// user gave before; an empty one gives the window's own back. A window
+    /// that waits for the answer asks nothing more.
+    pub(super) fn ask_title(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        if self.title_asks.values().any(|&asked| asked == window) {
+            return;
+        }
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let alert = Alert {
+            style: AlertStyle::Informational,
+            message: self.texts.text("set-title-message"),
+            detail: self.texts.text("set-title-detail"),
+            buttons: vec![
+                self.texts.text("set-title-set"),
+                self.texts.text("set-title-cancel"),
+            ],
+            suppression: None,
+            input: Some(state.user_title.clone().unwrap_or_default()),
+        };
+        let asked = platform.show_alert(Some(window), &alert);
+        self.title_asks.insert(asked, window);
+    }
+
+    /// Closes `window`, once the user confirms it while a program other
+    /// than a shell runs in it, which closing ends; a window that waits for
+    /// the answer asks nothing more.
+    pub(super) fn ask_close(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        if self.close_asks.values().any(|&asked| asked == window) {
+            return;
+        }
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) else {
+            self.close(platform, window);
+            return;
+        };
+        let program = self.program_name(program);
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("close-running-message"),
+            detail: self
+                .texts
+                .text_with("close-running-detail", &[("program", Arg::Text(&program))]),
+            buttons: vec![
+                self.texts.text("close-running-close"),
+                self.texts.text("close-running-cancel"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.close_asks.insert(alert, window);
+    }
+
+    /// Quits, once the user confirms it while programs other than shells
+    /// run, which quitting ends: the system's request, when `system`, waits
+    /// for the answer, and gives up when the user cancels. A question that
+    /// waits for its answer takes the request too.
+    pub(super) fn ask_quit(&mut self, platform: &mut dyn Platform, system: bool) {
+        self.system_quit |= system;
+        if self.quit_ask.is_some() {
+            return;
+        }
+        let mut programs = Vec::new();
+        let mut windows = 0;
+        for state in self.windows.values() {
+            if let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) {
+                windows += 1;
+                let program = self.program_name(program);
+                if !programs.contains(&program) {
+                    programs.push(program);
+                }
+            }
+        }
+        if windows == 0 {
+            self.system_quit = false;
+            self.quit(platform);
+            return;
+        }
+        let programs = programs.join(", ");
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text("quit-running-message"),
+            detail: self.texts.text_with(
+                "quit-running-detail",
+                &[
+                    ("windows", Arg::Number(windows)),
+                    ("programs", Arg::Text(&programs)),
+                ],
+            ),
+            buttons: vec![
+                self.texts.text("quit-running-quit"),
+                self.texts.text("quit-running-cancel"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        self.quit_ask = Some(platform.show_alert(None, &alert));
+    }
+
+    /// The name of a program that runs, or "a program" for one whose name
+    /// could not be read.
+    pub(super) fn program_name(&self, program: String) -> String {
+        if program.is_empty() {
+            self.texts.text("program-unknown")
+        } else {
+            program
+        }
+    }
+
+    /// Pastes no longer ask, as the user said with the question's
+    /// checkbox: the config file takes `confirm-paste = "never"`, or, if it
+    /// cannot, as the log tells, the app keeps it until it quits.
+    fn stop_confirming_pastes(&mut self) {
+        self.config.clipboard.confirm_paste = ConfirmPaste::Never;
+        let written = match &self.config_file {
+            Some(file) => config::set_string(&file.path, "clipboard", "confirm-paste", "never")
+                .map_err(|error| error.to_string()),
+            None => Err("there is no config file, without a home directory".to_owned()),
+        };
+        if let Err(error) = written {
+            eprintln!("lokyr: {error}");
+            eprintln!("lokyr: pastes are not confirmed until Lokyr quits");
+            self.pastes_unconfirmed = true;
+        }
+    }
+}
+
+/// `target` as a question shows it: each character that shows nothing,
+/// or that turns the text's direction, as `\u{202E}`, so that the target
+/// reads as it is.
+pub(super) fn shown(target: &str) -> String {
+    let mut shown = String::with_capacity(target.len());
+    for c in target.chars() {
+        if invisible(c) {
+            shown.push_str(&format!("\\u{{{:X}}}", u32::from(c)));
+        } else {
+            shown.push(c);
+        }
+    }
+    shown
+}
+
+/// Whether `c` shows nothing, or turns the text's direction: the controls,
+/// the separators of lines and paragraphs, and Unicode's characters that
+/// are ignorable by default, as the bidirectional overrides and isolates,
+/// the zero-width ones, the variation selectors and the tags.
+pub(super) fn invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            u32::from(c),
+            0xAD | 0x34F
+                | 0x61C
+                | 0x115F..=0x1160
+                | 0x17B4..=0x17B5
+                | 0x180B..=0x180F
+                | 0x200B..=0x200F
+                | 0x2028..=0x202E
+                | 0x2060..=0x206F
+                | 0x3164
+                | 0xFE00..=0xFE0F
+                | 0xFEFF
+                | 0xFFA0
+                | 0xFFF9..=0xFFFB
+                | 0x1BCA0..=0x1BCA3
+                | 0x1D173..=0x1D17A
+                | 0xE0000..=0xE0FFF
+        )
+}
+
+/// What the user chose that links do, as the config writes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Chosen {
+    /// What a URL does.
+    Url(OpenUrl),
+    /// What a file does.
+    File(OpenFile),
+}

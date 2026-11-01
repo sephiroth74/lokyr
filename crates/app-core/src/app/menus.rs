@@ -1,0 +1,639 @@
+//! The menus: the menu bar of the commands, with their keys and the
+//! state of their items as the focused pane has it; the context menu at
+//! the pointer, and what its commands of a cell do, Look Up and the man
+//! page of the selection among them.
+
+use lokyr_kernel::commands::{Args, Category, Command, Kind, Registry, Value};
+use lokyr_kernel::keymap;
+use lokyr_kernel::keymap::{Context, Keymap, When};
+use lokyr_kernel::l10n::{Arg, Texts};
+use lokyr_kernel::workspace::Pane;
+use lokyr_platform_core::{
+    ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Platform, Point, Shortcut,
+    ShortcutKey, StandardAction, WindowId,
+};
+use lokyr_pty::Program;
+use lokyr_vt_core::terminal as vt;
+use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
+
+use super::{
+    APPEARANCES, App, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE, MAN_PAGE_NAME, MAN_SECTION,
+    PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection,
+};
+use crate::drawing::Backend;
+use crate::mouse;
+use crate::window::Selecting;
+
+impl<B: Backend> App<B> {
+    /// Opens `window`'s context menu at `position`, over the cell there,
+    /// once the click has selected, as macOS's Terminal does: the
+    /// selection stays when it holds the cell; else the cell's word is
+    /// selected, as by a double click, or nothing on a blank cell. Its
+    /// items are the commands of a cell, which take its `column` and `row`,
+    /// then the clipboard's and the editing's that run without arguments;
+    /// an item is dimmed where its command's context does not hold, or
+    /// where its plugin tells that it would do nothing.
+    pub(super) fn context_menu(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) {
+        let Some(pointer) = self.pointer(platform, window, position) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        // Pinned, so that output that scrolls while the menu is open leaves
+        // its commands on the clicked text.
+        pane.mark_cell((pointer.col, i64::from(pointer.row)));
+        let within = pane
+            .selection()
+            .is_some_and(|selected| selected.contains(pointer.col, pointer.row));
+        if !within {
+            let grid = pane.grid();
+            let offset = pane.view_offset();
+            let spot = mouse::spot(pointer, offset, grid.cell_width, grid.columns);
+            pane.anchor_selection((spot.col, spot.row + offset as i64));
+            let mut selecting = Selecting {
+                anchor: spot,
+                last: spot,
+                shape: SelectionShape::Cells,
+                unit: SelectionUnit::Word,
+                held: false,
+                beyond: 0,
+            };
+            show_selection(pane, &mut selecting);
+            let blank = pane
+                .selection_text()
+                .is_none_or(|text| text.trim().is_empty());
+            if blank {
+                pane.clear_selection();
+            }
+            state.selecting = (!blank).then_some(selecting);
+            platform.request_frame(window);
+        }
+        let context = context(Some(pane));
+        let cell = (pointer.col, pointer.row);
+        let edits = |category: Category| -> Vec<Command> {
+            self.commands
+                .in_order()
+                .filter(|command| {
+                    command.category == category
+                        && command.params.iter().all(|param| param.default.is_some())
+                        && !of_cell(command)
+                        && !CONTEXT_ONLY.contains(&command.name.as_str())
+                })
+                .cloned()
+                .collect()
+        };
+        // As in Terminal: what opens, then Look Up, then the clipboard's,
+        // then the editing's.
+        let groups: [Vec<Command>; 4] = [
+            self.commands
+                .in_order()
+                .filter(|command| of_cell(command))
+                .chain(self.commands.get(MAN_PAGE))
+                .cloned()
+                .collect(),
+            self.commands.get(LOOK_UP).cloned().into_iter().collect(),
+            edits(Category::Clipboard),
+            edits(Category::Edit),
+        ];
+        self.acting = Some(window);
+        let dimmed = groups
+            .iter()
+            .flatten()
+            .filter(|command| !self.applies(platform, command, &context, cell))
+            .map(|command| command.name.clone())
+            .collect();
+        self.acting = None;
+        self.context_window = Some(window);
+        // Look Up and the man page name what they take.
+        let selection = self.looked_up(window).map(|(text, _)| text);
+        let named = |name: &str| {
+            let text = selection.as_deref()?;
+            let (message, variable) = match name {
+                LOOK_UP => ("menu-look-up", "word"),
+                MAN_PAGE if man_page(text).is_some() => ("menu-man-page", "page"),
+                _ => return None,
+            };
+            let text = shortened(text, LOOK_UP_TITLE);
+            Some(
+                self.texts
+                    .text_with(message, &[(variable, Arg::Text(&text))]),
+            )
+        };
+        let mut items = Vec::new();
+        for group in groups.iter().filter(|group| !group.is_empty()) {
+            if !items.is_empty() {
+                items.push(MenuItem::Separator);
+            }
+            items.extend(group.iter().map(|command| MenuItem::Command {
+                title: named(&command.name).unwrap_or_else(|| command.title.clone()),
+                command: command.name.clone(),
+                shortcut: None,
+            }));
+        }
+        let menu = ContextMenu { items, dimmed };
+        platform.show_context_menu(window, position, &menu);
+    }
+
+    /// Whether `command` would do something in `context`, at the view's
+    /// cell `cell` for a command of a cell: its context holds, and its
+    /// plugin, if one runs it, tells that it would.
+    fn applies(
+        &mut self,
+        platform: &mut dyn Platform,
+        command: &Command,
+        context: &Context,
+        (column, row): (u16, u16),
+    ) -> bool {
+        let when = command.when.as_deref().map(When::parse);
+        if when.is_some_and(|when| when.is_ok_and(|when| !when.holds(context))) {
+            return false;
+        }
+        if command.name == LOOK_UP {
+            return self
+                .acting
+                .and_then(|window| self.looked_up(window))
+                .is_some();
+        }
+        if command.name == MAN_PAGE {
+            return self
+                .acting
+                .and_then(|window| self.looked_up(window))
+                .is_some_and(|(text, _)| man_page(&text).is_some());
+        }
+        if !self.plugins.owns(&command.name) {
+            return true;
+        }
+        let args = if of_cell(command) {
+            cell_args(column, i64::from(row))
+        } else {
+            Args::new()
+        };
+        let applies = self.commands.check(&command.name, args).and_then(|args| {
+            self.with_plugins(platform, |plugins, context| {
+                plugins.applies(&command.name, &args, context)
+            })
+        });
+        applies.unwrap_or_else(|error| {
+            eprintln!("lokyr: {error}");
+            false
+        })
+    }
+
+    /// What Look Up looks up in `window`: the selection's text, of one line,
+    /// without the spaces around it, and the cell where that text starts,
+    /// in the view; `None` without one.
+    fn looked_up(&self, window: WindowId) -> Option<(String, (u16, i64))> {
+        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
+        let (column, row) = pane.selection()?.start;
+        let selected = pane.selection_text()?;
+        let text = selected.trim();
+        if text.is_empty() || text.contains('\n') {
+            return None;
+        }
+        // Each space before the text takes a cell.
+        let spaces = selected[..selected.len() - selected.trim_start().len()]
+            .chars()
+            .count();
+        let column = column.saturating_add(u16::try_from(spaces).unwrap_or(u16::MAX));
+        Some((text.to_owned(), (column, row)))
+    }
+
+    /// Shows the system's definition of the selection of the window that
+    /// the commands run in, over the selection's first cell, in the text's
+    /// font.
+    pub(super) fn look_up(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some((text, (column, row))) = self.looked_up(window) else {
+            return;
+        };
+        let (Some(size), Some(state)) = (platform.window_size(window), self.windows.get(&window))
+        else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(state.pane) else {
+            return;
+        };
+        let grid = pane.grid();
+        // A selection that starts above the view, or below it, shows at its
+        // edge.
+        let row = row.clamp(0, i64::from(grid.rows.saturating_sub(1))) as f64;
+        let (left, top) = self.origin(size);
+        let baseline = self
+            .drawing
+            .as_ref()
+            .map_or(f64::from(grid.cell_height) * 0.75, |drawing| {
+                f64::from(drawing.font.cell().baseline)
+            });
+        let at = Point {
+            x: (f64::from(left) + f64::from(column) * f64::from(grid.cell_width)) / size.scale,
+            y: (f64::from(top) + row * f64::from(grid.cell_height) + baseline) / size.scale,
+        };
+        let points = f64::from(self.font_size.unwrap_or(self.config.font.size.points()));
+        let family = self
+            .drawing
+            .as_ref()
+            .map(|drawing| drawing.font.family().to_owned());
+        platform.show_definition(
+            window,
+            &text,
+            at,
+            family.as_deref().map(|family| (family, points)),
+        );
+    }
+
+    /// Opens a window whose pane shows the man page that the selection of
+    /// the window that the commands run in names, rather than the shell:
+    /// `man`, which the user's login shell runs, as their `PATH` finds the
+    /// pages of their own programs.
+    pub(super) fn open_man_page(&mut self, platform: &mut dyn Platform) {
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let Some((text, args)) = self
+            .looked_up(window)
+            .and_then(|(text, _)| Some((text.clone(), man_page(&text)?)))
+        else {
+            return;
+        };
+        let program = man_program(self.man.as_deref(), &args);
+        self.open_window_running(platform, &program, Some(format!("man {text}")));
+    }
+
+    /// Runs `name`, which `window`'s context menu chose, in its pane, as
+    /// though the window had the focus: a command of a cell takes the cell
+    /// that the menu opened on, wherever output moved its text, and does
+    /// not run once its text left the scrollback.
+    pub(super) fn context_command(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        name: &str,
+    ) {
+        let Some(state) = self.windows.get(&window) else {
+            return;
+        };
+        let id = state.pane;
+        let pane = self.workspace.pane(id);
+        // The cell's line and link are read with it, which the command
+        // reads, until the mark goes after it.
+        let marked = pane
+            .filter(|_| self.context_window == Some(window))
+            .and_then(Pane::marked_cell);
+        let args = match self.commands.get(name) {
+            Some(command) if of_cell(command) => marked.map(|(column, row)| cell_args(column, row)),
+            _ => Some(Args::new()),
+        };
+        if let Some(args) = args {
+            self.acting = Some(window);
+            self.run(platform, name, args);
+            self.acting = None;
+        }
+        if let Some(pane) = self.workspace.pane(id) {
+            pane.unmark_cell();
+        }
+    }
+
+    /// Gives the platform the main menu of the commands and their keys,
+    /// in place of the one before; the items that it dimmed are enabled
+    /// again, until the next frame of the focused pane settles them.
+    pub(super) fn set_menu(&mut self, platform: &mut dyn Platform) {
+        platform.set_main_menu(&main_menu(&self.commands, &self.keymap, &self.texts));
+        for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
+            if !enabled {
+                platform.set_command_enabled(&command, true);
+            }
+        }
+        self.menu_contexts = menu_contexts(&self.commands);
+    }
+
+    /// Enables the menus' items of the commands that can run in `context`,
+    /// and dims the others, as each command's own context says: only those
+    /// whose state changes reach the platform.
+    pub(super) fn settle_menu(&mut self, platform: &mut dyn Platform, context: &Context) {
+        for (command, when) in &self.menu_contexts {
+            let enabled = when.holds(context);
+            if self.menu_enabled.get(command) != Some(&enabled) {
+                platform.set_command_enabled(command, enabled);
+                self.menu_enabled.insert(command.clone(), enabled);
+            }
+        }
+    }
+}
+
+/// The arguments of `man` for the page that `text` names: its name, and
+/// its section before it when `text` ends with one in brackets, as
+/// `ls(1)`, after `--`; `None` for a text that is no page's name, which
+/// only letters, digits and `.`, `_`, `+`, `:` and `-` make, not from `-`
+/// or `.`, as `man` would take an option, or a path.
+pub(super) fn man_page(text: &str) -> Option<Vec<String>> {
+    let (name, section) = match text.strip_suffix(')').and_then(|text| text.split_once('(')) {
+        Some((name, section)) => (name, Some(section)),
+        None => (text, None),
+    };
+    let named = !name.is_empty()
+        && name.len() <= MAN_PAGE_NAME
+        && !name.starts_with(['-', '.'])
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+:-".contains(c));
+    // A section starts with its number, or `n`, as `3pm` and `n`.
+    let sectioned = section.is_none_or(|section| {
+        section.len() <= MAN_SECTION
+            && section.starts_with(|c: char| c.is_ascii_digit() || c == 'n')
+            && section.chars().all(|c| c.is_ascii_alphanumeric())
+    });
+    (named && sectioned).then(|| {
+        let mut args = vec!["--".to_owned()];
+        args.extend(section.map(str::to_owned));
+        args.push(name.to_owned());
+        args
+    })
+}
+
+/// The program that shows the man page of `args`: `man`, the path, or the
+/// login shell's `man`, with them in its command, which they need no
+/// quotes in, whatever the shell. Its pager is `ul`, which prints the whole
+/// page, its bold and its underlined text as the terminal shows them, for
+/// the window to keep.
+pub(super) fn man_program(man: Option<&std::path::Path>, args: &[String]) -> Program {
+    let mut all = vec!["-P".to_owned(), "ul".to_owned()];
+    all.extend(args.iter().cloned());
+    match man {
+        Some(man) => Program::command(man, all),
+        None => Program::LoginCommand {
+            command: format!("exec man {}", all.join(" ")).into(),
+        },
+    }
+}
+
+/// `text`, shortened to its first `most` characters and `…` when it has
+/// more.
+pub(super) fn shortened(text: &str, most: usize) -> String {
+    match text.char_indices().nth(most) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_owned(),
+    }
+}
+
+/// Whether `command` is one of a cell: it takes the cell's `column` and
+/// `row`, whole numbers, and needs no other argument.
+fn of_cell(command: &Command) -> bool {
+    let cell = |name: &str| {
+        command
+            .params
+            .iter()
+            .any(|param| param.name == name && param.kind == Kind::Integer)
+    };
+    cell("column")
+        && cell("row")
+        && command
+            .params
+            .iter()
+            .all(|param| param.name == "column" || param.name == "row" || param.default.is_some())
+}
+
+/// The arguments of a command of a cell for the view's cell at `column` of
+/// `row`.
+fn cell_args(column: u16, row: i64) -> Args {
+    Args::from([
+        ("column".to_owned(), Value::Integer(i64::from(column))),
+        ("row".to_owned(), Value::Integer(row)),
+    ])
+}
+
+/// The main menu, of the commands of `commands` that run without
+/// arguments, by their categories, in the order of their registrations,
+/// each with the keys that `keymap` binds it to: the application's menu,
+/// with the system's items to hide it; the shell's, of the windows', the
+/// tabs', the panes' and the input's; the edit's, of the clipboard's and the
+/// editing's; the view's; the windows', with the system's items; and the
+/// help's, which the system gives a search of the menus. A line parts the
+/// commands of a category or a namespace from the next. Its titles are
+/// `texts`'.
+pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
+    let items = |categories: &[Category]| {
+        let shown: Vec<&Command> = commands
+            .in_order()
+            .filter(|command| {
+                categories.contains(&command.category)
+                    && command.params.iter().all(|param| param.default.is_some())
+                    && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
+                    && command.name != PERFORMANCE
+                    && !CONTEXT_ONLY.contains(&command.name.as_str())
+            })
+            .collect();
+        command_items(shown, |name| keymap.shortcut(name).and_then(shortcut))
+    };
+    // The appearances, in a menu of their own, by their short titles.
+    let appearances = APPEARANCES
+        .into_iter()
+        .filter(|(name, ..)| commands.get(name).is_some())
+        .map(|(name, _, title)| MenuItem::Command {
+            title: texts.text(&format!("menu-{title}")),
+            command: name.to_owned(),
+            shortcut: keymap.shortcut(name).and_then(shortcut),
+        })
+        .collect();
+    let mut view = items(&[Category::View]);
+    if !view.is_empty() {
+        view.push(MenuItem::Separator);
+    }
+    view.push(MenuItem::Submenu(Menu {
+        title: texts.text("menu-appearance"),
+        items: appearances,
+        role: None,
+    }));
+    // The performance's panel, a tool to see how Lokyr does, last.
+    if let Some(command) = commands.get(PERFORMANCE) {
+        view.push(MenuItem::Separator);
+        view.push(MenuItem::Command {
+            title: command.title.clone(),
+            command: PERFORMANCE.to_owned(),
+            shortcut: keymap.shortcut(PERFORMANCE).and_then(shortcut),
+        });
+    }
+    let standard = |key: &str, action, shortcut: Option<Shortcut>| MenuItem::Standard {
+        title: texts.text(key),
+        action,
+        shortcut,
+    };
+    let cmd = |key: char, alt: bool| Shortcut {
+        key: ShortcutKey::Char(key),
+        command: true,
+        shift: false,
+        alt,
+        control: false,
+    };
+    let menu = |key: &str, items, role| Menu {
+        title: texts.text(key),
+        items,
+        role,
+    };
+    // Settings first, as macOS's apps have it, and Secure Keyboard Entry,
+    // then the system's items.
+    let first = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command == SETTINGS || command == SECURE_INPUT);
+    let mut application = items(&[Category::App])
+        .into_iter()
+        .filter(first)
+        .collect::<Vec<_>>();
+    if !application.is_empty() {
+        application.push(MenuItem::Separator);
+    }
+    application.extend([
+        standard("menu-hide", StandardAction::Hide, Some(cmd('h', false))),
+        standard(
+            "menu-hide-others",
+            StandardAction::HideOthers,
+            Some(cmd('h', true)),
+        ),
+        standard("menu-show-all", StandardAction::ShowAll, None),
+    ]);
+    let app_commands: Vec<MenuItem> = items(&[Category::App])
+        .into_iter()
+        .filter(|item| !first(item))
+        .collect();
+    if !app_commands.is_empty() {
+        application.push(MenuItem::Separator);
+        application.extend(app_commands);
+    }
+    MainMenu {
+        menus: vec![
+            Menu {
+                title: "Lokyr".to_owned(),
+                items: application,
+                role: None,
+            },
+            menu(
+                "menu-shell",
+                items(&[
+                    Category::Windows,
+                    Category::Tabs,
+                    Category::Panes,
+                    Category::Input,
+                ]),
+                None,
+            ),
+            menu(
+                "menu-edit",
+                items(&[Category::Clipboard, Category::Edit]),
+                None,
+            ),
+            menu("menu-view", view, None),
+            menu(
+                "menu-window",
+                vec![
+                    standard(
+                        "menu-minimize",
+                        StandardAction::Minimize,
+                        Some(cmd('m', false)),
+                    ),
+                    standard("menu-zoom", StandardAction::Zoom, None),
+                    MenuItem::Separator,
+                    standard(
+                        "menu-bring-all-to-front",
+                        StandardAction::BringAllToFront,
+                        None,
+                    ),
+                ],
+                Some(MenuRole::Window),
+            ),
+            menu("menu-help", Vec::new(), Some(MenuRole::Help)),
+        ],
+    }
+}
+
+/// The items of `commands`, in their order, each with the keys that
+/// `shortcut` gives its name: a line parts the commands of a category or a
+/// namespace from the next.
+fn command_items<'a>(
+    commands: impl IntoIterator<Item = &'a Command>,
+    shortcut: impl Fn(&str) -> Option<Shortcut>,
+) -> Vec<MenuItem> {
+    let mut items = Vec::new();
+    let mut group = None;
+    for command in commands {
+        let namespace = command.name.split('.').next().unwrap_or_default();
+        if group.is_some_and(|group| group != (command.category, namespace)) {
+            items.push(MenuItem::Separator);
+        }
+        group = Some((command.category, namespace));
+        items.push(MenuItem::Command {
+            title: command.title.clone(),
+            command: command.name.clone(),
+            shortcut: shortcut(&command.name),
+        });
+    }
+    items
+}
+
+/// The contexts in which the commands of `commands` that tell one can run,
+/// as the menus enable their items.
+fn menu_contexts(commands: &Registry) -> Vec<(String, When)> {
+    commands
+        .in_order()
+        .filter_map(|command| {
+            let when = When::parse(command.when.as_deref()?).ok()?;
+            Some((command.name.clone(), when))
+        })
+        .collect()
+}
+
+/// The keys of `combo` as a menu's item shows them: a key that types a
+/// character, or a named one, with its modifiers.
+fn shortcut(combo: keymap::Combo) -> Option<Shortcut> {
+    use keymap::{Named, Press};
+    let key = match combo.press {
+        Press::Char(character) => ShortcutKey::Char(character),
+        Press::Named(named) => ShortcutKey::Code(match named {
+            Named::Enter => KeyCode::Enter,
+            Named::Tab => KeyCode::Tab,
+            Named::Backspace => KeyCode::Backspace,
+            Named::Escape => KeyCode::Escape,
+            Named::Space => KeyCode::Space,
+            Named::Delete => KeyCode::Delete,
+            Named::Insert => KeyCode::Insert,
+            Named::Home => KeyCode::Home,
+            Named::End => KeyCode::End,
+            Named::PageUp => KeyCode::PageUp,
+            Named::PageDown => KeyCode::PageDown,
+            Named::Up => KeyCode::ArrowUp,
+            Named::Down => KeyCode::ArrowDown,
+            Named::Left => KeyCode::ArrowLeft,
+            Named::Right => KeyCode::ArrowRight,
+            Named::F(n) => KeyCode::F(n),
+        }),
+        Press::Wheel(_) | Press::Click => return None,
+    };
+    Some(Shortcut {
+        key,
+        command: combo.mods.cmd,
+        shift: combo.mods.shift,
+        alt: combo.mods.alt,
+        control: combo.mods.ctrl,
+    })
+}
+
+/// The context in which the menus' commands run, of a pane whose frame
+/// shows `snapshot`: the pane has the focus, and may show the alternate
+/// screen and a selection.
+pub(super) fn menu_context(snapshot: &vt::Snapshot) -> Context {
+    let mut names = vec!["pane.focused"];
+    if snapshot.alternate_screen() {
+        names.push("alternate-screen");
+    }
+    if snapshot.selection().is_some() {
+        names.push("selection");
+    }
+    Context::new(names)
+}
