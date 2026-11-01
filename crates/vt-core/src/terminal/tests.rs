@@ -216,9 +216,11 @@ fn emoji_sequences_and_flags_take_one_wide_cell() {
 #[test]
 fn a_flag_split_by_the_margin_stays_one_cluster() {
     let mut term = Term::new(3, 2);
-    // The first indicator fills the last column; the second joins it.
+    // The first indicator, two cells wide, wraps from the last column; the
+    // second joins it on the next row.
     term.feed("ab\u{1F1EE}\u{1F1F9}c");
-    assert_eq!(term.screen(), ["ab\u{1F1EE}\u{1F1F9}", "c"]);
+    assert_eq!(term.screen(), ["ab", "\u{1F1EE}\u{1F1F9}c"]);
+    assert_eq!(term.cell(0, 1).width(), Width::Wide);
 }
 
 #[test]
@@ -2249,10 +2251,11 @@ fn mode_2027_switches_between_clusters_and_codepoints() {
     term.feed("\x1b[?2027h\r\u{1F1EE}\u{1F1F9}");
     assert_eq!(term.cursor(), (2, 0, false), "one wide cluster");
     assert_eq!(term.cell(0, 0).width(), Width::Wide);
-    // A switch ends the cluster: half a flag on either side stays apart.
+    // A switch ends the cluster: half a flag on either side stays apart,
+    // two cells each.
     term.feed("\r\x1b[K\u{1F1EE}\x1b[?2027l\x1b[?2027h\u{1F1F9}");
-    assert_eq!(term.cell(0, 0).width(), Width::Narrow);
-    assert_eq!(term.cursor(), (2, 0, false));
+    assert_eq!(term.cell(2, 0).content(), Content::Char('\u{1F1F9}'));
+    assert_eq!(term.cursor(), (4, 0, false));
     // RIS brings back the mode the terminal was made with.
     let options = Options {
         widths: Widths {
@@ -3609,21 +3612,23 @@ fn a_row_moved_into_a_page_that_cannot_grow_keeps_its_text() {
 
 #[test]
 fn a_prepended_character_starts_the_cluster_of_the_next_one() {
+    // The sign takes a cell, and the digit that joins it another.
     let mut term = Term::new(10, 2);
     term.feed("\r\u{600}123");
     assert_eq!(cluster_at(&term, 0, 0), ['\u{600}', '1']);
-    assert_eq!(cluster_at(&term, 1, 0), ['2']);
-    assert_eq!(term.cursor(), (3, 0, false));
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(cluster_at(&term, 2, 0), ['2']);
+    assert_eq!(term.cursor(), (4, 0, false));
     // After another character, and through both print paths.
     let mut term = Term::new(10, 2);
     term.feed("x\u{600}").feed("1");
     assert_eq!(cluster_at(&term, 1, 0), ['\u{600}', '1']);
-    assert_eq!(term.cursor(), (2, 0, false));
+    assert_eq!(term.cursor(), (3, 0, false));
     // A verse number: two digits after the sign.
     let mut term = Term::new(10, 2);
     term.feed("\u{6DD}\u{661}\u{662}");
     assert_eq!(cluster_at(&term, 0, 0), ['\u{6DD}', '\u{661}']);
-    assert_eq!(cluster_at(&term, 1, 0), ['\u{662}']);
+    assert_eq!(cluster_at(&term, 2, 0), ['\u{662}']);
     // In legacy mode, a codepoint of no width joins the cell before it.
     let mut term = Term::new(10, 2);
     term.feed("\x1b[?2027l\r\u{600}123");
@@ -3632,11 +3637,12 @@ fn a_prepended_character_starts_the_cluster_of_the_next_one() {
 }
 
 #[test]
-fn half_a_flag_and_a_mark_take_one_cell() {
+fn half_a_flag_and_a_mark_take_two_cells() {
     let mut term = Term::new(10, 2);
     term.feed("\u{1F1EE}\u{301}x");
-    assert_eq!(term.cell(0, 0).width(), Width::Narrow);
-    assert_eq!(term.cursor(), (2, 0, false));
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cell(2, 0).content(), Content::Char('x'));
+    assert_eq!(term.cursor(), (3, 0, false));
 }
 
 #[test]
@@ -3648,16 +3654,23 @@ fn the_hangul_fillers_take_cells() {
 
 #[test]
 fn every_control_ends_the_cluster() {
+    // Two halves of a flag that stay apart take two cells each.
     for control in ["\x07", "\x0f", "\x00", "\x1b[1m\x07"] {
         let mut term = Term::new(10, 2);
         term.feed(format!("\u{1F1EE}{control}\u{1F1F9}"));
-        assert_eq!(term.cursor(), (2, 0, false), "{control:?}");
-        assert_eq!(term.cell(0, 0).width(), Width::Narrow, "{control:?}");
+        assert_eq!(term.cursor(), (4, 0, false), "{control:?}");
+        assert_eq!(
+            term.cell(2, 0).content(),
+            Content::Char('\u{1F1F9}'),
+            "{control:?}"
+        );
     }
     // SGR alone leaves the cluster open.
     let mut term = Term::new(10, 2);
     term.feed("\u{1F1EE}\x1b[1m\u{1F1F9}");
-    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cursor(), (2, 0, false));
+    let (page, row) = term.terminal.screen_rows().screen_row(0);
+    assert_eq!(page.grapheme(row, 0), ['\u{1F1F9}']);
 }
 
 #[test]
@@ -3819,8 +3832,8 @@ fn resizing_ends_the_cluster_and_empties_a_cut_wide_character() {
     term.terminal.resize(12, 2);
     term.feed("\u{1F1F9}");
     assert_eq!(
-        term.cell(0, 0).width(),
-        Width::Narrow,
+        term.cell(2, 0).content(),
+        Content::Char('\u{1F1F9}'),
         "no flag across a resize"
     );
     let mut term = Term::new(10, 2);
@@ -4471,8 +4484,11 @@ fn ascii_after_a_prepended_character_joins_its_cluster() {
     assert_eq!(term.screen(), ["\u{D4E}ab", ""]);
     let (page, row) = term.terminal.screen_rows().screen_row(0);
     assert_eq!(page.grapheme(row, 0), ['a']);
-    assert_eq!(term.cell(1, 0).content(), Content::Char('b'));
-    assert_eq!(term.cursor(), (2, 0, false));
+    // The prepended character has a width, and the letter that joins it
+    // takes cells of its own: two cells.
+    assert_eq!(term.cell(0, 0).width(), Width::Wide);
+    assert_eq!(term.cell(2, 0).content(), Content::Char('b'));
+    assert_eq!(term.cursor(), (3, 0, false));
 }
 
 #[test]

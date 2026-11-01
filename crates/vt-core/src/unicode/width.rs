@@ -57,7 +57,11 @@ impl Widths {
     /// combine into syllables take none, except SOFT HYPHEN, which takes
     /// one, and the Hangul fillers, which take the cells of their East Asian
     /// width. Wide and fullwidth characters take two, and so do the
-    /// ambiguous ones when they count as wide.
+    /// ambiguous ones when they count as wide. In the unicode mode with the
+    /// current tables, as `wcwidth` 0.9 counts them where Markus Kuhn's
+    /// does not, a regional indicator takes two, alone as in a flag, and a
+    /// prepended concatenation mark, a format character that shows over the
+    /// digits after it, as the Arabic number signs, takes one.
     pub fn char_width(self, c: char) -> u8 {
         self.char_width_with(c, properties(c))
     }
@@ -73,11 +77,15 @@ impl Widths {
             || matches!(properties.mark, Some(Mark::Nonspacing | Mark::Enclosing))
             || properties.format
             || (properties.default_ignorable && !filler);
-        if c == '\u{AD}' {
+        let current = self.mode == Mode::Unicode && self.tables == Tables::Current;
+        if c == '\u{AD}' || (current && is_prepended_concatenation_mark(c)) {
             return 1;
         }
         if zero {
             return 0;
+        }
+        if current && properties.grapheme_break == GraphemeBreak::RegionalIndicator {
+            return 2;
         }
         let east_asian = match self.tables {
             Tables::Current => properties.east_asian_width,
@@ -93,13 +101,18 @@ impl Widths {
     /// The cells that a grapheme cluster takes: `first`, its first
     /// codepoint, then `rest`, as a page keeps them.
     ///
-    /// A cluster is as wide as its first codepoint that has a width, which
-    /// is its first codepoint unless a prepended character comes before it,
-    /// except where emoji presentation changes it: VS16 after a pictographic
-    /// or a keycap base makes two cells, VS15 one; a pair of regional
-    /// indicators, a flag, makes two; and so does an emoji ZWJ sequence. The
-    /// tables of Unicode 8 knew no emoji presentation, so with them a
-    /// cluster is always as wide as its first codepoint that has a width.
+    /// A cluster is as wide as its first codepoint that has a width, its
+    /// base, which is its first codepoint unless a prepended character comes
+    /// before it, except where emoji presentation changes it: VS16 after a
+    /// pictographic or a keycap base makes two cells, VS15 one; a pair of
+    /// regional indicators, a flag, makes two; and so does an emoji ZWJ
+    /// sequence. Past emoji presentation, a codepoint after the base that
+    /// takes cells of its own, [`Widths::spaces_in_cluster`], makes two: a
+    /// vowel sign that spaces, as Bengali's া after ক, or a consonant that a
+    /// virama joins, as in Devanagari's क्ष, as `wcwidth` 0.9 and the
+    /// programs that count codepoint by codepoint give them. The tables of
+    /// Unicode 8 knew no emoji presentation, so with them a cluster is always
+    /// as wide as its first codepoint that has a width.
     pub fn cluster_width(self, first: char, rest: &[char]) -> u8 {
         // The base, the first codepoint that has a width, and what follows
         // it, which emoji presentation reads.
@@ -135,15 +148,35 @@ impl Widths {
         if pictographic && joined() {
             return 2;
         }
+        if width == 1
+            && rest
+                .iter()
+                .any(|&c| self.spaces_in_cluster(c, properties(c)))
+        {
+            return 2;
+        }
         width
+    }
+
+    /// Whether `c`, whose properties are `properties`, takes cells of its
+    /// own after the base of a cluster, which then takes two: a codepoint
+    /// that has a width, but an emoji modifier, which colours the emoji
+    /// before it, and a prepended character, as `uucode` and Ghostty count
+    /// them. Marks that do not space, joiners, variation selectors and the
+    /// Hangul vowels and final consonants have no width.
+    pub fn spaces_in_cluster(self, c: char, properties: Properties) -> bool {
+        self.char_width_with(c, properties) > 0
+            && !matches!(c, '\u{1F3FB}'..='\u{1F3FF}')
+            && properties.grapheme_break != GraphemeBreak::Prepend
     }
 
     /// Whether `c`, whose properties are `properties`, joining a cluster
     /// that takes `cells` cells, one or two, as [`Widths::cluster_width`]
     /// gives them, leaves it as many: a wide cluster narrows only with VS15;
     /// a narrow one whose first codepoint has a width widens only with
-    /// VS16, with a regional indicator that makes a flag, or with a
-    /// pictographic that a ZWJ joins.
+    /// VS16, with a regional indicator that makes a flag, with a
+    /// pictographic that a ZWJ joins, or with a codepoint that takes cells
+    /// of its own in it.
     pub fn keeps_cells(self, cells: u8, c: char, properties: Properties) -> bool {
         if cells == 2 {
             c != TEXT_PRESENTATION
@@ -151,6 +184,7 @@ impl Widths {
             c != EMOJI_PRESENTATION
                 && properties.grapheme_break != GraphemeBreak::RegionalIndicator
                 && !properties.extended_pictographic
+                && !self.spaces_in_cluster(c, properties)
         }
     }
 }
@@ -158,6 +192,22 @@ impl Widths {
 /// The characters that a keycap sequence starts with: `#`, `*` and digits.
 fn is_keycap_base(c: char) -> bool {
     matches!(c, '#' | '*' | '0'..='9')
+}
+
+/// The format characters that show, over the digits after them, which
+/// `PropList.txt` of Unicode 18 lists as Prepended_Concatenation_Mark
+/// (<https://www.unicode.org/Public/18.0.0/ucd/PropList.txt>).
+fn is_prepended_concatenation_mark(c: char) -> bool {
+    matches!(
+        c,
+        '\u{600}'..='\u{605}'
+            | '\u{6DD}'
+            | '\u{70F}'
+            | '\u{890}'..='\u{891}'
+            | '\u{8E2}'
+            | '\u{110BD}'
+            | '\u{110CD}'
+    )
 }
 
 fn is_flag(c: char) -> bool {

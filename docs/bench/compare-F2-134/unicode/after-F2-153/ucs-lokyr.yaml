@@ -1,0 +1,993 @@
+ambiguous_width: 1
+datetime: 2026-11-01 13:10:12 UTC
+environment:
+  COLORTERM: truecolor
+  TERM: xterm-256color
+  TERM_PROGRAM: lokyr
+  TERM_PROGRAM_VERSION: 0.1.0-20261101
+height: 40
+preferred_encoding: UTF-8
+python_version: 3.13.13
+seconds_elapsed: 0.49185270798625425
+session_arguments:
+  all: false
+  limit_category_time: 10.0
+  limit_codepoints: 0
+  limit_errors: 0
+  limit_graphemes: 0
+  limit_graphemes_pct: 0
+  stream: stdout
+  timeout_cps: 3.0
+software_name: lokyr
+software_version: 0.1.0-20261101
+system: Darwin
+terminal_results:
+  background_color_hex: '#fafafafafafa'
+  background_color_rgb:
+  - 64250
+  - 64250
+  - 64250
+  cell_height: 31
+  cell_width: 16
+  color_scheme: false
+  colored_underlines: true
+  decrqcra: false
+  decrqss: true
+  decrqss_settings:
+    decsace: '0'
+    decsasd: '0'
+    decsca: '0'
+    decscl: 62;1
+    decscusr: '0'
+    decslpp: '40'
+    decslrm: 1;120
+    decsnls: '40'
+    decssdt: '0'
+    decstbm: 1;40
+    sgr: '0'
+  decrqss_truecolor_probe: true
+  device_attributes:
+    extensions:
+    - 22
+    raw: "\e[?62;22c"
+    service_class: 62
+  foreground_color_hex: '#1e1e1e1e2020'
+  foreground_color_rgb:
+  - 7710
+  - 7710
+  - 8224
+  height: 40
+  iterm2_features:
+    features: {}
+    supported: false
+  iterm2_graphics: false
+  kitty_clipboard_protocol: false
+  kitty_graphics: false
+  kitty_keyboard:
+    disambiguate: true
+    report_all_keys: true
+    report_alternates: true
+    report_events: true
+    report_text: true
+    supported_flags: 31
+  kitty_notifications: false
+  kitty_pointer_shapes: false
+  kitty_query: false
+  modes:
+    1004:
+      changeable: true
+      enabled: false
+      mode_description: Send FocusIn/FocusOut events
+      mode_name: FOCUS_IN_OUT_EVENTS
+      supported: true
+      value: 2
+      value_description: RESET
+    1006:
+      changeable: true
+      enabled: false
+      mode_description: Enable SGR Mouse Mode
+      mode_name: MOUSE_EXTENDED_SGR
+      supported: true
+      value: 2
+      value_description: RESET
+    2004:
+      changeable: true
+      enabled: false
+      mode_description: Set bracketed paste mode
+      mode_name: BRACKETED_PASTE
+      supported: true
+      value: 2
+      value_description: RESET
+    2026:
+      changeable: true
+      enabled: false
+      mode_description: Synchronized Output
+      mode_name: SYNCHRONIZED_OUTPUT
+      supported: true
+      value: 2
+      value_description: RESET
+    2027:
+      changeable: true
+      enabled: true
+      mode_description: Grapheme Clustering
+      mode_name: GRAPHEME_CLUSTERING
+      supported: true
+      value: 1
+      value_description: SET
+    2031:
+      changeable: false
+      enabled: false
+      mode_description: Color palette updates
+      mode_name: COLOR_PALETTE_UPDATES
+      supported: false
+      value: 0
+      value_description: NOT_RECOGNIZED
+    2048:
+      changeable: false
+      enabled: false
+      mode_description: In-Band Window Resize Notifications
+      mode_name: IN_BAND_WINDOW_RESIZE
+      supported: false
+      value: 0
+      value_description: NOT_RECOGNIZED
+    5522:
+      changeable: false
+      enabled: false
+      mode_description: Bracketed Paste MIME
+      mode_name: BRACKETED_PASTE_MIME
+      supported: false
+      value: 0
+      value_description: NOT_RECOGNIZED
+  number_of_colors: 16777216
+  osc52_clipboard: true
+  osc52_detection:
+    da1_extension_52: false
+    xtgettcap_ms: true
+  pixels_height: 1240
+  pixels_width: 1920
+  screen_ratio: '16:10'
+  screen_ratio_name: WSXGA
+  sixel: false
+  software_method: XTVERSION
+  software_name: lokyr
+  software_version: 0.1.0-20261101
+  styled_underlines: true
+  tab_stop_width: 8
+  text_sizing:
+    scale: false
+    width: false
+  tofu:
+    protocol: null
+    supported: false
+  ttype: xterm-256color
+  width: 120
+  xtgettcap:
+    capabilities:
+      AX: ''
+      BD: "\e[?2004l"
+      BE: "\e[?2004h"
+      Cr: "\e]112\a"
+      Cs: "\e]12;%p1%s\a"
+      E3: "\e[3J"
+      Ms: "\e]52;%p1%s;%p2%s\a"
+      PE: "\e[201~"
+      PS: "\e[200~"
+      RGB: 8/8/8
+      Rmol: "\e[55m"
+      Se: "\e[0 q"
+      Setulc: "\e[58:2::%p1%{65536}%/%d:%p1%{256}%/%{255}%&%d:%p1%{255}%&%dm"
+      Smol: "\e[53m"
+      Smulx: "\e[4:%p1%dm"
+      Ss: "\e[%p1%d q"
+      Su: ''
+      Sync: "\e[?2026%?%p1%{1}%-%tl%eh%;"
+      TN: xterm-256color
+      Tc: ''
+      XM: "\e[?1006;1000%?%p1%{1}%=%th%el%;"
+      XT: ''
+      acsc: '``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~'
+      am: ''
+      bce: ''
+      bel: "\a"
+      blink: "\e[5m"
+      bold: "\e[1m"
+      ccc: ''
+      civis: "\e[?25l"
+      clear: "\e[H\e[2J"
+      cnorm: "\e[?12l\e[?25h"
+      colors: '256'
+      cols: '80'
+      cr: "\r"
+      csr: "\e[%i%p1%d;%p2%dr"
+      cub: "\e[%p1%dD"
+      cub1: "\b"
+      cud: "\e[%p1%dB"
+      cud1: '
+
+        '
+      cuf: "\e[%p1%dC"
+      cuf1: "\e[C"
+      cup: "\e[%i%p1%d;%p2%dH"
+      cuu: "\e[%p1%dA"
+      cuu1: "\e[A"
+      cvvis: "\e[?12;25h"
+      dch: "\e[%p1%dP"
+      dch1: "\e[P"
+      dim: "\e[2m"
+      dl: "\e[%p1%dM"
+      dl1: "\e[M"
+      dsl: "\e]2;\a"
+      ech: "\e[%p1%dX"
+      ed: "\e[J"
+      el: "\e[K"
+      el1: "\e[1K"
+      fd: "\e[?1004l"
+      fe: "\e[?1004h"
+      flash: "\e[?5h\e[?5l"
+      fsl: "\a"
+      home: "\e[H"
+      hpa: "\e[%i%p1%dG"
+      hs: ''
+      ht: "\t"
+      hts: "\eH"
+      ich: "\e[%p1%d@"
+      il: "\e[%p1%dL"
+      il1: "\e[L"
+      ind: '
+
+        '
+      indn: "\e[%p1%dS"
+      initc: "\e]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\e\
+        \\"
+      invis: "\e[8m"
+      is2: "\e[!p\e[?3;4l\e[4l\e>"
+      it: '8'
+      kDC: "\e[3;2~"
+      kDC3: "\e[3;3~"
+      kDC4: "\e[3;4~"
+      kDC5: "\e[3;5~"
+      kDC6: "\e[3;6~"
+      kDC7: "\e[3;7~"
+      kDN: "\e[1;2B"
+      kDN3: "\e[1;3B"
+      kDN4: "\e[1;4B"
+      kDN5: "\e[1;5B"
+      kDN6: "\e[1;6B"
+      kDN7: "\e[1;7B"
+      kEND: "\e[1;2F"
+      kEND3: "\e[1;3F"
+      kEND4: "\e[1;4F"
+      kEND5: "\e[1;5F"
+      kEND6: "\e[1;6F"
+      kEND7: "\e[1;7F"
+      kHOM: "\e[1;2H"
+      kHOM3: "\e[1;3H"
+      kHOM4: "\e[1;4H"
+      kHOM5: "\e[1;5H"
+      kHOM6: "\e[1;6H"
+      kHOM7: "\e[1;7H"
+      kIC: "\e[2;2~"
+      kIC3: "\e[2;3~"
+      kIC4: "\e[2;4~"
+      kIC5: "\e[2;5~"
+      kIC6: "\e[2;6~"
+      kIC7: "\e[2;7~"
+      kLFT: "\e[1;2D"
+      kLFT3: "\e[1;3D"
+      kLFT4: "\e[1;4D"
+      kLFT5: "\e[1;5D"
+      kLFT6: "\e[1;6D"
+      kLFT7: "\e[1;7D"
+      kNXT: "\e[6;2~"
+      kNXT3: "\e[6;3~"
+      kNXT4: "\e[6;4~"
+      kNXT5: "\e[6;5~"
+      kNXT6: "\e[6;6~"
+      kNXT7: "\e[6;7~"
+      kPRV: "\e[5;2~"
+      kPRV3: "\e[5;3~"
+      kPRV4: "\e[5;4~"
+      kPRV5: "\e[5;5~"
+      kPRV6: "\e[5;6~"
+      kPRV7: "\e[5;7~"
+      kRIT: "\e[1;2C"
+      kRIT3: "\e[1;3C"
+      kRIT4: "\e[1;4C"
+      kRIT5: "\e[1;5C"
+      kRIT6: "\e[1;6C"
+      kRIT7: "\e[1;7C"
+      kUP: "\e[1;2A"
+      kUP3: "\e[1;3A"
+      kUP4: "\e[1;4A"
+      kUP5: "\e[1;5A"
+      kUP6: "\e[1;6A"
+      kUP7: "\e[1;7A"
+      kb2: "\eOE"
+      kbs: "\x7F"
+      kcbt: "\e[Z"
+      kcub1: "\eOD"
+      kcud1: "\eOB"
+      kcuf1: "\eOC"
+      kcuu1: "\eOA"
+      kdch1: "\e[3~"
+      kend: "\eOF"
+      kent: "\eOM"
+      kf1: "\eOP"
+      kf10: "\e[21~"
+      kf11: "\e[23~"
+      kf12: "\e[24~"
+      kf2: "\eOQ"
+      kf3: "\eOR"
+      kf4: "\eOS"
+      kf5: "\e[15~"
+      kf6: "\e[17~"
+      kf7: "\e[18~"
+      kf8: "\e[19~"
+      kf9: "\e[20~"
+      khome: "\eOH"
+      kich1: "\e[2~"
+      kind: "\e[1;2B"
+      km: ''
+      kmous: "\e[<"
+      knp: "\e[6~"
+      kpp: "\e[5~"
+      kri: "\e[1;2A"
+      kxIN: "\e[I"
+      kxOUT: "\e[O"
+      lines: '24'
+      mir: ''
+      msgr: ''
+      npc: ''
+      oc: "\e]104\a"
+      op: "\e[39;49m"
+      pairs: '32767'
+      rc: "\e8"
+      rep: "%p1%c\e[%p2%{1}%-%db"
+      rev: "\e[7m"
+      ri: "\eM"
+      rin: "\e[%p1%dT"
+      ritm: "\e[23m"
+      rmacs: "\e(B"
+      rmam: "\e[?7l"
+      rmcup: "\e[?1049l"
+      rmir: "\e[4l"
+      rmkx: "\e[?1l\e>"
+      rmso: "\e[27m"
+      rmul: "\e[24m"
+      rs1: "\ec"
+      rs2: "\e[!p\e[?3;4l\e[4l\e>"
+      sc: "\e7"
+      setab: "\e[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m"
+      setaf: "\e[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m"
+      setrgbb: "\e[48;2;%p1%d;%p2%d;%p3%dm"
+      setrgbf: "\e[38;2;%p1%d;%p2%d;%p3%dm"
+      sgr: "%?%p9%t\e(0%e\e(B%;\e[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m"
+      sgr0: "\e(B\e[m"
+      sitm: "\e[3m"
+      smacs: "\e(0"
+      smam: "\e[?7h"
+      smcup: "\e[?1049h"
+      smir: "\e[4h"
+      smkx: "\e[?1h\e="
+      smso: "\e[7m"
+      smul: "\e[4m"
+      tbc: "\e[3g"
+      tsl: "\e]2;"
+      u6: "\e[%i%d;%dR"
+      u7: "\e[6n"
+      u8: "\e[?%[;0123456789]c"
+      u9: "\e[c"
+      vpa: "\e[%i%p1%dd"
+      xenl: ''
+    supported: true
+  xtgettcap-bad-screenleak: false
+  xtversion-bad-screenleak: false
+  xtversion_raw: lokyr 0.1.0-20261101
+test_results:
+  emoji_vs15_results:
+    9.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 158
+      pct_success: 100.0
+  emoji_vs16_results:
+    9.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 426
+      pct_success: 100.0
+  emoji_zwj_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 1445
+      pct_success: 100.0
+  language_results:
+    Aja:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Amarakaeri:
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Arabic, Standard:
+      failed: []
+      n_errors: 0
+      n_total: 8
+      pct_success: 100.0
+    Assyrian Neo-Aramaic:
+      failed: []
+      n_errors: 0
+      n_total: 8
+      pct_success: 100.0
+    Baatonum:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Bamun:
+      failed: []
+      n_errors: 0
+      n_total: 17
+      pct_success: 100.0
+    Belanda Viri:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Bengali:
+      failed: []
+      n_errors: 0
+      n_total: 335
+      pct_success: 100.0
+    Bhojpuri:
+      failed: []
+      n_errors: 0
+      n_total: 252
+      pct_success: 100.0
+    Bora:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Burmese:
+      failed: []
+      n_errors: 0
+      n_total: 223
+      pct_success: 100.0
+    Catalan (2):
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Chakma:
+      failed: []
+      n_errors: 0
+      n_total: 225
+      pct_success: 100.0
+    Chickasaw:
+      failed: []
+      n_errors: 0
+      n_total: 4
+      pct_success: 100.0
+    Chinantec, Chiltepec:
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Dagaare, Southern:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Dari:
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Dendi:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Dinka, Northeastern:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Dzongkha:
+      failed: []
+      n_errors: 0
+      n_total: 160
+      pct_success: 100.0
+    Evenki:
+      failed: []
+      n_errors: 0
+      n_total: 13
+      pct_success: 100.0
+    Farsi, Western:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Fon:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    French (Welche):
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Fur:
+      failed: []
+      n_errors: 0
+      n_total: 9
+      pct_success: 100.0
+    Ga:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Gen:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Gilyak:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Gujarati:
+      failed: []
+      n_errors: 0
+      n_total: 290
+      pct_success: 100.0
+    Gumuz:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Hindi:
+      failed: []
+      n_errors: 0
+      n_total: 164
+      pct_success: 100.0
+    Javanese (Javanese):
+      failed:
+      - grapheme_id: Javanese (Javanese)-1-08
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua98f\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-2c
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a0\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-32
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a2\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-3c
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a4\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-3f
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a5\ua9b3\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-45
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a5\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-4b
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a7\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-54
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9a9\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-65
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9ad\ua9c0
+      - grapheme_id: Javanese (Javanese)-1-76
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \ua9b1\ua9c0
+      n_errors: 10
+      n_total: 488
+      pct_success: 97.95081967213115
+    Kabyle:
+      failed: []
+      n_errors: 0
+      n_total: 8
+      pct_success: 100.0
+    Kannada:
+      failed: []
+      n_errors: 0
+      n_total: 236
+      pct_success: 100.0
+    Khmer, Central:
+      failed: []
+      n_errors: 0
+      n_total: 390
+      pct_success: 100.0
+    Khün:
+      failed: []
+      n_errors: 0
+      n_total: 421
+      pct_success: 100.0
+    Lamnso':
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Lao:
+      failed: []
+      n_errors: 0
+      n_total: 227
+      pct_success: 100.0
+    Lingala (tones):
+      failed: []
+      n_errors: 0
+      n_total: 8
+      pct_success: 100.0
+    Magahi:
+      failed: []
+      n_errors: 0
+      n_total: 22
+      pct_success: 100.0
+    Maithili:
+      failed: []
+      n_errors: 0
+      n_total: 66
+      pct_success: 100.0
+    Malayalam:
+      failed: []
+      n_errors: 0
+      n_total: 382
+      pct_success: 100.0
+    Maldivian:
+      failed: []
+      n_errors: 0
+      n_total: 209
+      pct_success: 100.0
+    Maori (2):
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Marathi:
+      failed: []
+      n_errors: 0
+      n_total: 103
+      pct_success: 100.0
+    Mazahua Central:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Mon:
+      failed: []
+      n_errors: 0
+      n_total: 208
+      pct_success: 100.0
+    Mòoré:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Nanai:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Navajo:
+      failed: []
+      n_errors: 0
+      n_total: 4
+      pct_success: 100.0
+    Nepali:
+      failed: []
+      n_errors: 0
+      n_total: 71
+      pct_success: 100.0
+    Orok:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Otomi, Mezquital:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Panjabi, Eastern:
+      failed: []
+      n_errors: 0
+      n_total: 236
+      pct_success: 100.0
+    Panjabi, Western:
+      failed: []
+      n_errors: 0
+      n_total: 3
+      pct_success: 100.0
+    Pashto, Northern:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Picard:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Pular (Adlam):
+      failed: []
+      n_errors: 0
+      n_total: 24
+      pct_success: 100.0
+    Sanskrit:
+      failed: []
+      n_errors: 0
+      n_total: 155
+      pct_success: 100.0
+    Sanskrit (Grantha):
+      failed:
+      - grapheme_id: Sanskrit (Grantha)-1-01
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011315\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-03
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011317\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-04
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001131a\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-07
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001131c\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-08
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001131e\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-09
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001131f\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-0c
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011323\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-0e
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011324\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-10
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011326\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-12
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011327\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-14
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011328\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-16
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001132a\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-17
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001132c\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-18
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001132d\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-1a
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001132e\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-1c
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U0001132f\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-1e
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011330\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-1f
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011332\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-21
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011335\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-23
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011336\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-24
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011337\U0001134d
+      - grapheme_id: Sanskrit (Grantha)-1-26
+        measured_by_terminal: 2
+        measured_by_wcwidth: 1
+        wchars: \U00011338\U0001134d
+      n_errors: 22
+      n_total: 237
+      pct_success: 90.71729957805907
+    Secoya:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Seraiki:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Shan:
+      failed: []
+      n_errors: 0
+      n_total: 106
+      pct_success: 100.0
+    Shipibo-Conibo:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Sinhala:
+      failed: []
+      n_errors: 0
+      n_total: 198
+      pct_success: 100.0
+    Siona:
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    South Azerbaijani:
+      failed: []
+      n_errors: 0
+      n_total: 6
+      pct_success: 100.0
+    Tagalog (Tagalog):
+      failed: []
+      n_errors: 0
+      n_total: 16
+      pct_success: 100.0
+    Tai Dam:
+      failed: []
+      n_errors: 0
+      n_total: 120
+      pct_success: 100.0
+    Tamang, Eastern:
+      failed: []
+      n_errors: 0
+      n_total: 11
+      pct_success: 100.0
+    Tamazight, Central Atlas:
+      failed: []
+      n_errors: 0
+      n_total: 5
+      pct_success: 100.0
+    Tamil:
+      failed: []
+      n_errors: 0
+      n_total: 132
+      pct_success: 100.0
+    Telugu:
+      failed: []
+      n_errors: 0
+      n_total: 335
+      pct_success: 100.0
+    Tem:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Thai:
+      failed: []
+      n_errors: 0
+      n_total: 206
+      pct_success: 100.0
+    Thai (2):
+      failed: []
+      n_errors: 0
+      n_total: 14
+      pct_success: 100.0
+    Tibetan, Central:
+      failed: []
+      n_errors: 0
+      n_total: 48
+      pct_success: 100.0
+    Ticuna:
+      failed: []
+      n_errors: 0
+      n_total: 13
+      pct_success: 100.0
+    Uduk:
+      failed: []
+      n_errors: 0
+      n_total: 2
+      pct_success: 100.0
+    Urdu:
+      failed: []
+      n_errors: 0
+      n_total: 23
+      pct_success: 100.0
+    Urdu (2):
+      failed: []
+      n_errors: 0
+      n_total: 1
+      pct_success: 100.0
+    Vietnamese:
+      failed: []
+      n_errors: 0
+      n_total: 42
+      pct_success: 100.0
+    Yaneshaʼ:
+      failed: []
+      n_errors: 0
+      n_total: 10
+      pct_success: 100.0
+    Yiddish, Eastern:
+      failed: []
+      n_errors: 0
+      n_total: 10
+      pct_success: 100.0
+    Yoruba:
+      failed: []
+      n_errors: 0
+      n_total: 8
+      pct_success: 100.0
+  narrow_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 5595
+      pct_success: 100.0
+  ri_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 262
+      pct_success: 100.0
+  sfz_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 5
+      pct_success: 100.0
+  sri_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 26
+      pct_success: 100.0
+  tofu_results: {}
+  unicode_wide_results:
+    18.0.0:
+      failed_codepoints: []
+      n_errors: 0
+      n_total: 506
+      pct_success: 100.0
+ucs_detect_version: 2.3.8
+unicode_version: 18.0.0
+wcwidth_version: 0.9.4
+width: 120

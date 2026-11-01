@@ -750,7 +750,9 @@ Which width tables the terminal counts characters by, to place them in their cel
 | `"current"`, `"8"` | `"current"` |
 
 - `"current"` follows the tables of the Unicode version that Lokyr knows, as current programs do: most emoji take two cells.
-- `"8"` follows those of Unicode 8, for old programs that count emoji as one cell.
+  - A cluster of a letter and a vowel sign that spaces, as का or কা, or of consonants that a virama joins, as क्ष, takes two cells, as vim and most programs count it; so do a regional indicator alone, as 🇮, and an Arabic number sign with its digit, as ؁١.
+  - The zsh of macOS counts a vowel sign that spaces as no cell: after a cluster such as का, the cursor of its line editor stands a cell short of the text.
+- `"8"` follows those of Unicode 8, for old programs that count emoji as one cell: a cluster takes the cells of its first character, as का one, and a regional indicator alone one.
 - vim counts a character that the emoji's variation selector makes wide, as ❤️ or ✔️, as one cell: as it writes the next character on the emoji's second cell, the emoji goes, and vim shows nothing in its place. With `"8"` the two count alike, but every emoji takes one cell, everywhere.
 - It applies to the text that comes after the change, in the open windows too.
 
