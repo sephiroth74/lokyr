@@ -101,8 +101,9 @@ pub fn list(
 }
 
 /// Writes `families` to `out`, a line of each family's name, with what it
-/// is in brackets, and a line of each of its styles under it, indented.
-pub fn write(families: &[Family], out: &mut dyn io::Write) -> io::Result<()> {
+/// is in brackets; with `styles`, a line of each of its styles under it,
+/// indented.
+pub fn write(families: &[Family], styles: bool, out: &mut dyn io::Write) -> io::Result<()> {
     for family in families {
         let marks: Vec<&str> = [
             (family.monospaced, "monospaced"),
@@ -117,8 +118,10 @@ pub fn write(families: &[Family], out: &mut dyn io::Write) -> io::Result<()> {
         } else {
             writeln!(out, "{}  ({})", family.name, marks.join(", "))?;
         }
-        for style in &family.styles {
-            writeln!(out, "  {style}")?;
+        if styles {
+            for style in &family.styles {
+                writeln!(out, "  {style}")?;
+            }
         }
     }
     Ok(())
@@ -364,10 +367,24 @@ mod tests {
     }
 
     #[test]
+    fn the_list_is_written_a_line_a_family() {
+        let families = list(&mut System, Some("Times"), &Filter::default());
+        let mut out = Vec::new();
+        write(&families, false, &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "Iosevka  (monospaced)\n\
+             menlo  (monospaced)\n\
+             SF Mono  (monospaced, the default)\n\
+             Times  (the config's)\n"
+        );
+    }
+
+    #[test]
     fn the_list_is_written_a_line_a_family_and_a_style() {
         let families = list(&mut System, Some("Times"), &Filter::default());
         let mut out = Vec::new();
-        write(&families, &mut out).unwrap();
+        write(&families, true, &mut out).unwrap();
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "Iosevka  (monospaced)\n\

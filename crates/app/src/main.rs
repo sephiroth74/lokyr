@@ -48,7 +48,7 @@ Usage: lokyr [--version]
        lokyr --bench output [--window <width>x<height>] -- <program> [args]
        lokyr +show-config [--default] [--docs]
        lokyr +validate-config [path]
-       lokyr +list-fonts [--monospace] [--family <name>]";
+       lokyr +list-fonts [--monospace] [--styles] [--family <name>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -85,7 +85,7 @@ fn main() -> ExitCode {
             validate_config(Some(PathBuf::from(path)))
         }
         ["+list-fonts", options @ ..] => match list_fonts_options(options) {
-            Some(filter) => list_fonts(&filter),
+            Some((filter, styles)) => list_fonts(&filter, styles),
             None => {
                 eprintln!("{USAGE}");
                 ExitCode::FAILURE
@@ -222,24 +222,27 @@ fn validate_config(path: Option<PathBuf>) -> ExitCode {
     }
 }
 
-/// The list of fonts' options, `--monospace` and `--family <name>`.
-fn list_fonts_options<'a>(options: &[&'a str]) -> Option<Filter<'a>> {
-    let mut filter = Filter::default();
+/// The list of fonts' options, `--monospace`, `--styles` and `--family
+/// <name>`: the families that it keeps, and whether it shows their styles,
+/// as it does of a family named.
+fn list_fonts_options<'a>(options: &[&'a str]) -> Option<(Filter<'a>, bool)> {
+    let (mut filter, mut styles) = (Filter::default(), false);
     let mut options = options.iter();
     while let Some(option) = options.next() {
         match *option {
             "--monospace" => filter.monospaced = true,
+            "--styles" => styles = true,
             "--family" => filter.family = Some(options.next()?),
             _ => return None,
         }
     }
-    Some(filter)
+    Some((filter, styles || filter.family.is_some()))
 }
 
-/// Prints the families of fonts that the system has, each with its styles,
-/// by the names that the config's `family` and `style` take, those that
-/// `filter` keeps; the config's family marked.
-fn list_fonts(filter: &Filter<'_>) -> ExitCode {
+/// Prints the families of fonts that the system has, by the names that the
+/// config's `family` takes, those that `filter` keeps, the config's marked;
+/// with `styles`, each with its styles, by the names that `style` takes.
+fn list_fonts(filter: &Filter<'_>, styles: bool) -> ExitCode {
     // A config that does not read leaves its family unmarked.
     let configured =
         config::path()
@@ -268,7 +271,7 @@ fn list_fonts(filter: &Filter<'_>) -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
-    match catalog::write(&families, &mut std::io::stdout().lock()) {
+    match catalog::write(&families, styles, &mut std::io::stdout().lock()) {
         // A reader that stops early, as `head` does, ends the list.
         Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => {
             eprintln!("lokyr: the list does not write, {error}");
@@ -438,14 +441,20 @@ mod tests {
     #[test]
     fn the_list_of_fonts_takes_the_monospaced_ones_and_a_family() {
         let filter = |options: &[&str]| {
-            list_fonts_options(options)
-                .map(|filter| (filter.monospaced, filter.family.map(str::to_owned)))
+            list_fonts_options(options).map(|(filter, styles)| {
+                (filter.monospaced, filter.family.map(str::to_owned), styles)
+            })
         };
-        assert_eq!(filter(&[]), Some((false, None)));
-        assert_eq!(filter(&["--monospace"]), Some((true, None)));
+        // The families' names alone, but with `--styles` or of one family.
+        assert_eq!(filter(&[]), Some((false, None, false)));
+        assert_eq!(filter(&["--monospace"]), Some((true, None, false)));
+        assert_eq!(
+            filter(&["--styles", "--monospace"]),
+            Some((true, None, true))
+        );
         assert_eq!(
             filter(&["--family", "SF Mono", "--monospace"]),
-            Some((true, Some("SF Mono".to_owned())))
+            Some((true, Some("SF Mono".to_owned()), true))
         );
         for options in [&["--family"][..], &["--mono"], &["Menlo"]] {
             assert_eq!(filter(options), None, "{options:?}");

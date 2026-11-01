@@ -26,8 +26,8 @@ Under each key's name, a small line tells the platforms where the key applies: m
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.
   - A file with an error prints nothing but the error.
-- **The fonts**: `lokyr +list-fonts` lists the font families that macOS has, each with its styles, by the names that [`family`](#family) and [`style`](#style) take, in the order of their names; it marks the monospaced families, the default one and the config's.
-  - `--monospace` lists the monospaced families alone, and `--family <name>` one family, by its name or a name of some of its faces, as `family` takes it; a name of no family installed exits with 1.
+- **The fonts**: `lokyr +list-fonts` lists the font families that macOS has, by the names that [`family`](#family) takes, in the order of their names; it marks the monospaced families, the default one and the config's.
+  - `--styles` lists each family's styles under it, by the names that [`style`](#style) takes; `--monospace` lists the monospaced families alone; and `--family <name>` one family, with its styles, by its name or a name of some of its faces, as `family` takes it, where a name of no family installed exits with 1.
   - It draws nothing, so that it runs in any terminal and in a pipe, as `lokyr +list-fonts --monospace | less`.
 - **Checking a file**: `lokyr +validate-config` checks the config file, or the one that you name, as `lokyr +validate-config ~/dotfiles/lokyr.toml`, as Lokyr takes it, without applying it: its font's styles too.
   - It exits with 0 when Lokyr takes the file, and with 1 and the error, at its line and column, when it does not. A family that is not installed, or a language or an icon that Lokyr lacks, only warns, as Lokyr takes the file with its default in their place.
