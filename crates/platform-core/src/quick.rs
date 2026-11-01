@@ -138,6 +138,22 @@ impl QuickPlace {
         self.edge == QuickEdge::Center || others.iter().any(|other| other.overlaps(&from))
     }
 
+    /// The quick window's way in and out on a screen of the frame `screen`,
+    /// whose area for windows is `area`, beside the `others` screens: the
+    /// frame where it shows, the one that it comes from and goes to, and
+    /// whether it fades rather than slides. A window that fades comes and
+    /// goes where it shows, so that it never crosses another screen.
+    pub fn way(
+        &self,
+        screen: ScreenRect,
+        area: ScreenRect,
+        others: &[ScreenRect],
+    ) -> (ScreenRect, ScreenRect, bool) {
+        let (shown, from) = self.frames(screen, area);
+        let fades = self.fades(from, others);
+        (shown, if fades { shown } else { from }, fades)
+    }
+
     /// The quick window's frames on a screen of the frame `screen`, whose
     /// area for windows, below the menu bar and beside the Dock, is `area`:
     /// the one where it shows, within the area, centred along its edge; and
@@ -322,6 +338,20 @@ mod tests {
         let place = place(QuickEdge::Right, Length::Percent(50.0), None);
         let (_, from) = place.frames(SCREEN, AREA);
         assert!(!place.fades(from, &[corner]));
+    }
+
+    #[test]
+    fn a_window_that_fades_comes_and_goes_where_it_shows() {
+        // A laptop's screen below, past the bottom edge.
+        let below = rect(1440.0, 900.0, 1512.0, 982.0);
+        let bottom = place(QuickEdge::Bottom, Length::Percent(50.0), None);
+        let (shown, from) = bottom.frames(SCREEN, AREA);
+        assert_ne!(shown, from, "it would slide over the screen below");
+        assert_eq!(bottom.way(SCREEN, AREA, &[below]), (shown, shown, true));
+        // Past an edge that no screen touches, it slides from past it.
+        let top = place(QuickEdge::Top, Length::Percent(50.0), None);
+        let (shown, from) = top.frames(SCREEN, AREA);
+        assert_eq!(top.way(SCREEN, AREA, &[below]), (shown, from, false));
     }
 
     #[test]

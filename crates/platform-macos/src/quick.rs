@@ -314,24 +314,25 @@ fn contains(rect: NSRect, point: NSPoint) -> bool {
 }
 
 /// The frames of a quick window of `place` on `screen`, where it shows and
-/// where it slides from, as AppKit places windows, and whether it fades
-/// rather than slides, as the other screens tell.
+/// where it comes from, as AppKit places windows, and whether it fades
+/// rather than slides, as the other screens tell: one that fades comes from
+/// where it shows.
 fn frames(place: &QuickPlace, screen: &NSScreen) -> (NSRect, NSRect, bool) {
     let screens = NSScreen::screens(screen.mtm());
     let top = screens
         .firstObject()
         .map_or(screen.frame(), |first| first.frame());
     let top = top.origin.y + top.size.height;
-    let (shown, from) = place.frames(
-        on_screens(screen.frame(), top),
-        on_screens(screen.visibleFrame(), top),
-    );
     let others: Vec<ScreenRect> = (0..screens.count())
         .map(|index| screens.objectAtIndex(index))
         .filter(|other| !other.isEqual(Some(screen)))
         .map(|other| on_screens(other.frame(), top))
         .collect();
-    let fades = place.fades(from, &others);
+    let (shown, from, fades) = place.way(
+        on_screens(screen.frame(), top),
+        on_screens(screen.visibleFrame(), top),
+        &others,
+    );
     (in_appkit(shown, top), in_appkit(from, top), fades)
 }
 
