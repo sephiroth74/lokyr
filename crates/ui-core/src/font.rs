@@ -979,8 +979,9 @@ impl<B: FontBackend> Font<B> {
 
     /// Asks the backend where `style` finds `character` in `presentation`.
     /// As text: in the text's faces, the non-ASCII family's and then the
-    /// text's family's, and else in the face of the system's cascade that
-    /// draws its text. As an emoji: in the cascade's face of its emoji, and
+    /// text's family's; then, of the private use areas, in the symbols'
+    /// font; and else in the face of the system's cascade that draws its
+    /// text. As an emoji: in the cascade's face of its emoji, and
     /// else in the text's faces. A character that one presentation finds
     /// nowhere takes the other, if it has both, as a clock that no face
     /// draws as text.
@@ -1015,6 +1016,7 @@ impl<B: FontBackend> Font<B> {
                 .or_else(|| in_faces(&mut glyphs.ids, backend, &faces, character))
                 .or_else(|| cascade(glyphs, backend, own, character, text)),
             Presentation::Text => in_faces(&mut glyphs.ids, backend, &faces, character)
+                .or_else(|| in_symbols(&mut glyphs.ids, backend, character))
                 .or_else(|| cascade(glyphs, backend, own, character, text))
                 .or_else(|| {
                     unicode::properties(character)
@@ -1115,6 +1117,26 @@ fn is_private(character: char) -> bool {
     )
 }
 
+/// The glyph of `character`, of the private use areas, in the symbols'
+/// font, which draws the icons that the configured font lacks, as a Nerd
+/// Font would, upright and of its own weight.
+fn in_symbols<B: FontBackend>(
+    ids: &mut FastMap<(FaceId, char), Option<GlyphId>>,
+    backend: &mut B,
+    character: char,
+) -> Option<Found> {
+    if !is_private(character) {
+        return None;
+    }
+    let face = backend.symbols()?;
+    glyph_of(ids, backend, face, character).map(|glyph| Found {
+        face,
+        synthesis: Synthesis::default(),
+        glyph,
+        emoji: false,
+    })
+}
+
 /// The first of `faces` that has `character`, with its glyph.
 fn in_faces<B: FontBackend>(
     ids: &mut FastMap<(FaceId, char), Option<GlyphId>>,
@@ -1209,6 +1231,13 @@ mod tests {
     /// The last resort, which has every character.
     const LAST_RESORT: FaceId = FaceId(11);
 
+    /// The symbols' font, of U+E200 to U+E2FF, which Mono lacks.
+    const SYMBOLS_FONT: FaceId = FaceId(12);
+
+    fn is_symbol(character: char) -> bool {
+        ('\u{E200}'..='\u{E2FF}').contains(&character)
+    }
+
     fn is_icon(character: char) -> bool {
         matches!(character, '\u{E100}'..='\u{E1FF}' | '\u{F000}'..='\u{F0FF}')
     }
@@ -1294,6 +1323,7 @@ mod tests {
             let has = match face {
                 ICONS => is_icon(character),
                 LAST_RESORT => true,
+                SYMBOLS_FONT => is_symbol(character),
                 CJK => is_cjk(character),
                 EMOJI => character != '\u{E000}',
                 SYMBOLS => !is_cjk(character) && character != '\u{231A}',
@@ -1302,6 +1332,7 @@ mod tests {
                     !matches!(character, 'A' | '\u{2714}' | '\u{231A}')
                         && !is_cjk(character)
                         && !is_icon(character)
+                        && !is_symbol(character)
                 }
             };
             u16::try_from(u32::from(character))
@@ -1331,6 +1362,10 @@ mod tests {
 
         fn last_resort(&mut self, face: FaceId) -> bool {
             face == LAST_RESORT
+        }
+
+        fn symbols(&mut self) -> Option<FaceId> {
+            Some(SYMBOLS_FONT)
         }
 
         fn substitutes(&mut self, face: FaceId) -> bool {
@@ -1574,6 +1609,25 @@ mod tests {
         assert_eq!(font.backend.fallbacks, 2);
         assert!(font.glyph(&shown("\u{F003}", &style)).is_some());
         assert_eq!(font.backend.fallbacks, 2);
+    }
+
+    #[test]
+    fn an_icon_that_the_font_lacks_takes_the_symbols_font_without_the_cascade() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 2.0).unwrap();
+        let bold = Style {
+            bold: true,
+            ..Style::DEFAULT
+        };
+        let found = font.find(1, '\u{E201}', None).unwrap();
+        assert_eq!(found.face, SYMBOLS_FONT);
+        // Upright and of its own weight, in bold text too.
+        assert_eq!(found.synthesis, Synthesis::default());
+        assert!(font.glyph(&shown("\u{E202}", &bold)).is_some());
+        assert_eq!(font.backend.fallbacks, 0);
+        // A character that it lacks, past the private use areas, asks the
+        // cascade.
+        assert_eq!(font.find(0, 'A', None), None);
+        assert_eq!(font.backend.fallbacks, 1);
     }
 
     #[test]
@@ -2255,6 +2309,18 @@ mod system {
             .map(|frame| format!("{:.2}", frame.as_secs_f64() * 1000.0))
             .collect();
         println!("{} frames, ms: {}", frames.len(), ms.join(" "));
+    }
+
+    #[test]
+    fn the_icons_of_a_nerd_font_draw_from_the_symbols_font() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        let symbols = font.backend.symbols().expect("the symbols' font loads");
+        // Font Awesome's house, a devicon, a Material Design icon, which SF
+        // Mono lacks; of the first plane, the cascade's last resort's box.
+        for icon in ['\u{F015}', '\u{E606}', '\u{F0001}'] {
+            let found = font.find(0, icon, None).expect("a face");
+            assert_eq!(found.face, symbols, "U+{:X}", u32::from(icon));
+        }
     }
 
     #[test]

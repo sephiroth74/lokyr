@@ -206,6 +206,13 @@ pub trait FontBackend {
         false
     }
 
+    /// The face of [`SYMBOLS_FONT`](crate::SYMBOLS_FONT), the icons that
+    /// the configured font may lack, which the backend loads the first time:
+    /// `None` when it cannot.
+    fn symbols(&mut self) -> Option<FaceId> {
+        None
+    }
+
     /// Whether `face` is the system's last resort, which draws a box of its
     /// block for any character that no other face has, as the cascade gives
     /// it: `false` when it cannot tell.

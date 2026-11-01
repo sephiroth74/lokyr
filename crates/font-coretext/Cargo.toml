@@ -47,6 +47,7 @@ objc2-core-text = { workspace = true, features = [
     "CTFont",
     "CTFontCollection",
     "CTFontDescriptor",
+    "CTFontManager",
     "CTFontTraits",
     "CTLine",
     "CTRun",

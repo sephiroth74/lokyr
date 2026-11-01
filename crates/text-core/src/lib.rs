@@ -29,3 +29,8 @@ pub use faces::{
     Face, FaceError, Faces, Resolved, choose as choose_faces, resolve as resolve_faces,
 };
 pub use hash::{FastHasher, FastMap};
+
+/// Symbols Nerd Font Mono, of Nerd Fonts v3.5.1, which draws the icons of
+/// the private use areas that prompts and tools show, where the configured
+/// font lacks them: the backends take it as a face of their own.
+pub const SYMBOLS_FONT: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");

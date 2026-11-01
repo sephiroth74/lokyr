@@ -13,18 +13,19 @@ use std::time::Instant;
 
 use lokyr_text_core::{
     Bitmap, FaceId, FaceInfo, FaceMetrics, Features, FontBackend, GlyphId, Raster, Rendering,
-    ShapedGlyph, Synthesis,
+    SYMBOLS_FONT, ShapedGlyph, Synthesis,
 };
 use objc2_app_kit::{NSFont, NSFontWeightRegular};
 use objc2_core_foundation::{
-    CFArray, CFAttributedString, CFDictionary, CFNumber, CFRange, CFRetained, CFSet, CFString,
-    CFType, CGAffineTransform, CGPoint, Type, kCFTypeSetCallBacks,
+    CFArray, CFAttributedString, CFData, CFDictionary, CFNumber, CFRange, CFRetained, CFSet,
+    CFString, CFType, CGAffineTransform, CGPoint, Type, kCFAllocatorNull, kCFTypeSetCallBacks,
 };
 use objc2_core_text::{
-    CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor, CTFontOrientation,
-    CTFontSymbolicTraits, CTFontTableOptions, CTLine, CTRun, kCTFontAttributeName,
-    kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
-    kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
+    CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor,
+    CTFontManagerCreateFontDescriptorFromData, CTFontOrientation, CTFontSymbolicTraits,
+    CTFontTableOptions, CTLine, CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute,
+    kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue,
+    kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -74,6 +75,8 @@ pub struct CoreText {
     substitutes: HashMap<FaceId, bool>,
     /// Whether glyphs are drawn with macOS's font smoothing.
     smoothing: bool,
+    /// The face of the symbols' font, once loaded, if it loads.
+    symbols: Option<Option<FaceId>>,
 }
 
 impl Default for CoreText {
@@ -98,6 +101,7 @@ impl CoreText {
             unjoined: HashMap::new(),
             substitutes: HashMap::new(),
             smoothing,
+            symbols: None,
         }
     }
 
@@ -294,6 +298,21 @@ impl FontBackend for CoreText {
             // the system's own.
             .filter(|name| !name.is_empty() && !name.starts_with('.'))
             .collect()
+    }
+
+    fn symbols(&mut self) -> Option<FaceId> {
+        if let Some(known) = self.symbols {
+            return known;
+        }
+        let loaded = symbols_descriptor().map(|descriptor| {
+            // SAFETY: a descriptor that CoreText made of the font's data, at
+            // a size, without a matrix.
+            let font =
+                unsafe { CTFont::with_font_descriptor(&descriptor, PROBE_SIZE, std::ptr::null()) };
+            self.register(&descriptor, &font)
+        });
+        self.symbols = Some(loaded);
+        loaded
     }
 
     fn last_resort(&mut self, face: FaceId) -> bool {
@@ -532,6 +551,19 @@ fn preferred_face(name: &str) -> Option<String> {
     let (found, face) = unsafe { (font.family_name(), font.post_script_name()) };
     // CoreText gives a font of another family for one that it lacks.
     (found.to_string() == name).then(|| face.to_string())
+}
+
+/// The descriptor of the symbols' font, of the bytes that the binary holds,
+/// which CoreText reads where they are.
+fn symbols_descriptor() -> Option<CFRetained<CTFontDescriptor>> {
+    let length = isize::try_from(SYMBOLS_FONT.len()).ok()?;
+    // SAFETY: bytes that live as long as the process, which no allocator
+    // frees, as `kCFAllocatorNull` says.
+    let data = unsafe {
+        CFData::with_bytes_no_copy(None, SYMBOLS_FONT.as_ptr(), length, kCFAllocatorNull)
+    }?;
+    // SAFETY: the data of a font file.
+    unsafe { CTFontManagerCreateFontDescriptorFromData(&data) }
 }
 
 /// The name of the family that `descriptor` gives as its face's.

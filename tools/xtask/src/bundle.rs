@@ -91,6 +91,10 @@ const ENTITLEMENTS: [&str; 7] = [
 /// root.
 const LOCALES: &str = "crates/app/resources/locales";
 
+/// The symbols' font that the binary holds, with its license and its
+/// icons' licenses, which the bundle carries.
+const SYMBOLS_FONT: &str = "crates/text-core/fonts";
+
 /// The language of the source catalogs, which `Info.plist` takes.
 const SOURCE: &str = "en";
 
@@ -135,6 +139,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &resources.join("terminfo"),
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
+    copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
     let catalogs = usage_catalogs(&root.join(LOCALES))?;
     for (language, usages) in &catalogs {
         let directory = resources.join(format!("{language}.lproj"));
@@ -321,6 +326,20 @@ fn escaped(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Copies the symbols' font's license and its icons' licenses, of `fonts`,
+/// into `resources`' `licenses/symbols-nerd-font`, as the binary holds the
+/// font.
+fn copy_font_licenses(fonts: &Path, resources: &Path) -> Result<()> {
+    let licenses = resources.join("licenses/symbols-nerd-font");
+    fs::create_dir_all(&licenses).with_context(|| format!("making {}", licenses.display()))?;
+    for name in ["LICENSE", "README.md"] {
+        let path = fonts.join(name);
+        fs::copy(&path, licenses.join(name))
+            .with_context(|| format!("copying {}", path.display()))?;
+    }
+    Ok(())
+}
+
 /// Copies the icons' variants from `icons` into `resources`: each one's
 /// `.icns` into `icons`, and the default's as the bundle's own,
 /// `AppIcon.icns`, which `CFBundleIconFile` names.
@@ -475,6 +494,19 @@ mod tests {
                 .to_string()
                 .contains("no variable")
         );
+    }
+
+    #[test]
+    fn the_symbols_font_s_licenses_go_into_the_bundle() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let resources = std::env::temp_dir().join(format!("lokyr-licenses-{}", std::process::id()));
+        copy_font_licenses(&root.join(SYMBOLS_FONT), &resources).unwrap();
+        let licenses = resources.join("licenses/symbols-nerd-font");
+        let license = fs::read_to_string(licenses.join("LICENSE")).unwrap();
+        assert!(license.starts_with("The MIT License"), "{license}");
+        let notices = fs::read_to_string(licenses.join("README.md")).unwrap();
+        assert!(notices.contains("| Font Awesome |"), "{notices}");
+        fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
