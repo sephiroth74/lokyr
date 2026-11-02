@@ -786,6 +786,10 @@ fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
         ended(app, "https://lokyr.dev/z/end")
     });
     app.pane(window).clear_scrollback();
+    // The rows again, which the resize put off, done meanwhile, can have
+    // made one fewer, and the clicked row's place among them.
+    let rows = app.pane(window).snapshot().rows();
+    let y = y.min(rows - 1);
     let around: Vec<String> = (y.saturating_sub(2)..rows)
         .map(|r| row(&app, window, r))
         .collect();
