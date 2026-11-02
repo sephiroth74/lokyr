@@ -378,6 +378,22 @@ fn a_file_that_becomes_a_program_while_its_question_waits_shows_in_the_finder() 
 }
 
 #[test]
+fn a_link_to_a_file_url_without_a_path_opens_nothing() {
+    let program = shell(concat!(
+        "stty raw -echo; ",
+        "printf '\\033]8;;file://localhost\\033\\\\here\\033]8;;\\033\\\\\\r\\n'; ",
+        "echo ready; cat -v"
+    ));
+    let (mut fake, mut app, window, _) = pasting("no-path", "[links]\nfiles = \"open\"\n", program);
+    cmd_click(&mut fake, &mut app, window, 1);
+    assert!(fake.opened().is_empty() && fake.revealed().is_empty());
+    assert!(fake.alerts().is_empty());
+    // The app goes on: the window takes its keys.
+    fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "x"));
+}
+
+#[test]
 fn a_window_that_closes_drops_its_link_s_question() {
     let (mut fake, mut app, window, _) = pasting("link-close", "", links());
     cmd_click(&mut fake, &mut app, window, 2);

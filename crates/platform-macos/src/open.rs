@@ -68,12 +68,18 @@ pub(crate) fn resolve(target: &str) -> Result<Target, Error> {
         {
             return Err(failed("it is on another machine"));
         }
-        let path = url.path().ok_or_else(|| failed("it has no path"))?;
-        PathBuf::from(path.to_string())
+        // A URL of this machine without a path, as `file://localhost`, has
+        // an empty one.
+        let path = url
+            .path()
+            .map(|path| path.to_string())
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| failed("it has no path"))?;
+        PathBuf::from(path)
     };
     let path = resolved(&path).map_err(|why| failed(&why))?;
     let metadata = fs::metadata(&path).map_err(|error| failed(&error.to_string()))?;
-    let file = file_url(&path);
+    let file = file_url(&path).ok_or_else(|| failed("it has no path"))?;
     let opener = workspace
         .URLForApplicationToOpenURL(&file)
         .and_then(|application| NSBundle::bundleWithURL(&application));
@@ -99,10 +105,11 @@ fn resolved(path: &Path) -> Result<PathBuf, String> {
     for _ in 0..ALIASES {
         let options = NSURLBookmarkResolutionOptions::WithoutUI
             | NSURLBookmarkResolutionOptions::WithoutMounting;
-        let target = NSURL::URLByResolvingAliasFileAtURL_options_error(&file_url(&path), options)
-            .map_err(|error| {
-            format!("its alias leads nowhere: {}", error.localizedDescription())
-        })?;
+        let file = file_url(&path).ok_or("its path is not absolute")?;
+        let target =
+            NSURL::URLByResolvingAliasFileAtURL_options_error(&file, options).map_err(|error| {
+                format!("its alias leads nowhere: {}", error.localizedDescription())
+            })?;
         let target = target
             .path()
             .map(|target| PathBuf::from(target.to_string()))
@@ -115,9 +122,11 @@ fn resolved(path: &Path) -> Result<PathBuf, String> {
     Err("its aliases lead to aliases".to_owned())
 }
 
-/// The `file` URL of `path`.
-fn file_url(path: &Path) -> Retained<NSURL> {
-    NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
+/// The `file` URL of `path`, an absolute one; none of another, as
+/// Foundation gives none of an empty path, which would panic.
+fn file_url(path: &Path) -> Option<Retained<NSURL>> {
+    path.is_absolute()
+        .then(|| NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
 }
 
 /// Whether the application of `bundle` runs the documents that it opens:
@@ -149,7 +158,8 @@ fn runs_documents(bundle: &NSBundle) -> bool {
 /// The URL that opens `target`: its own, or its path's.
 fn url_of(target: &Target) -> Result<Retained<NSURL>, Error> {
     if target.kind != TargetKind::Url {
-        return Ok(file_url(Path::new(&target.location)));
+        return file_url(Path::new(&target.location))
+            .ok_or_else(|| Error::Open(target.location.clone(), "it has no path".to_owned()));
     }
     NSURL::URLWithString(&NSString::from_str(&target.location))
         .ok_or_else(|| Error::Open(target.location.clone(), "it is not a URL".to_owned()))
@@ -186,7 +196,8 @@ pub(crate) fn reveal(target: &Target) -> Result<(), Error> {
             "it is no file".to_owned(),
         ));
     }
-    let file = file_url(Path::new(&target.location));
+    let file = file_url(Path::new(&target.location))
+        .ok_or_else(|| Error::Open(target.location.clone(), "it has no path".to_owned()))?;
     NSWorkspace::sharedWorkspace()
         .activateFileViewerSelectingURLs(&NSArray::from_retained_slice(&[file]));
     Ok(())
@@ -321,6 +332,7 @@ mod tests {
     /// Makes `alias` a Finder's alias of `original`.
     fn make_alias(original: &Path, alias: &Path) {
         let bookmark = file_url(original)
+            .unwrap()
             .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
                 objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile,
                 None,
@@ -329,7 +341,7 @@ mod tests {
             .unwrap();
         NSURL::writeBookmarkData_toURL_options_error(
             &bookmark,
-            &file_url(alias),
+            &file_url(alias).unwrap(),
             objc2_foundation::NSURLBookmarkCreationOptions::SuitableForBookmarkFile.0,
         )
         .unwrap();
@@ -456,6 +468,27 @@ mod tests {
         // A program's target does not open.
         assert!(open(&resolve(program.to_str().unwrap()).unwrap()).is_err());
         fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_file_url_without_a_path_resolves_to_nothing_and_does_not_panic() {
+        let host = host_name();
+        for target in [
+            "file://localhost".to_owned(),
+            "file://localhost?x".to_owned(),
+            "file://localhost#x".to_owned(),
+            format!("file://{host}"),
+            "file:".to_owned(),
+        ] {
+            assert!(resolve(&target).is_err(), "{target}");
+        }
+        // A target of no path, whoever made it, opens nothing.
+        let empty = |kind| Target {
+            kind,
+            location: String::new(),
+        };
+        assert!(open(&empty(TargetKind::File)).is_err());
+        assert!(reveal(&empty(TargetKind::Directory)).is_err());
     }
 
     #[test]

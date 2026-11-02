@@ -65,6 +65,13 @@ fn files(directory: &Path) -> std::io::Result<Files> {
             files.directory.join("nowhere"),
         )?;
     }
+    // What macOS runs by its extension or its bundle, of no mode.
+    #[cfg(target_os = "macos")]
+    {
+        fs::create_dir_all(files.directory.join("Tool.app/Contents/MacOS"))?;
+        fs::write(files.directory.join("run.command"), "echo ran\n")?;
+        fs::write(files.directory.join("site.webloc"), "")?;
+    }
     Ok(files)
 }
 
@@ -129,15 +136,31 @@ fn targets(platform: &mut dyn Platform, directory: &Path) -> std::io::Result<Vec
         let link = directory.join("program-link.txt");
         expect(text(&link), TargetKind::Program, Some(&files.program));
         expect(
+            format!("file://{}", text(&files.program)),
+            TargetKind::Program,
+            Some(&files.program),
+        );
+        expect(
             text(&directory.join("notes-link")),
             TargetKind::File,
             Some(&files.notes),
         );
     }
-    // What leads nowhere, is elsewhere, or is no URL, fails.
+    // An application's bundle, and files that the system runs by their
+    // extensions.
+    #[cfg(target_os = "macos")]
+    for name in ["Tool.app", "run.command", "site.webloc"] {
+        let path = directory.join(name);
+        expect(text(&path), TargetKind::Program, Some(&path));
+    }
+    // What leads nowhere, is elsewhere, has no path, or is no URL, fails.
     let mut refused = vec![
         text(&directory.join("none")),
         format!("file://elsewhere.example{}", text(&files.notes)),
+        "file://localhost".to_owned(),
+        "file://localhost?x".to_owned(),
+        "file://localhost#x".to_owned(),
+        "file:".to_owned(),
         "not a url".to_owned(),
         "relative/path".to_owned(),
     ];
@@ -157,6 +180,15 @@ fn targets(platform: &mut dyn Platform, directory: &Path) -> std::io::Result<Vec
         };
         if platform.open(&program).is_ok() {
             failed.push("a program opens".to_owned());
+        }
+    }
+    for kind in [TargetKind::File, TargetKind::Directory] {
+        let empty = Target {
+            kind,
+            location: String::new(),
+        };
+        if platform.open(&empty).is_ok() || platform.reveal(&empty).is_ok() {
+            failed.push(format!("a {kind:?} of no path opens or shows"));
         }
     }
     let url = Target {

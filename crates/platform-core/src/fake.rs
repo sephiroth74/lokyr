@@ -940,8 +940,15 @@ impl Platform for Fake {
         })
     }
 
-    /// Opens nothing, and records `target`'s location; a program fails.
+    /// Opens nothing, and records `target`'s location; a program, and a
+    /// file or a directory of no absolute path, fail.
     fn open(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind != TargetKind::Url && !Path::new(&target.location).is_absolute() {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it has no path".to_owned(),
+            ));
+        }
         if target.kind == TargetKind::Program {
             return Err(Error::Open(
                 target.location.clone(),
@@ -952,8 +959,15 @@ impl Platform for Fake {
         Ok(())
     }
 
-    /// Shows nothing, and records `target`'s location; a URL fails.
+    /// Shows nothing, and records `target`'s location; a URL, and a target
+    /// of no absolute path, fail.
     fn reveal(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind != TargetKind::Url && !Path::new(&target.location).is_absolute() {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it has no path".to_owned(),
+            ));
+        }
         if target.kind == TargetKind::Url {
             return Err(Error::Open(
                 target.location.clone(),
