@@ -200,7 +200,7 @@ fn version_of(name: &str) -> Option<&str> {
 
 /// The release of `version`, without its date or its candidate:
 /// `0.3.0` of `0.3.0-20261102` and of `0.3.0-rc.1`.
-fn release_of(version: &str) -> &str {
+pub(crate) fn release_of(version: &str) -> &str {
     version
         .split_once('-')
         .map_or(version, |(release, _)| release)

@@ -8,6 +8,8 @@ mod dmg;
 mod feed;
 mod notarize;
 mod private;
+mod release;
+mod sbom;
 mod sparkle;
 mod terminfo;
 mod ucd;
@@ -28,6 +30,7 @@ fn main() -> ExitCode {
         Some("dmg") => dmg::run(args),
         Some("feed") => feed::run(args),
         Some("notarize") => notarize::run(args),
+        Some("release") => release::run(args),
         Some("terminfo") => terminfo::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
@@ -55,6 +58,7 @@ fn print_help() {
          feed add <dmg>              add a DMG and its notes to the feed of tests in private/feed, its appcast signed\n  \
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
+         release <version>           a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );

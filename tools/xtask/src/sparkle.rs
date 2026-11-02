@@ -13,7 +13,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail, ensure};
 
 /// The release of Sparkle that the bundle holds.
-const VERSION: &str = "2.10.1";
+pub(crate) const VERSION: &str = "2.10.1";
 
 /// The SHA-256 digest of the release's archive.
 const DIGEST: &str = "1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27";

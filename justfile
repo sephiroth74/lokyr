@@ -106,6 +106,10 @@ notarize: bundle
 dmg: bundle
     cargo xtask dmg
 
+# Release a candidate, X.Y.Z-rc.N, or a release, X.Y.Z, of the commit checked out, which GitHub has: the bundle and its DMG, notarized, its dSYM and its SBOM, to a draft of its GitHub release, which you publish, and to the feed of tests. It sends the bundle and the DMG to Apple's notary service.
+release version:
+    cargo xtask release {{version}}
+
 # Have Lokyr on this Mac read the feed of tests in private/feed, which `cargo xtask feed add <dmg>` writes, and serve it on 127.0.0.1:8123 until Control-C.
 feed-serve:
     cargo xtask feed serve

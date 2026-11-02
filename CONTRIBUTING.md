@@ -37,6 +37,8 @@ The bundle holds Sparkle's updater, of the release that `tools/xtask/src/sparkle
 
 The updates' feed of tests, until the repository is public, is on the maintainer's Mac, in the untracked `private/feed`: `cargo xtask feed add target/Lokyr-<version>.dmg` puts a DMG there with its notes, `docs/releases/<X.Y.Z>.md` or the file that `--notes` names, and has Sparkle's `generate_appcast` write the appcast, each DMG and the appcast signed with the EdDSA key, the keychain's or the file that `LOKYR_SPARKLE_KEY_FILE` names; `--channel <name>` puts the version in a channel, as a beta's. `just feed-serve` has Lokyr on that Mac read the feed, through the updater's `SUFeedURL` in its defaults, and serves it on `127.0.0.1:8123` until Control-C; `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the builds their own feed back.
 
+`just release <version>` releases a candidate, `X.Y.Z-rc.N`, or a release, `X.Y.Z`, of the workspace's version, from the commit checked out, without changes, once GitHub has it: the bundle built as that version, its build's number above the feed's latest, the binary's dSYM, which the release profile makes beside it, and the bill of materials, CycloneDX's JSON of the crates that the binary holds, Sparkle and the symbols' font, kept in `target/releases/<version>`; the DMG, the bundle and the image notarized; a draft of the GitHub release, `v<version>`, a candidate's a pre-release, with the DMG, the dSYM and the bill, its notes `docs/releases/<X.Y.Z>.md`; and the DMG in the feed of tests. The maintainer publishes the draft, which makes its tag.
+
 ## The gate: `just ci`
 
 `just ci` runs the checks of CI that a Mac can make, and a pull request needs it green:

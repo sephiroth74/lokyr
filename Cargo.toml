@@ -8,7 +8,7 @@ members = ["crates/*", "sleip/*", "plugins/*", "tools/*"]
 exclude = ["fuzz", "spikes"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -129,6 +129,10 @@ codegen-units = 1
 # only works when panics unwind.
 panic = "unwind"
 debug = "line-tables-only"
+# The debug info in a dSYM beside the binary, which rustc's dsymutil makes
+# as it links, of the code that fat LTO made, so that a release's crash
+# report symbolicates.
+split-debuginfo = "packed"
 
 # Release build with full debug info, for Instruments and other profilers.
 [profile.profiling]

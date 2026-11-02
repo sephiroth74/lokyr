@@ -26,7 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail, ensure};
 
 #[path = "../../../crates/app/build/version.rs"]
-mod version;
+pub(crate) mod version;
 
 /// The bundle's identifier, which follows the terminal's name.
 pub const IDENTIFIER: &str = "io.github.sephiroth74.lokyr";

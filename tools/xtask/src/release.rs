@@ -1,0 +1,306 @@
+//! `cargo xtask release <version>`: a candidate, `X.Y.Z-rc.N`, or a
+//! release, `X.Y.Z`, of the crate's numbers, from the commit checked out,
+//! which GitHub has, to a draft of its GitHub release, which the
+//! maintainer publishes; on the maintainer's Mac, which signs and has
+//! Apple notarize:
+//!
+//! 1. the bundle, built as that version, through `LOKYR_RELEASE`;
+//! 2. its build's number above the feed's latest, as Sparkle tells a newer
+//!    version by it, and a release built of its last candidate's commit
+//!    would have the candidate's;
+//! 3. the binary's dSYM, of the binary's UUID, and the bill of materials,
+//!    kept in `target/releases/<version>`;
+//! 4. the DMG, the bundle and the image notarized and stapled;
+//! 5. the draft, `v<version>`, of the commit, a candidate's a pre-release,
+//!    with the DMG, the dSYM and the bill, its notes
+//!    `docs/releases/<X.Y.Z>.md`;
+//! 6. the DMG in the feed of tests, as long as the repository is private.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode};
+
+use anyhow::{Context, Result, bail, ensure};
+
+use crate::{bundle, feed, sbom, sparkle};
+
+/// The repository of the releases.
+const REPOSITORY: &str = "sephiroth74/lokyr";
+
+/// The feed's appcast, relative to the workspace root.
+const APPCAST: &str = "private/feed/appcast.xml";
+
+pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
+    let version = args
+        .next()
+        .context("release takes the version: a candidate's, X.Y.Z-rc.N, or a release's, X.Y.Z")?;
+    if let Some(arg) = args.next() {
+        bail!("release takes the version alone, not `{arg}`");
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .context("the workspace's root")?;
+    // The version is of the crate's numbers, as the build takes it.
+    bundle::version::version(env!("CARGO_PKG_VERSION"), Some(&version), 0)
+        .map_err(anyhow::Error::msg)?;
+    let notes = root
+        .join("docs/releases")
+        .join(format!("{}.md", feed::release_of(&version)));
+    ensure!(
+        notes.is_file(),
+        "{} is not there: write the release's notes first",
+        notes.display()
+    );
+    let changed = output(
+        Command::new("git").args(["status", "--porcelain"]),
+        "reading the checkout's state",
+    )?;
+    ensure!(
+        changed.trim().is_empty(),
+        "the checkout has changes: a release is of a commit, as it is"
+    );
+    let commit = output(
+        Command::new("git").args(["rev-parse", "HEAD"]),
+        "reading the commit",
+    )?
+    .trim()
+    .to_owned();
+    ensure!(
+        Command::new("gh")
+            .args(["api", "--silent"])
+            .arg(format!("repos/{REPOSITORY}/commits/{commit}"))
+            .status()
+            .is_ok_and(|status| status.success()),
+        "GitHub does not have the commit {commit}: push it first"
+    );
+    let tag = format!("v{version}");
+    let released = Command::new("gh")
+        .args(["release", "view", &tag, "--repo", REPOSITORY])
+        .output()
+        .context("asking GitHub for the release")?;
+    ensure!(
+        !released.status.success(),
+        "{tag} has a release on GitHub already"
+    );
+
+    status(
+        Command::new(env!("CARGO"))
+            .args(["xtask", "bundle"])
+            .env("LOKYR_RELEASE", &version)
+            .current_dir(&root),
+        "building the bundle",
+    )?;
+    let app = root.join("target").join(format!("{}.app", bundle::NAME));
+    let info =
+        fs::read_to_string(app.join("Contents/Info.plist")).context("reading the Info.plist")?;
+    let number: u64 = plist_string(&info, "CFBundleVersion")
+        .and_then(|number| number.parse().ok())
+        .context("the bundle's CFBundleVersion")?;
+    let appcast = root.join(APPCAST);
+    if let Ok(text) = fs::read_to_string(&appcast)
+        && let Some(latest) = latest_build(&text)
+    {
+        ensure!(
+            number > latest,
+            "the build's number, {number}, is not above the feed's latest, {latest}: build the release of a commit of its own, after its last candidate's"
+        );
+    }
+
+    let out = root.join("target/releases").join(&version);
+    if out.exists() {
+        fs::remove_dir_all(&out).with_context(|| format!("removing {}", out.display()))?;
+    }
+    fs::create_dir_all(&out).with_context(|| format!("making {}", out.display()))?;
+    let dsym = root
+        .join("target/release")
+        .join(format!("{}.dSYM", bundle::EXECUTABLE));
+    let binary = app.join("Contents/MacOS").join(bundle::EXECUTABLE);
+    let (dsym_uuid, binary_uuid) = (uuid(&dsym)?, uuid(&binary)?);
+    ensure!(
+        dsym_uuid == binary_uuid,
+        "{} is of {dsym_uuid}, not of the bundle's binary, {binary_uuid}",
+        dsym.display()
+    );
+    let symbols = out.join(format!("{}-{version}.dSYM.zip", bundle::NAME));
+    status(
+        Command::new("ditto")
+            .args(["-c", "-k", "--keepParent"])
+            .arg(&dsym)
+            .arg(&symbols),
+        "zipping the dSYM",
+    )?;
+    let bill = out.join(format!("{}-{version}.cdx.json", bundle::NAME));
+    let crates = sbom::crates(&root)?;
+    fs::write(
+        &bill,
+        serde_json::to_string_pretty(&sbom::bill(&version, &crates, sparkle::VERSION))?,
+    )
+    .context("writing the bill of materials")?;
+
+    status(
+        Command::new(env!("CARGO"))
+            .args(["xtask", "dmg"])
+            .current_dir(&root),
+        "building the DMG",
+    )?;
+    let dmg = root
+        .join("target")
+        .join(format!("{}-{version}.dmg", bundle::NAME));
+    ensure!(dmg.is_file(), "{} is not there", dmg.display());
+
+    status(
+        Command::new("gh").args(draft_arguments(
+            &version,
+            &commit,
+            &notes,
+            &[dmg.clone(), symbols, bill],
+        )),
+        "making the draft of the release",
+    )?;
+    status(
+        Command::new(env!("CARGO"))
+            .args(["xtask", "feed", "add"])
+            .arg(&dmg)
+            .current_dir(&root),
+        "adding the DMG to the feed of tests",
+    )?;
+    println!(
+        "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The arguments of `gh` that make the draft of `version`'s release, of
+/// `commit`, its notes of the file `notes`, with `assets`: a candidate's is
+/// a pre-release.
+fn draft_arguments(version: &str, commit: &str, notes: &Path, assets: &[PathBuf]) -> Vec<String> {
+    let mut arguments = vec![
+        "release".to_owned(),
+        "create".to_owned(),
+        format!("v{version}"),
+        "--repo".to_owned(),
+        REPOSITORY.to_owned(),
+        "--draft".to_owned(),
+        "--target".to_owned(),
+        commit.to_owned(),
+        "--title".to_owned(),
+        format!("{} {version}", bundle::NAME),
+        "--notes-file".to_owned(),
+        notes.display().to_string(),
+    ];
+    if version.contains("-rc.") {
+        arguments.push("--prerelease".to_owned());
+    }
+    arguments.extend(assets.iter().map(|asset| asset.display().to_string()));
+    arguments
+}
+
+/// The string of `key` in the plist's `text`, as the bundle writes it.
+fn plist_string<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let after = text.split_once(&format!("<key>{key}</key>"))?.1;
+    let value = after.trim_start().strip_prefix("<string>")?;
+    value.split_once("</string>").map(|(value, _)| value)
+}
+
+/// The highest build's number of the appcast's `text`, its items'
+/// `sparkle:version`.
+fn latest_build(text: &str) -> Option<u64> {
+    text.split("<sparkle:version>")
+        .skip(1)
+        .filter_map(|rest| rest.split_once("</sparkle:version>")?.0.trim().parse().ok())
+        .max()
+}
+
+/// The UUID of the arm64 code of the binary or the dSYM at `path`, as
+/// `dwarfdump --uuid` tells it.
+fn uuid(path: &Path) -> Result<String> {
+    let told = output(
+        Command::new("dwarfdump").arg("--uuid").arg(path),
+        &format!("reading the UUID of {}", path.display()),
+    )?;
+    arm64_uuid(&told).with_context(|| format!("dwarfdump told no arm64 UUID of {}", path.display()))
+}
+
+/// The UUID of the arm64 code of `dwarfdump --uuid`'s `told`.
+fn arm64_uuid(told: &str) -> Option<String> {
+    told.lines().find_map(|line| {
+        let rest = line.strip_prefix("UUID: ")?;
+        let (uuid, rest) = rest.split_once(' ')?;
+        rest.starts_with("(arm64)").then(|| uuid.to_owned())
+    })
+}
+
+/// Runs `command`, which `what` describes, and fails if it fails.
+fn status(command: &mut Command, what: &str) -> Result<()> {
+    let status = command.status().with_context(|| what.to_owned())?;
+    if !status.success() {
+        bail!("{what} failed: {status}");
+    }
+    Ok(())
+}
+
+/// Runs `command`, which `what` describes, and gives its output; fails if
+/// it fails.
+fn output(command: &mut Command, what: &str) -> Result<String> {
+    let output = command.output().with_context(|| what.to_owned())?;
+    if !output.status.success() {
+        bail!(
+            "{what} failed: {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_feed_s_latest_build_is_its_highest_number() {
+        let appcast = "<item><sparkle:version>202611021148</sparkle:version></item>\
+            <item><sparkle:version>202611030900</sparkle:version></item>\
+            <item><sparkle:version>202611011000</sparkle:version></item>";
+        assert_eq!(latest_build(appcast), Some(202_611_030_900));
+        assert_eq!(latest_build("<rss></rss>"), None);
+    }
+
+    #[test]
+    fn the_plist_gives_its_strings() {
+        let plist = "<dict>\n\t<key>CFBundleShortVersionString</key>\n\t<string>0.3.0</string>\n\
+            \t<key>CFBundleVersion</key>\n\t<string>202611021148</string>\n</dict>";
+        assert_eq!(plist_string(plist, "CFBundleVersion"), Some("202611021148"));
+        assert_eq!(
+            plist_string(plist, "CFBundleShortVersionString"),
+            Some("0.3.0")
+        );
+        assert_eq!(plist_string(plist, "Missing"), None);
+    }
+
+    #[test]
+    fn dwarfdump_s_uuid_of_arm64_is_read() {
+        let told = "UUID: 0D7C1F2A-0000-1111-2222-333344445555 (arm64) target/release/lokyr.dSYM/Contents/Resources/DWARF/lokyr\n";
+        assert_eq!(
+            arm64_uuid(told).as_deref(),
+            Some("0D7C1F2A-0000-1111-2222-333344445555")
+        );
+        assert_eq!(arm64_uuid("UUID: AAAA (x86_64) lokyr\n"), None);
+    }
+
+    #[test]
+    fn a_candidate_s_draft_is_a_pre_release_and_a_release_s_is_not() {
+        let assets = [PathBuf::from("target/Lokyr-0.3.0-rc.1.dmg")];
+        let notes = Path::new("docs/releases/0.3.0.md");
+        let candidate = draft_arguments("0.3.0-rc.1", "abc123", notes, &assets);
+        assert_eq!(candidate[..3], ["release", "create", "v0.3.0-rc.1"]);
+        assert!(candidate.contains(&"--draft".to_owned()));
+        assert!(candidate.contains(&"--prerelease".to_owned()));
+        assert!(candidate.contains(&"abc123".to_owned()));
+        assert_eq!(candidate.last().unwrap(), "target/Lokyr-0.3.0-rc.1.dmg");
+        let release = draft_arguments("0.3.0", "abc123", notes, &assets);
+        assert!(!release.contains(&"--prerelease".to_owned()));
+        assert!(release.contains(&"Lokyr 0.3.0".to_owned()));
+    }
+}
