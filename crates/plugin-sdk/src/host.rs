@@ -13,6 +13,10 @@ use crate::command::{Args, Command, Error};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowId(pub u64);
 
+/// A tab, by the host's id, likewise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TabId(pub u64);
+
 /// A pane, by the host's id, likewise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaneId(pub u64);

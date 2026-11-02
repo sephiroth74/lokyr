@@ -7,6 +7,7 @@ use lokyr_vt_core::terminal::Colors;
 
 use super::*;
 use crate::l10n::Texts;
+use lokyr_plugin_sdk::event::WorkspaceEvent as Change;
 
 fn grid() -> Grid {
     Grid {
@@ -103,14 +104,42 @@ fn the_second_bell_of_a_pane_that_is_not_drawn_arrives() {
     }
 }
 
+/// The changes of the workspace that wait, oldest first.
+fn changes(workspace: &mut Workspace) -> Vec<Change> {
+    workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Changed(change) => Some(change),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn a_window_opens_with_one_tab_whose_layout_is_its_pane() {
     let mut workspace = Workspace::new();
     let pane = pane("sleep 10");
     let id = pane.id();
     let window = workspace.open_window(pane);
-    assert_eq!(workspace.take_events(), [Event::WindowOpened(window)]);
     let tabs = workspace.window(window).unwrap().tabs().to_vec();
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::WindowOpened {
+                window: window.into()
+            },
+            Change::TabCreated {
+                tab: tabs[0].into(),
+                window: window.into(),
+                index: 0
+            },
+            Change::PaneCreated {
+                pane: id.into(),
+                tab: tabs[0].into()
+            },
+        ]
+    );
     assert_eq!(tabs.len(), 1);
     let tab = workspace.tab(tabs[0]).unwrap();
     assert_eq!(tab.window(), window);
@@ -126,37 +155,130 @@ fn tabs_open_show_move_and_close_with_their_windows() {
     let mut workspace = Workspace::new();
     let first = workspace.open_window(pane("sleep 10"));
     let one = workspace.window(first).unwrap().active_tab();
+    changes(&mut workspace);
     let two = workspace.open_tab(first, pane("sleep 10"), 99).unwrap();
+    let two_pane = workspace.tab(two).unwrap().active_pane();
     let tabs = |workspace: &Workspace, window| workspace.window(window).unwrap().tabs().to_vec();
     // A new tab goes last, and the window shows the one that it showed.
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::TabCreated {
+                tab: two.into(),
+                window: first.into(),
+                index: 1
+            },
+            Change::PaneCreated {
+                pane: two_pane.into(),
+                tab: two.into()
+            },
+        ]
+    );
     assert_eq!(tabs(&workspace, first), [one, two]);
     assert_eq!(workspace.window(first).unwrap().active_tab(), one);
     assert!(workspace.activate_tab(two));
     assert_eq!(workspace.window(first).unwrap().active_tab(), two);
+    assert!(workspace.activate_tab(two));
+    assert_eq!(
+        changes(&mut workspace),
+        [Change::TabActivated {
+            tab: two.into(),
+            window: first.into()
+        }],
+        "the second time, nothing changes"
+    );
     // Reordered, then out to a window of its own, which shows it.
     assert!(workspace.move_tab(two, first, 0));
+    assert!(workspace.move_tab(two, first, 0));
+    assert_eq!(
+        changes(&mut workspace),
+        [Change::TabMoved {
+            tab: two.into(),
+            from: first.into(),
+            window: first.into(),
+            index: 0
+        }]
+    );
     assert_eq!(tabs(&workspace, first), [two, one]);
-    workspace.take_events();
     let second = workspace.tab_to_new_window(one).unwrap();
-    assert_eq!(workspace.take_events(), [Event::WindowOpened(second)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::WindowOpened {
+                window: second.into()
+            },
+            Change::TabMoved {
+                tab: one.into(),
+                from: first.into(),
+                window: second.into(),
+                index: 0
+            },
+        ]
+    );
     assert_eq!(tabs(&workspace, second), [one]);
     assert_eq!(workspace.tab(one).unwrap().window(), second);
     assert_eq!(workspace.window(second).unwrap().active_tab(), one);
     // A tab alone in its window stays there.
     assert_eq!(workspace.tab_to_new_window(one), Some(second));
+    assert_eq!(changes(&mut workspace), []);
     // Back, and the window that it leaves without tabs closes.
     assert!(workspace.move_tab(one, first, 99));
-    assert_eq!(workspace.take_events(), [Event::WindowClosed(second)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::TabMoved {
+                tab: one.into(),
+                from: second.into(),
+                window: first.into(),
+                index: 1
+            },
+            Change::WindowClosed {
+                window: second.into()
+            },
+        ]
+    );
     assert_eq!(tabs(&workspace, first), [two, one]);
     assert_eq!(workspace.window(first).unwrap().active_tab(), two);
     // Closed, with their panes: the shown one gives way to the one after
     // it, or before it, and the last one closes the window.
-    let panes = workspace.tab(two).unwrap().layout().panes();
+    let one_pane = workspace.tab(one).unwrap().active_pane();
     assert!(workspace.close_tab(two));
-    assert!(workspace.pane(panes[0]).is_none());
+    assert!(workspace.pane(two_pane).is_none());
     assert_eq!(workspace.window(first).unwrap().active_tab(), one);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneClosed {
+                pane: two_pane.into(),
+                tab: two.into()
+            },
+            Change::TabClosed {
+                tab: two.into(),
+                window: first.into()
+            },
+            Change::TabActivated {
+                tab: one.into(),
+                window: first.into()
+            },
+        ]
+    );
     assert!(workspace.close_tab(one));
-    assert_eq!(workspace.take_events(), [Event::WindowClosed(first)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneClosed {
+                pane: one_pane.into(),
+                tab: one.into()
+            },
+            Change::TabClosed {
+                tab: one.into(),
+                window: first.into()
+            },
+            Change::WindowClosed {
+                window: first.into()
+            },
+        ]
+    );
     assert!(workspace.window(first).is_none());
     assert!(!workspace.close_tab(one));
 }
@@ -168,15 +290,29 @@ fn panes_split_zoom_close_and_move_with_their_tabs() {
     let a_id = a.id();
     let window = workspace.open_window(a);
     let tab = workspace.window(window).unwrap().active_tab();
+    changes(&mut workspace);
     let b = workspace
         .split(a_id, Direction::Horizontal, pane("sleep 10"), Side::Second)
         .unwrap();
+    let laid_out = Change::LayoutChanged { tab: tab.into() };
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneCreated {
+                pane: b.into(),
+                tab: tab.into()
+            },
+            laid_out.clone(),
+        ]
+    );
     let layout = |workspace: &Workspace, tab| workspace.tab(tab).unwrap().layout().clone();
     assert_eq!(layout(&workspace, tab).panes(), [a_id, b]);
     assert_eq!(workspace.tab_of(b), Some(tab));
     // The keyboard stays where it was; a zoom ends with a split.
     assert_eq!(workspace.active_pane(window), Some(a_id));
     assert!(workspace.zoom(tab, Some(b)));
+    assert!(workspace.zoom(tab, Some(b)));
+    assert_eq!(changes(&mut workspace), std::slice::from_ref(&laid_out));
     assert_eq!(workspace.tab(tab).unwrap().zoomed(), Some(b));
     let c = workspace
         .split(b, Direction::Vertical, pane("sleep 10"), Side::Second)
@@ -185,8 +321,38 @@ fn panes_split_zoom_close_and_move_with_their_tabs() {
     // A closed pane's room to its sibling, and the keyboard to the
     // sibling's nearest pane.
     assert!(workspace.focus_pane(c));
+    assert!(workspace.focus_pane(c));
     assert!(workspace.zoom(tab, Some(c)));
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneCreated {
+                pane: c.into(),
+                tab: tab.into()
+            },
+            laid_out.clone(),
+            Change::PaneFocused {
+                pane: c.into(),
+                tab: tab.into()
+            },
+            laid_out.clone(),
+        ]
+    );
     assert!(workspace.close_pane(c));
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneClosed {
+                pane: c.into(),
+                tab: tab.into()
+            },
+            laid_out.clone(),
+            Change::PaneFocused {
+                pane: b.into(),
+                tab: tab.into()
+            },
+        ]
+    );
     assert!(workspace.pane(c).is_none());
     assert_eq!(workspace.active_pane(window), Some(b));
     assert_eq!(workspace.tab(tab).unwrap().zoomed(), None);
@@ -199,24 +365,84 @@ fn panes_split_zoom_close_and_move_with_their_tabs() {
             second: Box::new(Layout::Leaf(b)),
         }
     );
-    // Resized, then equalized.
+    // Resized, then equalized; equal already, it does not change.
     assert!(workspace.resize_pane(a_id, Edge::Right, 0.2));
     assert!((layout(&workspace, tab).share().unwrap() - 0.7).abs() < 1e-9);
     assert!(workspace.equalize(tab));
     assert_eq!(layout(&workspace, tab).share(), Some(0.5));
+    assert!(workspace.equalize(tab));
+    assert!(
+        !workspace.resize_pane(a_id, Edge::Left, 0.2),
+        "no edge there"
+    );
+    assert_eq!(
+        changes(&mut workspace),
+        [laid_out.clone(), laid_out.clone()]
+    );
     // Out to a tab of its own, then a pane alone to a window of its own,
     // with its tab.
     let other = workspace.pane_to_new_tab(b, window, 99).unwrap();
     assert_eq!(layout(&workspace, tab), Layout::Leaf(a_id));
     assert_eq!(layout(&workspace, other), Layout::Leaf(b));
-    workspace.take_events();
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            laid_out.clone(),
+            Change::PaneFocused {
+                pane: a_id.into(),
+                tab: tab.into()
+            },
+            Change::TabCreated {
+                tab: other.into(),
+                window: window.into(),
+                index: 1
+            },
+            Change::PaneMoved {
+                pane: b.into(),
+                from: tab.into(),
+                tab: other.into()
+            },
+        ]
+    );
     let moved = workspace.pane_to_new_window(a_id).unwrap();
-    assert_eq!(workspace.take_events(), [Event::WindowOpened(moved)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::WindowOpened {
+                window: moved.into()
+            },
+            Change::TabMoved {
+                tab: tab.into(),
+                from: window.into(),
+                window: moved.into(),
+                index: 0
+            },
+            Change::TabActivated {
+                tab: other.into(),
+                window: window.into()
+            },
+        ]
+    );
     assert_eq!(workspace.tab_of(a_id), Some(tab));
     assert_eq!(workspace.window(moved).unwrap().tabs(), [tab]);
     // A tab's last pane closes it, and a window's last tab the window.
     assert!(workspace.close_pane(b));
-    assert_eq!(workspace.take_events(), [Event::WindowClosed(window)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneClosed {
+                pane: b.into(),
+                tab: other.into()
+            },
+            Change::TabClosed {
+                tab: other.into(),
+                window: window.into()
+            },
+            Change::WindowClosed {
+                window: window.into()
+            },
+        ]
+    );
     assert!(workspace.tab(other).is_none());
     assert_eq!(workspace.tab_of(b), None);
 }
@@ -245,9 +471,24 @@ fn closing_a_window_closes_its_tab_and_its_pane() {
     let window = workspace.open_window(pane("sleep 10"));
     let tab = workspace.window(window).unwrap().active_tab();
     let id = workspace.active_pane(window).unwrap();
-    workspace.take_events();
+    changes(&mut workspace);
     assert!(workspace.close_window(window));
-    assert_eq!(workspace.take_events(), [Event::WindowClosed(window)]);
+    assert_eq!(
+        changes(&mut workspace),
+        [
+            Change::PaneClosed {
+                pane: id.into(),
+                tab: tab.into()
+            },
+            Change::TabClosed {
+                tab: tab.into(),
+                window: window.into()
+            },
+            Change::WindowClosed {
+                window: window.into()
+            },
+        ]
+    );
     assert!(workspace.window(window).is_none());
     assert!(workspace.tab(tab).is_none());
     assert!(workspace.pane(id).is_none());
@@ -487,4 +728,397 @@ fn a_marked_cell_s_line_and_link_are_its_own_as_output_scrolls_the_view() {
     pane.unmark_cell();
     assert_ne!(text(0), Some(first));
     assert_eq!(pane.link_at(1, 0), None);
+}
+
+/// The workspace as its changes tell it, from the empty one.
+mod told {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use lokyr_plugin_sdk::event::WorkspaceEvent as Change;
+    use lokyr_plugin_sdk::host as sdk;
+    use proptest::prelude::*;
+
+    use super::{changes, pane};
+    use crate::workspace::{
+        Direction, Edge, Layout, PaneId, Ratio, Side, TabId, Window as Shown, Workspace,
+    };
+
+    /// A window's tabs, in their order, and the one that it shows.
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct Window {
+        tabs: Vec<sdk::TabId>,
+        shown: Option<sdk::TabId>,
+    }
+
+    /// A tab's window, its panes and the one that has its keyboard.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Tab {
+        window: sdk::WindowId,
+        panes: BTreeSet<sdk::PaneId>,
+        active: Option<sdk::PaneId>,
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct Told {
+        windows: BTreeMap<sdk::WindowId, Window>,
+        tabs: BTreeMap<sdk::TabId, Tab>,
+    }
+
+    impl Told {
+        /// What `workspace` holds, as its changes would tell it.
+        fn of(workspace: &Workspace) -> Self {
+            let mut told = Self::default();
+            for window in workspace.windows() {
+                let shown = Window {
+                    tabs: window.tabs().iter().map(|&tab| tab.into()).collect(),
+                    shown: Some(window.active_tab().into()),
+                };
+                told.windows.insert(window.id().into(), shown);
+                for &tab in window.tabs() {
+                    let tab = workspace.tab(tab).unwrap();
+                    let panes = tab.layout().panes().into_iter().map(Into::into).collect();
+                    let shown = Tab {
+                        window: tab.window().into(),
+                        panes,
+                        active: Some(tab.active_pane().into()),
+                    };
+                    told.tabs.insert(tab.id().into(), shown);
+                }
+            }
+            told
+        }
+
+        /// Takes `change`, which changes what it tells, and the tabs whose
+        /// layouts it changed into `laid_out`.
+        fn take(&mut self, change: &Change, laid_out: &mut BTreeSet<sdk::TabId>) {
+            match *change {
+                Change::WindowOpened { window } => {
+                    assert!(self.windows.insert(window, Window::default()).is_none());
+                }
+                Change::WindowClosed { window } => {
+                    let closed = self.windows.remove(&window).unwrap();
+                    assert!(closed.tabs.is_empty(), "its tabs before it");
+                }
+                Change::TabCreated { tab, window, index } => {
+                    let into = self.window(window);
+                    into.tabs.insert(index, tab);
+                    into.shown.get_or_insert(tab);
+                    let created = Tab {
+                        window,
+                        panes: BTreeSet::new(),
+                        active: None,
+                    };
+                    assert!(self.tabs.insert(tab, created).is_none());
+                }
+                Change::TabClosed {
+                    tab: id,
+                    window: from,
+                } => {
+                    let closed = self.tabs.remove(&id).unwrap();
+                    assert_eq!(closed.window, from);
+                    assert!(closed.panes.is_empty(), "its panes before it");
+                    let from = self.window(from);
+                    from.tabs.retain(|&tab| tab != id);
+                    if from.shown == Some(id) {
+                        from.shown = None;
+                    }
+                }
+                Change::TabActivated {
+                    tab: id,
+                    window: of,
+                } => {
+                    let of = self.window(of);
+                    assert!(of.tabs.contains(&id));
+                    assert_ne!(of.shown, Some(id));
+                    of.shown = Some(id);
+                }
+                Change::TabMoved {
+                    tab: id,
+                    from,
+                    window: into,
+                    index,
+                } => {
+                    let left = self.window(from);
+                    let at = left.tabs.iter().position(|&tab| tab == id).unwrap();
+                    left.tabs.remove(at);
+                    if from != into && left.shown == Some(id) {
+                        left.shown = None;
+                    }
+                    assert!(from != into || at != index, "a move in place");
+                    let taken = self.window(into);
+                    taken.tabs.insert(index, id);
+                    taken.shown.get_or_insert(id);
+                    self.tab(id).window = into;
+                }
+                Change::PaneCreated { pane, tab: id } => {
+                    let into = self.tab(id);
+                    assert!(into.panes.insert(pane));
+                    into.active.get_or_insert(pane);
+                }
+                Change::PaneClosed { pane, tab: id } => {
+                    let from = self.tab(id);
+                    assert!(from.panes.remove(&pane));
+                    if from.active == Some(pane) {
+                        from.active = None;
+                    }
+                }
+                Change::PaneFocused { pane, tab: id } => {
+                    let of = self.tab(id);
+                    assert!(of.panes.contains(&pane));
+                    assert_ne!(of.active, Some(pane));
+                    of.active = Some(pane);
+                }
+                Change::PaneMoved {
+                    pane,
+                    from,
+                    tab: id,
+                } => {
+                    let left = self.tab(from);
+                    assert!(left.panes.remove(&pane));
+                    if left.active == Some(pane) {
+                        left.active = None;
+                    }
+                    let taken = self.tab(id);
+                    assert!(taken.panes.insert(pane));
+                    taken.active.get_or_insert(pane);
+                }
+                Change::LayoutChanged { tab } => {
+                    laid_out.insert(tab);
+                }
+            }
+        }
+    }
+
+    impl Told {
+        fn window(&mut self, id: sdk::WindowId) -> &mut Window {
+            self.windows.get_mut(&id).unwrap()
+        }
+
+        fn tab(&mut self, id: sdk::TabId) -> &mut Tab {
+            self.tabs.get_mut(&id).unwrap()
+        }
+    }
+
+    /// The item of `of` at `index`, round its length.
+    fn pick<T: Copy>(of: &[T], index: usize) -> Option<T> {
+        of.get(index % of.len().max(1)).copied()
+    }
+
+    #[derive(Clone, Debug)]
+    enum Operation {
+        OpenWindow,
+        CloseWindow(usize),
+        OpenTab(usize, usize),
+        CloseTab(usize),
+        ActivateTab(usize),
+        MoveTab(usize, usize, usize),
+        TabToNewWindow(usize),
+        Split(usize, bool, bool),
+        ClosePane(usize),
+        FocusPane(usize),
+        SetRatio(usize, Vec<bool>, Option<f64>),
+        ResizePane(usize, u8, f64),
+        Equalize(usize),
+        Zoom(usize, Option<usize>),
+        PaneToNewTab(usize, usize, usize),
+        PaneToNewWindow(usize),
+    }
+
+    fn operation() -> impl Strategy<Value = Operation> {
+        let index = || 0..4usize;
+        prop_oneof![
+            2 => Just(Operation::OpenWindow),
+            1 => any::<usize>().prop_map(Operation::CloseWindow),
+            3 => (any::<usize>(), index()).prop_map(|(window, at)| Operation::OpenTab(window, at)),
+            1 => any::<usize>().prop_map(Operation::CloseTab),
+            2 => any::<usize>().prop_map(Operation::ActivateTab),
+            2 => (any::<usize>(), any::<usize>(), index())
+                .prop_map(|(tab, window, at)| Operation::MoveTab(tab, window, at)),
+            1 => any::<usize>().prop_map(Operation::TabToNewWindow),
+            4 => (any::<usize>(), any::<bool>(), any::<bool>())
+                .prop_map(|(pane, vertical, first)| Operation::Split(pane, vertical, first)),
+            2 => any::<usize>().prop_map(Operation::ClosePane),
+            2 => any::<usize>().prop_map(Operation::FocusPane),
+            1 => (
+                any::<usize>(),
+                proptest::collection::vec(any::<bool>(), 0..3),
+                proptest::option::of(0.0..1.0f64),
+            )
+                .prop_map(|(tab, path, share)| Operation::SetRatio(tab, path, share)),
+            2 => (any::<usize>(), 0..4u8, -1.0..1.0f64)
+                .prop_map(|(pane, edge, by)| Operation::ResizePane(pane, edge, by)),
+            1 => any::<usize>().prop_map(Operation::Equalize),
+            2 => (any::<usize>(), proptest::option::of(any::<usize>()))
+                .prop_map(|(tab, pane)| Operation::Zoom(tab, pane)),
+            1 => (any::<usize>(), any::<usize>(), index())
+                .prop_map(|(pane, window, at)| Operation::PaneToNewTab(pane, window, at)),
+            1 => any::<usize>().prop_map(Operation::PaneToNewWindow),
+        ]
+    }
+
+    /// Makes `operation` on `workspace`, its targets picked among those
+    /// that are open; whether it had them.
+    fn make(workspace: &mut Workspace, operation: Operation) -> bool {
+        let windows: Vec<_> = workspace.windows().map(Shown::id).collect();
+        let tabs: Vec<TabId> = windows
+            .iter()
+            .flat_map(|&window| workspace.window(window).unwrap().tabs().to_vec())
+            .collect();
+        let panes: Vec<PaneId> = workspace.pane_ids();
+        let window = |index| pick(&windows, index);
+        let tab = |index| pick(&tabs, index);
+        let pane_at = |index| pick(&panes, index);
+        match operation {
+            Operation::OpenWindow => {
+                workspace.open_window(pane("exec sleep 30"));
+            }
+            Operation::CloseWindow(at) => {
+                let Some(window) = window(at) else {
+                    return false;
+                };
+                assert!(workspace.close_window(window));
+            }
+            Operation::OpenTab(at, index) => {
+                let Some(window) = window(at) else {
+                    return false;
+                };
+                assert!(
+                    workspace
+                        .open_tab(window, pane("exec sleep 30"), index)
+                        .is_some()
+                );
+            }
+            Operation::CloseTab(at) => {
+                let Some(tab) = tab(at) else { return false };
+                assert!(workspace.close_tab(tab));
+            }
+            Operation::ActivateTab(at) => {
+                let Some(tab) = tab(at) else { return false };
+                assert!(workspace.activate_tab(tab));
+            }
+            Operation::MoveTab(at, to, index) => {
+                let (Some(tab), Some(window)) = (tab(at), window(to)) else {
+                    return false;
+                };
+                assert!(workspace.move_tab(tab, window, index));
+            }
+            Operation::TabToNewWindow(at) => {
+                let Some(tab) = tab(at) else { return false };
+                assert!(workspace.tab_to_new_window(tab).is_some());
+            }
+            Operation::Split(at, vertical, first) => {
+                let Some(target) = pane_at(at) else {
+                    return false;
+                };
+                let direction = if vertical {
+                    Direction::Vertical
+                } else {
+                    Direction::Horizontal
+                };
+                let side = if first { Side::First } else { Side::Second };
+                let split = workspace.split(target, direction, pane("exec sleep 30"), side);
+                assert!(split.is_some());
+            }
+            Operation::ClosePane(at) => {
+                let Some(target) = pane_at(at) else {
+                    return false;
+                };
+                assert!(workspace.close_pane(target));
+            }
+            Operation::FocusPane(at) => {
+                let Some(target) = pane_at(at) else {
+                    return false;
+                };
+                assert!(workspace.focus_pane(target));
+            }
+            Operation::SetRatio(at, path, share) => {
+                let Some(tab) = tab(at) else { return false };
+                let path: Vec<Side> = path
+                    .into_iter()
+                    .map(|first| if first { Side::First } else { Side::Second })
+                    .collect();
+                workspace.set_ratio(tab, &path, share.map(Ratio::new));
+            }
+            Operation::ResizePane(at, edge, by) => {
+                let Some(target) = pane_at(at) else {
+                    return false;
+                };
+                let edge = [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom][usize::from(edge)];
+                workspace.resize_pane(target, edge, by);
+            }
+            Operation::Equalize(at) => {
+                let Some(tab) = tab(at) else { return false };
+                assert!(workspace.equalize(tab));
+            }
+            Operation::Zoom(at, zoomed) => {
+                let Some(tab) = tab(at) else { return false };
+                // Any pane, one of another tab's too, which it refuses.
+                workspace.zoom(tab, zoomed.and_then(pane_at));
+            }
+            Operation::PaneToNewTab(at, to, index) => {
+                let (Some(target), Some(window)) = (pane_at(at), window(to)) else {
+                    return false;
+                };
+                assert!(workspace.pane_to_new_tab(target, window, index).is_some());
+            }
+            Operation::PaneToNewWindow(at) => {
+                let Some(target) = pane_at(at) else {
+                    return false;
+                };
+                assert!(workspace.pane_to_new_window(target).is_some());
+            }
+        }
+        true
+    }
+
+    /// Each tab's layout and zoom.
+    fn layouts(workspace: &Workspace) -> BTreeMap<sdk::TabId, (Layout, Option<PaneId>)> {
+        workspace
+            .windows()
+            .flat_map(|window| window.tabs().to_vec())
+            .map(|id| {
+                let tab = workspace.tab(id).unwrap();
+                (id.into(), (tab.layout().clone(), tab.zoomed()))
+            })
+            .collect()
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(24))]
+
+        #[test]
+        fn the_changes_tell_every_change_and_nothing_else(
+            operations in proptest::collection::vec(operation(), 1..24),
+        ) {
+            let mut workspace = Workspace::new();
+            let mut told = Told::default();
+            for operation in operations {
+                let before = layouts(&workspace);
+                let made = format!("{operation:?}");
+                make(&mut workspace, operation);
+                let mut laid_out = BTreeSet::new();
+                for change in changes(&mut workspace) {
+                    told.take(&change, &mut laid_out);
+                }
+                prop_assert_eq!(&told, &Told::of(&workspace), "after {}", made);
+                let panes: BTreeSet<sdk::PaneId> =
+                    workspace.pane_ids().into_iter().map(Into::into).collect();
+                let told_panes: BTreeSet<sdk::PaneId> =
+                    told.tabs.values().flat_map(|tab| tab.panes.iter().copied()).collect();
+                prop_assert_eq!(panes, told_panes, "after {}", made);
+                // A layout changed if and only if its change is told.
+                for (tab, now) in layouts(&workspace) {
+                    if let Some(was) = before.get(&tab) {
+                        prop_assert_eq!(
+                            was != &now,
+                            laid_out.contains(&tab),
+                            "{:?} after {}",
+                            tab,
+                            made
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

@@ -12,6 +12,8 @@
 
 pub mod command;
 #[cfg(feature = "unstable")]
+pub mod event;
+#[cfg(feature = "unstable")]
 pub mod host;
 #[cfg(feature = "unstable")]
 pub mod plugin;

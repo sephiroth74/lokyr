@@ -247,10 +247,20 @@ type Query = {
     whole_word: boolean?,
 }
 
+-- The workspace's changes, as its operations record them; an index is a
+-- tab's place among its window's tabs.
 type Event =
-    { kind: "tab-created", tab: TabId }
-    | { kind: "tab-closed", tab: TabId }
-    | { kind: "pane-focused", pane: PaneId }
+    { kind: "window-opened", window: WindowId }
+    | { kind: "window-closed", window: WindowId }
+    | { kind: "tab-created", tab: TabId, window: WindowId, index: number }
+    | { kind: "tab-closed", tab: TabId, window: WindowId }
+    | { kind: "tab-activated", tab: TabId, window: WindowId }
+    | { kind: "tab-moved", tab: TabId, from: WindowId, window: WindowId, index: number }
+    | { kind: "pane-created", pane: PaneId, tab: TabId }
+    | { kind: "pane-closed", pane: PaneId, tab: TabId }
+    | { kind: "pane-focused", pane: PaneId, tab: TabId }
+    | { kind: "pane-moved", pane: PaneId, from: TabId, tab: TabId }
+    | { kind: "layout-changed", tab: TabId }
     | { kind: "title-changed", pane: PaneId, title: string }
     | { kind: "search-progress", id: number, matches: number, done: boolean }
     | { kind: "custom", name: string, schema: string, payload: any }

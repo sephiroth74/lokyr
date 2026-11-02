@@ -1780,10 +1780,7 @@ impl<B: Backend> App<B> {
                     pane,
                     event: vt::Event::Notification { title, body },
                 } => self.notify(platform, pane, &title, &body),
-                Event::WindowOpened(_)
-                | Event::WindowClosed(_)
-                | Event::Ended(_)
-                | Event::Terminal { .. } => {}
+                Event::Changed(_) | Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }
     }

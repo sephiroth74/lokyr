@@ -27,6 +27,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+use lokyr_plugin_sdk::event::WorkspaceEvent;
+use lokyr_plugin_sdk::host as sdk;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
@@ -79,6 +81,24 @@ impl WindowId {
     /// be no window's.
     pub(crate) fn of(id: u64) -> Self {
         Self(id)
+    }
+}
+
+impl From<WindowId> for sdk::WindowId {
+    fn from(id: WindowId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<TabId> for sdk::TabId {
+    fn from(id: TabId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<PaneId> for sdk::PaneId {
+    fn from(id: PaneId) -> Self {
+        Self(id.0)
     }
 }
 
@@ -165,13 +185,23 @@ impl Tab {
     }
 }
 
+/// What a tab's leaving its window did to the window.
+#[derive(Clone, Copy, Debug)]
+enum Left {
+    /// The window shows the tab that it showed.
+    Kept,
+    /// The window shows this tab, as it showed the one that left.
+    Shows(WindowId, TabId),
+    /// The window closed, as it has no tab left.
+    Closed(WindowId),
+}
+
 /// What happened in the workspace, for the embedder to act on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    /// A window opened.
-    WindowOpened(WindowId),
-    /// A window closed, with its tabs and panes.
-    WindowClosed(WindowId),
+    /// A change of the workspace's windows, tabs, layouts or panes, as the
+    /// operation that made it records it.
+    Changed(WorkspaceEvent),
     /// The title of a pane's program changed, which its tab takes when the
     /// pane is its active one.
     TitleChanged(PaneId),
@@ -224,7 +254,9 @@ impl Workspace {
         let id = pane.id();
         self.panes.insert(id, pane);
         let tab = self.new_tab(id);
-        self.window_for(tab)
+        let window = self.window_for(tab);
+        self.created(tab, &[id]);
+        window
     }
 
     /// Closes `window`, with its tabs and its panes, whose programs are hung
@@ -234,17 +266,62 @@ impl Workspace {
             return false;
         };
         for tab in closed.tabs {
-            let Some(tab) = self.tabs.remove(&tab) else {
-                continue;
-            };
-            for pane in tab.layout.panes() {
-                self.tab_of.remove(&pane);
-                self.panes.remove(&pane);
-                self.waiting.remove(&pane);
-            }
+            self.drop_tab(tab);
         }
-        self.events.push(Event::WindowClosed(window));
+        self.changed(WorkspaceEvent::WindowClosed {
+            window: window.into(),
+        });
         true
+    }
+
+    /// Takes `tab` and its panes away, which the window that held it no
+    /// longer lists, the panes' closings and the tab's told.
+    fn drop_tab(&mut self, tab: TabId) {
+        let Some(dropped) = self.tabs.remove(&tab) else {
+            return;
+        };
+        for pane in dropped.layout.panes() {
+            self.tab_of.remove(&pane);
+            self.panes.remove(&pane);
+            self.waiting.remove(&pane);
+            self.changed(WorkspaceEvent::PaneClosed {
+                pane: pane.into(),
+                tab: tab.into(),
+            });
+        }
+        self.changed(WorkspaceEvent::TabClosed {
+            tab: tab.into(),
+            window: dropped.window.into(),
+        });
+    }
+
+    /// Records `event`, for the embedder.
+    fn changed(&mut self, event: WorkspaceEvent) {
+        self.events.push(Event::Changed(event));
+    }
+
+    /// Records that `tab`, at its place in its window, and its `panes`
+    /// opened.
+    fn created(&mut self, tab: TabId, panes: &[PaneId]) {
+        let Some(window) = self.tabs.get(&tab).map(|tab| tab.window) else {
+            return;
+        };
+        let index = self
+            .windows
+            .get(&window)
+            .and_then(|shown| shown.tabs.iter().position(|&id| id == tab))
+            .unwrap_or(0);
+        self.changed(WorkspaceEvent::TabCreated {
+            tab: tab.into(),
+            window: window.into(),
+            index,
+        });
+        for &pane in panes {
+            self.changed(WorkspaceEvent::PaneCreated {
+                pane: pane.into(),
+                tab: tab.into(),
+            });
+        }
     }
 
     /// The window `id`, if it is open.
@@ -405,7 +482,9 @@ impl Workspace {
         }
         let id = pane.id();
         self.panes.insert(id, pane);
-        Some(self.insert_tab(window, id, index))
+        let tab = self.insert_tab(window, id, index);
+        self.created(tab, &[id]);
+        Some(tab)
     }
 
     /// Makes a tab of `pane`, which the workspace holds, in `window`, which
@@ -457,7 +536,9 @@ impl Workspace {
                 active: tab,
             },
         );
-        self.events.push(Event::WindowOpened(window));
+        self.changed(WorkspaceEvent::WindowOpened {
+            window: window.into(),
+        });
         window
     }
 
@@ -465,38 +546,53 @@ impl Workspace {
     /// shows the tab after it, or before it, if it showed that one, and
     /// closes if it has no tab left. Whether the tab was open.
     pub fn close_tab(&mut self, tab: TabId) -> bool {
-        let Some(panes) = self.tabs.get(&tab).map(|tab| tab.layout.panes()) else {
+        if !self.tabs.contains_key(&tab) {
             return false;
-        };
-        for pane in panes {
-            self.tab_of.remove(&pane);
-            self.panes.remove(&pane);
-            self.waiting.remove(&pane);
         }
-        self.detach_tab(tab);
-        self.tabs.remove(&tab);
+        let left = self.detach_tab(tab);
+        self.drop_tab(tab);
+        self.tell_left(left);
         true
     }
 
     /// Takes `tab` out of its window's tabs, which shows the tab after it,
     /// or before it, if it showed that one, and which closes if it has none
-    /// left; the tab itself stays.
-    fn detach_tab(&mut self, tab: TabId) {
+    /// left; what it did, for the caller to tell after the tab's own
+    /// change. The tab itself stays.
+    fn detach_tab(&mut self, tab: TabId) -> Left {
         let Some(window_id) = self.tabs.get(&tab).map(|tab| tab.window) else {
-            return;
+            return Left::Kept;
         };
         let Some(window) = self.windows.get_mut(&window_id) else {
-            return;
+            return Left::Kept;
         };
         let Some(index) = window.tabs.iter().position(|&id| id == tab) else {
-            return;
+            return Left::Kept;
         };
         window.tabs.remove(index);
         if window.tabs.is_empty() {
             self.windows.remove(&window_id);
-            self.events.push(Event::WindowClosed(window_id));
-        } else if window.active == tab {
-            window.active = window.tabs[index.min(window.tabs.len() - 1)];
+            return Left::Closed(window_id);
+        }
+        if window.active != tab {
+            return Left::Kept;
+        }
+        let shown = window.tabs[index.min(window.tabs.len() - 1)];
+        window.active = shown;
+        Left::Shows(window_id, shown)
+    }
+
+    /// Tells what a tab's leaving did to its window.
+    fn tell_left(&mut self, left: Left) {
+        match left {
+            Left::Kept => {}
+            Left::Shows(window, tab) => self.changed(WorkspaceEvent::TabActivated {
+                tab: tab.into(),
+                window: window.into(),
+            }),
+            Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed {
+                window: window.into(),
+            }),
         }
     }
 
@@ -505,10 +601,17 @@ impl Workspace {
         let Some(window) = self.tabs.get(&tab).map(|tab| tab.window) else {
             return false;
         };
-        self.windows
-            .get_mut(&window)
-            .map(|window| window.active = tab)
-            .is_some()
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        if shown.active != tab {
+            shown.active = tab;
+            self.changed(WorkspaceEvent::TabActivated {
+                tab: tab.into(),
+                window: window.into(),
+            });
+        }
+        true
     }
 
     /// Moves `tab` to `window`, its own or another, at `index` of that
@@ -521,22 +624,32 @@ impl Workspace {
             return false;
         }
         let from = self.tabs[&tab].window;
-        if from == window {
+        let was = self.windows[&from].tabs.iter().position(|&id| id == tab);
+        let left = if from == window {
             if let Some(window) = self.windows.get_mut(&window) {
                 window.tabs.retain(|&id| id != tab);
-                let index = index.min(window.tabs.len());
-                window.tabs.insert(index, tab);
             }
-            return true;
-        }
-        self.detach_tab(tab);
+            Left::Kept
+        } else {
+            self.detach_tab(tab)
+        };
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
+        let mut placed = 0;
         if let Some(window) = self.windows.get_mut(&window) {
-            let index = index.min(window.tabs.len());
-            window.tabs.insert(index, tab);
+            placed = index.min(window.tabs.len());
+            window.tabs.insert(placed, tab);
         }
+        if from != window || was != Some(placed) {
+            self.changed(WorkspaceEvent::TabMoved {
+                tab: tab.into(),
+                from: from.into(),
+                window: window.into(),
+                index: placed,
+            });
+        }
+        self.tell_left(left);
         true
     }
 
@@ -547,8 +660,16 @@ impl Workspace {
         if self.windows.get(&from)?.tabs.len() == 1 {
             return Some(from);
         }
-        self.detach_tab(tab);
-        Some(self.window_for(tab))
+        let left = self.detach_tab(tab);
+        let window = self.window_for(tab);
+        self.changed(WorkspaceEvent::TabMoved {
+            tab: tab.into(),
+            from: from.into(),
+            window: window.into(),
+            index: 0,
+        });
+        self.tell_left(left);
+        Some(window)
     }
 
     /// Splits the part of `pane` along `direction`, with `new` on `side`,
@@ -570,36 +691,43 @@ impl Workspace {
         tab.zoomed = None;
         self.panes.insert(id, new);
         self.tab_of.insert(id, tab_id);
+        self.changed(WorkspaceEvent::PaneCreated {
+            pane: id.into(),
+            tab: tab_id.into(),
+        });
+        self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         Some(id)
     }
 
     /// Takes `pane` out of its tab's layout, its room to its sibling, and
-    /// the tab's keyboard and zoom away from it; a tab that it leaves
-    /// without panes closes, and a window without tabs. The pane itself
-    /// stays. Whether it was in a tab.
-    fn detach_pane(&mut self, pane: PaneId) -> bool {
-        let Some(tab_id) = self.tab_of.remove(&pane) else {
-            return false;
-        };
-        let Some(tab) = self.tabs.get_mut(&tab_id) else {
-            return false;
-        };
-        match tab.layout.remove(pane) {
-            Some(nearest) => {
-                if tab.active == pane {
-                    tab.active = nearest;
-                }
-                if tab.zoomed == Some(pane) {
-                    tab.zoomed = None;
-                }
-            }
+    /// the tab's keyboard and zoom away from it, and tells the change of the
+    /// layout; a tab that it leaves without panes leaves its window, which
+    /// closes if it has no tab left. The pane itself stays. Returns the tab
+    /// that it left, if it was in one, and, if that tab is left empty, what
+    /// its leaving did to its window, which the caller tells after the
+    /// tab's end.
+    fn detach_pane(&mut self, pane: PaneId) -> Option<(TabId, Option<Left>)> {
+        let tab_id = self.tab_of.remove(&pane)?;
+        let tab = self.tabs.get_mut(&tab_id)?;
+        let Some(nearest) = tab.layout.remove(pane) else {
             // Its one pane.
-            None => {
-                self.detach_tab(tab_id);
-                self.tabs.remove(&tab_id);
-            }
+            return Some((tab_id, Some(self.detach_tab(tab_id))));
+        };
+        let refocused = tab.active == pane;
+        if refocused {
+            tab.active = nearest;
         }
-        true
+        if tab.zoomed == Some(pane) {
+            tab.zoomed = None;
+        }
+        self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
+        if refocused {
+            self.changed(WorkspaceEvent::PaneFocused {
+                pane: nearest.into(),
+                tab: tab_id.into(),
+            });
+        }
+        Some((tab_id, None))
     }
 
     /// Closes `pane`, whose program is hung up: its room goes to its
@@ -607,24 +735,42 @@ impl Workspace {
     /// nearest to it; a tab that it leaves without panes closes, and a
     /// window without tabs. Whether it was open.
     pub fn close_pane(&mut self, pane: PaneId) -> bool {
-        if !self.detach_pane(pane) {
+        let Some(&tab) = self.tab_of.get(&pane) else {
             return false;
-        }
+        };
         self.panes.remove(&pane);
         self.waiting.remove(&pane);
+        self.changed(WorkspaceEvent::PaneClosed {
+            pane: pane.into(),
+            tab: tab.into(),
+        });
+        if let Some((tab, Some(left))) = self.detach_pane(pane) {
+            if let Some(gone) = self.tabs.remove(&tab) {
+                self.changed(WorkspaceEvent::TabClosed {
+                    tab: tab.into(),
+                    window: gone.window.into(),
+                });
+            }
+            self.tell_left(left);
+        }
         true
     }
 
     /// Gives `pane` its tab's keyboard; whether it is open.
     pub fn focus_pane(&mut self, pane: PaneId) -> bool {
-        let Some(tab) = self
-            .tab_of
-            .get(&pane)
-            .and_then(|tab| self.tabs.get_mut(tab))
-        else {
+        let Some(&tab_id) = self.tab_of.get(&pane) else {
             return false;
         };
-        tab.active = pane;
+        let Some(tab) = self.tabs.get_mut(&tab_id) else {
+            return false;
+        };
+        if tab.active != pane {
+            tab.active = pane;
+            self.changed(WorkspaceEvent::PaneFocused {
+                pane: pane.into(),
+                tab: tab_id.into(),
+            });
+        }
         true
     }
 
@@ -632,44 +778,55 @@ impl Workspace {
     /// `None`, shares its room by its parts' weights; whether a split is
     /// there.
     pub fn set_ratio(&mut self, tab: TabId, path: &[Side], ratio: Option<Ratio>) -> bool {
-        self.tabs
-            .get_mut(&tab)
-            .is_some_and(|tab| tab.layout.set_ratio(path, ratio))
+        self.relayout(tab, |layout| layout.set_ratio(path, ratio))
     }
 
     /// Moves the `edge` of `pane` by `by`, a share of the room of the split
     /// whose divider it is: right and down for a positive one; whether
     /// `pane` has such an edge.
     pub fn resize_pane(&mut self, pane: PaneId, edge: Edge, by: f64) -> bool {
-        let Some(tab) = self
-            .tab_of
-            .get(&pane)
-            .and_then(|tab| self.tabs.get_mut(tab))
-        else {
+        let Some(&tab) = self.tab_of.get(&pane) else {
             return false;
         };
-        tab.layout.resize(pane, edge, by)
+        self.relayout(tab, |layout| layout.resize(pane, edge, by))
     }
 
     /// Shares the room of every split of `tab` by its parts' weights;
     /// whether the tab is open.
     pub fn equalize(&mut self, tab: TabId) -> bool {
-        self.tabs
-            .get_mut(&tab)
-            .map(|tab| tab.layout.equalize())
-            .is_some()
+        self.relayout(tab, |layout| {
+            layout.equalize();
+            true
+        })
+    }
+
+    /// Changes `tab`'s layout with `change`, and tells it if the layout is
+    /// another; what `change` returns, or false without the tab.
+    fn relayout(&mut self, tab: TabId, change: impl FnOnce(&mut Layout) -> bool) -> bool {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        let before = shown.layout.clone();
+        let done = change(&mut shown.layout);
+        if shown.layout != before {
+            self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
+        }
+        done
     }
 
     /// Zooms `pane`, which takes its tab's whole room, or, with `None`,
     /// ends `tab`'s zoom; whether `pane` is one of `tab`'s.
     pub fn zoom(&mut self, tab: TabId, pane: Option<PaneId>) -> bool {
-        let Some(tab) = self.tabs.get_mut(&tab) else {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
             return false;
         };
-        if pane.is_some_and(|pane| !tab.layout.contains(pane)) {
+        if pane.is_some_and(|pane| !shown.layout.contains(pane)) {
             return false;
         }
-        tab.zoomed = pane;
+        if shown.zoomed != pane {
+            shown.zoomed = pane;
+            self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
+        }
         true
     }
 
@@ -690,7 +847,14 @@ impl Workspace {
             return self.move_tab(tab, window, index).then_some(tab);
         }
         self.detach_pane(pane);
-        Some(self.insert_tab(window, pane, index))
+        let created = self.insert_tab(window, pane, index);
+        self.created(created, &[]);
+        self.changed(WorkspaceEvent::PaneMoved {
+            pane: pane.into(),
+            from: tab.into(),
+            tab: created.into(),
+        });
+        Some(created)
     }
 
     /// Moves `pane` out of its tab into a window of its own, and returns
@@ -702,7 +866,14 @@ impl Workspace {
             return self.tab_to_new_window(tab);
         }
         self.detach_pane(pane);
-        let tab = self.new_tab(pane);
-        Some(self.window_for(tab))
+        let created = self.new_tab(pane);
+        let window = self.window_for(created);
+        self.created(created, &[]);
+        self.changed(WorkspaceEvent::PaneMoved {
+            pane: pane.into(),
+            from: tab.into(),
+            tab: created.into(),
+        });
+        Some(window)
     }
 }
