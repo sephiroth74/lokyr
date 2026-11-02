@@ -62,11 +62,6 @@ const APP_PLACE: (u32, u32) = (170, 200);
 /// The center of the link to Applications, at the arrow's end.
 const APPLICATIONS_PLACE: (u32, u32) = (490, 200);
 
-/// How far below the place that the Finder's script gives an icon the
-/// Finder draws the icon's center, in points, on macOS 26 and later, as
-/// measured: the script gives each place this much higher.
-const FINDER_DROP: u32 = 45;
-
 /// The link to the folder of the apps.
 const APPLICATIONS: &str = "Applications";
 
@@ -442,8 +437,8 @@ fn layout_script() -> String {
     let volume = bundle::NAME;
     let (left, top) = WINDOW_PLACE;
     let (right, bottom) = (left + WINDOW.0, top + WINDOW.1 + TITLE_BAR);
-    let (app_x, app_y) = (APP_PLACE.0, APP_PLACE.1 - FINDER_DROP);
-    let (link_x, link_y) = (APPLICATIONS_PLACE.0, APPLICATIONS_PLACE.1 - FINDER_DROP);
+    let (app_x, app_y) = APP_PLACE;
+    let (link_x, link_y) = APPLICATIONS_PLACE;
     format!(
         r#"tell application "Finder"
     tell disk "{volume}"
@@ -473,25 +468,39 @@ end tell
 }
 
 /// Whether the bytes `store` are a `.DS_Store` of the Finder that holds the
-/// icons' places, the records `Iloc` of the app and of the link, and the
 /// window's options of its icons, of the background, the record `icvp` of
-/// the volume's root, `.`: each record starts with its file's name, its
-/// length in UTF-16's units and the units, big-endian, then its kind.
+/// the volume's root, `.`, and the icons' places, the records `Iloc` of the
+/// app and of the link, at [`APP_PLACE`] and [`APPLICATIONS_PLACE`].
 fn laid_out(store: &[u8]) -> bool {
-    let holds = |name: &str, kind: [u8; 4]| {
-        let units: Vec<u16> = name.encode_utf16().collect();
-        let Ok(length) = u32::try_from(units.len()) else {
-            return false;
-        };
-        let mut record = length.to_be_bytes().to_vec();
-        record.extend(units.iter().flat_map(|unit| unit.to_be_bytes()));
-        record.extend_from_slice(&kind);
-        store.windows(record.len()).any(|bytes| bytes == record)
-    };
     store.starts_with(STORE_MAGIC)
-        && holds(&format!("{}.app", bundle::NAME), *b"Iloc")
-        && holds(APPLICATIONS, *b"Iloc")
-        && holds(".", *b"icvp")
+        && value(store, ".", *b"icvp").is_some()
+        && place(store, &format!("{}.app", bundle::NAME)) == Some(APP_PLACE)
+        && place(store, APPLICATIONS) == Some(APPLICATIONS_PLACE)
+}
+
+/// The bytes of `store` after the start of the record `kind` of the file
+/// `name`, of its value's type and its value: a record starts with its
+/// file's name, its length in UTF-16's units and the units, big-endian,
+/// then its kind.
+fn value<'a>(store: &'a [u8], name: &str, kind: [u8; 4]) -> Option<&'a [u8]> {
+    let units: Vec<u16> = name.encode_utf16().collect();
+    let mut record = u32::try_from(units.len()).ok()?.to_be_bytes().to_vec();
+    record.extend(units.iter().flat_map(|unit| unit.to_be_bytes()));
+    record.extend_from_slice(&kind);
+    let at = store
+        .windows(record.len())
+        .position(|bytes| bytes == record)?;
+    store.get(at + record.len()..)
+}
+
+/// The center of the icon of the file `name` in the window, as `store`
+/// holds it: its record `Iloc`, of a `blob` of 16 bytes that starts with
+/// the center's two coordinates, big-endian.
+fn place(store: &[u8], name: &str) -> Option<(u32, u32)> {
+    let value = value(store, name, *b"Iloc")?;
+    let word = |at: usize| Some(u32::from_be_bytes(value.get(at..at + 4)?.try_into().ok()?));
+    (value.get(..8)? == b"blob\0\0\0\x10").then_some(())?;
+    Some((word(8)?, word(12)?))
 }
 
 #[cfg(test)]
@@ -518,15 +527,14 @@ mod tests {
         // The bounds hold the title bar over the background's 420 points.
         assert!(script.contains("set the bounds of container window to {200, 120, 860, 572}"));
         assert!(script.contains("set icon size of viewOptions to 128"));
-        // The icons' centers at the arrow's height, 200, which the Finder
-        // draws 45 points below the places that it is given.
+        // The icons' centers, at the arrow's height.
         assert!(
             script
-                .contains(r#"set position of item "Lokyr.app" of container window to {170, 155}"#)
+                .contains(r#"set position of item "Lokyr.app" of container window to {170, 200}"#)
         );
         assert!(
             script.contains(
-                r#"set position of item "Applications" of container window to {490, 155}"#
+                r#"set position of item "Applications" of container window to {490, 200}"#
             )
         );
         assert!(script.contains(r#"file ".background:background.tiff""#));
@@ -543,24 +551,44 @@ mod tests {
         bytes
     }
 
+    /// The record of the place of the icon of `name`, its center at `x` and
+    /// `y`.
+    fn place_record(name: &str, (x, y): (u32, u32)) -> Vec<u8> {
+        let mut bytes = record(name, *b"Iloc");
+        bytes.extend(x.to_be_bytes());
+        bytes.extend(y.to_be_bytes());
+        bytes.extend([0xff; 8]);
+        bytes
+    }
+
     #[test]
-    fn a_layout_holds_both_icons_places_and_the_window_s_options() {
+    fn a_layout_holds_the_icons_at_their_places_and_the_window_s_options() {
         let whole = [
             STORE_MAGIC.to_vec(),
             record(".", *b"bwsp"),
             record(".", *b"icvp"),
-            record("Applications", *b"Iloc"),
-            record("Lokyr.app", *b"Iloc"),
+            place_record("Applications", (490, 200)),
+            place_record("Lokyr.app", (170, 200)),
         ]
         .concat();
         assert!(laid_out(&whole));
+        assert_eq!(place(&whole, "Lokyr.app"), Some((170, 200)));
+        // An icon elsewhere than its place, as a layout of other places.
+        let elsewhere = [
+            STORE_MAGIC.to_vec(),
+            record(".", *b"icvp"),
+            place_record("Applications", (490, 200)),
+            place_record("Lokyr.app", (170, 245)),
+        ]
+        .concat();
+        assert!(!laid_out(&elsewhere));
         // Without the allocator's start, as macOS drops it.
         assert!(!laid_out(&whole[STORE_MAGIC.len()..]));
         // Without the app's place, as before the Finder writes it.
         let without_app = [
             STORE_MAGIC.to_vec(),
             record(".", *b"icvp"),
-            record("Applications", *b"Iloc"),
+            place_record("Applications", (490, 200)),
             record("Lokyr.app", *b"lsvp"),
         ]
         .concat();
@@ -569,8 +597,8 @@ mod tests {
         let without_options = [
             STORE_MAGIC.to_vec(),
             record(".", *b"bwsp"),
-            record("Applications", *b"Iloc"),
-            record("Lokyr.app", *b"Iloc"),
+            place_record("Applications", (490, 200)),
+            place_record("Lokyr.app", (170, 200)),
         ]
         .concat();
         assert!(!laid_out(&without_options));
