@@ -788,14 +788,19 @@ fn text_style(style: &Style) -> host::TextStyle {
 }
 
 /// Reads `count` rows of `reader`'s terminal from the row numbered
-/// `first`, on a thread of its own, [`READ_PART`] rows under the lock at a
-/// time, and wakes the main thread once it is done: the rows, and whether
-/// the read went to its end, as the rows' epoch stayed, come through the
+/// `first`, of the rows' `epoch`, the request's, on a thread of its own,
+/// [`READ_PART`] rows under the lock at a time, and wakes the main thread
+/// once it is done: the rows, and whether the read went to its end, as the
+/// rows' epoch stayed from the request to the last part, come through the
 /// receiver.
-fn read_rows(reader: Reader, first: i64, count: usize) -> mpsc::Receiver<(Vec<host::Line>, bool)> {
+fn read_rows(
+    reader: Reader,
+    epoch: u64,
+    first: i64,
+    count: usize,
+) -> mpsc::Receiver<(Vec<host::Line>, bool)> {
     let (sender, receiver) = mpsc::channel();
     let read = move || {
-        let epoch = reader.lock().origin().epoch;
         let (mut lines, mut next, mut complete) = (Vec::new(), first, true);
         while lines.len() < count {
             let part = {
@@ -1004,18 +1009,23 @@ impl Host<'_, '_> {
                     .map(|directory| directory.to_string_lossy().into_owned()),
             ),
             Asked::ReadLines { pane, first, count } => {
-                let reader = self.pane(pane)?.reader().ok_or_else(|| {
+                let found = self.pane(pane)?;
+                let unavailable = || {
                     Error::new(
                         Code::Unavailable,
                         format!("the pane {} has no terminal", pane.0),
                     )
-                })?;
+                };
+                // The rows' numbers are the request's, of the epoch now,
+                // which a resize before the read's first part changes.
+                let epoch = found.origin().ok_or_else(unavailable)?.epoch;
+                let reader = found.reader().ok_or_else(unavailable)?;
                 let id = new_id();
                 self.out.reads.push(Read {
                     id,
                     plugin: self.state.name.clone(),
                     pane,
-                    rows: read_rows(reader, first, count.min(host::MOST_LINES)),
+                    rows: read_rows(reader, epoch, first, count.min(host::MOST_LINES)),
                 });
                 Response::Reading(id)
             }

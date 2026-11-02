@@ -1482,6 +1482,45 @@ fn row_once(app: &App, pane: PaneId, row: i64, text: &str) {
 }
 
 #[test]
+fn a_read_of_the_epoch_before_a_resize_is_incomplete_without_other_rows() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 300; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 300, "ready");
+    // The request's epoch, then a resize before the read's first part.
+    let found = app.workspace.pane(pane).unwrap();
+    let epoch = found.origin().unwrap().epoch;
+    let reader = found.reader().unwrap();
+    let grid = Grid {
+        columns: 60,
+        rows: 20,
+        cell_width: 8,
+        cell_height: 16,
+    };
+    app.workspace
+        .pane_mut(pane)
+        .unwrap()
+        .resize(grid, Instant::now());
+    let read = |reader, epoch| {
+        super::read_rows(reader, epoch, 0, 3)
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+    };
+    let (lines, complete) = read(reader, epoch);
+    assert!(!complete);
+    assert!(
+        lines.is_empty(),
+        "{:?}",
+        lines.iter().map(|line| &line.text).collect::<Vec<_>>()
+    );
+    // Of the epoch now, the rows come whole.
+    let found = app.workspace.pane(pane).unwrap();
+    let (lines, complete) = read(found.reader().unwrap(), found.origin().unwrap().epoch);
+    assert!(complete);
+    assert_eq!(lines.len(), 3);
+}
+
+#[test]
 fn a_plugin_reads_ten_thousand_lines_on_a_thread_of_the_host_s() {
     let mut app = App::default();
     let window = window(&mut app, "seq 1 12000; echo ready; sleep 30");
