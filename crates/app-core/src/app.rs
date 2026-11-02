@@ -442,6 +442,12 @@ pub struct App<B: Backend> {
     title_asks: BTreeMap<AlertId, WindowId>,
     /// The question before quitting, while it waits for its answer.
     quit_ask: Option<AlertId>,
+    /// Whether the config in force is the defaults, as the start's file did
+    /// not apply.
+    config_fell_back: bool,
+    /// The updates' checks now and then, on or off, as the platform has
+    /// them.
+    update_checks: bool,
     /// Whether the system asked to quit, and waits for the answer.
     system_quit: bool,
     /// The environment of the programs that the app starts, which the
@@ -566,6 +572,8 @@ impl<B: Backend> App<B> {
             close_asks: BTreeMap::new(),
             title_asks: BTreeMap::new(),
             quit_ask: None,
+            config_fell_back: false,
+            update_checks: false,
             system_quit: false,
             environment: {
                 let resources = environment::resources();
@@ -826,6 +834,9 @@ impl<B: Backend> App<B> {
     /// The app, whose notices start with those of `diagnostics`, as a
     /// config that does not read as the app starts.
     pub fn with_diagnostics(mut self, diagnostics: Diagnostics) -> Self {
+        // A notice of the config at the start tells that the config in
+        // force is the defaults, of a file that did not apply.
+        self.config_fell_back = diagnostics.tells(&About::Config);
         self.diagnostics = diagnostics;
         self
     }
@@ -926,6 +937,7 @@ impl<B: Backend> App<B> {
     fn apply(&mut self, platform: &mut dyn Platform, config: Config) {
         if config == self.config {
             self.resolve(platform, &About::Config);
+            self.settle_update_checks(platform, config.updates.check);
             return;
         }
         let font_changed = config.font != self.config.font;
@@ -949,9 +961,7 @@ impl<B: Backend> App<B> {
         let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
-        if config.updates.check != self.config.updates.check {
-            platform.set_update_checks(config.updates.check);
-        }
+        self.settle_update_checks(platform, config.updates.check);
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
@@ -1028,8 +1038,20 @@ impl<B: Backend> App<B> {
         let benched = self.startup_bench.is_some()
             || self.latency_bench.is_some()
             || self.output_bench.is_some();
-        let can = !benched && platform.start_updates(self.config.updates.check);
+        // Off where the config in force is the defaults of a file that did
+        // not apply, which may have turned them off.
+        self.update_checks = self.config.updates.check && !self.config_fell_back;
+        let can = !benched && platform.start_updates(self.update_checks);
         platform.set_command_enabled(CHECK_UPDATES, can);
+    }
+
+    /// Has the updates' checks now and then follow `check`, of a config
+    /// that applied, if they do not.
+    fn settle_update_checks(&mut self, platform: &mut dyn Platform, check: bool) {
+        if self.update_checks != check {
+            self.update_checks = check;
+            platform.set_update_checks(check);
+        }
     }
 
     /// Shows the icon's variant that the config names, or the default one

@@ -544,6 +544,42 @@ fn a_query_encodes_all_but_the_unreserved() {
 }
 
 #[test]
+fn the_checks_start_off_of_a_config_that_fell_back_and_follow_it_once_it_applies() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-fell-back-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    // The user turned the checks off, in a file of an error, which gives
+    // the defaults, as the app starts.
+    std::fs::write(&path, "[updates]\ncheck = false\nnot-a-key = 1\n").unwrap();
+    let error = Config::read(&path).unwrap_err();
+    let mut diagnostics = lokyr_kernel::diagnostics::Diagnostics::default();
+    diagnostics.report(Diagnostic::new(
+        Code::InvalidConfig,
+        error.to_string(),
+        About::Config,
+    ));
+    let mut fake = Fake::default();
+    fake.set_can_update(true);
+    let mut app = App::new(None, Config::default(), Some(path.clone()))
+        .with_program(quiet())
+        .with_diagnostics(diagnostics);
+    fake.start(&mut app);
+    assert!(app.config.updates.check);
+    assert_eq!(fake.update_checks(), Some(false));
+    // Fixed to the defaults, which check, the file applies, and so do they.
+    std::fs::write(&path, "").unwrap();
+    change(&mut fake, &mut app);
+    assert_eq!(fake.update_checks(), Some(true));
+    // Turned off, as the file says.
+    std::fs::write(&path, "[updates]\ncheck = false\n").unwrap();
+    change(&mut fake, &mut app);
+    assert_eq!(fake.update_checks(), Some(false));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
 fn an_app_that_cannot_update_itself_dims_the_menu_s_item() {
     let (mut fake, mut app) = started();
     assert!(!fake.command_enabled(CHECK_UPDATES));

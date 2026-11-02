@@ -101,6 +101,11 @@ impl Diagnostics {
         self.notices.len() != before
     }
 
+    /// Whether a notice tells about `about`.
+    pub fn tells(&self, about: &About) -> bool {
+        self.notices.iter().any(|shown| shown.about == *about)
+    }
+
     /// The notice that shows: the latest.
     pub fn shown(&self) -> Option<&Diagnostic> {
         self.notices.last()

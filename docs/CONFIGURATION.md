@@ -1041,6 +1041,7 @@ Whether Lokyr checks for a newer version now and then, once a day at most, in th
 | `true`, `false` | `true` |
 
 - Lokyr › Check for Updates… checks at once, whatever the key says.
+- When the config file has an error as Lokyr starts, or names a font that is not installed, Lokyr takes the defaults but does not check for updates, as the file may have turned the checks off; it checks as the file says once you save it without its error.
 - A check asks Lokyr's site, `lokyr.dev`, for the list of its versions. It sends the version of Lokyr that you have, and what any request sends, your address and your preferred languages; nothing else about you or your Mac.
 - The updates' window has its own box to check automatically: the key wins over it the next time Lokyr starts, or as you save the file.
 - Lokyr updates itself in its app, `Lokyr.app`, as installed from its disk image. Lokyr built from its sources, as `cargo run` runs it, has no updater: the menu's item is dimmed, and the key does nothing.
