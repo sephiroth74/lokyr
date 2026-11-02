@@ -15,6 +15,7 @@ lokyr-render-core.workspace = true
 lokyr-text-core.workspace = true
 lokyr-vt-core.workspace = true
 serde.workspace = true
+taffy.workspace = true
 
 # The benchmark draws with CoreText, and criterion needs a C compiler of
 # its target, which the check for Linux from macOS does not have.

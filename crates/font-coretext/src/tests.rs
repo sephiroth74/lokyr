@@ -969,3 +969,41 @@ fn the_system_s_families_leave_out_the_hidden_ones() {
     );
     assert!(!families.iter().any(|family| family.starts_with('.')));
 }
+
+#[test]
+fn the_interface_s_family_is_the_system_s_and_its_text_has_its_width() {
+    let mut backend = CoreText::new();
+    let family = backend.interface_family();
+    let faces = backend
+        .family(&family)
+        .expect("the system's interface font");
+    let regular = faces
+        .iter()
+        .find(|face| face.style == "Regular")
+        .expect("a regular face");
+    // As AppKit lays out "Hello, world" at 13 points, about 71.5.
+    let width = backend.width(
+        regular.id,
+        13.0,
+        "Hello, world",
+        Features { ligatures: true },
+    );
+    assert!((width - 71.5).abs() < 1.5, "{width}");
+    // Of a proportional face: an `i` narrower than an `m`.
+    let narrow = backend.width(regular.id, 13.0, "iiii", Features { ligatures: true });
+    let wide = backend.width(regular.id, 13.0, "mmmm", Features { ligatures: true });
+    assert!(narrow < wide / 2.0, "{narrow} {wide}");
+    // Twice the size is narrower than twice the width, as the system's
+    // font draws its larger sizes of its own optical size, tighter.
+    let double = backend.width(
+        regular.id,
+        26.0,
+        "Hello, world",
+        Features { ligatures: true },
+    );
+    assert!(double < 2.0 * width - 4.0, "{double}");
+    assert_eq!(
+        backend.width(regular.id, 13.0, "", Features { ligatures: true }),
+        0.0
+    );
+}

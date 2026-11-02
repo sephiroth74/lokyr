@@ -100,6 +100,10 @@ animation = 150                      # ms, from 0 to 2000
 autohide = false                     # true | false: hides as it loses the focus
 spaces = "remain"                    # move | remain
 
+[interface]
+font-family = "Helvetica Neue"       # the system's interface font when absent
+font-size = 14                       # points, from 4 to 200
+
 [terminal]
 term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
@@ -723,6 +727,33 @@ Whether the quick terminal follows you to the Space in front, as you switch Spac
 | `"move"`, `"remain"` | `"move"` |
 
 It applies as it shows next.
+
+## `[interface]`
+
+The font of Lokyr's own interface, as its tab bar and its panels, apart from the terminal's text, which takes `[font]`'s.
+
+### `font-family`
+
+<sub>Platforms: macOS</sub>
+
+The family of the interface's text, by its name, as Font Book shows it on macOS, such as `"Helvetica Neue"`.
+
+- **Default**: the system's interface font, as macOS's menus and windows show it, SF Pro.
+- The case does not matter: `"helvetica neue"` is Helvetica Neue.
+- A family that is not installed gives the default one.
+- It does not apply yet, as Lokyr's interface has no text of its own yet: the tab bar and the panels will take it.
+
+### `font-size`
+
+<sub>Platforms: macOS</sub>
+
+The size of the interface's text, in points.
+
+| Values | Default |
+|---|---|
+| from `4` to `200`, whole or not | `13` |
+
+The text is measured at its size of points, as the system's font draws each size of its own, and the display's scale enlarges it. It does not apply yet, as `font-family`.
 
 ## `[terminal]`
 

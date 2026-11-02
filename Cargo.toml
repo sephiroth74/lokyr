@@ -62,6 +62,7 @@ raw-window-handle = "0.6.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+taffy = { version = "0.15.1", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 toml = "1.1.8"
 # The config's watcher, on FSEvents on macOS and inotify on Linux.
 notify = { version = "8.2.1", default-features = false, features = ["macos_fsevent"] }

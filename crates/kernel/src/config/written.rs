@@ -30,6 +30,7 @@ const EXAMPLES: &[(&str, &str, &str)] = &[
     ("font", "bold-italic-style", "\"Bold Italic\""),
     ("font", "non-ascii-family", "\"Hiragino Sans\""),
     ("cursor", "thickness", "2"),
+    ("interface", "font-family", "\"Helvetica Neue\""),
 ];
 
 /// What a heading of the guide is about.

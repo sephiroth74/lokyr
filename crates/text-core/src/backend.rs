@@ -224,6 +224,28 @@ pub trait FontBackend {
     /// What `face` measures at `size` pixels.
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics;
 
+    /// The name of the family of the text of the app's own interface, as
+    /// its tab bar and its panels: the system's, as its menus and windows
+    /// show it; [`FontBackend::default_family`] by default.
+    fn interface_family(&mut self) -> String {
+        self.default_family()
+    }
+
+    /// How wide `text` is in `face` at `size` pixels, on one line, with
+    /// `features`, its glyphs' advances: by default, its last glyph's place
+    /// and the face's advance, which a face of one advance gives exactly.
+    fn width(&mut self, face: FaceId, size: f32, text: &str, features: Features) -> f32 {
+        let mut glyphs = Vec::new();
+        self.shape(face, size, text, features, &mut glyphs);
+        glyphs
+            .iter()
+            .map(|glyph| glyph.x)
+            .fold(None, |last: Option<f32>, x| {
+                Some(last.map_or(x, |last| last.max(x)))
+            })
+            .map_or(0.0, |last| last + self.metrics(face, size).advance)
+    }
+
     /// The glyph of `character` in `face`, or `None` if the face lacks it.
     fn glyph(&mut self, face: FaceId, character: char) -> Option<GlyphId>;
 

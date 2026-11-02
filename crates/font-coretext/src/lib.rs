@@ -23,9 +23,9 @@ use objc2_core_foundation::{
 use objc2_core_text::{
     CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor,
     CTFontManagerCreateFontDescriptorFromData, CTFontOrientation, CTFontSymbolicTraits,
-    CTFontTableOptions, CTLine, CTRun, kCTFontAttributeName, kCTFontFamilyNameAttribute,
-    kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue,
-    kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
+    CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, kCTFontAttributeName,
+    kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
+    kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -259,6 +259,35 @@ impl CoreText {
 impl FontBackend for CoreText {
     fn default_family(&mut self) -> String {
         SF_MONO.to_owned()
+    }
+
+    fn interface_family(&mut self) -> String {
+        // SAFETY: a type of the UI's fonts, and its default language.
+        let font =
+            unsafe { CTFont::new_ui_font_for_language(CTFontUIFontType::System, 13.0, None) };
+        font.map_or_else(
+            || self.default_family(),
+            // SAFETY: a font that CoreText made.
+            |font| unsafe { font.family_name() }.to_string(),
+        )
+    }
+
+    fn width(&mut self, face: FaceId, size: f32, text: &str, features: Features) -> f32 {
+        let Some(font) = self.shaping_font(face, f64::from(size), features) else {
+            return 0.0;
+        };
+        line(&font, text).map_or(0.0, |line| {
+            // SAFETY: a line that CoreText made; the other bounds are not
+            // asked for.
+            let width = unsafe {
+                line.typographic_bounds(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                )
+            };
+            width as f32
+        })
     }
 
     fn family(&mut self, name: &str) -> Option<Vec<FaceInfo>> {
@@ -708,6 +737,20 @@ fn widest_digit(font: &CTFont) -> f64 {
         .fold(0.0, f64::max)
 }
 
+/// The line of `text` in `font`, as CoreText lays it out.
+fn line(font: &CTFont, text: &str) -> Option<CFRetained<CTLine>> {
+    let string = CFString::from_str(text);
+    // SAFETY: Core Text's constant.
+    let key = unsafe { kCTFontAttributeName };
+    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[font.as_ref()]);
+    // SAFETY: a string and a dictionary of its attributes, which the call
+    // copies.
+    let attributed =
+        unsafe { CFAttributedString::new(None, Some(&string), Some(attributes.as_opaque())) }?;
+    // SAFETY: an attributed string, which the line copies.
+    Some(unsafe { CTLine::with_attributed_string(&attributed) })
+}
+
 /// Shapes `text` in `font`, through a line of CoreText's, and appends its
 /// glyphs to `glyphs`, each at its place from the line's start; returns
 /// the fonts of the runs: `None` for `font`'s own, and the font that
@@ -726,19 +769,9 @@ fn shape(
         let at = u32::try_from(at).unwrap_or(u32::MAX);
         bytes.extend(std::iter::repeat_n(at, character.len_utf16()));
     }
-    let string = CFString::from_str(text);
-    // SAFETY: Core Text's constant.
-    let key = unsafe { kCTFontAttributeName };
-    let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[font.as_ref()]);
-    // SAFETY: a string and a dictionary of its attributes, which the call
-    // copies.
-    let Some(attributed) =
-        (unsafe { CFAttributedString::new(None, Some(&string), Some(attributes.as_opaque())) })
-    else {
+    let Some(line) = line(font, text) else {
         return fonts;
     };
-    // SAFETY: an attributed string, which the line copies.
-    let line = unsafe { CTLine::with_attributed_string(&attributed) };
     // SAFETY: a line that CoreText made.
     let runs = unsafe { line.glyph_runs() };
     // SAFETY: the runs of a line are `CTRun`s.

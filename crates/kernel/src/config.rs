@@ -65,7 +65,8 @@
 //!
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
-//! `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
+//! `[quick-terminal]` [`QuickTerminalConfig`], `[interface]`
+//! [`InterfaceConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
 //! [`BellConfig`], `[app]`
@@ -84,6 +85,7 @@ use std::path::{Path, PathBuf};
 use lokyr_text_core::FontConfig;
 use lokyr_text_core::as_written;
 use lokyr_ui_core::cursor::CursorConfig;
+use lokyr_ui_core::interface::InterfaceConfig;
 use lokyr_ui_core::text::TextConfig;
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use serde::de::{self, Visitor};
@@ -119,6 +121,8 @@ pub struct Config {
     pub window: WindowConfig,
     /// The `[quick-terminal]` section.
     pub quick_terminal: QuickTerminalConfig,
+    /// The `[interface]` section.
+    pub interface: InterfaceConfig,
     /// The `[terminal]` section.
     pub terminal: TerminalConfig,
     /// The `[scrollback]` section.
@@ -1460,13 +1464,14 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 14] {
+fn sections() -> [(&'static str, &'static [&'static str]); 15] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
         ("cursor", keys::<CursorConfig>()),
         ("window", keys::<WindowConfig>()),
         ("quick-terminal", keys::<QuickTerminalConfig>()),
+        ("interface", keys::<InterfaceConfig>()),
         ("terminal", keys::<TerminalConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
@@ -1885,6 +1890,10 @@ mod tests {
             title-size = false
             opaque-titlebar = true
 
+            [interface]
+            font-family = "Helvetica Neue"
+            font-size = 15
+
             [terminal]
             term = "xterm-lokyr"
             unicode-widths = "8"
@@ -1914,6 +1923,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.clipboard.read, ClipboardRead::Ask);
+        assert_eq!(config.interface.font_family, name("Helvetica Neue"));
+        assert_eq!(config.interface.font_size, Size::try_from(15.0).unwrap());
+        assert_eq!(Config::default().interface.font_family, None);
+        assert_eq!(Config::default().interface.font_size, Size::DEFAULT);
+        let message = error("[interface]\nfont-size = 300\n").1;
+        assert!(message.contains("from 4 to 200, not 300"), "{message}");
         let terminal = &config.terminal;
         assert_eq!(terminal.term.as_str(), "xterm-lokyr");
         assert_eq!(
@@ -2440,6 +2455,7 @@ mod tests {
                 "cursor",
                 "window",
                 "quick-terminal",
+                "interface",
                 "terminal",
                 "scrollback",
                 "keyboard",
@@ -2513,6 +2529,7 @@ mod tests {
             keys::<TextConfig>(),
             ["bold", "italic", "ansi-colors", "bold-is-bright", "blink"]
         );
+        assert_eq!(keys::<InterfaceConfig>(), ["font-family", "font-size"]);
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
         assert!(font.contains(&"builtin-powerline"));
