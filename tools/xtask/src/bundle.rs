@@ -36,7 +36,7 @@ pub const NAME: &str = "Lokyr";
 /// The binary, as the app's crate names it, and the bundle's, which the
 /// panes' programs run as their command line names it, on a volume that
 /// tells the case of names apart too.
-const EXECUTABLE: &str = "lokyr";
+pub(crate) const EXECUTABLE: &str = "lokyr";
 
 /// The oldest macOS that the app runs on.
 const MINIMUM_SYSTEM: &str = "26.0";
@@ -273,7 +273,7 @@ fn plist(pairs: &[(String, String)], high_resolution: bool) -> String {
 
 /// The version that the app's `binary` tells, as `lokyr --version` prints
 /// it, the crate's with the date of its commit: `0.2.0-20261101`.
-fn told_version(binary: &Path) -> Result<String> {
+pub(crate) fn told_version(binary: &Path) -> Result<String> {
     let output = Command::new(binary)
         .arg("--version")
         .output()

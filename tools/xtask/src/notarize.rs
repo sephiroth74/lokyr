@@ -47,7 +47,6 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             app.display()
         );
     }
-    let profile = std::env::var(PROFILE_VARIABLE).unwrap_or_else(|_| PROFILE.to_owned());
     let zip = app.with_extension("zip");
     let _ = std::fs::remove_file(&zip);
     status(
@@ -57,44 +56,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             .arg(&zip),
         "zipping the bundle",
     )?;
-    println!(
-        "notarize: sending {} to Apple's notary service",
-        app.display()
-    );
-    let submitted = output(
-        Command::new("xcrun")
-            .args(["notarytool", "submit"])
-            .arg(&zip)
-            .args([
-                "--keychain-profile",
-                &profile,
-                "--wait",
-                "--output-format",
-                "json",
-            ]),
-        "sending the bundle to the notary service",
-    );
+    let submitted = submit(&zip);
     let _ = std::fs::remove_file(&zip);
-    let submitted = submitted?;
-    let (id, outcome) = submission(&submitted)
-        .with_context(|| format!("the notary service's answer: {submitted}"))?;
-    println!("notarize: submission {id}: {outcome}");
-    if outcome != "Accepted" {
-        let _ = Command::new("xcrun")
-            .args(["notarytool", "log", &id, "--keychain-profile", &profile])
-            .status();
-        bail!("Apple did not notarize the bundle: {outcome}");
-    }
-    status(
-        Command::new("xcrun").args(["stapler", "staple"]).arg(&app),
-        "stapling the ticket",
-    )?;
-    status(
-        Command::new("xcrun")
-            .args(["stapler", "validate"])
-            .arg(&app),
-        "checking the stapled ticket",
-    )?;
+    submitted?;
+    staple(&app)?;
     status(
         Command::new("spctl")
             .args(["--assess", "--type", "execute", "--verbose=2"])
@@ -108,9 +73,59 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Sends `file`, a zip, a disk image or an installer's package, to Apple's
+/// notary service, with the credentials of the keychain's profile, and
+/// waits for its answer; fails, with Apple's log of why, if Apple refuses
+/// it.
+pub(crate) fn submit(file: &Path) -> Result<()> {
+    let profile = std::env::var(PROFILE_VARIABLE).unwrap_or_else(|_| PROFILE.to_owned());
+    println!(
+        "notarize: sending {} to Apple's notary service",
+        file.display()
+    );
+    let submitted = output(
+        Command::new("xcrun")
+            .args(["notarytool", "submit"])
+            .arg(file)
+            .args([
+                "--keychain-profile",
+                &profile,
+                "--wait",
+                "--output-format",
+                "json",
+            ]),
+        "sending it to the notary service",
+    )?;
+    let (id, outcome) = submission(&submitted)
+        .with_context(|| format!("the notary service's answer: {submitted}"))?;
+    println!("notarize: submission {id}: {outcome}");
+    if outcome != "Accepted" {
+        let _ = Command::new("xcrun")
+            .args(["notarytool", "log", &id, "--keychain-profile", &profile])
+            .status();
+        bail!("Apple did not notarize {}: {outcome}", file.display());
+    }
+    Ok(())
+}
+
+/// Staples the ticket of Apple's notarization to `path`, a bundle or a disk
+/// image that Apple notarized, and checks it.
+pub(crate) fn staple(path: &Path) -> Result<()> {
+    status(
+        Command::new("xcrun").args(["stapler", "staple"]).arg(path),
+        "stapling the ticket",
+    )?;
+    status(
+        Command::new("xcrun")
+            .args(["stapler", "validate"])
+            .arg(path),
+        "checking the stapled ticket",
+    )
+}
+
 /// Whether `signature`, as `codesign --display --verbose=2` tells it, is of
 /// a Developer ID Application, and not ad hoc.
-fn developer_id_signed(signature: &str) -> bool {
+pub(crate) fn developer_id_signed(signature: &str) -> bool {
     signature
         .lines()
         .any(|line| line.starts_with("Authority=Developer ID Application:"))
@@ -128,7 +143,7 @@ fn submission(answer: &str) -> Option<(String, String)> {
 }
 
 /// Runs `command`, which `what` describes, and fails if it fails.
-fn status(command: &mut Command, what: &str) -> Result<()> {
+pub(crate) fn status(command: &mut Command, what: &str) -> Result<()> {
     let status = command.status().with_context(|| what.to_owned())?;
     if !status.success() {
         bail!("{what} failed: {status}");
@@ -139,7 +154,7 @@ fn status(command: &mut Command, what: &str) -> Result<()> {
 /// Runs `command`, which `what` describes, and gives what it wrote, its
 /// output and its errors, which `codesign` writes its display to; fails if
 /// it fails.
-fn output(command: &mut Command, what: &str) -> Result<String> {
+pub(crate) fn output(command: &mut Command, what: &str) -> Result<String> {
     let output = command.output().with_context(|| what.to_owned())?;
     let text = format!(
         "{}{}",

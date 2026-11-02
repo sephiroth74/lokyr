@@ -101,6 +101,10 @@ bundle *args:
 notarize: bundle
     cargo xtask notarize
 
+# Build target/Lokyr.app, have Apple notarize it, then build target/Lokyr-<version>.dmg of it, signed, notarized and stapled. It sends the bundle and the image to Apple's notary service.
+dmg: notarize
+    cargo xtask dmg
+
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
     cargo xtask terminfo

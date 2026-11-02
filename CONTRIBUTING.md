@@ -31,6 +31,8 @@ Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you ne
 
 The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the identity that `LOKYR_SIGN_IDENTITY` names, as `codesign --sign` takes it, and ad hoc without it. `just` reads the variables of the untracked `private/lokyr.env`, where the maintainer names the Developer ID, so that no signing identity, team or credential is in the repository; a variable of the environment wins over the file's. `just notarize` has Apple notarize the bundle and staples the ticket, for the maintainer: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
 
+`just dmg` then builds `target/Lokyr-<version>.dmg` of the notarized bundle, the app and a link to Applications over a background, and has Apple notarize the image too; `cargo xtask dmg --no-notarize` builds it of the bundle as it is, to look at it. The window's look is the Finder's own `.DS_Store`, kept in `crates/app/resources/dmg`, which `cargo xtask dmg layout` has the Finder write again, with the background rendered from its SVG by `rsvg-convert`, when the window's size or the icons' places change; it needs the terminal's permission to control the Finder.
+
 ## The gate: `just ci`
 
 `just ci` runs the checks of CI that a Mac can make, and a pull request needs it green:
