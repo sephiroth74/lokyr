@@ -15,7 +15,7 @@ fn a_panic_writes_its_version_its_thread_and_its_backtrace_to_the_log() {
         .spawn(|| panic!("a test's panic"))
         .unwrap();
     assert!(worker.join().is_err());
-    // The hook wrote before the thread ended.
+    // The hook wrote it into the file, which the test reads.
     let mut text = String::new();
     for _ in 0..100 {
         text = std::fs::read_to_string(&log).unwrap_or_default();
@@ -25,7 +25,7 @@ fn a_panic_writes_its_version_its_thread_and_its_backtrace_to_the_log() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(
-        text.contains(" lokyr 9.9.9-test: the thread 'worker' panicked: "),
+        text.contains(" lokyr 9.9.9-test: the thread 'worker' panicked at "),
         "{text}"
     );
     assert!(text.contains("a test's panic"), "{text}");
