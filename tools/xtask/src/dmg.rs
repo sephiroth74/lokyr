@@ -1,9 +1,11 @@
 //! `cargo xtask dmg`: builds `target/Lokyr-<version>.dmg`, the disk image
-//! that the app is downloaded as, of `target/Lokyr.app` once `cargo xtask
-//! notarize` has had it notarized and its ticket stapled: a window of the
+//! that the app is downloaded as, of `target/Lokyr.app`, which it has Apple
+//! notarize first, as `cargo xtask notarize` does, unless the bundle has
+//! its ticket stapled already: a window of the
 //! app and of a link to Applications, over a background, the app dragged
 //! onto the link to install it. The image is signed with the bundle's
-//! identity, the Developer ID that `LOKYR_SIGN_IDENTITY` names, notarized
+//! identity, the Developer ID that `LOKYR_SIGN_IDENTITY` names, in the
+//! environment or in the untracked `private/lokyr.env`, notarized
 //! and stapled in its turn, so that Gatekeeper
 //! opens it as a download without its warning. `--no-notarize` builds it of
 //! the bundle as it is, without Apple, to look at it.
@@ -25,7 +27,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail, ensure};
 
 use crate::bundle;
-use crate::notarize::{self, output, status};
+use crate::notarize::{self, status};
 
 /// The image's resources, relative to the workspace root.
 const RESOURCES: &str = "crates/app/resources/dmg";
@@ -59,6 +61,11 @@ const APP_PLACE: (u32, u32) = (170, 200);
 
 /// The center of the link to Applications, at the arrow's end.
 const APPLICATIONS_PLACE: (u32, u32) = (490, 200);
+
+/// How far below the place that the Finder's script gives an icon the
+/// Finder draws the icon's center, in points, on macOS 26 and later, as
+/// measured: the script gives each place this much higher.
+const FINDER_DROP: u32 = 45;
 
 /// The link to the folder of the apps.
 const APPLICATIONS: &str = "Applications";
@@ -113,29 +120,6 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
 /// Builds the image of `app`, signed, notarized and stapled if `notarized`,
 /// through the folder `scratch`.
 fn build(root: &Path, app: &Path, scratch: &Path, notarized: bool) -> Result<()> {
-    if notarized {
-        let signature = output(
-            Command::new("codesign")
-                .args(["--display", "--verbose=2"])
-                .arg(app),
-            "reading the bundle's signature",
-        )?;
-        ensure!(
-            notarize::developer_id_signed(&signature),
-            "{} is not signed with a Developer ID: `just dmg` builds it and has it notarized",
-            app.display()
-        );
-        output(
-            Command::new("xcrun").args(["stapler", "validate"]).arg(app),
-            "checking the bundle's ticket",
-        )
-        .with_context(|| {
-            format!(
-                "{} has no ticket of Apple's stapled: `just dmg` has it notarized",
-                app.display()
-            )
-        })?;
-    }
     let resources = root.join(RESOURCES);
     let layout = resources.join(LAYOUT);
     let store = fs::read(&layout).with_context(|| {
@@ -149,6 +133,17 @@ fn build(root: &Path, app: &Path, scratch: &Path, notarized: bool) -> Result<()>
         "{} is not the Finder's layout of the window: `cargo xtask dmg layout` has the Finder write it",
         layout.display()
     );
+    if notarized {
+        notarize::ensure_developer_id(app)?;
+        let stapled = Command::new("xcrun")
+            .args(["stapler", "validate", "-q"])
+            .arg(app)
+            .status()
+            .is_ok_and(|status| status.success());
+        if !stapled {
+            notarize::notarize_app(app)?;
+        }
+    }
     let version = bundle::told_version(&app.join("Contents/MacOS").join(bundle::EXECUTABLE))?;
     let dmg = root
         .join("target")
@@ -447,8 +442,8 @@ fn layout_script() -> String {
     let volume = bundle::NAME;
     let (left, top) = WINDOW_PLACE;
     let (right, bottom) = (left + WINDOW.0, top + WINDOW.1 + TITLE_BAR);
-    let (app_x, app_y) = APP_PLACE;
-    let (link_x, link_y) = APPLICATIONS_PLACE;
+    let (app_x, app_y) = (APP_PLACE.0, APP_PLACE.1 - FINDER_DROP);
+    let (link_x, link_y) = (APPLICATIONS_PLACE.0, APPLICATIONS_PLACE.1 - FINDER_DROP);
     format!(
         r#"tell application "Finder"
     tell disk "{volume}"
@@ -502,6 +497,7 @@ fn laid_out(store: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notarize::output;
 
     fn root() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -522,13 +518,15 @@ mod tests {
         // The bounds hold the title bar over the background's 420 points.
         assert!(script.contains("set the bounds of container window to {200, 120, 860, 572}"));
         assert!(script.contains("set icon size of viewOptions to 128"));
+        // The icons' centers at the arrow's height, 200, which the Finder
+        // draws 45 points below the places that it is given.
         assert!(
             script
-                .contains(r#"set position of item "Lokyr.app" of container window to {170, 200}"#)
+                .contains(r#"set position of item "Lokyr.app" of container window to {170, 155}"#)
         );
         assert!(
             script.contains(
-                r#"set position of item "Applications" of container window to {490, 200}"#
+                r#"set position of item "Applications" of container window to {490, 155}"#
             )
         );
         assert!(script.contains(r#"file ".background:background.tiff""#));

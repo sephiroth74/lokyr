@@ -1,11 +1,12 @@
 //! `cargo xtask notarize`: has Apple notarize `target/Lokyr.app`, which
-//! `cargo xtask bundle` signed with the project's Developer ID and the
+//! `cargo xtask bundle` signed with a Developer ID and the
 //! hardened runtime, and staples the ticket to it, so that Gatekeeper opens
 //! a downloaded copy without its warning.
 //!
 //! The bundle goes to Apple's notary service as a zip, through `notarytool`,
 //! with the credentials of the keychain's profile `lokyr-notary`, or of the
-//! one that `LOKYR_NOTARY_PROFILE` names; the key stays in the keychain,
+//! one that `LOKYR_NOTARY_PROFILE` names, in the environment or in the
+//! untracked `private/lokyr.env`; the key stays in the keychain,
 //! outside the repository. Apple's log tells why a bundle that it refuses
 //! was refused.
 
@@ -35,10 +36,22 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     if !app.exists() {
         bail!("{} is not there: `just bundle` builds it", app.display());
     }
+    ensure_developer_id(&app)?;
+    notarize_app(&app)?;
+    println!(
+        "notarize: {} is notarized, its ticket stapled",
+        app.display()
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Fails unless `app` is signed with a Developer ID, which notarization
+/// needs.
+pub(crate) fn ensure_developer_id(app: &Path) -> Result<()> {
     let signature = output(
         Command::new("codesign")
             .args(["--display", "--verbose=2"])
-            .arg(&app),
+            .arg(app),
         "reading the bundle's signature",
     )?;
     if !developer_id_signed(&signature) {
@@ -47,30 +60,31 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             app.display()
         );
     }
+    Ok(())
+}
+
+/// Has Apple notarize the bundle `app`, signed with a Developer ID, as a
+/// zip, staples the ticket to it, and assesses it as Gatekeeper does.
+pub(crate) fn notarize_app(app: &Path) -> Result<()> {
     let zip = app.with_extension("zip");
     let _ = std::fs::remove_file(&zip);
     status(
         Command::new("ditto")
             .args(["-c", "-k", "--keepParent"])
-            .arg(&app)
+            .arg(app)
             .arg(&zip),
         "zipping the bundle",
     )?;
     let submitted = submit(&zip);
     let _ = std::fs::remove_file(&zip);
     submitted?;
-    staple(&app)?;
+    staple(app)?;
     status(
         Command::new("spctl")
             .args(["--assess", "--type", "execute", "--verbose=2"])
-            .arg(&app),
+            .arg(app),
         "assessing the bundle as Gatekeeper does",
-    )?;
-    println!(
-        "notarize: {} is notarized, its ticket stapled",
-        app.display()
-    );
-    Ok(ExitCode::SUCCESS)
+    )
 }
 
 /// Sends `file`, a zip, a disk image or an installer's package, to Apple's
@@ -78,7 +92,9 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
 /// waits for its answer; fails, with Apple's log of why, if Apple refuses
 /// it.
 pub(crate) fn submit(file: &Path) -> Result<()> {
-    let profile = std::env::var(PROFILE_VARIABLE).unwrap_or_else(|_| PROFILE.to_owned());
+    let profile = crate::private::variable(PROFILE_VARIABLE)?
+        .filter(|named| !named.is_empty())
+        .unwrap_or_else(|| PROFILE.to_owned());
     println!(
         "notarize: sending {} to Apple's notary service",
         file.display()

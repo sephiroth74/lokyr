@@ -6,6 +6,7 @@ mod check_deps;
 mod check_links;
 mod dmg;
 mod notarize;
+mod private;
 mod terminfo;
 mod ucd;
 
@@ -46,7 +47,7 @@ fn print_help() {
          check-comments              find the plan, tasks, phases and ADRs, in the code's comments\n  \
          check-deps [--print-graph]  check the dependency rules of the workspace\n  \
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
-         dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the notarized bundle, signed, notarized and stapled\n  \
+         dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the bundle, notarized first, signed, notarized and stapled\n  \
          dmg layout                  have the Finder lay out the image's window, and keep its .DS_Store\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \

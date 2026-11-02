@@ -8,7 +8,7 @@
 //! the usage strings of its `infoplist.ftl`, which `Info.plist` takes in
 //! English.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
-//! maintainer's Developer ID, which `just` reads from the untracked
+//! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
 //! app from one build to the next; without it, as on CI, ad hoc; with the
 //! hardened runtime, and the entitlements of the resources that the
@@ -470,14 +470,11 @@ fn localized_plist(usages: &[(String, String)]) -> String {
 }
 
 /// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
-/// names, or `-`, ad hoc.
+/// names, in the environment or in `private/lokyr.env`, or `-`, ad hoc.
 pub(crate) fn identity() -> Result<String> {
-    match std::env::var_os(IDENTITY_VARIABLE) {
-        Some(named) if !named.is_empty() => named
-            .into_string()
-            .map_err(|_| anyhow::anyhow!("{IDENTITY_VARIABLE} is not UTF-8")),
-        _ => Ok("-".to_owned()),
-    }
+    Ok(crate::private::variable(IDENTITY_VARIABLE)?
+        .filter(|named| !named.is_empty())
+        .unwrap_or_else(|| "-".to_owned()))
 }
 
 /// The plist of [`ENTITLEMENTS`], each granted.

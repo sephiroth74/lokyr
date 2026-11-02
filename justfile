@@ -7,7 +7,8 @@ alias t := test
 
 # The maintainer's signing identity, `LOKYR_SIGN_IDENTITY`, and other
 # variables that stay out of the repository, from the untracked
-# private/lokyr.env when it is there; a variable of the environment wins.
+# private/lokyr.env when it is there, which `cargo xtask` reads too; a
+# variable of the environment wins.
 set dotenv-path := "private/lokyr.env"
 
 # The nightly toolchain that cargo-fuzz needs, pinned like the main one:
@@ -101,8 +102,8 @@ bundle *args:
 notarize: bundle
     cargo xtask notarize
 
-# Build target/Lokyr.app, have Apple notarize it, then build target/Lokyr-<version>.dmg of it, signed, notarized and stapled. It sends the bundle and the image to Apple's notary service.
-dmg: notarize
+# Build target/Lokyr.app, then target/Lokyr-<version>.dmg of it, the bundle and the image each notarized by Apple and stapled. It sends both to Apple's notary service.
+dmg: bundle
     cargo xtask dmg
 
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
