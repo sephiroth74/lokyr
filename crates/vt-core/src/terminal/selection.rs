@@ -394,6 +394,37 @@ fn line(rows: &PageList, index: usize) -> (usize, usize) {
     (first, last)
 }
 
+/// The first and the last row of the logical line that the row at `index`
+/// is in, as far as `reach` rows before it and after it: each way in one
+/// pass, so that a line of many rows costs no more than `reach` rows.
+fn line_near(rows: &PageList, index: usize, reach: usize) -> (usize, usize) {
+    let goes_on = |row: ListRow<'_>, next: ListRow<'_>| {
+        row.metadata().has(RowFlag::SoftWrapped) && next.metadata().has(RowFlag::Continuation)
+    };
+    let Some(at) = rows.rows_from(index).next() else {
+        return (index, index);
+    };
+    let mut first = index;
+    let mut after = at;
+    for before in rows.rows_before(index).take(reach) {
+        if !goes_on(before, after) {
+            break;
+        }
+        first -= 1;
+        after = before;
+    }
+    let mut last = index;
+    let mut row = at;
+    for next in rows.rows_from(index).skip(1).take(reach) {
+        if !goes_on(row, next) {
+            break;
+        }
+        last += 1;
+        row = next;
+    }
+    (first, last)
+}
+
 /// Whether the cells of `row` from column `from` on show nothing.
 fn blank_from(row: ListRow<'_>, from: u16) -> bool {
     (from..row.cols()).all(|x| {
@@ -501,9 +532,7 @@ impl Terminal {
     pub fn line_text(&self, row: i64, reach: usize) -> Option<(String, Vec<(u16, i64)>)> {
         let index = self.row_index(row)?;
         let rows = &self.screen().rows;
-        let (first, last) = line(rows, index);
-        let first = first.max(index.saturating_sub(reach));
-        let last = last.min(index.saturating_add(reach));
+        let (first, last) = line_near(rows, index, reach);
         let (mut text, mut cells) = (String::new(), Vec::new());
         for (at, list_row) in (first..=last).zip(rows.rows_from(first)) {
             let number = self.row_number(at);
@@ -1195,6 +1224,32 @@ mod tests {
         assert_eq!(line_at(&terminal, drawn.row(0)).as_deref(), Some("a"));
         terminal.snapshot(&mut snapshot);
         assert_eq!(snapshot.origin(), Some(terminal.origin()));
+    }
+
+    #[test]
+    fn a_line_s_read_takes_the_time_of_its_reach() {
+        // A line of 100 000 rows of 10 cells, between two short ones.
+        let mut terminal = fed(10, 4, "short\r\n");
+        feed(&mut terminal, &"0123456789".repeat(100_000));
+        feed(&mut terminal, "\r\nend");
+        let middle = 50_000;
+        let start = std::time::Instant::now();
+        let (text, _) = terminal.line_text(middle, 2).unwrap();
+        let long = start.elapsed();
+        assert_eq!(text, "0123456789".repeat(5));
+        let start = std::time::Instant::now();
+        assert_eq!(terminal.line_text(0, 2).unwrap().0.trim_end(), "short");
+        let short = start.elapsed();
+        // The walk of the whole line took 200 times a short one's.
+        assert!(
+            long < short * 20 + std::time::Duration::from_millis(2),
+            "{long:?} against {short:?}"
+        );
+        // Its first rows, and its last, as far as the reach.
+        let first = terminal.line_text(1, 3).unwrap().1;
+        assert_eq!((first[0].1, first.last().unwrap().1), (1, 4));
+        let last = terminal.line_text(100_000, 3).unwrap().1;
+        assert_eq!((last[0].1, last.last().unwrap().1), (99_997, 100_000));
     }
 
     #[test]
