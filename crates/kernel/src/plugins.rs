@@ -24,6 +24,7 @@ pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
+pub use lokyr_plugin_sdk::message::{Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_session::Reader;
 use lokyr_text_core::Size;
@@ -523,6 +524,13 @@ impl Plugins {
             }
         }
         errors
+    }
+
+    /// Whether an active plugin subscribed to the events of `name`, which
+    /// the app then tells, as the pointer's, whose moves cost wakeups.
+    pub fn subscribes(&self, name: &str) -> bool {
+        self.active()
+            .any(|state| state.subscribed.iter().any(|subscribed| subscribed == name))
     }
 
     /// Whether events wait for the next delivery, or reads of rows, whose
@@ -1184,7 +1192,9 @@ impl Host<'_, '_> {
             }
             Asked::Subscribe(names) => {
                 if let Some(name) = names.iter().find(|name| {
-                    !WorkspaceEvent::NAMES.contains(&name.as_str()) && !commands::is_name(name)
+                    !WorkspaceEvent::NAMES.contains(&name.as_str())
+                        && name.as_str() != POINTER
+                        && !commands::is_name(name)
                 }) {
                     return Err(Error::new(
                         Code::InvalidName,

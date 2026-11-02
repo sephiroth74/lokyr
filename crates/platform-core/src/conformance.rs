@@ -223,6 +223,9 @@ fn absent_window(platform: &mut dyn Platform) -> Vec<String> {
     if platform.refresh_interval(window).is_some() {
         failed.push("a window that never was has a refresh interval".to_owned());
     }
+    if platform.pointer_position(window).is_some() {
+        failed.push("a window that never was has a pointer".to_owned());
+    }
     if platform.window_handle(window).is_some() {
         failed.push("a window that never was has a handle".to_owned());
     }

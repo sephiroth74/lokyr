@@ -275,6 +275,9 @@ type Event =
     | { kind: "layout-changed", tab: TabId }
     | { kind: "title-changed", pane: PaneId, title: string }
     | { kind: "search-progress", id: number, matches: number, done: boolean }
+    -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it; while Command is up, its
+    -- moves come only as the system gives them, as a program that tracks the mouse asks.
+    | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
     -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "custom", name: string, schema: string, value: any }

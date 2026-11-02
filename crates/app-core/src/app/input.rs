@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use lokyr_kernel::commands::Value;
 use lokyr_kernel::keymap::{Invocation, Pressed, Resolved, Resolver};
+use lokyr_kernel::plugins;
 use lokyr_kernel::workspace::{Pane, PaneId};
 use lokyr_kernel::{keymap, paste};
 use lokyr_platform_core::{
@@ -39,6 +40,14 @@ impl<B: Backend> App<B> {
             && !key.text.is_empty()
         {
             bench.pending = key.time;
+        }
+        // Command, down or up, with the pointer still: the plugins learn
+        // where the pointer is, and its moves wake the app while it is held.
+        if key.mods.super_key != self.command_held {
+            self.command_held = key.mods.super_key;
+            let position = platform.pointer_position(window);
+            self.tell_pointer(platform, window, position, key.mods);
+            platform.request_frame(window);
         }
         // The key's own prompt, which no output told, as after a
         // silent `stty -echo`, is secure from the next key.
@@ -626,6 +635,7 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
+        self.tell_pointer(platform, window, Some(position), mods);
         let dragging = self
             .windows
             .get(&window)
@@ -665,6 +675,56 @@ impl<B: Backend> App<B> {
             let action = MouseAction::Motion(state.mouse.held());
             pane.mouse(&mouse_event(action, mods, pointer));
         }
+    }
+
+    /// Tells the plugins that subscribed to the pointer's events where it
+    /// is over `window`, at `position`, with `mods`, if it went over another
+    /// cell, or out of the panes, or Command went down or up: its pane and
+    /// its cell, by its row's number as the drawn frame showed it, which
+    /// takes no lock of the pane.
+    pub(super) fn tell_pointer(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Option<Point>,
+        mods: Modifiers,
+    ) {
+        // The modifiers of a pointer's event are those held now.
+        self.command_held = mods.super_key;
+        if !self.plugins.subscribes(plugins::POINTER) {
+            return;
+        }
+        let command = mods.super_key;
+        let over = position.and_then(|position| {
+            let pane = self.pane_under(platform, window, position)?;
+            let pointer = self.pointer_in(platform, window, pane, position)?;
+            // The drawn frame's numbers, which take no lock of the pane.
+            let top = self.workspace.pane(pane)?.snapshot().origin()?.top;
+            Some((
+                pane,
+                Some((pointer.col, top + i64::from(pointer.row))),
+                command,
+            ))
+        });
+        // Out of the panes, the pane that it left learns so.
+        let told = over.or_else(|| self.pointer_told.map(|(pane, _, _)| (pane, None, command)));
+        if told.is_none() || told == self.pointer_told {
+            return;
+        }
+        self.pointer_told = told;
+        let Some((pane, at, _)) = told else {
+            return;
+        };
+        self.plugins.post(plugins::Event::Pointer {
+            pane: plugins::host::PaneId(pane.get()),
+            at,
+            mods: plugins::Mods {
+                shift: mods.shift,
+                control: mods.control,
+                option: mods.left_alt || mods.right_alt,
+                command,
+            },
+        });
     }
 
     /// The wheel or the trackpad scrolled over `window`, by `scroll`'s delta

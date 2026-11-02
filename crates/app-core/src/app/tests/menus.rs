@@ -588,6 +588,50 @@ fn the_context_menu_s_link_is_told_by_its_row_s_number_after_a_scroll() {
 }
 
 #[test]
+fn command_underlines_the_link_under_the_pointer_still_until_it_goes_up() {
+    let (mut fake, mut app, window, _) = pasting(
+        "underlined",
+        "",
+        shell("stty raw -echo; printf 'see https://lokyr.dev/x here\\r\\n'; echo ready; cat -v"),
+    );
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let underlined = |app: &App| {
+        app.pane(window)
+            .snapshot()
+            .decorations()
+            .iter()
+            .map(|span| (span.row, span.first, span.last))
+            .collect::<Vec<_>>()
+    };
+    // The pointer over the URL, without Command: nothing.
+    let over = cell(10, 0);
+    fake.send(&mut app, window, moved(over, Modifiers::NONE));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(underlined(&app).is_empty());
+    // Command down, the pointer still: the URL's cells underlined.
+    let command = |pressed: bool| {
+        key_event(
+            KeyCode::SuperLeft,
+            "",
+            if pressed { CMD } else { Modifiers::NONE },
+            pressed,
+        )
+    };
+    let tracks = |fake: &Fake| fake.window(window).unwrap().mouse_moves;
+    assert!(!tracks(&fake));
+    fake.send(&mut app, window, command(true));
+    run_until(&mut fake, &mut app, |_, app| !underlined(app).is_empty());
+    assert_eq!(underlined(&app), [(0, 4, 22)]);
+    // The pointer's moves wake the app while Command is held, and not
+    // after.
+    assert!(tracks(&fake));
+    // Up, it goes.
+    fake.send(&mut app, window, command(false));
+    run_until(&mut fake, &mut app, |_, app| underlined(app).is_empty());
+    assert!(!tracks(&fake));
+}
+
+#[test]
 fn a_command_click_opens_the_link_that_the_drawn_frame_showed() {
     let (mut fake, mut app, window, _) = pasting(
         "click-drawn",

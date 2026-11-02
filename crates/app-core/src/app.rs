@@ -355,6 +355,11 @@ pub struct App<B: Backend> {
     /// The timer of the next step of the views that scroll under a
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
+    /// Whether Command is held, as the last key told, while which the
+    /// pointer's moves go to the plugins that subscribed to them.
+    command_held: bool,
+    /// What the plugins were told last of the pointer.
+    pointer_told: Option<PointerTold>,
     /// Whether a window opened since the app started, after which none
     /// restores the frame that a window kept, nor starts in the first
     /// window's directory.
@@ -466,6 +471,10 @@ struct StartupBench {
     shown: Option<std::time::SystemTime>,
 }
 
+/// What the plugins were told of the pointer: its pane, its cell there,
+/// if any, and whether Command was held.
+type PointerTold = (PaneId, Option<(u16, i64)>, bool);
+
 impl<B: Backend> App<B> {
     /// An application that draws its windows with `drawing`, or nothing
     /// without it, with `config`, which it reads again from `path`, its
@@ -478,7 +487,10 @@ impl<B: Backend> App<B> {
                 lokyr_core_actions::MANIFEST,
                 Box::new(lokyr_core_actions::CoreActions),
             ),
-            (lokyr_links::MANIFEST, Box::new(lokyr_links::Links)),
+            (
+                lokyr_links::MANIFEST,
+                Box::new(lokyr_links::Links::default()),
+            ),
         ];
         for (manifest, plugin) in builtins {
             if let Err(error) = plugins.add_builtin(manifest, plugin) {
@@ -516,6 +528,8 @@ impl<B: Backend> App<B> {
             resize_timer: None,
             flash_timer: None,
             scroll_timer: None,
+            command_held: false,
+            pointer_told: None,
             title_timer: None,
             title_look: Some(TITLE_LOOK),
             opened_one: false,
@@ -2383,6 +2397,11 @@ impl<B: Backend> App<B> {
             // took, whose releases go elsewhere.
             // A window that takes the focus loses its bell's mark.
             WindowEvent::Focused(focused) => {
+                // Command's release, out of the window, comes to another.
+                if !focused {
+                    self.command_held = false;
+                    self.tell_pointer(platform, window, None, lokyr_platform_core::Modifiers::NONE);
+                }
                 if let Some(state) = self.windows.get_mut(&window) {
                     // A program that asked learns of it.
                     if let Some(pane) = self.workspace.focused(state.window) {

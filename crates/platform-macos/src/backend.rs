@@ -512,6 +512,10 @@ impl Platform for Backend {
         }
     }
 
+    fn pointer_position(&self, window: WindowId) -> Option<Point> {
+        self.windows.get(&window).map(Window::pointer)
+    }
+
     fn focused_window(&self) -> Option<WindowId> {
         self.windows
             .iter()

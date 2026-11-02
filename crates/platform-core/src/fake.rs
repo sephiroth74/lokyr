@@ -45,6 +45,9 @@ const QUICK_SIZE: Size = Size {
 pub struct FakeWindow {
     /// Its title.
     pub title: String,
+    /// Where the pointer is over its content, as the events sent to it
+    /// last told.
+    pub pointer_at: Point,
     /// The size of its content.
     pub size: WindowSize,
     /// Whether it is hidden or covered.
@@ -267,6 +270,9 @@ impl Fake {
                 }
             }
             WindowEvent::Frame => state.frame_requested = false,
+            WindowEvent::MouseMoved { position, .. }
+            | WindowEvent::MouseButton { position, .. }
+            | WindowEvent::Scroll { position, .. } => state.pointer_at = *position,
             WindowEvent::Focused(true) => self.focused = Some(window),
             WindowEvent::Focused(false) if self.focused == Some(window) => self.focused = None,
             _ => {}
@@ -613,6 +619,7 @@ impl Platform for Fake {
                 restore_size: attributes.restore_size,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
                 appearance: None,
                 quick: None,
@@ -640,6 +647,7 @@ impl Platform for Fake {
                 restore_size: false,
                 mouse_moves: false,
                 pointer: PointerShape::Arrow,
+                pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
                 appearance: None,
                 quick: Some(None),
@@ -766,6 +774,10 @@ impl Platform for Fake {
 
     fn focused_window(&self) -> Option<WindowId> {
         self.focused
+    }
+
+    fn pointer_position(&self, window: WindowId) -> Option<Point> {
+        self.windows.get(&window).map(|state| state.pointer_at)
     }
 
     fn set_main_menu(&mut self, menu: &MainMenu) {

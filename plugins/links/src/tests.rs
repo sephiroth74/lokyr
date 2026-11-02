@@ -21,7 +21,13 @@ struct Host {
     directory: Option<&'static str>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
+    subscribed: Vec<String>,
     opened: Vec<String>,
+    /// The decorations that the plugin laid and has not taken away, by
+    /// their ids, with their cells.
+    decorations: Vec<(u64, Span)>,
+    /// How many decorations it laid.
+    laid: u64,
 }
 
 /// The line's columns.
@@ -60,6 +66,26 @@ impl lokyr_plugin_sdk::host::Host for Host {
             }
             Request::Bind(binding) => {
                 self.bindings.push(binding);
+                Response::Done
+            }
+            Request::Subscribe(names) => {
+                self.subscribed.extend(names);
+                Response::Done
+            }
+            Request::Decorate {
+                pane,
+                from,
+                to,
+                look,
+            } => {
+                assert_eq!((pane, look), (PaneId(4), UNDERLINED));
+                self.laid += 1;
+                self.decorations.push((self.laid, (from, to)));
+                Response::Decoration(self.laid)
+            }
+            Request::Undecorate { pane, id } => {
+                assert_eq!(pane, PaneId(4));
+                self.decorations.retain(|&(laid, _)| laid != id);
                 Response::Done
             }
             Request::FocusedWindow => Response::Window(self.focused.then_some(WindowId(1))),
@@ -102,14 +128,14 @@ fn cell(column: i64, row: i64) -> Args {
 
 /// Clicks `host`'s cell at `column` of `row`.
 fn click(host: &mut Host, column: i64, row: i64) -> Result<(), Error> {
-    Links.on_command(&mut Cx::new(host, "links"), OPEN, cell(column, row))
+    Links::default().on_command(&mut Cx::new(host, "links"), OPEN, cell(column, row))
 }
 
 /// Whether a click on `host`'s cell at `column` of `row` would open
 /// something, which opens nothing.
 fn applies(host: &mut Host, column: i64, row: i64) -> bool {
     let opened = host.opened.len();
-    let applies = Links.applies(&mut Cx::new(host, "links"), OPEN, &cell(column, row));
+    let applies = Links::default().applies(&mut Cx::new(host, "links"), OPEN, &cell(column, row));
     assert_eq!(host.opened.len(), opened);
     applies
 }
@@ -117,7 +143,9 @@ fn applies(host: &mut Host, column: i64, row: i64) -> bool {
 #[test]
 fn the_command_registers_with_cmd_click() {
     let mut host = Host::default();
-    Links.activate(&mut Cx::new(&mut host, "links")).unwrap();
+    Links::default()
+        .activate(&mut Cx::new(&mut host, "links"))
+        .unwrap();
     let [command] = &host.commands[..] else {
         panic!("one command: {:?}", host.commands);
     };
@@ -152,6 +180,85 @@ fn the_command_registers_with_cmd_click() {
             when: None,
         }]
     );
+    assert_eq!(host.subscribed, ["pointer"]);
+}
+
+/// The pointer at the cell of `column` and `row`, or out of the pane, with
+/// Command held or not.
+fn pointer(at: Option<(u16, i64)>, command: bool) -> Event {
+    Event::Pointer {
+        pane: PaneId(4),
+        at,
+        mods: lokyr_plugin_sdk::message::Mods {
+            command,
+            ..Default::default()
+        },
+    }
+}
+
+#[test]
+fn command_underlines_the_link_under_the_pointer_while_both_stay() {
+    // `see https://lokyr.dev/x here`, of rows of 10 from the row 1: the
+    // URL from the cell (4, 1) to (2, 3).
+    let mut host = focused("see https://lokyr.dev/x here");
+    host.missing = vec!["/work/lokyr/see"];
+    let mut links = Links::default();
+    let mut hover = |host: &mut Host, events: &[Event]| {
+        links.on_event(&mut Cx::new(host, "links"), events).unwrap();
+        host.decorations
+            .iter()
+            .map(|&(_, span)| span)
+            .collect::<Vec<_>>()
+    };
+    let url = ((4, 1), (2, 3));
+    // Without Command, nothing; with it, the URL.
+    assert!(hover(&mut host, &[pointer(Some((6, 1)), false)]).is_empty());
+    assert_eq!(hover(&mut host, &[pointer(Some((6, 1)), true)]), [url]);
+    // Over another of its cells, the same underline, not laid again.
+    assert_eq!(hover(&mut host, &[pointer(Some((9, 1)), true)]), [url]);
+    assert_eq!(host.laid, 1);
+    // Over a word that opens nothing, none; back, the URL again.
+    assert!(hover(&mut host, &[pointer(Some((1, 1)), true)]).is_empty());
+    assert_eq!(hover(&mut host, &[pointer(Some((6, 1)), true)]), [url]);
+    // Command up, or the pointer out of the pane, takes it away; a batch
+    // goes by its last pointer.
+    assert!(hover(&mut host, &[pointer(Some((6, 1)), false)]).is_empty());
+    assert_eq!(
+        hover(
+            &mut host,
+            &[pointer(None, true), pointer(Some((6, 1)), true)]
+        ),
+        [url]
+    );
+    assert!(hover(&mut host, &[pointer(None, true)]).is_empty());
+}
+
+#[test]
+fn command_underlines_an_osc_8_link_s_cells_and_a_path_without_its_line() {
+    // An OSC 8 link over the whole line, as the host gives one.
+    let mut host = Host {
+        link: Some("https://lokyr.dev/osc8"),
+        ..focused("the docs")
+    };
+    let mut links = Links::default();
+    links
+        .on_event(
+            &mut Cx::new(&mut host, "links"),
+            &[pointer(Some((5, 1)), true)],
+        )
+        .unwrap();
+    assert_eq!(host.decorations[0].1, ((0, 1), (7, 1)));
+    // A path with its line and column, as `grep -n` writes it: the path
+    // alone.
+    let mut host = focused("at src/main.rs:42:7 now");
+    let mut links = Links::default();
+    links
+        .on_event(
+            &mut Cx::new(&mut host, "links"),
+            &[pointer(Some((5, 1)), true)],
+        )
+        .unwrap();
+    assert_eq!(host.decorations[0].1, ((3, 1), (3, 2)));
 }
 
 #[test]
@@ -229,7 +336,7 @@ fn a_click_on_nothing_opens_nothing() {
     // refused.
     click(&mut host, -1, 1).unwrap();
     click(&mut host, 0, 70_000).unwrap();
-    Links
+    Links::default()
         .on_command(&mut Cx::new(&mut host, "links"), OPEN, Args::new())
         .unwrap();
     // A relative path without a directory, as after the program ended.
@@ -248,7 +355,7 @@ fn a_click_on_nothing_opens_nothing() {
     click(&mut unfocused, 2, 1).unwrap();
     assert!(host.opened.is_empty() && ended.opened.is_empty() && unfocused.opened.is_empty());
     assert_eq!(
-        Links
+        Links::default()
             .on_command(&mut Cx::new(&mut host, "links"), "links.other", Args::new())
             .unwrap_err()
             .code,
@@ -262,7 +369,11 @@ fn a_click_on_nothing_opens_nothing() {
     assert!(!applies(&mut missing, 2, 1));
     // Another command, at a cell with a path.
     let mut path = focused("/etc/hosts");
-    assert!(!Links.applies(&mut Cx::new(&mut path, "links"), "links.other", &cell(2, 1)));
+    assert!(!Links::default().applies(
+        &mut Cx::new(&mut path, "links"),
+        "links.other",
+        &cell(2, 1)
+    ));
 }
 
 #[test]

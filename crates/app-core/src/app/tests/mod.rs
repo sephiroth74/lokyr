@@ -425,7 +425,7 @@ fn the_app_s_catalogs_match_their_source() {
     // whose titles are those that the commands register.
     let builtins: [Box<dyn plugins::Plugin>; 2] = [
         Box::new(lokyr_core_actions::CoreActions),
-        Box::new(lokyr_links::Links),
+        Box::new(lokyr_links::Links::default()),
     ];
     for plugin in &builtins {
         let catalogs = plugin.catalogs();

@@ -256,6 +256,18 @@ impl Window {
     }
 
     /// The window's content view.
+    /// Where the pointer is now, from the top left corner of the content,
+    /// in points, over it or out of it.
+    pub(crate) fn pointer(&self) -> Point {
+        let at = self.ns_window.mouseLocationOutsideOfEventStream();
+        let local = self.view.convertPoint_fromView(at, None);
+        Point {
+            x: local.x,
+            // The view's own coordinates go up from its bottom edge.
+            y: self.view.bounds().size.height - local.y,
+        }
+    }
+
     pub(crate) fn view(&self) -> Retained<NSView> {
         Retained::into_super(self.view.clone())
     }

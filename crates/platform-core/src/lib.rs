@@ -340,6 +340,11 @@ pub trait Platform {
     /// application's has it.
     fn focused_window(&self) -> Option<WindowId>;
 
+    /// Where the pointer is now, over `window`'s content or out of it, in
+    /// points from the content's top left corner, as a press of a modifier
+    /// asks without a move; `None` for a window that is not open.
+    fn pointer_position(&self, window: WindowId) -> Option<Point>;
+
     /// Sets the main menu, in place of the one before it.
     fn set_main_menu(&mut self, menu: &MainMenu);
 

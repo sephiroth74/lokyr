@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use lokyr_kernel::commands::ErrorCategory;
 use lokyr_kernel::diagnostics::About;
+use lokyr_kernel::plugins;
 use lokyr_kernel::workspace::{Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
@@ -381,6 +382,9 @@ impl<B: Backend> App<B> {
         let now = Instant::now();
         // Each pane of the active tab in its room.
         let views = self.lay_out_panes(window, size);
+        // The pointer's moves while Command is held, for the plugins that
+        // follow it, as `links` does.
+        let pointer_moves = self.command_held && self.plugins.subscribes(plugins::POINTER);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -446,9 +450,10 @@ impl<B: Backend> App<B> {
         };
         // The pointer's moves without a button wake the app only for a
         // program that asked for them all.
-        let moves = pane
-            .shown_modes()
-            .is_some_and(|modes| modes.mouse_tracking == MouseTracking::AnyEvent);
+        let moves = pointer_moves
+            || pane
+                .shown_modes()
+                .is_some_and(|modes| modes.mouse_tracking == MouseTracking::AnyEvent);
         if moves != state.mouse_moves {
             platform.track_mouse_moves(window, moves);
             state.mouse_moves = moves;

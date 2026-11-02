@@ -301,12 +301,42 @@ pub enum Response {
     Failed(Error),
 }
 
+/// The name of [`Event::Pointer`], as plugins subscribe to it.
+pub const POINTER: &str = "pointer";
+
+/// The modifiers held.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mods {
+    /// Shift.
+    pub shift: bool,
+    /// Control.
+    pub control: bool,
+    /// Option, or Alt.
+    pub option: bool,
+    /// Command, or Super.
+    pub command: bool,
+}
+
 /// What the host tells a plugin.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Event {
     /// A change of the workspace's windows, tabs, layouts or panes.
     Workspace(WorkspaceEvent),
+    /// The pointer went over another cell of a pane, or out of it, or the
+    /// modifiers held changed over it: the cell, by its column and its
+    /// row's number, or none out of the pane's cells. The host tells it
+    /// as the pointer moves, and as a modifier goes down or up, with the
+    /// pointer still; while Command is up, it tells moves only as the
+    /// system gives them, as a program that tracks the mouse asks.
+    Pointer {
+        /// The pane.
+        pane: PaneId,
+        /// The cell under the pointer, if one is.
+        at: Option<(u16, i64)>,
+        /// The modifiers held.
+        mods: Mods,
+    },
     /// The rows of a read that the plugin asked for, to it alone: all
     /// that it asked for, of those that the pane holds, unless `complete`
     /// is false, as a resize renumbered the rows, or the pane closed, in
@@ -337,6 +367,7 @@ impl Event {
     pub fn name(&self) -> &str {
         match self {
             Self::Workspace(event) => event.name(),
+            Self::Pointer { .. } => POINTER,
             Self::Lines { .. } => "lines",
             Self::Custom { name, .. } => name,
         }
