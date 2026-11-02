@@ -155,6 +155,9 @@ struct Outbox {
     /// The decorations that the plugins laid, by their ids: each one's
     /// pane and plugin.
     decorations: BTreeMap<u64, (host::PaneId, String)>,
+    /// Whether a call wrote to the kernel's state since the last look, as
+    /// what the windows show may have changed.
+    written: bool,
 }
 
 /// A read of a pane's rows, on a thread of the host's.
@@ -544,6 +547,15 @@ impl Plugins {
     pub fn take_bindings_changed(&mut self) -> bool {
         std::mem::take(&mut self.bindings_changed)
     }
+
+    /// Whether the plugins' calls wrote to the kernel's state since the
+    /// last call, a pane's decorations, its selection, its scroll or its
+    /// text among them, as what the windows show may have changed; a call
+    /// that wrote nothing, as a delivery that a plugin only read, changes
+    /// nothing shown.
+    pub fn take_written(&mut self) -> bool {
+        std::mem::take(&mut self.out.written)
+    }
 }
 
 /// The message of a plugin's catalogs that titles its command `name`:
@@ -642,6 +654,7 @@ fn within<T>(
 /// user first becomes a request of the app's; an event emitted waits for
 /// the next delivery.
 fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
+    out.written |= !writes.is_empty();
     let requests = &mut out.requests;
     for write in writes {
         let pane = |pane: host::PaneId| context.workspace.pane(PaneId::of(pane.0));

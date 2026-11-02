@@ -1785,8 +1785,13 @@ impl<B: Backend> App<B> {
                 Request::Open(target) => self.open_target(platform, target),
             }
         }
-        for &window in self.windows.keys() {
-            platform.request_frame(window);
+        // What the windows show changed only through the calls' writes; a
+        // turn whose plugins wrote nothing, as the start's, whose events
+        // they only take, draws no frame more.
+        if self.plugins.take_written() {
+            for &window in self.windows.keys() {
+                platform.request_frame(window);
+            }
         }
     }
 

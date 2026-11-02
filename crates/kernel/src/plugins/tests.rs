@@ -912,6 +912,47 @@ fn a_plugin_s_writes_apply_in_their_order_as_its_call_returns() {
 }
 
 #[test]
+fn a_call_that_writes_tells_it_and_one_that_reads_does_not() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let pane = app.workspace.active_pane(window).unwrap();
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "both",
+            scripted(
+                |cx| {
+                    cx.register_command(command("both.read"))?;
+                    cx.register_command(command("both.select"))
+                },
+                move |cx, name, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    if name == "both.select" {
+                        cx.select_all(pane)?;
+                    } else {
+                        cx.selection_text(pane)?;
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let _ = plugins.take_written();
+    plugins
+        .run("both.read", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(!plugins.take_written());
+    plugins
+        .run("both.select", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(app.workspace.pane(pane).unwrap().selection().is_some());
+    assert!(plugins.take_written());
+    // Taken, it is told once.
+    assert!(!plugins.take_written());
+}
+
+#[test]
 fn a_selection_that_a_plugin_makes_reads_after_its_call() {
     // A program that writes nothing, which would clear the selection.
     let mut app = App::default();

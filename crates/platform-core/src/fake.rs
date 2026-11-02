@@ -55,6 +55,8 @@ pub struct FakeWindow {
     /// Whether the app asked for a frame, which the next
     /// [`WindowEvent::Frame`] that a test sends gives.
     pub frame_requested: bool,
+    /// How many times the app asked for a frame.
+    pub frames_asked: usize,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
     /// Its backdrop, when it is translucent.
@@ -635,6 +637,7 @@ impl Platform for Fake {
                 .with_bar(self.bar),
                 occluded: false,
                 frame_requested: false,
+                frames_asked: 0,
                 text_area: None,
                 translucent: None,
                 frame_held: false,
@@ -663,6 +666,7 @@ impl Platform for Fake {
                 size: WindowSize::new(QUICK_SIZE, self.scale),
                 occluded: true,
                 frame_requested: false,
+                frames_asked: 0,
                 text_area: None,
                 translucent: None,
                 frame_held: false,
@@ -780,6 +784,7 @@ impl Platform for Fake {
 
     fn request_frame(&mut self, window: WindowId) {
         if let Some(state) = self.windows.get_mut(&window) {
+            state.frames_asked += 1;
             if state.occluded {
                 state.frame_held = true;
             } else {

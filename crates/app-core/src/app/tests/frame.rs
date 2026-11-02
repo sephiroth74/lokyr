@@ -597,6 +597,16 @@ fn a_pane_s_output_asks_for_its_own_window_s_frame_alone() {
 }
 
 #[test]
+fn the_start_asks_for_no_frame_past_its_window_s_first() {
+    // A new window draws its first frame of its own; the plugins take the
+    // start's events, which change nothing shown, and ask for none, as a
+    // second frame at once would show the window a refresh later.
+    let (fake, _) = started();
+    let window = fake.windows().next().unwrap();
+    assert_eq!(fake.window(window).unwrap().frames_asked, 0);
+}
+
+#[test]
 fn a_frame_with_nothing_new_presents_nothing() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
