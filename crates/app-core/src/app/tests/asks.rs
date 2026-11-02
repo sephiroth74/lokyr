@@ -634,10 +634,7 @@ fn a_title_of_the_user_s_takes_the_place_of_the_window_s_own() {
     // Emptied, the window's own comes back, of the program's title.
     let open = ask(&mut fake, &mut app);
     fake.answer_alert_typed(&mut app, open.id, (0, false), Some(" "));
-    assert_eq!(
-        title(&fake),
-        format!("prompt — {} — 200×62", shell_name())
-    );
+    assert_eq!(title(&fake), format!("prompt — {} — 200×62", shell_name()));
     assert_ne!(own, title(&fake));
 }
 
