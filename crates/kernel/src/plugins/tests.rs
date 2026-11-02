@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::command::{Category, Kind, Param, Value};
-use lokyr_plugin_sdk::host::{self, Binding as PluginBinding, HostApi};
+use lokyr_plugin_sdk::host::{self, Binding as PluginBinding};
 use lokyr_pty::Program;
 use lokyr_vt_core::terminal::Colors;
 
@@ -66,9 +66,10 @@ fn binding(keys: &str, command: &str, when: Option<&str>) -> PluginBinding {
     }
 }
 
-/// A clipboard of the test's own.
+/// A clipboard of the test's own: its text, and every text put on it, in
+/// order.
 #[derive(Default)]
-struct Board(Option<String>);
+struct Board(Option<String>, Vec<String>);
 
 impl Clipboard for Board {
     fn text(&self) -> Option<String> {
@@ -77,6 +78,7 @@ impl Clipboard for Board {
 
     fn set_text(&mut self, text: &str) {
         self.0 = Some(text.to_owned());
+        self.1.push(text.to_owned());
     }
 }
 
@@ -532,7 +534,7 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
                     .unwrap_err()
                     .code,
                 );
-                assert_eq!(cx.font_size(), 13.0);
+                assert_eq!(cx.font_size(), Ok(13.0));
                 Ok(())
             },
         ),
@@ -544,7 +546,12 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
         .unwrap();
     assert_eq!(
         *errors.borrow(),
-        [Code::Failed, Code::Failed, Code::NotFound, Code::WrongKind]
+        [
+            Code::Failed,
+            Code::NotFound,
+            Code::NotFound,
+            Code::WrongKind
+        ]
     );
     assert_eq!(
         plugins.take_requests(),
@@ -580,14 +587,16 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
         scripted(
             |cx| {
                 assert_eq!(cx.focused_window(), None);
+                cx.register_command(command("copier.select"))?;
                 cx.register_command(command("copier.copy"))?;
                 cx.register_command(command("copier.paste"))
             },
             move |cx, name, _| {
                 let pane = cx.focused_pane().unwrap();
                 match name {
+                    // Applied as the call returns, for the next to read.
+                    "copier.select" => cx.select_all(pane)?,
                     "copier.copy" => {
-                        cx.select_all(pane)?;
                         let text = cx.selection_text(pane)?.unwrap();
                         cx.set_clipboard_text(text.lines().next().unwrap())?;
                         cx.scroll(pane, host::Scroll::Up(3))?;
@@ -617,14 +626,14 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
     let focused = app.focused.take();
     assert!(plugins.activate(&mut app.context()).is_empty());
     app.focused = focused;
-    plugins
-        .run("copier.copy", Args::new(), &mut app.context())
-        .unwrap();
+    for copy in ["copier.select", "copier.copy"] {
+        plugins.run(copy, Args::new(), &mut app.context()).unwrap();
+    }
     assert_eq!(app.clipboard.0.as_deref(), Some("hello"));
     plugins
         .run("copier.paste", Args::new(), &mut app.context())
         .unwrap();
-    assert_eq!(*log.borrow(), [Code::Failed, Code::Failed]);
+    assert_eq!(*log.borrow(), [Code::NotFound, Code::NotFound]);
     // The line break waits for the user, as the app asks: confirmed, its
     // line ends.
     let requests = plugins.take_requests();
@@ -755,7 +764,7 @@ fn the_host_reads_a_line_its_links_and_the_directory_and_opens() {
             "Some(\"/usr\")",
             "None",
             "201 `javascript:` does not open: only http, https, mailto, file",
-            "Failed",
+            "NotFound",
         ]
     );
     // The home directory in full.
@@ -813,25 +822,163 @@ fn only_urls_of_the_schemes_and_paths_from_the_root_or_home_open() {
 }
 
 #[test]
-fn the_host_s_api_is_a_trait_object() {
-    fn takes(_: &mut dyn HostApi) {}
+fn a_plugin_s_writes_apply_in_their_order_as_its_call_returns() {
+    let mut app = App::default();
+    let window = window(&mut app, "stty -echo; echo ready; cat");
+    let pane = app.workspace.active_pane(window).unwrap();
+    text_once(&app, pane, "ready");
+    app.workspace.pane(pane).unwrap().clear_selection();
+    app.clipboard.0 = Some("before".to_owned());
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins.add(
+        "writer",
+        scripted(
+            |cx| cx.register_command(command("writer.write")),
+            move |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                cx.set_clipboard_text("one")?;
+                // A read in the call reads the state before its writes.
+                seen.borrow_mut().push(cx.clipboard_text()?);
+                cx.send_text(pane, "a")?;
+                cx.set_clipboard_text("two")?;
+                cx.send_text(pane, "b\n")?;
+                cx.select_all(pane)?;
+                seen.borrow_mut().push(cx.selection_text(pane)?);
+                Ok(())
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("writer.write", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*log.borrow(), [Some("before".to_owned()), None]);
+    assert_eq!(app.clipboard.1, ["one", "two"]);
+    assert!(app.workspace.pane(pane).unwrap().selection_text().is_some());
+    // The program read `a`, then `b`.
+    assert!(text_once(&app, pane, "\nab").contains("ready\nab"));
+}
+
+#[test]
+fn a_read_or_a_write_of_a_pane_that_closed_is_not_found() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    let kept = Rc::new(RefCell::new(None));
+    plugins.add(
+        "keeper",
+        scripted(
+            |cx| cx.register_command(command("keeper.look")),
+            move |cx, _, _| {
+                let pane = *kept
+                    .borrow_mut()
+                    .get_or_insert_with(|| cx.focused_pane().unwrap());
+                let mut seen = seen.borrow_mut();
+                seen.push(cx.selection_text(pane).map_err(|error| error.code));
+                seen.push(
+                    cx.send_text(pane, "x")
+                        .map(|()| None)
+                        .map_err(|error| error.code),
+                );
+                Ok(())
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let mut look = |app: &mut App| {
+        plugins
+            .run("keeper.look", Args::new(), &mut app.context())
+            .unwrap();
+    };
+    look(&mut app);
+    assert!(app.workspace.close_window(window));
+    look(&mut app);
+    assert_eq!(
+        *log.borrow(),
+        [Ok(None), Ok(None), Err(Code::NotFound), Err(Code::NotFound)]
+    );
+}
+
+#[test]
+fn a_request_needs_its_capability() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins.add_granted(
+        "reader",
+        scripted(
+            |cx| cx.register_command(command("reader.read")),
+            move |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                let mut seen = seen.borrow_mut();
+                let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                seen.push(code(cx.selection_text(pane).map(drop)));
+                seen.push(code(cx.select_all(pane)));
+                seen.push(code(cx.clipboard_text().map(drop)));
+                seen.push(code(cx.send_text(pane, "x")));
+                seen.push(code(cx.open("https://lokyr.dev")));
+                Ok(())
+            },
+        ),
+        Some(vec![Capability::TerminalRead]),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *log.borrow(),
+        [
+            None,
+            None,
+            Some(Code::MissingCapability),
+            Some(Code::MissingCapability),
+            Some(Code::MissingCapability)
+        ]
+    );
+    // Nothing that it lacked went to the app.
+    assert!(plugins.take_requests().is_empty());
+}
+
+#[test]
+fn a_call_is_its_own_plugin_s() {
     let mut app = App::default();
     let mut context = app.context();
-    let (mut state, mut requests, mut changed) = (
+    let (mut state, mut requests, mut writes, mut changed) = (
         State {
             name: "x".to_owned(),
             status: Status::Active,
+            granted: None,
             commands: Vec::new(),
             bindings: Vec::new(),
             catalogs: &[],
         },
         Vec::new(),
+        Vec::new(),
         false,
     );
-    takes(&mut Host {
+    let mut host = Host {
         state: &mut state,
         context: &mut context,
         requests: &mut requests,
+        writes: &mut writes,
         bindings_changed: &mut changed,
-    });
+    };
+    let call = |caller: &str| Call {
+        caller: caller.to_owned(),
+        request: Asked::Quit,
+    };
+    let forged = host::Host::handle(&mut host, call("y"));
+    assert!(
+        matches!(&forged, Response::Failed(error) if error.code == Code::Fault),
+        "{forged:?}"
+    );
+    assert_eq!(host::Host::handle(&mut host, call("x")), Response::Done);
+    assert_eq!(requests, [Request::Quit]);
 }

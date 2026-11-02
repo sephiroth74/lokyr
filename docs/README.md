@@ -104,7 +104,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | **Pin** | A stable reference to a position in the grid. It stays valid across scrolling and reflow |
 | **Capability** | A permission that a third-party plugin must declare and the user must grant (e.g. `terminal-read`) |
 | **Slot** | A place in the UI where a plugin can render a view tree (e.g. `tab-bar`) |
-| **HostApi** | The Rust trait the kernel implements. Both front ends of the plugin API, Rust and Luau, call into it |
+| **HostApi** | The plugin API: the requests, responses and events of `plugin-sdk`'s `message` module, which the kernel serves through `host::Host`. Both front ends, Rust's `Cx` and Luau's bindings, make its requests |
 
 ## References worth studying
 

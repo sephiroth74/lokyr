@@ -1,7 +1,8 @@
 //! The plugin against a host of the tests', with a line, its link and the
 //! working directory of the test's own, which records what it opens.
 
-use lokyr_plugin_sdk::host::{HostApi, LineText, PaneId, Scroll, WindowId};
+use lokyr_plugin_sdk::host::{LineText, PaneId, WindowId};
+use lokyr_plugin_sdk::message::{Call, Request, Response};
 
 use super::*;
 
@@ -26,50 +27,12 @@ struct Host {
 /// The line's columns.
 const COLUMNS: u16 = 10;
 
-impl HostApi for Host {
-    fn register_command(&mut self, command: Command) -> Result<(), Error> {
-        self.commands.push(command);
-        Ok(())
-    }
-
-    fn run_command(&mut self, _: &str, _: Args) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn bind(&mut self, binding: Binding) -> Result<(), Error> {
-        self.bindings.push(binding);
-        Ok(())
-    }
-
-    fn clipboard_text(&mut self) -> Result<Option<String>, Error> {
-        Ok(None)
-    }
-
-    fn set_clipboard_text(&mut self, _: &str) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn focused_window(&self) -> Option<WindowId> {
-        self.focused.then_some(WindowId(1))
-    }
-
-    fn focused_pane(&self) -> Option<PaneId> {
-        self.focused.then_some(PaneId(4))
-    }
-
-    fn selection_text(&mut self, _: PaneId) -> Result<Option<String>, Error> {
-        Ok(None)
-    }
-
-    fn line_text(
-        &mut self,
-        pane: PaneId,
-        row: i64,
-        reach: usize,
-    ) -> Result<Option<LineText>, Error> {
+impl Host {
+    /// The line's text, by its row's number, as the host's reads give it.
+    fn line(&self, pane: PaneId, row: i64, reach: usize) -> Option<LineText> {
         assert_eq!((pane, reach), (PaneId(4), super::REACH));
         if !(1..=2).contains(&row) {
-            return Ok(None);
+            return None;
         }
         let cells = self.cells.clone().unwrap_or_else(|| {
             (0..self.line.chars().count())
@@ -79,74 +42,43 @@ impl HostApi for Host {
                 })
                 .collect()
         });
-        Ok(Some(LineText {
+        Some(LineText {
             text: self.line.to_owned(),
             cells,
-        }))
+        })
     }
+}
 
-    fn link_at(&mut self, _: PaneId, _: u16, _: i64) -> Result<Option<String>, Error> {
-        Ok(self.link.map(str::to_owned))
-    }
-
-    fn working_directory(&mut self, _: PaneId) -> Result<Option<String>, Error> {
-        Ok(self.directory.map(str::to_owned))
-    }
-
-    fn open(&mut self, target: &str) -> Result<(), Error> {
-        if target.starts_with("javascript:") {
-            return Err(Error::new(Code::Failed, "refused"));
+impl lokyr_plugin_sdk::host::Host for Host {
+    fn handle(&mut self, call: Call) -> Response {
+        assert_eq!(call.caller, "links");
+        let text = |text: Option<&str>| Response::Text(text.map(str::to_owned));
+        match call.request {
+            Request::RegisterCommand(command) => {
+                self.commands.push(command);
+                Response::Done
+            }
+            Request::Bind(binding) => {
+                self.bindings.push(binding);
+                Response::Done
+            }
+            Request::FocusedWindow => Response::Window(self.focused.then_some(WindowId(1))),
+            Request::FocusedPane => Response::Pane(self.focused.then_some(PaneId(4))),
+            Request::LineText { pane, row, reach } => Response::Line(self.line(pane, row, reach)),
+            Request::LinkAt { .. } => text(self.link),
+            Request::WorkingDirectory(_) => text(self.directory),
+            Request::Open(target) if target.starts_with("javascript:") => {
+                Response::Failed(Error::new(Code::Failed, "refused"))
+            }
+            Request::Open(target) => {
+                self.opened.push(target);
+                Response::Done
+            }
+            Request::Opens(target) => Response::Boolean(
+                !target.starts_with("javascript:") && !self.missing.contains(&target.as_str()),
+            ),
+            other => panic!("links asked {other:?}"),
         }
-        self.opened.push(target.to_owned());
-        Ok(())
-    }
-
-    fn opens(&mut self, target: &str) -> Result<bool, Error> {
-        Ok(!target.starts_with("javascript:") && !self.missing.contains(&target))
-    }
-
-    fn select_all(&mut self, _: PaneId) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn clear_scrollback(&mut self, _: PaneId) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn clear(&mut self, _: PaneId) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn paste(&mut self, _: PaneId, _: &str) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn send_text(&mut self, _: PaneId, _: &str) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn scroll(&mut self, _: PaneId, _: Scroll) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn font_size(&self) -> f32 {
-        13.0
-    }
-
-    fn set_font_size(&mut self, _: Option<f32>) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn open_window(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn close_window(&mut self, _: WindowId) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn quit(&mut self) -> Result<(), Error> {
-        Ok(())
     }
 }
 
@@ -170,14 +102,14 @@ fn cell(column: i64, row: i64) -> Args {
 
 /// Clicks `host`'s cell at `column` of `row`.
 fn click(host: &mut Host, column: i64, row: i64) -> Result<(), Error> {
-    Links.on_command(&mut Cx::new(host), OPEN, cell(column, row))
+    Links.on_command(&mut Cx::new(host, "links"), OPEN, cell(column, row))
 }
 
 /// Whether a click on `host`'s cell at `column` of `row` would open
 /// something, which opens nothing.
 fn applies(host: &mut Host, column: i64, row: i64) -> bool {
     let opened = host.opened.len();
-    let applies = Links.applies(&mut Cx::new(host), OPEN, &cell(column, row));
+    let applies = Links.applies(&mut Cx::new(host, "links"), OPEN, &cell(column, row));
     assert_eq!(host.opened.len(), opened);
     applies
 }
@@ -185,7 +117,7 @@ fn applies(host: &mut Host, column: i64, row: i64) -> bool {
 #[test]
 fn the_command_registers_with_cmd_click() {
     let mut host = Host::default();
-    Links.activate(&mut Cx::new(&mut host)).unwrap();
+    Links.activate(&mut Cx::new(&mut host, "links")).unwrap();
     let [command] = &host.commands[..] else {
         panic!("one command: {:?}", host.commands);
     };
@@ -298,7 +230,7 @@ fn a_click_on_nothing_opens_nothing() {
     click(&mut host, -1, 1).unwrap();
     click(&mut host, 0, 70_000).unwrap();
     Links
-        .on_command(&mut Cx::new(&mut host), OPEN, Args::new())
+        .on_command(&mut Cx::new(&mut host, "links"), OPEN, Args::new())
         .unwrap();
     // A relative path without a directory, as after the program ended.
     let mut ended = Host {
@@ -317,7 +249,7 @@ fn a_click_on_nothing_opens_nothing() {
     assert!(host.opened.is_empty() && ended.opened.is_empty() && unfocused.opened.is_empty());
     assert_eq!(
         Links
-            .on_command(&mut Cx::new(&mut host), "links.other", Args::new())
+            .on_command(&mut Cx::new(&mut host, "links"), "links.other", Args::new())
             .unwrap_err()
             .code,
         Code::NotFound
@@ -330,7 +262,7 @@ fn a_click_on_nothing_opens_nothing() {
     assert!(!applies(&mut missing, 2, 1));
     // Another command, at a cell with a path.
     let mut path = focused("/etc/hosts");
-    assert!(!Links.applies(&mut Cx::new(&mut path), "links.other", &cell(2, 1)));
+    assert!(!Links.applies(&mut Cx::new(&mut path, "links"), "links.other", &cell(2, 1)));
 }
 
 #[test]

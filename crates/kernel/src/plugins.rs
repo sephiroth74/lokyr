@@ -3,20 +3,24 @@
 //! that one that panics is disabled, with its commands and its bindings,
 //! rather than taking the app down.
 //!
-//! A plugin's calls change the kernel's state at once, as a pane's
-//! selection; what changes the app, as a window to open or another command
-//! to run, comes as a request, which the app takes once the plugin's call
-//! returns, as a plugin is never called while it runs.
+//! A plugin reaches the host through messages: its reads answer with the
+//! state as the host handles them; its writes, as a pane's selection, are
+//! queued, and applied in their order as its call returns, a plugin on the
+//! main thread too; what changes the app, as a window to open or another
+//! command to run, comes as a request, which the app takes after them, as
+//! a plugin is never called while it runs. Each request needs its
+//! capability, which the plugin's grants hold.
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 
-pub use lokyr_plugin_sdk::host::{self, HostApi};
+pub use lokyr_plugin_sdk::host;
+use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_text_core::Size;
 use lokyr_vt_core::terminal::Scroll;
 
-use crate::commands::{self, Args, Code, Command, Error, Registry};
+use crate::commands::{self, Args, Capability, Code, Command, Error, Registry};
 use crate::config::ConfirmPaste;
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::Texts;
@@ -92,11 +96,14 @@ struct Entry {
     state: State,
 }
 
-/// What the host keeps of a plugin: its name, its status, and the commands
-/// and the bindings that it gave.
+/// What the host keeps of a plugin: its name, its status, the
+/// capabilities that it was granted, and the commands and the bindings that
+/// it gave.
 struct State {
     name: String,
     status: Status,
+    /// Its capabilities; `None` for every one, as a built-in plugin's.
+    granted: Option<Vec<Capability>>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
     /// Its catalogs, of its commands' titles.
@@ -132,8 +139,21 @@ impl Plugins {
         Self::default()
     }
 
-    /// Adds `plugin`, by its `name`, to activate.
+    /// Adds `plugin`, by its `name`, to activate, with every capability,
+    /// as a built-in plugin has them.
     pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) {
+        self.add_granted(name, plugin, None);
+    }
+
+    /// Adds `plugin`, by its `name`, to activate, with the capabilities
+    /// `granted`, or every one with `None`: a request that needs another
+    /// fails.
+    pub fn add_granted(
+        &mut self,
+        name: &str,
+        plugin: Box<dyn Plugin>,
+        granted: Option<Vec<Capability>>,
+    ) {
         // A plugin whose catalogs panic has none.
         let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
         self.entries.push(Entry {
@@ -141,6 +161,7 @@ impl Plugins {
             state: State {
                 name: name.to_owned(),
                 status: Status::Inactive,
+                granted,
                 commands: Vec::new(),
                 bindings: Vec::new(),
                 catalogs,
@@ -240,10 +261,9 @@ impl Plugins {
             ));
         };
         let before = self.requests.len();
-        let applies = call(
+        let applies = look(
             &mut self.entries[at],
             context,
-            &mut self.requests,
             &mut self.bindings_changed,
             |plugin, cx| Ok(plugin.applies(cx, command, args)),
         );
@@ -316,8 +336,9 @@ pub fn title_message(name: &str) -> String {
     format!("command-{}", name.replace('.', "-"))
 }
 
-/// Calls `call` on `entry`'s plugin, within `catch_unwind`: a plugin that
-/// panics is disabled, and the requests of the call go.
+/// Calls `call` on `entry`'s plugin, within `catch_unwind`, and applies
+/// its writes, in their order, as it returns: a plugin that panics is
+/// disabled, and the writes and the requests of the call go.
 fn call<T>(
     entry: &mut Entry,
     context: &mut Context<'_>,
@@ -326,18 +347,68 @@ fn call<T>(
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let before = requests.len();
+    let mut writes = Vec::new();
+    let outcome = within(
+        entry,
+        context,
+        (requests, &mut writes),
+        bindings_changed,
+        call,
+    );
+    match outcome {
+        Ok(result) => {
+            apply(writes, context, requests);
+            result
+        }
+        Err(fault) => {
+            requests.truncate(before);
+            fault
+        }
+    }
+}
+
+/// Calls `call` on `entry`'s plugin, as [`call`] does, but drops its
+/// writes and its requests, as the call only looks.
+fn look<T>(
+    entry: &mut Entry,
+    context: &mut Context<'_>,
+    bindings_changed: &mut bool,
+    call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let (mut requests, mut writes) = (Vec::new(), Vec::new());
+    let outcome = within(
+        entry,
+        context,
+        (&mut requests, &mut writes),
+        bindings_changed,
+        call,
+    );
+    outcome.unwrap_or_else(|fault| fault)
+}
+
+/// Calls `call` on `entry`'s plugin within `catch_unwind`, its writes and
+/// its requests into `queues`: the call's result, or, as it panicked, which
+/// disables the plugin, the fault's error.
+fn within<T>(
+    entry: &mut Entry,
+    context: &mut Context<'_>,
+    (requests, writes): (&mut Vec<Request>, &mut Vec<Asked>),
+    bindings_changed: &mut bool,
+    call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
+) -> Result<Result<T, Error>, Result<T, Error>> {
     let Entry { plugin, state } = entry;
+    let name = state.name.clone();
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
         let mut host = Host {
             state: &mut *state,
             context: &mut *context,
             requests: &mut *requests,
+            writes: &mut *writes,
             bindings_changed: &mut *bindings_changed,
         };
-        call(plugin.as_mut(), &mut Cx::new(&mut host))
+        call(plugin.as_mut(), &mut Cx::new(&mut host, &name))
     }));
-    outcome.unwrap_or_else(|payload| {
-        requests.truncate(before);
+    outcome.map_err(|payload| {
         disable(state, context.registry, bindings_changed);
         Err(Error::new(
             Code::Fault,
@@ -348,6 +419,73 @@ fn call<T>(
             ),
         ))
     })
+}
+
+/// Applies a call's `writes` to the kernel's state, in their order: the
+/// writes to a pane that closed since do nothing; a paste that asks the
+/// user first becomes a request of the app's.
+fn apply(writes: Vec<Asked>, context: &mut Context<'_>, requests: &mut Vec<Request>) {
+    for write in writes {
+        let pane = |pane: host::PaneId| context.workspace.pane(PaneId::of(pane.0));
+        match write {
+            Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
+            Asked::SelectAll(id) => {
+                if let Some(pane) = pane(id) {
+                    pane.select_all();
+                }
+            }
+            Asked::ClearScrollback(id) => {
+                if let Some(pane) = pane(id) {
+                    pane.clear_scrollback();
+                }
+            }
+            Asked::Clear(id) => {
+                if let Some(pane) = pane(id) {
+                    pane.clear();
+                }
+            }
+            Asked::Paste { pane: id, text } => {
+                let Some(found) = pane(id) else {
+                    continue;
+                };
+                let bracketed = found
+                    .input_modes()
+                    .is_some_and(|modes| modes.bracketed_paste);
+                match paste::decide(&text, bracketed, context.confirm_paste) {
+                    Paste::Now(text) => found.paste(&text),
+                    Paste::Ask => requests.push(Request::ConfirmPaste {
+                        pane: PaneId::of(id.0),
+                        text,
+                    }),
+                }
+            }
+            Asked::SendText { pane: id, text } => {
+                if let Some(pane) = pane(id) {
+                    pane.send_text(&text);
+                }
+            }
+            Asked::Scroll { pane: id, scroll } => {
+                if let Some(pane) = pane(id) {
+                    pane.scroll(scrolled(scroll));
+                }
+            }
+            // The host queues writes alone.
+            _ => {}
+        }
+    }
+}
+
+/// The terminal's scroll of the SDK's.
+fn scrolled(scroll: host::Scroll) -> Scroll {
+    let rows = |n: u32| usize::try_from(n).unwrap_or(usize::MAX);
+    match scroll {
+        host::Scroll::Up(n) => Scroll::Up(rows(n)),
+        host::Scroll::Down(n) => Scroll::Down(rows(n)),
+        host::Scroll::PageUp => Scroll::PageUp,
+        host::Scroll::PageDown => Scroll::PageDown,
+        host::Scroll::Top => Scroll::Top,
+        host::Scroll::Bottom => Scroll::Bottom,
+    }
 }
 
 /// `: ` and the message of a panic's `payload`, when it has one.
@@ -423,205 +561,201 @@ struct Host<'h, 'c> {
     state: &'h mut State,
     context: &'h mut Context<'c>,
     requests: &'h mut Vec<Request>,
+    /// The call's writes, which it applies as the call returns.
+    writes: &'h mut Vec<Asked>,
     bindings_changed: &'h mut bool,
 }
 
 impl Host<'_, '_> {
-    /// The pane of `pane`'s handle.
+    /// The pane of `pane`'s handle; `not-found` once it closed.
     fn pane(&self, pane: host::PaneId) -> Result<&Pane, Error> {
         self.context
             .workspace
             .pane(PaneId::of(pane.0))
-            .ok_or_else(|| Error::new(Code::Failed, format!("there is no pane {}", pane.0)))
+            .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
+    }
+
+    /// Whether the plugin may make `request`: it has the capability that
+    /// the request needs, if it needs one.
+    fn allows(&self, request: &Asked) -> Result<(), Error> {
+        let Some(needed) = request.capability() else {
+            return Ok(());
+        };
+        match &self.state.granted {
+            Some(granted) if !granted.contains(&needed) => Err(Error::new(
+                Code::MissingCapability,
+                format!(
+                    "the plugin `{}` lacks the capability `{needed}`",
+                    self.state.name
+                ),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    /// Answers `request`, a read, with the state as it is now.
+    fn read(&mut self, request: Asked) -> Result<Response, Error> {
+        Ok(match request {
+            Asked::ClipboardText => Response::Text(self.context.clipboard.text()),
+            Asked::FocusedWindow => Response::Window(
+                self.context
+                    .focused
+                    .map(|window| host::WindowId(window.get())),
+            ),
+            Asked::FocusedPane => Response::Pane(
+                self.context
+                    .focused
+                    .and_then(|window| self.context.workspace.active_pane(window))
+                    .map(|pane| host::PaneId(pane.get())),
+            ),
+            Asked::SelectionText(pane) => Response::Text(self.pane(pane)?.selection_text()),
+            Asked::LineText { pane, row, reach } => Response::Line(
+                self.pane(pane)?
+                    .line_text(row, reach.min(host::MOST_REACH))
+                    .map(|(text, cells)| host::LineText { text, cells }),
+            ),
+            Asked::LinkAt { pane, column, row } => {
+                Response::Text(self.pane(pane)?.link_at(column, row))
+            }
+            Asked::WorkingDirectory(pane) => Response::Text(
+                self.pane(pane)?
+                    .working_directory()
+                    .map(|directory| directory.to_string_lossy().into_owned()),
+            ),
+            Asked::Opens(target) => Response::Boolean(opens(&target)),
+            Asked::FontSize => Response::FontSize(self.context.font_size),
+            other => {
+                return Err(Error::new(Code::Fault, format!("{other:?} is not a read")));
+            }
+        })
+    }
+
+    /// Checks `request`, a write, and queues it: one to a pane that is not
+    /// there fails now.
+    fn queue(&mut self, request: Asked) -> Result<Response, Error> {
+        match &request {
+            Asked::SelectAll(pane)
+            | Asked::ClearScrollback(pane)
+            | Asked::Clear(pane)
+            | Asked::Paste { pane, .. }
+            | Asked::SendText { pane, .. }
+            | Asked::Scroll { pane, .. } => {
+                self.pane(*pane)?;
+            }
+            _ => {}
+        }
+        self.writes.push(request);
+        Ok(Response::Done)
+    }
+
+    /// Checks `request`, of the app's, and passes it on, for the app to do
+    /// once the call returns.
+    fn ask_app(&mut self, request: Asked) -> Result<Response, Error> {
+        let asked = match request {
+            Asked::RunCommand { name, args } => {
+                let args = self.context.registry.check(&name, args)?;
+                Request::Run(Invocation {
+                    command: name,
+                    args,
+                })
+            }
+            Asked::Open(target) => Request::Open(
+                opening(&target).map_err(|message| Error::new(Code::Failed, message))?,
+            ),
+            Asked::SetFontSize(size) => {
+                if let Some(size) = size {
+                    Size::try_from(f64::from(size))
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                Request::FontSize(size)
+            }
+            Asked::OpenWindow => Request::OpenWindow,
+            Asked::CloseWindow(window) => {
+                let id = WindowId::of(window.0);
+                if self.context.workspace.window(id).is_none() {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ));
+                }
+                Request::CloseWindow(id)
+            }
+            Asked::Quit => Request::Quit,
+            other => {
+                return Err(Error::new(
+                    Code::Fault,
+                    format!("{other:?} is not a request of the app's"),
+                ));
+            }
+        };
+        self.requests.push(asked);
+        Ok(Response::Done)
+    }
+
+    /// Takes `request`, a declaration of the plugin's commands or keys, at
+    /// once.
+    fn declare(&mut self, request: Asked) -> Result<Response, Error> {
+        match request {
+            Asked::RegisterCommand(command) => {
+                self.context.registry.register(command.clone())?;
+                self.state.commands.push(command);
+            }
+            Asked::Bind(binding) => {
+                let invalid = |message: String| Error::new(Code::InvalidBinding, message);
+                let keys = keymap::parse_keys(&binding.keys).map_err(invalid)?;
+                if !commands::is_name(&binding.command) {
+                    return Err(invalid(format!(
+                        "`{}` is not a command's name, `namespace.action`",
+                        binding.command
+                    )));
+                }
+                let when = binding
+                    .when
+                    .as_deref()
+                    .map(When::parse)
+                    .transpose()
+                    .map_err(invalid)?;
+                self.state.bindings.push(Binding {
+                    keys,
+                    invocation: Invocation {
+                        command: binding.command,
+                        args: binding.args,
+                    },
+                    when,
+                });
+                *self.bindings_changed = true;
+            }
+            other => {
+                return Err(Error::new(
+                    Code::Fault,
+                    format!("{other:?} is not a declaration"),
+                ));
+            }
+        }
+        Ok(Response::Done)
     }
 }
 
-impl HostApi for Host<'_, '_> {
-    fn register_command(&mut self, command: Command) -> Result<(), Error> {
-        self.context.registry.register(command.clone())?;
-        self.state.commands.push(command);
-        Ok(())
-    }
-
-    fn run_command(&mut self, name: &str, args: Args) -> Result<(), Error> {
-        let args = self.context.registry.check(name, args)?;
-        self.requests.push(Request::Run(Invocation {
-            command: name.to_owned(),
-            args,
-        }));
-        Ok(())
-    }
-
-    fn bind(&mut self, binding: host::Binding) -> Result<(), Error> {
-        let invalid = |message: String| Error::new(Code::InvalidBinding, message);
-        let keys = keymap::parse_keys(&binding.keys).map_err(invalid)?;
-        if !commands::is_name(&binding.command) {
-            return Err(invalid(format!(
-                "`{}` is not a command's name, `namespace.action`",
-                binding.command
-            )));
-        }
-        let when = binding
-            .when
-            .as_deref()
-            .map(When::parse)
-            .transpose()
-            .map_err(invalid)?;
-        self.state.bindings.push(Binding {
-            keys,
-            invocation: Invocation {
-                command: binding.command,
-                args: binding.args,
-            },
-            when,
-        });
-        *self.bindings_changed = true;
-        Ok(())
-    }
-
-    fn clipboard_text(&mut self) -> Result<Option<String>, Error> {
-        Ok(self.context.clipboard.text())
-    }
-
-    fn set_clipboard_text(&mut self, text: &str) -> Result<(), Error> {
-        self.context.clipboard.set_text(text);
-        Ok(())
-    }
-
-    fn focused_window(&self) -> Option<host::WindowId> {
-        self.context
-            .focused
-            .map(|window| host::WindowId(window.get()))
-    }
-
-    fn focused_pane(&self) -> Option<host::PaneId> {
-        let window = self.context.focused?;
-        let pane = self.context.workspace.active_pane(window)?;
-        Some(host::PaneId(pane.get()))
-    }
-
-    fn selection_text(&mut self, pane: host::PaneId) -> Result<Option<String>, Error> {
-        Ok(self.pane(pane)?.selection_text())
-    }
-
-    fn line_text(
-        &mut self,
-        pane: host::PaneId,
-        row: i64,
-        reach: usize,
-    ) -> Result<Option<host::LineText>, Error> {
-        Ok(self
-            .pane(pane)?
-            .line_text(row, reach.min(host::MOST_REACH))
-            .map(|(text, cells)| host::LineText { text, cells }))
-    }
-
-    fn link_at(
-        &mut self,
-        pane: host::PaneId,
-        column: u16,
-        row: i64,
-    ) -> Result<Option<String>, Error> {
-        Ok(self.pane(pane)?.link_at(column, row))
-    }
-
-    fn working_directory(&mut self, pane: host::PaneId) -> Result<Option<String>, Error> {
-        Ok(self
-            .pane(pane)?
-            .working_directory()
-            .map(|directory| directory.to_string_lossy().into_owned()))
-    }
-
-    fn open(&mut self, target: &str) -> Result<(), Error> {
-        let target = opening(target).map_err(|message| Error::new(Code::Failed, message))?;
-        self.requests.push(Request::Open(target));
-        Ok(())
-    }
-
-    fn opens(&mut self, target: &str) -> Result<bool, Error> {
-        Ok(opens(target))
-    }
-
-    fn select_all(&mut self, pane: host::PaneId) -> Result<(), Error> {
-        self.pane(pane)?.select_all();
-        Ok(())
-    }
-
-    fn clear_scrollback(&mut self, pane: host::PaneId) -> Result<(), Error> {
-        self.pane(pane)?.clear_scrollback();
-        Ok(())
-    }
-
-    fn clear(&mut self, pane: host::PaneId) -> Result<(), Error> {
-        self.pane(pane)?.clear();
-        Ok(())
-    }
-
-    fn paste(&mut self, pane: host::PaneId, text: &str) -> Result<(), Error> {
-        let found = self.pane(pane)?;
-        let bracketed = found
-            .input_modes()
-            .is_some_and(|modes| modes.bracketed_paste);
-        match paste::decide(text, bracketed, self.context.confirm_paste) {
-            Paste::Now(text) => found.paste(&text),
-            Paste::Ask => self.requests.push(Request::ConfirmPaste {
-                pane: PaneId::of(pane.0),
-                text: text.to_owned(),
-            }),
-        }
-        Ok(())
-    }
-
-    fn send_text(&mut self, pane: host::PaneId, text: &str) -> Result<(), Error> {
-        self.pane(pane)?.send_text(text);
-        Ok(())
-    }
-
-    fn scroll(&mut self, pane: host::PaneId, scroll: host::Scroll) -> Result<(), Error> {
-        let rows = |n: u32| usize::try_from(n).unwrap_or(usize::MAX);
-        self.pane(pane)?.scroll(match scroll {
-            host::Scroll::Up(n) => Scroll::Up(rows(n)),
-            host::Scroll::Down(n) => Scroll::Down(rows(n)),
-            host::Scroll::PageUp => Scroll::PageUp,
-            host::Scroll::PageDown => Scroll::PageDown,
-            host::Scroll::Top => Scroll::Top,
-            host::Scroll::Bottom => Scroll::Bottom,
-        });
-        Ok(())
-    }
-
-    fn font_size(&self) -> f32 {
-        self.context.font_size
-    }
-
-    fn set_font_size(&mut self, size: Option<f32>) -> Result<(), Error> {
-        if let Some(size) = size {
-            Size::try_from(f64::from(size)).map_err(|message| Error::new(Code::Failed, message))?;
-        }
-        self.requests.push(Request::FontSize(size));
-        Ok(())
-    }
-
-    fn open_window(&mut self) -> Result<(), Error> {
-        self.requests.push(Request::OpenWindow);
-        Ok(())
-    }
-
-    fn close_window(&mut self, window: host::WindowId) -> Result<(), Error> {
-        let id = WindowId::of(window.0);
-        if self.context.workspace.window(id).is_none() {
-            return Err(Error::new(
-                Code::Failed,
-                format!("there is no window {}", window.0),
-            ));
-        }
-        self.requests.push(Request::CloseWindow(id));
-        Ok(())
-    }
-
-    fn quit(&mut self) -> Result<(), Error> {
-        self.requests.push(Request::Quit);
-        Ok(())
+impl host::Host for Host<'_, '_> {
+    fn handle(&mut self, call: Call) -> Response {
+        let request = call.request;
+        let answered = if call.caller == self.state.name {
+            self.allows(&request).and_then(|()| match request.effect() {
+                Effect::Read => self.read(request),
+                Effect::Write => self.queue(request),
+                Effect::App => self.ask_app(request),
+                Effect::Declaration => self.declare(request),
+            })
+        } else {
+            Err(Error::new(
+                Code::Fault,
+                format!(
+                    "a call of the plugin `{}` came as `{}`'s",
+                    self.state.name, call.caller
+                ),
+            ))
+        };
+        answered.unwrap_or_else(Response::Failed)
     }
 }
 

@@ -182,7 +182,7 @@ impl Plugin for CoreActions {
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         // The font's size is every window's; it stays within its sizes.
         let (smallest, largest) = SIZES;
-        let size = cx.font_size();
+        let size = cx.font_size()?;
         match name {
             FONT_BIGGER if size < largest => {
                 return cx.set_font_size(Some((size.floor() + 1.0).min(largest)));

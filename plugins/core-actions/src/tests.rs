@@ -1,6 +1,7 @@
 //! The plugin against a host of the tests', which records what it asks.
 
-use lokyr_plugin_sdk::host::{HostApi, LineText, PaneId, Scroll, WindowId};
+use lokyr_plugin_sdk::host::{PaneId, WindowId};
+use lokyr_plugin_sdk::message::{Call, Request, Response};
 
 use super::*;
 
@@ -17,125 +18,54 @@ struct Host {
     font: f32,
 }
 
-impl HostApi for Host {
-    fn register_command(&mut self, command: Command) -> Result<(), Error> {
-        self.commands.push(command);
-        Ok(())
-    }
-
-    fn run_command(&mut self, name: &str, _: Args) -> Result<(), Error> {
-        self.calls.push(format!("run {name}"));
-        Ok(())
-    }
-
-    fn bind(&mut self, binding: Binding) -> Result<(), Error> {
-        self.bindings.push(binding);
-        Ok(())
-    }
-
-    fn clipboard_text(&mut self) -> Result<Option<String>, Error> {
-        Ok(self.clipboard.clone())
-    }
-
-    fn set_clipboard_text(&mut self, text: &str) -> Result<(), Error> {
-        self.clipboard = Some(text.to_owned());
-        Ok(())
-    }
-
-    fn focused_window(&self) -> Option<WindowId> {
-        self.pane.map(|_| WindowId(1))
-    }
-
-    fn focused_pane(&self) -> Option<PaneId> {
-        self.pane
-    }
-
-    fn selection_text(&mut self, _: PaneId) -> Result<Option<String>, Error> {
-        Ok(self.selection.clone())
-    }
-
-    fn line_text(&mut self, _: PaneId, _: i64, _: usize) -> Result<Option<LineText>, Error> {
-        Ok(None)
-    }
-
-    fn link_at(&mut self, _: PaneId, _: u16, _: i64) -> Result<Option<String>, Error> {
-        Ok(None)
-    }
-
-    fn working_directory(&mut self, _: PaneId) -> Result<Option<String>, Error> {
-        Ok(None)
-    }
-
-    fn open(&mut self, target: &str) -> Result<(), Error> {
-        self.calls.push(format!("open {target}"));
-        Ok(())
-    }
-
-    fn opens(&mut self, _: &str) -> Result<bool, Error> {
-        Ok(true)
-    }
-
-    fn select_all(&mut self, pane: PaneId) -> Result<(), Error> {
-        self.calls.push(format!("select all {}", pane.0));
-        Ok(())
-    }
-
-    fn clear_scrollback(&mut self, pane: PaneId) -> Result<(), Error> {
-        self.calls.push(format!("clear scrollback {}", pane.0));
-        Ok(())
-    }
-
-    fn clear(&mut self, pane: PaneId) -> Result<(), Error> {
-        self.calls.push(format!("clear {}", pane.0));
-        Ok(())
-    }
-
-    fn paste(&mut self, pane: PaneId, text: &str) -> Result<(), Error> {
-        self.calls.push(format!("paste {} {text:?}", pane.0));
-        Ok(())
-    }
-
-    fn send_text(&mut self, pane: PaneId, text: &str) -> Result<(), Error> {
-        self.calls.push(format!("send {} {text:?}", pane.0));
-        Ok(())
-    }
-
-    fn scroll(&mut self, pane: PaneId, scroll: Scroll) -> Result<(), Error> {
-        self.calls.push(format!("scroll {} {scroll:?}", pane.0));
-        Ok(())
-    }
-
-    fn font_size(&self) -> f32 {
-        self.font
-    }
-
-    fn set_font_size(&mut self, size: Option<f32>) -> Result<(), Error> {
-        self.calls.push(format!("font {size:?}"));
-        Ok(())
-    }
-
-    fn open_window(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn close_window(&mut self, _: WindowId) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn quit(&mut self) -> Result<(), Error> {
-        Ok(())
+impl lokyr_plugin_sdk::host::Host for Host {
+    fn handle(&mut self, call: Call) -> Response {
+        assert_eq!(call.caller, "core-actions");
+        let mut done = |call: String| {
+            self.calls.push(call);
+            Response::Done
+        };
+        match call.request {
+            Request::RegisterCommand(command) => {
+                self.commands.push(command);
+                Response::Done
+            }
+            Request::Bind(binding) => {
+                self.bindings.push(binding);
+                Response::Done
+            }
+            Request::ClipboardText => Response::Text(self.clipboard.clone()),
+            Request::SetClipboardText(text) => {
+                self.clipboard = Some(text);
+                Response::Done
+            }
+            Request::FocusedWindow => Response::Window(self.pane.map(|_| WindowId(1))),
+            Request::FocusedPane => Response::Pane(self.pane),
+            Request::SelectionText(_) => Response::Text(self.selection.clone()),
+            Request::SelectAll(pane) => done(format!("select all {}", pane.0)),
+            Request::ClearScrollback(pane) => done(format!("clear scrollback {}", pane.0)),
+            Request::Clear(pane) => done(format!("clear {}", pane.0)),
+            Request::Paste { pane, text } => done(format!("paste {} {text:?}", pane.0)),
+            Request::SendText { pane, text } => done(format!("send {} {text:?}", pane.0)),
+            Request::Scroll { pane, scroll } => done(format!("scroll {} {scroll:?}", pane.0)),
+            Request::FontSize => Response::FontSize(self.font),
+            Request::SetFontSize(size) => done(format!("font {size:?}")),
+            other => panic!("core-actions asked {other:?}"),
+        }
     }
 }
 
 /// Runs `name` on `host`.
 fn run(host: &mut Host, name: &str) -> Result<(), Error> {
-    CoreActions.on_command(&mut Cx::new(host), name, Args::new())
+    CoreActions.on_command(&mut Cx::new(host, "core-actions"), name, Args::new())
 }
 
 #[test]
 fn the_commands_register_with_their_keys() {
     let mut host = Host::default();
-    CoreActions.activate(&mut Cx::new(&mut host)).unwrap();
+    CoreActions
+        .activate(&mut Cx::new(&mut host, "core-actions"))
+        .unwrap();
     let registered: Vec<(&str, Category, Vec<String>)> = host
         .commands
         .iter()
@@ -363,13 +293,17 @@ fn sending_text_sends_it_as_it_is() {
     };
     let args = Args::from([("text".to_owned(), Value::String("\u{17}\u{1b}b".to_owned()))]);
     CoreActions
-        .on_command(&mut Cx::new(&mut host), SEND_TEXT, args.clone())
+        .on_command(
+            &mut Cx::new(&mut host, "core-actions"),
+            SEND_TEXT,
+            args.clone(),
+        )
         .unwrap();
     assert_eq!(host.calls, ["send 9 \"\\u{17}\\u{1b}b\""]);
     // Without a focused pane, nothing.
     let mut host = Host::default();
     CoreActions
-        .on_command(&mut Cx::new(&mut host), SEND_TEXT, args)
+        .on_command(&mut Cx::new(&mut host, "core-actions"), SEND_TEXT, args)
         .unwrap();
     assert!(host.calls.is_empty());
 }

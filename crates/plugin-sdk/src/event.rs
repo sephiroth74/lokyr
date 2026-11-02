@@ -2,10 +2,13 @@
 //! windows, their tabs, the tabs' layouts and their panes, as the
 //! workspace's own operations record each change.
 
+use serde::{Deserialize, Serialize};
+
 use crate::host::{PaneId, TabId, WindowId};
 
 /// A change of the workspace.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum WorkspaceEvent {
     /// A window opened.
     WindowOpened {

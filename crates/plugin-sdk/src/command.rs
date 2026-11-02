@@ -10,11 +10,13 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// The arguments of a call: values by their parameters' names.
 pub type Args = BTreeMap<String, Value>;
 
 /// A command, as its registration describes it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Command {
     /// Its name, `namespace.action`.
     pub name: String,
@@ -35,7 +37,7 @@ pub struct Command {
 
 /// A parameter of a command: its name, the kind of its value, and its
 /// default, which makes it optional.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Param {
     /// Its name: lowercase letters, digits and `-`, from a letter.
     pub name: String,
@@ -46,7 +48,8 @@ pub struct Param {
 }
 
 /// A value of an argument.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Value {
     /// Text.
     String(String),
@@ -71,7 +74,8 @@ impl Value {
 }
 
 /// The kind of a parameter's value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Kind {
     /// Text.
     String,
@@ -96,7 +100,8 @@ impl fmt::Display for Kind {
 
 /// The group of a command, for the user: the install screen and the
 /// palette list the commands by it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Category {
     /// The app itself, as quitting it.
     App,
@@ -119,7 +124,8 @@ pub enum Category {
 
 /// A capability: what a plugin may reach beyond its own computation, which
 /// its manifest declares and the user grants.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Capability {
     /// Reading the screen's and the scrollback's text, and the selection.
     TerminalRead,
@@ -179,9 +185,11 @@ impl fmt::Display for Capability {
 
 /// What went wrong, by its code, which never changes: the hundreds tell
 /// the category.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Code {
-    /// 101: no command of the name.
+    /// 101: no command of the name, or no window, tab or pane of the id,
+    /// as one that closed.
     NotFound,
     /// 102: an argument that the command does not take.
     UnknownArgument,
@@ -288,7 +296,7 @@ impl fmt::Display for ErrorCategory {
 }
 
 /// An error of a command's registration or call.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Error {
     /// What went wrong.
     pub code: Code,

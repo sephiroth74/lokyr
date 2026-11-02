@@ -1964,10 +1964,11 @@ impl plugins::Plugin for Tester {
                 when: None,
             }),
             _ => {
+                // The first row's text, which a selection, applied as the
+                // call returns, would not give in the same call.
                 let pane = cx.focused_pane().expect("a focused pane");
-                cx.select_all(pane)?;
-                let text = cx.selection_text(pane)?.unwrap_or_default();
-                cx.set_clipboard_text(text.lines().next().unwrap_or_default())?;
+                let line = cx.line_text(pane, 0, 0)?.unwrap_or_default();
+                cx.set_clipboard_text(line.text.trim_end())?;
                 cx.run_command(NEW_WINDOW, Args::new())
             }
         }
