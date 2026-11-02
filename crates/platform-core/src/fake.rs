@@ -11,8 +11,8 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
     LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace, ScreenRect, Size,
-    TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    Target, TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -480,12 +480,14 @@ impl Fake {
         &self.focus_requests
     }
 
-    /// The URLs and the paths that the app opened, from the first.
+    /// The URLs and the paths that the app opened, from the first, as the
+    /// targets' locations tell them.
     pub fn opened(&self) -> &[String] {
         &self.opened
     }
 
-    /// The paths that the app showed in the file manager, from the first.
+    /// The paths that the app showed in the file manager, from the first,
+    /// as the targets' locations tell them.
     pub fn revealed(&self) -> &[String] {
         &self.revealed
     }
@@ -907,43 +909,58 @@ impl Platform for Fake {
     }
 
     /// A URL, unless of `file`; a directory, a program, as the shared rule
-    /// tells of the file that the target's links lead to, or a file; a
-    /// path that does not exist, a `file` URL of another machine and a text
-    /// that is no URL fail, as a backend's do.
-    fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
+    /// tells of the file that the target's links lead to, or a file, at the
+    /// path that its links lead to; a path that leads nowhere, a `file` URL
+    /// of another machine and a text that is no URL fail, as a backend's
+    /// do.
+    fn resolve_target(&self, target: &str) -> Result<Target, Error> {
         let failed = |why: String| Error::Open(target.to_owned(), why);
-        let path = match fake_path(target) {
-            Target::Url => return Ok(TargetKind::Url),
-            Target::Path(path) => path,
-            Target::Neither(why) => return Err(failed(why.to_owned())),
+        let path = match given(target) {
+            Given::Url => {
+                return Ok(Target {
+                    kind: TargetKind::Url,
+                    location: target.to_owned(),
+                });
+            }
+            Given::Path(path) => path,
+            Given::Neither(why) => return Err(failed(why.to_owned())),
         };
         let path = std::fs::canonicalize(path).map_err(|error| failed(error.to_string()))?;
         let metadata = std::fs::metadata(&path).map_err(|error| failed(error.to_string()))?;
-        Ok(if crate::runs_by_itself(&path, &metadata) {
+        let kind = if crate::runs_by_itself(&path, &metadata) {
             TargetKind::Program
         } else if metadata.is_dir() {
             TargetKind::Directory
         } else {
             TargetKind::File
+        };
+        Ok(Target {
+            kind,
+            location: path.display().to_string(),
         })
     }
 
-    /// Opens nothing, and records `target`, or, for a program, reveals it.
-    fn open(&mut self, target: &str) -> Result<(), Error> {
-        if self.target_kind(target)? == TargetKind::Program {
-            return self.reveal(target);
+    /// Opens nothing, and records `target`'s location; a program fails.
+    fn open(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind == TargetKind::Program {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it would run".to_owned(),
+            ));
         }
-        self.opened.push(target.to_owned());
+        self.opened.push(target.location.clone());
         Ok(())
     }
 
-    /// Shows nothing, and records `target`; a URL that is not of `file`
-    /// fails.
-    fn reveal(&mut self, target: &str) -> Result<(), Error> {
-        if self.target_kind(target)? == TargetKind::Url {
-            return Err(Error::Open(target.to_owned(), "not a file".to_owned()));
+    /// Shows nothing, and records `target`'s location; a URL fails.
+    fn reveal(&mut self, target: &Target) -> Result<(), Error> {
+        if target.kind == TargetKind::Url {
+            return Err(Error::Open(
+                target.location.clone(),
+                "it is no file".to_owned(),
+            ));
         }
-        self.revealed.push(target.to_owned());
+        self.revealed.push(target.location.clone());
         Ok(())
     }
 
@@ -957,7 +974,7 @@ impl Platform for Fake {
 }
 
 /// What a target is, as the fake reads it.
-enum Target {
+enum Given {
     /// A URL of another scheme than `file`.
     Url,
     /// The path of an absolute path, or of a `file` URL of this machine.
@@ -969,36 +986,36 @@ enum Target {
 /// What `target` is: an absolute path; a `file` URL, of any case, with no
 /// host or `localhost`, its escapes decoded; or another URL, of a scheme
 /// that starts with a letter.
-fn fake_path(target: &str) -> Target {
+fn given(target: &str) -> Given {
     if target.starts_with('/') {
-        return Target::Path(PathBuf::from(target));
+        return Given::Path(PathBuf::from(target));
     }
     let Some((scheme, rest)) = target.split_once(':') else {
-        return Target::Neither("it is not a URL");
+        return Given::Neither("it is not a URL");
     };
     let scheme_ok = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
         && scheme
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c));
     if !scheme_ok {
-        return Target::Neither("it is not a URL");
+        return Given::Neither("it is not a URL");
     }
     if !scheme.eq_ignore_ascii_case("file") {
-        return Target::Url;
+        return Given::Url;
     }
     let path = match rest.strip_prefix("//") {
         Some(rest) => {
             let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
             if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
-                return Target::Neither("it is on another machine");
+                return Given::Neither("it is on another machine");
             }
             path
         }
         None => rest,
     };
     match decoded(path) {
-        Some(path) if path.starts_with('/') => Target::Path(PathBuf::from(path)),
-        _ => Target::Neither("it has no path"),
+        Some(path) if path.starts_with('/') => Given::Path(PathBuf::from(path)),
+        _ => Given::Neither("it has no path"),
     }
 }
 

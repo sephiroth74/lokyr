@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Layer, LayerPlace,
-    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, TargetKind,
+    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, Target,
     TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
@@ -692,15 +692,15 @@ impl Platform for Backend {
         NSBeep();
     }
 
-    fn target_kind(&self, target: &str) -> Result<TargetKind, Error> {
-        open::kind(target)
+    fn resolve_target(&self, target: &str) -> Result<Target, Error> {
+        open::resolve(target)
     }
 
-    fn open(&mut self, target: &str) -> Result<(), Error> {
+    fn open(&mut self, target: &Target) -> Result<(), Error> {
         open::open(target)
     }
 
-    fn reveal(&mut self, target: &str) -> Result<(), Error> {
+    fn reveal(&mut self, target: &Target) -> Result<(), Error> {
         open::reveal(target)
     }
 

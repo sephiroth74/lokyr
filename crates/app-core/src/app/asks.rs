@@ -193,26 +193,27 @@ impl<B: Backend> App<B> {
     }
 
     /// Opens `target`, a URL or an absolute path, as a plugin asked, and as
-    /// `[links]` says: a URL or a file asks the user first, by default,
-    /// showing it in full; a directory opens, and a program shows in the
-    /// file manager, never running.
+    /// [`opening`] decides of what the platform tells it is: a URL or a
+    /// file asks the user first, by default, showing it in full; a
+    /// directory opens, and a program shows in the file manager, never
+    /// running.
     pub(super) fn open_target(&mut self, platform: &mut dyn Platform, target: String) {
-        let links = self.links();
-        let opened = match platform.target_kind(&target) {
-            Ok(kind @ TargetKind::Url) if links.urls == OpenUrl::Ask => {
-                self.ask_open(platform, target, kind);
+        let resolved = match platform.resolve_target(&target) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                eprintln!("lokyr: {error}");
                 return;
             }
-            Ok(kind @ TargetKind::File) if links.files == OpenFile::Ask => {
-                self.ask_open(platform, target, kind);
-                return;
-            }
-            Ok(TargetKind::File) if links.files == OpenFile::Reveal => platform.reveal(&target),
-            // A program shows in the file manager.
-            Ok(_) => platform.open(&target),
-            Err(error) => Err(error),
         };
-        if let Err(error) = opened {
+        let done = match opening(resolved.kind, self.links()) {
+            Opening::Ask => {
+                self.ask_open(platform, target, resolved.kind);
+                return;
+            }
+            Opening::Reveal => platform.reveal(&resolved),
+            Opening::Open => platform.open(&resolved),
+        };
+        if let Err(error) = done {
             eprintln!("lokyr: {error}");
         }
     }
@@ -258,6 +259,9 @@ impl<B: Backend> App<B> {
     /// The user answered the question before opening `target`, of `kind`,
     /// with `button`, its checkbox ticked when `suppressed`: it opens, or
     /// shows in the file manager, and, ticked, the config keeps the answer.
+    /// What the target is is asked again, as the question's time can have
+    /// changed it: one that became a program shows in the file manager,
+    /// whatever the answer.
     fn answer_open(
         &mut self,
         platform: &mut dyn Platform,
@@ -265,12 +269,19 @@ impl<B: Backend> App<B> {
         button: usize,
         suppressed: bool,
     ) {
-        let (done, chosen) = match (kind, button) {
-            (TargetKind::File, 0) => (platform.open(&target), Chosen::File(OpenFile::Open)),
-            (TargetKind::File, 1) => (platform.reveal(&target), Chosen::File(OpenFile::Reveal)),
-            (_, 0) => (platform.open(&target), Chosen::Url(OpenUrl::Open)),
+        let chosen = match (kind, button) {
+            (TargetKind::File, 0) => Chosen::File(OpenFile::Open),
+            (TargetKind::File, 1) => Chosen::File(OpenFile::Reveal),
+            (_, 0) => Chosen::Url(OpenUrl::Open),
             _ => return,
         };
+        let done = platform.resolve_target(&target).and_then(|resolved| {
+            if resolved.kind == TargetKind::Program || chosen == Chosen::File(OpenFile::Reveal) {
+                platform.reveal(&resolved)
+            } else {
+                platform.open(&resolved)
+            }
+        });
         if let Err(error) = done {
             eprintln!("lokyr: {error}");
         }
@@ -505,4 +516,29 @@ enum Chosen {
     Url(OpenUrl),
     /// What a file does.
     File(OpenFile),
+}
+
+/// What the app does with a target that a plugin opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Opening {
+    /// Opens it with the system's handler.
+    Open,
+    /// Shows it in the file manager, selected.
+    Reveal,
+    /// Asks the user first, whose answer opens it or shows it.
+    Ask,
+}
+
+/// What the app does with a target of `kind`, as the platform tells it:
+/// a program shows in the file manager, and never runs, whatever `links`
+/// says; a directory opens; a URL and a file do as `links` says, asking
+/// first by default.
+pub(super) fn opening(kind: TargetKind, links: LinksConfig) -> Opening {
+    match (kind, links.urls, links.files) {
+        (TargetKind::Program, ..) | (TargetKind::File, _, OpenFile::Reveal) => Opening::Reveal,
+        (TargetKind::Url, OpenUrl::Ask, _) | (TargetKind::File, _, OpenFile::Ask) => Opening::Ask,
+        (TargetKind::Directory, ..)
+        | (TargetKind::Url, OpenUrl::Open, _)
+        | (TargetKind::File, _, OpenFile::Open) => Opening::Open,
+    }
 }

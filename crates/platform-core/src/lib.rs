@@ -15,6 +15,8 @@
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
+#[cfg(any(test, feature = "conformance"))]
+pub mod conformance;
 mod event;
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
@@ -180,7 +182,7 @@ pub struct Backdrop {
     pub blur: f64,
 }
 
-/// What a target that opens is, as [`Platform::open`] takes it.
+/// What a target that opens is, as [`Platform::resolve_target`] tells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetKind {
     /// A URL of another scheme than `file`, which its application opens.
@@ -190,9 +192,21 @@ pub enum TargetKind {
     /// A file, which its application opens.
     File,
     /// A file that would run rather than open, as a program, an
-    /// application or a script that a terminal runs, which the file manager
-    /// shows instead.
+    /// application or a script that a terminal runs.
     Program,
+}
+
+/// A target that opens, as [`Platform::resolve_target`] tells it: what it
+/// is, by which the app decides what to do, and where it leads, which is
+/// what opens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Target {
+    /// What it is.
+    pub kind: TargetKind,
+    /// A URL, as it was given, or the absolute path of the file that a
+    /// path, or a `file` URL, leads to through its links and the system's
+    /// aliases.
+    pub location: String,
 }
 
 /// What the app asks of the platform, from the main thread.
@@ -441,21 +455,23 @@ pub trait Platform {
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
     fn notify(&mut self, window: WindowId, title: &str, body: &str);
 
-    /// What `target`, a URL or an absolute path, is, as [`Platform::open`]
-    /// takes it: a `file` URL is its path's, if it names this machine; a
-    /// path that does not exist fails.
-    fn target_kind(&self, target: &str) -> Result<TargetKind, Error>;
+    /// What `target`, a URL or an absolute path, is, and where it leads: a
+    /// `file` URL is its path's, if it names this machine; a path's links
+    /// and the system's aliases are followed, so that what the app decides
+    /// by is what opens. A path that leads nowhere, a `file` URL of another
+    /// machine and a text that is no URL fail. The platform tells the
+    /// facts, and decides nothing: the app decides what opens, and how.
+    fn resolve_target(&self, target: &str) -> Result<Target, Error>;
 
-    /// Opens `target`, a URL or an absolute path, with the system's handler:
-    /// a URL in its application, as the browser; a file in its
-    /// application, and a directory in the file manager. A file that would
-    /// run rather than open, a [`TargetKind::Program`], shows in the file
-    /// manager, selected, and does not run.
-    fn open(&mut self, target: &str) -> Result<(), Error>;
+    /// Opens `target`, as [`Platform::resolve_target`] told it, with the
+    /// system's handler: a URL in its application, as the browser; a file
+    /// in its application, and a directory in the file manager. A
+    /// [`TargetKind::Program`] fails, and nothing runs.
+    fn open(&mut self, target: &Target) -> Result<(), Error>;
 
-    /// Shows `target`, an absolute path or a `file` URL, in the file
-    /// manager, selected; another URL fails.
-    fn reveal(&mut self, target: &str) -> Result<(), Error>;
+    /// Shows `target`, as [`Platform::resolve_target`] told it, a file, a
+    /// directory or a program, in the file manager, selected; a URL fails.
+    fn reveal(&mut self, target: &Target) -> Result<(), Error>;
 
     /// Opens `path`, a file, in the system's text editor: the application
     /// that opens plain text, whatever the file's own type opens in. What

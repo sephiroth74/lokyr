@@ -281,12 +281,12 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
     assert_eq!(shown(&fake), file);
     fake.answer_alert(&mut app, fake.alerts()[0].id, 1);
     // A program shows in the Finder, and a directory opens, without a
-    // question.
+    // question, each at the place that its links lead to.
     cmd_click(&mut fake, &mut app, window, 33);
     cmd_click(&mut fake, &mut app, window, 46);
     assert!(fake.alerts().is_empty());
-    assert_eq!(fake.opened(), ["/usr"]);
-    assert_eq!(fake.revealed(), ["/etc/hosts", "/usr/bin/true"]);
+    assert_eq!(fake.opened(), [real("/usr")]);
+    assert_eq!(fake.revealed(), [real("/etc/hosts"), real("/usr/bin/true")]);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "# mine\n");
     // Ticked, the answer goes into the config, and the next one opens
     // without a question, before the file's reload too.
@@ -305,15 +305,76 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
         fake.opened()[1..],
         ["https://lokyr.dev/x", "https://lokyr.dev/x"]
     );
-    assert_eq!(fake.revealed()[2..], ["/etc/hosts", "/etc/hosts"]);
+    assert_eq!(
+        fake.revealed()[2..],
+        [real("/etc/hosts"), real("/etc/hosts")]
+    );
     // Opening a file, ticked, keeps `open`.
     std::fs::write(&path, "").unwrap();
     app.apply(&mut fake, Config::default());
     cmd_click(&mut fake, &mut app, window, 22);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
-    assert_eq!(fake.opened().last().map(String::as_str), Some("/etc/hosts"));
+    assert_eq!(fake.opened().last(), Some(&real("/etc/hosts")));
     assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
     assert!(app.links_chosen == (None, None));
+}
+
+/// The path that `path`'s links lead to.
+fn real(path: &str) -> String {
+    std::fs::canonicalize(path).unwrap().display().to_string()
+}
+
+#[test]
+fn a_program_never_opens_and_the_rest_do_as_the_config_says() {
+    use crate::app::asks::{Opening, opening};
+
+    for urls in [OpenUrl::Ask, OpenUrl::Open] {
+        for files in [OpenFile::Ask, OpenFile::Open, OpenFile::Reveal] {
+            let links = lokyr_kernel::config::LinksConfig { urls, files };
+            let of = |kind| opening(kind, links);
+            assert_eq!(of(TargetKind::Program), Opening::Reveal, "{links:?}");
+            assert_eq!(of(TargetKind::Directory), Opening::Open, "{links:?}");
+            let url = if urls == OpenUrl::Ask {
+                Opening::Ask
+            } else {
+                Opening::Open
+            };
+            assert_eq!(of(TargetKind::Url), url, "{links:?}");
+            let file = match files {
+                OpenFile::Ask => Opening::Ask,
+                OpenFile::Open => Opening::Open,
+                OpenFile::Reveal => Opening::Reveal,
+            };
+            assert_eq!(of(TargetKind::File), file, "{links:?}");
+        }
+    }
+}
+
+#[test]
+fn a_file_that_becomes_a_program_while_its_question_waits_shows_in_the_finder() {
+    let directory = real_directory("becomes-program");
+    let file = directory.join("notes.txt");
+    std::fs::write(&file, "notes").unwrap();
+    let program = shell(&format!(
+        "stty raw -echo; printf '{}\\r\\n'; echo ready; cat -v",
+        file.display()
+    ));
+    let (mut fake, mut app, window, _) = pasting("becomes-program", "", program);
+    cmd_click(&mut fake, &mut app, window, 2);
+    assert_eq!(fake.alerts()[0].alert.message, "Open this file?");
+    // The file can run before the answer, which opens it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fake.answer_alert(&mut app, fake.alerts()[0].id, 0);
+    #[cfg(unix)]
+    {
+        assert!(fake.opened().is_empty());
+        assert_eq!(fake.revealed(), [file.display().to_string()]);
+    }
+    let _ = std::fs::remove_dir_all(&directory);
 }
 
 #[test]

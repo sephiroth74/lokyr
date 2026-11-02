@@ -122,7 +122,7 @@ lokyr/
 │   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
 │   ├── render-core/       Renderer and Surface traits, display-list types, shaders
-│   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance
+│   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance, targets that open; the fake platform and the conformance suite
 │   ├── platform-macos/    AppKit via objc2 (NSWindow, NSPanel, NSView + CAMetalLayer, NSTextInputClient, NSMenu), Carbon's hot keys
 │   ├── platform-wayland/  (F7) smithay-client-toolkit + calloop, our own CSD
 │   ├── platform-x11/      (F7) x11rb + xkbcommon + xim
@@ -184,6 +184,8 @@ sleip/* ─▶ pkg-model           registry/* ─▶ pkg-model
 | Platform-independent crates (`vt-core`, `pty`, `session`, `search`, `kernel`, `*-core`) build and pass their tests on Linux, and expose no macOS types | Keeps Linux possible after 1.0 ([ADR 0011](adr/0011-macos-only-1-0.md)) | Linux CI job, and `xtask check-deps` on Linux's dependencies |
 
 The platform, render and font traits are deliberately thin. They describe what the macOS backend needs rather than a lowest common denominator, and the Linux backends will extend them in F7.
+
+The platform tells facts and does what it is asked; the decisions are `app-core`'s, once for every platform. A target that opens, a link's or a path's, is resolved by the platform, `Platform::resolve_target`: what it is, a URL, a directory, a file or a program that would run rather than open, and the file that its links and the system's aliases lead to; `app-core` decides whether it opens, shows in the file manager or asks first, as `[links]` says, a program never opening, and resolves it again once its question is answered. The platform's `open` refuses a program too, and opens what was resolved. A conformance suite, `platform-core`'s `conformance::check`, behind its feature `conformance`, checks what every platform tells alike, the targets and the windows that are not there; the fake passes it in `platform-core`'s tests and the macOS backend in an integration test of its own, and the Linux backends will in F7.
 
 ## Main libraries
 

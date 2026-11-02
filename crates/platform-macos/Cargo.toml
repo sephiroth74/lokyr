@@ -105,6 +105,9 @@ objc2-user-notifications = { workspace = true, features = [
     "UNUserNotificationCenter",
 ] }
 
+[dev-dependencies]
+lokyr-platform-core = { workspace = true, features = ["conformance"] }
+
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 objc2-app-kit = { workspace = true, features = ["NSPasteboardItem", "NSTextView"] }
 objc2-foundation = { workspace = true, features = ["NSOperation", "NSUserDefaults"] }
@@ -221,6 +224,10 @@ harness = false
 
 [[test]]
 name = "posted_keys"
+harness = false
+
+[[test]]
+name = "conformance"
 harness = false
 
 [lints]
