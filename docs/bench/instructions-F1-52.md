@@ -1,6 +1,6 @@
 # Instruction counts in CI (F1-52)
 
-The instructions that the VT core takes for one sample of each of vtebench's scenarios, and for 1 MiB of text as `cat` prints it, as callgrind counts them. These are the counts of the first run of the `instructions` job, on GitHub's `ubuntu-latest` runner for x86-64, on 2026-10-20, at commit b4680a5.
+The instructions that the VT core takes for one sample of each of vtebench's scenarios, and for 1 MiB of text as `cat` prints it, as callgrind counts them. These are the counts of the first run of the `instructions` job, on GitHub's `ubuntu-latest` runner for x86-64, on 2026-10-20, at commit 99da71b.
 
 ## Method
 

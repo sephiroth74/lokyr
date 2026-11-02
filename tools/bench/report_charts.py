@@ -33,7 +33,7 @@ def latency():
              ("60 Hz", "60hz", 2), ("60 Hz, flood", "60hz-flood", 3)]
     before = {key: load(f"latency-F2-54/synthetic-{key}.json") for _, key, _ in cases}
     after = {key: load(f"latency-F2-54/after-F2-144-{key}.json") for _, key, _ in cases}
-    labels = ("8917140, before", "d69529b, after")
+    labels = ("c121058, before", "7796b52, after")
     for stat, name, budget_frames in (("p50", "median", None), ("p99", "99th percentile", None)):
         rows = [(label, before[key]["latency_ms"][stat], after[key]["latency_ms"][stat])
                 for label, key, _ in cases]

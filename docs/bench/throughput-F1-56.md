@@ -1,6 +1,6 @@
 # Throughput on the code that F1 ends with (F1-56)
 
-Measured on 2026-10-25 at about 08:50, with `bolt-throughput` alone, on the code of 5ae91ad, whose VT core is 9061941's, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, after the fuzzing of the 24 hours had ended, with no build running. Rust 1.99.0, release builds. [F1-133's figures](throughput-F1-133.md) were measured on ac9a8f3, before F1-140 and F1-147 changed how a wrap from the screen's last column treats the rows' soft-wrap marks, on the path of a wide character that does not fit there.
+Measured on 2026-10-25 at about 08:50, with `bolt-throughput` alone, on the code of 29048e6, whose VT core is 7959169's, on the machine of [the F0 baseline](baseline-F0.md): an Apple M5 Pro, macOS 27.0.1, on AC power, after the fuzzing of the 24 hours had ended, with no build running. Rust 1.99.0, release builds. [F1-133's figures](throughput-F1-133.md) were measured on 840cee6, before F1-140 and F1-147 changed how a wrap from the screen's last column treats the rows' soft-wrap marks, on the path of a wide character that does not fit there.
 
 ## Method
 
