@@ -1,0 +1,25 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37421155)	100%; charged; 0:00 remaining present: true
+15:58:15 startup v020 1
+15:58:30 startup v030 1
+15:58:46 startup floor 1
+15:59:01 startup v020 2
+15:59:16 startup v030 2
+15:59:31 startup floor 2
+15:59:47 latency v020 1
+15:59:59 latency v030 1
+16:00:11 latency v020 2
+16:00:24 latency v030 2
+16:00:36 idle v020 1
+16:02:13 idle v030 1
+16:03:51 idle v020 2
+16:05:28 idle v030 2
+16:07:06 throughput ascii v020
+16:07:17 throughput ascii v030
+16:07:27 throughput seq v020
+16:07:29 throughput seq v030
+16:07:30 throughput sgr v020
+16:07:32 throughput sgr v030
+16:07:34 throughput cjk v020
+16:07:36 throughput cjk v030
+16:07:38 done
