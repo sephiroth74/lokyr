@@ -164,39 +164,45 @@ impl Plugins {
     }
 
     /// Adds `plugin`, by its `name`, without a manifest, to activate, with
-    /// every capability, as a first-party plugin has them.
-    pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) {
-        self.insert(name, None, plugin, None);
+    /// every capability, as a first-party plugin has them; its namespace is
+    /// its name, which no other plugin's may be.
+    pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) -> Result<(), Error> {
+        self.insert(name, None, plugin, None)
     }
 
     /// Adds `plugin`, a first-party one, which the text `manifest`
     /// describes, by the manifest's name, to activate: with every
     /// capability and any command, as first-party plugins have them; its
     /// manifest's capabilities tell what it uses. A manifest that does not
-    /// read adds nothing.
-    pub fn add_builtin(
-        &mut self,
-        manifest: &str,
-        plugin: Box<dyn Plugin>,
-    ) -> Result<(), ManifestError> {
-        let manifest = Manifest::parse(manifest)?;
+    /// read, or of another plugin's namespace, adds nothing.
+    pub fn add_builtin(&mut self, manifest: &str, plugin: Box<dyn Plugin>) -> Result<(), Error> {
+        let manifest = Manifest::parse(manifest).map_err(|error: ManifestError| {
+            Error::new(
+                Code::InvalidConfig,
+                format!("a plugin's manifest does not read: {error}"),
+            )
+        })?;
         let name = manifest.name.clone();
-        self.insert(&name, Some(manifest), plugin, None);
-        Ok(())
+        self.insert(&name, Some(manifest), plugin, None)
     }
 
     /// Adds `plugin`, which `manifest` describes, by the manifest's name,
     /// to activate, with what the manifest declares: its capabilities, and
-    /// the commands of its `[uses]` with those of its own namespace; a
-    /// request that needs another capability, or a run of another command,
-    /// fails.
-    pub fn add_declared(&mut self, manifest: Manifest, plugin: Box<dyn Plugin>) {
+    /// the commands of its `[uses]` with those that it registers, of its
+    /// own namespace alone; a request that needs another capability, or a
+    /// run of another command, fails. One of another plugin's namespace
+    /// adds nothing.
+    pub fn add_declared(
+        &mut self,
+        manifest: Manifest,
+        plugin: Box<dyn Plugin>,
+    ) -> Result<(), Error> {
         let name = manifest.name.clone();
         let granted = (
             manifest.capabilities.clone(),
             Uses::new(manifest.uses.clone()),
         );
-        self.insert(&name, Some(manifest), plugin, Some(granted));
+        self.insert(&name, Some(manifest), plugin, Some(granted))
     }
 
     fn insert(
@@ -205,14 +211,27 @@ impl Plugins {
         manifest: Option<Manifest>,
         plugin: Box<dyn Plugin>,
         declared: Option<(Vec<Capability>, Uses)>,
-    ) {
-        // A plugin whose catalogs panic has none.
-        let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
-        let (granted, uses) = declared.unzip();
+    ) -> Result<(), Error> {
         let namespace = manifest
             .as_ref()
             .map_or(name, Manifest::namespace)
             .to_owned();
+        if let Some(other) = self
+            .entries
+            .iter()
+            .find(|entry| entry.state.namespace == namespace)
+        {
+            return Err(Error::new(
+                Code::AlreadyRegistered,
+                format!(
+                    "the plugin `{name}` takes the namespace `{namespace}`, which is `{}`'s",
+                    other.state.name
+                ),
+            ));
+        }
+        // A plugin whose catalogs panic has none.
+        let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
+        let (granted, uses) = declared.unzip();
         self.entries.push(Entry {
             plugin,
             state: State {
@@ -228,6 +247,7 @@ impl Plugins {
                 catalogs,
             },
         });
+        Ok(())
     }
 
     /// Activates the plugins that are not active yet, in their order, and
@@ -721,6 +741,34 @@ impl Host<'_, '_> {
         }
     }
 
+    /// Whether a declared plugin may register the command `name`: of its
+    /// own namespace, which no other plugin's command, nor the app's, has.
+    fn of_its_namespace(&self, name: &str) -> Result<(), Error> {
+        let namespace = &self.state.namespace;
+        let prefix = format!("{namespace}.");
+        if !name.starts_with(&prefix) {
+            return Err(Error::new(
+                Code::InvalidName,
+                format!("`{name}` is not of the plugin's namespace, `{namespace}`"),
+            ));
+        }
+        let taken = self.context.registry.in_order().any(|command| {
+            command.name.starts_with(&prefix)
+                && !self
+                    .state
+                    .commands
+                    .iter()
+                    .any(|own| own.name == command.name)
+        });
+        if taken {
+            return Err(Error::new(
+                Code::AlreadyRegistered,
+                format!("the namespace `{namespace}` has another plugin's commands, or the app's"),
+            ));
+        }
+        Ok(())
+    }
+
     /// Answers `request`, a read, with the state as it is now.
     fn read(&mut self, request: Asked) -> Result<Response, Error> {
         Ok(match request {
@@ -806,7 +854,7 @@ impl Host<'_, '_> {
                     (Some(uses), Some(granted)) => registry.check_for_plugin(
                         &name,
                         args,
-                        &self.state.namespace,
+                        &self.state.commands,
                         uses,
                         granted,
                     )?,
@@ -855,6 +903,9 @@ impl Host<'_, '_> {
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
         match request {
             Asked::RegisterCommand(command) => {
+                if self.state.uses.is_some() {
+                    self.of_its_namespace(&command.name)?;
+                }
                 self.context.registry.register(command.clone())?;
                 self.state.commands.push(command);
             }

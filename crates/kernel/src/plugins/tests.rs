@@ -173,26 +173,28 @@ fn a_plugin_registers_a_command_and_a_binding_through_the_sdk() {
     let mut plugins = Plugins::new();
     let ran = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&ran);
-    plugins.add(
-        "greeter",
-        scripted(
-            |cx| {
-                cx.register_command(Command {
-                    params: vec![Param {
-                        name: "times".to_owned(),
-                        kind: Kind::Integer,
-                        default: Some(Value::Integer(1)),
-                    }],
-                    ..command("greeter.hello")
-                })?;
-                cx.bind(binding("cmd+h", "greeter.hello", Some("pane.focused")))
-            },
-            move |_, name, args| {
-                seen.borrow_mut().push((name.to_owned(), args));
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "greeter",
+            scripted(
+                |cx| {
+                    cx.register_command(Command {
+                        params: vec![Param {
+                            name: "times".to_owned(),
+                            kind: Kind::Integer,
+                            default: Some(Value::Integer(1)),
+                        }],
+                        ..command("greeter.hello")
+                    })?;
+                    cx.bind(binding("cmd+h", "greeter.hello", Some("pane.focused")))
+                },
+                move |_, name, args| {
+                    seen.borrow_mut().push((name.to_owned(), args));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert_eq!(plugins.status("greeter"), Some(Status::Inactive));
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(plugins.status("greeter"), Some(Status::Active));
@@ -256,26 +258,30 @@ fn a_plugin_registers_a_command_and_a_binding_through_the_sdk() {
 fn a_plugin_that_panics_is_disabled_with_its_commands_and_bindings() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
-    plugins.add(
-        "boom",
-        scripted(
-            |cx| {
-                cx.register_command(command("boom.go"))?;
-                cx.bind(binding("cmd+b", "boom.go", None))
-            },
-            |cx, _, _| {
-                cx.open_window()?;
-                panic!("on purpose");
-            },
-        ),
-    );
-    plugins.add(
-        "calm",
-        scripted(
-            |cx| cx.register_command(command("calm.go")),
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins
+        .add(
+            "boom",
+            scripted(
+                |cx| {
+                    cx.register_command(command("boom.go"))?;
+                    cx.bind(binding("cmd+b", "boom.go", None))
+                },
+                |cx, _, _| {
+                    cx.open_window()?;
+                    panic!("on purpose");
+                },
+            ),
+        )
+        .unwrap();
+    plugins
+        .add(
+            "calm",
+            scripted(
+                |cx| cx.register_command(command("calm.go")),
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins.take_bindings_changed();
     let error = plugins
@@ -330,14 +336,16 @@ impl Plugin for Looking {
 fn a_plugin_tells_whether_its_command_applies_and_asks_nothing_meanwhile() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
-    plugins.add("look", Box::new(Looking));
-    plugins.add(
-        "calm",
-        scripted(
-            |cx| cx.register_command(command("calm.go")),
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins.add("look", Box::new(Looking)).unwrap();
+    plugins
+        .add(
+            "calm",
+            scripted(
+                |cx| cx.register_command(command("calm.go")),
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     let answer = |text: &str| Args::from([("answer".to_owned(), Value::String(text.to_owned()))]);
     assert!(
@@ -409,7 +417,7 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
     let titles = |plugin: Titled, language: &str| -> Vec<String> {
         let mut app = App::default();
         let mut plugins = Plugins::new();
-        plugins.add("titled", Box::new(plugin));
+        plugins.add("titled", Box::new(plugin)).unwrap();
         assert!(plugins.activate(&mut app.context()).is_empty());
         plugins
             .commands_in(language)
@@ -434,33 +442,39 @@ fn a_plugin_s_catalogs_title_its_commands_in_the_language_shown() {
 fn a_plugin_whose_activation_fails_or_panics_is_disabled() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
-    plugins.add(
-        "failing",
-        scripted(
-            |cx| {
-                cx.register_command(command("failing.go"))?;
-                Err(Error::new(Code::Failed, "no luck"))
-            },
-            |_, _, _| Ok(()),
-        ),
-    );
-    plugins.add(
-        "panicking",
-        scripted(
-            |cx| {
-                cx.bind(binding("cmd+p", "panicking.go", None))?;
-                panic!("{}", String::from("at start"))
-            },
-            |_, _, _| Ok(()),
-        ),
-    );
-    plugins.add(
-        "last",
-        scripted(
-            |cx| cx.register_command(command("last.go")),
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins
+        .add(
+            "failing",
+            scripted(
+                |cx| {
+                    cx.register_command(command("failing.go"))?;
+                    Err(Error::new(Code::Failed, "no luck"))
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    plugins
+        .add(
+            "panicking",
+            scripted(
+                |cx| {
+                    cx.bind(binding("cmd+p", "panicking.go", None))?;
+                    panic!("{}", String::from("at start"))
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    plugins
+        .add(
+            "last",
+            scripted(
+                |cx| cx.register_command(command("last.go")),
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     let errors = plugins.activate(&mut app.context());
     let messages: Vec<(Code, &str)> = errors
         .iter()
@@ -495,22 +509,24 @@ fn a_binding_that_is_not_one_fails_with_108() {
     let mut plugins = Plugins::new();
     let errors = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&errors);
-    plugins.add(
-        "keys",
-        scripted(
-            move |cx| {
-                for wrong in [
-                    binding("cmd+", "keys.go", None),
-                    binding("cmd+k", "go", None),
-                    binding("cmd+k", "keys.go", Some("pane.focused &&")),
-                ] {
-                    seen.borrow_mut().push(cx.bind(wrong).unwrap_err().code);
-                }
-                Ok(())
-            },
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins
+        .add(
+            "keys",
+            scripted(
+                move |cx| {
+                    for wrong in [
+                        binding("cmd+", "keys.go", None),
+                        binding("cmd+k", "go", None),
+                        binding("cmd+k", "keys.go", Some("pane.focused &&")),
+                    ] {
+                        seen.borrow_mut().push(cx.bind(wrong).unwrap_err().code);
+                    }
+                    Ok(())
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(*errors.borrow(), [Code::InvalidBinding; 3]);
     assert_eq!(plugins.bindings().count(), 0);
@@ -524,46 +540,48 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     let mut plugins = Plugins::new();
     let errors = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&errors);
-    plugins.add(
-        "app",
-        scripted(
-            |cx| {
-                cx.register_command(command("app.go"))?;
-                cx.register_command(Command {
-                    params: vec![Param {
-                        name: "n".to_owned(),
-                        kind: Kind::Number,
-                        default: Some(Value::Number(2.0)),
-                    }],
-                    ..command("app.other")
-                })
-            },
-            move |cx, _, _| {
-                let mut seen = seen.borrow_mut();
-                cx.open_window()?;
-                cx.quit()?;
-                cx.set_font_size(Some(20.0))?;
-                seen.push(cx.set_font_size(Some(1.0)).unwrap_err().code);
-                cx.set_font_size(None)?;
-                seen.push(cx.close_window(host::WindowId(u64::MAX)).unwrap_err().code);
-                let window = cx.focused_window().unwrap();
-                cx.close_window(window)?;
-                // Another command, checked now, which gets its defaults.
-                cx.run_command("app.other", Args::new())?;
-                seen.push(cx.run_command("app.none", Args::new()).unwrap_err().code);
-                seen.push(
-                    cx.run_command(
-                        "app.other",
-                        Args::from([("n".to_owned(), Value::Boolean(true))]),
-                    )
-                    .unwrap_err()
-                    .code,
-                );
-                assert_eq!(cx.font_size(), Ok(13.0));
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "app",
+            scripted(
+                |cx| {
+                    cx.register_command(command("app.go"))?;
+                    cx.register_command(Command {
+                        params: vec![Param {
+                            name: "n".to_owned(),
+                            kind: Kind::Number,
+                            default: Some(Value::Number(2.0)),
+                        }],
+                        ..command("app.other")
+                    })
+                },
+                move |cx, _, _| {
+                    let mut seen = seen.borrow_mut();
+                    cx.open_window()?;
+                    cx.quit()?;
+                    cx.set_font_size(Some(20.0))?;
+                    seen.push(cx.set_font_size(Some(1.0)).unwrap_err().code);
+                    cx.set_font_size(None)?;
+                    seen.push(cx.close_window(host::WindowId(u64::MAX)).unwrap_err().code);
+                    let window = cx.focused_window().unwrap();
+                    cx.close_window(window)?;
+                    // Another command, checked now, which gets its defaults.
+                    cx.run_command("app.other", Args::new())?;
+                    seen.push(cx.run_command("app.none", Args::new()).unwrap_err().code);
+                    seen.push(
+                        cx.run_command(
+                            "app.other",
+                            Args::from([("n".to_owned(), Value::Boolean(true))]),
+                        )
+                        .unwrap_err()
+                        .code,
+                    );
+                    assert_eq!(cx.font_size(), Ok(13.0));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert!(plugins.take_requests().is_empty());
     plugins
@@ -607,46 +625,48 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
     let mut plugins = Plugins::new();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add(
-        "copier",
-        scripted(
-            |cx| {
-                assert_eq!(cx.focused_window(), None);
-                cx.register_command(command("copier.select"))?;
-                cx.register_command(command("copier.copy"))?;
-                cx.register_command(command("copier.paste"))
-            },
-            move |cx, name, _| {
-                let pane = cx.focused_pane().unwrap();
-                match name {
-                    // Applied as the call returns, for the next to read.
-                    "copier.select" => cx.select_all(pane)?,
-                    "copier.copy" => {
-                        let text = cx.selection_text(pane)?.unwrap();
-                        cx.set_clipboard_text(text.lines().next().unwrap())?;
-                        cx.scroll(pane, host::Scroll::Up(3))?;
-                        cx.scroll(pane, host::Scroll::Bottom)?;
-                        cx.clear_scrollback(pane)?;
+    plugins
+        .add(
+            "copier",
+            scripted(
+                |cx| {
+                    assert_eq!(cx.focused_window(), None);
+                    cx.register_command(command("copier.select"))?;
+                    cx.register_command(command("copier.copy"))?;
+                    cx.register_command(command("copier.paste"))
+                },
+                move |cx, name, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    match name {
+                        // Applied as the call returns, for the next to read.
+                        "copier.select" => cx.select_all(pane)?,
+                        "copier.copy" => {
+                            let text = cx.selection_text(pane)?.unwrap();
+                            cx.set_clipboard_text(text.lines().next().unwrap())?;
+                            cx.scroll(pane, host::Scroll::Up(3))?;
+                            cx.scroll(pane, host::Scroll::Bottom)?;
+                            cx.clear_scrollback(pane)?;
+                        }
+                        _ => {
+                            let text = cx.clipboard_text()?.unwrap();
+                            // A line, its escape left out, then a line break,
+                            // which the user is to confirm.
+                            cx.paste(pane, &format!("{text}\x1b[A"))?;
+                            cx.paste(pane, "two\nthree")?;
+                            // A carriage return alone is a line break too.
+                            cx.paste(pane, "x\ry")?;
+                            let missing = host::PaneId(u64::MAX);
+                            seen.borrow_mut()
+                                .push(cx.selection_text(missing).unwrap_err().code);
+                            seen.borrow_mut()
+                                .push(cx.paste(missing, "x").unwrap_err().code);
+                        }
                     }
-                    _ => {
-                        let text = cx.clipboard_text()?.unwrap();
-                        // A line, its escape left out, then a line break,
-                        // which the user is to confirm.
-                        cx.paste(pane, &format!("{text}\x1b[A"))?;
-                        cx.paste(pane, "two\nthree")?;
-                        // A carriage return alone is a line break too.
-                        cx.paste(pane, "x\ry")?;
-                        let missing = host::PaneId(u64::MAX);
-                        seen.borrow_mut()
-                            .push(cx.selection_text(missing).unwrap_err().code);
-                        seen.borrow_mut()
-                            .push(cx.paste(missing, "x").unwrap_err().code);
-                    }
-                }
-                Ok(())
-            },
-        ),
-    );
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     // Activated before the window takes the focus.
     let focused = app.focused.take();
     assert!(plugins.activate(&mut app.context()).is_empty());
@@ -688,16 +708,18 @@ fn a_program_that_asks_for_bracketed_paste_takes_line_breaks_at_once() {
     let pane = app.workspace.active_pane(window).unwrap();
     text_once(&app, pane, "ready");
     let mut plugins = Plugins::new();
-    plugins.add(
-        "paster",
-        scripted(
-            |cx| cx.register_command(command("paster.paste")),
-            |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                cx.paste(pane, "a\nb")
-            },
-        ),
-    );
+    plugins
+        .add(
+            "paster",
+            scripted(
+                |cx| cx.register_command(command("paster.paste")),
+                |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.paste(pane, "a\nb")
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("paster.paste", Args::new(), &mut app.context())
@@ -717,16 +739,18 @@ fn clearing_a_pane_keeps_its_prompt_at_the_top() {
     // The text's lines end without their spaces.
     text_once(&app, pane, "line30\n$");
     let mut plugins = Plugins::new();
-    plugins.add(
-        "clearer",
-        scripted(
-            |cx| cx.register_command(command("clearer.clear")),
-            |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                cx.clear(pane)
-            },
-        ),
-    );
+    plugins
+        .add(
+            "clearer",
+            scripted(
+                |cx| cx.register_command(command("clearer.clear")),
+                |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.clear(pane)
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("clearer.clear", Args::new(), &mut app.context())
@@ -747,34 +771,36 @@ fn the_host_reads_a_line_its_links_and_the_directory_and_opens() {
     let mut plugins = Plugins::new();
     let seen = Rc::new(RefCell::new(Vec::new()));
     let log = Rc::clone(&seen);
-    plugins.add(
-        "reader",
-        scripted(
-            |cx| cx.register_command(command("reader.read")),
-            move |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                let line = cx.line_text(pane, 0, 4)?.unwrap();
-                let mut log = log.borrow_mut();
-                log.push(line.text.trim_end().to_owned());
-                log.push(format!("{:?}", &line.cells[..2]));
-                log.push(format!("{:?}", cx.link_at(pane, 3, 0)?));
-                log.push(format!("{:?}", cx.link_at(pane, 5, 0)?));
-                log.push(format!("{:?}", cx.working_directory(pane)?));
-                log.push(format!("{:?}", cx.line_text(pane, 24, usize::MAX)?));
-                for target in ["https://lokyr.dev", "/etc/hosts", "~/x"] {
-                    cx.open(target)?;
-                }
-                let refused = cx.open("javascript:alert(1)").unwrap_err();
-                log.push(format!("{} {}", refused.code.number(), refused.message));
-                let missing = host::PaneId(u64::MAX);
-                log.push(format!(
-                    "{:?}",
-                    cx.working_directory(missing).unwrap_err().code
-                ));
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let line = cx.line_text(pane, 0, 4)?.unwrap();
+                    let mut log = log.borrow_mut();
+                    log.push(line.text.trim_end().to_owned());
+                    log.push(format!("{:?}", &line.cells[..2]));
+                    log.push(format!("{:?}", cx.link_at(pane, 3, 0)?));
+                    log.push(format!("{:?}", cx.link_at(pane, 5, 0)?));
+                    log.push(format!("{:?}", cx.working_directory(pane)?));
+                    log.push(format!("{:?}", cx.line_text(pane, 24, usize::MAX)?));
+                    for target in ["https://lokyr.dev", "/etc/hosts", "~/x"] {
+                        cx.open(target)?;
+                    }
+                    let refused = cx.open("javascript:alert(1)").unwrap_err();
+                    log.push(format!("{} {}", refused.code.number(), refused.message));
+                    let missing = host::PaneId(u64::MAX);
+                    log.push(format!(
+                        "{:?}",
+                        cx.working_directory(missing).unwrap_err().code
+                    ));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("reader.read", Args::new(), &mut app.context())
@@ -857,22 +883,24 @@ fn a_plugin_s_writes_apply_in_their_order_as_its_call_returns() {
     let mut plugins = Plugins::new();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add(
-        "writer",
-        scripted(
-            |cx| cx.register_command(command("writer.write")),
-            move |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                cx.set_clipboard_text("one")?;
-                // A read in the call reads the state before its writes.
-                seen.borrow_mut().push(cx.clipboard_text()?);
-                cx.send_text(pane, "a")?;
-                cx.set_clipboard_text("two")?;
-                cx.send_text(pane, "b\n")?;
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "writer",
+            scripted(
+                |cx| cx.register_command(command("writer.write")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.set_clipboard_text("one")?;
+                    // A read in the call reads the state before its writes.
+                    seen.borrow_mut().push(cx.clipboard_text()?);
+                    cx.send_text(pane, "a")?;
+                    cx.set_clipboard_text("two")?;
+                    cx.send_text(pane, "b\n")?;
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("writer.write", Args::new(), &mut app.context())
@@ -892,18 +920,20 @@ fn a_selection_that_a_plugin_makes_reads_after_its_call() {
     let mut plugins = Plugins::new();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add(
-        "selector",
-        scripted(
-            |cx| cx.register_command(command("selector.select")),
-            move |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                cx.select_all(pane)?;
-                seen.borrow_mut().push(cx.selection_text(pane)?.is_some());
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "selector",
+            scripted(
+                |cx| cx.register_command(command("selector.select")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.select_all(pane)?;
+                    seen.borrow_mut().push(cx.selection_text(pane)?.is_some());
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("selector.select", Args::new(), &mut app.context())
@@ -920,25 +950,27 @@ fn a_read_or_a_write_of_a_pane_that_closed_is_not_found() {
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
     let kept = Rc::new(RefCell::new(None));
-    plugins.add(
-        "keeper",
-        scripted(
-            |cx| cx.register_command(command("keeper.look")),
-            move |cx, _, _| {
-                let pane = *kept
-                    .borrow_mut()
-                    .get_or_insert_with(|| cx.focused_pane().unwrap());
-                let mut seen = seen.borrow_mut();
-                seen.push(cx.selection_text(pane).map_err(|error| error.code));
-                seen.push(
-                    cx.send_text(pane, "x")
-                        .map(|()| None)
-                        .map_err(|error| error.code),
-                );
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add(
+            "keeper",
+            scripted(
+                |cx| cx.register_command(command("keeper.look")),
+                move |cx, _, _| {
+                    let pane = *kept
+                        .borrow_mut()
+                        .get_or_insert_with(|| cx.focused_pane().unwrap());
+                    let mut seen = seen.borrow_mut();
+                    seen.push(cx.selection_text(pane).map_err(|error| error.code));
+                    seen.push(
+                        cx.send_text(pane, "x")
+                            .map(|()| None)
+                            .map_err(|error| error.code),
+                    );
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     let mut look = |app: &mut App| {
         plugins
@@ -966,23 +998,25 @@ fn a_request_needs_its_capability() {
         "api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nterminal-read = true\n",
     ))
     .unwrap();
-    plugins.add_declared(
-        manifest,
-        scripted(
-            |cx| cx.register_command(command("reader.read")),
-            move |cx, _, _| {
-                let pane = cx.focused_pane().unwrap();
-                let mut seen = seen.borrow_mut();
-                let code = |done: Result<(), Error>| done.err().map(|error| error.code);
-                seen.push(code(cx.selection_text(pane).map(drop)));
-                seen.push(code(cx.select_all(pane)));
-                seen.push(code(cx.clipboard_text().map(drop)));
-                seen.push(code(cx.send_text(pane, "x")));
-                seen.push(code(cx.open("https://lokyr.dev")));
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let mut seen = seen.borrow_mut();
+                    let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                    seen.push(code(cx.selection_text(pane).map(drop)));
+                    seen.push(code(cx.select_all(pane)));
+                    seen.push(code(cx.clipboard_text().map(drop)));
+                    seen.push(code(cx.send_text(pane, "x")));
+                    seen.push(code(cx.open("https://lokyr.dev")));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("reader.read", Args::new(), &mut app.context())
@@ -1047,20 +1081,22 @@ fn a_plugin_that_declares_runs_its_own_commands_and_those_of_its_uses() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
     // The app's commands, which another plugin registers.
-    plugins.add(
-        "app",
-        scripted(
-            |cx| {
-                cx.register_command(command("app.used"))?;
-                cx.register_command(Command {
-                    capabilities: vec![Capability::PtyWrite],
-                    ..command("app.writes")
-                })?;
-                cx.register_command(command("app.other"))
-            },
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins
+        .add(
+            "app",
+            scripted(
+                |cx| {
+                    cx.register_command(command("app.used"))?;
+                    cx.register_command(Command {
+                        capabilities: vec![Capability::PtyWrite],
+                        ..command("app.writes")
+                    })?;
+                    cx.register_command(command("app.other"))
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     let manifest = Manifest::parse(concat!(
         "[plugin]\nname = \"acme/runner\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
         "api = \"^0.1\"\nlicense = \"MIT\"\n",
@@ -1069,20 +1105,22 @@ fn a_plugin_that_declares_runs_its_own_commands_and_those_of_its_uses() {
     .unwrap();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add_declared(
-        manifest,
-        scripted(
-            |cx| cx.register_command(command("runner.go")),
-            move |cx, _, _| {
-                let mut seen = seen.borrow_mut();
-                for name in ["runner.go", "app.used", "app.writes", "app.other"] {
-                    let ran = cx.run_command(name, Args::new());
-                    seen.push(ran.err().map(|error| error.code));
-                }
-                Ok(())
-            },
-        ),
-    );
+    plugins
+        .add_declared(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("runner.go")),
+                move |cx, _, _| {
+                    let mut seen = seen.borrow_mut();
+                    for name in ["runner.go", "app.used", "app.writes", "app.other"] {
+                        let ran = cx.run_command(name, Args::new());
+                        seen.push(ran.err().map(|error| error.code));
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(
         plugins.manifest("acme/runner").map(Manifest::namespace),
@@ -1151,15 +1189,21 @@ fn events_come_in_batches_of_those_subscribed_to_in_their_order() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
     let (tabs, panes) = (Rc::default(), Rc::default());
-    plugins.add("tabs", listening(&["tab-created", "acme.ping"], &tabs));
-    plugins.add("panes", listening(&["pane-focused"], &panes));
-    plugins.add(
-        "acme",
-        scripted(
-            |cx| cx.register_command(command("acme.ping")),
-            |cx, _, _| cx.emit("acme.ping", "acme.ping/1", Data::Integer(1)),
-        ),
-    );
+    plugins
+        .add("tabs", listening(&["tab-created", "acme.ping"], &tabs))
+        .unwrap();
+    plugins
+        .add("panes", listening(&["pane-focused"], &panes))
+        .unwrap();
+    plugins
+        .add(
+            "acme",
+            scripted(
+                |cx| cx.register_command(command("acme.ping")),
+                |cx, _, _| cx.emit("acme.ping", "acme.ping/1", Data::Integer(1)),
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     let created = |tab| {
         Event::Workspace(WorkspaceEvent::TabCreated {
@@ -1199,31 +1243,33 @@ fn an_event_comes_after_the_call_that_emits_it_and_a_delivery_s_in_the_next() {
     let seen = Rc::clone(&log);
     let inside = Rc::new(std::cell::Cell::new(false));
     let within = Rc::clone(&inside);
-    plugins.add(
-        "echo",
-        Box::new(Scripted {
-            activate: Box::new(|cx| {
-                cx.register_command(command("echo.go"))?;
-                cx.subscribe(&["echo.ping", "echo.pong"])
-            }),
-            on_command: Box::new(move |cx, _, _| {
-                within.set(true);
-                cx.emit("echo.ping", "echo/1", Data::Nil)?;
-                within.set(false);
-                Ok(())
-            }),
-            on_event: Some(Box::new(move |cx, events| {
-                assert!(!inside.get(), "an event within the call that emitted it");
-                for event in events {
-                    seen.borrow_mut().push(event.name().to_owned());
-                    if event.name() == "echo.ping" {
-                        cx.emit("echo.pong", "echo/1", Data::Text("back".to_owned()))?;
+    plugins
+        .add(
+            "echo",
+            Box::new(Scripted {
+                activate: Box::new(|cx| {
+                    cx.register_command(command("echo.go"))?;
+                    cx.subscribe(&["echo.ping", "echo.pong"])
+                }),
+                on_command: Box::new(move |cx, _, _| {
+                    within.set(true);
+                    cx.emit("echo.ping", "echo/1", Data::Nil)?;
+                    within.set(false);
+                    Ok(())
+                }),
+                on_event: Some(Box::new(move |cx, events| {
+                    assert!(!inside.get(), "an event within the call that emitted it");
+                    for event in events {
+                        seen.borrow_mut().push(event.name().to_owned());
+                        if event.name() == "echo.ping" {
+                            cx.emit("echo.pong", "echo/1", Data::Text("back".to_owned()))?;
+                        }
                     }
-                }
-                Ok(())
-            })),
-        }),
-    );
+                    Ok(())
+                })),
+            }),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
         .run("echo.go", Args::new(), &mut app.context())
@@ -1245,23 +1291,25 @@ fn a_subscription_and_an_event_s_name_are_checked() {
     let mut plugins = Plugins::new();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add(
-        "checker",
-        scripted(
-            move |cx| {
-                let mut seen = seen.borrow_mut();
-                let code = |done: Result<(), Error>| done.err().map(|error| error.code);
-                seen.push(code(cx.subscribe(&["tab-created", "other.event"])));
-                seen.push(code(cx.subscribe(&["tab-made"])));
-                seen.push(code(cx.emit("checker.done", "checker/1", Data::Nil)));
-                seen.push(code(cx.emit("other.done", "checker/1", Data::Nil)));
-                seen.push(code(cx.emit("checker", "checker/1", Data::Nil)));
-                seen.push(code(cx.emit("checker.done", "", Data::Nil)));
-                Ok(())
-            },
-            |_, _, _| Ok(()),
-        ),
-    );
+    plugins
+        .add(
+            "checker",
+            scripted(
+                move |cx| {
+                    let mut seen = seen.borrow_mut();
+                    let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                    seen.push(code(cx.subscribe(&["tab-created", "other.event"])));
+                    seen.push(code(cx.subscribe(&["tab-made"])));
+                    seen.push(code(cx.emit("checker.done", "checker/1", Data::Nil)));
+                    seen.push(code(cx.emit("other.done", "checker/1", Data::Nil)));
+                    seen.push(code(cx.emit("checker", "checker/1", Data::Nil)));
+                    seen.push(code(cx.emit("checker.done", "", Data::Nil)));
+                    Ok(())
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(
         *log.borrow(),
@@ -1280,16 +1328,20 @@ fn a_subscription_and_an_event_s_name_are_checked() {
 fn a_plugin_that_panics_at_its_events_is_disabled_and_the_others_take_theirs() {
     let mut app = App::default();
     let mut plugins = Plugins::new();
-    plugins.add(
-        "broken",
-        Box::new(Scripted {
-            activate: Box::new(|cx| cx.subscribe(&["window-opened"])),
-            on_command: Box::new(|_, _, _| Ok(())),
-            on_event: Some(Box::new(|_, _| panic!("on purpose"))),
-        }),
-    );
+    plugins
+        .add(
+            "broken",
+            Box::new(Scripted {
+                activate: Box::new(|cx| cx.subscribe(&["window-opened"])),
+                on_command: Box::new(|_, _, _| Ok(())),
+                on_event: Some(Box::new(|_, _| panic!("on purpose"))),
+            }),
+        )
+        .unwrap();
     let log = Rc::default();
-    plugins.add("after", listening(&["window-opened"], &log));
+    plugins
+        .add("after", listening(&["window-opened"], &log))
+        .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins.post(Event::Workspace(WorkspaceEvent::WindowOpened {
         window: host::WindowId(1),
@@ -1299,4 +1351,72 @@ fn a_plugin_that_panics_at_its_events_is_disabled_and_the_others_take_theirs() {
     assert_eq!(errors[0].code, Code::Fault);
     assert_eq!(plugins.status("broken"), Some(Status::Disabled));
     assert_eq!(*log.borrow(), ["window-opened"]);
+}
+
+#[test]
+fn a_plugin_s_namespace_is_its_own_and_its_prefix_gives_it_nothing() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    // A first-party plugin, whose commands are of another namespace.
+    plugins
+        .add(
+            "core",
+            scripted(
+                |cx| {
+                    cx.register_command(Command {
+                        capabilities: vec![Capability::PtyWrite],
+                        ..command("pane.paste")
+                    })
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    let declared = |name: &str| {
+        Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n"
+        ))
+        .unwrap()
+    };
+    // A second plugin of a namespace is refused.
+    let taken = plugins.add_declared(
+        declared("mallory/core"),
+        scripted(|_| Ok(()), |_, _, _| Ok(())),
+    );
+    assert_eq!(taken.unwrap_err().code, Code::AlreadyRegistered);
+    assert_eq!(plugins.status("mallory/core"), None);
+    // One whose namespace another's commands have.
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins
+        .add_declared(
+            declared("acme/pane"),
+            scripted(
+                move |cx| {
+                    let mut seen = seen.borrow_mut();
+                    let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                    seen.push(code(cx.register_command(command("pane.evil"))));
+                    seen.push(code(cx.register_command(command("other.x"))));
+                    seen.push(code(cx.run_command("pane.paste", Args::new())));
+                    seen.push(code(cx.emit("other.event", "x/1", Data::Nil)));
+                    Ok(())
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(
+        *log.borrow(),
+        [
+            Some(Code::AlreadyRegistered),
+            Some(Code::InvalidName),
+            Some(Code::Undeclared),
+            Some(Code::InvalidName)
+        ]
+    );
+    assert!(app.registry.get("pane.evil").is_none());
+    assert!(plugins.take_requests().is_empty());
 }

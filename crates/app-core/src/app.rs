@@ -793,7 +793,9 @@ impl<B: Backend> App<B> {
     /// The app, with `plugin`, by its `name`, after the built-in ones.
     #[cfg(test)]
     fn with_plugin(mut self, name: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
-        self.plugins.add(name, plugin);
+        if let Err(error) = self.plugins.add(name, plugin) {
+            eprintln!("lokyr: {error}");
+        }
         self
     }
 

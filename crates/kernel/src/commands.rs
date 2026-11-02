@@ -199,21 +199,18 @@ impl Registry {
 
     /// Checks a call of `name` with `args` that a plugin makes, which
     /// `uses` says it runs, with the capabilities `granted`, as
-    /// [`Registry::check`] does; the plugin's own commands, whose namespace
-    /// is `own`, need neither.
+    /// [`Registry::check`] does; the commands that the plugin registered,
+    /// `own`, need neither, whatever their names.
     pub fn check_for_plugin(
         &self,
         name: &str,
         args: Args,
-        own: &str,
+        own: &[Command],
         uses: &Uses,
         granted: &[Capability],
     ) -> Result<Args, Error> {
         let args = self.check(name, args)?;
-        let theirs = name
-            .strip_prefix(own)
-            .is_some_and(|rest| rest.starts_with('.'));
-        if theirs {
+        if own.iter().any(|command| command.name == name) {
             return Ok(args);
         }
         if !uses.allows(name) {
@@ -430,19 +427,25 @@ mod tests {
         let mut paste = command("pane.paste", Vec::new());
         paste.capabilities = vec![Capability::ClipboardRead, Capability::PtyWrite];
         registry.register(paste).unwrap();
-        registry
-            .register(command("search.open", Vec::new()))
-            .unwrap();
+        for name in ["search.open", "search.other"] {
+            registry.register(command(name, Vec::new())).unwrap();
+        }
         let goto = || args(&[("index", Value::Integer(1))]);
         let uses = Uses::new(["tabs.*", "pane.paste"]);
         let granted = [Capability::ClipboardRead, Capability::PtyWrite];
+        let own = [command("search.open", Vec::new())];
         let check = |name: &str, args, uses: &Uses, granted: &[Capability]| {
-            registry.check_for_plugin(name, args, "search", uses, granted)
+            registry.check_for_plugin(name, args, &own, uses, granted)
         };
         assert!(check("tabs.goto", goto(), &uses, &[]).is_ok());
         assert!(check("pane.paste", Args::new(), &uses, &granted).is_ok());
-        // Its own commands need no declaration.
+        // Its own commands need no declaration; another of their prefix
+        // does.
         assert!(check("search.open", Args::new(), &Uses::default(), &[]).is_ok());
+        assert_eq!(
+            code(check("search.other", Args::new(), &Uses::default(), &[])),
+            301
+        );
         // One that it did not declare, and one whose capability it lacks.
         assert_eq!(code(check("tabs.goto", goto(), &Uses::default(), &[])), 301);
         let partly = [Capability::ClipboardRead];

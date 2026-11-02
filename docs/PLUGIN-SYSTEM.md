@@ -413,7 +413,7 @@ type Plugin = {
   - The connection runs in a helper process started on demand, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowlist too, so that no response from the network is parsed in the process that sees what the user types.
   - Lokyr's own code contains no HTTP/TLS client; Sparkle's updater is the app's one network client ([ADR 0008](adr/0008-separate-package-manager.md), [ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)).
 - **First-party plugins** are trusted code, which holds every capability and runs any command ([ADR 0024](adr/0024-user-commands.md)), but they are still limited to the SDK. Each has a manifest, `plugin.toml`, of the kind `builtin`, whose capabilities tell what it uses, which the build checks; the kernel adds it by its manifest's name, as `lokyr/links`.
-- **Other plugins** hold the capabilities that their manifest declares, and run their own commands, of their name's namespace, and those of their `[uses]`: a request that needs another capability fails with 302, and a run of another command with 301, both `denied`.
+- **Other plugins** hold the capabilities that their manifest declares, and run their own commands, those that they registered, and those of their `[uses]`: a request that needs another capability fails with 302, and a run of another command with 301, both `denied`. Each plugin's namespace, its name's after its owner, as `links` of `lokyr/links`, is its own: a second plugin of a namespace is refused; such a plugin registers commands of its namespace alone, which no other plugin's commands, nor the app's, have, and every plugin emits events of its own namespace alone.
 
 ## Lifecycle
 
