@@ -1,0 +1,31 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37421155)	80%; AC attached; not charging present: true
+08:20:57 startup f2 1
+08:21:12 startup f3 1
+08:21:27 startup floor 1
+08:21:43 startup f2 2
+08:21:58 startup f3 2
+08:22:13 startup floor 2
+08:22:28 latency f2 1
+08:22:41 latency f3 1
+08:22:53 latency f2 2
+08:23:05 latency f3 2
+08:23:18 idle f2 1
+08:24:55 idle f3 1
+08:26:33 idle f2 2
+08:28:11 idle f3 2
+08:29:48 throughput ascii f2
+08:29:58 throughput ascii f3
+08:30:08 throughput seq f2
+08:30:10 throughput seq f3
+08:30:11 throughput sgr f2
+08:30:13 throughput sgr f3
+08:30:15 throughput cjk f2
+08:30:17 throughput cjk f3
+08:30:19 done
+08:30:48 latency f2 3
+08:31:00 latency f3 3
+08:31:12 latency f2 4
+08:31:25 latency f3 4
+08:31:37 latency f2 5
+08:31:49 latency f3 5
