@@ -51,7 +51,7 @@ The script builds both variants (`build/bin/spike-cranelift` and `build/bin/spik
 ./bundle.sh cranelift entitlements/unsigned-memory.plist   # build/Spike-Cranelift.app
 ```
 
-Each bundle contains the host for one variant and the guests, in `Contents/Resources`. It is signed with the hardened runtime and a secure timestamp. `SPIKE_SIGN_IDENTITY` overrides the signing identity.
+Each bundle contains the host for one variant and the guests, in `Contents/Resources`. It is signed with the hardened runtime and a secure timestamp. `SPIKE_SIGN_IDENTITY` names the signing identity, a Developer ID.
 
 The `entitlements/` folder holds the variants tested under the hardened runtime:
 

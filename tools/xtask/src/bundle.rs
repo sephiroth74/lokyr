@@ -7,13 +7,14 @@
 //! and, for each language of the app's catalogs, `<language>.lproj` with
 //! the usage strings of its `infoplist.ftl`, which `Info.plist` takes in
 //! English.
-//! It is signed with the project's Developer ID when the
-//! keychain has it, so that macOS keeps the permissions that it gave the
-//! app from one build to the next, or with the identity that
-//! `LOKYR_SIGN_IDENTITY` names; otherwise, as on a machine without it,
-//! ad hoc; with the hardened runtime, and the entitlements of the resources
-//! that the programs in the terminal ask for, without which the runtime
-//! refuses them without a prompt. `cargo xtask notarize` has it notarized.
+//! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
+//! maintainer's Developer ID, which `just` reads from the untracked
+//! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
+//! app from one build to the next; without it, as on CI, ad hoc; with the
+//! hardened runtime, and the entitlements of the resources that the
+//! programs in the terminal ask for, without which the runtime refuses them
+//! without a prompt. `cargo xtask notarize` has it notarized. No signing
+//! identity, team or credential is in the repository.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -43,10 +44,9 @@ const ICONS: &str = "crates/app/resources/icons";
 /// The variant that the bundle shows as its own.
 const DEFAULT_ICON: &str = "lokyr-jormungandr";
 
-/// The team of the project's Developer ID.
-const TEAM: &str = "XXXXXXXXXX";
-
-/// The variable that names another signing identity, or `-` for ad hoc.
+/// The variable that names the signing identity, as `codesign --sign`
+/// takes it, the name of a certificate of the keychain or its hash, or `-`
+/// for ad hoc.
 const IDENTITY_VARIABLE: &str = "LOKYR_SIGN_IDENTITY";
 
 /// The usage strings that macOS shows when a program started in the
@@ -394,31 +394,14 @@ fn localized_plist(usages: &[(String, String)]) -> String {
 }
 
 /// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
-/// names, the project's Developer ID when the keychain has it, or `-`, ad
-/// hoc.
-fn identity() -> Result<String> {
-    if let Some(named) = std::env::var_os(IDENTITY_VARIABLE) {
-        return named
+/// names, or `-`, ad hoc.
+pub(crate) fn identity() -> Result<String> {
+    match std::env::var_os(IDENTITY_VARIABLE) {
+        Some(named) if !named.is_empty() => named
             .into_string()
-            .map_err(|_| anyhow::anyhow!("{IDENTITY_VARIABLE} is not UTF-8"));
+            .map_err(|_| anyhow::anyhow!("{IDENTITY_VARIABLE} is not UTF-8")),
+        _ => Ok("-".to_owned()),
     }
-    let listed = Command::new("security")
-        .args(["find-identity", "-v", "-p", "codesigning"])
-        .output()
-        .context("listing the signing identities")?;
-    let listing = String::from_utf8_lossy(&listed.stdout);
-    Ok(developer_id(&listing).unwrap_or_else(|| "-".to_owned()))
-}
-
-/// The project's Developer ID in `listing`, as `security find-identity`
-/// lists the identities: the name between quotes of the line of its team.
-fn developer_id(listing: &str) -> Option<String> {
-    let wanted = format!("({TEAM})");
-    listing.lines().find_map(|line| {
-        let name = line.split('"').nth(1)?;
-        (name.starts_with("Developer ID Application:") && name.ends_with(&wanted))
-            .then(|| name.to_owned())
-    })
 }
 
 /// The plist of [`ENTITLEMENTS`], each granted.
@@ -459,21 +442,6 @@ fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_project_s_developer_id_is_found_among_others() {
-        let listing = concat!(
-            "  1) 0123 \"Apple Development: Someone (AAAAAAAAAA)\"\n",
-            "  2) 4567 \"Developer ID Application: Someone Else (BBBBBBBBBB)\"\n",
-            "  3) 89AB \"Developer ID Application: The Maintainer (XXXXXXXXXX)\"\n",
-            "     3 valid identities found\n",
-        );
-        assert_eq!(
-            developer_id(listing).as_deref(),
-            Some("Developer ID Application: The Maintainer (XXXXXXXXXX)")
-        );
-        assert_eq!(developer_id("     0 valid identities found\n"), None);
-    }
 
     /// The catalogs of the workspace's app.
     fn catalogs() -> BTreeMap<String, Vec<(String, String)>> {

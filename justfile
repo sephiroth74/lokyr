@@ -5,6 +5,11 @@ alias f := fmt
 alias l := lint
 alias t := test
 
+# The maintainer's signing identity, `LOKYR_SIGN_IDENTITY`, and other
+# variables that stay out of the repository, from the untracked
+# private/lokyr.env when it is there; a variable of the environment wins.
+set dotenv-path := "private/lokyr.env"
+
 # The nightly toolchain that cargo-fuzz needs, pinned like the main one:
 # bump it in a dedicated commit.
 fuzz_toolchain := "nightly-2026-10-12"
@@ -88,7 +93,7 @@ test-bench-tools:
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps check-comments check-links bundle
 
-# Build target/Lokyr.app from the release binary, signed with the project's Developer ID when the keychain has it, or ad hoc; `--features three-drawables` builds it of three drawables a window.
+# Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc; `--features three-drawables` builds it of three drawables a window.
 bundle *args:
     cargo xtask bundle {{args}}
 
