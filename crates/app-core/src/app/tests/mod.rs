@@ -520,6 +520,30 @@ fn the_updates_start_with_the_config_s_checks_and_the_menu_checks_now() {
 }
 
 #[test]
+fn report_an_issue_opens_a_new_issue_of_the_version_and_the_system() {
+    let (mut fake, mut app) = started();
+    fake.send_app(&mut app, AppEvent::Command(REPORT_ISSUE.to_owned()));
+    let [url] = fake.opened() else {
+        panic!("one page opened: {:?}", fake.opened());
+    };
+    assert!(url.starts_with("https://github.com/sephiroth74/lokyr/issues/new?body="));
+    let version = query_encoded(&format!("**Lokyr**: {}", app.environment.version));
+    assert!(url.contains(&version), "{url}");
+    assert!(
+        url.contains(&query_encoded("**System**: Fake 1.0")),
+        "{url}"
+    );
+}
+
+#[test]
+fn a_query_encodes_all_but_the_unreserved() {
+    assert_eq!(
+        query_encoded("a-b.c_d~e f\n**x**: 0.3.0/é"),
+        "a-b.c_d~e%20f%0A%2A%2Ax%2A%2A%3A%200.3.0%2F%C3%A9"
+    );
+}
+
+#[test]
 fn an_app_that_cannot_update_itself_dims_the_menu_s_item() {
     let (mut fake, mut app) = started();
     assert!(!fake.command_enabled(CHECK_UPDATES));

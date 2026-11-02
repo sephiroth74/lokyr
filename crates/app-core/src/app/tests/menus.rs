@@ -90,7 +90,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
         menu_items(&fake, 4),
         ["Minimize cmd+m", "Zoom", "-", "Bring All to Front"]
     );
-    assert!(menu_items(&fake, 5).is_empty());
+    assert_eq!(menu_items(&fake, 5), ["Report an Issue…"]);
 }
 
 #[test]
@@ -184,6 +184,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("app.check-for-updates", "Check for Updates…", Category::App),
             ("app.performance", "Show Performance", Category::View),
             ("app.quit", "Quit Lokyr", Category::App),
+            ("app.report-issue", "Report an Issue…", Category::App),
             (
                 "app.secure-keyboard-entry",
                 "Secure Keyboard Entry",

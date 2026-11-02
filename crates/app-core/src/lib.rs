@@ -14,6 +14,7 @@ mod fakes;
 mod icon;
 mod keys;
 mod latency;
+pub mod log;
 mod mouse;
 mod notice;
 mod output_bench;

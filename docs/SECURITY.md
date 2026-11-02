@@ -79,7 +79,7 @@ The MCP server lets AI agents drive the terminal ([ADR 0017](adr/0017-mcp-and-ag
   - The release profile uses `panic = "unwind"`, with `catch_unwind` at the boundary of native plugins. A faulty plugin is disabled while the terminal keeps running.
   - A panic inside the core is still a bug to fix, not a handled case.
 - **Crashes**:
-  - A panic writes its backtrace to the app's log file, with the version, from F3; macOS's own crash reports keep the others, and Help › Report an Issue opens an issue of the repository with the version and the system's.
+  - A panic writes its backtrace to the app's log file, `~/Library/Logs/Lokyr/lokyr.log` on macOS, with the version, the time and the thread, before the process ends or its plugin is disabled; the app's standard error goes there too when no terminal reads it, as from the Finder. macOS's own crash reports keep the others, which `cargo xtask symbolicate` reads with the release's dSYM. Help › Report an Issue opens a new issue of the repository with the version and the system's.
   - An out-of-process crash handler (e.g. `crash-handler` + `minidumper`) writes a minidump, later.
   - dSYMs are archived for every release, for symbolication.
   - Nothing is uploaded automatically: the user decides whether to attach a minidump to a report.

@@ -18,7 +18,8 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
     APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE, MAN_PAGE_NAME,
-    MAN_SECTION, PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
+    MAN_SECTION, PERFORMANCE, REPORT_ISSUE, SECURE_INPUT, SETTINGS, context, show_selection,
+    shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -513,7 +514,12 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
     ]);
     let app_commands: Vec<MenuItem> = items(&[Category::App])
         .into_iter()
-        .filter(|item| !first(item))
+        .filter(|item| !first(item) && !of(item, &[REPORT_ISSUE]))
+        .collect();
+    // Report an Issue… in the help's menu, whose search the system gives.
+    let help: Vec<MenuItem> = items(&[Category::App])
+        .into_iter()
+        .filter(|item| of(item, &[REPORT_ISSUE]))
         .collect();
     if !app_commands.is_empty() {
         application.push(MenuItem::Separator);
@@ -560,7 +566,7 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
                 ],
                 Some(MenuRole::Window),
             ),
-            menu("menu-help", Vec::new(), Some(MenuRole::Help)),
+            menu("menu-help", help, Some(MenuRole::Help)),
         ],
     }
 }

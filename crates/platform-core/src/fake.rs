@@ -999,6 +999,10 @@ impl Platform for Fake {
 
     /// Opens nothing, and records `target`'s location; a program, and a
     /// file or a directory of no absolute path, fail.
+    fn system_version(&self) -> String {
+        "Fake 1.0".to_owned()
+    }
+
     fn open(&mut self, target: &Target) -> Result<(), Error> {
         if target.kind != TargetKind::Url && !Path::new(&target.location).is_absolute() {
             return Err(Error::Open(

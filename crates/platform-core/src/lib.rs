@@ -492,6 +492,10 @@ pub trait Platform {
     /// [`TargetKind::Program`] fails, and nothing runs.
     fn open(&mut self, target: &Target) -> Result<(), Error>;
 
+    /// The system's name and version, as a report of a problem tells
+    /// them: `macOS 27.2 (27C5032e)` on the Mac, its build in brackets.
+    fn system_version(&self) -> String;
+
     /// Shows `target`, as [`Platform::resolve_target`] told it, a file, a
     /// directory or a program, in the file manager, selected; a URL fails.
     fn reveal(&mut self, target: &Target) -> Result<(), Error>;

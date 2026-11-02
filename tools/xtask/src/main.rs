@@ -12,6 +12,7 @@ mod private;
 mod release;
 mod sbom;
 mod sparkle;
+mod symbolicate;
 mod terminfo;
 mod ucd;
 
@@ -32,6 +33,7 @@ fn main() -> ExitCode {
         Some("feed") => feed::run(args),
         Some("notarize") => notarize::run(args),
         Some("release") => release::run(args),
+        Some("symbolicate") => symbolicate::run(args),
         Some("terminfo") => terminfo::run(args),
         Some("ucd") => ucd::run(args),
         Some(task) => {
@@ -60,6 +62,7 @@ fn print_help() {
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version>           a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
+         symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"
     );

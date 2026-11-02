@@ -307,6 +307,18 @@ fn run(bench: Bench) -> ExitCode {
     use lokyr_kernel::commands::Code;
     use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 
+    // The app's log, where a panic writes its backtrace, and the standard
+    // error when no terminal reads it, as from the Finder; the benches keep
+    // theirs.
+    if matches!(bench, Bench::None)
+        && let Some(log) = lokyr_app_core::log::file()
+        && let Err(error) = lokyr_app_core::log::start(&log, VERSION, true)
+    {
+        eprintln!(
+            "lokyr: the log at {} does not start, {error}",
+            log.display()
+        );
+    }
     let (mut config, path, error) = config();
     // The GPU and the font take tens of milliseconds the first time in a
     // process, the next nearly nothing: a thread makes them, and lets them

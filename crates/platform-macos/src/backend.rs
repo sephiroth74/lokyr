@@ -720,6 +720,14 @@ impl Platform for Backend {
         open::open(target)
     }
 
+    fn system_version(&self) -> String {
+        let version = sysctl_string(c"kern.osproductversion").unwrap_or_else(|| "?".to_owned());
+        match sysctl_string(c"kern.osversion") {
+            Some(build) => format!("macOS {version} ({build})"),
+            None => format!("macOS {version}"),
+        }
+    }
+
     fn reveal(&mut self, target: &Target) -> Result<(), Error> {
         open::reveal(target)
     }
@@ -765,5 +773,56 @@ impl Platform for Backend {
                 .ns_window()
                 .setAppearance(appearance::named(appearance).as_deref());
         }
+    }
+}
+
+/// The string of the system's control `name`, as `sysctl` tells it.
+fn sysctl_string(name: &std::ffi::CStr) -> Option<String> {
+    let mut size = 0;
+    // SAFETY: a null buffer asks for the value's size alone.
+    if unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return None;
+    }
+    let mut buffer = vec![0_u8; size];
+    // SAFETY: the buffer holds `size` bytes, which `sysctlbyname` fills.
+    if unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return None;
+    }
+    buffer.truncate(size);
+    let text = std::ffi::CStr::from_bytes_until_nul(&buffer).ok()?;
+    Some(text.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_system_s_version_is_macos_s_with_its_build() {
+        let version = sysctl_string(c"kern.osproductversion").unwrap();
+        assert!(
+            version.split('.').all(|part| part.parse::<u32>().is_ok()),
+            "{version}"
+        );
+        assert!(sysctl_string(c"kern.osversion").is_some_and(|build| !build.is_empty()));
+        assert_eq!(sysctl_string(c"kern.no-such-control"), None);
     }
 }

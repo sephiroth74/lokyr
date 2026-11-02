@@ -21,7 +21,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
   lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:3:1: unknown key `sise` in `[font]`; did you mean `size`?; none of the config applies, and the one in force stays
   ```
 
-  The error shows in a bar across the top of every window, under the titlebar, until you save a file that reads, or click its ×; it goes to the log too, the terminal that started Lokyr, when you start it from one. A font family that is not installed shows in the bar the same way, until the file names one that is.
+  The error shows in a bar across the top of every window, under the titlebar, until you save a file that reads, or click its ×; it goes to the log too: the terminal that started Lokyr, when you start it from one, or else, as from the Finder or the Dock, the file `~/Library/Logs/Lokyr/lokyr.log`, which the Console app shows. A font family that is not installed shows in the bar the same way, until the file names one that is.
 - **Every key at once**: `lokyr +show-config` prints the config with every key: the file's values, and the defaults of the keys that it leaves out.
   - `--default` prints the defaults alone, as an empty file gives them, and `--docs` puts the text of this guide over each key: what it does, its values and its default.
   - What it prints is a config file, which reads back as the same settings. A key whose default no value can write, as `family`'s, which is the system's font, shows as a comment.

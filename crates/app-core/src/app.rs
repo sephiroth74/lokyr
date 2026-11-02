@@ -70,6 +70,12 @@ const SETTINGS: &str = "app.settings";
 /// update itself.
 const CHECK_UPDATES: &str = "app.check-for-updates";
 
+/// The command that opens a new issue of the repository in the browser.
+const REPORT_ISSUE: &str = "app.report-issue";
+
+/// The repository, whose issues take the reports of problems.
+const REPOSITORY: &str = "https://github.com/sephiroth74/lokyr";
+
 /// The command that shows the performance's panel over the windows, or
 /// hides it.
 const PERFORMANCE: &str = "app.performance";
@@ -1001,6 +1007,18 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Opens a new issue of the repository in the browser, which tells
+    /// the app's version and the system's, and asks what happened.
+    fn report_issue(&mut self, platform: &mut dyn Platform) {
+        let url = issue_url(&self.environment.version, &platform.system_version());
+        let opened = platform
+            .resolve_target(&url)
+            .and_then(|target| platform.open(&target));
+        if let Err(error) = opened {
+            eprintln!("lokyr: the page of a new issue does not open, {error}");
+        }
+    }
+
     /// Starts the app's updates, where it can update itself, with the
     /// config's checks now and then, once the first window has opened, as
     /// the updater loads out of its way; the menu's item is dimmed where it
@@ -1622,6 +1640,10 @@ impl<B: Backend> App<B> {
                 }
                 CHECK_UPDATES => {
                     platform.check_for_updates();
+                    Ok(())
+                }
+                REPORT_ISSUE => {
+                    self.report_issue(platform);
                     Ok(())
                 }
                 PERFORMANCE => {
@@ -2598,6 +2620,30 @@ fn default_bindings() -> Vec<Binding> {
     .collect()
 }
 
+/// The address of a new issue of the repository, its text telling the
+/// app's `version` and the `system`, and asking what happened, in English,
+/// as the issues are.
+fn issue_url(version: &str, system: &str) -> String {
+    let body = format!(
+        "**Lokyr**: {version}\n**System**: {system}\n\n### What happened\n\n\n### What you expected\n\n\n### How to make it happen again\n\n"
+    );
+    format!("{REPOSITORY}/issues/new?body={}", query_encoded(&body))
+}
+
+/// `text` as a URL's query takes it: every byte but the unreserved ones of
+/// RFC 3986 percent-encoded.
+fn query_encoded(text: &str) -> String {
+    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
 /// The texts of the language `chosen`, as the config names it, or of the
 /// first of the user's `preferred` languages that the catalogs have; a
 /// language that they lack goes to the log, with those that they have.
@@ -2619,6 +2665,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
         (CHECK_UPDATES, "app-check-for-updates", Category::App),
+        (REPORT_ISSUE, "app-report-issue", Category::App),
         (SETTINGS, "app-settings", Category::App),
         (SECURE_INPUT, "app-secure-keyboard-entry", Category::App),
         (PERFORMANCE, "app-performance", Category::View),
