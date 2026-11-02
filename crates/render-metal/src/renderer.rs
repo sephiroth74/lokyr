@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use dispatch2::DispatchData;
 use lokyr_render_core::{
     AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, Rect,
-    Renderer, Texture, TextureUpdate,
+    Renderer, Shape, Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -70,6 +70,25 @@ struct LineInstance {
     origin: f32,
 }
 
+/// A shape, or its shadow, as the shaders take it: the quad that it covers,
+/// its outline's centre and half its size, its corners' radius, its
+/// border's width, its blur's deviation, negative for the shape itself, what
+/// fills it, and its border's color.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ShapeInstance {
+    position: [f32; 2],
+    size: [f32; 2],
+    center: [f32; 2],
+    extent: [f32; 2],
+    radius: f32,
+    border: f32,
+    sigma: f32,
+    _padding: f32,
+    fill: [f32; 4],
+    border_color: [f32; 4],
+}
+
 /// A grid, as the shaders take it.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -92,6 +111,7 @@ pub struct MetalRenderer {
     background: Pipeline,
     lines: Pipeline,
     glyphs: Pipeline,
+    shapes: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
     /// The commands of the frames that the GPU may still draw, by their
@@ -148,6 +168,7 @@ impl MetalRenderer {
             background: pipeline("background_vertex", "solid_fragment")?,
             lines: pipeline("line_vertex", "line_fragment")?,
             glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
+            shapes: pipeline("shape_vertex", "shape_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
             queue: gpu.queue.clone(),
@@ -738,6 +759,11 @@ impl Frame<'_> {
                 self.glyphs(&instances);
             }
             Item::Cells(batch) => self.cells(batch),
+            Item::Shapes(shapes) => {
+                let instances: Vec<ShapeInstance> =
+                    shapes.iter().flat_map(shape_instances).collect();
+                self.shapes(&instances);
+            }
         }
     }
 
@@ -768,6 +794,27 @@ impl Frame<'_> {
                     0,
                     QUAD,
                     rects.len(),
+                );
+        }
+    }
+
+    fn shapes(&self, shapes: &[ShapeInstance]) {
+        let Some((buffer, offset)) = self.arena.borrow_mut().put(shapes) else {
+            return;
+        };
+        self.encoder.setRenderPipelineState(&self.renderer.shapes);
+        // SAFETY: the buffers and bytes that the shapes' shaders take, at
+        // their indices.
+        unsafe {
+            self.encoder
+                .setVertexBuffer_offset_atIndex(Some(&buffer), offset, 0);
+            self.set_viewport();
+            self.encoder
+                .drawPrimitives_vertexStart_vertexCount_instanceCount(
+                    MTLPrimitiveType::TriangleStrip,
+                    0,
+                    QUAD,
+                    shapes.len(),
                 );
         }
     }
@@ -966,6 +1013,48 @@ fn rect_instance(rect: &Rect, color: Color) -> RectInstance {
     }
 }
 
+/// The instances of `shape`: its shadow's, if it casts one, under its own.
+fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
+    let rect = shape.rect;
+    let size = [rect.width as f32, rect.height as f32];
+    let extent = [size[0] / 2.0, size[1] / 2.0];
+    let center = [rect.x as f32 + extent[0], rect.y as f32 + extent[1]];
+    let shadow = shape.shadow.map(|shadow| {
+        let sigma = shadow.blur.max(0.0) / 2.0;
+        // Three deviations cover all but a thousandth of the blur.
+        let reach = (3.0 * sigma).ceil() + 1.0;
+        let position = [
+            rect.x as f32 + shadow.x - reach,
+            rect.y as f32 + shadow.y - reach,
+        ];
+        ShapeInstance {
+            position,
+            size: [size[0] + 2.0 * reach, size[1] + 2.0 * reach],
+            center: [center[0] + shadow.x, center[1] + shadow.y],
+            extent,
+            radius: shape.radius,
+            border: 0.0,
+            sigma,
+            _padding: 0.0,
+            fill: rgba(shadow.color),
+            border_color: [0.0; 4],
+        }
+    });
+    let own = ShapeInstance {
+        position: [rect.x as f32, rect.y as f32],
+        size,
+        center,
+        extent,
+        radius: shape.radius.max(0.0),
+        border: shape.border.max(0.0),
+        sigma: -1.0,
+        _padding: 0.0,
+        fill: rgba(shape.fill),
+        border_color: rgba(shape.border_color),
+    };
+    shadow.into_iter().chain(std::iter::once(own))
+}
+
 fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> GlyphInstance {
     GlyphInstance {
         position,
@@ -1050,7 +1139,7 @@ fn make_texture(
 #[cfg(test)]
 mod tests {
     use lokyr_render_core::Surface as _;
-    use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph};
+    use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph, Shadow};
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -1468,6 +1557,107 @@ mod tests {
         assert_eq!(pixel(3, 2), [0, 0, 255, 255]);
         // A size of nothing is a pixel.
         assert_eq!(renderer.draw_offscreen(&list, 0, 0).unwrap().len(), 4);
+    }
+
+    fn rect(x: i32, y: i32, width: u32, height: u32) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_shape_fills_within_its_border_and_its_rounded_corners() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (white, red, blue) = (
+            Color::from_rgb8(255, 255, 255),
+            Color::from_rgb8(255, 0, 0),
+            Color::from_rgb8(0, 0, 255),
+        );
+        let square = Shape {
+            border: 2.0,
+            border_color: blue,
+            ..Shape::filled(rect(2, 2, 16, 12), red)
+        };
+        let round = Shape {
+            radius: 8.0,
+            ..Shape::filled(rect(20, 2, 16, 16), red)
+        };
+        let list = DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![square, round])],
+        };
+        let rows = drawn(&mut renderer, &list, 40, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        // The square: its border's two pixels, then its fill; nothing past
+        // its edges.
+        assert_eq!(pixel(1, 5), [255, 255, 255]);
+        assert_eq!(pixel(2, 5), [0, 0, 255]);
+        assert_eq!(pixel(3, 5), [0, 0, 255]);
+        assert_eq!(pixel(4, 5), [255, 0, 0]);
+        assert_eq!(pixel(17, 13), [0, 0, 255]);
+        assert_eq!(pixel(15, 11), [255, 0, 0]);
+        assert_eq!(pixel(18, 13), [255, 255, 255]);
+        // The circle: its corners left out, its middle and its edges'
+        // middles filled, its outline's pixels between.
+        assert_eq!(pixel(20, 2), [255, 255, 255]);
+        assert_eq!(pixel(35, 17), [255, 255, 255]);
+        assert_eq!(pixel(28, 10), [255, 0, 0]);
+        assert_eq!(pixel(21, 10), [255, 0, 0]);
+        assert_eq!(pixel(28, 3), [255, 0, 0]);
+        let edge = pixel(22, 4);
+        assert!(edge[1] > 0 && edge[1] < 255, "{edge:?}");
+    }
+
+    #[test]
+    fn a_shadow_darkens_under_its_shape_alone_and_fades() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let white = Color::from_rgb8(255, 255, 255);
+        let shadowed = |blur: f32| DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![Shape {
+                shadow: Some(Shadow {
+                    x: 0.0,
+                    y: 4.0,
+                    blur,
+                    color: Color::BLACK.with_alpha(0.5),
+                }),
+                ..Shape::filled(rect(10, 10, 20, 20), white)
+            }])],
+        };
+        let rows = drawn(&mut renderer, &shadowed(0.0), 40, 44);
+        let gray = |rows: &[Vec<u8>], x: usize, y: usize| rows[y][x * 4];
+        // Sharp: half black under the shape's bottom, moved 4 down, and
+        // nothing above it or past it.
+        assert_eq!(gray(&rows, 20, 20), 255);
+        assert!(
+            gray(&rows, 20, 31).abs_diff(128) <= 1,
+            "{}",
+            gray(&rows, 20, 31)
+        );
+        assert!(gray(&rows, 20, 33).abs_diff(128) <= 1);
+        assert_eq!(gray(&rows, 20, 34), 255);
+        assert_eq!(gray(&rows, 20, 8), 255);
+        // Blurred: darkest at the edge, fading below it, half as dark at
+        // the moved edge, and nothing a blur's three deviations past it.
+        let rows = drawn(&mut renderer, &shadowed(8.0), 40, 50);
+        let column: Vec<u8> = (30..50).map(|y| gray(&rows, 20, y)).collect();
+        assert!(
+            column.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{column:?}"
+        );
+        assert!(gray(&rows, 20, 33).abs_diff(185) <= 2, "{column:?}");
+        assert!(gray(&rows, 20, 43) >= 253, "{column:?}");
+        assert_eq!(gray(&rows, 20, 48), 255);
+        assert_eq!(gray(&rows, 20, 20), 255);
     }
 
     #[test]

@@ -31,7 +31,9 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - AccessKit receives a tree built from the view tree, with a role and a label on every node.
 - Panes expose their visible text and cursor to VoiceOver and AT-SPI.
 
-**Themes**: plugins use tokens (`tab.active.bg`, `search.match`, …) rather than fixed colors, so a theme restyles all the chrome.
+**Themes**: plugins use tokens (`tab.active.bg`, `search.match`, …) rather than fixed colors, so a theme restyles all the chrome. A token that a theme lacks takes the color of its name without its last part, `tab.active` for `tab.active.bg`, then `tab`, so that a theme of a few colors still covers them all; the built-in theme gives every token of the chrome, in its light and dark variants.
+
+**Text and icons**: the chrome's text is the interface's font, the system's by default, at the optical size of its points, so that a display of twice the pixels draws the same forms twice as large and the layout's measures hold at every scale; its glyphs share the atlas of the terminal's. The icons are the codicons of the Symbols Nerd Font that the app carries, by their names (`terminal`, `close`, `search`, …), in the text's color.
 
 **Animations**
 - Host-driven transitions (opacity, position), e.g. when tabs are reordered.

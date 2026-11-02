@@ -1,7 +1,8 @@
 //! Golden images of the screen: a terminal's snapshot laid out in cells, as
-//! a window's frame lays it out, drawn by the GPU into an offscreen
-//! texture, and compared with the image in `tests/golden/`, within a
-//! tolerance for the GPU's and the rasterizer's rounding.
+//! a window's frame lays it out, and a view tree of the interface, laid out
+//! and painted in the theme's light and dark tokens, drawn by the GPU into
+//! an offscreen texture, and compared with the image in `tests/golden/`,
+//! within a tolerance for the GPU's and the rasterizer's rounding.
 //!
 //! `LOKYR_GOLDEN_UPDATE=1 cargo test -p lokyr-app --test golden` writes the
 //! images afresh, to look at before they are committed. An image that
@@ -15,12 +16,18 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use lokyr_font_coretext::CoreText;
+use lokyr_plugin_sdk::view::{
+    Align, Border, Direction, Edges, Layout as Box, Length, Node, Shadow, Style,
+};
 use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
 use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::font::Font;
+use lokyr_ui_core::layout::Layout;
+use lokyr_ui_core::paint::paint;
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
+use lokyr_ui_core::tree::Tree;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{Options, SelectionShape, SelectionUnit, Snapshot, Terminal};
 
@@ -315,6 +322,247 @@ fn shapes() -> Vec<Scene> {
     scenes
 }
 
+/// The width of the view tree's image, in points.
+const VIEW_WIDTH: f32 = 480.0;
+
+/// A tab of the bar, of a terminal's icon, its title and its close button,
+/// in its colors of the active tab or of another.
+fn tab(title: &str, active: bool) -> Node {
+    let (background, color) = if active {
+        ("tab.active.bg", "tab.active.fg")
+    } else {
+        ("tab.inactive.bg", "tab.inactive.fg")
+    };
+    Node::container(vec![
+        Node::icon("terminal"),
+        Node::text(title),
+        Node::icon("close").style(Style {
+            color: Some("text.secondary".into()),
+            ..Style::default()
+        }),
+    ])
+    .key(title)
+    .layout(Box {
+        gap: 6.0,
+        padding: Edges {
+            top: 4.0,
+            right: 8.0,
+            bottom: 4.0,
+            left: 10.0,
+        },
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some(background.into()),
+        radius: 6.0,
+        color: Some(color.into()),
+        ..Style::default()
+    })
+}
+
+/// A toggle of a find bar, of its icon, its background shown when `on`.
+fn toggle(icon: &str, on: bool) -> Node {
+    Node::container(vec![Node::icon(icon)])
+        .key(icon)
+        .layout(Box {
+            padding: Edges::all(2.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: on.then(|| "button.bg".into()),
+            radius: 4.0,
+            ..Style::default()
+        })
+}
+
+/// A text marked as a match of a search, the current one or another.
+fn mark(text: &str, token: &str) -> Node {
+    Node::container(vec![Node::text(text)]).style(Style {
+        background: Some(token.into()),
+        radius: 2.0,
+        ..Style::default()
+    })
+}
+
+/// The view tree of the images: a tab bar of two tabs and a button; a find
+/// bar floating in its panel, of a border, rounded corners and a shadow, of
+/// a field of the focus's border that clips its text, its count and its
+/// toggles; a line of the search's matches; and a box that clips a title
+/// too long, beside a badge of the accent's color, whose corners show
+/// apart from the background.
+fn view_tree() -> Node {
+    let secondary = || Style {
+        color: Some("text.secondary".into()),
+        ..Style::default()
+    };
+    let bar = Node::container(vec![
+        tab("~/lokyr", true),
+        tab("cargo test", false),
+        Node::spacer(),
+        Node::icon("add").style(secondary()),
+    ])
+    .layout(Box {
+        gap: 4.0,
+        padding: Edges::all(4.0),
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some("tab.bar.bg".into()),
+        ..Style::default()
+    });
+    let field = Node::container(vec![Node::text("fn main\\(")])
+        .layout(Box {
+            padding: Edges {
+                top: 3.0,
+                right: 6.0,
+                bottom: 3.0,
+                left: 6.0,
+            },
+            width: Length::Points(160.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("field.bg".into()),
+            border: Some(Border {
+                color: "field.focus".into(),
+                width: 2.0,
+            }),
+            radius: 5.0,
+            clip: true,
+            ..Style::default()
+        });
+    let find = Node::container(vec![
+        Node::icon("search").style(secondary()),
+        field,
+        Node::text("3 of 12").style(secondary()),
+        toggle("case-sensitive", false),
+        toggle("regex", true),
+        toggle("whole-word", false),
+        Node::icon("chevron-up"),
+        Node::icon("chevron-down"),
+        Node::icon("close"),
+    ])
+    .layout(Box {
+        gap: 6.0,
+        padding: Edges::all(8.0),
+        align: Align::Center,
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some("panel.bg".into()),
+        border: Some(Border {
+            color: "panel.border".into(),
+            width: 1.0,
+        }),
+        radius: 8.0,
+        shadow: Some(Shadow::default()),
+        ..Style::default()
+    });
+    let line = Node::container(vec![
+        Node::text("let"),
+        mark("main", "search.match"),
+        Node::text("= run(||"),
+        mark("main", "search.match.current"),
+        Node::text(")"),
+    ])
+    .layout(Box {
+        gap: 4.0,
+        ..Box::default()
+    });
+    let clipped = Node::container(vec![Node::text("a title that its box clips at its edge")])
+        .layout(Box {
+            width: Length::Points(150.0),
+            padding: Edges::all(4.0),
+            ..Box::default()
+        })
+        .style(Style {
+            border: Some(Border {
+                color: "separator".into(),
+                width: 1.0,
+            }),
+            radius: 4.0,
+            clip: true,
+            ..Style::default()
+        });
+    let badge = Node::container(vec![Node::text("beta")])
+        .layout(Box {
+            padding: Edges {
+                top: 2.0,
+                right: 8.0,
+                bottom: 2.0,
+                left: 8.0,
+            },
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("accent".into()),
+            radius: 9.0,
+            color: Some("panel.bg".into()),
+            ..Style::default()
+        });
+    let last = Node::container(vec![clipped, badge]).layout(Box {
+        gap: 12.0,
+        align: Align::Center,
+        ..Box::default()
+    });
+    Node::container(vec![bar, find, line, last]).layout(Box {
+        direction: Direction::Column,
+        gap: 14.0,
+        padding: Edges::all(16.0),
+        ..Box::default()
+    })
+}
+
+/// Draws the view tree at `scale`, in the dark variant or the light one,
+/// and compares the image with its golden one.
+fn check_view(dark: bool, scale: u32) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let variant = Theme::builtin().variant(dark).clone();
+    let mut tree = Tree::new();
+    let changes = tree.update(&view_tree()).unwrap();
+    let mut layout = Layout::new(scale as f32);
+    layout.update(&tree, &changes);
+    let width = VIEW_WIDTH * scale as f32;
+    layout.compute(&tree, Some(width), None, &mut drawing.font);
+    let root = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    let (width, height) = (root.width as u32, root.height as u32);
+    drawing.font.begin_frame();
+    let items = paint(
+        &tree,
+        &layout,
+        &mut drawing.font,
+        &variant.tokens,
+        (0.0, 0.0),
+        dark,
+    );
+    let list = DisplayList {
+        background: lokyr_render_core::Color::from_rgb8(
+            variant.colors.background.r,
+            variant.colors.background.g,
+            variant.colors.background.b,
+        ),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let appearance = if dark { "dark" } else { "light" };
+    let most = (f64::from(width * height) * SHARE) as usize;
+    compare(
+        &format!("view-{appearance}-{scale}x"),
+        (width, height, &pixels),
+        most,
+    );
+}
+
 /// The directory of the golden images.
 fn golden() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
@@ -377,16 +625,28 @@ fn check(scenes: &[Scene], scale: u32) {
         return;
     };
     let (width, height, pixels) = drawing.draw(scenes);
+    let most = if scenes[0].shapes {
+        SHAPES * (scale * scale) as usize
+    } else {
+        (f64::from(width * height) * SHARE) as usize
+    };
     let name = format!("{}-{scale}x", scenes[0].name);
+    compare(&name, (width, height, &pixels), most);
+}
+
+/// Compares the image `name` drawn, its width, its height and its pixels,
+/// with its golden one, of which `most` pixels can differ; or writes it as
+/// the golden one, when asked.
+fn compare(name: &str, (width, height, pixels): (u32, u32, &[u8]), most: usize) {
     let path = golden().join(format!("{name}.png"));
     if std::env::var_os("LOKYR_GOLDEN_UPDATE").is_some() {
-        write_png(&path, width, height, &pixels);
+        write_png(&path, width, height, pixels);
         return;
     }
     let failed = Path::new(env!("CARGO_TARGET_TMPDIR")).join("golden");
     let actual = failed.join(format!("{name}.png"));
     let Some((want_width, want_height, expected)) = read_png(&path) else {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         panic!(
             "{} is not there, or is not an RGBA image: the image drawn is {}; \
              LOKYR_GOLDEN_UPDATE=1 writes the golden images",
@@ -395,7 +655,7 @@ fn check(scenes: &[Scene], scale: u32) {
         );
     };
     if (want_width, want_height) != (width, height) {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         panic!(
             "{name} is {width} by {height} pixels, where {} is {want_width} by {want_height}: \
              the image drawn is {}",
@@ -403,14 +663,9 @@ fn check(scenes: &[Scene], scale: u32) {
             actual.display()
         );
     }
-    let (count, map) = differences(&expected, &pixels);
-    let most = if scenes[0].shapes {
-        SHAPES * (scale * scale) as usize
-    } else {
-        (f64::from(width * height) * SHARE) as usize
-    };
+    let (count, map) = differences(&expected, pixels);
     if count > most {
-        write_png(&actual, width, height, &pixels);
+        write_png(&actual, width, height, pixels);
         let map_path = failed.join(format!("{name}-differences.png"));
         write_png(&map_path, width, height, &map);
         panic!(
@@ -462,6 +717,15 @@ fn the_shapes_draw_as_their_golden_image() {
 fn a_selection_draws_as_its_golden_image() {
     for scale in [1, 2] {
         check(&selection(), scale);
+    }
+}
+
+#[test]
+fn a_view_tree_draws_as_its_golden_images_light_and_dark() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_view(dark, scale);
+        }
     }
 }
 

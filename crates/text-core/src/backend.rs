@@ -224,6 +224,16 @@ pub trait FontBackend {
     /// What `face` measures at `size` pixels.
     fn metrics(&mut self, face: FaceId, size: f32) -> FaceMetrics;
 
+    /// `face` of the design of `points`, whatever the size it is made at,
+    /// as a family of optical sizes draws each size of its own: at 26
+    /// pixels, the text of 13 points on a display of twice the pixels, its
+    /// 13 points' forms and advances, twice as large. A face of its own,
+    /// which the backend keeps; `face` itself by default.
+    fn optical(&mut self, face: FaceId, points: f32) -> FaceId {
+        let _ = points;
+        face
+    }
+
     /// The name of the family of the text of the app's own interface, as
     /// its tab bar and its panels: the system's, as its menus and windows
     /// show it; [`FontBackend::default_family`] by default.

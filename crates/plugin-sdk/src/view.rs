@@ -3,7 +3,9 @@
 //! plugins' boundary alike from the main thread, a worker or a Luau VM.
 //!
 //! A node is a container of others, a text, an icon or a spacer, with the
-//! properties of its layout; the widgets come as their own kinds. A node
+//! properties of its layout and of its style, whose colors are the theme's
+//! tokens, so that a theme restyles every plugin's UI; the widgets come as
+//! their own kinds. A node
 //! keeps its place from one render to the next by its key, unique among
 //! its siblings, or, without one, by its order among its siblings of its
 //! kind; a node that holds state, as a widget whose state the host keeps,
@@ -31,6 +33,9 @@ pub struct Node {
     pub kind: Kind,
     /// Its place and size among its siblings, and its children's.
     pub layout: Layout,
+    /// How it draws.
+    #[serde(default)]
+    pub style: Style,
     /// Its children, a container's alone.
     pub children: Vec<Node>,
 }
@@ -100,6 +105,75 @@ impl Default for Layout {
             width: Length::Auto,
             height: Length::Auto,
             grow: 0.0,
+        }
+    }
+}
+
+/// A color of the theme, by its token's name, as `tab.active.bg` or
+/// `search.match`, which the theme gives in the light and the dark
+/// appearance. A name that the theme lacks takes the color of the name
+/// without its last part, `tab.active` for `tab.active.bg`, then `tab`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Token(pub String);
+
+impl From<&str> for Token {
+    fn from(token: &str) -> Self {
+        Self(token.to_owned())
+    }
+}
+
+/// How a node draws: its box, of a background, a border, rounded corners
+/// and a shadow, and the color of its texts and icons.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Style {
+    /// What fills its box; `None` for nothing.
+    pub background: Option<Token>,
+    /// Its border, inside its edges; `None` for none.
+    pub border: Option<Border>,
+    /// The radius of its box's corners, in points.
+    pub radius: f32,
+    /// Its box's shadow; `None` for none.
+    pub shadow: Option<Shadow>,
+    /// The color of its text or icon, and of its children's that name none;
+    /// `None` for its parent's, and at the root the theme's `text`.
+    pub color: Option<Token>,
+    /// Whether its children draw within its box alone, as a list's rows
+    /// within the list.
+    pub clip: bool,
+}
+
+/// A node's border.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Border {
+    /// Its color.
+    pub color: Token,
+    /// Its width, in points.
+    pub width: f32,
+}
+
+/// A node's shadow: its box moved, blurred and filled with its color.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Shadow {
+    /// Its color, of an opacity that makes it lighter.
+    pub color: Token,
+    /// How far right it is moved, in points.
+    pub x: f32,
+    /// How far down it is moved, in points.
+    pub y: f32,
+    /// How far its edge blurs, in points.
+    pub blur: f32,
+}
+
+impl Default for Shadow {
+    fn default() -> Self {
+        Self {
+            color: Token::from("shadow"),
+            x: 0.0,
+            y: 2.0,
+            blur: 8.0,
         }
     }
 }
@@ -192,6 +266,7 @@ impl Node {
             key: None,
             kind,
             layout: Layout::default(),
+            style: Style::default(),
             children: Vec::new(),
         }
     }
@@ -234,6 +309,13 @@ impl Node {
         self.layout = layout;
         self
     }
+
+    /// The node with its style.
+    #[must_use]
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -252,10 +334,22 @@ mod tests {
             gap: 4.0,
             padding: Edges::all(2.0),
             ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("panel.bg")),
+            border: Some(Border {
+                color: Token::from("panel.border"),
+                width: 1.0,
+            }),
+            radius: 6.0,
+            shadow: Some(Shadow::default()),
+            color: Some(Token::from("text.secondary")),
+            clip: true,
         });
         let json = serde_json::to_string(&tree).unwrap();
         assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), tree);
-        // A layout's properties left out take their defaults.
+        // A layout's properties left out take their defaults, and a style
+        // left out the default style.
         let node: Node = serde_json::from_str(
             r#"{"key":null,"kind":"spacer","layout":{"grow":1.0},"children":[]}"#,
         )

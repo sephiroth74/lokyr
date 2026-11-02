@@ -1006,4 +1006,26 @@ fn the_interface_s_family_is_the_system_s_and_its_text_has_its_width() {
         backend.width(regular.id, 13.0, "", Features { ligatures: true }),
         0.0
     );
+    // Of the optical size of 13 points, twice the size is twice the width,
+    // as a display of twice the pixels draws 13 points.
+    let optical = backend.optical(regular.id, 13.0);
+    assert_ne!(optical, regular.id);
+    assert_eq!(backend.optical(regular.id, 13.0), optical);
+    let at = |backend: &mut CoreText, size| {
+        backend.width(optical, size, "Hello, world", Features { ligatures: true })
+    };
+    let (one, two) = (at(&mut backend, 13.0), at(&mut backend, 26.0));
+    assert!((one - width).abs() < 0.01, "{one} {width}");
+    assert!((two - 2.0 * one).abs() < 0.5, "{one} {two}");
+    let metrics = backend.metrics(optical, 26.0);
+    assert!((metrics.ascent - 2.0 * backend.metrics(optical, 13.0).ascent).abs() < 0.5);
+    // A face of another family's keeps its own forms.
+    let mono = backend.family("SF Mono").unwrap()[0].id;
+    let mono_optical = backend.optical(mono, 13.0);
+    assert!(
+        (backend.width(mono_optical, 26.0, "abc", Features { ligatures: true })
+            - backend.width(mono, 26.0, "abc", Features { ligatures: true }))
+        .abs()
+            < 0.01
+    );
 }

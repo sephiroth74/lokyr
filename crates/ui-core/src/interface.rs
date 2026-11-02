@@ -1,19 +1,19 @@
 //! The `[interface]` section of the configuration, the font of the app's
-//! own interface, as its tab bar and its panels, and what measures its texts
-//! and icons for the view trees' [`layout`](crate::layout).
+//! own interface, as its tab bar and its panels, and its icons.
 //!
 //! ```toml
 //! [interface]
 //! font-family = "Helvetica Neue"   # the system's interface font when absent
 //! font-size = 13                   # points, 4 to 200
 //! ```
+//!
+//! The window's [`Font`](crate::font::Font) takes the interface's face, so
+//! that the interface's glyphs share the atlas of the terminal's: it
+//! measures the view trees' texts and icons for their
+//! [`layout`](crate::layout), and draws them.
 
-use lokyr_text_core::{
-    FaceError, FaceId, Features, FontBackend, FontConfig, Name, Size, choose_faces,
-};
+use lokyr_text_core::{FaceError, FaceId, FontBackend, FontConfig, Name, Size, choose_faces};
 use serde::{Deserialize, Serialize};
-
-use crate::layout::Measure;
 
 /// The `[interface]` section: the font of the app's own interface.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -26,24 +26,25 @@ pub struct InterfaceConfig {
     pub font_size: Size,
 }
 
-/// The font of the interface's text, its family's regular face at its size
-/// of points, which measures the view trees' texts and icons in points: at
-/// its size of points, rather than of pixels, as a family of optical sizes,
-/// as the system's, draws a size of its own at each, which the display's
-/// scale enlarges.
-pub struct InterfaceFont<B> {
-    backend: B,
+/// The face of the interface's text: its family's regular face, of the
+/// optical size of its points, so that a display of twice the pixels draws
+/// the same forms twice as large, as a family of optical sizes, as the
+/// system's, draws each size of its own otherwise; and what it measures, in
+/// points.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InterfaceFace {
     family: String,
     missing_family: Option<String>,
     face: FaceId,
     size: f32,
+    ascent: f32,
     line: f32,
 }
 
-impl<B: FontBackend> InterfaceFont<B> {
-    /// The font that `config` names, through `backend`: the system's
+impl InterfaceFace {
+    /// The face that `config` names, through `backend`: of the system's
     /// interface family when it names none, or one that is not installed.
-    pub fn new(mut backend: B, config: &InterfaceConfig) -> Result<Self, FaceError> {
+    pub fn new(backend: &mut dyn FontBackend, config: &InterfaceConfig) -> Result<Self, FaceError> {
         let wanted = config.font_family.as_ref().map(Name::as_str);
         let found = wanted.and_then(|name| Some((name.to_owned(), backend.family(name)?)));
         let missing_family = match (&found, wanted) {
@@ -58,19 +59,31 @@ impl<B: FontBackend> InterfaceFont<B> {
                 (family, faces)
             }
         };
-        let face = choose_faces(&family, &faces, &FontConfig::default())?
+        let regular = choose_faces(&family, &faces, &FontConfig::default())?
             .regular
             .id;
         let size = config.font_size.points();
+        Ok(Self::of(backend, family, missing_family, regular, size))
+    }
+
+    /// The face `regular` of `family`, at `size` points.
+    pub(crate) fn of(
+        backend: &mut dyn FontBackend,
+        family: String,
+        missing_family: Option<String>,
+        regular: FaceId,
+        size: f32,
+    ) -> Self {
+        let face = backend.optical(regular, size);
         let metrics = backend.metrics(face, size);
-        Ok(Self {
-            backend,
+        Self {
             family,
             missing_family,
             face,
             size,
+            ascent: metrics.ascent,
             line: metrics.ascent + metrics.descent + metrics.leading,
-        })
+        }
     }
 
     /// The family's name.
@@ -84,7 +97,7 @@ impl<B: FontBackend> InterfaceFont<B> {
         self.missing_family.as_deref()
     }
 
-    /// The face of the text.
+    /// The face, of the optical size of its points.
     pub fn face(&self) -> FaceId {
         self.face
     }
@@ -94,90 +107,77 @@ impl<B: FontBackend> InterfaceFont<B> {
         self.size
     }
 
-    /// The height of a line of the text, in points.
+    /// The height of the text above its baseline, in points.
+    pub fn ascent(&self) -> f32 {
+        self.ascent
+    }
+
+    /// The height of a line of the text, in points, of which an icon takes a
+    /// square.
     pub fn line(&self) -> f32 {
         self.line
     }
 }
 
-impl<B: FontBackend> Measure for InterfaceFont<B> {
-    /// Its advances, ligatures and kerning as the face makes them, and a
-    /// line's height.
-    fn text(&mut self, text: &str) -> (f32, f32) {
-        let features = Features { ligatures: true };
-        let width = self.backend.width(self.face, self.size, text, features);
-        (width, self.line)
-    }
+/// The icons of the host, by their names, which a view tree's icon names:
+/// the codicons of Symbols Nerd Font, which the terminal's text takes too,
+/// drawn in the text's color.
+const ICONS: &[(&str, char)] = &[
+    ("add", '\u{ea60}'),
+    ("arrow-down", '\u{ea9a}'),
+    ("arrow-up", '\u{eaa1}'),
+    ("bell", '\u{eaa2}'),
+    ("case-sensitive", '\u{eab1}'),
+    ("check", '\u{eab2}'),
+    ("chevron-down", '\u{eab4}'),
+    ("chevron-left", '\u{eab5}'),
+    ("chevron-right", '\u{eab6}'),
+    ("chevron-up", '\u{eab7}'),
+    ("circle", '\u{eabc}'),
+    ("circle-filled", '\u{ea71}'),
+    ("close", '\u{ea76}'),
+    ("copy", '\u{ebcc}'),
+    ("edit", '\u{ea73}'),
+    ("ellipsis", '\u{ea7c}'),
+    ("error", '\u{ea87}'),
+    ("filter", '\u{eaf1}'),
+    ("folder", '\u{ea83}'),
+    ("history", '\u{ea82}'),
+    ("info", '\u{ea74}'),
+    ("pin", '\u{eb2b}'),
+    ("regex", '\u{eb38}'),
+    ("replace", '\u{eb3d}'),
+    ("search", '\u{ea6d}'),
+    ("settings", '\u{eb51}'),
+    ("sparkle", '\u{ec10}'),
+    ("split-horizontal", '\u{eb56}'),
+    ("split-vertical", '\u{eb57}'),
+    ("terminal", '\u{ea85}'),
+    ("trash", '\u{ea81}'),
+    ("warning", '\u{ea6c}'),
+    ("whole-word", '\u{eb7e}'),
+];
 
-    /// A square of a line's height.
-    fn icon(&mut self, _name: &str) -> (f32, f32) {
-        (self.line, self.line)
-    }
+/// The character of the icon `name`, of the symbols' font, if the host has
+/// it.
+pub fn icon(name: &str) -> Option<char> {
+    ICONS
+        .binary_search_by(|(known, _)| known.cmp(&name))
+        .ok()
+        .map(|index| ICONS[index].1)
 }
 
-/// The system's interface font, as CoreText gives it.
-#[cfg(all(test, target_os = "macos"))]
-mod system {
-    use lokyr_font_coretext::CoreText;
-
+#[cfg(test)]
+mod tests {
     use super::*;
-    use crate::layout::Layout;
-    use crate::tree::Tree;
-    use lokyr_plugin_sdk::view::{self, Node};
 
     #[test]
-    fn the_system_s_font_measures_a_bar_at_two_scales() {
-        let mut font = InterfaceFont::new(CoreText::new(), &InterfaceConfig::default()).unwrap();
-        assert_eq!(font.missing_family(), None);
-        assert_eq!(font.size(), 13.0);
-        // A line of 13 points is about 16 high.
-        assert!((14.0..18.0).contains(&font.line()), "{}", font.line());
-        let (narrow, _) = font.text("iiii");
-        let (wide, _) = font.text("mmmm");
-        assert!(narrow * 2.0 < wide, "{narrow} {wide}");
-        let bar = Node::container(vec![Node::icon("terminal"), Node::text("~/Projects")]).layout(
-            view::Layout {
-                gap: 4.0,
-                ..view::Layout::default()
-            },
-        );
-        let mut tree = Tree::new();
-        let changes = tree.update(&bar).unwrap();
-        let mut frames = Vec::new();
-        for scale in [1.0, 2.0] {
-            let mut layout = Layout::new(scale);
-            layout.update(&tree, &changes);
-            layout.compute(&tree, None, None, &mut font);
-            let root = tree.root().unwrap();
-            let title = tree.children(root)[1];
-            frames.push(layout.frame(&tree, title).unwrap());
-        }
-        // Twice the scale, twice the pixels, as the points are measured at
-        // their own size, within the pixel that each rounds to.
-        let [one, two] = [frames[0], frames[1]];
-        assert!(
-            (two.width - one.width * 2.0).abs() <= 2.0,
-            "{one:?} {two:?}"
-        );
-        assert!((two.x - one.x * 2.0).abs() <= 2.0, "{one:?} {two:?}");
-    }
-
-    #[test]
-    fn a_family_that_is_not_installed_takes_the_system_s() {
-        let config = InterfaceConfig {
-            font_family: Some(Name::try_from("No Such Family Here".to_owned()).unwrap()),
-            ..InterfaceConfig::default()
-        };
-        let font = InterfaceFont::new(CoreText::new(), &config).unwrap();
-        assert_eq!(font.missing_family(), Some("No Such Family Here"));
-        let mut backend = CoreText::new();
-        assert_eq!(font.family(), backend.interface_family());
-        // A family that is: its own.
-        let config = InterfaceConfig {
-            font_family: Some(Name::try_from("Helvetica".to_owned()).unwrap()),
-            ..InterfaceConfig::default()
-        };
-        let font = InterfaceFont::new(CoreText::new(), &config).unwrap();
-        assert_eq!((font.family(), font.missing_family()), ("Helvetica", None));
+    fn the_icons_are_named_in_order_and_found_by_their_names() {
+        assert!(ICONS.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(icon("terminal"), Some('\u{ea85}'));
+        assert_eq!(icon("whole-word"), Some('\u{eb7e}'));
+        assert_eq!(icon("add"), Some('\u{ea60}'));
+        assert_eq!(icon("Terminal"), None);
+        assert_eq!(icon(""), None);
     }
 }

@@ -690,6 +690,7 @@ dependencies = [
  "lokyr-platform-core",
  "lokyr-platform-macos",
  "lokyr-plugin-host-luau",
+ "lokyr-plugin-sdk",
  "lokyr-pty",
  "lokyr-render-core",
  "lokyr-render-metal",

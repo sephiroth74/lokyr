@@ -25,7 +25,8 @@ use objc2_core_text::{
     CTFontManagerCreateFontDescriptorFromData, CTFontOrientation, CTFontSymbolicTraits,
     CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, kCTFontAttributeName,
     kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
-    kCTFontOpenTypeFeatureValue, kCTFontStyleNameKey, kCTFontWeightTrait, kCTFontWidthTrait,
+    kCTFontOpenTypeFeatureValue, kCTFontOpticalSizeAttribute, kCTFontStyleNameKey,
+    kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
 /// The size at which the backend makes a face to read what does not depend
@@ -73,6 +74,8 @@ pub struct CoreText {
     unjoined: HashMap<(FaceId, u64), CFRetained<CTFont>>,
     /// Whether each face substitutes glyphs in context, as it was found.
     substitutes: HashMap<FaceId, bool>,
+    /// The faces of an optical size, by the face and the bits of the size.
+    optical: HashMap<(FaceId, u32), FaceId>,
     /// Whether glyphs are drawn with macOS's font smoothing.
     smoothing: bool,
     /// The face of the symbols' font, once loaded, if it loads.
@@ -104,6 +107,7 @@ impl CoreText {
             fonts: HashMap::new(),
             unjoined: HashMap::new(),
             substitutes: HashMap::new(),
+            optical: HashMap::new(),
             smoothing,
             symbols: None,
             language: None,
@@ -259,6 +263,30 @@ impl CoreText {
 impl FontBackend for CoreText {
     fn default_family(&mut self) -> String {
         SF_MONO.to_owned()
+    }
+
+    fn optical(&mut self, face: FaceId, points: f32) -> FaceId {
+        if let Some(&optical) = self.optical.get(&(face, points.to_bits())) {
+            return optical;
+        }
+        let Some(descriptor) = usize::try_from(face.0)
+            .ok()
+            .and_then(|index| self.faces.get(index))
+        else {
+            return face;
+        };
+        // SAFETY: Core Text's constant.
+        let key = unsafe { kCTFontOpticalSizeAttribute };
+        let size = CFNumber::new_f64(f64::from(points));
+        let attributes = CFDictionary::<CFString, CFType>::from_slices(&[key], &[size.as_ref()]);
+        // SAFETY: a descriptor that CoreText matched, and a dictionary of
+        // descriptor attributes.
+        let sized = unsafe { descriptor.copy_with_attributes(attributes.as_opaque()) };
+        let optical =
+            FaceId(u32::try_from(self.faces.len()).expect("fewer faces than an id counts"));
+        self.faces.push(sized);
+        self.optical.insert((face, points.to_bits()), optical);
+        optical
     }
 
     fn interface_family(&mut self) -> String {

@@ -1,5 +1,8 @@
 //! The built-in theme: its colors in a light and a dark variant, which follow
-//! the system's appearance.
+//! the system's appearance: the terminal's, and the interface's, by their
+//! tokens.
+
+use std::collections::HashMap;
 
 use lokyr_render_core::Color;
 use lokyr_vt_core::page::Rgb;
@@ -14,7 +17,8 @@ pub struct SelectionColors {
     pub foreground: Option<Color>,
 }
 
-/// A variant of the theme: the terminal's colors, and the selection's.
+/// A variant of the theme: the terminal's colors, the selection's, and the
+/// interface's.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Variant {
     /// The palette, the default colors and the cursor's, which a terminal
@@ -22,7 +26,85 @@ pub struct Variant {
     pub colors: Colors,
     /// The selection's colors.
     pub selection: SelectionColors,
+    /// The interface's colors, by their tokens.
+    pub tokens: Tokens,
 }
+
+/// The colors of the interface, by their tokens' names, as `tab.active.bg`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Tokens(HashMap<String, Color>);
+
+impl Tokens {
+    /// The color of `token`; of the token without its last part where it
+    /// has none, `tab.active` for `tab.active.bg`, then `tab`; `None` when
+    /// none of them has one.
+    pub fn get(&self, token: &str) -> Option<Color> {
+        let mut name = token;
+        loop {
+            if let Some(&color) = self.0.get(name) {
+                return Some(color);
+            }
+            name = &name[..name.rfind('.')?];
+        }
+    }
+
+    /// Gives `token` its color.
+    pub fn set(&mut self, token: &str, color: Color) {
+        self.0.insert(token.to_owned(), color);
+    }
+}
+
+/// A token's color: `#rrggbb` and its opacity.
+type TokenColor = (&'static str, u32, f32);
+
+/// The interface's colors in the light variant: the system's grays, the
+/// text the terminal's.
+const LIGHT_TOKENS: &[TokenColor] = &[
+    ("text", 0x1e1e20, 1.0),
+    ("text.secondary", 0x6c6c72, 1.0),
+    ("accent", 0x0a64d8, 1.0),
+    ("separator", 0x000000, 0.1),
+    ("shadow", 0x000000, 0.25),
+    ("panel.bg", 0xf6f6f6, 1.0),
+    ("panel.border", 0x000000, 0.14),
+    ("field.bg", 0xffffff, 1.0),
+    ("field.border", 0x000000, 0.18),
+    ("field.focus", 0x0a64d8, 0.5),
+    ("button.bg", 0x000000, 0.06),
+    ("button.hover.bg", 0x000000, 0.1),
+    ("tab.bar.bg", 0xe6e6e8, 1.0),
+    ("tab.active.bg", 0xfafafa, 1.0),
+    ("tab.active.fg", 0x1e1e20, 1.0),
+    ("tab.inactive.bg", 0xe6e6e8, 1.0),
+    ("tab.inactive.fg", 0x5e5e64, 1.0),
+    ("tab.hover.bg", 0x000000, 0.05),
+    ("search.match", 0xffd60a, 0.5),
+    ("search.match.current", 0xff7a00, 0.6),
+];
+
+/// The interface's colors in the dark variant.
+const DARK_TOKENS: &[TokenColor] = &[
+    ("text", 0xe6e6e6, 1.0),
+    ("text.secondary", 0x9a9aa0, 1.0),
+    ("accent", 0x4c9bff, 1.0),
+    ("separator", 0xffffff, 0.1),
+    ("shadow", 0x000000, 0.5),
+    ("panel.bg", 0x2a2a2d, 1.0),
+    ("panel.border", 0xffffff, 0.12),
+    ("field.bg", 0x1e1e20, 1.0),
+    ("field.border", 0xffffff, 0.16),
+    ("field.focus", 0x4c9bff, 0.6),
+    ("button.bg", 0xffffff, 0.08),
+    ("button.hover.bg", 0xffffff, 0.12),
+    ("tab.bar.bg", 0x161618, 1.0),
+    ("tab.active.bg", 0x1e1e20, 1.0),
+    ("tab.active.fg", 0xe6e6e6, 1.0),
+    ("tab.inactive.bg", 0x161618, 1.0),
+    ("tab.inactive.fg", 0x9a9aa0, 1.0),
+    ("tab.hover.bg", 0xffffff, 0.06),
+    ("search.match", 0xffd60a, 0.3),
+    ("search.match.current", 0xff7a00, 0.5),
+];
 
 /// The built-in theme, of a light and a dark variant, and of the man
 /// pages'.
@@ -80,9 +162,9 @@ impl Theme {
     pub fn builtin() -> Self {
         let (foreground, background, selection) = MAN_PAGE;
         Self {
-            light: variant(LIGHT),
-            dark: variant(DARK),
-            man_page: variant((LIGHT.0, foreground, background, selection)),
+            light: variant(LIGHT, LIGHT_TOKENS),
+            dark: variant(DARK, DARK_TOKENS),
+            man_page: variant((LIGHT.0, foreground, background, selection), LIGHT_TOKENS),
         }
     }
 
@@ -92,7 +174,10 @@ impl Theme {
     }
 }
 
-fn variant((sixteen, foreground, background, selection): (Sixteen, u32, u32, u32)) -> Variant {
+fn variant(
+    (sixteen, foreground, background, selection): (Sixteen, u32, u32, u32),
+    tokens: &[TokenColor],
+) -> Variant {
     let mut colors = Colors::default();
     for (entry, &color) in colors.palette.iter_mut().zip(&sixteen) {
         *entry = rgb(color);
@@ -106,6 +191,12 @@ fn variant((sixteen, foreground, background, selection): (Sixteen, u32, u32, u32
             background: color(rgb(selection)),
             foreground: None,
         },
+        tokens: Tokens(
+            tokens
+                .iter()
+                .map(|&(name, value, alpha)| (name.to_owned(), color(rgb(value)).with_alpha(alpha)))
+                .collect(),
+        ),
     }
 }
 
@@ -181,6 +272,80 @@ mod tests {
                 "{name} 8"
             );
         }
+    }
+
+    /// The color of `top` over the opaque `under`, as the drawable blends
+    /// them, of their encoded components.
+    fn over(top: Color, under: Rgb) -> Rgb {
+        let alpha = top.alpha;
+        let mix = |top: f32, under: u8| {
+            (top * 255.0 * alpha + f32::from(under) * (1.0 - alpha)).round() as u8
+        };
+        Rgb {
+            r: mix(top.red, under.r),
+            g: mix(top.green, under.g),
+            b: mix(top.blue, under.b),
+        }
+    }
+
+    fn opaque(color: Color) -> Rgb {
+        over(color, Rgb { r: 0, g: 0, b: 0 })
+    }
+
+    #[test]
+    fn the_interface_s_text_reads_on_its_backgrounds() {
+        let theme = Theme::builtin();
+        for (name, variant) in [("light", &theme.light), ("dark", &theme.dark)] {
+            let token = |token: &str| variant.tokens.get(token).unwrap();
+            for (text, background) in [
+                ("text", "panel.bg"),
+                ("text", "field.bg"),
+                ("text.secondary", "panel.bg"),
+                ("tab.active.fg", "tab.active.bg"),
+                ("tab.inactive.fg", "tab.inactive.bg"),
+                ("accent", "panel.bg"),
+            ] {
+                let under = opaque(token(background));
+                let ratio = contrast(opaque(token(text)), under);
+                // WCAG's AA for text.
+                assert!(ratio >= 4.5, "{name}: {text} on {background}: {ratio:.2}");
+            }
+            // A match shows on the terminal's background, of its hue as
+            // much as of its lightness, the current one apart from the
+            // others, and the text reads on both.
+            let background = variant.colors.background;
+            let matched = over(token("search.match"), background);
+            let current = over(token("search.match.current"), background);
+            let distance = |a: Rgb, b: Rgb| {
+                let d = |a: u8, b: u8| f64::from(a) - f64::from(b);
+                (d(a.r, b.r).powi(2) + d(a.g, b.g).powi(2) + d(a.b, b.b).powi(2)).sqrt()
+            };
+            assert!(distance(matched, background) > 60.0, "{name}");
+            assert!(distance(current, matched) > 40.0, "{name}");
+            for shown in [matched, current] {
+                let ratio = contrast(variant.colors.foreground, shown);
+                assert!(ratio > 4.5, "{name}: {ratio:.2}");
+            }
+            // The active tab is the terminal's background.
+            assert_eq!(opaque(token("tab.active.bg")), background, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_token_without_a_color_takes_its_parent_s() {
+        let mut tokens = Tokens::default();
+        tokens.set("tab", Color::from_rgb8(1, 2, 3));
+        tokens.set("tab.active.bg", Color::from_rgb8(4, 5, 6));
+        assert_eq!(tokens.get("tab.active.bg"), Some(Color::from_rgb8(4, 5, 6)));
+        assert_eq!(tokens.get("tab.active.fg"), Some(Color::from_rgb8(1, 2, 3)));
+        assert_eq!(tokens.get("tab.hover"), Some(Color::from_rgb8(1, 2, 3)));
+        assert_eq!(tokens.get("tabs"), None);
+        assert_eq!(tokens.get("panel.bg"), None);
+        assert_eq!(tokens.get(""), None);
+        assert_eq!(
+            Theme::builtin().dark.tokens.get("search.match.other"),
+            Theme::builtin().dark.tokens.get("search.match")
+        );
     }
 
     #[test]

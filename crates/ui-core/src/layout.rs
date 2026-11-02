@@ -14,8 +14,8 @@ use std::collections::HashMap;
 
 use lokyr_plugin_sdk::view::{self, Align, Direction, Justify, Kind, Length};
 use taffy::prelude::{
-    AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage, Rect,
-    Size, Style, TaffyTree,
+    AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage,
+    LengthPercentageAuto, Rect, Size, Style, TaffyTree,
 };
 
 use crate::tree::{Changes, NodeId, Tree};
@@ -86,7 +86,7 @@ impl Layout {
             let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) else {
                 continue;
             };
-            let style = style(layout, self.scale);
+            let style = style(kind, layout, self.scale);
             let made = match leaf(kind) {
                 Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
                 None => self.taffy.new_leaf(style),
@@ -101,7 +101,7 @@ impl Layout {
             else {
                 continue;
             };
-            let _ = self.taffy.set_style(node, style(layout, self.scale));
+            let _ = self.taffy.set_style(node, style(kind, layout, self.scale));
             let leaf = leaf(kind);
             let kept = self.taffy.get_node_context(node).map(|kept| &kept.content);
             if kept != leaf.as_ref().map(|leaf| &leaf.content) {
@@ -124,13 +124,18 @@ impl Layout {
         }
     }
 
+    /// The pixels a point of the layout.
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
     /// Lays out `tree` again at `scale` pixels a point, every node's style
     /// of the new scale.
     pub fn set_scale(&mut self, tree: &Tree, scale: f32) {
         self.scale = scale;
         for (&id, &node) in &self.nodes {
-            if let Some(layout) = tree.layout(id) {
-                let _ = self.taffy.set_style(node, style(layout, scale));
+            if let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) {
+                let _ = self.taffy.set_style(node, style(kind, layout, scale));
             }
         }
     }
@@ -146,14 +151,17 @@ impl Layout {
         height: Option<f32>,
         measure: &mut impl Measure,
     ) {
-        let Some((id, layout)) = tree.root().and_then(|id| Some((id, tree.layout(id)?))) else {
+        let Some((id, kind, layout)) = tree
+            .root()
+            .and_then(|id| Some((id, tree.kind(id)?, tree.layout(id)?)))
+        else {
             return;
         };
         let Some(&root) = self.nodes.get(&id) else {
             return;
         };
         // The root takes the room that it is given, where it is given.
-        let mut style = style(layout, self.scale);
+        let mut style = style(kind, layout, self.scale);
         if let Some(width) = width {
             style.size.width = Dimension::length(width);
         }
@@ -244,8 +252,10 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
     })
 }
 
-/// `taffy`'s style of `layout`, in pixels at `scale`.
-fn style(layout: &view::Layout, scale: f32) -> Style {
+/// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`:
+/// a text shrinks below its content's width, as a title too long for its
+/// room, which its box clips.
+fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
     let pixels = |points: f32| LengthPercentage::length(points * scale);
     let length = |length: Length| match length {
         Length::Auto => Dimension::auto(),
@@ -282,6 +292,13 @@ fn style(layout: &view::Layout, scale: f32) -> Style {
         size: Size {
             width: length(layout.width),
             height: length(layout.height),
+        },
+        min_size: Size {
+            width: match kind {
+                Kind::Text(_) => LengthPercentageAuto::length(0.0),
+                _ => LengthPercentageAuto::auto(),
+            },
+            height: LengthPercentageAuto::auto(),
         },
         flex_grow: layout.grow,
         ..Style::default()

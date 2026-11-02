@@ -1,9 +1,10 @@
 //! Rendering interface shared by the GPU backends.
 //!
 //! Defines the [`Renderer`] trait that each backend implements, and the
-//! [`DisplayList`] that it draws: a window's frame as rectangles, glyphs
-//! placed anywhere for the chrome, and panes' grids of cells, each with its
-//! background, its glyphs from the atlas and the lines that decorate it.
+//! [`DisplayList`] that it draws: a window's frame as rectangles, shapes of
+//! rounded corners, borders and shadows, and glyphs placed anywhere for the
+//! chrome, and panes' grids of cells, each with its background, its glyphs
+//! from the atlas and the lines that decorate it.
 //! Positions and sizes are in the pixels of the window's content, from its
 //! top left corner.
 
@@ -45,6 +46,9 @@ impl Color {
 
     /// Opaque black.
     pub const BLACK: Self = Self::from_rgb8(0, 0, 0);
+
+    /// Nothing: black, of no opacity.
+    pub const CLEAR: Self = Self::BLACK.with_alpha(0.0);
 
     /// The color, with the opacity `alpha`.
     #[must_use]
@@ -299,6 +303,55 @@ pub struct PlacedGlyph {
     pub color: Color,
 }
 
+/// A shape of the interface: a rectangle of rounded corners, filled inside
+/// its border, over its shadow, as a panel or a button.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shape {
+    /// Its rectangle, the border's outer edges.
+    pub rect: Rect,
+    /// The radius of its corners, in pixels: 0 for square ones, and at most
+    /// half its shorter side.
+    pub radius: f32,
+    /// What fills it inside its border; [`Color::CLEAR`] for nothing.
+    pub fill: Color,
+    /// Its border's width, in pixels, inside its edges: 0 for none.
+    pub border: f32,
+    /// Its border's color.
+    pub border_color: Color,
+    /// Its shadow, if it casts one.
+    pub shadow: Option<Shadow>,
+}
+
+impl Shape {
+    /// A shape of `rect`, filled with `fill`, of square corners, without a
+    /// border or a shadow.
+    pub fn filled(rect: Rect, fill: Color) -> Self {
+        Self {
+            rect,
+            radius: 0.0,
+            fill,
+            border: 0.0,
+            border_color: Color::CLEAR,
+            shadow: None,
+        }
+    }
+}
+
+/// The shadow of a shape: the shape's outline moved, blurred, and filled
+/// with its color, under the shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    /// How far right it is moved, in pixels.
+    pub x: f32,
+    /// How far down it is moved, in pixels.
+    pub y: f32,
+    /// How far its edge blurs, in pixels, twice the deviation of a Gaussian
+    /// blur: 0 for a sharp edge.
+    pub blur: f32,
+    /// Its color, which its opacity makes lighter.
+    pub color: Color,
+}
+
 /// One drawing of a frame, over those before it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
@@ -313,6 +366,8 @@ pub enum Item {
     Cells(CellBatch),
     /// Glyphs placed anywhere.
     Glyphs(Vec<PlacedGlyph>),
+    /// Shapes, each over those before it, its shadow under itself alone.
+    Shapes(Vec<Shape>),
     /// The drawings that follow, up to the matching [`Item::PopClip`], keep
     /// within the rectangle, and within the clips that hold it.
     PushClip(Rect),

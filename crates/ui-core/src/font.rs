@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use lokyr_render_core::{AtlasRegion, Texture, TextureUpdate};
+use lokyr_render_core::{AtlasRegion, Color, PlacedGlyph, Texture, TextureUpdate};
 use lokyr_text_core::{
     Atlas, BitmapFormat, CellMetrics, Change, Face, FaceError, FaceId, Faces, FastMap, Features,
     FontBackend, FontConfig, GlyphId, Raster, Rendering, Resolved, ShapedGlyph, Synthesis,
@@ -15,6 +15,8 @@ use lokyr_text_core::{
 };
 use lokyr_vt_core::unicode;
 
+use crate::interface::{self, InterfaceConfig, InterfaceFace};
+use crate::layout::Measure;
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
 use crate::text::TextConfig;
 
@@ -39,6 +41,12 @@ const SHAPED_GLYPHS: usize = 1 << 17;
 
 /// The slots of the glyphs that a frame drew, a power of two.
 const DRAWN_SLOTS: usize = 512;
+
+/// The share of an icon's square, a line of the interface's text, that its
+/// ink takes, where the symbols' font takes it an em wide: three quarters,
+/// 12 points of a line of 16, as the system's symbols beside text of 13
+/// points.
+const ICON_INK: f32 = 0.75;
 
 /// VARIATION SELECTOR-16, which asks for a character's emoji.
 const EMOJI_PRESENTATION: char = '\u{FE0F}';
@@ -174,6 +182,16 @@ pub struct Font<B> {
     /// The glyphs that [`Font::draw_pending`] left, as the frame's time for
     /// glyphs ran out, which the frame shows without.
     deferred: FastMap<GlyphKey, ()>,
+    /// The face of the interface's text, once found: the first text of the
+    /// interface finds the default one, so that a window without them does
+    /// not pay for it.
+    interface: Option<InterfaceFace>,
+    /// The glyph of each icon's character in the symbols' font, once
+    /// asked for.
+    icons: FastMap<char, Option<GlyphId>>,
+    /// The size in pixels at which the symbols' font's advance is an icon's
+    /// ink, by its square's side's bits, once asked for.
+    icon_pixels: FastMap<u32, f32>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -430,6 +448,9 @@ impl<B: FontBackend> Font<B> {
             pending: Vec::new(),
             pending_keys: FastMap::default(),
             deferred: FastMap::default(),
+            interface: None,
+            icons: FastMap::default(),
+            icon_pixels: FastMap::default(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -1006,6 +1027,138 @@ impl<B: FontBackend> Font<B> {
             .collect()
     }
 
+    /// Takes the interface's face that `config` names; or, if it fails,
+    /// keeps the one before.
+    pub fn set_interface(&mut self, config: &InterfaceConfig) -> Result<(), FaceError> {
+        self.interface = Some(InterfaceFace::new(&mut self.backend, config)?);
+        Ok(())
+    }
+
+    /// The face of the interface's text: the one that
+    /// [`Font::set_interface`] took, or else the default one, found the
+    /// first time; the terminal's face where the system has no interface
+    /// family.
+    pub fn interface(&mut self) -> &InterfaceFace {
+        let (backend, resolved) = (&mut self.backend, &self.resolved);
+        self.interface.get_or_insert_with(|| {
+            let config = InterfaceConfig::default();
+            InterfaceFace::new(backend, &config).unwrap_or_else(|_| {
+                InterfaceFace::of(
+                    backend,
+                    resolved.family.clone(),
+                    None,
+                    resolved.faces.regular.id,
+                    config.font_size.points(),
+                )
+            })
+        })
+    }
+
+    /// The glyphs of `text` on one line in the interface's face, at the
+    /// display's scale, from the pen at `x` on the baseline at `baseline`,
+    /// in pixels, in `color`, drawn into the atlas the first time, of thin
+    /// strokes as the configuration has them for a background darker than
+    /// the text when `dark`; and where the last one's ink ends, rightwards.
+    pub fn interface_text(
+        &mut self,
+        text: &str,
+        (x, baseline): (f32, f32),
+        color: Color,
+        dark: bool,
+    ) -> (Vec<PlacedGlyph>, f32) {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let pixels = size * self.scale;
+        let features = Features { ligatures: true };
+        let shaped = self
+            .shaped
+            .shape(&mut self.backend, face, pixels, features, text);
+        let thin = self.thin(dark);
+        let mut placed = Vec::with_capacity(shaped.len());
+        let mut end = x;
+        for glyph in shaped.iter() {
+            let found = Found {
+                face: glyph.face,
+                synthesis: Synthesis::default(),
+                glyph: glyph.glyph,
+                emoji: false,
+                fitted: false,
+            };
+            // A glyph without ink, as a space, draws nothing.
+            let Some(drawn) = self
+                .draw_at(found, pixels, thin, false)
+                .filter(|drawn| drawn.region.width > 0 && drawn.region.height > 0)
+            else {
+                continue;
+            };
+            let left = (x + glyph.x).round() as i32 + drawn.left;
+            end = end.max((left + drawn.region.width as i32) as f32);
+            placed.push(PlacedGlyph {
+                region: drawn.region,
+                x: left,
+                y: (baseline - glyph.y).round() as i32 - drawn.top,
+                color,
+            });
+        }
+        (placed, end)
+    }
+
+    /// The glyph of the icon `name`, in the middle of the square of `side`
+    /// pixels whose top left corner is `(x, y)`, in `color`: the symbols'
+    /// font's, at the size whose advance, an em, is the icon's ink, most of
+    /// the side. `None` for an icon that the host lacks, or that its font
+    /// cannot draw.
+    pub fn interface_icon(
+        &mut self,
+        name: &str,
+        (x, y): (f32, f32),
+        side: f32,
+        color: Color,
+        dark: bool,
+    ) -> Option<PlacedGlyph> {
+        let character = interface::icon(name)?;
+        let face = self.backend.symbols()?;
+        let glyph = match self.icons.get(&character) {
+            Some(&known) => known,
+            None => {
+                let glyph = self.backend.glyph(face, character);
+                self.icons.insert(character, glyph);
+                glyph
+            }
+        }?;
+        let pixels = match self.icon_pixels.get(&side.to_bits()) {
+            Some(&pixels) => pixels,
+            None => {
+                let ink = side * ICON_INK;
+                let advance = self.backend.metrics(face, ink).advance;
+                let pixels = if advance > 0.0 {
+                    ink * ink / advance
+                } else {
+                    ink
+                };
+                self.icon_pixels.insert(side.to_bits(), pixels);
+                pixels
+            }
+        };
+        let found = Found {
+            face,
+            synthesis: Synthesis::default(),
+            glyph,
+            emoji: false,
+            fitted: false,
+        };
+        let drawn = self.draw_at(found, pixels, self.thin(dark), false)?;
+        let middle = |start: f32, size: u32| (start + (side - size as f32) / 2.0).round() as i32;
+        Some(PlacedGlyph {
+            region: drawn.region,
+            x: middle(x, drawn.region.width),
+            y: middle(y, drawn.region.height),
+            color,
+        })
+    }
+
     /// Where `style` finds `character`, in the presentation that `asked`
     /// gives, or else in its own, found once.
     fn find(
@@ -1289,6 +1442,24 @@ fn texture(format: BitmapFormat) -> Texture {
     match format {
         BitmapFormat::Gray => Texture::Coverage,
         BitmapFormat::Rgba => Texture::Color,
+    }
+}
+
+/// The interface's texts and icons measured in its face, in points, for a
+/// view tree's layout: a text of its advances, as its run draws them at
+/// the display's scale, and an icon a square of a line.
+impl<B: FontBackend> Measure for Font<B> {
+    fn text(&mut self, text: &str) -> (f32, f32) {
+        let features = Features { ligatures: true };
+        let interface = self.interface();
+        let (face, size, line) = (interface.face(), interface.size(), interface.line());
+        let width = self.backend.width(face, size, text, features);
+        (width, line)
+    }
+
+    fn icon(&mut self, _name: &str) -> (f32, f32) {
+        let line = self.interface().line();
+        (line, line)
     }
 }
 
@@ -2490,6 +2661,66 @@ mod system {
             dark: false,
         };
         font.glyph(&shown).map(|glyph| glyph.region.texture)
+    }
+
+    #[test]
+    fn the_interface_s_face_is_the_system_s_of_the_optical_size_of_its_points() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        // Found as the interface first asks for it.
+        assert!(font.interface.is_none());
+        let mut backend = CoreText::new();
+        assert_eq!(font.interface().family(), backend.interface_family());
+        assert_eq!(font.interface().missing_family(), None);
+        assert_eq!(font.interface().size(), 13.0);
+        // A line of 13 points is about 16 high.
+        let line = font.interface().line();
+        assert!((14.0..18.0).contains(&line), "{line}");
+        // As AppKit lays out "Hello, world" at 13 points, about 71.5.
+        let (width, height) = font.text("Hello, world");
+        assert!((width - 71.5).abs() < 1.5, "{width}");
+        assert_eq!(height, line);
+        let (narrow, _) = font.text("iiii");
+        let (wide, _) = font.text("mmmm");
+        assert!(narrow * 2.0 < wide, "{narrow} {wide}");
+        assert_eq!(font.icon("terminal"), (line, line));
+        // Its run at 2 pixels a point: a glyph of each letter, of coverage,
+        // the space none, its ink ending near twice the points.
+        let color = Color::from_rgb8(10, 20, 30);
+        let (glyphs, end) = font.interface_text("Hello, world", (4.0, 30.0), color, false);
+        assert_eq!(glyphs.len(), 11);
+        assert!((end - 4.0 - 2.0 * width).abs() < 4.0, "{end} {width}");
+        assert!(glyphs.iter().all(|glyph| glyph.color == color));
+        assert!(glyphs.windows(2).all(|pair| pair[0].x < pair[1].x));
+        // An `H` on the baseline: its top about the cap height above it.
+        assert!((10..=20).contains(&(30 - glyphs[0].y)), "{}", glyphs[0].y);
+        // An icon in the middle of its square, of most of it.
+        let icon = font
+            .interface_icon("terminal", (0.0, 0.0), 32.0, color, false)
+            .unwrap();
+        let (width, height) = (icon.region.width, icon.region.height);
+        assert!(
+            (20..=32).contains(&width) && (16..=32).contains(&height),
+            "{icon:?}"
+        );
+        assert!(icon.x.abs_diff((32 - width as i32) / 2) <= 1, "{icon:?}");
+        assert!(
+            font.interface_icon("no-such-icon", (0.0, 0.0), 32.0, color, false)
+                .is_none()
+        );
+        // A family that is not installed: the system's, which tells it.
+        let named = |name: &str| InterfaceConfig {
+            font_family: Some(lokyr_text_core::Name::try_from(name.to_owned()).unwrap()),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&named("No Such Family Here")).unwrap();
+        assert_eq!(
+            font.interface().missing_family(),
+            Some("No Such Family Here")
+        );
+        assert_eq!(font.interface().family(), backend.interface_family());
+        font.set_interface(&named("Helvetica")).unwrap();
+        assert_eq!(font.interface().family(), "Helvetica");
+        assert_eq!(font.interface().missing_family(), None);
     }
 
     /// The frames, of a frame's budgets, that show a screen of 30 icons of a

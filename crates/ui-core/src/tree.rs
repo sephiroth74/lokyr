@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
-use lokyr_plugin_sdk::view::{Key, Kind, Layout, Node};
+use lokyr_plugin_sdk::view::{Key, Kind, Layout, Node, Style};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
 /// taken away ends, so that its id finds no other node in its slot.
@@ -33,6 +33,9 @@ pub struct Changes {
     /// The nodes kept whose children changed: added, taken away, or moved
     /// among them.
     pub rearranged: Vec<NodeId>,
+    /// The nodes kept whose style alone changed, which draw again without
+    /// being laid out again.
+    pub restyled: Vec<NodeId>,
 }
 
 impl Changes {
@@ -42,6 +45,7 @@ impl Changes {
             && self.removed.is_empty()
             && self.changed.is_empty()
             && self.rearranged.is_empty()
+            && self.restyled.is_empty()
     }
 }
 
@@ -62,6 +66,7 @@ struct Entry {
     key: Option<Key>,
     kind: Kind,
     layout: Layout,
+    style: Style,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
 }
@@ -130,6 +135,11 @@ impl Tree {
         self.entry(id).map(|entry| &entry.layout)
     }
 
+    /// The style of `id`, if the tree has it.
+    pub fn style(&self, id: NodeId) -> Option<&Style> {
+        self.entry(id).map(|entry| &entry.style)
+    }
+
     /// The parent of `id`, if the tree has it and it is not the root.
     pub fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.entry(id)?.parent
@@ -178,6 +188,10 @@ impl Tree {
             entry.kind = new.kind.clone();
             entry.layout = new.layout;
             changes.changed.push(old);
+        }
+        if entry.style != new.style {
+            entry.style = new.style.clone();
+            changes.restyled.push(old);
         }
         self.reconcile_children(old, &new.children, changes);
         old
@@ -237,6 +251,7 @@ impl Tree {
             key: node.key.clone(),
             kind: node.kind.clone(),
             layout: node.layout,
+            style: node.style.clone(),
             parent,
             children: Vec::new(),
         };
@@ -366,6 +381,17 @@ mod tests {
         let changes = tree.update(&wider).unwrap();
         assert_eq!(changes.changed, [root]);
         assert_eq!(tree.root(), Some(root));
+        // A style's change alone: restyled, not changed.
+        let mut styled = wider.clone();
+        styled.style.background = Some("panel.bg".into());
+        let changes = tree.update(&styled).unwrap();
+        assert!(changes.changed.is_empty());
+        assert_eq!(changes.restyled, [root]);
+        assert!(!changes.is_empty());
+        assert_eq!(
+            tree.style(root).and_then(|style| style.background.clone()),
+            Some("panel.bg".into())
+        );
     }
 
     #[test]
