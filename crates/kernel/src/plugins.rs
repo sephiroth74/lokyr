@@ -17,7 +17,9 @@ use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 
 use lokyr_pkg_model::manifest::{Manifest, ManifestError};
+pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
+pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_text_core::Size;
@@ -109,9 +111,14 @@ struct State {
     status: Status,
     /// Its capabilities; `None` for every one, as a first-party plugin's.
     granted: Option<Vec<Capability>>,
-    /// The commands of others that it runs, and the namespace of its own;
-    /// `None` for every command, as a first-party plugin's.
-    uses: Option<(Uses, String)>,
+    /// The commands of others that it runs; `None` for every command, as a
+    /// first-party plugin's.
+    uses: Option<Uses>,
+    /// The namespace of its own commands and events: its manifest's, or
+    /// its name without a manifest.
+    namespace: String,
+    /// The names of the events that it subscribed to.
+    subscribed: Vec<String>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
     /// Its catalogs, of its commands' titles.
@@ -123,10 +130,19 @@ struct State {
 #[derive(Default)]
 pub struct Plugins {
     entries: Vec<Entry>,
-    /// The requests of the calls since the last take.
-    requests: Vec<Request>,
+    /// What the calls asked and emitted.
+    out: Outbox,
     /// Whether the plugins' bindings changed since the last look.
     bindings_changed: bool,
+}
+
+/// What plugins' calls send out, once they return: their requests of the
+/// app's, since the app's last take, and the events to deliver, since the
+/// last delivery, with the workspace's.
+#[derive(Default)]
+struct Outbox {
+    requests: Vec<Request>,
+    events: Vec<Event>,
 }
 
 impl std::fmt::Debug for Plugins {
@@ -178,10 +194,7 @@ impl Plugins {
         let name = manifest.name.clone();
         let granted = (
             manifest.capabilities.clone(),
-            (
-                Uses::new(manifest.uses.clone()),
-                manifest.namespace().to_owned(),
-            ),
+            Uses::new(manifest.uses.clone()),
         );
         self.insert(&name, Some(manifest), plugin, Some(granted));
     }
@@ -191,11 +204,15 @@ impl Plugins {
         name: &str,
         manifest: Option<Manifest>,
         plugin: Box<dyn Plugin>,
-        declared: Option<(Vec<Capability>, (Uses, String))>,
+        declared: Option<(Vec<Capability>, Uses)>,
     ) {
         // A plugin whose catalogs panic has none.
         let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
         let (granted, uses) = declared.unzip();
+        let namespace = manifest
+            .as_ref()
+            .map_or(name, Manifest::namespace)
+            .to_owned();
         self.entries.push(Entry {
             plugin,
             state: State {
@@ -204,6 +221,8 @@ impl Plugins {
                 status: Status::Inactive,
                 granted,
                 uses,
+                namespace,
+                subscribed: Vec::new(),
                 commands: Vec::new(),
                 bindings: Vec::new(),
                 catalogs,
@@ -224,7 +243,7 @@ impl Plugins {
             let activated = call(
                 entry,
                 context,
-                &mut self.requests,
+                &mut self.out,
                 &mut self.bindings_changed,
                 |plugin, cx| plugin.activate(cx),
             );
@@ -280,7 +299,7 @@ impl Plugins {
         call(
             &mut self.entries[at],
             context,
-            &mut self.requests,
+            &mut self.out,
             &mut self.bindings_changed,
             |plugin, cx| plugin.on_command(cx, command, args),
         )
@@ -302,14 +321,14 @@ impl Plugins {
                 format!("no plugin runs `{command}`"),
             ));
         };
-        let before = self.requests.len();
+        let before = self.out.requests.len();
         let applies = look(
             &mut self.entries[at],
             context,
             &mut self.bindings_changed,
             |plugin, cx| Ok(plugin.applies(cx, command, args)),
         );
-        self.requests.truncate(before);
+        self.out.requests.truncate(before);
         applies
     }
 
@@ -370,7 +389,55 @@ impl Plugins {
 
     /// Takes what the plugins' calls asked of the app since the last take.
     pub fn take_requests(&mut self) -> Vec<Request> {
-        std::mem::take(&mut self.requests)
+        std::mem::take(&mut self.out.requests)
+    }
+
+    /// Posts `event`, of the workspace's, for the next delivery.
+    pub fn post(&mut self, event: Event) {
+        self.out.events.push(event);
+    }
+
+    /// Delivers the events posted and emitted since the last delivery, in
+    /// their order, as a batch to each active plugin, in their order, of
+    /// those that it subscribed to; those that the deliveries' calls emit
+    /// wait for the next. Returns the calls' errors, of which a panic's
+    /// disables its plugin.
+    pub fn deliver(&mut self, context: &mut Context<'_>) -> Vec<Error> {
+        let events = std::mem::take(&mut self.out.events);
+        let mut errors = Vec::new();
+        if events.is_empty() {
+            return errors;
+        }
+        for entry in &mut self.entries {
+            if entry.state.status != Status::Active {
+                continue;
+            }
+            let subscribed = &entry.state.subscribed;
+            let batch: Vec<Event> = events
+                .iter()
+                .filter(|event| subscribed.iter().any(|name| name == event.name()))
+                .cloned()
+                .collect();
+            if batch.is_empty() {
+                continue;
+            }
+            let delivered = call(
+                entry,
+                context,
+                &mut self.out,
+                &mut self.bindings_changed,
+                |plugin, cx| plugin.on_event(cx, &batch),
+            );
+            if let Err(error) = delivered {
+                errors.push(error);
+            }
+        }
+        errors
+    }
+
+    /// Whether events wait for the next delivery.
+    pub fn has_events(&self) -> bool {
+        !self.out.events.is_empty()
     }
 
     /// Whether the plugins' bindings changed since the last call, as a
@@ -392,26 +459,26 @@ pub fn title_message(name: &str) -> String {
 fn call<T>(
     entry: &mut Entry,
     context: &mut Context<'_>,
-    requests: &mut Vec<Request>,
+    out: &mut Outbox,
     bindings_changed: &mut bool,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    let before = requests.len();
+    let before = out.requests.len();
     let mut writes = Vec::new();
     let outcome = within(
         entry,
         context,
-        (requests, &mut writes),
+        (&mut out.requests, &mut writes),
         bindings_changed,
         call,
     );
     match outcome {
         Ok(result) => {
-            apply(writes, context, requests);
+            apply(writes, context, out);
             result
         }
         Err(fault) => {
-            requests.truncate(before);
+            out.requests.truncate(before);
             fault
         }
     }
@@ -473,8 +540,10 @@ fn within<T>(
 
 /// Applies a call's `writes` to the kernel's state, in their order: the
 /// writes to a pane that closed since do nothing; a paste that asks the
-/// user first becomes a request of the app's.
-fn apply(writes: Vec<Asked>, context: &mut Context<'_>, requests: &mut Vec<Request>) {
+/// user first becomes a request of the app's; an event emitted waits for
+/// the next delivery.
+fn apply(writes: Vec<Asked>, context: &mut Context<'_>, out: &mut Outbox) {
+    let requests = &mut out.requests;
     for write in writes {
         let pane = |pane: host::PaneId| context.workspace.pane(PaneId::of(pane.0));
         match write {
@@ -519,6 +588,15 @@ fn apply(writes: Vec<Asked>, context: &mut Context<'_>, requests: &mut Vec<Reque
                     pane.scroll(scrolled(scroll));
                 }
             }
+            Asked::Emit {
+                name,
+                schema,
+                value,
+            } => out.events.push(Event::Custom {
+                name,
+                schema,
+                value,
+            }),
             // The host queues writes alone.
             _ => {}
         }
@@ -692,6 +770,26 @@ impl Host<'_, '_> {
             | Asked::Scroll { pane, .. } => {
                 self.pane(*pane)?;
             }
+            Asked::Emit { name, schema, .. } => {
+                let own = name
+                    .strip_prefix(self.state.namespace.as_str())
+                    .is_some_and(|rest| rest.starts_with('.'));
+                if !commands::is_name(name) || !own {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!(
+                            "`{name}` is not an event of the plugin's, `{}.event`",
+                            self.state.namespace
+                        ),
+                    ));
+                }
+                if schema.is_empty() {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!("the event `{name}` names no schema"),
+                    ));
+                }
+            }
             _ => {}
         }
         self.writes.push(request);
@@ -705,9 +803,13 @@ impl Host<'_, '_> {
             Asked::RunCommand { name, args } => {
                 let registry = &self.context.registry;
                 let args = match (&self.state.uses, &self.state.granted) {
-                    (Some((uses, own)), Some(granted)) => {
-                        registry.check_for_plugin(&name, args, own, uses, granted)?
-                    }
+                    (Some(uses), Some(granted)) => registry.check_for_plugin(
+                        &name,
+                        args,
+                        &self.state.namespace,
+                        uses,
+                        granted,
+                    )?,
                     _ => registry.check(&name, args)?,
                 };
                 Request::Run(Invocation {
@@ -780,6 +882,23 @@ impl Host<'_, '_> {
                     when,
                 });
                 *self.bindings_changed = true;
+            }
+            Asked::Subscribe(names) => {
+                if let Some(name) = names.iter().find(|name| {
+                    !WorkspaceEvent::NAMES.contains(&name.as_str()) && !commands::is_name(name)
+                }) {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!(
+                            "`{name}` is no event: one of the workspace's, as `tab-created`, or a plugin's, `namespace.event`"
+                        ),
+                    ));
+                }
+                for name in names {
+                    if !self.state.subscribed.contains(&name) {
+                        self.state.subscribed.push(name);
+                    }
+                }
             }
             other => {
                 return Err(Error::new(

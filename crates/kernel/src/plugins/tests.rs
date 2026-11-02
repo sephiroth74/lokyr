@@ -19,11 +19,13 @@ use crate::workspace::{Environment, Grid, Settings};
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
 type OnCommand = Box<dyn FnMut(&mut Cx<'_>, &str, Args) -> Result<(), Error>>;
+type OnEvent = Box<dyn FnMut(&mut Cx<'_>, &[Event]) -> Result<(), Error>>;
 
 /// A plugin whose callbacks the test gives.
 struct Scripted {
     activate: Activate,
     on_command: OnCommand,
+    on_event: Option<OnEvent>,
 }
 
 impl Plugin for Scripted {
@@ -34,6 +36,13 @@ impl Plugin for Scripted {
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         (self.on_command)(cx, name, args)
     }
+
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        match &mut self.on_event {
+            Some(on_event) => on_event(cx, events),
+            None => Ok(()),
+        }
+    }
 }
 
 fn scripted(
@@ -43,6 +52,22 @@ fn scripted(
     Box::new(Scripted {
         activate: Box::new(activate),
         on_command: Box::new(on_command),
+        on_event: None,
+    })
+}
+
+/// A plugin that subscribes to `names` as it activates, and records the
+/// names of the events of each batch that it takes, in `log`, as `a b`.
+fn listening(names: &'static [&'static str], log: &Rc<RefCell<Vec<String>>>) -> Box<dyn Plugin> {
+    let log = Rc::clone(log);
+    Box::new(Scripted {
+        activate: Box::new(move |cx| cx.subscribe(names)),
+        on_command: Box::new(|_, _, _| Ok(())),
+        on_event: Some(Box::new(move |_, events| {
+            let names: Vec<&str> = events.iter().map(Event::name).collect();
+            log.borrow_mut().push(names.join(" "));
+            Ok(())
+        })),
     })
 }
 
@@ -987,6 +1012,8 @@ fn a_call_is_its_own_plugin_s() {
             status: Status::Active,
             granted: None,
             uses: None,
+            namespace: "x".to_owned(),
+            subscribed: Vec::new(),
             commands: Vec::new(),
             bindings: Vec::new(),
             catalogs: &[],
@@ -1115,4 +1142,161 @@ fn a_built_in_plugin_comes_by_its_manifest_s_name_with_every_capability() {
     );
     assert!(wrong.is_err());
     assert_eq!(plugins.status("x"), None);
+}
+
+#[test]
+fn events_come_in_batches_of_those_subscribed_to_in_their_order() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let (tabs, panes) = (Rc::default(), Rc::default());
+    plugins.add("tabs", listening(&["tab-created", "acme.ping"], &tabs));
+    plugins.add("panes", listening(&["pane-focused"], &panes));
+    plugins.add(
+        "acme",
+        scripted(
+            |cx| cx.register_command(command("acme.ping")),
+            |cx, _, _| cx.emit("acme.ping", "acme.ping/1", Data::Integer(1)),
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let created = |tab| {
+        Event::Workspace(WorkspaceEvent::TabCreated {
+            tab: host::TabId(tab),
+            window: host::WindowId(1),
+            index: 0,
+        })
+    };
+    plugins.post(created(1));
+    plugins.post(Event::Workspace(WorkspaceEvent::PaneFocused {
+        pane: host::PaneId(3),
+        tab: host::TabId(1),
+    }));
+    plugins.post(created(2));
+    plugins
+        .run("acme.ping", Args::new(), &mut app.context())
+        .unwrap();
+    // Nothing until the delivery.
+    assert!(tabs.borrow().is_empty() && panes.borrow().is_empty());
+    assert!(plugins.has_events());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*tabs.borrow(), ["tab-created tab-created acme.ping"]);
+    assert_eq!(*panes.borrow(), ["pane-focused"]);
+    // Delivered once.
+    assert!(!plugins.has_events());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(tabs.borrow().len(), 1);
+}
+
+#[test]
+fn an_event_comes_after_the_call_that_emits_it_and_a_delivery_s_in_the_next() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    let inside = Rc::new(std::cell::Cell::new(false));
+    let within = Rc::clone(&inside);
+    plugins.add(
+        "echo",
+        Box::new(Scripted {
+            activate: Box::new(|cx| {
+                cx.register_command(command("echo.go"))?;
+                cx.subscribe(&["echo.ping", "echo.pong"])
+            }),
+            on_command: Box::new(move |cx, _, _| {
+                within.set(true);
+                cx.emit("echo.ping", "echo/1", Data::Nil)?;
+                within.set(false);
+                Ok(())
+            }),
+            on_event: Some(Box::new(move |cx, events| {
+                assert!(!inside.get(), "an event within the call that emitted it");
+                for event in events {
+                    seen.borrow_mut().push(event.name().to_owned());
+                    if event.name() == "echo.ping" {
+                        cx.emit("echo.pong", "echo/1", Data::Text("back".to_owned()))?;
+                    }
+                }
+                Ok(())
+            })),
+        }),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("echo.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(log.borrow().is_empty());
+    // The ping, whose answer waits for the next batch.
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*log.borrow(), ["echo.ping"]);
+    assert!(plugins.has_events());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(*log.borrow(), ["echo.ping", "echo.pong"]);
+}
+
+#[test]
+fn a_subscription_and_an_event_s_name_are_checked() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins.add(
+        "checker",
+        scripted(
+            move |cx| {
+                let mut seen = seen.borrow_mut();
+                let code = |done: Result<(), Error>| done.err().map(|error| error.code);
+                seen.push(code(cx.subscribe(&["tab-created", "other.event"])));
+                seen.push(code(cx.subscribe(&["tab-made"])));
+                seen.push(code(cx.emit("checker.done", "checker/1", Data::Nil)));
+                seen.push(code(cx.emit("other.done", "checker/1", Data::Nil)));
+                seen.push(code(cx.emit("checker", "checker/1", Data::Nil)));
+                seen.push(code(cx.emit("checker.done", "", Data::Nil)));
+                Ok(())
+            },
+            |_, _, _| Ok(()),
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(
+        *log.borrow(),
+        [
+            None,
+            Some(Code::InvalidName),
+            None,
+            Some(Code::InvalidName),
+            Some(Code::InvalidName),
+            Some(Code::InvalidName)
+        ]
+    );
+}
+
+#[test]
+fn a_plugin_that_panics_at_its_events_is_disabled_and_the_others_take_theirs() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins.add(
+        "broken",
+        Box::new(Scripted {
+            activate: Box::new(|cx| cx.subscribe(&["window-opened"])),
+            on_command: Box::new(|_, _, _| Ok(())),
+            on_event: Some(Box::new(|_, _| panic!("on purpose"))),
+        }),
+    );
+    let log = Rc::default();
+    plugins.add("after", listening(&["window-opened"], &log));
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins.post(Event::Workspace(WorkspaceEvent::WindowOpened {
+        window: host::WindowId(1),
+    }));
+    let errors = plugins.deliver(&mut app.context());
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].code, Code::Fault);
+    assert_eq!(plugins.status("broken"), Some(Status::Disabled));
+    assert_eq!(*log.borrow(), ["window-opened"]);
 }

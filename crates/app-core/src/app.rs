@@ -1761,9 +1761,25 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Takes the workspace's events. A program's write to the clipboard
-    /// puts its text there, and the primary selection, which macOS lacks,
-    /// takes nothing; its read asks the user, once at a time for each pane.
+    /// Ends a turn of the main thread: the workspace's events, whose
+    /// changes the plugins take, then the plugins' events delivered, a
+    /// batch to each plugin of those that it subscribed to, whose calls'
+    /// requests the app then takes. A turn without events costs nothing.
+    fn end_turn(&mut self, platform: &mut dyn Platform) {
+        self.events(platform);
+        if !self.plugins.has_events() {
+            return;
+        }
+        for error in self.with_plugins(platform, Plugins::deliver) {
+            eprintln!("lokyr: {error}");
+        }
+        self.after_plugins(platform, 0);
+    }
+
+    /// Takes the workspace's events, whose changes the plugins take. A
+    /// program's write to the clipboard puts its text there, and the
+    /// primary selection, which macOS lacks, takes nothing; its read asks
+    /// the user, once at a time for each pane.
     /// A window takes the title of its active tab, which its program's
     /// gives; a bell does what `[bell]` says, and a program's notification
     /// shows as the system's. The tabs keep their programs' colors, which
@@ -1791,7 +1807,8 @@ impl<B: Backend> App<B> {
                     pane,
                     event: vt::Event::Notification { title, body },
                 } => self.notify(platform, pane, &title, &body),
-                Event::Changed(_) | Event::Ended(_) | Event::Terminal { .. } => {}
+                Event::Changed(change) => self.plugins.post(plugins::Event::Workspace(change)),
+                Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }
     }
@@ -2090,8 +2107,9 @@ impl<B: Backend> App<B> {
     }
 }
 
-impl<B: Backend> Handler for App<B> {
-    fn started(&mut self, platform: &mut dyn Platform) {
+/// The platform's calls, each a turn of the main thread.
+impl<B: Backend> App<B> {
+    fn start(&mut self, platform: &mut dyn Platform) {
         self.preferred = platform.locales();
         self.texts = texts(&self.config.app.language, &self.preferred);
         self.commands = commands(&self.texts, &self.plugins);
@@ -2133,7 +2151,7 @@ impl<B: Backend> Handler for App<B> {
         }
     }
 
-    fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
+    fn take_app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
         match event {
             AppEvent::Command(command) => self.run(platform, &command, Args::new()),
             AppEvent::GlobalKey(index) => {
@@ -2311,7 +2329,12 @@ impl<B: Backend> Handler for App<B> {
         }
     }
 
-    fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
+    fn take_window_event(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        event: WindowEvent,
+    ) {
         match event {
             // A step of a live resize draws at once, so that the content
             // follows the edge, but once a refresh: a second draw within
@@ -2434,6 +2457,25 @@ impl<B: Backend> Handler for App<B> {
                 }
             }
         }
+    }
+}
+
+/// Each call of the platform's ends a turn of the main thread, which
+/// delivers the plugins' events.
+impl<B: Backend> Handler for App<B> {
+    fn started(&mut self, platform: &mut dyn Platform) {
+        self.start(platform);
+        self.end_turn(platform);
+    }
+
+    fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
+        self.take_app_event(platform, event);
+        self.end_turn(platform);
+    }
+
+    fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
+        self.take_window_event(platform, window, event);
+        self.end_turn(platform);
     }
 }
 

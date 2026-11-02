@@ -94,6 +94,21 @@ pub enum WorkspaceEvent {
 }
 
 impl WorkspaceEvent {
+    /// The names of the workspace's events, as plugins subscribe to them.
+    pub const NAMES: [&'static str; 11] = [
+        "window-opened",
+        "window-closed",
+        "tab-created",
+        "tab-closed",
+        "tab-activated",
+        "tab-moved",
+        "pane-created",
+        "pane-closed",
+        "pane-focused",
+        "pane-moved",
+        "layout-changed",
+    ];
+
     /// The event's name, as a plugin subscribes to it.
     pub fn name(&self) -> &'static str {
         match self {

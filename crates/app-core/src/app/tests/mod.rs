@@ -2656,3 +2656,55 @@ fn right_click(fake: &mut Fake, app: &mut App, window: WindowId, at: Point, mods
 fn selected_text(app: &App, window: WindowId) -> Option<String> {
     app.pane(window).selection_text()
 }
+
+/// A plugin that subscribes to the windows' and the panes' events, and
+/// records their names, a batch a line.
+struct Watcher(std::rc::Rc<std::cell::RefCell<Vec<String>>>);
+
+impl plugins::Plugin for Watcher {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&[
+            "window-opened",
+            "window-closed",
+            "pane-created",
+            "pane-closed",
+        ])
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        let names: Vec<&str> = events.iter().map(plugins::Event::name).collect();
+        self.0.borrow_mut().push(names.join(" "));
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_takes_the_workspace_s_changes_as_each_turn_ends() {
+    let log = std::rc::Rc::default();
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), shell("read line"))
+        .with_plugin("watcher", Box::new(Watcher(std::rc::Rc::clone(&log))));
+    fake.start(&mut app);
+    // The first window, as the start's turn ends.
+    assert_eq!(*log.borrow(), ["window-opened pane-created"]);
+    fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+    assert_eq!(log.borrow().len(), 2);
+    assert_eq!(log.borrow()[1], "window-opened pane-created");
+    // Closed, with its pane, as its close's turn ends.
+    let second = fake.windows().last().unwrap();
+    fake.send(&mut app, second, WindowEvent::CloseRequested);
+    // A question, if the shell's program is not the shell yet.
+    if let Some(asked) = fake.alerts().first().map(|alert| alert.id) {
+        fake.answer_alert(&mut app, asked, 0);
+    }
+    assert_eq!(log.borrow().len(), 3);
+    assert_eq!(log.borrow()[2], "pane-closed window-closed");
+    // A turn without changes delivers nothing.
+    let first = fake.windows().next().unwrap();
+    fake.send(&mut app, first, WindowEvent::Frame);
+    assert_eq!(log.borrow().len(), 3);
+}

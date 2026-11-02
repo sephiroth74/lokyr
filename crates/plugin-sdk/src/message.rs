@@ -9,8 +9,17 @@
 //! as the plugin's call returns: a plugin that reads what it just wrote, in
 //! the same call, reads the state before its write. What changes the app,
 //! as a window to open or a command to run, comes once the call returns
-//! too, after the writes. A plugin's declarations, its commands and its
-//! keys, take effect at once, as the registry checks them.
+//! too, after the writes. A plugin's declarations, its commands, its keys
+//! and the events that it subscribes to, take effect at once, as the host
+//! checks them.
+//!
+//! The host gathers the events, the workspace's changes and those that
+//! plugins emit, and delivers them in batches, in their order, each plugin
+//! the events that it subscribed to, once a turn of the main thread: an
+//! event that a call emits comes after the call returns, never within it,
+//! and one that a delivery's call emits, in the next batch.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +45,20 @@ pub enum Request {
     RegisterCommand(Command),
     /// Binds keys to a command, which needs not be registered yet.
     Bind(Binding),
+    /// Subscribes to the events of these names: the workspace's, as
+    /// `tab-created`, or plugins' own, as `search.progress`.
+    Subscribe(Vec<String>),
+    /// Emits an event of the plugin's own, whose name is of its namespace,
+    /// as `search.progress`, to the plugins that subscribed to it, once the
+    /// call returns.
+    Emit {
+        /// Its name, `namespace.event`.
+        name: String,
+        /// The id of its value's schema, as `search.progress/1`.
+        schema: String,
+        /// Its value.
+        value: Data,
+    },
     /// Runs a command with arguments, once the call returns; the call is
     /// checked as it is asked.
     RunCommand {
@@ -151,6 +174,8 @@ impl Request {
             Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
             Self::RegisterCommand(_)
             | Self::Bind(_)
+            | Self::Subscribe(_)
+            | Self::Emit { .. }
             | Self::RunCommand { .. }
             | Self::FocusedWindow
             | Self::FocusedPane
@@ -185,14 +210,15 @@ impl Request {
             | Self::Clear(_)
             | Self::Paste { .. }
             | Self::SendText { .. }
-            | Self::Scroll { .. } => Effect::Write,
+            | Self::Scroll { .. }
+            | Self::Emit { .. } => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
             | Self::SetFontSize(_)
             | Self::OpenWindow
             | Self::CloseWindow(_)
             | Self::Quit => Effect::App,
-            Self::RegisterCommand(_) | Self::Bind(_) => Effect::Declaration,
+            Self::RegisterCommand(_) | Self::Bind(_) | Self::Subscribe(_) => Effect::Declaration,
         }
     }
 }
@@ -221,11 +247,51 @@ pub enum Response {
 }
 
 /// What the host tells a plugin.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Event {
     /// A change of the workspace's windows, tabs, layouts or panes.
     Workspace(WorkspaceEvent),
+    /// An event of a plugin's own.
+    Custom {
+        /// Its name, `namespace.event`, of the plugin's namespace.
+        name: String,
+        /// The id of its value's schema.
+        schema: String,
+        /// Its value.
+        value: Data,
+    },
+}
+
+impl Event {
+    /// The event's name, as a plugin subscribes to it.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Workspace(event) => event.name(),
+            Self::Custom { name, .. } => name,
+        }
+    }
+}
+
+/// A plain value, as an event of a plugin's carries: text, numbers, true
+/// or false, and lists and maps of them, as a Luau table is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Data {
+    /// Nothing.
+    Nil,
+    /// True or false.
+    Boolean(bool),
+    /// A whole number.
+    Integer(i64),
+    /// A number.
+    Number(f64),
+    /// Text.
+    Text(String),
+    /// Values in their order.
+    List(Vec<Data>),
+    /// Values by their keys.
+    Map(BTreeMap<String, Data>),
 }
 
 #[cfg(test)]
@@ -286,6 +352,26 @@ mod tests {
         let text = serde_json::to_string(&event).unwrap();
         assert_eq!(text, r#"{"workspace":{"layout-changed":{"tab":9}}}"#);
         assert_eq!(serde_json::from_str::<Event>(&text).unwrap(), event);
+        assert_eq!(event.name(), "layout-changed");
+        let custom = Event::Custom {
+            name: "search.progress".to_owned(),
+            schema: "search.progress/1".to_owned(),
+            value: Data::Map(BTreeMap::from([
+                ("matches".to_owned(), Data::Integer(12)),
+                ("done".to_owned(), Data::Boolean(false)),
+                (
+                    "panes".to_owned(),
+                    Data::List(vec![
+                        Data::Integer(4),
+                        Data::Nil,
+                        Data::Text("x".to_owned()),
+                    ]),
+                ),
+            ])),
+        };
+        let text = serde_json::to_string(&custom).unwrap();
+        assert_eq!(serde_json::from_str::<Event>(&text).unwrap(), custom);
+        assert_eq!(custom.name(), "search.progress");
     }
 
     #[test]

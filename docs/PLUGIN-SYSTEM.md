@@ -55,9 +55,9 @@ Native and Luau plugins follow the same rules, so they behave the same way ([ADR
 - **Reads at the host's time**: a request reads the main thread's state as the host handles it; an id that is gone gives `not-found`. A read of much text runs on a thread of the host's, which holds a pane's lock as briefly as a frame's copy.
 - **Writes queued, for every plugin**: what a plugin changes, the kernel's state and the app's, the host applies in order as the plugin's call returns, on the main thread as on a worker and in Luau; plugins never change the state in place. A write to a pane that is not there fails as it is asked. The kernel's writes, as a selection, a paste or the clipboard's text, come first, then the app's requests, as a window to open or a command to run; a read in the same call reads the state before the call's writes. A plugin's declarations, its commands and its keys, take effect at once, as the registry checks them.
 - **Owned data**: plugins receive copies, never references into kernel state.
-- **No re-entrancy**: events generated during a callback are queued and delivered only after the callback returns.
+- **No re-entrancy**: events generated during a callback are queued and delivered only after the callback returns; those that a delivery's calls emit, in the next batch.
 - **No threads of their own, no blocking I/O**: time is provided by the host, through timers and `tick` events that are sent only on request.
-- **Filtered, batched events**: the kernel delivers only the events a plugin subscribed to, batched per frame.
+- **Filtered, batched events**: a plugin subscribes to the events that it names, `cx.subscribe`, the workspace's, as `tab-created`, and plugins' own, `namespace.event`; the kernel gathers the workspace's changes and the events that plugins emit, and delivers them to `on_event` in their order, each plugin those that it subscribed to, as a batch, once a turn of the main thread, which a frame, a key, a click or a wake is.
 - **Rendering**:
   - `render(slot)` is called only when the plugin asks for an update (`request_render`) or the theme changes. The result is cached.
   - Native plugins run on the main thread, unless their manifest asks for a thread of their own, `thread = "worker"`, as the user chose on 1 November 2026: each such plugin then has a thread of the host's, which makes all its calls, its renders too, with the same messages as a Luau plugin's, and the host takes their results on the main thread as they are ready, never waiting for them; a call of the main thread's plugins that takes long is logged as it returns, and stopped by nothing, as the plugins are ours. The main thread stays for the plugins that must answer at once, as the tab bar's. Luau plugins run on the plugin executor, with a deadline per call.
@@ -163,7 +163,7 @@ return Search
   - Bulk data uses buffers. For example, a highlighter returns its spans in one `buffer`, which the host reads in one copy: reading 100000 spans from tables costs 6–7 ms, against about 1.5 ms through Lua's C API ([F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes)).
 - **Handles to host objects**: windows, tabs and panes are opaque integer ids, as in the Rust front end.
 - **Rows** are numbers, which output, the view's scrolling and the scrollback's limit leave a row, until it leaves the scrollback; a resize numbers the rows anew. A command of a cell, as a click's, takes the number of the row clicked, as the drawn frame showed it ([ARCHITECTURE.md](ARCHITECTURE.md#kernel-data-model)).
-- **Plugin-defined events**: `custom` events carry a name, a schema id and a plain value. The host encodes the value as CBOR for Rust plugins.
+- **Plugin-defined events**: `custom` events carry a name, of the plugin's namespace, as `search.progress`, a schema id, as `search.progress/1`, and a plain value, the SDK's `message::Data`: text, numbers, true or false, and lists and maps of them, as a Luau table is. `cx.emit` emits one, which comes after the call returns.
 
 ### Versioning
 
@@ -264,7 +264,7 @@ type Event =
     | { kind: "layout-changed", tab: TabId }
     | { kind: "title-changed", pane: PaneId, title: string }
     | { kind: "search-progress", id: number, matches: number, done: boolean }
-    | { kind: "custom", name: string, schema: string, payload: any }
+    | { kind: "custom", name: string, schema: string, value: any }
 
 type UiEvent = {
     slot: string,
@@ -279,6 +279,12 @@ type UiEvent = {
 }
 
 type Cx = {
+    events: {
+        -- The workspace's events, as "tab-created", and plugins' own, as "search.progress".
+        subscribe: (names: { string }) -> (boolean, Error?),
+        -- An event of the plugin's namespace, which comes after the call returns.
+        emit: (name: string, schema: string, value: any) -> (boolean, Error?),
+    },
     commands: {
         register: (name: string, title: string) -> (boolean, Error?),
         execute: (name: string, args: Args?) -> (boolean, Error?),

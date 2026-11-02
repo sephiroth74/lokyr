@@ -47,7 +47,7 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{Binding, Host, LineText, PaneId, Scroll, WindowId};
-use crate::message::{Call, Request, Response};
+use crate::message::{Call, Data, Event, Request, Response};
 
 /// A plugin: its activation, which registers its commands and binds its
 /// keys, and the calls of its commands, which the host checked against
@@ -70,6 +70,14 @@ pub trait Plugin {
             Code::NotFound,
             format!("the plugin has no command `{name}`"),
         ))
+    }
+
+    /// Takes `events`, those that it subscribed to, in their order, as a
+    /// batch: a turn's of the main thread, which come after the calls that
+    /// made them. What it emits comes in the next batch.
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let _ = (cx, events);
+        Ok(())
     }
 
     /// Its catalogs of [Project Fluent](https://projectfluent.org), each by
@@ -155,6 +163,26 @@ impl<'a> Cx<'a> {
     /// tell the log of it, as they are pressed, until it is.
     pub fn bind(&mut self, binding: Binding) -> Result<(), Error> {
         self.done(Request::Bind(binding))
+    }
+
+    /// Subscribes to the events of `names`: the workspace's, as
+    /// `tab-created`, or plugins' own, as `search.progress`, which
+    /// [`on_event`](Plugin::on_event) takes from the next batch on.
+    pub fn subscribe(&mut self, names: &[&str]) -> Result<(), Error> {
+        self.done(Request::Subscribe(
+            names.iter().map(|&name| name.to_owned()).collect(),
+        ))
+    }
+
+    /// Emits the event `name`, of the plugin's namespace, as
+    /// `search.progress`, of the schema `schema`, with `value`, to the
+    /// plugins that subscribed to it, once this call returns.
+    pub fn emit(&mut self, name: &str, schema: &str, value: Data) -> Result<(), Error> {
+        self.done(Request::Emit {
+            name: name.to_owned(),
+            schema: schema.to_owned(),
+            value,
+        })
     }
 
     /// The clipboard's text, if it holds any.
