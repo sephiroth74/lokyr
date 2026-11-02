@@ -1,6 +1,6 @@
 # CPU per frame and throughput on screen (F2-56)
 
-Measured on 2026-10-31, on the bundle of the commit after 8a5b5f4, against the [budgets](../PERFORMANCE.md#budgets): a frame's time on the CPU, p99 ≤ 2 ms at 4K, and the throughput within 10% of the faster of Ghostty and Alacritty, but for [ADR 0015](../adr/0015-vt-core-throughput-exception.md)'s exception. The raw results, one line a run, and each terminal's config are in [onscreen-F2-56/](onscreen-F2-56/).
+Measured on 2026-10-31, on the bundle of the commit after acf9679, against the [budgets](../PERFORMANCE.md#budgets): a frame's time on the CPU, p99 ≤ 2 ms at 4K, and the throughput within 10% of the faster of Ghostty and Alacritty, but for [ADR 0015](../adr/0015-vt-core-throughput-exception.md)'s exception. The raw results, one line a run, and each terminal's config are in [onscreen-F2-56/](onscreen-F2-56/).
 
 ## Method
 
@@ -56,7 +56,7 @@ Lokyr's frames as each workload's output draws, in ms, at 3840 × 2224 pixels: t
 
 ## After F2-145
 
-Measured on 2026-10-31, on the bundle of the commit after f21bb1e, as above, of Lokyr, Ghostty and Alacritty alone, which the criterion names: the raw results are in [after-F2-145.jsonl](onscreen-F2-56/after-F2-145.jsonl).
+Measured on 2026-10-31, on the bundle of the commit after ce85fd6, as above, of Lokyr, Ghostty and Alacritty alone, which the criterion names: the raw results are in [after-F2-145.jsonl](onscreen-F2-56/after-F2-145.jsonl).
 
 | Workload | Lokyr | Lokyr before | Ghostty | Alacritty | Against the faster |
 |---|---|---|---|---|---|
@@ -68,13 +68,13 @@ Measured on 2026-10-31, on the bundle of the commit after f21bb1e, as above, of 
 - **The cause**: one thread read the PTY and parsed what it read, in turn. A macOS terminal queues 1 KiB of output, which every read takes, 98.5% of them 1024 bytes exactly: the program waited, each KiB, for the parse, and the reader for the program's refill, two wakeups a KiB. A reader of `cat`'s output that does nothing else takes 154 MiB/s as Lokyr read, a `poll` then a `read`; 174 reading first, and polling once the queue is empty; 182 with a blocking read; 313 with reads that never wait. With 1 to 3 µs of work a KiB between its reads, as a parse takes, each of the first three takes 134 to 176 MiB/s. The reader's thread at the user-interactive QoS changed nothing, 2.16 s for 256 MiB either way. Ghostty, as `sample` shows, reads on a thread and parses on another.
 - **The fix**: a thread of the PTY's reads into a ring of four buffers of 64 KiB, ahead of the I/O thread's parse, and bridges the refills of a stream that fills the queue, as [ARCHITECTURE.md](../ARCHITECTURE.md#threads-and-data-flow) tells: ASCII, `seq` and SGR come within 3% of Ghostty, `seq` ahead.
 - **CJK is the parse's now**: the I/O thread parses in 98% of the samples, and the reader waits for a free buffer in 54%. The VT core alone, as `lokyr-throughput` feeds it, parses `cjk.txt` at 156.7 MiB/s, where `alacritty_terminal` parses it at 280, 0.56 of it, though vtebench's `unicode` scenario, without emoji of joiners, skin tones and variation selectors, keeps 1.04: the clusters take `print_chars`, the segmenter, `write_stretch` and `join_previous`, and an allocation each, `malloc` and `free` about a seventh of the core's samples.
-- **What it costs**: a thread more for each pane; four buffers where there was one, of which only the pages written are resident, all 256 KiB once a pane has had a flood; on a stream that fills the queue, up to 16 reads that do not wait for each refill, about 8 µs of CPU, where an idle or interactive pane never spins. A key's echo, which goes through both threads, takes as long: at 60 Hz, the median of 200 synthetic keys of `lokyr --bench latency`, 21.1 and 21.6 ms, against 22.6 and 20.8 at f21bb1e, in turn.
+- **What it costs**: a thread more for each pane; four buffers where there was one, of which only the pages written are resident, all 256 KiB once a pane has had a flood; on a stream that fills the queue, up to 16 reads that do not wait for each refill, about 8 µs of CPU, where an idle or interactive pane never spins. A key's echo, which goes through both threads, takes as long: at 60 Hz, the median of 200 synthetic keys of `lokyr --bench latency`, 21.1 and 21.6 ms, against 22.6 and 20.8 at ce85fd6, in turn.
 - **A frame's time**, at 3840 × 2224 pixels, of the three runs: 548 frames of ASCII, p50 0.28 ms, p99 1.52 at most; 75 of `seq`, 0.27 and 2.30; 91 of SGR, 0.55 and 5.68; 142 of CJK, 0.57 and 17.41, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
 - **The headless throughput of F1** holds: the VT core did not change.
 
 ## After F2-147
 
-On screen, on the bundle of 0a3796d, as above, of Lokyr, Ghostty and Alacritty; the raw results are in [after-F2-147.jsonl](onscreen-F2-56/after-F2-147.jsonl). The median of three runs, in MiB/s:
+On screen, on the bundle of bc7c256, as above, of Lokyr, Ghostty and Alacritty; the raw results are in [after-F2-147.jsonl](onscreen-F2-56/after-F2-147.jsonl). The median of three runs, in MiB/s:
 
 | Workload | Lokyr | After F2-145 | Ghostty | Alacritty | Against the faster |
 |---|---|---|---|---|---|
@@ -87,7 +87,7 @@ On screen, on the bundle of 0a3796d, as above, of Lokyr, Ghostty and Alacritty; 
 - **A frame's time**, at 3840 × 2224 pixels, of the three runs: 564 frames of ASCII, p50 0.28 ms, p99 1.50 at most; 74 of `seq`, 0.29 and 2.05; 89 of SGR, 0.52 and 6.62; 117 of CJK, 0.48 and 21.12, whose first frames of new glyphs [F2-146](../tasks/F2-macos-single-pane.md#f2-146--a-frames-new-glyphs) takes.
 - **A first round**, with the display asleep and the screen locked, drew two frames a run, and was left out: a window that does not show draws nothing, and its terminal reads faster.
 
-Measured on 2026-10-31, on the commit after 74d71b1, against it, of the VT core alone: `lokyr-throughput`, and a harness that feeds a file to the terminal in reads of 64 KiB at 120 × 40, its line feeds after carriage returns as a terminal's ONLCR puts them, the median of five runs.
+Measured on 2026-10-31, on the commit after ab12125, against it, of the VT core alone: `lokyr-throughput`, and a harness that feeds a file to the terminal in reads of 64 KiB at 120 × 40, its line feeds after carriage returns as a terminal's ONLCR puts them, the median of five runs.
 
 | Input | Before | After | |
 |---|---|---|---|
