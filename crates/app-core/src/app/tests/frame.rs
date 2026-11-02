@@ -567,10 +567,19 @@ fn a_pane_s_output_asks_for_its_own_window_s_frame_alone() {
             .iter()
             .any(|line| line.contains("ready"))
     });
-    for window in [first, second] {
-        if fake.window(window).unwrap().frame_requested {
-            fake.send(&mut app, window, WindowEvent::Frame);
+    // Both windows settle, their frames drawn, until neither has asked
+    // for one for 200 ms, as a title of the first's that the system
+    // tells late would ask for one.
+    let mut quiet = Instant::now();
+    while quiet.elapsed() < Duration::from_millis(200) {
+        fake.deliver_wake(&mut app);
+        for window in [first, second] {
+            if fake.window(window).unwrap().frame_requested {
+                fake.send(&mut app, window, WindowEvent::Frame);
+                quiet = Instant::now();
+            }
         }
+        std::thread::sleep(Duration::from_millis(2));
     }
     // The second's shell echoes a key: its window's frame, not the
     // first's.

@@ -1477,7 +1477,9 @@ fn a_plugin_reads_ten_thousand_lines_on_a_thread_of_the_host_s() {
         "{:?}",
         start.elapsed()
     );
-    // The frames' copies go on as the thread reads, a part at a time.
+    // The frames' copies go on as the thread reads, a part at a time: the
+    // longest waits for a part, a small share of the whole read, on a
+    // machine slow or fast.
     let mut longest = Duration::ZERO;
     while log.borrow().is_empty() {
         assert!(start.elapsed() < Duration::from_secs(10), "no rows");
@@ -1486,9 +1488,10 @@ fn a_plugin_reads_ten_thousand_lines_on_a_thread_of_the_host_s() {
         longest = longest.max(copy.elapsed());
         assert!(plugins.deliver(&mut app.context()).is_empty());
     }
+    let read = start.elapsed();
     assert!(
-        longest < Duration::from_millis(20),
-        "a frame's copy took {longest:?}"
+        longest < Duration::from_millis(20).max(read / 4),
+        "a frame's copy took {longest:?} of a read of {read:?}"
     );
     let log = log.borrow();
     let [

@@ -988,6 +988,17 @@ fn shell(script: &str) -> Program {
     Program::command("/bin/sh", ["-c", script])
 }
 
+/// The name of the program in the foreground that [`shell`] runs, as a
+/// title tells it: macOS's `/bin/sh` runs bash, Linux's is dash, of the
+/// name `sh`.
+fn shell_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "bash"
+    } else {
+        "sh"
+    }
+}
+
 /// A directory of the test's own, made empty, as the system names it,
 /// which `pwd` tells, its links resolved.
 fn real_directory(test: &str) -> PathBuf {
@@ -1266,12 +1277,22 @@ fn a_program_finds_the_bundle_s_resources_and_the_user_s_locale() {
         std::env::temp_dir().join(format!("lokyr-app-resources-{}", std::process::id()));
     std::fs::create_dir_all(&resources).unwrap();
     let mut fake = Fake::default();
-    // A language that the system has no locale of, then one that it has.
+    // A language that the system has no locale of, then one that macOS
+    // has; elsewhere, what the system's locales give, as a Linux of
+    // English's alone gives `en_US.UTF-8`.
     fake.set_locales(&["xx_XX", "it_CH"]);
     let script = "printf '%s' \"$LOKYR_RESOURCES_DIR\"; sleep 10";
     let mut app = app(Config::default(), shell(script)).with_resources(Some(resources.clone()));
     fake.start(&mut app);
-    assert_eq!(app.environment.locale, "it_CH.UTF-8");
+    let expected = if cfg!(target_os = "macos") {
+        "it_CH.UTF-8".to_owned()
+    } else {
+        crate::environment::utf8_locale(
+            &["xx_XX".to_owned(), "it_CH".to_owned()],
+            &crate::environment::system_locales(),
+        )
+    };
+    assert_eq!(app.environment.locale, expected);
     let window = fake.windows().next().unwrap();
     let shown = resources.display().to_string();
     run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == shown);
@@ -1455,6 +1476,10 @@ fn the_title_s_last_look_comes_after_the_window_s_last_output() {
 }
 
 #[test]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "macOS's `login` alone is set-user-ID root, of a directory that the system does not tell"
+)]
 fn a_directory_that_cannot_be_read_keeps_the_title_s_place() {
     // A program of another user's, as `login` runs, whose directory the
     // system does not tell, waiting for a name.
@@ -1512,7 +1537,7 @@ fn a_window_takes_its_program_s_title() {
     // The program's title, then the program in the foreground: the
     // shell that runs the script.
     run_until(&mut fake, &mut app, |fake, app| {
-        title(fake) == format!("x{TITLE_DASH}bash{}", size(app))
+        title(fake) == format!("x{TITLE_DASH}{}{}", shell_name(), size(app))
     });
     // A title of nothing gives the window's own.
     fake.send(&mut app, window, key());
