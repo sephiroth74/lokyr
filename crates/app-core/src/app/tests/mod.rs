@@ -22,6 +22,7 @@ mod frame;
 mod input;
 mod menus;
 mod notices;
+mod panes;
 
 /// The app of the tests, which draws with the tests' drawing, if at all.
 type App = super::App<fakes::Gpu>;
@@ -514,7 +515,7 @@ fn a_window_s_state_follows_it_from_its_opening_to_its_closing() {
     let window = fake.windows().next().unwrap();
     // Its window and pane in the workspace.
     let state = &app.windows[&window];
-    let (opened, pane) = (state.window, state.pane);
+    let (opened, pane) = (state.window, app.focused(window).unwrap());
     assert_eq!(app.workspace.active_pane(opened), Some(pane));
     assert!(!state.focused);
     fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -2397,14 +2398,14 @@ fn the_quick_terminal_shows_and_hides_keeping_its_pane() {
     );
     let size = fake.window(quick).unwrap().size;
     assert_eq!((size.points.width, size.points.height), (1440.0, 438.0));
-    let pane = app.windows[&quick].pane;
+    let pane = app.focused(quick).unwrap();
     assert_eq!(app.grid(size), app.pane(quick).grid());
     // With the focus, it hides; its pane stays.
     fake.send(&mut app, quick, WindowEvent::Focused(true));
     toggle(&mut fake, &mut app);
     assert_eq!(shown(&fake), None);
     fake.send(&mut app, quick, WindowEvent::Focused(false));
-    assert_eq!(app.windows[&quick].pane, pane);
+    assert_eq!(app.focused(quick).unwrap(), pane);
     // It shows again; without the focus, it takes it rather than
     // hiding.
     toggle(&mut fake, &mut app);

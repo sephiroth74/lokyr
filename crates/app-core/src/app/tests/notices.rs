@@ -258,7 +258,7 @@ fn a_notification_s_title_and_text_show_their_start() {
 fn a_stream_of_bells_wakes_the_main_thread_at_the_frame_s_pace() {
     let script = "echo ready; read line; while :; do printf '\\a\\a\\a\\a'; done";
     let (mut fake, mut app, window) = started_running(shell(script));
-    let pane = app.windows[&window].pane;
+    let pane = app.focused(window).unwrap();
     let wake = Arc::clone(&app.pane_wakes[&pane]);
     fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
     // The main thread as it runs, which takes each wake at once, and a

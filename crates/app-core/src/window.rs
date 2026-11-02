@@ -67,8 +67,6 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) cursor_layer: WindowLayer<B>,
     /// The workspace's window that it shows.
     pub(crate) window: workspace::WindowId,
-    /// Its pane, which runs its program, and what that shows.
-    pub(crate) pane: PaneId,
     /// Where its active tab's panes lie, as its last frame laid them out:
     /// the zoomed one alone while one is.
     pub(crate) views: Vec<PaneView>,
@@ -200,7 +198,7 @@ pub(crate) struct Surfaces<B: Backend> {
 impl<B: Backend> Window<B> {
     pub(crate) fn new(
         surfaces: Surfaces<B>,
-        (window, pane): (workspace::WindowId, PaneId),
+        window: workspace::WindowId,
         focused: bool,
         now: Instant,
     ) -> Self {
@@ -209,7 +207,6 @@ impl<B: Backend> Window<B> {
             text_layer: WindowLayer::new(surfaces.text),
             cursor_layer: WindowLayer::new(surfaces.cursor),
             window,
-            pane,
             views: Vec::new(),
             preedit: None,
             focused,

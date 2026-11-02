@@ -39,7 +39,7 @@ fn a_wake_asks_for_the_frames_of_the_panes_that_woke_it() {
     // A wake of nothing that changed asks for nothing.
     fake.send_app(&mut app, AppEvent::Wake);
     assert!(!fake.window(window).unwrap().frame_requested);
-    let pane = app.windows[&window].pane;
+    let pane = app.focused(window).unwrap();
     app.pane_wakes[&pane].wake();
     fake.send_app(&mut app, AppEvent::Wake);
     assert!(fake.window(window).unwrap().frame_requested);
@@ -695,7 +695,7 @@ fn a_window_of_two_panes_draws_both_each_in_its_room() {
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
     fake.send(&mut app, window, WindowEvent::Focused(true));
     // The tests' layout: a second pane beside the first.
-    let first = app.windows[&window].pane;
+    let first = app.focused(window).unwrap();
     let grid = app.pane(window).grid();
     let pane = Pane::spawn(
         &idle(),

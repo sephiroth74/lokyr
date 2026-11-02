@@ -156,7 +156,7 @@ fn programs_of_several_windows_take_one_question() {
             .values()
             .filter(|state| {
                 app.workspace
-                    .pane(state.pane)
+                    .focused(state.window)
                     .and_then(Pane::running)
                     .is_some()
             })

@@ -76,7 +76,7 @@ impl<B: Backend> App<B> {
 
     /// Whether a question of the app's is open on `window`.
     pub(super) fn asks_on(&self, window: WindowId) -> bool {
-        let pane = self.windows.get(&window).map(|state| state.pane);
+        let pane = self.focused(window);
         self.close_asks.values().any(|&asked| asked == window)
             || self.title_asks.values().any(|&asked| asked == window)
             || self
@@ -110,7 +110,7 @@ impl<B: Backend> App<B> {
         {
             return;
         }
-        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+        let Some(window) = self.window_of(pane) else {
             return;
         };
         let alert = Alert {
@@ -137,7 +137,7 @@ impl<B: Backend> App<B> {
         window: WindowId,
         text: String,
     ) {
-        let Some(id) = self.windows.get(&window).map(|state| state.pane) else {
+        let Some(id) = self.focused(window) else {
             return;
         };
         let Some(pane) = self.workspace.pane(id) else {
@@ -165,7 +165,7 @@ impl<B: Backend> App<B> {
         if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
             return;
         }
-        let Some((&window, _)) = self.windows.iter().find(|(_, state)| state.pane == pane) else {
+        let Some(window) = self.window_of(pane) else {
             return;
         };
         let lines = i64::try_from(paste::lines(&text)).unwrap_or(i64::MAX);
@@ -351,7 +351,12 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get(&window) else {
             return;
         };
-        let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) else {
+        let running = self
+            .workspace
+            .panes_of(state.window)
+            .into_iter()
+            .find_map(|pane| self.workspace.pane(pane).and_then(Pane::running));
+        let Some(program) = running else {
             self.close(platform, window);
             return;
         };
@@ -385,13 +390,17 @@ impl<B: Backend> App<B> {
         let mut programs = Vec::new();
         let mut windows = 0;
         for state in self.windows.values() {
-            if let Some(program) = self.workspace.pane(state.pane).and_then(Pane::running) {
-                windows += 1;
-                let program = self.program_name(program);
-                if !programs.contains(&program) {
-                    programs.push(program);
+            let mut running = false;
+            for pane in self.workspace.panes_of(state.window) {
+                if let Some(program) = self.workspace.pane(pane).and_then(Pane::running) {
+                    running = true;
+                    let program = self.program_name(program);
+                    if !programs.contains(&program) {
+                        programs.push(program);
+                    }
                 }
             }
+            windows += i64::from(running);
         }
         if windows == 0 {
             self.system_quit = false;

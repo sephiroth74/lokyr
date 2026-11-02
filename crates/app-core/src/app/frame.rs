@@ -175,7 +175,7 @@ impl<B: Backend> App<B> {
                     divider,
                 )
             }
-            None => vec![(state.pane, content)],
+            None => Vec::new(),
         };
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
         let views: Vec<PaneView> = rooms
@@ -270,7 +270,7 @@ impl<B: Backend> App<B> {
         now: Instant,
     ) -> Option<(CursorShape, Option<PlatformBlink>)> {
         let state = self.windows.get_mut(&window)?;
-        let program = self.workspace.pane(state.pane)?.snapshot().cursor();
+        let program = self.workspace.focused(state.window)?.snapshot().cursor();
         let config = self.config.cursor;
         let shape = cursor::shape(&program, &config, state.focused);
         let blinking =
@@ -315,7 +315,7 @@ impl<B: Backend> App<B> {
             && state.focused
             && self
                 .workspace
-                .pane(state.pane)
+                .focused(state.window)
                 .is_some_and(|pane| cells::has_blinking_text(pane.snapshot()));
         if !blinking {
             return (true, None);
@@ -385,13 +385,14 @@ impl<B: Backend> App<B> {
             return;
         };
         // The pane with the keyboard, or the one zoomed over it.
+        let focused = self.workspace.active_pane(state.window);
         let Some(&PaneView {
             pane: active,
             rect,
             grid,
         }) = views
             .iter()
-            .find(|view| view.pane == state.pane)
+            .find(|view| Some(view.pane) == focused)
             .or_else(|| views.first())
         else {
             return;

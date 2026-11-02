@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use lokyr_kernel::commands::Value;
 use lokyr_kernel::keymap::{Invocation, Pressed, Resolved, Resolver};
-use lokyr_kernel::workspace::Pane;
+use lokyr_kernel::workspace::{Pane, PaneId};
 use lokyr_kernel::{keymap, paste};
 use lokyr_platform_core::{
     Dropped, Ime, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point, ScrollDelta,
@@ -47,7 +47,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         let pressed = key.state != KeyState::Released;
@@ -61,7 +61,8 @@ impl<B: Backend> App<B> {
         }
         if pane.is_kept() {
             if pressed && closes(key) {
-                self.close(platform, window);
+                let id = pane.id();
+                self.close_pane(platform, window, id);
             }
             return;
         }
@@ -78,7 +79,7 @@ impl<B: Backend> App<B> {
                 let Some(pane) = self
                     .windows
                     .get(&window)
-                    .and_then(|state| self.workspace.pane(state.pane))
+                    .and_then(|state| self.workspace.focused(state.window))
                 else {
                     return;
                 };
@@ -97,7 +98,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         // On a window whose program ended, what the input method
@@ -105,7 +106,8 @@ impl<B: Backend> App<B> {
         // does.
         if pane.is_kept() {
             if matches!(ime, Ime::Commit(_)) {
-                self.close(platform, window);
+                let id = pane.id();
+                self.close_pane(platform, window, id);
             }
             return;
         }
@@ -200,7 +202,7 @@ impl<B: Backend> App<B> {
             keys.push(key.clone());
             return Taken::Program(keys);
         };
-        let context = context(self.workspace.pane(state.pane));
+        let context = context(self.workspace.focused(state.window));
         match state.resolver.press(&self.keymap, pressed, &context) {
             Resolved::Run(invocation) => {
                 state.held_back.clear();
@@ -220,14 +222,25 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Where `position` is in the cells of `window`.
+    /// Where `position` is in the cells of the pane that has `window`'s
+    /// keyboard.
     pub(super) fn pointer(
         &self,
         platform: &dyn Platform,
         window: WindowId,
         position: Point,
     ) -> Option<Pointer> {
-        let id = self.windows.get(&window)?.pane;
+        self.pointer_in(platform, window, self.focused(window)?, position)
+    }
+
+    /// Where `position` is in the cells of `pane`, one of `window`'s.
+    fn pointer_in(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        id: PaneId,
+        position: Point,
+    ) -> Option<Pointer> {
         let pane = self.workspace.pane(id)?;
         let size = platform.window_size(window)?;
         Some(mouse::pointer(
@@ -236,6 +249,40 @@ impl<B: Backend> App<B> {
             self.pane_origin(window, id, size),
             pane.grid(),
         ))
+    }
+
+    /// The pane of `window` under `position`, as its last frame laid its
+    /// panes out; none over a divider, the padding or the titlebar.
+    pub(super) fn pane_at(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<PaneId> {
+        let scale = platform.window_size(window)?.scale;
+        let (x, y) = (position.x * scale, position.y * scale);
+        let state = self.windows.get(&window)?;
+        state
+            .views
+            .iter()
+            .find(|view| {
+                let (left, top) = (f64::from(view.rect.x), f64::from(view.rect.y));
+                (left..left + f64::from(view.rect.width)).contains(&x)
+                    && (top..top + f64::from(view.rect.height)).contains(&y)
+            })
+            .map(|view| view.pane)
+    }
+
+    /// The pane that the pointer's moves and the wheel at `position` go
+    /// to: the one under it, or, over none, the one with the keyboard.
+    fn pane_under(
+        &self,
+        platform: &dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<PaneId> {
+        self.pane_at(platform, window, position)
+            .or_else(|| self.focused(window))
     }
 
     /// A button of the mouse went down or up over `window`: the program
@@ -266,6 +313,13 @@ impl<B: Backend> App<B> {
                 return;
             }
             _ => {}
+        }
+        // A press gives the pane under it the keyboard, then acts there.
+        if pressed
+            && let Some(under) = self.pane_at(platform, window, position)
+            && self.focused(window) != Some(under)
+        {
+            self.focus_pane(platform, window, under);
         }
         // A press that a binding takes starts no selection, and reaches no
         // program, which then learns of no release.
@@ -307,7 +361,7 @@ impl<B: Backend> App<B> {
         };
         let Some(pane) = self
             .workspace
-            .pane(state.pane)
+            .focused(state.window)
             .filter(|pane| !pane.is_kept())
         else {
             return;
@@ -350,7 +404,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
-        let context = context(self.workspace.pane(state.pane));
+        let context = context(self.workspace.focused(state.window));
         let Resolved::Run(mut invocation) =
             Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
         else {
@@ -390,7 +444,7 @@ impl<B: Backend> App<B> {
             return false;
         };
         mods.shift
-            || self.workspace.pane(state.pane).is_none_or(|pane| {
+            || self.workspace.focused(state.window).is_none_or(|pane| {
                 pane.is_kept()
                     || pane
                         .input_modes()
@@ -417,7 +471,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         let grid = pane.grid();
@@ -471,14 +525,14 @@ impl<B: Backend> App<B> {
         let Some(pointer) = self.pointer(platform, window, position) else {
             return;
         };
-        let Some(id) = self.windows.get(&window).map(|state| state.pane) else {
+        let Some(id) = self.focused(window) else {
             return;
         };
         let (_, top) = self.pane_origin(window, id, size);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         let Some(selecting) = &mut state.selecting else {
@@ -507,7 +561,7 @@ impl<B: Backend> App<B> {
         if self.config.clipboard.copy_on_select
             && let Some(text) = self
                 .workspace
-                .pane(state.pane)
+                .focused(state.window)
                 .and_then(Pane::selection_text)
             && !text.is_empty()
         {
@@ -529,7 +583,7 @@ impl<B: Backend> App<B> {
             if !selecting.held || selecting.beyond == 0 {
                 continue;
             }
-            let Some(pane) = self.workspace.pane(state.pane) else {
+            let Some(pane) = self.workspace.focused(state.window) else {
                 continue;
             };
             let rows = usize::try_from(selecting.beyond.unsigned_abs())
@@ -581,17 +635,16 @@ impl<B: Backend> App<B> {
         if mods.shift {
             return;
         }
-        let Some(pointer) = self.pointer(platform, window, position) else {
+        let Some(target) = self.pane_under(platform, window, position) else {
+            return;
+        };
+        let Some(pointer) = self.pointer_in(platform, window, target, position) else {
             return;
         };
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self
-            .workspace
-            .pane(state.pane)
-            .filter(|pane| !pane.is_kept())
-        else {
+        let Some(pane) = self.workspace.pane(target).filter(|pane| !pane.is_kept()) else {
             return;
         };
         let Some(modes) = pane.input_modes() else {
@@ -626,13 +679,16 @@ impl<B: Backend> App<B> {
         let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
             return;
         };
-        let Some(pointer) = self.pointer(platform, window, position) else {
+        let Some(target) = self.pane_under(platform, window, position) else {
+            return;
+        };
+        let Some(pointer) = self.pointer_in(platform, window, target, position) else {
             return;
         };
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.pane(target) else {
             return;
         };
         let row_points = f64::from(pane.grid().cell_height) / scale;

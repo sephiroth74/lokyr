@@ -45,7 +45,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         // Pinned, so that output that scrolls while the menu is open leaves
@@ -192,7 +192,7 @@ impl<B: Backend> App<B> {
     /// without the spaces around it, and the cell where that text starts,
     /// in the view; `None` without one.
     fn looked_up(&self, window: WindowId) -> Option<(String, (u16, i64))> {
-        let pane = self.workspace.pane(self.windows.get(&window)?.pane)?;
+        let pane = self.workspace.pane(self.focused(window)?)?;
         let (column, row) = pane.selection()?.start;
         let selected = pane.selection_text()?;
         let text = selected.trim();
@@ -221,14 +221,17 @@ impl<B: Backend> App<B> {
         else {
             return;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
         let grid = pane.grid();
         // A selection that starts above the view, or below it, shows at its
         // edge.
         let row = row.clamp(0, i64::from(grid.rows.saturating_sub(1))) as f64;
-        let (left, top) = self.pane_origin(window, state.pane, size);
+        let Some(id) = self.workspace.active_pane(state.window) else {
+            return;
+        };
+        let (left, top) = self.pane_origin(window, id, size);
         let baseline = self
             .drawing
             .as_ref()
@@ -283,7 +286,9 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get(&window) else {
             return;
         };
-        let id = state.pane;
+        let Some(id) = self.workspace.active_pane(state.window) else {
+            return;
+        };
         let pane = self.workspace.pane(id);
         // The cell's line and link are read with it, which the command
         // reads, until the mark goes after it.

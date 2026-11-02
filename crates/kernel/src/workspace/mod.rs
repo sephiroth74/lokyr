@@ -288,6 +288,31 @@ impl Workspace {
         Some(self.tabs.get(&window.active)?.active)
     }
 
+    /// The pane that has the keyboard in `window`, as
+    /// [`Workspace::active_pane`] names it.
+    pub fn focused(&self, window: WindowId) -> Option<&Pane> {
+        self.panes.get(&self.active_pane(window)?)
+    }
+
+    /// The pane that has the keyboard in `window`, to change.
+    pub fn focused_mut(&mut self, window: WindowId) -> Option<&mut Pane> {
+        let pane = self.active_pane(window)?;
+        self.panes.get_mut(&pane)
+    }
+
+    /// The panes of every tab of `window`, in the tabs' order and their
+    /// layouts'.
+    pub fn panes_of(&self, window: WindowId) -> Vec<PaneId> {
+        self.windows.get(&window).map_or_else(Vec::new, |window| {
+            window
+                .tabs
+                .iter()
+                .filter_map(|tab| self.tabs.get(tab))
+                .flat_map(|tab| tab.layout.panes())
+                .collect()
+        })
+    }
+
     /// Gathers what the sessions of `panes` tell, on the main thread, once
     /// they woke it, at `now`, and of the panes that waited for their
     /// turn: the titles, which the tabs of their active panes take, the

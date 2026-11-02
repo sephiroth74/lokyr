@@ -23,7 +23,7 @@ use lokyr_kernel::workspace::RESIZE_PACE;
 #[cfg(test)]
 use lokyr_kernel::workspace::TOLD_PACE;
 use lokyr_kernel::workspace::{
-    self, Environment, Event, Exited, Pane, PaneId, Settings, Workspace,
+    self, Environment, Event, Exited, Grid, Pane, PaneId, Settings, Workspace,
 };
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
@@ -602,7 +602,7 @@ impl<B: Backend> App<B> {
         }
         let started = self.windows.values().any(|state| {
             self.workspace
-                .pane(state.pane)
+                .focused(state.window)
                 .is_some_and(lokyr_kernel::workspace::Pane::started)
         });
         if !started {
@@ -821,8 +821,14 @@ impl<B: Backend> App<B> {
     /// The pane of `window`.
     #[cfg(test)]
     fn pane(&self, window: WindowId) -> &Pane {
-        let pane = self.windows[&window].pane;
-        self.workspace.pane(pane).expect("the window's pane")
+        let shown = self.windows[&window].window;
+        self.workspace.focused(shown).expect("the window's pane")
+    }
+
+    /// The pane that has `window`'s keyboard: its active tab's active one.
+    fn focused(&self, window: WindowId) -> Option<PaneId> {
+        self.workspace
+            .active_pane(self.windows.get(&window)?.window)
     }
 
     /// The app, whose icon's variants are `icons`.
@@ -1170,10 +1176,29 @@ impl<B: Backend> App<B> {
             .window_size(window)
             .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
         let grid = self.grid(size);
-        let colors = &match page {
+        let colors = match page {
             Some(_) => self.theme.man_page.colors.clone(),
             None => self.colors(platform.appearance()),
         };
+        let pane = self.spawn_pane(platform, program, environment, grid, &colors);
+        let shown = self.workspace.open_window(pane);
+        let mut state = Window::new(surfaces, shown, focused, Instant::now());
+        state.page = page;
+        self.windows.insert(window, state);
+        self.draw(platform, window, size);
+    }
+
+    /// A pane that runs `program` in `environment`, of `grid` and `colors`,
+    /// whose session wakes the app as it tells something, of the config's
+    /// scrolling and clipboard's reads.
+    fn spawn_pane(
+        &mut self,
+        platform: &dyn Platform,
+        program: &Program,
+        environment: &Environment,
+        grid: Grid,
+        colors: &lokyr_vt_core::terminal::Colors,
+    ) -> Pane {
         let waker = platform.waker();
         let wake = Arc::new(PaneWake::default());
         let woken = Arc::clone(&wake);
@@ -1192,12 +1217,7 @@ impl<B: Backend> App<B> {
         self.pane_wakes.insert(pane.id(), wake);
         pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
         pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
-        let id = pane.id();
-        let ids = (self.workspace.open_window(pane), id);
-        let mut state = Window::new(surfaces, ids, focused, Instant::now());
-        state.page = page;
-        self.windows.insert(window, state);
-        self.draw(platform, window, size);
+        pane
     }
 
     /// Shows the quick terminal, at the place that the config gives, and
@@ -1333,7 +1353,7 @@ impl<B: Backend> App<B> {
     fn directory_of(&self, window: WindowId) -> Option<PathBuf> {
         let state = self.windows.get(&window)?;
         self.workspace
-            .pane(state.pane)
+            .focused(state.window)
             .and_then(Pane::working_directory)
             .or_else(|| state.directory.clone())
     }
@@ -1378,14 +1398,12 @@ impl<B: Backend> App<B> {
         // its program's reads with it.
         if let Some(state) = self.windows.remove(&window) {
             drop(state.surface);
-            self.clipboard_asks
-                .retain(|_, (pane, _)| *pane != state.pane);
-            self.paste_asks.retain(|_, (pane, _)| *pane != state.pane);
+            let panes = self.workspace.panes_of(state.window);
+            self.forget_panes(&panes);
             self.open_asks
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
-            self.pane_wakes.remove(&state.pane);
             self.workspace.close_window(state.window);
         }
         if self.quick.is_some_and(|(quick, _)| quick == window) {
@@ -1411,6 +1429,66 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Gives `pane`, one of `window`'s, the window's keyboard: the title
+    /// takes its program's, its cursor starts blinking, on, and the window
+    /// draws again. A composition under way, of the pane that had it, ends.
+    pub(super) fn focus_pane(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        pane: PaneId,
+    ) {
+        if self.window_of(pane) != Some(window) || !self.workspace.focus_pane(pane) {
+            return;
+        }
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.preedit = None;
+            state.blink.restart(Instant::now());
+        }
+        self.look_at_place(window);
+        self.show_title(platform, window);
+        platform.request_frame(window);
+    }
+
+    /// Closes `pane` of `window`, whose program is hung up: its room goes
+    /// to its sibling, and the keyboard, if it had it, to the sibling's
+    /// pane nearest to it; a tab that it leaves without panes closes. The
+    /// window's last pane closes the window, as [`App::close`] does.
+    pub(super) fn close_pane(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        pane: PaneId,
+    ) {
+        let Some(shown) = self.windows.get(&window).map(|state| state.window) else {
+            return;
+        };
+        if self.workspace.panes_of(shown).len() <= 1 {
+            self.close(platform, window);
+            return;
+        }
+        self.forget_panes(&[pane]);
+        self.workspace.close_pane(pane);
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.selecting = None;
+        }
+        self.look_at_place(window);
+        self.show_title(platform, window);
+        platform.request_frame(window);
+    }
+
+    /// Forgets what the app keeps of `panes`, which close: their programs'
+    /// reads of the clipboard and their pastes that the user is asked
+    /// about, and their wakes.
+    fn forget_panes(&mut self, panes: &[PaneId]) {
+        self.clipboard_asks
+            .retain(|_, (pane, _)| !panes.contains(pane));
+        self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
+        for pane in panes {
+            self.pane_wakes.remove(pane);
+        }
+    }
+
     /// Does what `close-on-exit` says with the windows whose program has
     /// ended, and looks again soon for the status of those whose output
     /// ended before it.
@@ -1420,16 +1498,26 @@ impl<B: Backend> App<B> {
         let mut closing = Vec::new();
         let mut ended = Vec::new();
         let mut waiting = false;
-        for (&window, state) in &self.windows {
-            let Some(pane) = self.workspace.pane_mut(state.pane) else {
+        let panes: Vec<(WindowId, PaneId, bool)> = self
+            .windows
+            .iter()
+            .flat_map(|(&window, state)| {
+                let page = state.page.is_some();
+                self.workspace
+                    .panes_of(state.window)
+                    .into_iter()
+                    .map(move |pane| (window, pane, page))
+            })
+            .collect();
+        for (window, id, page) in panes {
+            let Some(pane) = self.workspace.pane_mut(id) else {
                 continue;
             };
             // A man page's window keeps the page, from its top.
-            let page = state.page.is_some();
             let close = if page { CloseOnExit::Never } else { close };
             match pane.exited(close, now, &self.texts) {
                 Some(Exited::Close) => {
-                    closing.push(window);
+                    closing.push((window, id));
                     ended.push(window);
                 }
                 Some(Exited::Keep) => {
@@ -1450,8 +1538,8 @@ impl<B: Backend> App<B> {
             platform.quit();
             return;
         }
-        for window in closing {
-            self.close(platform, window);
+        for (window, pane) in closing {
+            self.close_pane(platform, window, pane);
         }
         if waiting && self.exit_timer.is_none() {
             self.exit_timer = Some(platform.start_timer(now + EXIT_POLL));
@@ -1726,11 +1814,12 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// The platform's window that shows `pane`.
+    /// The platform's window that shows `pane`, in one of its tabs.
     fn window_of(&self, pane: PaneId) -> Option<WindowId> {
+        let tab = self.workspace.tab(self.workspace.tab_of(pane)?)?;
         self.windows
             .iter()
-            .find(|(_, state)| state.pane == pane)
+            .find(|(_, state)| state.window == tab.window())
             .map(|(&window, _)| window)
     }
 
@@ -1767,9 +1856,9 @@ impl<B: Backend> App<B> {
             .windows
             .iter()
             .find(|(_, state)| state.focused)
-            .map(|(&window, state)| (window, state.pane));
+            .map(|(&window, state)| (window, state.window));
         let hides = focused
-            .and_then(|(_, pane)| self.workspace.pane(pane))
+            .and_then(|(_, shown)| self.workspace.focused(shown))
             .is_some_and(Pane::hides_input);
         let on = focused.is_some() && (self.secure_chosen || hides);
         if on == self.secure_on {
@@ -1790,7 +1879,7 @@ impl<B: Backend> App<B> {
         let grid = self
             .windows
             .get(&window)
-            .and_then(|state| self.workspace.pane(state.pane))
+            .and_then(|state| self.workspace.focused(state.window))
             .map(Pane::grid);
         match grid {
             Some(grid) if self.config.window.title_size => {
@@ -1877,7 +1966,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return false;
         };
-        let Some(pane) = self.workspace.pane(state.pane) else {
+        let Some(pane) = self.workspace.focused(state.window) else {
             return false;
         };
         if pane.is_kept() {
@@ -1968,7 +2057,7 @@ impl<B: Backend> App<B> {
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
         let colors = self.colors(appearance);
         for state in self.windows.values().filter(|state| state.page.is_none()) {
-            if let Some(pane) = self.workspace.pane(state.pane) {
+            if let Some(pane) = self.workspace.focused(state.window) {
                 pane.set_colors(&colors);
             }
         }
@@ -2263,7 +2352,7 @@ impl<B: Backend> Handler for App<B> {
             WindowEvent::Focused(focused) => {
                 if let Some(state) = self.windows.get_mut(&window) {
                     // A program that asked learns of it.
-                    if let Some(pane) = self.workspace.pane(state.pane) {
+                    if let Some(pane) = self.workspace.focused(state.window) {
                         pane.focus(focused);
                     }
                     state.focused = focused;
