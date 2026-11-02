@@ -23,6 +23,9 @@ pub struct Look {
     pub underline_color: Option<Rgb>,
     /// The cells' background, in place of the text's, if any.
     pub background: Option<Rgb>,
+    /// Whether the pointer over its cells is a pointing hand, as over a
+    /// link that a click opens.
+    pub pointing: bool,
 }
 
 /// A span of a decoration, as the view shows it: the cells of a row of the
@@ -174,6 +177,7 @@ mod tests {
         underline: Underline::Single,
         underline_color: None,
         background: None,
+        pointing: false,
     };
 
     #[test]

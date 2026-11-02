@@ -43,11 +43,12 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// How a link under the pointer looks while Command is held: underlined,
-/// in its text's color.
+/// in its text's color, with the pointing hand over it.
 const UNDERLINED: DecorationLook = DecorationLook {
     underline: Some(Underline::Single),
     underline_color: None,
     background: None,
+    pointing: true,
 };
 
 /// The most cells around the pointer's that an OSC 8 link's underline

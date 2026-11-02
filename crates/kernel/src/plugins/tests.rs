@@ -1535,6 +1535,7 @@ fn a_plugin_s_decorations_keep_their_text_through_new_output() {
                         underline: Some(host::Underline::Curly),
                         underline_color: Some((255, 0, 0)),
                         background: None,
+                        pointing: false,
                     };
                     for row in 0..3 {
                         let line = cx.line_text(pane, row, 0)?.unwrap();

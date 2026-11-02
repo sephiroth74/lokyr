@@ -585,6 +585,18 @@ impl<B: Backend> App<B> {
         // most, and is done again with them; the cells of those left show
         // empty until the frames after draw them.
         let grid_cursor = cursor.filter(|_| !apart);
+        // Each pane's grid's corner, for the pointer's areas over it.
+        let pointed: Vec<(PaneId, (i32, i32))> = views
+            .iter()
+            .map(|view| {
+                let corner = if view.pane == active {
+                    (x, y)
+                } else {
+                    (view.rect.x, view.rect.y)
+                };
+                (view.pane, corner)
+            })
+            .collect();
         // The other panes, each at its room's corner.
         let others: Vec<(&Pane, (i32, i32))> = views
             .iter()
@@ -675,7 +687,7 @@ impl<B: Backend> App<B> {
             },
             shape,
         };
-        let areas: Vec<PointerArea> = state
+        let mut areas: Vec<PointerArea> = state
             .notice
             .iter()
             .flat_map(|rects| {
@@ -685,6 +697,28 @@ impl<B: Backend> App<B> {
                 ]
             })
             .collect();
+        // The hand over the decorations that ask for it, as a link's that
+        // Command underlines, of every pane, under the bar.
+        for (pane, (left, top)) in &pointed {
+            let Some(pane) = self.workspace.pane(*pane) else {
+                continue;
+            };
+            let (width, height) = (cell.width, cell.height);
+            for span in pane
+                .snapshot()
+                .decorations()
+                .iter()
+                .filter(|span| span.look.pointing)
+            {
+                let rect = Rect {
+                    x: left + i32::try_from(u32::from(span.first) * width).unwrap_or(i32::MAX),
+                    y: top + i32::try_from(u32::from(span.row) * height).unwrap_or(i32::MAX),
+                    width: u32::from(span.last - span.first + 1) * width,
+                    height,
+                };
+                areas.push(points(&rect, PointerShape::PointingHand));
+            }
+        }
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;

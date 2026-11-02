@@ -245,11 +245,12 @@ type Line = { row: number, text: string, wrapped: boolean }
 -- The cells of a row from a column to another, of one style, as the program gave it.
 type StyleRun = { first: number, last: number, style: { foreground: any?, background: any?, bold: boolean, italic: boolean, underline: string? } }
 
--- A decoration's look: an underline, of its own color or the text's, and a background.
+-- A decoration's look: an underline, of its own color or the text's, a background, and the pointing hand over its cells.
 type DecorationLook = {
     underline: ("single" | "double" | "curly" | "dotted" | "dashed")?,
     underline_color: { number }?, -- red, green, blue
     background: { number }?,
+    pointing: boolean?,
 }
 
 type Query = {

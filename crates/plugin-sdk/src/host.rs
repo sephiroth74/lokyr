@@ -148,6 +148,10 @@ pub struct DecorationLook {
     pub underline_color: Option<(u8, u8, u8)>,
     /// The cells' background, in place of the text's, if any.
     pub background: Option<(u8, u8, u8)>,
+    /// Whether the pointer over the cells is a pointing hand, as over a
+    /// link that a click opens.
+    #[serde(default)]
+    pub pointing: bool,
 }
 
 /// How a pane's view scrolls through its scrollback.

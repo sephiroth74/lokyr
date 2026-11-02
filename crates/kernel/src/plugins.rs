@@ -740,6 +740,7 @@ fn decoration(look: host::DecorationLook) -> Look {
         },
         underline_color: look.underline_color.map(rgb),
         background: look.background.map(rgb),
+        pointing: look.pointing,
     }
 }
 

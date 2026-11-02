@@ -632,6 +632,62 @@ fn command_underlines_the_link_under_the_pointer_still_until_it_goes_up() {
 }
 
 #[test]
+fn the_pointer_is_a_hand_over_the_link_that_command_underlines() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let program =
+        shell("stty raw -echo; printf 'see https://lokyr.dev/x here\\r\\n'; echo ready; cat -v");
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    let cell = *app.drawing.as_ref().unwrap().font.cell();
+    let scale = fake.window(window).unwrap().size.scale;
+    let (width, height) = (
+        f64::from(cell.width) / scale,
+        f64::from(cell.height) / scale,
+    );
+    let hands = |fake: &Fake| {
+        fake.window(window)
+            .unwrap()
+            .pointer_areas
+            .iter()
+            .filter(|area| area.shape == PointerShape::PointingHand)
+            .map(|area| {
+                (
+                    area.origin.x,
+                    area.origin.y,
+                    area.size.width,
+                    area.size.height,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // The pointer over the URL, then Command down: the hand over its 19
+    // cells from the 5th, as long as Command is held.
+    let over = Point {
+        x: 10.5 * width,
+        y: 0.5 * height,
+    };
+    fake.send(&mut app, window, moved(over, Modifiers::NONE));
+    let command = |pressed: bool| {
+        key_event(
+            KeyCode::SuperLeft,
+            "",
+            if pressed { CMD } else { Modifiers::NONE },
+            pressed,
+        )
+    };
+    fake.send(&mut app, window, command(true));
+    run_until(&mut fake, &mut app, |fake, _| !hands(fake).is_empty());
+    assert_eq!(hands(&fake), [(4.0 * width, 0.0, 19.0 * width, height)]);
+    fake.send(&mut app, window, command(false));
+    run_until(&mut fake, &mut app, |fake, _| hands(fake).is_empty());
+}
+
+#[test]
 fn a_command_click_opens_the_link_that_the_drawn_frame_showed() {
     let (mut fake, mut app, window, _) = pasting(
         "click-drawn",
