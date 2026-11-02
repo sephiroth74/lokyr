@@ -58,10 +58,10 @@ fn print_help() {
          check-links                 find the internal links of the Markdown files that do not resolve\n  \
          dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the bundle, notarized first, signed, notarized and stapled\n  \
          dmg layout                  have the Finder lay out the image's window, and keep its .DS_Store\n  \
-         feed add <dmg>              add a DMG and its notes to the feed of tests in private/feed, its appcast signed\n  \
+         feed add <dmg> [--notes <file>] [--channel <name>]  add a DMG and its notes to the feed of tests, its appcast signed\n  \
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
-         release <version>           a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
+         release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \
          terminfo [--out DIR]        compile the terminfo entry xterm-lokyr, into target/terminfo by default\n  \
          ucd [--check]               generate the Unicode tables of vt-core, or check them"

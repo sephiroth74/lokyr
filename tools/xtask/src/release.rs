@@ -7,14 +7,16 @@
 //! 1. the bundle, built as that version, through `LOKYR_RELEASE`;
 //! 2. its build's number above the feed's latest, as Sparkle tells a newer
 //!    version by it, and a release built of its last candidate's commit
-//!    would have the candidate's;
+//!    would have the candidate's: the feed of tests must be there, unless
+//!    `--without-feed`, as a feed's first release; a `SOURCE_DATE_EPOCH`
+//!    set, which would give the number, is refused;
 //! 3. the binary's dSYM, of the binary's UUID, and the bill of materials,
 //!    kept in `target/releases/<version>`;
 //! 4. the DMG, the bundle and the image notarized and stapled;
 //! 5. the draft, `v<version>`, of the commit, a candidate's a pre-release,
 //!    with the DMG, the dSYM and the bill, its notes
 //!    `docs/releases/<X.Y.Z>.md`;
-//! 6. the DMG in the feed of tests, as long as the repository is private.
+//! 6. the DMG in the feed of tests.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,9 +36,15 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let version = args
         .next()
         .context("release takes the version: a candidate's, X.Y.Z-rc.N, or a release's, X.Y.Z")?;
+    let without_feed = match args.next().as_deref() {
+        None => false,
+        Some("--without-feed") => true,
+        Some(arg) => bail!("release takes the version and `--without-feed`, not `{arg}`"),
+    };
     if let Some(arg) = args.next() {
-        bail!("release takes the version alone, not `{arg}`");
+        bail!("release takes the version and `--without-feed`, not `{arg}`");
     }
+    epoch_unset(std::env::var_os("SOURCE_DATE_EPOCH").as_deref())?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -97,15 +105,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let number: u64 = plist_string(&info, "CFBundleVersion")
         .and_then(|number| number.parse().ok())
         .context("the bundle's CFBundleVersion")?;
-    let appcast = root.join(APPCAST);
-    if let Ok(text) = fs::read_to_string(&appcast)
-        && let Some(latest) = latest_build(&text)
-    {
-        ensure!(
-            number > latest,
-            "the build's number, {number}, is not above the feed's latest, {latest}: build the release of a commit of its own, after its last candidate's"
-        );
-    }
+    let appcast = fs::read_to_string(root.join(APPCAST)).ok();
+    above_the_feed(number, appcast.as_deref(), without_feed)?;
 
     let out = root.join("target/releases").join(&version);
     if out.exists() {
@@ -169,6 +170,34 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
     );
     Ok(ExitCode::SUCCESS)
+}
+
+/// Fails where `SOURCE_DATE_EPOCH` is set, to `epoch`, which would give the
+/// build its number in place of the commit's.
+fn epoch_unset(epoch: Option<&std::ffi::OsStr>) -> Result<()> {
+    ensure!(
+        epoch.is_none(),
+        "SOURCE_DATE_EPOCH is set, which would give the build its number in place of the commit's: unset it"
+    );
+    Ok(())
+}
+
+/// Fails unless the build's `number` is above the latest of the feed's
+/// `appcast`, as Sparkle tells a newer version by it; or where the feed is
+/// not there, or tells no number, unless `without_feed`, as a feed's
+/// first release.
+fn above_the_feed(number: u64, appcast: Option<&str>, without_feed: bool) -> Result<()> {
+    match appcast.and_then(latest_build) {
+        Some(latest) => ensure!(
+            number > latest,
+            "the build's number, {number}, is not above the feed's latest, {latest}: build the release of a commit of its own, after its last candidate's"
+        ),
+        None => ensure!(
+            without_feed,
+            "the feed, {APPCAST}, is not there or tells no build's number, against which the release's must be checked: `--without-feed` releases without it, as a feed's first release"
+        ),
+    }
+    Ok(())
 }
 
 /// The arguments of `gh` that make the draft of `version`'s release, of
@@ -265,6 +294,26 @@ mod tests {
             <item><sparkle:version>202611011000</sparkle:version></item>";
         assert_eq!(latest_build(appcast), Some(202_611_030_900));
         assert_eq!(latest_build("<rss></rss>"), None);
+    }
+
+    #[test]
+    fn a_release_is_above_the_feed_s_latest_or_told_to_go_without_it() {
+        let appcast = "<item><sparkle:version>202611021148</sparkle:version></item>";
+        assert!(above_the_feed(202_611_021_200, Some(appcast), false).is_ok());
+        // The last candidate's own number.
+        assert!(above_the_feed(202_611_021_148, Some(appcast), false).is_err());
+        // No feed, or none of a number: refused, unless told.
+        assert!(above_the_feed(202_611_021_200, None, false).is_err());
+        assert!(above_the_feed(202_611_021_200, Some("<rss></rss>"), false).is_err());
+        assert!(above_the_feed(202_611_021_200, None, true).is_ok());
+        // Told, a number below the feed's latest is still refused.
+        assert!(above_the_feed(202_611_021_100, Some(appcast), true).is_err());
+    }
+
+    #[test]
+    fn a_release_refuses_a_source_date_epoch_left_set() {
+        assert!(epoch_unset(None).is_ok());
+        assert!(epoch_unset(Some(std::ffi::OsStr::new("1793625907"))).is_err());
     }
 
     #[test]

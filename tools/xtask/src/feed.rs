@@ -111,10 +111,9 @@ fn add(root: &Path, dmg: &Path, notes: Option<&Path>, channel: Option<&str>) -> 
     );
     let directory = root.join(DIRECTORY);
     fs::create_dir_all(&directory).with_context(|| format!("making {}", directory.display()))?;
-    fs::copy(dmg, directory.join(name)).with_context(|| format!("copying {}", dmg.display()))?;
+    copy_unless_same(dmg, &directory.join(name))?;
     let stem = name.trim_end_matches(".dmg");
-    fs::copy(&notes, directory.join(format!("{stem}.md")))
-        .with_context(|| format!("copying {}", notes.display()))?;
+    copy_unless_same(&notes, &directory.join(format!("{stem}.md")))?;
     let tools = crate::sparkle::release(&root.join("target"))?.join("bin");
     let key = key_arguments(root)?;
     let mut generate = Command::new(tools.join("generate_appcast"));
@@ -212,6 +211,18 @@ fn signed(text: &str) -> bool {
     text.contains(SIGNATURE_MARK)
 }
 
+/// Copies `from` to `to`, unless they are the same file, which a copy
+/// would empty, as of a DMG that the feed holds already.
+fn copy_unless_same(from: &Path, to: &Path) -> Result<()> {
+    if let (Ok(from), Ok(to)) = (from.canonicalize(), to.canonicalize())
+        && from == to
+    {
+        return Ok(());
+    }
+    fs::copy(from, to).with_context(|| format!("copying {}", from.display()))?;
+    Ok(())
+}
+
 /// Runs `command`, which `what` describes, and fails if it fails.
 fn status(command: &mut Command, what: &str) -> Result<()> {
     let status = command.status().with_context(|| what.to_owned())?;
@@ -239,6 +250,32 @@ mod tests {
         assert_eq!(release_of("0.3.0-20261102"), "0.3.0");
         assert_eq!(release_of("1.0.0-rc.2"), "1.0.0");
         assert_eq!(release_of("1.0.0"), "1.0.0");
+    }
+
+    #[test]
+    fn a_file_copied_onto_itself_keeps_its_bytes() {
+        let directory =
+            std::env::temp_dir().join(format!("lokyr-feed-copy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let dmg = directory.join("Lokyr-1.0.0.dmg");
+        fs::write(&dmg, b"an image").unwrap();
+        // The same file, by another path too.
+        copy_unless_same(&dmg, &dmg).unwrap();
+        copy_unless_same(
+            &directory
+                .join("../")
+                .join(directory.file_name().unwrap())
+                .join("Lokyr-1.0.0.dmg"),
+            &dmg,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&dmg).unwrap(), b"an image");
+        // Another file is copied.
+        let copy = directory.join("copy.dmg");
+        copy_unless_same(&dmg, &copy).unwrap();
+        assert_eq!(fs::read(&copy).unwrap(), b"an image");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
