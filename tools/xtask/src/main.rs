@@ -7,6 +7,7 @@ mod check_links;
 mod dmg;
 mod notarize;
 mod private;
+mod sparkle;
 mod terminfo;
 mod ucd;
 

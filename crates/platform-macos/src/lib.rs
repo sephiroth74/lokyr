@@ -25,6 +25,7 @@ mod secure;
 mod shared;
 mod text_input;
 mod timer;
+mod updates;
 mod wake;
 mod window;
 

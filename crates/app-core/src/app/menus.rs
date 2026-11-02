@@ -17,8 +17,8 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    APPEARANCES, App, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE, MAN_PAGE_NAME, MAN_SECTION,
-    PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
+    APPEARANCES, App, CHECK_UPDATES, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE, MAN_PAGE_NAME,
+    MAN_SECTION, PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -487,15 +487,20 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
         items,
         role,
     };
-    // Settings first, as macOS's apps have it, and Secure Keyboard Entry,
-    // then the system's items.
-    let first = |item: &MenuItem| matches!(item, MenuItem::Command { command, .. } if command == SETTINGS || command == SECURE_INPUT);
-    let mut application = items(&[Category::App])
-        .into_iter()
-        .filter(first)
-        .collect::<Vec<_>>();
-    if !application.is_empty() {
-        application.push(MenuItem::Separator);
+    // Check for Updates… first, where macOS's apps have it, then Settings
+    // and Secure Keyboard Entry, then the system's items.
+    let of = |item: &MenuItem, names: &[&str]| matches!(item, MenuItem::Command { command, .. } if names.contains(&command.as_str()));
+    let first = |item: &MenuItem| of(item, &[CHECK_UPDATES, SETTINGS, SECURE_INPUT]);
+    let mut application = Vec::new();
+    for group in [&[CHECK_UPDATES][..], &[SETTINGS, SECURE_INPUT]] {
+        let group: Vec<MenuItem> = items(&[Category::App])
+            .into_iter()
+            .filter(|item| of(item, group))
+            .collect();
+        if !group.is_empty() {
+            application.extend(group);
+            application.push(MenuItem::Separator);
+        }
     }
     application.extend([
         standard("menu-hide", StandardAction::Hide, Some(cmd('h', false))),

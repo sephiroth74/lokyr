@@ -6,7 +6,8 @@
 //! variant's in `Contents/Resources/icons`, from `crates/app/resources/icons`;
 //! and, for each language of the app's catalogs, `<language>.lproj` with
 //! the usage strings of its `infoplist.ftl`, which `Info.plist` takes in
-//! English.
+//! English; and Sparkle's updater, in `Contents/Frameworks`, which the app
+//! loads, and the keys of its feed in `Info.plist`.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
 //! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
@@ -173,6 +174,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )
     .context("writing the Info.plist")?;
     let identity = identity()?;
+    let sparkle = crate::sparkle::release(&root.join("target"))?;
+    crate::sparkle::embed(&sparkle, &app, &identity)?;
     let entitlements = root.join("target").join(format!("{NAME}.entitlements"));
     fs::write(&entitlements, entitlements_plist()).context("writing the entitlements")?;
     sign(&app, &identity, &entitlements)?;
@@ -390,7 +393,10 @@ fn info_plist(
     let at = plist.rfind("</dict>").expect("the plist's dictionary ends");
     plist.insert_str(
         at,
-        &format!("\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n"),
+        &format!(
+            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}",
+            crate::sparkle::plist_entries()
+        ),
     );
     Ok(plist)
 }
@@ -492,21 +498,23 @@ fn entitlements_plist() -> String {
     plist
 }
 
-/// Signs `app` with `identity`, with the hardened runtime and the
-/// entitlements of the file `entitlements`, and checks the signature as
-/// Gatekeeper does.
+/// Signs `app` with `identity`, with the hardened runtime, the
+/// entitlements of the file `entitlements` and a secure timestamp unless ad
+/// hoc, over its frameworks signed already, and checks the signature, of
+/// the code that it holds too, as Gatekeeper does.
 fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
+    let mut command = Command::new("codesign");
+    command.args(["--force", "--options", "runtime", "--sign", identity]);
+    if identity != "-" {
+        command.arg("--timestamp");
+    }
     run_command(
-        Command::new("codesign")
-            .args(["--force", "--options", "runtime", "--sign", identity])
-            .arg("--entitlements")
-            .arg(entitlements)
-            .arg(app),
+        command.arg("--entitlements").arg(entitlements).arg(app),
         "signing the bundle",
     )?;
     run_command(
         Command::new("codesign")
-            .args(["--verify", "--strict", "--verbose=2"])
+            .args(["--verify", "--deep", "--strict", "--verbose=2"])
             .arg(app),
         "checking the bundle's signature",
     )
@@ -664,6 +672,7 @@ mod tests {
         assert!(plist.contains(
             "<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>en</string>\n\t\t<string>it</string>\n\t</array>"
         ));
+        assert!(plist.contains("<key>SUPublicEDKey</key>"));
     }
 
     /// A binary signed as the bundle is has the entitlements, as `codesign`
@@ -756,6 +765,11 @@ mod tests {
         // The build's number, of twelve digits.
         assert_eq!(extract("CFBundleVersion"), "202611011530");
         assert_eq!(extract("NSHighResolutionCapable"), "true");
+        // Sparkle's feed, a check a day, and nothing of the Mac sent.
+        assert_eq!(extract("SUFeedURL"), "https://lokyr.dev/appcast.xml");
+        assert_eq!(extract("SUScheduledCheckInterval"), "86400");
+        assert_eq!(extract("SUEnableAutomaticChecks"), "true");
+        assert_eq!(extract("SUEnableSystemProfiling"), "false");
         assert_eq!(
             extract("NSLocalNetworkUsageDescription"),
             "A program started in the terminal wants to reach devices on the local network."

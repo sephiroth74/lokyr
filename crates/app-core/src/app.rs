@@ -66,6 +66,10 @@ const QUIT: &str = "app.quit";
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
 
+/// The command that checks for a newer version of the app, where it can
+/// update itself.
+const CHECK_UPDATES: &str = "app.check-for-updates";
+
 /// The command that shows the performance's panel over the windows, or
 /// hides it.
 const PERFORMANCE: &str = "app.performance";
@@ -939,6 +943,9 @@ impl<B: Backend> App<B> {
         let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
+        if config.updates.check != self.config.updates.check {
+            platform.set_update_checks(config.updates.check);
+        }
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
@@ -992,6 +999,19 @@ impl<B: Backend> App<B> {
         for &window in self.windows.keys() {
             platform.request_frame(window);
         }
+    }
+
+    /// Starts the app's updates, where it can update itself, with the
+    /// config's checks now and then, once the first window has opened, as
+    /// the updater loads out of its way; the menu's item is dimmed where it
+    /// cannot. The benches leave the updater alone, as its checks would
+    /// reach the network while they measure.
+    fn start_updates(&mut self, platform: &mut dyn Platform) {
+        let benched = self.startup_bench.is_some()
+            || self.latency_bench.is_some()
+            || self.output_bench.is_some();
+        let can = !benched && platform.start_updates(self.config.updates.check);
+        platform.set_command_enabled(CHECK_UPDATES, can);
     }
 
     /// Shows the icon's variant that the config names, or the default one
@@ -1600,6 +1620,10 @@ impl<B: Backend> App<B> {
                     self.open_settings(platform);
                     Ok(())
                 }
+                CHECK_UPDATES => {
+                    platform.check_for_updates();
+                    Ok(())
+                }
                 PERFORMANCE => {
                     self.performance_chosen = Some(self.performance.is_none());
                     self.show_performance(platform);
@@ -2159,6 +2183,7 @@ impl<B: Backend> App<B> {
             file.watch(platform);
         }
         self.open_window(platform);
+        self.start_updates(platform);
         self.end_output_bench_unstarted(platform);
         self.end_startup_bench(platform);
         self.start_latency_bench(platform);
@@ -2593,6 +2618,7 @@ fn texts(chosen: &str, preferred: &[String]) -> Texts {
 fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
+        (CHECK_UPDATES, "app-check-for-updates", Category::App),
         (SETTINGS, "app-settings", Category::App),
         (SECURE_INPUT, "app-secure-keyboard-entry", Category::App),
         (PERFORMANCE, "app-performance", Category::View),

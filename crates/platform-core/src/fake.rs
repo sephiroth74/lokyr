@@ -172,6 +172,12 @@ pub struct Fake {
     /// Whether the secure entry of the keyboard is on, and how many times
     /// it changed.
     secure_input: (bool, usize),
+    /// Whether the app can update itself, as a test says.
+    can_update: bool,
+    /// The updates' checks now and then, on or off, once started.
+    update_checks: Option<bool>,
+    /// The checks for updates that the app asked.
+    updates_checked: usize,
     usage: Option<Usage>,
     /// When the fake was made, as the process's start.
     started: SystemTime,
@@ -226,6 +232,9 @@ impl Fake {
             edited: Vec::new(),
             editor_fails: None,
             secure_input: (false, 0),
+            can_update: false,
+            update_checks: None,
+            updates_checked: 0,
             usage: None,
             started: SystemTime::now(),
             posted_keys: Vec::new(),
@@ -512,6 +521,23 @@ impl Fake {
     /// it, and how many times it changed.
     pub fn secure_input(&self) -> (bool, usize) {
         self.secure_input
+    }
+
+    /// Has the app able to update itself, or not, as it is by default.
+    pub fn set_can_update(&mut self, can: bool) {
+        self.can_update = can;
+    }
+
+    /// The updates' checks now and then, on or off, as the app last set
+    /// them; `None` before it started them, or where it cannot update
+    /// itself.
+    pub fn update_checks(&self) -> Option<bool> {
+        self.update_checks
+    }
+
+    /// How many checks for updates the app asked.
+    pub fn updates_checked(&self) -> usize {
+        self.updates_checked
     }
 
     /// Has the text editor open nothing, for `why`, until it is `None`.
@@ -872,6 +898,25 @@ impl Platform for Fake {
     fn set_secure_input(&mut self, on: bool) {
         if self.secure_input.0 != on {
             self.secure_input = (on, self.secure_input.1 + 1);
+        }
+    }
+
+    fn start_updates(&mut self, check: bool) -> bool {
+        if self.can_update && self.update_checks.is_none() {
+            self.update_checks = Some(check);
+        }
+        self.can_update
+    }
+
+    fn set_update_checks(&mut self, check: bool) {
+        if self.update_checks.is_some() {
+            self.update_checks = Some(check);
+        }
+    }
+
+    fn check_for_updates(&mut self) {
+        if self.can_update {
+            self.updates_checked += 1;
         }
     }
 

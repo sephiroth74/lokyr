@@ -69,7 +69,7 @@
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
 //! [`BellConfig`], `[app]`
-//! [`AppConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
+//! [`AppConfig`], `[updates]` [`UpdatesConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -133,6 +133,8 @@ pub struct Config {
     pub bell: BellConfig,
     /// The `[app]` section.
     pub app: AppConfig,
+    /// The `[updates]` section.
+    pub updates: UpdatesConfig,
     /// The `[debug]` section.
     pub debug: DebugConfig,
     /// The `[keys]` section.
@@ -583,6 +585,22 @@ impl Default for BellConfig {
             bounce: true,
             mark_title: true,
         }
+    }
+}
+
+/// The `[updates]` section: the app's own updates, where it can update
+/// itself, as its bundle holds an updater on the Mac.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct UpdatesConfig {
+    /// Whether the app checks for a newer version now and then, a day
+    /// apart at least; the menu's item checks whatever it says.
+    pub check: bool,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self { check: true }
     }
 }
 
@@ -1442,7 +1460,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 13] {
+fn sections() -> [(&'static str, &'static [&'static str]); 14] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1456,6 +1474,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 13] {
         ("links", keys::<LinksConfig>()),
         ("bell", keys::<BellConfig>()),
         ("app", keys::<AppConfig>()),
+        ("updates", keys::<UpdatesConfig>()),
         ("debug", keys::<DebugConfig>()),
     ]
 }
@@ -2428,6 +2447,7 @@ mod tests {
                 "links",
                 "bell",
                 "app",
+                "updates",
                 "debug",
                 "keys"
             ]

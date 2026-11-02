@@ -26,6 +26,7 @@ use crate::menu::MenuTarget;
 use crate::notify::Notifier;
 use crate::secure::SecureInput;
 use crate::shared::{Pending, Shared};
+use crate::updates::Updates;
 use crate::window::Window;
 use crate::{alert, appearance, definition, menu, open, timer};
 
@@ -78,6 +79,8 @@ pub(crate) struct Backend {
     /// The keys that the app takes from every app, which the system gets
     /// back as the backend goes.
     global_keys: GlobalKeys,
+    /// The app's updates, where its bundle has the updater.
+    updates: Updates,
 }
 
 impl Backend {
@@ -100,6 +103,7 @@ impl Backend {
             notifier: None,
             secure: SecureInput::default(),
             global_keys: GlobalKeys::new(shared),
+            updates: Updates::default(),
         }
     }
 
@@ -676,6 +680,18 @@ impl Platform for Backend {
 
     fn set_secure_input(&mut self, on: bool) {
         self.secure.set(on);
+    }
+
+    fn start_updates(&mut self, check: bool) -> bool {
+        self.updates.start(check)
+    }
+
+    fn set_update_checks(&mut self, check: bool) {
+        self.updates.set_checks(check);
+    }
+
+    fn check_for_updates(&mut self) {
+        self.updates.check();
     }
 
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {

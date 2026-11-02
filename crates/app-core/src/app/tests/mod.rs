@@ -89,9 +89,9 @@ fn menu_items(fake: &Fake, index: usize) -> Vec<String> {
 fn settings_opens_the_config_in_the_text_editor_made_first() {
     let (mut fake, mut app, path) = with_file("settings", "");
     std::fs::remove_file(&path).unwrap();
-    // The application's menu starts with it, of its key.
+    // The application's menu has it first after the updates, of its key.
     assert_eq!(
-        menu_items(&fake, 0)[..3],
+        menu_items(&fake, 0)[2..5],
         ["Settings… cmd+,", "Secure Keyboard Entry", "-"]
     );
     assert_eq!(menu_items(&fake, 0).last().unwrap(), "Quit Lokyr cmd+q");
@@ -491,6 +491,41 @@ fn started_running(program: Program) -> (Fake, App, WindowId) {
     let (mut fake, mut app, window) = started_with(program);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     (fake, app, window)
+}
+
+#[test]
+fn the_updates_start_with_the_config_s_checks_and_the_menu_checks_now() {
+    let directory = std::env::temp_dir().join(format!("lokyr-app-updates-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[updates]\ncheck = false\n").unwrap();
+    let mut fake = Fake::default();
+    fake.set_can_update(true);
+    let mut app =
+        App::new(None, Config::read(&path).unwrap(), Some(path.clone())).with_program(quiet());
+    fake.start(&mut app);
+    // Started once the window opened, the checks off as the file says.
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(fake.update_checks(), Some(false));
+    assert!(fake.command_enabled(CHECK_UPDATES));
+    // The menu's item checks now, whatever the key says.
+    fake.send_app(&mut app, AppEvent::Command(CHECK_UPDATES.to_owned()));
+    assert_eq!(fake.updates_checked(), 1);
+    // The key changed turns the checks on, at once.
+    std::fs::write(&path, "[updates]\ncheck = true\n").unwrap();
+    change(&mut fake, &mut app);
+    assert_eq!(fake.update_checks(), Some(true));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn an_app_that_cannot_update_itself_dims_the_menu_s_item() {
+    let (mut fake, mut app) = started();
+    assert!(!fake.command_enabled(CHECK_UPDATES));
+    assert_eq!(fake.update_checks(), None);
+    fake.send_app(&mut app, AppEvent::Command(CHECK_UPDATES.to_owned()));
+    assert_eq!(fake.updates_checked(), 0);
 }
 
 #[test]

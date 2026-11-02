@@ -134,6 +134,9 @@ icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 
+[updates]
+check = false                        # true | false: a check for a newer version, once a day at most
+
 [debug]
 performance-overlay = true           # true | false: a panel of the performance over each window
 performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bottom-left
@@ -1021,6 +1024,26 @@ Whether Lokyr is light or dark: the theme's colors, and Lokyr's own titlebar, me
 
 - `"system"` follows the appearance of macOS, in the system's settings, as it changes, automatic too; `"light"` and `"dark"` keep theirs, whatever the system's is.
 - The View menu's Appearance sets it too: Automatic, Light or Dark, the one in force ticked. The choice goes into your config file, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits, or until you change the key.
+- It applies at once, as you save the file.
+
+## `[updates]`
+
+Lokyr's own updates: it checks for a newer version, which it shows in a window with what is new, to install now or as Lokyr quits, or to skip.
+
+### `check`
+
+<sub>Platforms: macOS</sub>
+
+Whether Lokyr checks for a newer version now and then, once a day at most, in the background.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Lokyr › Check for Updates… checks at once, whatever the key says.
+- A check asks Lokyr's site, `lokyr.dev`, for the list of its versions. It sends the version of Lokyr that you have, and what any request sends, your address and your preferred languages; nothing else about you or your Mac.
+- The updates' window has its own box to check automatically: the key wins over it the next time Lokyr starts, or as you save the file.
+- Lokyr updates itself in its app, `Lokyr.app`, as installed from its disk image. Lokyr built from its sources, as `cargo run` runs it, has no updater: the menu's item is dimmed, and the key does nothing.
 - It applies at once, as you save the file.
 
 ## `[debug]`

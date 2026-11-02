@@ -34,6 +34,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
     assert_eq!(
         menu_items(&fake, 0),
         [
+            "Check for Updates…",
+            "-",
             "Settings… cmd+,",
             "Secure Keyboard Entry",
             "-",
@@ -179,6 +181,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "Automatic Appearance",
                 Category::View
             ),
+            ("app.check-for-updates", "Check for Updates…", Category::App),
             ("app.performance", "Show Performance", Category::View),
             ("app.quit", "Quit Lokyr", Category::App),
             (
@@ -240,7 +243,10 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Composizione"
         ]
     );
-    assert_eq!(menu_items(&fake, 0)[0], "Impostazioni… cmd+,");
+    assert_eq!(
+        menu_items(&fake, 0)[..3],
+        ["Controlla aggiornamenti…", "-", "Impostazioni… cmd+,"]
+    );
     // The plugins' commands too, from their own catalogs.
     assert_eq!(
         menu_items(&fake, 2),

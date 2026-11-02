@@ -438,6 +438,24 @@ pub trait Platform {
     /// dead key that Option makes does not compose.
     fn set_option_as_meta(&mut self, left: bool, right: bool);
 
+    /// Starts the application's updates, where it can update itself, as
+    /// its bundle holds an updater on the Mac: a check for a newer version
+    /// now and then, a day apart at least, while `check` holds, and those
+    /// that [`Platform::check_for_updates`] asks. Whether the application
+    /// can update itself; the updater may still be loading, out of the
+    /// main thread, as the call returns. A second call changes nothing.
+    fn start_updates(&mut self, check: bool) -> bool;
+
+    /// Turns the updates' checks now and then on or off, once
+    /// [`Platform::start_updates`] has started them.
+    fn set_update_checks(&mut self, check: bool);
+
+    /// Checks for a newer version now, and shows what it finds, a newer
+    /// version to install or none, in the updater's own window; once the
+    /// updater has loaded, for a check asked before. Nothing where the
+    /// application cannot update itself.
+    fn check_for_updates(&mut self);
+
     /// Shows the image of the file at `icon` as the application's icon
     /// while it runs, where the system shows running applications, as the
     /// Dock and the application switcher on the Mac; or, with `None`, the
