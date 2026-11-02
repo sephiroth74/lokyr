@@ -6,6 +6,7 @@ mod check_deps;
 mod check_links;
 mod dmg;
 mod feed;
+mod licenses;
 mod notarize;
 mod private;
 mod release;

@@ -34,6 +34,10 @@ pub(crate) struct Component {
     pub(crate) version: String,
     /// Its license, an SPDX expression, if its manifest tells one.
     pub(crate) license: Option<String>,
+    /// Its authors, as its manifest names them.
+    pub(crate) authors: Vec<String>,
+    /// The directory of its source, which holds its files of its license.
+    pub(crate) source: std::path::PathBuf,
 }
 
 /// The crates of other projects that the app's binary holds, by name and
@@ -98,6 +102,12 @@ fn shipped(metadata: &Metadata) -> Result<Vec<Component>> {
                     name: package.name.to_string(),
                     version: package.version.to_string(),
                     license: package.license.clone(),
+                    authors: package.authors.clone(),
+                    source: package
+                        .manifest_path
+                        .parent()
+                        .map(|directory| directory.as_std_path().to_owned())
+                        .unwrap_or_default(),
                 });
             }
         }
@@ -198,6 +208,8 @@ mod tests {
             name: "objc2".to_owned(),
             version: "0.6.5".to_owned(),
             license: Some("MIT".to_owned()),
+            authors: Vec::new(),
+            source: std::path::PathBuf::new(),
         }];
         let bill = bill("0.3.0-rc.1", &crates, "2.10.1");
         assert_eq!(bill["bomFormat"], "CycloneDX");

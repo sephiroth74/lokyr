@@ -7,7 +7,10 @@
 //! and, for each language of the app's catalogs, `<language>.lproj` with
 //! the usage strings of its `infoplist.ftl`, which `Info.plist` takes in
 //! English; and Sparkle's updater, in `Contents/Frameworks`, which the app
-//! loads, and the keys of its feed in `Info.plist`.
+//! loads, and the keys of its feed in `Info.plist`; and in
+//! `Contents/Resources/licenses` the notices of the licenses of what the
+//! binary and the bundle hold of other projects: the crates', Sparkle's and
+//! the symbols' font's.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
 //! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
@@ -148,6 +151,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
     copy_font_licenses(&root.join(SYMBOLS_FONT), &resources)?;
+    crate::licenses::write(&root, &resources.join("licenses/crates"))?;
     let catalogs = usage_catalogs(&root.join(LOCALES))?;
     for (language, usages) in &catalogs {
         let directory = resources.join(format!("{language}.lproj"));
