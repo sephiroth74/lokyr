@@ -7,6 +7,7 @@ mod colors;
 mod control;
 mod csi;
 mod cursor;
+mod decorations;
 mod edit;
 mod erase;
 mod escape;
@@ -27,9 +28,10 @@ mod window;
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
+pub use decorations::{Decorated, Look, MOST_DECORATIONS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
-pub use selection::{CellPin, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
+pub use selection::{CellPin, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;
@@ -480,6 +482,8 @@ pub struct Terminal {
     /// The cell that the embedder marked, as the one that a menu opened
     /// on, if one was.
     cell_mark: Option<selection::CellPin>,
+    /// The decorations that the embedder laid over the text.
+    decorations: Vec<decorations::Decoration>,
 }
 
 impl Terminal {
@@ -585,6 +589,7 @@ impl Terminal {
             selection: None,
             selection_anchor: None,
             cell_mark: None,
+            decorations: Vec::new(),
         }
     }
 

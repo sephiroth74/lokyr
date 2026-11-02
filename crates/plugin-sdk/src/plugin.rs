@@ -46,7 +46,7 @@
 //! ```
 
 use crate::command::{Args, Code, Command, Error};
-use crate::host::{Binding, Host, LineText, PaneId, Scroll, WindowId};
+use crate::host::{Binding, DecorationLook, Host, LineText, PaneId, Scroll, StyleRun, WindowId};
 use crate::message::{Call, Data, Event, Request, Response};
 
 /// A plugin: its activation, which registers its commands and binds its
@@ -248,6 +248,55 @@ impl<'a> Cx<'a> {
         row: i64,
     ) -> Result<Option<String>, Error> {
         self.text(Request::LinkAt { pane, column, row })
+    }
+
+    /// Reads the texts of `pane`'s rows from the row numbered `first`,
+    /// `count` at most, [`MOST_LINES`](crate::host::MOST_LINES) at most, on
+    /// a thread of the host's: returns the read's id, and the rows come to
+    /// [`on_event`](Plugin::on_event) as an [`Event::Lines`] of that id,
+    /// which no subscription needs.
+    pub fn read_lines(&mut self, pane: PaneId, first: i64, count: usize) -> Result<u64, Error> {
+        match self.request(Request::ReadLines { pane, first, count }) {
+            Response::Reading(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The styles of `pane`'s row numbered `row`, as runs of cells; `None`
+    /// for a row that the pane does not hold.
+    pub fn styles(&mut self, pane: PaneId, row: i64) -> Result<Option<Vec<StyleRun>>, Error> {
+        match self.request(Request::Styles { pane, row }) {
+            Response::Styles(runs) => Ok(runs),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Decorates `pane`'s cells from `from` to `to`, in reading order, each
+    /// by its column and its row's number, with `look`, as this call
+    /// returns: returns the decoration's id. It keeps its text as output
+    /// scrolls it and a resize reflows it, and goes with it.
+    pub fn decorate(
+        &mut self,
+        pane: PaneId,
+        from: (u16, i64),
+        to: (u16, i64),
+        look: DecorationLook,
+    ) -> Result<u64, Error> {
+        match self.request(Request::Decorate {
+            pane,
+            from,
+            to,
+            look,
+        }) {
+            Response::Decoration(id) => Ok(id),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Takes away the plugin's decoration `id` of `pane`, as this call
+    /// returns.
+    pub fn undecorate(&mut self, pane: PaneId, id: u64) -> Result<(), Error> {
+        self.done(Request::Undecorate { pane, id })
     }
 
     /// The working directory of the program in `pane`'s foreground, as a

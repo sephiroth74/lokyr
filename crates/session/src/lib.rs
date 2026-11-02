@@ -106,6 +106,36 @@ impl Shared {
     }
 }
 
+/// A handle on a session's terminal for a thread of its owner's, as
+/// [`Session::reader`] gives it, which outlives neither the terminal's
+/// state nor its program: the session that it came from hangs the program
+/// up as it goes.
+#[derive(Clone)]
+pub struct Reader {
+    shared: Arc<Shared>,
+}
+
+impl Reader {
+    /// Locks the terminal, ahead of the I/O thread's next slice, as
+    /// [`Session::lock`] does: a read holds it for a part at a time, so
+    /// that the I/O thread and the frames wait no longer than for a
+    /// frame's copy.
+    pub fn lock(&self) -> MutexGuard<'_, Terminal> {
+        self.shared.terminal.lock()
+    }
+
+    /// Wakes the main thread, as a change of the terminal does.
+    pub fn wake(&self) {
+        (self.shared.wake)();
+    }
+}
+
+impl std::fmt::Debug for Reader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reader").finish_non_exhaustive()
+    }
+}
+
 /// A program running in a terminal: its PTY, the terminal's state, and the
 /// threads that move the bytes between them.
 ///
@@ -179,6 +209,15 @@ impl Session {
     pub fn lock(&self) -> MutexGuard<'_, Terminal> {
         self.shared.locks.fetch_add(1, Ordering::Relaxed);
         self.shared.terminal.lock()
+    }
+
+    /// A handle on the terminal for a thread of the owner's, as one that
+    /// reads much of its text, under the lock a part at a time, apart from
+    /// the main thread, which it wakes once it is done.
+    pub fn reader(&self) -> Reader {
+        Reader {
+            shared: Arc::clone(&self.shared),
+        }
     }
 
     /// How many times the session's owner locked the terminal, as each

@@ -302,6 +302,42 @@ pub fn cells(
     )
 }
 
+/// Lays `snapshot`'s decorations over `batch`, its grid as [`cells_with`]
+/// laid it out: each span's background in place of its cells' own, and
+/// its underline under them, of its own color or the default text's.
+pub fn decorate(batch: &mut CellBatch, snapshot: &Snapshot, cell: &CellMetrics) {
+    let text = defaults(snapshot).0;
+    for span in snapshot.decorations() {
+        if span.row >= batch.rows || span.first >= batch.columns || span.first > span.last {
+            continue;
+        }
+        let last = span.last.min(batch.columns - 1);
+        if let Some(background) = span.look.background {
+            let start = usize::from(span.row) * usize::from(batch.columns);
+            for column in span.first..=last {
+                batch.backgrounds[start + usize::from(column)] = color(background);
+            }
+        }
+        let style = match span.look.underline {
+            page::Underline::None => continue,
+            page::Underline::Single => LineStyle::Single,
+            page::Underline::Double => LineStyle::Double,
+            page::Underline::Curly => LineStyle::Curly,
+            page::Underline::Dotted => LineStyle::Dotted,
+            page::Underline::Dashed => LineStyle::Dashed,
+        };
+        batch.lines.push(CellLine {
+            column: span.first,
+            row: span.row,
+            columns: last - span.first + 1,
+            style,
+            top: cell.underline_top,
+            thickness: cell.underline_thickness,
+            color: span.look.underline_color.map_or(text, color),
+        });
+    }
+}
+
 /// Whether `snapshot` shows text that blinks, as SGR 5 and 6 make it: some
 /// cell of a style that blinks.
 pub fn has_blinking_text(snapshot: &Snapshot) -> bool {
@@ -2072,6 +2108,48 @@ mod tests {
             &mut atlas(&mut asked),
         );
         assert_eq!(batch.cursor, None);
+    }
+
+    #[test]
+    fn decorations_lay_their_lines_and_backgrounds_over_the_grid() {
+        use lokyr_vt_core::parser::Parser;
+        use lokyr_vt_core::terminal::{Look, Options, Snapshot, Terminal};
+
+        let mut terminal = Terminal::new(8, 2, Options::default());
+        Parser::new().advance(&mut terminal, b"abcdefgh\r\nxyz");
+        let red = Rgb { r: 255, g: 0, b: 0 };
+        let underline = Look {
+            underline: page::Underline::Curly,
+            ..Look::default()
+        };
+        let lit = Look {
+            background: Some(red),
+            ..Look::default()
+        };
+        // Across both rows, then two cells lit.
+        assert!(terminal.decorate(1, (6, 0), (1, 1), underline));
+        assert!(terminal.decorate(2, (2, 1), (2, 1), lit));
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let mut asked = Vec::new();
+        let mut batch = cells(&shown, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let lines = batch.lines.len();
+        decorate(&mut batch, &shown, &cell());
+        let laid: Vec<(u16, u16, u16, LineStyle)> = batch.lines[lines..]
+            .iter()
+            .map(|line| (line.row, line.column, line.columns, line.style))
+            .collect();
+        assert_eq!(
+            laid,
+            [(0, 6, 2, LineStyle::Curly), (1, 0, 2, LineStyle::Curly)]
+        );
+        assert!(
+            batch.lines[lines..]
+                .iter()
+                .all(|line| line.color == color(Colors::default().foreground))
+        );
+        assert_eq!(batch.backgrounds[8 + 2], color(red));
+        assert_ne!(batch.backgrounds[8 + 3], color(red));
     }
 
     #[test]

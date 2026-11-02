@@ -1039,7 +1039,7 @@ fn a_request_needs_its_capability() {
 fn a_call_is_its_own_plugin_s() {
     let mut app = App::default();
     let mut context = app.context();
-    let (mut state, mut requests, mut writes, mut changed) = (
+    let (mut state, mut out, mut writes, mut changed) = (
         State {
             name: "x".to_owned(),
             manifest: None,
@@ -1052,14 +1052,14 @@ fn a_call_is_its_own_plugin_s() {
             bindings: Vec::new(),
             catalogs: &[],
         },
-        Vec::new(),
+        Outbox::default(),
         Vec::new(),
         false,
     );
     let mut host = Host {
         state: &mut state,
         context: &mut context,
-        requests: &mut requests,
+        out: &mut out,
         writes: &mut writes,
         bindings_changed: &mut changed,
     };
@@ -1073,7 +1073,7 @@ fn a_call_is_its_own_plugin_s() {
         "{forged:?}"
     );
     assert_eq!(host::Host::handle(&mut host, call("x")), Response::Done);
-    assert_eq!(requests, [Request::Quit]);
+    assert_eq!(out.requests, [Request::Quit]);
 }
 
 #[test]
@@ -1419,4 +1419,233 @@ fn a_plugin_s_namespace_is_its_own_and_its_prefix_gives_it_nothing() {
     );
     assert!(app.registry.get("pane.evil").is_none());
     assert!(plugins.take_requests().is_empty());
+}
+
+/// Waits until `pane`'s row numbered `row` reads `text`, ten seconds at
+/// most.
+fn row_once(app: &App, pane: PaneId, row: i64, text: &str) {
+    let start = Instant::now();
+    while app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .line_text(row, 0)
+        .is_none_or(|(line, _)| line.trim_end() != text)
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "no `{text}` at {row}"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn a_plugin_reads_ten_thousand_lines_on_a_thread_of_the_host_s() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 12000; echo ready; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    // `1` on the row numbered 0, `12000` on 11 999.
+    row_once(&app, pane, 12_000, "ready");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins
+        .add(
+            "reader",
+            Box::new(Scripted {
+                activate: Box::new(|cx| cx.register_command(command("reader.read"))),
+                on_command: Box::new(|cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.read_lines(pane, 1000, 10_000).map(drop)
+                }),
+                on_event: Some(Box::new(move |_, events| {
+                    seen.borrow_mut().extend(events.iter().cloned());
+                    Ok(())
+                })),
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let start = Instant::now();
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    // The call does not wait for the rows.
+    assert!(
+        start.elapsed() < Duration::from_millis(50),
+        "{:?}",
+        start.elapsed()
+    );
+    // The frames' copies go on as the thread reads, a part at a time.
+    let mut longest = Duration::ZERO;
+    while log.borrow().is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(10), "no rows");
+        let copy = Instant::now();
+        app.workspace.pane_mut(pane).unwrap().update();
+        longest = longest.max(copy.elapsed());
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    }
+    assert!(
+        longest < Duration::from_millis(20),
+        "a frame's copy took {longest:?}"
+    );
+    let log = log.borrow();
+    let [
+        Event::Lines {
+            pane: of,
+            lines,
+            complete,
+            ..
+        },
+    ] = &log[..]
+    else {
+        panic!("one read: {log:?}");
+    };
+    assert_eq!(
+        (*of, *complete, lines.len()),
+        (host::PaneId(pane.get()), true, 10_000)
+    );
+    assert_eq!((lines[0].row, lines[0].text.as_str()), (1000, "1001"));
+    assert_eq!(lines[9999].text, "11000");
+    assert!(lines.iter().all(|line| !line.wrapped));
+    assert!(!plugins.has_events());
+}
+
+#[test]
+fn a_plugin_s_decorations_keep_their_text_through_new_output() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "printf 'one match\\ntwo\\nthe match\\n'; echo ready; read x; seq 1 40; echo done; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 3, "ready");
+    let mut plugins = Plugins::new();
+    let ids = Rc::new(RefCell::new(Vec::new()));
+    let found = Rc::clone(&ids);
+    plugins
+        .add(
+            "marker",
+            scripted(
+                |cx| cx.register_command(command("marker.mark")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let look = host::DecorationLook {
+                        underline: Some(host::Underline::Curly),
+                        underline_color: Some((255, 0, 0)),
+                        background: None,
+                    };
+                    for row in 0..3 {
+                        let line = cx.line_text(pane, row, 0)?.unwrap();
+                        if let Some(at) = line.text.find("match") {
+                            let at = u16::try_from(at).unwrap();
+                            let id = cx.decorate(pane, (at, row), (at + 4, row), look)?;
+                            found.borrow_mut().push(id);
+                        }
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    plugins
+        .add("other", scripted(|_| Ok(()), |_, _, _| Ok(())))
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("marker.mark", Args::new(), &mut app.context())
+        .unwrap();
+    let spans = |app: &mut App| {
+        let found = app.workspace.pane_mut(pane).unwrap();
+        found.update();
+        found
+            .snapshot()
+            .decorations()
+            .iter()
+            .map(|span| (span.row, span.first, span.last))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(spans(&mut app), [(0, 4, 8), (2, 4, 8)]);
+    // New output scrolls them out of the view; up there, they kept their
+    // text.
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    row_once(&app, pane, 45, "done");
+    assert!(spans(&mut app).is_empty());
+    app.workspace.pane(pane).unwrap().scroll(Scroll::Top);
+    assert_eq!(spans(&mut app), [(0, 4, 8), (2, 4, 8)]);
+    // Another plugin cannot take them away; their own can.
+    let first = ids.borrow()[0];
+    let mut asked = Plugins::new();
+    asked
+        .add(
+            "thief",
+            scripted(
+                |cx| cx.register_command(command("thief.take")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    cx.undecorate(pane, first)
+                },
+            ),
+        )
+        .unwrap();
+    assert!(asked.activate(&mut app.context()).is_empty());
+    let refused = asked
+        .run("thief.take", Args::new(), &mut app.context())
+        .unwrap_err();
+    assert_eq!(refused.code, Code::NotFound);
+    assert_eq!(spans(&mut app).len(), 2);
+}
+
+#[test]
+fn a_plugin_reads_a_row_s_styles_and_decorates_only_what_the_pane_holds() {
+    let mut app = App::default();
+    let window = window(
+        &mut app,
+        "printf 'ab\\033[1;31mcd\\033[0me\\n'; echo ready; sleep 30",
+    );
+    let pane = app.workspace.active_pane(window).unwrap();
+    row_once(&app, pane, 1, "ready");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins
+        .add(
+            "styler",
+            scripted(
+                |cx| cx.register_command(command("styler.look")),
+                move |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let runs = cx.styles(pane, 0)?.unwrap();
+                    let mut seen = seen.borrow_mut();
+                    for run in &runs[..3] {
+                        seen.push(format!(
+                            "{}-{} {:?} {}",
+                            run.first, run.last, run.style.foreground, run.style.bold
+                        ));
+                    }
+                    seen.push(format!("{:?}", cx.styles(pane, 900)?));
+                    let look = host::DecorationLook::default();
+                    let missing = cx.decorate(pane, (0, 900), (1, 900), look).unwrap_err();
+                    let backwards = cx.decorate(pane, (3, 0), (1, 0), look).unwrap_err();
+                    seen.push(format!("{:?} {:?}", missing.code, backwards.code));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("styler.look", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *log.borrow(),
+        [
+            "0-1 None false",
+            "2-3 Some(Palette(1)) true",
+            "4-79 None false",
+            "None",
+            "Failed Failed"
+        ]
+    );
 }

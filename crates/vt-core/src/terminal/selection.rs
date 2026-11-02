@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use super::Terminal;
-use crate::page::{Content, ListRow, PageList, PinId, Position, RowFlag, StyleId, Width};
+use crate::page::{Content, ListRow, PageList, PinId, Position, RowFlag, Style, StyleId, Width};
 
 /// The characters that end a word, besides spaces, by default: quotes,
 /// brackets and the punctuation that separates fields, so that a path or a
@@ -39,6 +39,20 @@ pub enum SelectionUnit {
     Word,
     /// The logical lines that they are in, their soft-wrapped rows whole.
     Line,
+}
+
+/// A row's text, as a read of rows gives it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowText {
+    /// The row's number.
+    pub row: i64,
+    /// Its text: a cell without a character a space, a cluster whole, a
+    /// wide character once; without the spaces that end it, but where it
+    /// wraps into the next.
+    pub text: String,
+    /// Whether it soft-wraps into the next row, its logical line going on
+    /// there.
+    pub wrapped: bool,
 }
 
 /// The selection, as a renderer shows it: its first and last cells, each
@@ -680,6 +694,70 @@ impl Terminal {
         Some((position.col, self.row_number(index)))
     }
 
+    /// Whether `pin`'s cell left its screen's list, or the pin was let go.
+    pub(super) fn is_lost(&self, pin: &CellPin) -> bool {
+        let rows = if pin.alternate {
+            &self.alternate.rows
+        } else {
+            &self.primary.rows
+        };
+        rows.pin_position(pin.pin).is_none()
+    }
+
+    /// The texts of the rows of the active screen and of its scrollback
+    /// numbered from `first`, `count` at most, those that the list holds,
+    /// from its first if `first` left it, read in one pass, oldest first.
+    pub fn read_rows(&self, first: i64, count: usize) -> Vec<RowText> {
+        let Some(index) = self.row_index(first.max(self.row_number(0))) else {
+            return Vec::new();
+        };
+        let rows = &self.screen().rows;
+        let count = count.min(rows.total_rows() - index);
+        let mut read = Vec::with_capacity(count);
+        let mut list = rows.rows_from(index).peekable();
+        for at in index..index + count {
+            let Some(row) = list.next() else {
+                break;
+            };
+            let wrapped = row.metadata().has(RowFlag::SoftWrapped)
+                && list
+                    .peek()
+                    .is_some_and(|next| next.metadata().has(RowFlag::Continuation));
+            let mut text = String::new();
+            push_cells(&mut text, row, 0..row.cols());
+            if !wrapped {
+                text.truncate(text.trim_end_matches(' ').len());
+            }
+            read.push(RowText {
+                row: self.row_number(at),
+                text,
+                wrapped,
+            });
+        }
+        read
+    }
+
+    /// The styles of the row numbered `row`, as runs: each the columns
+    /// from the first to the last of one style, with the style; `None` for
+    /// a row that the list does not hold.
+    pub fn row_styles(&self, row: i64) -> Option<Vec<(u16, u16, Style)>> {
+        let list_row = row_at(&self.screen().rows, self.row_index(row)?)?;
+        let (page, _) = list_row.parts();
+        let mut runs: Vec<(u16, u16, StyleId)> = Vec::new();
+        for x in 0..list_row.cols() {
+            let style = list_row.cell(x).style();
+            match runs.last_mut() {
+                Some((_, last, id)) if *id == style => *last = x,
+                _ => runs.push((x, x, style)),
+            }
+        }
+        Some(
+            runs.into_iter()
+                .map(|(first, last, id)| (first, last, *page.styles().get(id)))
+                .collect(),
+        )
+    }
+
     /// Lets `pin` go, from its own screen's list, which then tells nothing
     /// of it; a pin whose row went needs nothing more.
     pub fn unpin_cell(&mut self, pin: &CellPin) {
@@ -1250,6 +1328,53 @@ mod tests {
         assert_eq!((first[0].1, first.last().unwrap().1), (1, 4));
         let last = terminal.line_text(100_000, 3).unwrap().1;
         assert_eq!((last[0].1, last.last().unwrap().1), (99_997, 100_000));
+    }
+
+    #[test]
+    fn rows_read_by_their_numbers_with_their_wraps() {
+        // `hello wond`, `erful`, then `x`, of rows of 10, 3 on the screen.
+        let terminal = fed(10, 3, "one\r\nhello wonderful\r\nx\r\ny");
+        assert_eq!(terminal.origin().top, 2);
+        let rows = terminal.read_rows(0, 10);
+        let read: Vec<(i64, &str, bool)> = rows
+            .iter()
+            .map(|row| (row.row, row.text.as_str(), row.wrapped))
+            .collect();
+        assert_eq!(
+            read,
+            [
+                (0, "one", false),
+                (1, "hello wond", true),
+                (2, "erful", false),
+                (3, "x", false),
+                (4, "y", false)
+            ]
+        );
+        assert_eq!(terminal.read_rows(3, 1)[0].text, "x");
+        assert!(terminal.read_rows(9, 5).is_empty());
+        // From before the first row, from the first.
+        assert_eq!(terminal.read_rows(-5, 1)[0].row, 0);
+        // A wide character once, and its spacer head left out.
+        let terminal = fed(5, 3, "abcd日本");
+        let texts: Vec<String> = terminal
+            .read_rows(0, 2)
+            .into_iter()
+            .map(|row| row.text)
+            .collect();
+        assert_eq!(texts, ["abcd", "日本"]);
+    }
+
+    #[test]
+    fn a_row_s_styles_come_as_runs() {
+        let terminal = fed(10, 2, "ab\x1b[1;31mcd\x1b[0me");
+        let runs = terminal.row_styles(0).unwrap();
+        let shape: Vec<(u16, u16, bool)> = runs
+            .iter()
+            .map(|&(first, last, style)| (first, last, style.bold))
+            .collect();
+        assert_eq!(shape, [(0, 1, false), (2, 3, true), (4, 9, false)]);
+        assert_eq!(runs[1].2.fg, crate::page::Color::Palette(1));
+        assert!(terminal.row_styles(5).is_none());
     }
 
     #[test]

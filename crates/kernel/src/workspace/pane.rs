@@ -6,12 +6,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_pty::{Exit, Program, Size};
-use lokyr_session::{Options, Session};
+use lokyr_session::{Options, Reader, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Scrollback;
+use lokyr_vt_core::page::Style;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Origin, Scroll, Selected,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, Scroll, Selected,
     SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
@@ -536,6 +537,46 @@ impl Pane {
         self.session
             .as_ref()
             .and_then(|session| session.lock().link_at(column, row))
+    }
+
+    /// The styles of the row numbered `row`, as runs, as
+    /// [`Terminal::row_styles`] gives them.
+    pub fn row_styles(&self, row: i64) -> Option<Vec<(u16, u16, Style)>> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().row_styles(row))
+    }
+
+    /// Whether the terminal holds the rows numbered `rows`, of its active
+    /// screen.
+    pub fn holds(&self, rows: &[i64]) -> bool {
+        self.session.as_ref().is_some_and(|session| {
+            let terminal = session.lock();
+            rows.iter().all(|&row| terminal.line_text(row, 0).is_some())
+        })
+    }
+
+    /// Decorates the cells from `from` to `to` with `look`, as the
+    /// decoration `id`, as [`Terminal::decorate`] does; whether it took it.
+    /// The next frame shows it.
+    pub fn decorate(&self, id: u64, from: (u16, i64), to: (u16, i64), look: Look) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.lock().decorate(id, from, to, look))
+    }
+
+    /// Takes the decoration `id` away, as [`Terminal::undecorate`] does.
+    pub fn undecorate(&self, id: u64) {
+        if let Some(session) = &self.session {
+            session.lock().undecorate(id);
+        }
+    }
+
+    /// A handle on the terminal for a thread of the host's, which reads
+    /// it a part at a time, as [`Session::reader`] gives it; none for a
+    /// pane whose program did not start.
+    pub fn reader(&self) -> Option<Reader> {
+        self.session.as_ref().map(Session::reader)
     }
 
     /// Marks the cell `at`, its column and its row's number, as the one

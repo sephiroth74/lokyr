@@ -55,6 +55,101 @@ pub struct LineText {
 /// takes, so that a line of many rows costs no more.
 pub const MOST_REACH: usize = 256;
 
+/// The most rows that a read of rows takes.
+pub const MOST_LINES: usize = 100_000;
+
+/// A row's text, as a read of rows gives it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Line {
+    /// The row's number.
+    pub row: i64,
+    /// Its text: a cell without a character a space, a cluster whole, a
+    /// wide character once; without the spaces that end it, but where it
+    /// wraps into the next.
+    pub text: String,
+    /// Whether it soft-wraps into the next row, its logical line going on
+    /// there.
+    pub wrapped: bool,
+}
+
+/// A color: one of the 256's palette, or an RGB one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Color {
+    /// An entry of the 256-color palette.
+    Palette(u8),
+    /// Red, green and blue.
+    Rgb(u8, u8, u8),
+}
+
+/// A kind of underline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Underline {
+    /// One line.
+    Single,
+    /// Two lines.
+    Double,
+    /// A wave.
+    Curly,
+    /// Dots.
+    Dotted,
+    /// Dashes.
+    Dashed,
+}
+
+/// The style of a run of cells, as the program gave it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextStyle {
+    /// The text's color; the default one without.
+    pub foreground: Option<Color>,
+    /// The background; the default one without.
+    pub background: Option<Color>,
+    /// The underline, if any.
+    pub underline: Option<Underline>,
+    /// The underline's color; the text's without.
+    pub underline_color: Option<Color>,
+    /// Bold.
+    pub bold: bool,
+    /// Faint.
+    pub faint: bool,
+    /// Italic.
+    pub italic: bool,
+    /// Blinking.
+    pub blink: bool,
+    /// The text's and the background's colors swapped.
+    pub inverse: bool,
+    /// Hidden.
+    pub invisible: bool,
+    /// Struck through.
+    pub strikethrough: bool,
+    /// Overlined.
+    pub overline: bool,
+}
+
+/// The cells of a row from a column to another, both included, of one
+/// style.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StyleRun {
+    /// The first column.
+    pub first: u16,
+    /// The last column.
+    pub last: u16,
+    /// Their style.
+    pub style: TextStyle,
+}
+
+/// How a decoration looks over its cells.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecorationLook {
+    /// The line under the cells, if any.
+    pub underline: Option<Underline>,
+    /// The underline's color, red, green and blue; the text's without.
+    pub underline_color: Option<(u8, u8, u8)>,
+    /// The cells' background, in place of the text's, if any.
+    pub background: Option<(u8, u8, u8)>,
+}
+
 /// How a pane's view scrolls through its scrollback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

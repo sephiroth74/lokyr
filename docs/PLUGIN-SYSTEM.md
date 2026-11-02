@@ -239,7 +239,18 @@ type View = Node
 -- their places in it.
 type ListItem = { key: number, texts: { string } }
 
-type Line = { text: string, wrapped: boolean }
+-- A row's text, by its number, without the spaces that end it, but where it wraps into the next.
+type Line = { row: number, text: string, wrapped: boolean }
+
+-- The cells of a row from a column to another, of one style, as the program gave it.
+type StyleRun = { first: number, last: number, style: { foreground: any?, background: any?, bold: boolean, italic: boolean, underline: string? } }
+
+-- A decoration's look: an underline, of its own color or the text's, and a background.
+type DecorationLook = {
+    underline: ("single" | "double" | "curly" | "dotted" | "dashed")?,
+    underline_color: { number }?, -- red, green, blue
+    background: { number }?,
+}
 
 type Query = {
     pattern: string,
@@ -264,6 +275,8 @@ type Event =
     | { kind: "layout-changed", tab: TabId }
     | { kind: "title-changed", pane: PaneId, title: string }
     | { kind: "search-progress", id: number, matches: number, done: boolean }
+    -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
+    | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "custom", name: string, schema: string, value: any }
 
 type UiEvent = {
@@ -310,8 +323,15 @@ type Cx = {
         request_render: (slot: string) -> (),
     },
     terminal: {
-        -- Requires `terminal-read`; returns a `denied` error without it.
-        read_lines: (pane: PaneId, start: number, count: number) -> ({ Line }?, Error?),
+        -- Requires `terminal-read`; returns a `denied` error without it. Reads 100 000 rows at most, from the row numbered
+        -- `first`, on a thread of the host's, a part at a time: returns the read's id, and the rows come as a "lines" event.
+        read_lines: (pane: PaneId, first: number, count: number) -> (number?, Error?),
+        -- The styles of a row, by its number, as runs of cells of one style.
+        styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
+        -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the
+        -- decoration's id. It keeps its text as output scrolls it and a resize reflows it, and goes with it.
+        decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
+        undecorate: (pane: PaneId, id: number) -> (boolean, Error?),
         -- The logical line of a row, by its number, its wrapped rows joined as far as `reach` rows before it and after it, 256 at most, with each character's cell.
         line_text: (pane: PaneId, row: number, reach: number) -> (LineText?, Error?),
         -- The target of the OSC 8 link at a cell, by its row's number.

@@ -613,6 +613,8 @@ impl<B: Backend> App<B> {
             );
             other_batches = other_cells(&others, &cell, selection_colors, hollow, text, font);
         }
+        // The plugins' decorations over the text, under the composition.
+        cells::decorate(&mut batch, snapshot, &cell);
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }
@@ -923,7 +925,7 @@ fn other_cells(
                 colors,
                 contains: &contains,
             });
-            cells::cells_with(
+            let mut batch = cells::cells_with(
                 snapshot,
                 cell,
                 *origin,
@@ -931,7 +933,9 @@ fn other_cells(
                 Some(cursor),
                 look,
                 font,
-            )
+            );
+            cells::decorate(&mut batch, snapshot, cell);
+            batch
         })
         .collect()
 }

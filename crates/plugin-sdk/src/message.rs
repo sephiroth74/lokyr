@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
-use crate::host::{Binding, LineText, PaneId, Scroll, WindowId};
+use crate::host::{Binding, DecorationLook, Line, LineText, PaneId, Scroll, StyleRun, WindowId};
 
 /// A request, with the plugin that asks it, by its name, as it crosses to
 /// the host.
@@ -99,6 +99,47 @@ pub enum Request {
     },
     /// The working directory of the program in a pane's foreground.
     WorkingDirectory(PaneId),
+    /// Reads the texts of a pane's rows, from the row numbered `first`,
+    /// `count` at most, on a thread of the host's, a part at a time: the
+    /// host answers with the read's id, and the rows come as an
+    /// [`Event::Lines`] of that id, to the plugin alone.
+    ReadLines {
+        /// The pane.
+        pane: PaneId,
+        /// The first row's number.
+        first: i64,
+        /// How many rows, [`MOST_LINES`](crate::host::MOST_LINES) at most.
+        count: usize,
+    },
+    /// The styles of a pane's row, by its number, as runs of cells.
+    Styles {
+        /// The pane.
+        pane: PaneId,
+        /// The row's number.
+        row: i64,
+    },
+    /// Decorates a pane's cells, from one to another in reading order,
+    /// each by its column and its row's number, with a look: the host
+    /// answers with the decoration's id, and lays it as the call returns.
+    /// The decoration keeps its text as output scrolls it and a resize
+    /// reflows it, and goes with it.
+    Decorate {
+        /// The pane.
+        pane: PaneId,
+        /// The first cell.
+        from: (u16, i64),
+        /// The last cell.
+        to: (u16, i64),
+        /// How it looks.
+        look: DecorationLook,
+    },
+    /// Takes away one of the plugin's decorations of a pane.
+    Undecorate {
+        /// The pane.
+        pane: PaneId,
+        /// The decoration's id.
+        id: u64,
+    },
     /// Opens a URL, or a path, absolute or from `~`, with the system's
     /// handler, as the user's config says.
     Open(String),
@@ -166,9 +207,11 @@ impl Request {
         match self {
             Self::ClipboardText => Some(Capability::ClipboardRead),
             Self::SetClipboardText(_) => Some(Capability::ClipboardWrite),
-            Self::SelectionText(_) | Self::LineText { .. } | Self::LinkAt { .. } => {
-                Some(Capability::TerminalRead)
-            }
+            Self::SelectionText(_)
+            | Self::LineText { .. }
+            | Self::LinkAt { .. }
+            | Self::ReadLines { .. }
+            | Self::Styles { .. } => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) => Some(Capability::ProcessRead),
             Self::Open(_) | Self::Opens(_) => Some(Capability::Open),
             Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
@@ -179,6 +222,8 @@ impl Request {
             | Self::RunCommand { .. }
             | Self::FocusedWindow
             | Self::FocusedPane
+            | Self::Decorate { .. }
+            | Self::Undecorate { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)
@@ -202,6 +247,8 @@ impl Request {
             | Self::LineText { .. }
             | Self::LinkAt { .. }
             | Self::WorkingDirectory(_)
+            | Self::ReadLines { .. }
+            | Self::Styles { .. }
             | Self::Opens(_)
             | Self::FontSize => Effect::Read,
             Self::SetClipboardText(_)
@@ -211,6 +258,8 @@ impl Request {
             | Self::Paste { .. }
             | Self::SendText { .. }
             | Self::Scroll { .. }
+            | Self::Decorate { .. }
+            | Self::Undecorate { .. }
             | Self::Emit { .. } => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
@@ -242,6 +291,12 @@ pub enum Response {
     Boolean(bool),
     /// The text's size, in points.
     FontSize(f32),
+    /// A read's id, whose rows come as an event.
+    Reading(u64),
+    /// A row's styles, or none of a row that the pane does not hold.
+    Styles(Option<Vec<StyleRun>>),
+    /// A decoration's id.
+    Decoration(u64),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -252,6 +307,20 @@ pub enum Response {
 pub enum Event {
     /// A change of the workspace's windows, tabs, layouts or panes.
     Workspace(WorkspaceEvent),
+    /// The rows of a read that the plugin asked for, to it alone: all
+    /// that it asked for, of those that the pane holds, unless `complete`
+    /// is false, as a resize renumbered the rows, or the pane closed, in
+    /// the middle.
+    Lines {
+        /// The read's id.
+        id: u64,
+        /// The pane.
+        pane: PaneId,
+        /// The rows, oldest first.
+        lines: Vec<Line>,
+        /// Whether the read went to its end.
+        complete: bool,
+    },
     /// An event of a plugin's own.
     Custom {
         /// Its name, `namespace.event`, of the plugin's namespace.
@@ -268,6 +337,7 @@ impl Event {
     pub fn name(&self) -> &str {
         match self {
             Self::Workspace(event) => event.name(),
+            Self::Lines { .. } => "lines",
             Self::Custom { name, .. } => name,
         }
     }

@@ -14,7 +14,10 @@
 //! declares, and the commands of its `[uses]`.
 
 use std::any::Any;
+use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 
 use lokyr_pkg_model::manifest::{Manifest, ManifestError};
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -22,8 +25,10 @@ pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_session::Reader;
 use lokyr_text_core::Size;
-use lokyr_vt_core::terminal::Scroll;
+use lokyr_vt_core::page::{self, Rgb, Style};
+use lokyr_vt_core::terminal::{Look, Scroll};
 
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
 use crate::config::ConfirmPaste;
@@ -142,7 +147,47 @@ pub struct Plugins {
 #[derive(Default)]
 struct Outbox {
     requests: Vec<Request>,
-    events: Vec<Event>,
+    /// Each event, with the plugin that it goes to alone, if it is one's.
+    events: Vec<(Option<String>, Event)>,
+    /// The reads of rows under way, whose rows come as events.
+    reads: Vec<Read>,
+    /// The decorations that the plugins laid, by their ids: each one's
+    /// pane and plugin.
+    decorations: BTreeMap<u64, (host::PaneId, String)>,
+}
+
+/// A read of a pane's rows, on a thread of the host's.
+struct Read {
+    id: u64,
+    plugin: String,
+    pane: host::PaneId,
+    rows: mpsc::Receiver<(Vec<host::Line>, bool)>,
+}
+
+/// A write of a call, which the host applies as the call returns.
+enum Write {
+    /// One that the plugin asked, as it asked it.
+    Asked(Asked),
+    /// A decoration, of the id that the host gave it.
+    Decorate {
+        id: u64,
+        pane: host::PaneId,
+        from: (u16, i64),
+        to: (u16, i64),
+        look: host::DecorationLook,
+    },
+}
+
+/// The rows that a read takes under the lock at a time: about a frame's
+/// copy's time.
+const READ_PART: usize = 256;
+
+/// The last id of a read or a decoration, which none takes twice.
+static LAST_ID: AtomicU64 = AtomicU64::new(0);
+
+/// An id that no read nor decoration of the process took.
+fn new_id() -> u64 {
+    LAST_ID.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 impl std::fmt::Debug for Plugins {
@@ -414,7 +459,28 @@ impl Plugins {
 
     /// Posts `event`, of the workspace's, for the next delivery.
     pub fn post(&mut self, event: Event) {
-        self.out.events.push(event);
+        self.out.events.push((None, event));
+    }
+
+    /// Takes the reads of rows that ended, as events to their plugins.
+    fn take_reads(&mut self) {
+        let Outbox { reads, events, .. } = &mut self.out;
+        reads.retain(|read| {
+            let (lines, complete) = match read.rows.try_recv() {
+                Ok(read) => read,
+                Err(mpsc::TryRecvError::Empty) => return true,
+                // The read's thread did not start, or broke.
+                Err(mpsc::TryRecvError::Disconnected) => (Vec::new(), false),
+            };
+            let event = Event::Lines {
+                id: read.id,
+                pane: read.pane,
+                lines,
+                complete,
+            };
+            events.push((Some(read.plugin.clone()), event));
+            false
+        });
     }
 
     /// Delivers the events posted and emitted since the last delivery, in
@@ -423,6 +489,7 @@ impl Plugins {
     /// wait for the next. Returns the calls' errors, of which a panic's
     /// disables its plugin.
     pub fn deliver(&mut self, context: &mut Context<'_>) -> Vec<Error> {
+        self.take_reads();
         let events = std::mem::take(&mut self.out.events);
         let mut errors = Vec::new();
         if events.is_empty() {
@@ -432,11 +499,14 @@ impl Plugins {
             if entry.state.status != Status::Active {
                 continue;
             }
-            let subscribed = &entry.state.subscribed;
+            let (name, subscribed) = (&entry.state.name, &entry.state.subscribed);
             let batch: Vec<Event> = events
                 .iter()
-                .filter(|event| subscribed.iter().any(|name| name == event.name()))
-                .cloned()
+                .filter(|(to, event)| match to {
+                    Some(to) => to == name,
+                    None => subscribed.iter().any(|name| name == event.name()),
+                })
+                .map(|(_, event)| event.clone())
                 .collect();
             if batch.is_empty() {
                 continue;
@@ -455,9 +525,10 @@ impl Plugins {
         errors
     }
 
-    /// Whether events wait for the next delivery.
+    /// Whether events wait for the next delivery, or reads of rows, whose
+    /// rows will come as events.
     pub fn has_events(&self) -> bool {
-        !self.out.events.is_empty()
+        !self.out.events.is_empty() || !self.out.reads.is_empty()
     }
 
     /// Whether the plugins' bindings changed since the last call, as a
@@ -488,7 +559,7 @@ fn call<T>(
     let outcome = within(
         entry,
         context,
-        (&mut out.requests, &mut writes),
+        (&mut *out, &mut writes),
         bindings_changed,
         call,
     );
@@ -512,11 +583,11 @@ fn look<T>(
     bindings_changed: &mut bool,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
-    let (mut requests, mut writes) = (Vec::new(), Vec::new());
+    let (mut out, mut writes) = (Outbox::default(), Vec::new());
     let outcome = within(
         entry,
         context,
-        (&mut requests, &mut writes),
+        (&mut out, &mut writes),
         bindings_changed,
         call,
     );
@@ -529,7 +600,7 @@ fn look<T>(
 fn within<T>(
     entry: &mut Entry,
     context: &mut Context<'_>,
-    (requests, writes): (&mut Vec<Request>, &mut Vec<Asked>),
+    (out, writes): (&mut Outbox, &mut Vec<Write>),
     bindings_changed: &mut bool,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<Result<T, Error>, Result<T, Error>> {
@@ -539,7 +610,7 @@ fn within<T>(
         let mut host = Host {
             state: &mut *state,
             context: &mut *context,
-            requests: &mut *requests,
+            out: &mut *out,
             writes: &mut *writes,
             bindings_changed: &mut *bindings_changed,
         };
@@ -562,10 +633,25 @@ fn within<T>(
 /// writes to a pane that closed since do nothing; a paste that asks the
 /// user first becomes a request of the app's; an event emitted waits for
 /// the next delivery.
-fn apply(writes: Vec<Asked>, context: &mut Context<'_>, out: &mut Outbox) {
+fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
     let requests = &mut out.requests;
     for write in writes {
         let pane = |pane: host::PaneId| context.workspace.pane(PaneId::of(pane.0));
+        let write = match write {
+            Write::Asked(write) => write,
+            Write::Decorate {
+                id,
+                pane: on,
+                from,
+                to,
+                look,
+            } => {
+                if !pane(on).is_some_and(|pane| pane.decorate(id, from, to, decoration(look))) {
+                    out.decorations.remove(&id);
+                }
+                continue;
+            }
+        };
         match write {
             Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
             Asked::SelectAll(id) => {
@@ -608,19 +694,116 @@ fn apply(writes: Vec<Asked>, context: &mut Context<'_>, out: &mut Outbox) {
                     pane.scroll(scrolled(scroll));
                 }
             }
+            Asked::Undecorate { pane: on, id } => {
+                if let Some(pane) = pane(on) {
+                    pane.undecorate(id);
+                }
+                out.decorations.remove(&id);
+            }
             Asked::Emit {
                 name,
                 schema,
                 value,
-            } => out.events.push(Event::Custom {
-                name,
-                schema,
-                value,
-            }),
+            } => out.events.push((
+                None,
+                Event::Custom {
+                    name,
+                    schema,
+                    value,
+                },
+            )),
             // The host queues writes alone.
             _ => {}
         }
     }
+}
+
+/// The terminal's look of a decoration of the SDK's.
+fn decoration(look: host::DecorationLook) -> Look {
+    let rgb = |(r, g, b): (u8, u8, u8)| Rgb { r, g, b };
+    Look {
+        underline: match look.underline {
+            None => page::Underline::None,
+            Some(host::Underline::Single) => page::Underline::Single,
+            Some(host::Underline::Double) => page::Underline::Double,
+            Some(host::Underline::Curly) => page::Underline::Curly,
+            Some(host::Underline::Dotted) => page::Underline::Dotted,
+            Some(host::Underline::Dashed) => page::Underline::Dashed,
+        },
+        underline_color: look.underline_color.map(rgb),
+        background: look.background.map(rgb),
+    }
+}
+
+/// The SDK's style of a run of the terminal's.
+fn text_style(style: &Style) -> host::TextStyle {
+    let color = |color: page::Color| match color {
+        page::Color::Default => None,
+        page::Color::Palette(index) => Some(host::Color::Palette(index)),
+        page::Color::Rgb(Rgb { r, g, b }) => Some(host::Color::Rgb(r, g, b)),
+    };
+    host::TextStyle {
+        foreground: color(style.fg),
+        background: color(style.bg),
+        underline: match style.underline {
+            page::Underline::None => None,
+            page::Underline::Single => Some(host::Underline::Single),
+            page::Underline::Double => Some(host::Underline::Double),
+            page::Underline::Curly => Some(host::Underline::Curly),
+            page::Underline::Dotted => Some(host::Underline::Dotted),
+            page::Underline::Dashed => Some(host::Underline::Dashed),
+        },
+        underline_color: color(style.underline_color),
+        bold: style.bold,
+        faint: style.faint,
+        italic: style.italic,
+        blink: style.blink,
+        inverse: style.inverse,
+        invisible: style.invisible,
+        strikethrough: style.strikethrough,
+        overline: style.overline,
+    }
+}
+
+/// Reads `count` rows of `reader`'s terminal from the row numbered
+/// `first`, on a thread of its own, [`READ_PART`] rows under the lock at a
+/// time, and wakes the main thread once it is done: the rows, and whether
+/// the read went to its end, as the rows' epoch stayed, come through the
+/// receiver.
+fn read_rows(reader: Reader, first: i64, count: usize) -> mpsc::Receiver<(Vec<host::Line>, bool)> {
+    let (sender, receiver) = mpsc::channel();
+    let read = move || {
+        let epoch = reader.lock().origin().epoch;
+        let (mut lines, mut next, mut complete) = (Vec::new(), first, true);
+        while lines.len() < count {
+            let part = {
+                let terminal = reader.lock();
+                if terminal.origin().epoch != epoch {
+                    complete = false;
+                    break;
+                }
+                terminal.read_rows(next, READ_PART.min(count - lines.len()))
+            };
+            let Some(last) = part.last() else {
+                break;
+            };
+            next = last.row + 1;
+            lines.extend(part.into_iter().map(|row| host::Line {
+                row: row.row,
+                text: row.text,
+                wrapped: row.wrapped,
+            }));
+        }
+        // A receiver that went, as its plugin's look's, takes nothing.
+        let _ = sender.send((lines, complete));
+        reader.wake();
+    };
+    // A thread that does not start drops the sender, which tells the read
+    // broken.
+    let _ = std::thread::Builder::new()
+        .name("lokyr-read".to_owned())
+        .spawn(read);
+    receiver
 }
 
 /// The terminal's scroll of the SDK's.
@@ -708,9 +891,9 @@ fn opens(target: &str) -> bool {
 struct Host<'h, 'c> {
     state: &'h mut State,
     context: &'h mut Context<'c>,
-    requests: &'h mut Vec<Request>,
+    out: &'h mut Outbox,
     /// The call's writes, which it applies as the call returns.
-    writes: &'h mut Vec<Asked>,
+    writes: &'h mut Vec<Write>,
     bindings_changed: &'h mut bool,
 }
 
@@ -798,6 +981,33 @@ impl Host<'_, '_> {
                     .working_directory()
                     .map(|directory| directory.to_string_lossy().into_owned()),
             ),
+            Asked::ReadLines { pane, first, count } => {
+                let reader = self.pane(pane)?.reader().ok_or_else(|| {
+                    Error::new(
+                        Code::Unavailable,
+                        format!("the pane {} has no terminal", pane.0),
+                    )
+                })?;
+                let id = new_id();
+                self.out.reads.push(Read {
+                    id,
+                    plugin: self.state.name.clone(),
+                    pane,
+                    rows: read_rows(reader, first, count.min(host::MOST_LINES)),
+                });
+                Response::Reading(id)
+            }
+            Asked::Styles { pane, row } => {
+                Response::Styles(self.pane(pane)?.row_styles(row).map(|runs| {
+                    runs.iter()
+                        .map(|(first, last, style)| host::StyleRun {
+                            first: *first,
+                            last: *last,
+                            style: text_style(style),
+                        })
+                        .collect()
+                }))
+            }
             Asked::Opens(target) => Response::Boolean(opens(&target)),
             Asked::FontSize => Response::FontSize(self.context.font_size),
             other => {
@@ -817,6 +1027,44 @@ impl Host<'_, '_> {
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.pane(*pane)?;
+            }
+            Asked::Decorate {
+                pane,
+                from,
+                to,
+                look,
+            } => {
+                if !self.pane(*pane)?.holds(&[from.1, to.1]) || (to.1, to.0) < (from.1, from.0) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a decoration's cells are not the pane's, or not in reading order",
+                    ));
+                }
+                let id = new_id();
+                self.out
+                    .decorations
+                    .insert(id, (*pane, self.state.name.clone()));
+                self.writes.push(Write::Decorate {
+                    id,
+                    pane: *pane,
+                    from: *from,
+                    to: *to,
+                    look: *look,
+                });
+                return Ok(Response::Decoration(id));
+            }
+            Asked::Undecorate { pane, id } => {
+                let own = self
+                    .out
+                    .decorations
+                    .get(id)
+                    .is_some_and(|(on, plugin)| on == pane && *plugin == self.state.name);
+                if !own {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has no decoration {id} of the pane {}", pane.0),
+                    ));
+                }
             }
             Asked::Emit { name, schema, .. } => {
                 let own = name
@@ -840,7 +1088,7 @@ impl Host<'_, '_> {
             }
             _ => {}
         }
-        self.writes.push(request);
+        self.writes.push(Write::Asked(request));
         Ok(Response::Done)
     }
 
@@ -894,7 +1142,7 @@ impl Host<'_, '_> {
                 ));
             }
         };
-        self.requests.push(asked);
+        self.out.requests.push(asked);
         Ok(Response::Done)
     }
 

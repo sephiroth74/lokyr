@@ -1,7 +1,9 @@
 //! Snapshots: what a renderer draws, copied from the terminal under the
 //! lock, so that it can draw without the lock.
 
-use super::{Colors, Cursor, CursorStyle, InputModes, KeyboardFlags, Origin, Selected, Terminal};
+use super::{
+    Colors, Cursor, CursorStyle, Decorated, InputModes, KeyboardFlags, Origin, Selected, Terminal,
+};
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
 /// The view as a renderer draws it: its rows, the screen's or, when the
@@ -39,6 +41,8 @@ pub struct Snapshot {
     colors: Colors,
     /// The selection, as the view shows it.
     selection: Option<Selected>,
+    /// The decorations' spans that the view shows.
+    decorations: Vec<Decorated>,
 }
 
 /// The cursor, as a renderer draws it.
@@ -96,6 +100,12 @@ impl Snapshot {
     /// The selection, as the view shows it, if there is one.
     pub fn selection(&self) -> Option<Selected> {
         self.selection
+    }
+
+    /// The spans of the decorations that the view shows, as the last
+    /// update found them, row by row.
+    pub fn decorations(&self) -> &[Decorated] {
+        &self.decorations
     }
 
     /// Whether the last update copied row `y`, which the renderer then has
@@ -375,6 +385,7 @@ impl Terminal {
             }
         }
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
+        snapshot.decorations = self.decorated_view();
         copied
     }
 }
@@ -420,6 +431,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         keyboard_flags: terminal.keyboard_flags(),
         colors: terminal.colors().clone(),
         selection: None,
+        decorations: Vec::new(),
     }
 }
 
