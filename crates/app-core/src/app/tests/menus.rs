@@ -564,6 +564,30 @@ fn the_context_menu_opens_the_link_at_its_cell() {
 }
 
 #[test]
+fn the_context_menu_s_link_is_told_by_its_row_s_number_after_a_scroll() {
+    let (mut fake, mut app, window, _) = pasting(
+        "context-scrolled",
+        "[links]\nurls = \"open\"\n",
+        shell(concat!(
+            "seq 1 80; printf 'see https://lokyr.dev/x here\\n'; echo ready; ",
+            "stty raw -echo; cat -v"
+        )),
+    );
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    // The terminal scrolled: the URL's row is far from its number.
+    assert!(app.pane(window).origin().unwrap().top > 10);
+    let rows = app.pane(window).grid().rows;
+    let url = (0..rows)
+        .find(|&y| row(&app, window, y).starts_with("see https://lokyr.dev/x"))
+        .expect("the URL on screen");
+    // On the URL, Open Link is enabled; on the word before it, dimmed.
+    right_click(&mut fake, &mut app, window, cell(10, url), Modifiers::NONE);
+    assert_eq!(context_menu(&fake, window).2, [MAN_PAGE]);
+    right_click(&mut fake, &mut app, window, cell(1, url), Modifiers::NONE);
+    assert_eq!(context_menu(&fake, window).2, ["links.open"]);
+}
+
+#[test]
 fn a_command_click_opens_the_link_that_the_drawn_frame_showed() {
     let (mut fake, mut app, window, _) = pasting(
         "click-drawn",

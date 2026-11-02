@@ -78,7 +78,8 @@ impl<B: Backend> App<B> {
             platform.request_frame(window);
         }
         let context = context(Some(pane));
-        let cell = (pointer.col, pointer.row);
+        // The cell by its row's number, as the marked cell's run takes it.
+        let cell = (pointer.col, top + i64::from(pointer.row));
         let edits = |category: Category| -> Vec<Command> {
             self.commands
                 .in_order()
@@ -143,15 +144,16 @@ impl<B: Backend> App<B> {
         platform.show_context_menu(window, position, &menu);
     }
 
-    /// Whether `command` would do something in `context`, at the view's
-    /// cell `cell` for a command of a cell: its context holds, and its
-    /// plugin, if one runs it, tells that it would.
+    /// Whether `command` would do something in `context`, at the cell
+    /// `cell`, its column and its row's number, for a command of a cell:
+    /// its context holds, and its plugin, if one runs it, tells that it
+    /// would.
     fn applies(
         &mut self,
         platform: &mut dyn Platform,
         command: &Command,
         context: &Context,
-        (column, row): (u16, u16),
+        (column, row): (u16, i64),
     ) -> bool {
         let when = command.when.as_deref().map(When::parse);
         if when.is_some_and(|when| when.is_ok_and(|when| !when.holds(context))) {
@@ -173,7 +175,7 @@ impl<B: Backend> App<B> {
             return true;
         }
         let args = if of_cell(command) {
-            cell_args(column, i64::from(row))
+            cell_args(column, row)
         } else {
             Args::new()
         };
@@ -408,8 +410,8 @@ fn of_cell(command: &Command) -> bool {
             .all(|param| param.name == "column" || param.name == "row" || param.default.is_some())
 }
 
-/// The arguments of a command of a cell for the view's cell at `column` of
-/// `row`.
+/// The arguments of a command of a cell for the cell at `column` of the row
+/// numbered `row`.
 fn cell_args(column: u16, row: i64) -> Args {
     Args::from([
         ("column".to_owned(), Value::Integer(i64::from(column))),
