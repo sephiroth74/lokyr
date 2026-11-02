@@ -116,12 +116,13 @@ pub struct Reader {
 }
 
 impl Reader {
-    /// Locks the terminal, ahead of the I/O thread's next slice, as
-    /// [`Session::lock`] does: a read holds it for a part at a time, so
-    /// that the I/O thread and the frames wait no longer than for a
-    /// frame's copy.
+    /// Locks the terminal for a part of a read, once the threads that
+    /// asked for it before, as a frame's copy, have had it, as the I/O
+    /// thread takes its slices: a read takes it again and again, a part at
+    /// a time, which the lock of `std`, unfair, would let keep a frame
+    /// waiting for many parts.
     pub fn lock(&self) -> MutexGuard<'_, Terminal> {
-        self.shared.terminal.lock()
+        self.shared.terminal.lock_in_turn()
     }
 
     /// Wakes the main thread, as a change of the terminal does.
