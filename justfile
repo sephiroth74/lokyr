@@ -106,6 +106,10 @@ notarize: bundle
 dmg: bundle
     cargo xtask dmg
 
+# Have Lokyr on this Mac read the feed of tests in private/feed, which `cargo xtask feed add <dmg>` writes, and serve it on 127.0.0.1:8123 until Control-C.
+feed-serve:
+    cargo xtask feed serve
+
 # Compile the terminfo entry xterm-lokyr into target/terminfo, with the tic on the PATH or $TIC.
 terminfo:
     cargo xtask terminfo

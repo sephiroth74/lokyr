@@ -35,6 +35,8 @@ The bundle holds Sparkle's updater, of the release that `tools/xtask/src/sparkle
 
 `just dmg` builds `target/Lokyr-<version>.dmg` of the bundle, the app and a link to Applications over a background, after it has Apple notarize the bundle if it has no ticket yet, and has Apple notarize the image too; `cargo xtask dmg --no-notarize` builds it of the bundle as it is, to look at it. The window's look is the Finder's own `.DS_Store`, kept in `crates/app/resources/dmg`, which `cargo xtask dmg layout` has the Finder write again, with the background rendered from its SVG by `rsvg-convert`, when the window's size or the icons' places change; it needs the terminal's permission to control the Finder.
 
+The updates' feed of tests, until the repository is public, is on the maintainer's Mac, in the untracked `private/feed`: `cargo xtask feed add target/Lokyr-<version>.dmg` puts a DMG there with its notes, `docs/releases/<X.Y.Z>.md` or the file that `--notes` names, and has Sparkle's `generate_appcast` write the appcast, each DMG and the appcast signed with the EdDSA key, the keychain's or the file that `LOKYR_SPARKLE_KEY_FILE` names; `--channel <name>` puts the version in a channel, as a beta's. `just feed-serve` has Lokyr on that Mac read the feed, through the updater's `SUFeedURL` in its defaults, and serves it on `127.0.0.1:8123` until Control-C; `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the builds their own feed back.
+
 ## The gate: `just ci`
 
 `just ci` runs the checks of CI that a Mac can make, and a pull request needs it green:

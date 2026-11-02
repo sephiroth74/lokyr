@@ -38,15 +38,27 @@ const UNUSED: [&str; 4] = ["Headers", "PrivateHeaders", "Modules", "XPCServices"
 /// installs an update and the app that shows its progress.
 const HELPERS: [&str; 2] = ["Versions/B/Autoupdate", "Versions/B/Updater.app"];
 
+/// The parts of the release that the bundle and the feed take: the
+/// framework, its license, and the tools that write and sign the feed.
+const PARTS: [&str; 4] = [
+    "Sparkle.framework",
+    "LICENSE",
+    "bin/generate_appcast",
+    "bin/sign_update",
+];
+
 /// The entries of the bundle's `Info.plist` for Sparkle: the feed, its key,
-/// the checks now and then on, as `[updates] check` turns them off at
-/// runtime, without Sparkle's prompt to turn them on, a day apart, and no
-/// profile of the Mac sent with them.
+/// a feed signed with it and each update checked against it before it
+/// unpacks, the checks now and then on, as `[updates] check` turns them off
+/// at runtime, without Sparkle's prompt to turn them on, a day apart, and
+/// no profile of the Mac sent with them.
 pub(crate) fn plist_entries() -> String {
     format!(
         concat!(
             "\t<key>SUFeedURL</key>\n\t<string>{FEED}</string>\n",
             "\t<key>SUPublicEDKey</key>\n\t<string>{PUBLIC_KEY}</string>\n",
+            "\t<key>SURequireSignedFeed</key>\n\t<true/>\n",
+            "\t<key>SUVerifyUpdateBeforeExtraction</key>\n\t<true/>\n",
             "\t<key>SUEnableAutomaticChecks</key>\n\t<true/>\n",
             "\t<key>SUScheduledCheckInterval</key>\n\t<integer>{CHECK_INTERVAL}</integer>\n",
             "\t<key>SUEnableSystemProfiling</key>\n\t<false/>\n",
@@ -57,12 +69,12 @@ pub(crate) fn plist_entries() -> String {
     )
 }
 
-/// The directory of the release in `target`, with its `Sparkle.framework`
-/// and its `LICENSE`: downloaded and unpacked the first time, its archive
-/// checked against [`DIGEST`].
+/// The directory of the release in `target`, with its [`PARTS`]:
+/// downloaded and unpacked the first time, its archive checked against
+/// [`DIGEST`].
 pub(crate) fn release(target: &Path) -> Result<PathBuf> {
     let directory = target.join("sparkle").join(VERSION);
-    if directory.join("Sparkle.framework").is_dir() && directory.join("LICENSE").is_file() {
+    if PARTS.iter().all(|part| directory.join(part).exists()) {
         return Ok(directory);
     }
     fs::create_dir_all(&directory).with_context(|| format!("making {}", directory.display()))?;
@@ -100,12 +112,21 @@ pub(crate) fn release(target: &Path) -> Result<PathBuf> {
             .arg(&archive)
             .arg("-C")
             .arg(&unpacked)
-            .args(["./Sparkle.framework", "./LICENSE"]),
+            .args(PARTS.map(|part| format!("./{part}"))),
         "unpacking Sparkle",
     )?;
-    for name in ["Sparkle.framework", "LICENSE"] {
-        fs::rename(unpacked.join(name), directory.join(name))
-            .with_context(|| format!("keeping Sparkle's {name}"))?;
+    for part in PARTS {
+        let kept = directory.join(part);
+        if let Some(parent) = kept.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("making {}", parent.display()))?;
+        }
+        if kept.is_dir() {
+            fs::remove_dir_all(&kept).with_context(|| format!("removing {}", kept.display()))?;
+        } else if kept.exists() {
+            fs::remove_file(&kept).with_context(|| format!("removing {}", kept.display()))?;
+        }
+        fs::rename(unpacked.join(part), &kept)
+            .with_context(|| format!("keeping Sparkle's {part}"))?;
     }
     fs::remove_dir_all(&unpacked).with_context(|| format!("removing {}", unpacked.display()))?;
     Ok(directory)
@@ -213,6 +234,10 @@ mod tests {
             entries.contains("<key>SUScheduledCheckInterval</key>\n\t<integer>86400</integer>")
         );
         assert!(entries.contains("<key>SUEnableSystemProfiling</key>\n\t<false/>"));
+        // A feed signed, and each update checked before it unpacks, which
+        // Sparkle asks of a signed feed.
+        assert!(entries.contains("<key>SURequireSignedFeed</key>\n\t<true/>"));
+        assert!(entries.contains("<key>SUVerifyUpdateBeforeExtraction</key>\n\t<true/>"));
         // An Ed25519 key of 32 bytes, in base64.
         assert_eq!(PUBLIC_KEY.len(), 44);
         assert!(PUBLIC_KEY.ends_with('='));

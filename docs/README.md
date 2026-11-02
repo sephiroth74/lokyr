@@ -54,7 +54,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its title and its sequences, on its tab; `lokyr +notify` and the agents' hooks with F3b's IPC | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3b |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
 | Localized: menus, commands and notices in the user's language | Fluent catalogs, English and Italian first; the system's preferred language, or `[app] language`; the system's own texts made from the same catalogs | [ADR 0020](adr/0020-localization.md) | F2 |
-| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed at `lokyr.dev`; the versions of ADR 0027, a build's number growing with each release | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md), [ADR 0029](adr/0029-update-feed-and-releases.md) | F3 |
+| The app installs from a DMG and updates itself | A signed, notarized DMG of `xtask dmg`; Sparkle 2, from a signed feed at `lokyr.dev`; the versions of ADR 0027, a build's number growing with each release | [ADR 0026](adr/0026-app-updates.md), [ADR 0027](adr/0027-version-numbers.md), [ADR 0029](adr/0029-update-feed-and-releases.md), [ADR 0030](adr/0030-release-notes-in-english.md) | F3 |
 
 ## Architecture decisions
 
@@ -85,10 +85,11 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0023](adr/0023-blinking-text-layer.md) | Blinking text on a layer of its own, which the window server blinks, as it blinks the cursor's | Accepted; amends 0021 |
 | [0024](adr/0024-user-commands.md) | The commands that the user runs through a plugin, as the palette's: the capability `user-commands`, which also reads the whole registry | Accepted; amends 0019 |
 | [0025](adr/0025-symbols-font.md) | A font of symbols in the binary, Symbols Nerd Font Mono, for the icons of the private use areas that the configured font lacks | Accepted; amends 0006 |
-| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008; its feed at the project's address, per 0029 |
+| [0026](adr/0026-app-updates.md) | The app updates itself through Sparkle 2, from a signed feed on the repository's GitHub releases | Accepted; amends 0008; its feed at the project's address, per 0029; its notes in English, per 0030 |
 | [0027](adr/0027-version-numbers.md) | Version numbers: releases, builds of a date and candidates; F3 from 0.2 to the first public release, 1.0.0; the plugin API's own version | Accepted; replaces the roadmap's versions; F3's blocks' minors in their new order, per 0029 |
 | [0028](adr/0028-plugin-calls-as-messages.md) | The plugins' calls as messages, with every plugin's changes queued, and their UI as data, whose widgets keep their state in the host | Accepted; amends 0003 |
 | [0029](adr/0029-update-feed-and-releases.md) | The updates' feed at `lokyr.dev`, builds' numbers that grow with each release, Sparkle in the app, and the distribution as F3's second block | Accepted; amends 0026 and 0027 |
+| [0030](adr/0030-release-notes-in-english.md) | The release notes in English alone, and the feed of Sparkle's `generate_appcast` | Accepted; amends 0026 |
 
 ## Glossary
 
