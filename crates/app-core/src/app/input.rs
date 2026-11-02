@@ -385,9 +385,10 @@ impl<B: Backend> App<B> {
 
     /// Runs the command that the keymap binds the left button's click with
     /// `mods` to, as it goes down at `position` over `window`, which has the
-    /// focus, before the selection and the program: the column and the row
-    /// of the cell under the pointer, in the view, become its `column` and
-    /// `row` arguments, if it takes them. Whether a command was bound.
+    /// focus, before the selection and the program: the column of the cell
+    /// under the pointer and its row's number, as the drawn frame showed
+    /// it, become its `column` and `row` arguments, if it takes them.
+    /// Whether a command was bound.
     fn click(
         &mut self,
         platform: &mut dyn Platform,
@@ -404,19 +405,21 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
-        let context = context(self.workspace.focused(state.window));
+        let pane = self.workspace.focused(state.window);
+        let context = context(pane);
+        let row = pane.map_or(0, shown_top) + i64::from(pointer.row);
         let Resolved::Run(mut invocation) =
             Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
         else {
             return false;
         };
         if let Some(command) = self.commands.get(&invocation.command) {
-            for (name, value) in [("column", pointer.col), ("row", pointer.row)] {
+            for (name, value) in [("column", i64::from(pointer.col)), ("row", row)] {
                 if command.params.iter().any(|param| param.name == name) {
                     invocation
                         .args
                         .entry(name.to_owned())
-                        .or_insert(Value::Integer(i64::from(value)));
+                        .or_insert(Value::Integer(value));
                 }
             }
         }
@@ -475,7 +478,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let grid = pane.grid();
-        let spot = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        let spot = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
         let tracking = !pane.is_kept()
             && pane
                 .input_modes()
@@ -493,7 +496,7 @@ impl<B: Backend> App<B> {
                 };
                 let rectangle = (mods.left_alt || mods.right_alt) && unit == SelectionUnit::Cell;
                 // The terminal keeps the anchor, which moves with its text.
-                pane.anchor_selection((spot.col, spot.row + pane.view_offset() as i64));
+                pane.anchor_selection((spot.col, spot.row));
                 *slot = Some(Selecting {
                     anchor: spot,
                     last: spot,
@@ -539,7 +542,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let grid = pane.grid();
-        selecting.last = mouse::spot(pointer, pane.view_offset(), grid.cell_width, grid.columns);
+        selecting.last = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
         selecting.beyond = mouse::beyond(position.y, scale, top, grid);
         show_selection(pane, selecting);
         platform.request_frame(window);
@@ -601,9 +604,9 @@ impl<B: Backend> App<B> {
             let edge = if selecting.beyond < 0 {
                 0
             } else {
-                i64::from(pane.grid().rows) - 1
+                pane.grid().rows.saturating_sub(1)
             };
-            selecting.last.row = edge - offset as i64;
+            selecting.last.row = pane.origin().map_or(0, |origin| origin.row(edge));
             show_selection(pane, selecting);
             platform.request_frame(window);
             scrolled |= offset != before;
@@ -834,20 +837,31 @@ fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseE
     }
 }
 
+/// The number of the first row of `pane`'s view as the drawn frame showed
+/// it, which the pointer's cells take, though output scrolled the view
+/// since; as the terminal has it now, when a resize laid the rows out
+/// again since, or the other screen became the active one.
+pub(super) fn shown_top(pane: &Pane) -> i64 {
+    let now = pane.origin();
+    match (pane.snapshot().origin(), now) {
+        (Some(drawn), Some(now)) if drawn.epoch == now.epoch => drawn.top,
+        (_, now) => now.map_or(0, |now| now.top),
+    }
+}
+
 /// Shows `selecting`'s selection in `pane`: the cells between its spots,
 /// or the words or the lines that they are in; none, as after a click. Its
 /// anchor is where the terminal keeps it, which output moves with its text.
 pub(super) fn show_selection(pane: &Pane, selecting: &mut Selecting) {
-    let offset = pane.view_offset() as i64;
-    // The anchor where its text is now, which output, or a reflow, can
-    // have moved; its side of its cell kept.
+    // The anchor where its text is now, which a reflow can have moved; its
+    // side of its cell kept.
     if let Some((col, row)) = pane.selection_anchor() {
         let side = selecting
             .anchor
             .boundary
             .saturating_sub(selecting.anchor.col);
         selecting.anchor = Spot {
-            row: row - offset,
+            row,
             col,
             boundary: col + side,
         };
@@ -860,9 +874,8 @@ pub(super) fn show_selection(pane: &Pane, selecting: &mut Selecting) {
         }
         (SelectionShape::Cells, _) => Some(((anchor.col, anchor.row), (last.col, last.row))),
     };
-    let view = |(col, row): (u16, i64)| (col, row + offset);
     match cells {
-        Some((from, to)) => pane.select(view(from), view(to), selecting.shape, selecting.unit),
+        Some((from, to)) => pane.select(from, to, selecting.shape, selecting.unit),
         None => pane.clear_selection(),
     }
 }

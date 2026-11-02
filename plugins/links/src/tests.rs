@@ -61,8 +61,13 @@ impl HostApi for Host {
         Ok(None)
     }
 
-    fn line_text(&mut self, pane: PaneId, row: i64) -> Result<Option<LineText>, Error> {
-        assert_eq!(pane, PaneId(4));
+    fn line_text(
+        &mut self,
+        pane: PaneId,
+        row: i64,
+        reach: usize,
+    ) -> Result<Option<LineText>, Error> {
+        assert_eq!((pane, reach), (PaneId(4), super::REACH));
         if !(1..=2).contains(&row) {
             return Ok(None);
         }

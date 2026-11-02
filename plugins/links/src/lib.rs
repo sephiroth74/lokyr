@@ -19,9 +19,14 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
 pub use scan::{Found, find};
 
-/// Opens the link at the cell of its `column` and `row`, in the focused
-/// pane's view.
+/// Opens the link at the cell of its `column` and `row`, the row's number,
+/// in the focused pane.
 const OPEN: &str = "links.open";
+
+/// The rows before the clicked one and after it that the read of its line
+/// takes: a URL or a path of thousands of characters, and no more of a line
+/// of many rows.
+const REACH: usize = 32;
 
 /// The keys of [`OPEN`].
 const KEYS: &str = "cmd+click";
@@ -96,8 +101,8 @@ impl Plugin for Links {
 /// before a relative one; of the text between quotes and the word around
 /// it, the first that is there, else the word's; `None` for nothing.
 fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
-    // The registry checked that both are there, whole numbers; a row
-    // above the view is the scrollback's, and one past it finds nothing.
+    // The registry checked that both are there, whole numbers; a row that
+    // the pane no longer holds finds nothing.
     let number = |name| match args.get(name) {
         Some(&Value::Integer(value)) => Some(value),
         _ => None,
@@ -112,7 +117,7 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
     if let Some(link) = cx.link_at(pane, column, row)? {
         return Ok(Some(link));
     }
-    let Some(line) = cx.line_text(pane, row)? else {
+    let Some(line) = cx.line_text(pane, row, REACH)? else {
         return Ok(None);
     };
     // The character whose cell holds the column: the last one that starts

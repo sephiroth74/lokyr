@@ -695,13 +695,13 @@ fn a_pane_tells_its_contexts() {
 }
 
 #[test]
-fn a_marked_cell_s_line_and_link_are_its_own_as_output_scrolls_the_view() {
+fn a_marked_cell_s_line_and_link_keep_its_row_s_number_as_output_scrolls_the_view() {
     let pane = pane(concat!(
         "stty -echo; printf '\\033]8;;https://lokyr.dev/osc\\033\\\\see\\033]8;;\\033\\\\ ",
         "https://lokyr.dev/x\\n'; read line; seq 1 60; echo done; read line"
     ));
     let text = |row| {
-        pane.line_text(row)
+        pane.line_text(row, 4)
             .map(|(text, _)| text.trim_end().to_owned())
     };
     let wait = |done: &dyn Fn() -> bool| {
@@ -713,21 +713,24 @@ fn a_marked_cell_s_line_and_link_are_its_own_as_output_scrolls_the_view() {
     };
     let first = "see https://lokyr.dev/x".to_owned();
     wait(&|| text(0).as_deref() == Some(first.as_str()));
-    // A menu's cell, on the OSC 8 link, read with its line and its link.
+    // A menu's cell, on the OSC 8 link.
     pane.mark_cell((1, 0));
     assert_eq!(pane.marked_cell(), Some((1, 0)));
-    // Output scrolls the view, and its row 0 shows another line.
+    assert_eq!(pane.origin().map(|origin| origin.top), Some(0));
+    // Output scrolls the line into the scrollback: the view's first row
+    // shows another, and the row numbered 0 is still the line.
     pane.send_text("\r");
-    wait(&|| (1..24).any(|row| text(row).as_deref() == Some("done")));
-    assert_eq!(text(0), Some(first.clone()));
+    wait(&|| {
+        pane.origin().is_some_and(|origin| origin.top > 0) && text(61).as_deref() == Some("done")
+    });
+    assert_eq!(pane.marked_cell(), Some((1, 0)));
+    assert_eq!(text(0), Some(first));
     assert_eq!(pane.link_at(1, 0).as_deref(), Some("https://lokyr.dev/osc"));
-    let (_, cells) = pane.line_text(0).unwrap();
+    let (_, cells) = pane.line_text(0, 4).unwrap();
     assert_eq!(cells[0], (0, 0));
-    // The other rows are the view's own, and the mark gone, the row too.
-    assert_ne!(text(1), Some(first.clone()));
+    assert_eq!(text(1).as_deref(), Some("1"));
     pane.unmark_cell();
-    assert_ne!(text(0), Some(first));
-    assert_eq!(pane.link_at(1, 0), None);
+    assert_eq!(pane.marked_cell(), None);
 }
 
 /// The workspace as its changes tell it, from the empty one.

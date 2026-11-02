@@ -44,9 +44,13 @@ pub struct LineText {
     /// The text: a cell without a character is a space.
     pub text: String,
     /// The cell of each of the text's characters, in order: its column,
-    /// and its row from the view's first, which can be above the view.
+    /// and its row's number.
     pub cells: Vec<(u16, i64)>,
 }
+
+/// The most rows before a row and after it that a read of its logical line
+/// takes, so that a line of many rows costs no more.
+pub const MOST_REACH: usize = 256;
 
 /// How a pane's view scrolls through its scrollback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,15 +103,26 @@ pub trait HostApi {
     /// The text of `pane`'s selection, if it has one.
     fn selection_text(&mut self, pane: PaneId) -> Result<Option<String>, Error>;
 
-    /// The text of the logical line that `pane`'s row `row` from the view's
-    /// first is in, which can be above the view, in the scrollback, with
-    /// each character's cell; `None` past the view's last row, or above the
-    /// scrollback's first.
-    fn line_text(&mut self, pane: PaneId, row: i64) -> Result<Option<LineText>, Error>;
+    /// The text of the logical line that `pane`'s row numbered `row` is in,
+    /// of the screen or of its scrollback, as far as `reach` rows before it
+    /// and after it, [`MOST_REACH`] at most, with each character's cell;
+    /// `None` for a row that the pane does not hold.
+    ///
+    /// A row's number stays its own as output scrolls it into the
+    /// scrollback and the view scrolls, until the scrollback's limit takes
+    /// it away; a resize, which lays the rows out again, numbers them
+    /// anew. A command of a cell, as a click's, takes the number of the
+    /// row that the click was on, as the drawn frame showed it.
+    fn line_text(
+        &mut self,
+        pane: PaneId,
+        row: i64,
+        reach: usize,
+    ) -> Result<Option<LineText>, Error>;
 
     /// The target of the OSC 8 link that the cell of `pane` at `column` of
-    /// the row `row` from the view's first is part of, if it is one's: of
-    /// the view's rows, or above them, as [`HostApi::line_text`] takes them.
+    /// the row numbered `row` is part of, if it is one's, as
+    /// [`HostApi::line_text`] numbers the rows.
     fn link_at(&mut self, pane: PaneId, column: u16, row: i64) -> Result<Option<String>, Error>;
 
     /// The working directory of the program in `pane`'s foreground, as a

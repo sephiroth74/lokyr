@@ -504,10 +504,15 @@ impl HostApi for Host<'_, '_> {
         Ok(self.pane(pane)?.selection_text())
     }
 
-    fn line_text(&mut self, pane: host::PaneId, row: i64) -> Result<Option<host::LineText>, Error> {
+    fn line_text(
+        &mut self,
+        pane: host::PaneId,
+        row: i64,
+        reach: usize,
+    ) -> Result<Option<host::LineText>, Error> {
         Ok(self
             .pane(pane)?
-            .line_text(row)
+            .line_text(row, reach.min(host::MOST_REACH))
             .map(|(text, cells)| host::LineText { text, cells }))
     }
 

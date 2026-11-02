@@ -93,11 +93,14 @@ pub(super) struct Selection {
     hashes: Vec<u64>,
 }
 
-/// A cell that moves with its text, as the one that a selection by the
-/// mouse grows from, or a mark's: a pin, and whether it is the alternate
-/// screen's.
+/// A cell that keeps its text: output scrolls it into the scrollback, a
+/// resize reflows it, and the pin goes with it, until the scrollback's
+/// limit, or a clearing, takes its row away. Its screen's own: the other
+/// screen's rows do not have it. [`Terminal::unpin_cell`] lets it go, and a
+/// pin let go, or whose row went, tells nothing, though another pin takes
+/// its place in the list.
 #[derive(Debug)]
-pub(super) struct Anchor {
+pub struct CellPin {
     pin: PinId,
     alternate: bool,
 }
@@ -431,12 +434,12 @@ fn trim_line(text: &mut String) {
 }
 
 impl Terminal {
-    /// Selects from the view's cell `from`, its column and its row from the
-    /// view's first, which can be above the view, in the scrollback, to its
-    /// cell `to`, either before the other, in `shape`, grown to `unit`, with
-    /// `separators` ending the words besides spaces, as [`WORD_SEPARATORS`]
-    /// does by default. A rectangle takes no unit. A row past the list's
-    /// ends takes the nearest end's. The selection that was there goes.
+    /// Selects from the cell `from`, its column and its row's number, of
+    /// the screen or of its scrollback, to the cell `to`, either before the
+    /// other, in `shape`, grown to `unit`, with `separators` ending the
+    /// words besides spaces, as [`WORD_SEPARATORS`] does by default. A
+    /// rectangle takes no unit. A row past the list's ends takes the
+    /// nearest end's. The selection that was there goes.
     pub fn select(
         &mut self,
         from: (u16, i64),
@@ -446,12 +449,10 @@ impl Terminal {
         separators: &str,
     ) {
         self.clear_selection();
-        let top = self.view_top() as i64;
-        let rows = &self.screen().rows;
-        let (cols, last) = (rows.cols(), rows.total_rows() as i64 - 1);
-        // Within the list's rows, which a `usize` holds.
-        let at = |(col, row): (u16, i64)| ((top + row).clamp(0, last) as usize, col.min(cols - 1));
+        let cols = self.screen().rows.cols();
+        let at = |(col, row): (u16, i64)| (self.nearest_index(row), col.min(cols - 1));
         let (a, b) = (at(from), at(to));
+        let rows = &self.screen().rows;
         let (mut start, mut end) = match shape {
             SelectionShape::Rectangle => {
                 ((a.0.min(b.0), a.1.min(b.1)), (a.0.max(b.0), a.1.max(b.1)))
@@ -490,22 +491,22 @@ impl Terminal {
         self.take_selection((start, end), shape);
     }
 
-    /// The text of the logical line that the row `row` from the view's
-    /// first is in, which can be above the view, in the scrollback: its
-    /// rows that soft-wrap joined, with the cell of each of its characters,
-    /// by its column and its row from the view's first: a wide character's
-    /// first cell, each of a cluster's characters its cell's, and a cell
-    /// without a character a space. `None` past the view's last row, or
-    /// above the list's first.
-    pub fn line_text(&self, row: i64) -> Option<(String, Vec<(u16, i64)>)> {
-        let top = self.view_top();
-        let index = self.view_index(row)?;
+    /// The text of the logical line that the row numbered `row` is in, of
+    /// the screen or of its scrollback, as far as `reach` rows before it
+    /// and after it: its rows that soft-wrap joined, with the cell of each
+    /// of its characters, by its column and its row's number: a wide
+    /// character's first cell, each of a cluster's characters its cell's,
+    /// and a cell without a character a space. `None` for a row that the
+    /// list does not hold.
+    pub fn line_text(&self, row: i64, reach: usize) -> Option<(String, Vec<(u16, i64)>)> {
+        let index = self.row_index(row)?;
         let rows = &self.screen().rows;
         let (first, last) = line(rows, index);
+        let first = first.max(index.saturating_sub(reach));
+        let last = last.min(index.saturating_add(reach));
         let (mut text, mut cells) = (String::new(), Vec::new());
         for (at, list_row) in (first..=last).zip(rows.rows_from(first)) {
-            // Fewer rows than an `i64` holds.
-            let view_row = at as i64 - top as i64;
+            let number = self.row_number(at);
             let end = list_row.cols() - 1;
             for x in 0..list_row.cols() {
                 let cell = list_row.cell(x);
@@ -517,16 +518,16 @@ impl Terminal {
                 match cell.content() {
                     Content::Char('\0') | Content::BgPalette(_) | Content::BgRgb(_) => {
                         text.push(' ');
-                        cells.push((x, view_row));
+                        cells.push((x, number));
                     }
                     Content::Char(character) => {
                         text.push(character);
-                        cells.push((x, view_row));
+                        cells.push((x, number));
                     }
                     Content::Grapheme(character) => {
                         for &character in std::iter::once(&character).chain(list_row.grapheme(x)) {
                             text.push(character);
-                            cells.push((x, view_row));
+                            cells.push((x, number));
                         }
                     }
                 }
@@ -536,24 +537,12 @@ impl Terminal {
     }
 
     /// The target of the OSC 8 link that the cell at `column` of the row
-    /// `row` from the view's first is part of, if it is one's: of a row
-    /// of the view, or above it, as [`Terminal::line_text`] takes it.
+    /// numbered `row` is part of, if it is one's.
     pub fn link_at(&self, column: u16, row: i64) -> Option<String> {
-        let list_row = row_at(&self.screen().rows, self.view_index(row)?)?;
+        let list_row = row_at(&self.screen().rows, self.row_index(row)?)?;
         list_row
             .link(column)
             .map(|uri| String::from_utf8_lossy(uri).into_owned())
-    }
-
-    /// The list's index of the row `row` from the view's first: of a row of
-    /// the view, or above it, within the list.
-    fn view_index(&self, row: i64) -> Option<usize> {
-        if row >= i64::from(self.rows) {
-            return None;
-        }
-        // Fewer rows than an `i64` holds.
-        let index = usize::try_from(self.view_top() as i64 + row).ok()?;
-        (index < self.screen().rows.total_rows()).then_some(index)
     }
 
     /// Selects every cell of the active screen and of its scrollback, to
@@ -573,22 +562,21 @@ impl Terminal {
         self.take_selection(((0, 0), last), SelectionShape::Cells);
     }
 
-    /// Anchors the selection that the mouse makes at the view's cell `at`,
-    /// its column and its row from the view's first, which can be above
-    /// the view: a pin, which output moves with its text, as it scrolls the
-    /// text into the scrollback, and a resize as it reflows it. A row past
-    /// the list's ends takes the nearest end's. The anchor that was there
-    /// goes.
+    /// Anchors the selection that the mouse makes at the cell `at`, its
+    /// column and its row's number: a pin, which output moves with its
+    /// text, as it scrolls the text into the scrollback, and a resize as it
+    /// reflows it. A row past the list's ends takes the nearest end's. The
+    /// anchor that was there goes.
     pub fn anchor_selection(&mut self, at: (u16, i64)) {
         self.drop_selection_anchor();
-        self.selection_anchor = self.pin_cell(at);
+        self.selection_anchor = self.pin_nearest(at);
     }
 
     /// The cell that the selection by the mouse grows from, by its column
-    /// and its row from the view's first, while its text is in the list
-    /// and its screen is the active one.
+    /// and its row's number, while its text is in the list and its screen
+    /// is the active one.
     pub fn selection_anchor(&self) -> Option<(u16, i64)> {
-        self.pinned(self.selection_anchor.as_ref()?)
+        self.pinned_cell(self.selection_anchor.as_ref()?)
     }
 
     /// Lets the selection's anchor go, if there is one.
@@ -598,21 +586,21 @@ impl Terminal {
         }
     }
 
-    /// Marks the view's cell `at`, its column and its row from the view's
-    /// first, as the one that a menu opened on, whose commands run later:
-    /// a pin, as the selection's anchor is, which output moves with its
-    /// text. A row past the list's ends takes the nearest end's. The mark
-    /// that was there goes.
+    /// Marks the cell `at`, its column and its row's number, as the one
+    /// that a menu opened on, whose commands run later: a pin, as the
+    /// selection's anchor is, which output moves with its text. A row past
+    /// the list's ends takes the nearest end's. The mark that was there
+    /// goes.
     pub fn mark_cell(&mut self, at: (u16, i64)) {
         self.unmark_cell();
-        self.cell_mark = self.pin_cell(at);
+        self.cell_mark = self.pin_nearest(at);
     }
 
     /// The cell that [`Terminal::mark_cell`] marked, by its column and its
-    /// row from the view's first, while its text is in the list and its
-    /// screen is the active one.
+    /// row's number, while its text is in the list and its screen is the
+    /// active one.
     pub fn marked_cell(&self) -> Option<(u16, i64)> {
-        self.pinned(self.cell_mark.as_ref()?)
+        self.pinned_cell(self.cell_mark.as_ref()?)
     }
 
     /// Lets the cell's mark go, if there is one.
@@ -622,44 +610,56 @@ impl Terminal {
         }
     }
 
-    /// A pin of the active screen's view cell `at`, its column and its row
-    /// from the view's first, a row past the list's ends at the nearest
-    /// end's; none where the list has no pin left.
-    fn pin_cell(&mut self, at: (u16, i64)) -> Option<Anchor> {
-        let top = self.view_top() as i64;
-        let alternate = self.alternate_active;
-        let rows = &mut self.screen_mut().rows;
-        let (cols, last) = (rows.cols(), rows.total_rows() as i64 - 1);
-        // Within the list's rows, which a `usize` holds.
-        let index = (top + at.1).clamp(0, last) as usize;
-        let (page, row) = rows.row_at(index)?;
-        let col = at.0.min(cols - 1);
-        let pin = rows.pin(Position { page, row, col })?;
-        Some(Anchor { pin, alternate })
+    /// A pin of the active screen's cell `at`, its column and its row's
+    /// number, which keeps its text as [`CellPin`] tells; `None` for a row
+    /// that the list does not hold, or a column past the rows' last.
+    pub fn pin_cell(&mut self, at: (u16, i64)) -> Option<CellPin> {
+        let index = self.row_index(at.1)?;
+        if at.0 >= self.screen().rows.cols() {
+            return None;
+        }
+        self.pin_index(index, at.0)
     }
 
-    /// Where `anchor`'s cell is, by its column and its row from the view's
-    /// first, while its text is in the list and its screen is the active
-    /// one.
-    fn pinned(&self, anchor: &Anchor) -> Option<(u16, i64)> {
-        if anchor.alternate != self.alternate_active {
+    /// A pin of the active screen's cell `at`, of the row past the list's
+    /// ends at the nearest end's, and of the last column past it.
+    fn pin_nearest(&mut self, at: (u16, i64)) -> Option<CellPin> {
+        let index = self.nearest_index(at.1);
+        let col = at.0.min(self.screen().rows.cols() - 1);
+        self.pin_index(index, col)
+    }
+
+    /// A pin of the cell at `col` of the active screen's row at `index` of
+    /// its list; none where the list has no pin left.
+    fn pin_index(&mut self, index: usize, col: u16) -> Option<CellPin> {
+        let alternate = self.alternate_active;
+        let rows = &mut self.screen_mut().rows;
+        let (page, row) = rows.row_at(index)?;
+        let pin = rows.pin(Position { page, row, col })?;
+        Some(CellPin { pin, alternate })
+    }
+
+    /// Where `pin`'s cell is, by its column and its row's number, while its
+    /// text is in the list and its screen is the active one.
+    pub fn pinned_cell(&self, pin: &CellPin) -> Option<(u16, i64)> {
+        if pin.alternate != self.alternate_active {
             return None;
         }
         let rows = &self.screen().rows;
-        let position = rows.pin_position(anchor.pin)?;
+        let position = rows.pin_position(pin.pin)?;
         let index = rows.row_index(position.page, position.row)?;
-        // Fewer rows than an `i64` holds.
-        Some((position.col, index as i64 - self.view_top() as i64))
+        Some((position.col, self.row_number(index)))
     }
 
-    /// Lets `anchor`'s pin go, from its own screen's list.
-    fn unpin_cell(&mut self, anchor: &Anchor) {
-        let rows = if anchor.alternate {
+    /// Lets `pin` go, from its own screen's list, which then tells nothing
+    /// of it; a pin whose row went needs nothing more.
+    pub fn unpin_cell(&mut self, pin: &CellPin) {
+        let rows = if pin.alternate {
             &mut self.alternate.rows
         } else {
             &mut self.primary.rows
         };
-        rows.unpin(anchor.pin);
+        rows.unpin(pin.pin);
     }
 
     /// Lets the selection go, if there is one.
@@ -703,11 +703,6 @@ impl Terminal {
         };
         selection.baseline(rows, bounds);
         self.selection = Some(selection);
-    }
-
-    /// The list's index of the view's first row.
-    fn view_top(&self) -> usize {
-        self.screen().rows.scrollback_rows() - self.viewport_offset()
     }
 
     /// The selection's first and last cells, once the selection is still
@@ -825,8 +820,9 @@ impl Terminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::page::Scrollback;
     use crate::parser::Parser;
-    use crate::terminal::{Options, Scroll};
+    use crate::terminal::{Options, Scroll, Snapshot};
 
     fn fed(cols: u16, rows: u16, text: &str) -> Terminal {
         let mut terminal = Terminal::new(cols, rows, Options::default());
@@ -986,8 +982,9 @@ mod tests {
         // Rows 0 to 7, of which the screen shows the last three.
         let mut terminal = fed(10, 3, "0\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n7");
         // From two rows above the view, in the scrollback, to its last.
+        assert_eq!(terminal.origin().top, 5);
         assert_eq!(
-            selected(&mut terminal, (0, -2), (0, 2), SelectionUnit::Line),
+            selected(&mut terminal, (0, 3), (0, 7), SelectionUnit::Line),
             "3\n4\n5\n6\n7"
         );
         // Past the list's first row and its last, its ends.
@@ -1003,7 +1000,7 @@ mod tests {
     fn a_line_s_text_joins_its_wraps_with_each_character_s_cell() {
         // `ab日cd` and an `e` with its accent, wrapped in rows of 4.
         let terminal = fed(4, 4, "ab日cde\u{301}\r\nnext");
-        let (text, cells) = terminal.line_text(1).unwrap();
+        let (text, cells) = terminal.line_text(1, 9).unwrap();
         // The second row's last cell is empty.
         assert_eq!(text, "ab日cde\u{301} ");
         assert_eq!(
@@ -1019,12 +1016,17 @@ mod tests {
                 (3, 1)
             ]
         );
-        // The row on its own, and past the view.
-        assert_eq!(terminal.line_text(2).unwrap().0, "next");
-        assert_eq!(terminal.line_text(4), None);
+        // As far as no row from it: its own row's.
+        let (text, cells) = terminal.line_text(1, 0).unwrap();
+        assert_eq!(text, "cde\u{301} ");
+        assert_eq!(cells, [(0, 1), (1, 1), (2, 1), (2, 1), (3, 1)]);
+        assert_eq!(terminal.line_text(0, 0).unwrap().0, "ab日");
+        // The row on its own, and past the list.
+        assert_eq!(terminal.line_text(2, 9).unwrap().0, "next");
+        assert_eq!(terminal.line_text(4, 9), None);
         // A wide character that did not fit at a row's end leaves nothing
         // there.
-        let (text, cells) = fed(4, 4, "abc日").line_text(0).unwrap();
+        let (text, cells) = fed(4, 4, "abc日").line_text(0, 9).unwrap();
         assert_eq!(text, "abc日  ");
         assert_eq!(cells[2..4], [(2, 0), (0, 1)]);
     }
@@ -1039,12 +1041,14 @@ mod tests {
         // Anchored again, the first one's pin goes.
         terminal.anchor_selection((0, 1));
         assert_eq!(terminal.screen().rows.pins(), pins + 1);
-        // Output scrolls `b` above the screen: the anchor goes with it.
+        // Output scrolls `b` above the screen, and a view scrolled up shows
+        // it lower: its number stays.
         Parser::new().advance(&mut terminal, b"\r\ne\r\nf");
-        assert_eq!(terminal.selection_anchor(), Some((0, -1)));
-        // A view scrolled up shows it a row lower.
+        assert_eq!(terminal.origin().top, 2);
+        assert_eq!(terminal.selection_anchor(), Some((0, 1)));
         terminal.scroll_viewport(Scroll::Up(1));
-        assert_eq!(terminal.selection_anchor(), Some((0, 0)));
+        assert_eq!(terminal.origin().top, 1);
+        assert_eq!(terminal.selection_anchor(), Some((0, 1)));
         terminal.scroll_viewport(Scroll::Bottom);
         // On the other screen, none, whatever that screen pins; back on its
         // own, again.
@@ -1052,19 +1056,21 @@ mod tests {
         terminal.select_all();
         assert_eq!(terminal.selection_anchor(), None);
         Parser::new().advance(&mut terminal, b"\x1b[?1049l");
-        assert_eq!(terminal.selection_anchor(), Some((0, -1)));
+        assert_eq!(terminal.selection_anchor(), Some((0, 1)));
         // A new anchor takes its place, a cell past the row's or the
         // list's end at the nearest one.
         terminal.anchor_selection((30, 99));
-        assert_eq!(terminal.selection_anchor(), Some((9, 3)));
+        assert_eq!(terminal.selection_anchor(), Some((9, 5)));
+        terminal.anchor_selection((0, -99));
+        assert_eq!(terminal.selection_anchor(), Some((0, 0)));
         // A clear of the scrollback takes the anchor's text away.
-        terminal.anchor_selection((0, -1));
+        terminal.anchor_selection((0, 1));
         Parser::new().advance(&mut terminal, b"\x1b[3J");
         assert_eq!(terminal.selection_anchor(), None);
     }
 
     #[test]
-    fn a_line_above_the_view_is_the_scrollback_s() {
+    fn a_line_of_the_scrollback_or_below_the_view_reads_by_its_number() {
         // Rows of 4 cells, 2 of them on the screen: `a` and `b` scroll into
         // the scrollback.
         let mut terminal = fed(
@@ -1072,24 +1078,123 @@ mod tests {
             2,
             "\x1b]8;;https://lokyr.dev\x07a\x1b]8;;\x07\r\nb\r\nc\r\nd",
         );
-        assert_eq!(terminal.line_text(-2).unwrap().0, "a   ");
-        assert_eq!(terminal.line_text(-1).unwrap().1[0], (0, -1));
-        assert_eq!(
-            terminal.link_at(0, -2).as_deref(),
-            Some("https://lokyr.dev")
-        );
-        assert_eq!(terminal.line_text(-3), None);
-        assert_eq!(terminal.link_at(0, -3), None);
-        // A view scrolled up takes neither the rows below it, nor the
-        // links there.
+        assert_eq!(terminal.origin().top, 2);
+        assert_eq!(terminal.line_text(0, 9).unwrap().0, "a   ");
+        assert_eq!(terminal.line_text(1, 9).unwrap().1[0], (0, 1));
+        assert_eq!(terminal.link_at(0, 0).as_deref(), Some("https://lokyr.dev"));
+        assert_eq!(terminal.line_text(-1, 9), None);
+        assert_eq!(terminal.link_at(0, -1), None);
+        // A view scrolled up reads the rows below it too, and their links,
+        // by the same numbers; none past the screen.
         feed(
             &mut terminal,
             "\x1b]8;;https://lokyr.dev/d\x07d\x1b]8;;\x07",
         );
         terminal.scroll_viewport(Scroll::Up(1));
-        assert_eq!(terminal.line_text(1).unwrap().0, "c   ");
-        assert_eq!(terminal.line_text(2), None);
-        assert_eq!(terminal.link_at(1, 2), None);
+        assert_eq!(terminal.origin().top, 1);
+        assert_eq!(terminal.line_text(2, 9).unwrap().0, "c   ");
+        assert_eq!(terminal.line_text(3, 9).unwrap().0, "dd  ");
+        assert_eq!(
+            terminal.link_at(1, 3).as_deref(),
+            Some("https://lokyr.dev/d")
+        );
+        assert_eq!(terminal.line_text(4, 9), None);
+    }
+
+    /// The text of the logical line of the row numbered `row`, without the
+    /// spaces that end it.
+    fn line_at(terminal: &Terminal, row: i64) -> Option<String> {
+        let (text, _) = terminal.line_text(row, 99)?;
+        Some(text.trim_end().to_owned())
+    }
+
+    #[test]
+    fn a_line_keeps_its_place_through_output_a_reflow_and_the_scrollback_s_limit() {
+        // Rows of 10 cells, 3 on the screen, and a scrollback that keeps
+        // only the pages of the screen's rows.
+        let options = Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(10, 3, options);
+        // `two three ` and `four`, the line of the row numbered 1.
+        feed(&mut terminal, "one\r\ntwo three four\r\nfive");
+        let pin = terminal.pin_cell((0, 1)).unwrap();
+        assert_eq!(line_at(&terminal, 1).as_deref(), Some("two three four"));
+        // Output scrolls it into the scrollback, and the view goes up and
+        // down: its number stays, and its pin.
+        feed(&mut terminal, "\r\nsix\r\nseven\r\neight");
+        assert_eq!(terminal.origin().top, 4);
+        assert_eq!(line_at(&terminal, 1).as_deref(), Some("two three four"));
+        terminal.scroll_viewport(Scroll::Up(2));
+        assert_eq!(terminal.origin().top, 2);
+        assert_eq!(terminal.pinned_cell(&pin), Some((0, 1)));
+        assert_eq!(line_at(&terminal, 1).as_deref(), Some("two three four"));
+        terminal.scroll_viewport(Scroll::Bottom);
+        // A reflow lays it out in one row, of another epoch, whose number
+        // the pin tells; then in three.
+        let epoch = terminal.origin().epoch;
+        terminal.resize(20, 3);
+        assert_ne!(terminal.origin().epoch, epoch);
+        let (_, row) = terminal.pinned_cell(&pin).unwrap();
+        assert_eq!(line_at(&terminal, row).as_deref(), Some("two three four"));
+        assert_eq!(
+            terminal.line_text(row, 0).unwrap().0.trim_end(),
+            "two three four"
+        );
+        terminal.resize(5, 3);
+        let (col, row) = terminal.pinned_cell(&pin).unwrap();
+        assert_eq!(col, 0);
+        assert_eq!(line_at(&terminal, row).as_deref(), Some("two three four"));
+        assert_eq!(terminal.line_text(row, 0).unwrap().0, "two t");
+        // The scrollback's limit takes its page away, and the pin with it;
+        // the rows that stay keep their numbers.
+        let mut lines = 0;
+        while terminal.pinned_cell(&pin).is_some() {
+            let (top, shown) = (
+                terminal.origin().top,
+                line_at(&terminal, terminal.origin().top),
+            );
+            feed(&mut terminal, &format!("\r\n{lines}"));
+            lines += 1;
+            assert!(lines < 100_000, "the scrollback keeps every row");
+            assert_eq!(line_at(&terminal, top), shown, "after {lines} lines");
+        }
+        assert_eq!(line_at(&terminal, row), None);
+        assert_eq!(terminal.pinned_cell(&pin), None);
+        terminal.unpin_cell(&pin);
+        // A pin of a row that the list does not hold, or past the rows'
+        // last column, is none.
+        assert!(terminal.pin_cell((0, row)).is_none());
+        assert!(terminal.pin_cell((5, terminal.origin().top)).is_none());
+        // A pin let go tells nothing, though another takes its place.
+        let top = terminal.origin().top;
+        let other = terminal.pin_cell((0, top)).unwrap();
+        terminal.unpin_cell(&other);
+        assert_eq!(terminal.pinned_cell(&other), None);
+        let taken = terminal.pin_cell((1, top)).unwrap();
+        assert_eq!(terminal.pinned_cell(&other), None);
+        assert_eq!(terminal.pinned_cell(&taken), Some((1, top)));
+    }
+
+    #[test]
+    fn a_snapshot_keeps_the_origin_of_its_update() {
+        let mut terminal = fed(10, 3, "a\r\nb\r\nc");
+        let mut snapshot = Snapshot::default();
+        assert_eq!(snapshot.origin(), None);
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(snapshot.origin(), Some(terminal.origin()));
+        // Output after it moves the terminal's view, not the frame's: the
+        // frame's first row is still the row numbered 0, `a`.
+        feed(&mut terminal, "\r\nd");
+        let drawn = snapshot.origin().unwrap();
+        assert_eq!((drawn.top, terminal.origin().top), (0, 1));
+        assert_eq!(line_at(&terminal, drawn.row(0)).as_deref(), Some("a"));
+        terminal.snapshot(&mut snapshot);
+        assert_eq!(snapshot.origin(), Some(terminal.origin()));
     }
 
     #[test]
@@ -1103,13 +1208,13 @@ mod tests {
         terminal.mark_cell((1, 1));
         assert_eq!(terminal.screen().rows.pins(), pins + 2);
         feed(&mut terminal, "\r\ne\r\nf");
-        assert_eq!(terminal.marked_cell(), Some((1, -1)));
-        assert_eq!(terminal.selection_anchor(), Some((0, 0)));
+        assert_eq!(terminal.marked_cell(), Some((1, 1)));
+        assert_eq!(terminal.selection_anchor(), Some((0, 2)));
         // Not on the other screen.
         feed(&mut terminal, "\x1b[?1049h");
         assert_eq!(terminal.marked_cell(), None);
         feed(&mut terminal, "\x1b[?1049l");
-        assert_eq!(terminal.marked_cell(), Some((1, -1)));
+        assert_eq!(terminal.marked_cell(), Some((1, 1)));
         // Unmarked, its pin goes, and the anchor's stays.
         terminal.unmark_cell();
         assert_eq!(terminal.marked_cell(), None);
@@ -1117,10 +1222,10 @@ mod tests {
         terminal.unmark_cell();
         // A clear of the scrollback takes its text away, and a reset the
         // mark.
-        terminal.mark_cell((0, -1));
+        terminal.mark_cell((0, 1));
         feed(&mut terminal, "\x1b[3J");
         assert_eq!(terminal.marked_cell(), None);
-        terminal.mark_cell((0, 0));
+        terminal.mark_cell((0, terminal.origin().top));
         feed(&mut terminal, "\x1bc");
         assert_eq!(terminal.marked_cell(), None);
     }
@@ -1246,7 +1351,8 @@ mod tests {
             assert!(lines < 5000, "no page's end on the screen");
         }
         feed(&mut terminal, "\x1b[6;1H\x1b[2K\x1b[31mred\x1b[0m");
-        assert_eq!(word_at(&mut terminal, (0, 5)), "red");
+        let row = terminal.origin().row(5);
+        assert_eq!(word_at(&mut terminal, (0, row)), "red");
         // The region of rows 2 to 9 scrolls a row: `red` goes up a row,
         // into the other page.
         feed(&mut terminal, "\x1b[2;9r\x1b[9;1H\n");
@@ -1394,7 +1500,8 @@ mod tests {
         // text is taken.
         let mut terminal = fed(20, 2, "a\r\nb\r\nc");
         terminal.snapshot(&mut snapshot);
-        word_at(&mut terminal, (0, 1));
+        let row = terminal.origin().row(1);
+        word_at(&mut terminal, (0, row));
         terminal.scroll_viewport(Scroll::Up(1));
         feed(&mut terminal, "\x1b[2;1Hz");
         terminal.snapshot(&mut snapshot);

@@ -2,6 +2,13 @@
 //! screen's or, scrolled up, rows of the scrollback above it. A view above
 //! the screen keeps its rows, pinned by its first, as output scrolls the
 //! screen under it.
+//!
+//! The rows of the active screen and of its scrollback have numbers, which
+//! output, the view's scrolling and the scrollback's limit leave them: the
+//! screen's top row is numbered by the times that the screen scrolled up
+//! in its epoch, the rows below it on from there, and the scrollback's
+//! rows above it down from there. A resize, which lays the rows out again,
+//! starts an epoch of other numbers; a pin keeps its cell through it.
 
 use super::Terminal;
 use crate::page::Position;
@@ -23,7 +30,62 @@ pub enum Scroll {
     Bottom,
 }
 
+/// Where the active screen's rows are, at a moment: the epoch of their
+/// numbers, and the number of the view's first row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Origin {
+    /// The epoch of the rows' numbers, which a resize changes, and which
+    /// no other screen's rows share.
+    pub epoch: u64,
+    /// The number of the view's first row.
+    pub top: i64,
+}
+
+impl Origin {
+    /// The number of the view's row `row`.
+    pub fn row(self, row: u16) -> i64 {
+        self.top.saturating_add(i64::from(row))
+    }
+}
+
 impl Terminal {
+    /// Where the active screen's rows are now: their epoch, and the number
+    /// of the view's first row.
+    pub fn origin(&self) -> Origin {
+        Origin {
+            epoch: self.screen().rows.epoch(),
+            top: self.row_number(self.view_top()),
+        }
+    }
+
+    /// The number of the active screen's row at `index` of its list.
+    pub(super) fn row_number(&self, index: usize) -> i64 {
+        let rows = &self.screen().rows;
+        // Fewer rows, and scrolls, than an `i64` holds.
+        let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        first.saturating_add(index as i64)
+    }
+
+    /// The index in the active screen's list of the row numbered `row`, if
+    /// the list holds it.
+    pub(super) fn row_index(&self, row: i64) -> Option<usize> {
+        let index = usize::try_from(row.checked_sub(self.row_number(0))?).ok()?;
+        (index < self.screen().rows.total_rows()).then_some(index)
+    }
+
+    /// The index in the active screen's list of the row numbered `row`, or
+    /// of the list's end nearest to it.
+    pub(super) fn nearest_index(&self, row: i64) -> usize {
+        let last = self.screen().rows.total_rows() - 1;
+        let index = row.saturating_sub(self.row_number(0)).max(0);
+        usize::try_from(index).map_or(last, |index| index.min(last))
+    }
+
+    /// The list's index of the view's first row.
+    pub(super) fn view_top(&self) -> usize {
+        self.screen().rows.scrollback_rows() - self.viewport_offset()
+    }
+
     /// How many rows the view is above the screen's top: 0 while it shows
     /// the screen, and while the alternate screen, which has no
     /// scrollback, is active. A view whose first row left the scrollback,

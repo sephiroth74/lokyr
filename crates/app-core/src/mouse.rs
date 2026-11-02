@@ -64,10 +64,10 @@ pub(crate) fn at_top(pointer: Pointer) -> Pointer {
 }
 
 /// Where a selection by the mouse starts, or where the pointer is as it
-/// drags: its row from the screen's top, which can be above it, in the
-/// scrollback, as the view scrolls under the selection; the cell under the
-/// pointer; and the boundary between cells nearest to it, from 0, before
-/// the row's first cell, to the grid's columns, after its last.
+/// drags: its row's number, which output and the view's scrolling leave
+/// it; the cell under the pointer; and the boundary between cells nearest
+/// to it, from 0, before the row's first cell, to the grid's columns, after
+/// its last.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Spot {
     pub(crate) row: i64,
@@ -75,22 +75,20 @@ pub(crate) struct Spot {
     pub(crate) boundary: u16,
 }
 
-/// The spot of `pointer`, over a view `offset` rows above the screen's
-/// top, in cells `cell_width` pixels wide, of a grid of `columns`.
-pub(crate) fn spot(pointer: Pointer, offset: usize, cell_width: u16, columns: u16) -> Spot {
+/// The spot of `pointer`, over a view whose first row is numbered `top`,
+/// in cells `cell_width` pixels wide, of a grid of `columns`.
+pub(crate) fn spot(pointer: Pointer, top: i64, cell_width: u16, columns: u16) -> Spot {
     let width = u32::from(cell_width.max(1));
     // Within the grid's columns, which a `u16` holds.
     let boundary = ((pointer.x + width / 2) / width).min(u32::from(columns)) as u16;
-    // Fewer rows than an `i64` holds.
-    let row = i64::from(pointer.row) - offset as i64;
     Spot {
-        row,
+        row: top.saturating_add(i64::from(pointer.row)),
         col: pointer.col,
         boundary,
     }
 }
 
-/// The cells, by column and row from the screen's top, that a drag from
+/// The cells, by column and row's number, that a drag from
 /// `anchor` to `to` selects, the first and the last in reading order: those
 /// between the two spots' boundaries, as text's selection takes them; `None`
 /// when no cell is between them, as after a click.
@@ -326,14 +324,14 @@ mod tests {
     }
 
     #[test]
-    fn a_spot_takes_the_nearest_boundary_and_the_screen_s_row() {
+    fn a_spot_takes_the_nearest_boundary_and_its_row_s_number() {
         let pointer = |col: u16, x: u32, row: u16| Pointer { col, row, x, y: 0 };
         // Cells of 16 pixels: the boundary after the first cell from 8.
         assert_eq!(spot(pointer(0, 7, 3), 0, 16, 80), at(3, 0, 0));
         assert_eq!(spot(pointer(0, 8, 3), 0, 16, 80), at(3, 0, 1));
         assert_eq!(spot(pointer(79, 80 * 16 - 1, 0), 0, 16, 80), at(0, 79, 80));
-        // A view two rows up: the row above the screen's top.
-        assert_eq!(spot(pointer(5, 80, 1), 2, 16, 80).row, -1);
+        // A view whose first row is numbered 40: its second row's.
+        assert_eq!(spot(pointer(5, 80, 1), 40, 16, 80).row, 41);
     }
 
     #[test]

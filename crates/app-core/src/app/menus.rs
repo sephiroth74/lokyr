@@ -18,7 +18,7 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
     APPEARANCES, App, CONTEXT_ONLY, LOOK_UP, LOOK_UP_TITLE, MAN_PAGE, MAN_PAGE_NAME, MAN_SECTION,
-    PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection,
+    PERFORMANCE, SECURE_INPUT, SETTINGS, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -50,15 +50,15 @@ impl<B: Backend> App<B> {
         };
         // Pinned, so that output that scrolls while the menu is open leaves
         // its commands on the clicked text.
-        pane.mark_cell((pointer.col, i64::from(pointer.row)));
+        let top = shown_top(pane);
+        pane.mark_cell((pointer.col, top + i64::from(pointer.row)));
         let within = pane
             .selection()
             .is_some_and(|selected| selected.contains(pointer.col, pointer.row));
         if !within {
             let grid = pane.grid();
-            let offset = pane.view_offset();
-            let spot = mouse::spot(pointer, offset, grid.cell_width, grid.columns);
-            pane.anchor_selection((spot.col, spot.row + offset as i64));
+            let spot = mouse::spot(pointer, top, grid.cell_width, grid.columns);
+            pane.anchor_selection((spot.col, spot.row));
             let mut selecting = Selecting {
                 anchor: spot,
                 last: spot,

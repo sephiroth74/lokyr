@@ -162,6 +162,7 @@ return Search
   - The host stores view trees as a flat arena of nodes and diffs them between renders. A node that holds state, as a text field or a list, has a key, by which the host keeps its state, its text, caret, selection and composition, its scroll; the plugin learns of changes through events, and sets a field's text through a request. A large list is data, its items flat with a row's template, which the host instantiates for the rows that show.
   - Bulk data uses buffers. For example, a highlighter returns its spans in one `buffer`, which the host reads in one copy: reading 100000 spans from tables costs 6–7 ms, against about 1.5 ms through Lua's C API ([F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes)).
 - **Handles to host objects**: windows, tabs and panes are opaque integer ids, as in the Rust front end.
+- **Rows** are numbers, which output, the view's scrolling and the scrollback's limit leave a row, until it leaves the scrollback; a resize numbers the rows anew. A command of a cell, as a click's, takes the number of the row clicked, as the drawn frame showed it ([ARCHITECTURE.md](ARCHITECTURE.md#kernel-data-model)).
 - **Plugin-defined events**: `custom` events carry a name, a schema id and a plain value. The host encodes the value as CBOR for Rust plugins.
 
 ### Versioning
@@ -305,9 +306,9 @@ type Cx = {
     terminal: {
         -- Requires `terminal-read`; returns a `denied` error without it.
         read_lines: (pane: PaneId, start: number, count: number) -> ({ Line }?, Error?),
-        -- The logical line of a row from the view's first, or above it in the scrollback, its wrapped rows joined, with each character's cell.
-        line_text: (pane: PaneId, row: number) -> (LineText?, Error?),
-        -- The target of the OSC 8 link at a cell of the view, or above it.
+        -- The logical line of a row, by its number, its wrapped rows joined as far as `reach` rows before it and after it, 256 at most, with each character's cell.
+        line_text: (pane: PaneId, row: number, reach: number) -> (LineText?, Error?),
+        -- The target of the OSC 8 link at a cell, by its row's number.
         link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
     },
     process: {

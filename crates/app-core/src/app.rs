@@ -57,7 +57,7 @@ mod notices;
 #[cfg(test)]
 mod tests;
 
-use input::show_selection;
+use input::{show_selection, shown_top};
 
 /// The command that quits.
 const QUIT: &str = "app.quit";

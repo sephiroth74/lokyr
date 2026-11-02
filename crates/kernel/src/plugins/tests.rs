@@ -719,14 +719,14 @@ fn the_host_reads_a_line_its_links_and_the_directory_and_opens() {
             |cx| cx.register_command(command("reader.read")),
             move |cx, _, _| {
                 let pane = cx.focused_pane().unwrap();
-                let line = cx.line_text(pane, 0)?.unwrap();
+                let line = cx.line_text(pane, 0, 4)?.unwrap();
                 let mut log = log.borrow_mut();
                 log.push(line.text.trim_end().to_owned());
                 log.push(format!("{:?}", &line.cells[..2]));
                 log.push(format!("{:?}", cx.link_at(pane, 3, 0)?));
                 log.push(format!("{:?}", cx.link_at(pane, 5, 0)?));
                 log.push(format!("{:?}", cx.working_directory(pane)?));
-                log.push(format!("{:?}", cx.line_text(pane, 24)?));
+                log.push(format!("{:?}", cx.line_text(pane, 24, usize::MAX)?));
                 for target in ["https://lokyr.dev", "/etc/hosts", "~/x"] {
                     cx.open(target)?;
                 }

@@ -3,7 +3,6 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use lokyr_pty::{Exit, Program, Size};
@@ -12,8 +11,8 @@ use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Scrollback;
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Scroll, Selected, SelectionShape,
-    SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Origin, Scroll, Selected,
+    SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
@@ -167,18 +166,6 @@ pub struct Pane {
     selection_touched: AtomicBool,
     /// Whether the workspace told that the program's output ended.
     ended_told: bool,
-    /// The marked cell, and its line and its link, as
-    /// [`Pane::marked_cell`] read them last, until the mark goes.
-    marked: Mutex<Option<Marked>>,
-}
-
-/// A marked cell, by its column and its row from the view's first, and the
-/// text of its logical line and its link, read together.
-#[derive(Clone, Debug)]
-struct Marked {
-    at: (u16, i64),
-    line: Option<(String, Vec<(u16, i64)>)>,
-    link: Option<String>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -254,7 +241,6 @@ impl Pane {
             ended_told: false,
             told_at: None,
             selection_touched: AtomicBool::new(false),
-            marked: Mutex::new(None),
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -477,9 +463,9 @@ impl Pane {
             .and_then(|session| session.lock().selection_text())
     }
 
-    /// Selects from the view's cell `from` to its cell `to`, each by its
-    /// column and its row from the view's first, which can be above the
-    /// view, in `shape`, grown to `unit`, as [`Terminal::select`] does.
+    /// Selects from the cell `from` to the cell `to`, each by its column
+    /// and its row's number, in `shape`, grown to `unit`, as
+    /// [`Terminal::select`] does.
     pub fn select(
         &self,
         from: (u16, i64),
@@ -495,9 +481,9 @@ impl Pane {
         }
     }
 
-    /// Anchors the selection that the mouse makes at the view's cell `at`,
-    /// its column and its row from the view's first, as
-    /// [`Terminal::anchor_selection`] does: the anchor moves with its text.
+    /// Anchors the selection that the mouse makes at the cell `at`, its
+    /// column and its row's number, as [`Terminal::anchor_selection`] does:
+    /// the anchor moves with its text.
     pub fn anchor_selection(&self, at: (u16, i64)) {
         if let Some(session) = &self.session {
             session.lock().anchor_selection(at);
@@ -506,8 +492,8 @@ impl Pane {
     }
 
     /// The cell that the selection by the mouse grows from, now, by its
-    /// column and its row from the view's first, as
-    /// [`Terminal::selection_anchor`] tells it.
+    /// column and its row's number, as [`Terminal::selection_anchor`] tells
+    /// it.
     pub fn selection_anchor(&self) -> Option<(u16, i64)> {
         self.session.as_ref()?.lock().selection_anchor()
     }
@@ -520,6 +506,13 @@ impl Pane {
             .map_or(0, |session| session.lock().viewport_offset())
     }
 
+    /// Where the rows are now, as [`Terminal::origin`] tells: their epoch,
+    /// and the number of the view's first row, which output can have moved
+    /// since the snapshot's, the drawn frame's.
+    pub fn origin(&self) -> Option<Origin> {
+        Some(self.session.as_ref()?.lock().origin())
+    }
+
     /// Lets the selection go.
     pub fn clear_selection(&self) {
         if let Some(session) = &self.session {
@@ -528,42 +521,26 @@ impl Pane {
         }
     }
 
-    /// The text of the logical line that the row `row` from the view's
-    /// first is in, which can be above the view, with each character's
-    /// cell, as [`Terminal::line_text`] gives it; of the marked cell's row,
-    /// as [`Pane::marked_cell`] read it.
-    pub fn line_text(&self, row: i64) -> Option<(String, Vec<(u16, i64)>)> {
-        if let Some(marked) = self.marked().filter(|marked| marked.at.1 == row) {
-            return marked.line;
-        }
+    /// The text of the logical line that the row numbered `row` is in, as
+    /// far as `reach` rows before it and after it, with each character's
+    /// cell, as [`Terminal::line_text`] gives it.
+    pub fn line_text(&self, row: i64, reach: usize) -> Option<(String, Vec<(u16, i64)>)> {
         self.session
             .as_ref()
-            .and_then(|session| session.lock().line_text(row))
+            .and_then(|session| session.lock().line_text(row, reach))
     }
 
     /// The target of the OSC 8 link of the cell at `column` of the row
-    /// `row` from the view's first, as [`Terminal::link_at`] gives it; of
-    /// the marked cell, as [`Pane::marked_cell`] read it.
+    /// numbered `row`, as [`Terminal::link_at`] gives it.
     pub fn link_at(&self, column: u16, row: i64) -> Option<String> {
-        if let Some(marked) = self.marked().filter(|marked| marked.at == (column, row)) {
-            return marked.link;
-        }
         self.session
             .as_ref()
             .and_then(|session| session.lock().link_at(column, row))
     }
 
-    /// The marked cell, as [`Pane::marked_cell`] read it last.
-    fn marked(&self) -> Option<Marked> {
-        self.marked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Marks the view's cell `at`, its column and its row from the view's
-    /// first, as the one that a menu opened on, as
-    /// [`Terminal::mark_cell`] does: the mark moves with its text.
+    /// Marks the cell `at`, its column and its row's number, as the one
+    /// that a menu opened on, as [`Terminal::mark_cell`] does: the mark
+    /// moves with its text.
     pub fn mark_cell(&self, at: (u16, i64)) {
         if let Some(session) = &self.session {
             session.lock().mark_cell(at);
@@ -571,28 +548,13 @@ impl Pane {
     }
 
     /// The cell that [`Pane::mark_cell`] marked, now, by its column and its
-    /// row from the view's first, as [`Terminal::marked_cell`] tells it.
-    /// Its line's text and its link are read with it, which
-    /// [`Pane::line_text`] and [`Pane::link_at`] give of its row until the
-    /// mark goes, so that what a command reads of it is its own, whatever
-    /// output scrolls the view meanwhile.
+    /// row's number, as [`Terminal::marked_cell`] tells it.
     pub fn marked_cell(&self) -> Option<(u16, i64)> {
-        let terminal = self.session.as_ref()?.lock();
-        let at = terminal.marked_cell()?;
-        let marked = Marked {
-            at,
-            line: terminal.line_text(at.1),
-            link: terminal.link_at(at.0, at.1),
-        };
-        drop(terminal);
-        *self.marked.lock().unwrap_or_else(PoisonError::into_inner) = Some(marked);
-        Some(at)
+        self.session.as_ref()?.lock().marked_cell()
     }
 
-    /// Lets the cell's mark go, if there is one, and what
-    /// [`Pane::marked_cell`] read of it.
+    /// Lets the cell's mark go, if there is one.
     pub fn unmark_cell(&self) {
-        *self.marked.lock().unwrap_or_else(PoisonError::into_inner) = None;
         if let Some(session) = &self.session {
             session.lock().unmark_cell();
         }

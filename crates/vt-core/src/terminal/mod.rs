@@ -29,9 +29,9 @@ pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{Colors, SPECIAL_COLORS};
 pub use keyboard::KeyboardFlags;
 pub use osc::{Event, Progress, WorkingDirectory};
-pub use selection::{Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
+pub use selection::{CellPin, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS};
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
-pub use viewport::Scroll;
+pub use viewport::{Origin, Scroll};
 pub use window::Window;
 
 use std::ops::Range;
@@ -476,10 +476,10 @@ pub struct Terminal {
     selection: Option<selection::Selection>,
     /// The cell that a selection by the mouse grows from, if one was
     /// anchored.
-    selection_anchor: Option<selection::Anchor>,
+    selection_anchor: Option<selection::CellPin>,
     /// The cell that the embedder marked, as the one that a menu opened
     /// on, if one was.
-    cell_mark: Option<selection::Anchor>,
+    cell_mark: Option<selection::CellPin>,
 }
 
 impl Terminal {

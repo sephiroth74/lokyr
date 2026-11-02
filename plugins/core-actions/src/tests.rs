@@ -54,7 +54,7 @@ impl HostApi for Host {
         Ok(self.selection.clone())
     }
 
-    fn line_text(&mut self, _: PaneId, _: i64) -> Result<Option<LineText>, Error> {
+    fn line_text(&mut self, _: PaneId, _: i64, _: usize) -> Result<Option<LineText>, Error> {
         Ok(None)
     }
 

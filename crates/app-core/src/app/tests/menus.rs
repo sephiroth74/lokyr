@@ -564,6 +564,42 @@ fn the_context_menu_opens_the_link_at_its_cell() {
 }
 
 #[test]
+fn a_command_click_opens_the_link_that_the_drawn_frame_showed() {
+    let (mut fake, mut app, window, _) = pasting(
+        "click-drawn",
+        "[links]\nurls = \"open\"\n",
+        shell(concat!(
+            "stty -echo; printf 'see https://lokyr.dev/x here\\n'; echo ready; ",
+            "read line; seq 1 70; echo https://lokyr.dev/y; read line"
+        )),
+    );
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    assert_eq!(
+        row(&app, window, 0).trim_end(),
+        "see https://lokyr.dev/x here"
+    );
+    // Output scrolls the terminal's view before the next frame, which
+    // still shows the URL at its first row.
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    let start = std::time::Instant::now();
+    while !app
+        .pane(window)
+        .line_text(72, 0)
+        .is_some_and(|(text, _)| text.starts_with("https://lokyr.dev/y"))
+    {
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let drawn = app.pane(window).snapshot().origin().unwrap();
+    assert_eq!(drawn.top, 0);
+    assert!(app.pane(window).origin().unwrap().top > 0);
+    // A Command-click on the URL's cell, as the frame shows it.
+    fake.send(&mut app, window, click(true, cell(10, 0), CMD, 1));
+    fake.send(&mut app, window, click(false, cell(10, 0), CMD, 1));
+    assert_eq!(fake.opened(), ["https://lokyr.dev/x"]);
+}
+
+#[test]
 fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
     let (mut fake, mut app, window, _) = pasting(
         "context-moved",
