@@ -43,7 +43,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     )?;
     if !developer_id_signed(&signature) {
         bail!(
-            "{} is not signed with a Developer ID, which notarization needs: `just bundle` signs it so where the keychain has one",
+            "{} is not signed with a Developer ID, which notarization needs: `just bundle` signs it so where `LOKYR_SIGN_IDENTITY` names one",
             app.display()
         );
     }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn the_signature_of_a_developer_id_is_told_from_an_ad_hoc_one() {
         let signed = "Executable=/x/Lokyr.app/Contents/MacOS/lokyr\n\
-            Authority=Developer ID Application: The Maintainer (XXXXXXXXXX)\n\
+            Authority=Developer ID Application: The Maintainer (ABCDE12345)\n\
             Authority=Developer ID Certification Authority\n";
         assert!(developer_id_signed(signed));
         let ad_hoc = "Executable=/x/Lokyr.app/Contents/MacOS/lokyr\nSignature=adhoc\n";

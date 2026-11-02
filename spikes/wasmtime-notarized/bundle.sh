@@ -18,7 +18,7 @@
 # interpreters, Pulley and Luau, and entitlements/jit.plist for the others.
 #
 # Environment:
-#   SPIKE_SIGN_IDENTITY  signing identity (default: the project's Developer ID)
+#   SPIKE_SIGN_IDENTITY  signing identity, a Developer ID (required)
 set -euo pipefail
 
 # Resolve a given entitlements path before leaving the caller's directory.
@@ -46,7 +46,7 @@ case "$variant" in
     *) echo "unknown variant: $variant" >&2 && exit 2 ;;
 esac
 entitlements="${2:-$default_entitlements}"
-identity="${SPIKE_SIGN_IDENTITY:-Developer ID Application: The Maintainer (XXXXXXXXXX)}"
+identity="${SPIKE_SIGN_IDENTITY:?names the Developer ID that signs the spike}"
 app="build/$name.app"
 
 # `${features[@]+...}` keeps an empty array safe under `set -u` in bash 3.2.

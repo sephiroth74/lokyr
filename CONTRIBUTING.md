@@ -29,7 +29,7 @@ just ci                 # the checks of CI, as the next section tells
 
 Fuzzing uses a nightly Rust, which the `justfile` pins, and `cargo-fuzz`; you need it only to work on the fuzzers.
 
-The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the project's Developer ID where the keychain has it, and ad hoc elsewhere. `just notarize` has Apple notarize it and staples the ticket, for the maintainer: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
+The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the identity that `LOKYR_SIGN_IDENTITY` names, as `codesign --sign` takes it, and ad hoc without it. `just` reads the variables of the untracked `private/lokyr.env`, where the maintainer names the Developer ID, so that no signing identity, team or credential is in the repository; a variable of the environment wins over the file's. `just notarize` has Apple notarize the bundle and staples the ticket, for the maintainer: it needs the Developer ID and the notary's credentials in the keychain, the profile `lokyr-notary` that `xcrun notarytool store-credentials` makes, or the one that `LOKYR_NOTARY_PROFILE` names; it sends the bundle to Apple's notary service.
 
 ## The gate: `just ci`
 
@@ -40,7 +40,7 @@ The bundle, `target/Lokyr.app`, which `just bundle` builds, is signed with the p
 - `cargo xtask check-deps`: the [dependency rules](tools/xtask/deps-rules.toml), such as no networking in the app and no macOS crate in the platform-independent ones;
 - `cargo xtask check-comments`: no comment names a task, a phase or an ADR;
 - `cargo xtask check-links`: the internal links and anchors of the Markdown files resolve;
-- `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed ad hoc on a Mac without the project's Developer ID, or with the identity that `LOKYR_SIGN_IDENTITY` names.
+- `cargo xtask bundle`: the app's bundle, `target/Lokyr.app`, signed with the identity that `LOKYR_SIGN_IDENTITY` names, or ad hoc without it.
 
 Two checks of CI are not in it, and run on Linux: the tests of the platform-independent crates, which `just ci` builds for Linux without running; and the count of the instructions that the terminal's core takes for a set of scenarios, which fails a pull request that raises one by more than 3% over its base, with `just instructions <base>` where Valgrind runs.
 
