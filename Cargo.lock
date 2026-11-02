@@ -770,6 +770,7 @@ dependencies = [
  "lokyr-text-core",
  "lokyr-ui-core",
  "lokyr-vt-core",
+ "proptest",
  "serde",
  "toml_edit",
  "unic-langid",
