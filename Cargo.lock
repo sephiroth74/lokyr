@@ -911,6 +911,7 @@ version = "0.3.0"
 dependencies = [
  "criterion",
  "lokyr-font-coretext",
+ "lokyr-plugin-sdk",
  "lokyr-render-core",
  "lokyr-text-core",
  "lokyr-vt-core",

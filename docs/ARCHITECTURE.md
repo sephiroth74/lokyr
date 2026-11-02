@@ -156,7 +156,8 @@ app ─┬─▶ app-core ─▶ kernel
      │           │            └─▶ pty
      │           ├─▶ search ───▶ vt-core
      │           ├─▶ ui-core ──┬─▶ text-core
-     │           │             └─▶ render-core
+     │           │             ├─▶ render-core
+     │           │             └─▶ plugin-sdk          (the view tree's types, which it keeps)
      │           ├─▶ plugin-sdk                      (the kernel serves the HostApi's messages)
      │           └─▶ pkg-model
      ├─▶ platform-{macos|wayland|x11} ─▶ platform-core

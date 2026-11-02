@@ -10,6 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 lokyr-render-core.workspace = true
 lokyr-text-core.workspace = true
 lokyr-vt-core.workspace = true
