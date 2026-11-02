@@ -185,17 +185,22 @@ fn target(cx: &mut Cx<'_>, args: &Args) -> Result<Option<String>, Error> {
 fn hovered(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Option<Span>, Error> {
     for (target, span) in candidates(cx, pane, at)? {
         if cx.opens(&target)? {
-            return Ok(Some(span));
+            return Ok(span);
         }
     }
     Ok(None)
 }
 
 /// What the cell `at` of `pane` holds that a click could open, each with
-/// the cells of its text: the cell's OSC 8 link alone; else the URLs and
-/// the paths around it, of the text between quotes and of the word, the
-/// word's last, with the working directory before a relative one.
-fn candidates(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Vec<(String, Span)>, Error> {
+/// the cells of its text, where the line holds its text: the cell's OSC 8
+/// link alone; else the URLs and the paths around it, of the text between
+/// quotes and of the word, the word's last, with the working directory
+/// before a relative one.
+fn candidates(
+    cx: &mut Cx<'_>,
+    pane: PaneId,
+    at: (u16, i64),
+) -> Result<Vec<(String, Option<Span>)>, Error> {
     let (column, row) = at;
     let Some(line) = cx.line_text(pane, row, REACH)? else {
         return Ok(Vec::new());
@@ -211,7 +216,7 @@ fn candidates(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Vec<(Stri
     };
     if let Some(link) = cx.link_at(pane, column, row)? {
         let span = link_span(cx, pane, &line.cells, index, &link)?;
-        return Ok(vec![(link, span)]);
+        return Ok(vec![(link, Some(span))]);
     }
     let found = find(&line.text, index);
     let relative = |path: &str| !(path.starts_with('/') || path == "~" || path.starts_with("~/"));
@@ -238,8 +243,12 @@ fn candidates(cx: &mut Cx<'_>, pane: PaneId, at: (u16, i64)) -> Result<Vec<(Stri
                     (path, target)
                 }
             };
-            let (first, end) = span_of(&line.text, &text, index)?;
-            Some((target, cells_of(&line.cells, first, end)))
+            // A path of escaped spaces, as a shell's completion writes it,
+            // is found without its backslashes, which the line holds.
+            let span = span_of(&line.text, &text, index)
+                .or_else(|| span_of(&line.text, &text.replace(' ', "\\ "), index))
+                .map(|(first, end)| cells_of(&line.cells, first, end));
+            Some((target, span))
         })
         .collect())
 }

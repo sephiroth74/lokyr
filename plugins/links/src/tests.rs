@@ -262,6 +262,23 @@ fn command_underlines_an_osc_8_link_s_cells_and_a_path_without_its_line() {
 }
 
 #[test]
+fn a_path_of_escaped_spaces_opens_and_command_underlines_it_whole() {
+    // As a shell's completion writes it: `My\ File.txt`, over two rows.
+    let mut host = focused("open My\\ File.txt");
+    assert!(applies(&mut host, 6, 1));
+    click(&mut host, 6, 1).unwrap();
+    assert_eq!(host.opened, ["/work/lokyr/My File.txt"]);
+    let mut links = Links::default();
+    links
+        .on_event(
+            &mut Cx::new(&mut host, "links"),
+            &[pointer(Some((6, 1)), true)],
+        )
+        .unwrap();
+    assert_eq!(host.decorations[0].1, ((5, 1), (6, 2)));
+}
+
+#[test]
 fn a_click_opens_the_cell_s_link_first() {
     let mut host = Host {
         link: Some("https://lokyr.dev/osc8"),
