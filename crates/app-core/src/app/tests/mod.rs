@@ -1997,7 +1997,7 @@ fn a_plugin_s_binding_runs_its_command_and_what_it_asks() {
     let (mut fake, mut app, window, _) = with_tester();
     // The plugins started with the app, the built-in one too.
     assert_eq!(
-        app.plugins.status("core-actions"),
+        app.plugins.status("lokyr/core-actions"),
         Some(plugins::Status::Active)
     );
     assert!(app.commands.get("test.copy").is_some());

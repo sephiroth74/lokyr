@@ -406,7 +406,8 @@ type Plugin = {
   - A plugin has no network of its own: a request with `net:<host>` goes to the app, which checks its capability and its host against the allowlist, and logs it.
   - The connection runs in a helper process started on demand, `sleip net-helper`, of the Sleip that the bundle holds, which enforces the allowlist too, so that no response from the network is parsed in the process that sees what the user types.
   - Lokyr's own code contains no HTTP/TLS client; Sparkle's updater is the app's one network client ([ADR 0008](adr/0008-separate-package-manager.md), [ADR 0026](adr/0026-app-updates.md), [ADR 0029](adr/0029-update-feed-and-releases.md)).
-- **First-party plugins** are trusted code and don't go through capabilities, but they are still limited to the SDK.
+- **First-party plugins** are trusted code, which holds every capability and runs any command ([ADR 0024](adr/0024-user-commands.md)), but they are still limited to the SDK. Each has a manifest, `plugin.toml`, of the kind `builtin`, whose capabilities tell what it uses, which the build checks; the kernel adds it by its manifest's name, as `lokyr/links`.
+- **Other plugins** hold the capabilities that their manifest declares, and run their own commands, of their name's namespace, and those of their `[uses]`: a request that needs another capability fails with 302, and a run of another command with 301, both `denied`.
 
 ## Lifecycle
 

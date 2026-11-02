@@ -21,6 +21,9 @@ lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
 notify.workspace = true
 
+[build-dependencies]
+lokyr-pkg-model.workspace = true
+
 [dev-dependencies]
 lokyr-platform-core = { workspace = true, features = ["fake"] }
 

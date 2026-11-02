@@ -87,17 +87,20 @@ config-schema = "schema.json"
 | Field | Required | Meaning |
 |---|---|---|
 | `plugin.name` | yes | `owner/name`: lowercase letters, digits and `-` |
-| `plugin.version` | yes | Semver |
+| `plugin.version` | yes, but for `builtin` | Semver; a `builtin` plugin's is the app's |
 | `plugin.kind` | yes | `luau`, `themes` or `builtin` |
 | `plugin.api` | for `luau` | Constraint on the host API version |
 | `plugin.license` | yes | SPDX expression |
 | `plugin.description`, `repository`, `homepage`, `keywords`, `authors` | no | Metadata for the registry |
 | `plugin.platforms` | no | Restricts the OSes (e.g. `["macos"]`); all by default |
-| `activation.on` | for `luau` | Activation events |
-| `capabilities.*` | no | Requested capabilities |
+| `plugin.thread` | no | `main`, by default, or `worker`, a thread of the host's for the plugin alone ([PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#execution-model)) |
+| `activation.on` | for `luau` | Activation events: `startup`, `command:<glob>`, `event:<name>`, `slot:<name>`, `osc:<number>`; a `builtin` plugin's is `startup` by default |
+| `capabilities.*` | no | Requested capabilities, each `true` or `false`, but `net`, `fs-read`, `fs-write` and `env-read`, which list their hosts, paths and variables, as `net = ["api.github.com"]` |
 | `uses.commands` | no | The commands that the plugin runs, by name or namespace (`tabs.*`), which Sleip shows at install, by category, with the capabilities they need ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) |
 | `contributes.*` | no | Static contributions (commands, keybindings, slots, themes, config schema), used by the palette, the registry and validation |
 | `dependencies` | no | Other plugins required at runtime; plugins talk through kernel commands, events and services |
+
+`pkg-model`'s `manifest::Manifest::parse` reads the manifest; one that does not read, as a capability misspelt or a field that the format lacks, tells its line and column. The first-party plugins' manifests, `plugins/*/plugin.toml`, of the kind `builtin`, sit beside their crates, which embed them; `app-core`'s build checks them, and fails with the file, the line and the column of one that does not read.
 
 ### `plugins.toml`
 

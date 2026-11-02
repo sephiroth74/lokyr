@@ -159,6 +159,9 @@ pub enum Capability {
     /// Seeing the panes' processes: their command lines and working
     /// directories.
     ProcessRead,
+    /// Running any command as the user's, without declaring it, and
+    /// reading the whole registry, with each command's plugin.
+    UserCommands,
 }
 
 impl fmt::Display for Capability {
@@ -179,6 +182,7 @@ impl fmt::Display for Capability {
             Self::InputRead => f.write_str("input-read"),
             Self::HistoryRead => f.write_str("history-read"),
             Self::ProcessRead => f.write_str("process-read"),
+            Self::UserCommands => f.write_str("user-commands"),
         }
     }
 }

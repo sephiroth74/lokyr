@@ -9,18 +9,21 @@
 //! main thread too; what changes the app, as a window to open or another
 //! command to run, comes as a request, which the app takes after them, as
 //! a plugin is never called while it runs. Each request needs its
-//! capability, which the plugin's grants hold.
+//! capability, which the plugin's grants hold: a first-party plugin holds
+//! every one, and runs any command; another, those that its manifest
+//! declares, and the commands of its `[uses]`.
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
 
+use lokyr_pkg_model::manifest::{Manifest, ManifestError};
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_text_core::Size;
 use lokyr_vt_core::terminal::Scroll;
 
-use crate::commands::{self, Args, Capability, Code, Command, Error, Registry};
+use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
 use crate::config::ConfirmPaste;
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::Texts;
@@ -96,14 +99,19 @@ struct Entry {
     state: State,
 }
 
-/// What the host keeps of a plugin: its name, its status, the
-/// capabilities that it was granted, and the commands and the bindings that
-/// it gave.
+/// What the host keeps of a plugin: its name, its manifest, its status,
+/// the capabilities that it was granted and the commands of others that it
+/// runs, and the commands and the bindings that it gave.
 struct State {
     name: String,
+    /// Its manifest, if it has one.
+    manifest: Option<Manifest>,
     status: Status,
-    /// Its capabilities; `None` for every one, as a built-in plugin's.
+    /// Its capabilities; `None` for every one, as a first-party plugin's.
     granted: Option<Vec<Capability>>,
+    /// The commands of others that it runs, and the namespace of its own;
+    /// `None` for every command, as a first-party plugin's.
+    uses: Option<(Uses, String)>,
     commands: Vec<Command>,
     bindings: Vec<Binding>,
     /// Its catalogs, of its commands' titles.
@@ -139,29 +147,63 @@ impl Plugins {
         Self::default()
     }
 
-    /// Adds `plugin`, by its `name`, to activate, with every capability,
-    /// as a built-in plugin has them.
+    /// Adds `plugin`, by its `name`, without a manifest, to activate, with
+    /// every capability, as a first-party plugin has them.
     pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) {
-        self.add_granted(name, plugin, None);
+        self.insert(name, None, plugin, None);
     }
 
-    /// Adds `plugin`, by its `name`, to activate, with the capabilities
-    /// `granted`, or every one with `None`: a request that needs another
+    /// Adds `plugin`, a first-party one, which the text `manifest`
+    /// describes, by the manifest's name, to activate: with every
+    /// capability and any command, as first-party plugins have them; its
+    /// manifest's capabilities tell what it uses. A manifest that does not
+    /// read adds nothing.
+    pub fn add_builtin(
+        &mut self,
+        manifest: &str,
+        plugin: Box<dyn Plugin>,
+    ) -> Result<(), ManifestError> {
+        let manifest = Manifest::parse(manifest)?;
+        let name = manifest.name.clone();
+        self.insert(&name, Some(manifest), plugin, None);
+        Ok(())
+    }
+
+    /// Adds `plugin`, which `manifest` describes, by the manifest's name,
+    /// to activate, with what the manifest declares: its capabilities, and
+    /// the commands of its `[uses]` with those of its own namespace; a
+    /// request that needs another capability, or a run of another command,
     /// fails.
-    pub fn add_granted(
+    pub fn add_declared(&mut self, manifest: Manifest, plugin: Box<dyn Plugin>) {
+        let name = manifest.name.clone();
+        let granted = (
+            manifest.capabilities.clone(),
+            (
+                Uses::new(manifest.uses.clone()),
+                manifest.namespace().to_owned(),
+            ),
+        );
+        self.insert(&name, Some(manifest), plugin, Some(granted));
+    }
+
+    fn insert(
         &mut self,
         name: &str,
+        manifest: Option<Manifest>,
         plugin: Box<dyn Plugin>,
-        granted: Option<Vec<Capability>>,
+        declared: Option<(Vec<Capability>, (Uses, String))>,
     ) {
         // A plugin whose catalogs panic has none.
         let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
+        let (granted, uses) = declared.unzip();
         self.entries.push(Entry {
             plugin,
             state: State {
                 name: name.to_owned(),
+                manifest,
                 status: Status::Inactive,
                 granted,
+                uses,
                 commands: Vec::new(),
                 bindings: Vec::new(),
                 catalogs,
@@ -308,6 +350,14 @@ impl Plugins {
             .iter()
             .map(|entry| &entry.state)
             .filter(|state| state.status == Status::Active)
+    }
+
+    /// The manifest of the plugin `name`, if it was added with one.
+    pub fn manifest(&self, name: &str) -> Option<&Manifest> {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == name)
+            .and_then(|entry| entry.state.manifest.as_ref())
     }
 
     /// The status of the plugin `name`, if it was added.
@@ -653,7 +703,13 @@ impl Host<'_, '_> {
     fn ask_app(&mut self, request: Asked) -> Result<Response, Error> {
         let asked = match request {
             Asked::RunCommand { name, args } => {
-                let args = self.context.registry.check(&name, args)?;
+                let registry = &self.context.registry;
+                let args = match (&self.state.uses, &self.state.granted) {
+                    (Some((uses, own)), Some(granted)) => {
+                        registry.check_for_plugin(&name, args, own, uses, granted)?
+                    }
+                    _ => registry.check(&name, args)?,
+                };
                 Request::Run(Invocation {
                     command: name,
                     args,

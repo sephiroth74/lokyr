@@ -472,8 +472,19 @@ impl<B: Backend> App<B> {
     /// file, when that changes.
     pub fn new(drawing: Option<Drawing<B>>, config: Config, path: Option<PathBuf>) -> Self {
         let mut plugins = Plugins::new();
-        plugins.add("core-actions", Box::new(lokyr_core_actions::CoreActions));
-        plugins.add("links", Box::new(lokyr_links::Links));
+        // Their manifests read, as the build checked them.
+        let builtins: [(&str, Box<dyn plugins::Plugin>); 2] = [
+            (
+                lokyr_core_actions::MANIFEST,
+                Box::new(lokyr_core_actions::CoreActions),
+            ),
+            (lokyr_links::MANIFEST, Box::new(lokyr_links::Links)),
+        ];
+        for (manifest, plugin) in builtins {
+            if let Err(error) = plugins.add_builtin(manifest, plugin) {
+                eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
+            }
+        }
         let keymap = Keymap::with_config(bindings(&plugins), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {

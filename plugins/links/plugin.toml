@@ -1,0 +1,15 @@
+# The manifest of the built-in plugin that opens links with ⌘-click.
+[plugin]
+name = "lokyr/links"
+kind = "builtin"
+license = "MIT"
+description = "Opens the link, the URL or the path under a ⌘-click"
+
+[capabilities]
+terminal-read = true
+open = true
+process-read = true
+
+[contributes]
+commands = [{ name = "links.open", title = "Open Link" }]
+keybindings = [{ key = "cmd+click", command = "links.open" }]

@@ -844,8 +844,6 @@ fn a_plugin_s_writes_apply_in_their_order_as_its_call_returns() {
                 cx.send_text(pane, "a")?;
                 cx.set_clipboard_text("two")?;
                 cx.send_text(pane, "b\n")?;
-                cx.select_all(pane)?;
-                seen.borrow_mut().push(cx.selection_text(pane)?);
                 Ok(())
             },
         ),
@@ -854,11 +852,39 @@ fn a_plugin_s_writes_apply_in_their_order_as_its_call_returns() {
     plugins
         .run("writer.write", Args::new(), &mut app.context())
         .unwrap();
-    assert_eq!(*log.borrow(), [Some("before".to_owned()), None]);
+    assert_eq!(*log.borrow(), [Some("before".to_owned())]);
     assert_eq!(app.clipboard.1, ["one", "two"]);
-    assert!(app.workspace.pane(pane).unwrap().selection_text().is_some());
     // The program read `a`, then `b`.
     assert!(text_once(&app, pane, "\nab").contains("ready\nab"));
+}
+
+#[test]
+fn a_selection_that_a_plugin_makes_reads_after_its_call() {
+    // A program that writes nothing, which would clear the selection.
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let pane = app.workspace.active_pane(window).unwrap();
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins.add(
+        "selector",
+        scripted(
+            |cx| cx.register_command(command("selector.select")),
+            move |cx, _, _| {
+                let pane = cx.focused_pane().unwrap();
+                cx.select_all(pane)?;
+                seen.borrow_mut().push(cx.selection_text(pane)?.is_some());
+                Ok(())
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("selector.select", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(*log.borrow(), [false]);
+    assert!(app.workspace.pane(pane).unwrap().selection().is_some());
 }
 
 #[test]
@@ -910,8 +936,13 @@ fn a_request_needs_its_capability() {
     let mut plugins = Plugins::new();
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
-    plugins.add_granted(
-        "reader",
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/reader\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\nterminal-read = true\n",
+    ))
+    .unwrap();
+    plugins.add_declared(
+        manifest,
         scripted(
             |cx| cx.register_command(command("reader.read")),
             move |cx, _, _| {
@@ -926,7 +957,6 @@ fn a_request_needs_its_capability() {
                 Ok(())
             },
         ),
-        Some(vec![Capability::TerminalRead]),
     );
     assert!(plugins.activate(&mut app.context()).is_empty());
     plugins
@@ -953,8 +983,10 @@ fn a_call_is_its_own_plugin_s() {
     let (mut state, mut requests, mut writes, mut changed) = (
         State {
             name: "x".to_owned(),
+            manifest: None,
             status: Status::Active,
             granted: None,
+            uses: None,
             commands: Vec::new(),
             bindings: Vec::new(),
             catalogs: &[],
@@ -981,4 +1013,106 @@ fn a_call_is_its_own_plugin_s() {
     );
     assert_eq!(host::Host::handle(&mut host, call("x")), Response::Done);
     assert_eq!(requests, [Request::Quit]);
+}
+
+#[test]
+fn a_plugin_that_declares_runs_its_own_commands_and_those_of_its_uses() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    // The app's commands, which another plugin registers.
+    plugins.add(
+        "app",
+        scripted(
+            |cx| {
+                cx.register_command(command("app.used"))?;
+                cx.register_command(Command {
+                    capabilities: vec![Capability::PtyWrite],
+                    ..command("app.writes")
+                })?;
+                cx.register_command(command("app.other"))
+            },
+            |_, _, _| Ok(()),
+        ),
+    );
+    let manifest = Manifest::parse(concat!(
+        "[plugin]\nname = \"acme/runner\"\nversion = \"1.0.0\"\nkind = \"luau\"\n",
+        "api = \"^0.1\"\nlicense = \"MIT\"\n",
+        "[uses]\ncommands = [\"app.used\", \"app.writes\"]\n",
+    ))
+    .unwrap();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins.add_declared(
+        manifest,
+        scripted(
+            |cx| cx.register_command(command("runner.go")),
+            move |cx, _, _| {
+                let mut seen = seen.borrow_mut();
+                for name in ["runner.go", "app.used", "app.writes", "app.other"] {
+                    let ran = cx.run_command(name, Args::new());
+                    seen.push(ran.err().map(|error| error.code));
+                }
+                Ok(())
+            },
+        ),
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(
+        plugins.manifest("acme/runner").map(Manifest::namespace),
+        Some("runner")
+    );
+    plugins
+        .run("runner.go", Args::new(), &mut app.context())
+        .unwrap();
+    // Its own command and the one that it declares run; the one that needs
+    // a capability that it lacks, and the one that it does not declare,
+    // do not.
+    assert_eq!(
+        *log.borrow(),
+        [
+            None,
+            None,
+            Some(Code::MissingCapability),
+            Some(Code::Undeclared)
+        ]
+    );
+}
+
+#[test]
+fn a_built_in_plugin_comes_by_its_manifest_s_name_with_every_capability() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/reader\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[capabilities]\nterminal-read = true\n",
+    );
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins
+        .add_builtin(
+            manifest,
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    seen.borrow_mut().push(cx.clipboard_text().is_ok());
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("lokyr/reader"), Some(Status::Active));
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    // Beyond what its manifest tells it uses.
+    assert_eq!(*log.borrow(), [true]);
+    // One whose manifest does not read is not added.
+    let wrong = plugins.add_builtin(
+        "[plugin]\nname = \"x\"\n",
+        scripted(|_| Ok(()), |_, _, _| Ok(())),
+    );
+    assert!(wrong.is_err());
+    assert_eq!(plugins.status("x"), None);
 }

@@ -706,6 +706,7 @@ dependencies = [
  "lokyr-core-actions",
  "lokyr-kernel",
  "lokyr-links",
+ "lokyr-pkg-model",
  "lokyr-platform-core",
  "lokyr-pty",
  "lokyr-render-core",
@@ -786,6 +787,11 @@ dependencies = [
 [[package]]
 name = "lokyr-pkg-model"
 version = "0.2.0"
+dependencies = [
+ "lokyr-plugin-sdk",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "lokyr-platform-core"

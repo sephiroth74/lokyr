@@ -5,3 +5,5 @@
 //! and the distribution files that list the built-in plugins.
 
 #![forbid(unsafe_code)]
+
+pub mod manifest;
