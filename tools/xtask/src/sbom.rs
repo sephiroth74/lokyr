@@ -1,16 +1,18 @@
 //! The software bill of materials of the app's bundle, in CycloneDX's JSON
 //! (<https://cyclonedx.org/docs/1.6/json/>): the crates of other projects
-//! that the app's binary holds, as Cargo resolves them for Apple Silicon
-//! with the app's default features, through normal dependencies, without
-//! the procedural macros, whose code runs as it builds; each with its
-//! version, its license and its package's URL; and what the bundle holds
-//! besides, Sparkle's framework and the symbols' font.
+//! that the app's binary holds, as `cargo tree` gives them, of Cargo's own
+//! resolution of the app's default features for Apple Silicon, through
+//! normal dependencies and without the procedural macros, whose code runs
+//! as it builds; each with its version, its license and its package's URL,
+//! of `cargo metadata`; and what the bundle holds besides, Sparkle's
+//! framework and the symbols' font.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashSet;
 use std::path::Path;
+use std::process::Command;
 
-use anyhow::{Context, Result};
-use cargo_metadata::{DependencyKind, Metadata, MetadataCommand, Package, PackageId, TargetKind};
+use anyhow::{Context, Result, ensure};
+use cargo_metadata::{MetadataCommand, PackageId};
 use serde_json::{Value, json};
 
 use crate::bundle;
@@ -43,77 +45,60 @@ pub(crate) struct Component {
 /// The crates of other projects that the app's binary holds, by name and
 /// version.
 pub(crate) fn crates(root: &Path) -> Result<Vec<Component>> {
+    let tree = Command::new(env!("CARGO"))
+        .args(["tree", "--quiet", "--locked", "-p", APP])
+        .args(["-e", "normal,no-proc-macro", "--target", PLATFORM])
+        .args(["--prefix", "none", "--format", "{p}"])
+        .current_dir(root)
+        .output()
+        .context("running `cargo tree`")?;
+    ensure!(
+        tree.status.success(),
+        "`cargo tree` failed: {}",
+        String::from_utf8_lossy(&tree.stderr)
+    );
+    let built = built(&String::from_utf8_lossy(&tree.stdout));
     let metadata = MetadataCommand::new()
         .manifest_path(root.join("Cargo.toml"))
-        .other_options(vec![
-            "--filter-platform".to_owned(),
-            PLATFORM.to_owned(),
-            "--locked".to_owned(),
-        ])
+        .other_options(vec!["--locked".to_owned()])
         .exec()
         .context("running `cargo metadata`")?;
-    shipped(&metadata)
+    let members: HashSet<&PackageId> = metadata.workspace_members.iter().collect();
+    let mut components: Vec<Component> = metadata
+        .packages
+        .iter()
+        .filter(|package| {
+            !members.contains(&package.id)
+                && built.contains(&(package.name.to_string(), package.version.to_string()))
+        })
+        .map(|package| Component {
+            name: package.name.to_string(),
+            version: package.version.to_string(),
+            license: package.license.clone(),
+            authors: package.authors.clone(),
+            source: package
+                .manifest_path
+                .parent()
+                .map(|directory| directory.as_std_path().to_owned())
+                .unwrap_or_default(),
+        })
+        .collect();
+    components.sort();
+    components.dedup_by(|a, b| a.name == b.name && a.version == b.version);
+    Ok(components)
 }
 
-/// The packages of `metadata` that the app reaches through normal
-/// dependencies, but the workspace's own and the procedural macros.
-fn shipped(metadata: &Metadata) -> Result<Vec<Component>> {
-    let packages: HashMap<&PackageId, &Package> = metadata
-        .packages
-        .iter()
-        .map(|package| (&package.id, package))
-        .collect();
-    let members: HashSet<&PackageId> = metadata.workspace_members.iter().collect();
-    let resolve = metadata
-        .resolve
-        .as_ref()
-        .context("`cargo metadata` returned no dependency resolution")?;
-    let nodes: HashMap<&PackageId, _> = resolve.nodes.iter().map(|node| (&node.id, node)).collect();
-    let app = metadata
-        .packages
-        .iter()
-        .find(|package| package.name.as_str() == APP)
-        .with_context(|| format!("no package {APP}"))?;
-    let mut seen = HashSet::from([&app.id]);
-    let mut queue = VecDeque::from([&app.id]);
-    let mut components = Vec::new();
-    while let Some(id) = queue.pop_front() {
-        let node = nodes
-            .get(id)
-            .with_context(|| format!("{id} is not in the resolution"))?;
-        for dep in &node.deps {
-            let normal = dep
-                .dep_kinds
-                .iter()
-                .any(|info| info.kind == DependencyKind::Normal);
-            let package = packages
-                .get(&dep.pkg)
-                .with_context(|| format!("{} is not a package", dep.pkg))?;
-            let macro_only = package
-                .targets
-                .iter()
-                .all(|target| target.kind.contains(&TargetKind::ProcMacro));
-            if !normal || macro_only || !seen.insert(&dep.pkg) {
-                continue;
-            }
-            queue.push_back(&dep.pkg);
-            if !members.contains(&dep.pkg) {
-                components.push(Component {
-                    name: package.name.to_string(),
-                    version: package.version.to_string(),
-                    license: package.license.clone(),
-                    authors: package.authors.clone(),
-                    source: package
-                        .manifest_path
-                        .parent()
-                        .map(|directory| directory.as_std_path().to_owned())
-                        .unwrap_or_default(),
-                });
-            }
-        }
-    }
-    components.sort();
-    Ok(components)
+/// The packages, by name and version, of `cargo tree`'s lines without
+/// their prefix, `name v1.2.3`, a path's or a repeat's mark after them.
+fn built(tree: &str) -> HashSet<(String, String)> {
+    tree.lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let name = words.next()?;
+            let version = words.next()?.strip_prefix('v')?;
+            Some((name.to_owned(), version.to_owned()))
+        })
+        .collect()
 }
 
 /// The bill of materials of the app at `version`, whose binary holds
@@ -130,8 +115,9 @@ pub(crate) fn bill(version: &str, crates: &[Component], sparkle: &str) -> Value 
                 "version": component.version,
                 "purl": purl,
             });
+            // Cargo's old `/`, which SPDX writes `OR`.
             if let Some(license) = &component.license {
-                value["licenses"] = json!([{ "expression": license }]);
+                value["licenses"] = json!([{ "expression": license.replace('/', " OR ") }]);
             }
             value
         })
@@ -198,8 +184,31 @@ mod tests {
         assert!(!names.contains(&"serde_derive"));
         assert!(!names.contains(&"insta"));
         assert!(!names.contains(&"cc"));
+        // A procedural macro of test targets too, and its own dependencies,
+        // which build alone; optional dependencies whose features are off,
+        // which `cargo metadata`'s resolution names.
+        for absent in [
+            "displaydoc",
+            "proc-macro2",
+            "syn",
+            "zerovec",
+            "zerofrom",
+            "objc2-io-surface",
+        ] {
+            assert!(!names.contains(&absent), "{absent}");
+        }
         // Sorted, once each.
         assert!(crates.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn cargo_tree_s_lines_give_their_packages() {
+        let tree = "lokyr-app v0.3.0 (/x/crates/app)\nlibc v0.2.190\nobjc2 v0.6.5 (*)\n\n";
+        let built = built(tree);
+        assert!(built.contains(&("libc".to_owned(), "0.2.190".to_owned())));
+        assert!(built.contains(&("objc2".to_owned(), "0.6.5".to_owned())));
+        assert!(built.contains(&("lokyr-app".to_owned(), "0.3.0".to_owned())));
+        assert_eq!(built.len(), 3);
     }
 
     #[test]
@@ -218,6 +227,19 @@ mod tests {
         let components = bill["components"].as_array().unwrap();
         assert_eq!(components[0]["purl"], "pkg:cargo/objc2@0.6.5");
         assert_eq!(components[0]["licenses"][0]["expression"], "MIT");
+        // Cargo's old `/` as SPDX's `OR`.
+        let old_form = [Component {
+            name: "same-file".to_owned(),
+            version: "1.0.6".to_owned(),
+            license: Some("Unlicense/MIT".to_owned()),
+            authors: Vec::new(),
+            source: std::path::PathBuf::new(),
+        }];
+        let bill_of_old = super::bill("0.3.0", &old_form, "2.10.1");
+        assert_eq!(
+            bill_of_old["components"][0]["licenses"][0]["expression"],
+            "Unlicense OR MIT"
+        );
         assert_eq!(components[1]["name"], "Sparkle");
         assert_eq!(components[1]["version"], "2.10.1");
         assert_eq!(components[2]["name"], "Symbols Nerd Font Mono");

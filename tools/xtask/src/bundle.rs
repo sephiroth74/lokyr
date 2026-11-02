@@ -565,7 +565,8 @@ mod tests {
     #[test]
     fn the_symbols_font_s_licenses_go_into_the_bundle() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let resources = std::env::temp_dir().join(format!("lokyr-licenses-{}", std::process::id()));
+        let resources =
+            std::env::temp_dir().join(format!("lokyr-bundle-licenses-{}", std::process::id()));
         copy_font_licenses(&root.join(SYMBOLS_FONT), &resources).unwrap();
         let licenses = resources.join("licenses/symbols-nerd-font");
         let license = fs::read_to_string(licenses.join("LICENSE")).unwrap();
