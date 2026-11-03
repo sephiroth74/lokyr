@@ -921,6 +921,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lokyr-ui-gallery"
+version = "0.3.0"
+dependencies = [
+ "lokyr-font-coretext",
+ "lokyr-platform-core",
+ "lokyr-platform-macos",
+ "lokyr-plugin-sdk",
+ "lokyr-render-core",
+ "lokyr-render-metal",
+ "lokyr-text-core",
+ "lokyr-ui-core",
+ "lokyr-vt-core",
+ "png",
+]
+
+[[package]]
 name = "lokyr-vt-core"
 version = "0.3.0"
 dependencies = [

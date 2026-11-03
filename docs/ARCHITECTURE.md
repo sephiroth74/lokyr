@@ -143,7 +143,7 @@ lokyr/
 ├── sleip/              cli/ (`sleip` binary) · resolver/ (pubgrub) · index/ (sparse index, verification)
 ├── registry/              registry-server (v1) + index specification
 ├── templates/             templates for `sleip new` (Luau)
-├── tools/                 replay/ (`lokyr-replay`, `lokyr-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
+├── tools/                 replay/ (`lokyr-replay`, `lokyr-record`) · differential/ (the VT core against `alacritty_terminal`) · bench/ · ui-gallery/ (`ui-core`'s widgets, to check by hand) · xtask/ (bundle, signing, gen-dist, UCD tables, terminfo)
 ├── fuzz/                  cargo-fuzz: parser, terminal, differential (against `alacritty_terminal`); later .itermcolors, manifest, archives
 └── docs/                  this documentation (later an mdBook)
 ```

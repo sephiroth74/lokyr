@@ -91,6 +91,10 @@ check-links:
 test-bench-tools:
     python3 -m unittest discover -s tools/bench
 
+# Open the gallery of ui-core's nodes and widgets, each in its states, to check them by hand (macOS); `just ui-gallery --images <directory>` draws it, light and dark, into PNGs.
+ui-gallery *args:
+    cargo run --locked -p lokyr-ui-gallery -- {{args}}
+
 # Run the CI checks locally. Linux is covered by `check-linux`.
 ci: lint build test check-linux deny check-deps check-comments check-links bundle
 

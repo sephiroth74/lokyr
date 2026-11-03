@@ -1,0 +1,31 @@
+[package]
+name = "lokyr-ui-gallery"
+description = "A window of ui-core's nodes and widgets in their states, to check them by hand"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "ui-gallery"
+path = "src/main.rs"
+
+[dependencies]
+lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+lokyr-ui-core.workspace = true
+lokyr-vt-core.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+lokyr-font-coretext.workspace = true
+lokyr-platform-core.workspace = true
+lokyr-platform-macos.workspace = true
+lokyr-render-core.workspace = true
+lokyr-render-metal.workspace = true
+lokyr-text-core.workspace = true
+png.workspace = true
+
+[lints]
+workspace = true

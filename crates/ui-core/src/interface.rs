@@ -158,6 +158,11 @@ const ICONS: &[(&str, char)] = &[
     ("whole-word", '\u{eb7e}'),
 ];
 
+/// The names of the host's icons, in their order.
+pub fn icons() -> impl Iterator<Item = &'static str> {
+    ICONS.iter().map(|(name, _)| *name)
+}
+
 /// The character of the icon `name`, of the symbols' font, if the host has
 /// it.
 pub fn icon(name: &str) -> Option<char> {
@@ -179,5 +184,7 @@ mod tests {
         assert_eq!(icon("add"), Some('\u{ea60}'));
         assert_eq!(icon("Terminal"), None);
         assert_eq!(icon(""), None);
+        assert_eq!(icons().count(), ICONS.len());
+        assert!(icons().all(|name| icon(name).is_some()));
     }
 }
