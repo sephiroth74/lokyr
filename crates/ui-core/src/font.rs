@@ -106,13 +106,17 @@ pub struct GlyphKey {
     /// Whether it spans two columns: a drawing of the terminal's in a wide
     /// cell, which takes both; no other glyph.
     pub wide: bool,
+    /// How far its origin is past its pixel's left edge, in thirds of a
+    /// pixel: 0 for the cells' glyphs, which take whole pixels.
+    pub phase: u8,
 }
 
 /// A key hashes as two words rather than a word a field, as every glyph of
 /// a frame looks one up.
 impl Hash for GlyphKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let flags = u64::from(self.wide) << 3
+        let flags = u64::from(self.phase) << 4
+            | u64::from(self.wide) << 3
             | u64::from(self.synthesis.bold) << 2
             | u64::from(self.synthesis.italic) << 1
             | u64::from(self.thin);
@@ -219,6 +223,7 @@ impl DrawnGlyph {
             },
             thin: false,
             wide: false,
+            phase: 0,
         },
         glyph: AtlasGlyph {
             region: AtlasRegion {
@@ -739,6 +744,18 @@ impl<B: FontBackend> Font<B> {
     /// alone take, drawn into it the first time, antialiased as the
     /// configuration says.
     fn draw_at(&mut self, found: Found, size: f32, thin: bool, wide: bool) -> Option<AtlasGlyph> {
+        self.draw_at_phase(found, size, (thin, wide), 0)
+    }
+
+    /// The glyph of `found` at `size` pixels, as [`Font::draw_at`] gives
+    /// it, its origin `phase` thirds of a pixel past its pixel's left edge.
+    fn draw_at_phase(
+        &mut self,
+        found: Found,
+        size: f32,
+        (thin, wide): (bool, bool),
+        phase: u8,
+    ) -> Option<AtlasGlyph> {
         let key = GlyphKey {
             face: found.face,
             glyph: found.glyph,
@@ -746,6 +763,7 @@ impl<B: FontBackend> Font<B> {
             synthesis: found.synthesis,
             thin,
             wide,
+            phase,
         };
         let slot = DrawnGlyph::slot(&key);
         let drawn = self.this_frame[slot];
@@ -763,7 +781,11 @@ impl<B: FontBackend> Font<B> {
                     return None;
                 }
                 let antialias = self.config.antialias;
-                let rendering = Rendering { antialias, thin };
+                let rendering = Rendering {
+                    antialias,
+                    thin,
+                    phase,
+                };
                 if found.face != SPRITES {
                     if self.deferred.contains_key(&key) {
                         return None;
@@ -1058,7 +1080,9 @@ impl<B: FontBackend> Font<B> {
     /// display's scale, from the pen at `x` on the baseline at `baseline`,
     /// in pixels, in `color`, drawn into the atlas the first time, of thin
     /// strokes as the configuration has them for a background darker than
-    /// the text when `dark`; and where the last one's ink ends, rightwards.
+    /// the text when `dark`, each where the shaping puts it to a third of a
+    /// pixel, as a glyph drawn past its pixel's edge by the thirds left; and
+    /// where the last one's ink ends, rightwards.
     pub fn interface_text(
         &mut self,
         text: &str,
@@ -1086,14 +1110,19 @@ impl<B: FontBackend> Font<B> {
                 emoji: false,
                 fitted: false,
             };
+            // The pen at a third of a pixel: its whole pixel, and the
+            // glyph drawn past it by the thirds left.
+            let thirds = ((x + glyph.x) * f32::from(Rendering::PHASES)).round() as i32;
+            let phases = i32::from(Rendering::PHASES);
+            let (pixel, phase) = (thirds.div_euclid(phases), thirds.rem_euclid(phases) as u8);
             // A glyph without ink, as a space, draws nothing.
             let Some(drawn) = self
-                .draw_at(found, pixels, thin, false)
+                .draw_at_phase(found, pixels, (thin, false), phase)
                 .filter(|drawn| drawn.region.width > 0 && drawn.region.height > 0)
             else {
                 continue;
             };
-            let left = (x + glyph.x).round() as i32 + drawn.left;
+            let left = pixel + drawn.left;
             end = end.max((left + drawn.region.width as i32) as f32);
             placed.push(PlacedGlyph {
                 region: drawn.region,
@@ -1740,6 +1769,43 @@ mod tests {
             wide: false,
             dark: false,
         }
+    }
+
+    #[test]
+    fn the_interface_s_glyphs_fall_at_thirds_of_a_pixel() {
+        // 13 pixels at a scale of 1: glyphs 7.8 pixels apart, drawn a pixel
+        // past their pen.
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let color = Color::from_rgb8(10, 20, 30);
+        let (glyphs, _) = font.interface_text("abcd", (0.5, 20.0), color, false);
+        // Pens at 0.5, 8.3, 16.1 and 23.9: whole pixels and thirds past
+        // them, 0 and 2, 8 and 1, 16 and 0, 24 and 0.
+        let xs: Vec<i32> = glyphs.iter().map(|glyph| glyph.x).collect();
+        assert_eq!(xs, [1, 9, 17, 25]);
+        let phases: Vec<(u16, u8)> = font
+            .backend
+            .rendered
+            .iter()
+            .map(|&(_, glyph, rendering)| (glyph, rendering.phase))
+            .collect();
+        assert_eq!(phases, [(97, 2), (98, 1), (99, 0), (100, 0)]);
+        // Each pen within a sixth of a pixel of where its glyph draws.
+        for (index, glyph) in glyphs.iter().enumerate() {
+            let pen = 0.5 + 7.8 * index as f32;
+            let (_, _, rendering) = font.backend.rendered[index];
+            let drawn = (glyph.x - 1) as f32 + f32::from(rendering.phase) / 3.0;
+            assert!((drawn - pen).abs() <= 1.0 / 6.0 + 1e-4, "{drawn} {pen}");
+        }
+        // A glyph at another third is drawn again; at the same, kept.
+        let drawn = |font: &Font<Squares>| font.backend.drawn[&(FaceId(0), 97)];
+        font.interface_text("aaa", (0.0, 20.0), color, false);
+        // Pens at 0, 7.8 and 15.6: thirds 0, 2 and 2, the first of `abcd`'s
+        // phase 2 kept.
+        assert_eq!(drawn(&font), 2);
+        // The cells' glyphs keep whole pixels.
+        font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+        let (_, _, rendering) = *font.backend.rendered.last().unwrap();
+        assert_eq!(rendering.phase, 0);
     }
 
     #[test]
@@ -2462,7 +2528,7 @@ mod tests {
             rendering,
             Rendering {
                 antialias: false,
-                thin: false
+                ..Rendering::default()
             }
         );
         // An arc, which the terminal draws with its edges antialiased.

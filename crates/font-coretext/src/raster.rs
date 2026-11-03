@@ -147,7 +147,8 @@ fn bold_stroke(size: CGFloat) -> CGFloat {
 /// `glyph` of `font`, drawn as `synthesis` says, into a bitmap: of coverage,
 /// antialiased as `rendering` says and smoothed when `smoothing` is on but
 /// for a thin glyph, or of color, when the font's glyphs have colors of
-/// their own, which keep their antialiasing.
+/// their own, which keep their antialiasing; its origin past the bitmap's
+/// pixel by the thirds of a pixel of `rendering`'s phase.
 pub(crate) fn rasterize(
     font: &CTFont,
     glyph: GlyphId,
@@ -184,8 +185,10 @@ pub(crate) fn rasterize(
         0.0
     };
     let margin = MARGIN + stroke / 2.0;
+    let offset = CGFloat::from(rendering.phase.min(Rendering::PHASES - 1))
+        / CGFloat::from(Rendering::PHASES);
     let left = (bounds.origin.x - margin).floor();
-    let right = (bounds.origin.x + bounds.size.width + margin).ceil();
+    let right = (bounds.origin.x + bounds.size.width + margin + offset).ceil();
     let bottom = (bounds.origin.y - margin).floor();
     let top = (bounds.origin.y + bounds.size.height + margin).ceil();
     // A cast from a float saturates, and takes NaN to 0.
@@ -236,7 +239,7 @@ pub(crate) fn rasterize(
         // `M` or `^`, would leave the bitmap.
         CGContext::set_line_join(drawing, CGLineJoin::Round);
     }
-    let mut origin = CGPoint::new(-left, -bottom);
+    let mut origin = CGPoint::new(offset - left, -bottom);
     // SAFETY: one glyph at one position, into the context, which is alive.
     unsafe {
         font.draw_glyphs(

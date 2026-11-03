@@ -475,15 +475,16 @@ mod tests {
         let shadow = panel.shadow.unwrap();
         assert_eq!((shadow.x, shadow.y, shadow.blur), (0.0, 2.0, 8.0));
         assert_eq!(shadow.color, token("shadow"));
-        // Three blocks, from the padding, on the baseline 0.8 of the line
-        // down, in the secondary text's color.
+        // Three blocks, from the padding, 7.8 apart, at their whole pixels
+        // and the thirds past them, on the baseline 0.8 of the line down,
+        // in the secondary text's color.
         assert_eq!(title.len(), 3);
         assert_eq!(
             title
                 .iter()
                 .map(|glyph| (glyph.x, glyph.y))
                 .collect::<Vec<_>>(),
-            [(18, 28), (26, 28), (34, 28)]
+            [(18, 28), (25, 28), (33, 28)]
         );
         assert!(
             title
@@ -550,10 +551,11 @@ mod tests {
         let [_, Item::Glyphs(two), ..] = &twos[..] else {
             panic!()
         };
-        // The blocks of 26 pixels, 15.6 apart, on whole pixels.
+        // The blocks of 26 pixels, 15.6 apart: their whole pixels, the
+        // thirds past them drawn into their glyphs.
         assert_eq!(
             two.iter().map(|glyph| glyph.x).collect::<Vec<_>>(),
-            [16, 32, 47]
+            [16, 31, 47]
         );
         assert_eq!(two[0].region.width, 2 * one[0].region.width + 1);
     }

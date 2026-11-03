@@ -724,10 +724,7 @@ fn a_run_in_another_font_takes_that_font_s_face() {
             glyph.glyph,
             26.0,
             Synthesis::default(),
-            Rendering {
-                antialias: true,
-                thin: false,
-            },
+            Rendering::default(),
         );
         assert!(bitmap.width > 0, "{glyph:?}");
     }
@@ -848,10 +845,37 @@ fn menlo_m(rendering: Rendering) -> Vec<u8> {
 }
 
 #[test]
+fn a_glyph_s_phase_moves_its_ink_by_thirds_of_a_pixel() {
+    let mut backend = CoreText::with_font_smoothing(true);
+    let face = regular(&mut backend, "Menlo");
+    let glyph = backend.glyph(face, 'l').unwrap();
+    // The ink's centre across, from the pen, in pixels.
+    let mut centre = |phase: u8| {
+        let rendering = Rendering {
+            phase,
+            ..Rendering::default()
+        };
+        let bitmap = backend.rasterize(face, glyph, 13.0, Synthesis::default(), rendering);
+        let width = bitmap.width as usize;
+        let (mut ink, mut moment) = (0.0, 0.0);
+        for (index, &pixel) in bitmap.data.iter().enumerate() {
+            let x = (index % width) as f64 + 0.5 + f64::from(bitmap.left);
+            ink += f64::from(pixel);
+            moment += f64::from(pixel) * x;
+        }
+        moment / ink
+    };
+    let (first, second, third) = (centre(0), centre(1), centre(2));
+    for (from, to) in [(first, second), (second, third)] {
+        assert!(((to - from) - 1.0 / 3.0).abs() < 0.08, "{from} to {to}");
+    }
+}
+
+#[test]
 fn without_antialiasing_each_pixel_is_covered_or_not() {
     let aliased = menlo_m(Rendering {
         antialias: false,
-        thin: false,
+        ..Rendering::default()
     });
     assert!(aliased.contains(&255));
     assert!(aliased.iter().all(|&pixel| pixel == 0 || pixel == 255));
@@ -864,8 +888,8 @@ fn a_thin_glyph_covers_less_than_a_smoothed_one() {
     let total = |pixels: Vec<u8>| pixels.iter().map(|&pixel| u32::from(pixel)).sum::<u32>();
     let smoothed = total(menlo_m(Rendering::default()));
     let thin = total(menlo_m(Rendering {
-        antialias: true,
         thin: true,
+        ..Rendering::default()
     }));
     // Font smoothing adds about a third of coverage.
     assert!(thin * 5 < smoothed * 4, "thin {thin}, smoothed {smoothed}");

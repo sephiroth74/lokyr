@@ -110,6 +110,15 @@ pub struct Rendering {
     /// Whether it is drawn without the darkening that the system's font
     /// smoothing adds, of thinner strokes.
     pub thin: bool,
+    /// How far its origin is past its pixel's left edge, in thirds of a
+    /// pixel, from 0 to 2: of text placed at fractions of a pixel, as the
+    /// interface's, rather than of the cells' whole pixels.
+    pub phase: u8,
+}
+
+impl Rendering {
+    /// The phases of a pixel, its thirds.
+    pub const PHASES: u8 = 3;
 }
 
 impl Default for Rendering {
@@ -117,6 +126,7 @@ impl Default for Rendering {
         Self {
             antialias: true,
             thin: false,
+            phase: 0,
         }
     }
 }
