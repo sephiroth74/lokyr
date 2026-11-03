@@ -24,7 +24,9 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - A canvas of drawing primitives, for a plugin's own graphics, comes with F4's Luau API.
 
 **Focus and IME**
-- Focus belongs to exactly one element: a pane or a text field.
+- Focus belongs to exactly one element: the window's pane, or a node of a panel that takes it, a widget or a node of a key that a plugin marks `focusable`. A press over a panel's node gives it to the innermost node under the pointer that takes it.
+- Of the keys that no binding takes, Tab and Shift-Tab move it among the panel's nodes that take it, in the tree's order, from the last round to the first; Escape gives it back to the pane; every other key goes to the element that has it alone, and a key's release where its press went. A node taken away leaves it to the node in its place, and a panel that closes, or has none left, to the pane. The ring of the focus, of the theme's `focus.ring`, goes round the node that has it, over the others.
+- The keymap's contexts tell where it is: `pane.focused` while the pane has it; of a plugin's panels, `namespace.open` while one shows and `namespace.focused` while one has it, as `search.open` and `search.focused`.
 - The platform IME client (`NSTextInputClient`, text-input-v3, XIM) is routed to that element, along with the cursor position for the candidate window.
 
 **Accessibility**

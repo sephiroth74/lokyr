@@ -230,6 +230,7 @@ type Node = {
     items: { ListItem }?, -- for list nodes, flat
     row: Node?, -- for list nodes: the template of a row
     style: Style?,
+    focusable: boolean?, -- takes the keyboard's focus, by its key
     children: { Node }?,
     role: string?,
     label: string?,
@@ -308,7 +309,8 @@ type Cx = {
         execute: (name: string, args: Args?) -> (boolean, Error?),
     },
     keymap: {
-        -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open".
+        -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a
+        -- plugin's panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
         bind: (keys: string, command: string, when: string?) -> (boolean, Error?),
     },
     workspace: {
