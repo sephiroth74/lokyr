@@ -849,13 +849,14 @@ fn a_glyph_s_phase_moves_its_ink_by_thirds_of_a_pixel() {
     let mut backend = CoreText::with_font_smoothing(true);
     let face = regular(&mut backend, "Menlo");
     let glyph = backend.glyph(face, 'l').unwrap();
-    // The ink's centre across, from the pen, in pixels.
-    let mut centre = |phase: u8| {
+    // The ink's centre across, from the pen, in pixels, of the glyph at
+    // `size` pixels.
+    let mut centre = |phase: u8, size: f32| {
         let rendering = Rendering {
             phase,
             ..Rendering::default()
         };
-        let bitmap = backend.rasterize(face, glyph, 13.0, Synthesis::default(), rendering);
+        let bitmap = backend.rasterize(face, glyph, size, Synthesis::default(), rendering);
         let width = bitmap.width as usize;
         let (mut ink, mut moment) = (0.0, 0.0);
         for (index, &pixel) in bitmap.data.iter().enumerate() {
@@ -865,9 +866,16 @@ fn a_glyph_s_phase_moves_its_ink_by_thirds_of_a_pixel() {
         }
         moment / ink
     };
-    let (first, second, third) = (centre(0), centre(1), centre(2));
-    for (from, to) in [(first, second), (second, third)] {
-        assert!(((to - from) - 1.0 / 3.0).abs() < 0.08, "{from} to {to}");
+    // 13 pixels, and 26, the 13 points at a scale of 2, of which Core
+    // Graphics would put the origin at half a pixel.
+    for size in [13.0, 26.0] {
+        let (first, second, third) = (centre(0, size), centre(1, size), centre(2, size));
+        for (from, to) in [(first, second), (second, third)] {
+            assert!(
+                ((to - from) - 1.0 / 3.0).abs() < 0.08,
+                "{size}: {from} to {to}"
+            );
+        }
     }
 }
 

@@ -226,6 +226,12 @@ pub(crate) fn rasterize(
     let antialias = rendering.antialias || color;
     CGContext::set_should_antialias(drawing, antialias);
     CGContext::set_allows_font_smoothing(drawing, true);
+    // The glyph at the fraction of a pixel that its origin asks, which Core
+    // Graphics would put to the half pixel past about 20 pixels.
+    CGContext::set_allows_font_subpixel_positioning(drawing, true);
+    CGContext::set_should_subpixel_position_fonts(drawing, true);
+    CGContext::set_allows_font_subpixel_quantization(drawing, false);
+    CGContext::set_should_subpixel_quantize_fonts(drawing, false);
     CGContext::set_should_smooth_fonts(
         drawing,
         smoothing && antialias && !color && !rendering.thin,

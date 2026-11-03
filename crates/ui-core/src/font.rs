@@ -244,7 +244,10 @@ impl DrawnGlyph {
 
     /// The slot of `key`.
     fn slot(key: &GlyphKey) -> usize {
-        (usize::from(key.glyph.0) ^ (key.face.0 as usize).wrapping_mul(0x9E37)) & (DRAWN_SLOTS - 1)
+        // A glyph's phases, as `lll` draws them, in slots of their own.
+        let phase = usize::from(key.phase).wrapping_mul(0x51);
+        (usize::from(key.glyph.0) ^ (key.face.0 as usize).wrapping_mul(0x9E37) ^ phase)
+            & (DRAWN_SLOTS - 1)
     }
 }
 
@@ -1793,6 +1796,16 @@ mod tests {
             wide: false,
             dark: false,
         }
+    }
+
+    #[test]
+    fn a_glyph_s_phases_take_slots_of_their_own_in_a_frame() {
+        let key = |phase| GlyphKey {
+            phase,
+            ..DrawnGlyph::EMPTY.key
+        };
+        let slots: Vec<usize> = (0..3).map(|phase| DrawnGlyph::slot(&key(phase))).collect();
+        assert!(slots[0] != slots[1] && slots[1] != slots[2] && slots[0] != slots[2]);
     }
 
     #[test]
