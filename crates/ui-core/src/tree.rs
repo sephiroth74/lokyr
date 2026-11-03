@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
-use lokyr_plugin_sdk::view::{Key, Kind, Layout, Node, Style};
+use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Style};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
 /// taken away ends, so that its id finds no other node in its slot.
@@ -59,7 +59,18 @@ pub enum Invalid {
     NoKey,
     /// Children under a node that has none.
     Children,
+    /// Nodes nested past [`DEEPEST`] levels.
+    TooDeep,
+    /// A number of a node's layout or style that is not one, infinite, or
+    /// out of its range, as a negative padding: the property's name.
+    Number(&'static str),
 }
+
+/// The levels of nodes that a tree nests at most, the root's the first:
+/// past them, its diff, its layout and its paint, which recurse, would take
+/// more of a thread's stack than an interface needs, whatever a plugin
+/// sends.
+pub const DEEPEST: usize = 64;
 
 /// A node as the arena keeps it.
 #[derive(Debug)]
@@ -321,8 +332,18 @@ impl Tree {
 
 /// Whether `node`'s tree is one that the arena takes: its siblings of
 /// different keys, its nodes that hold state or take the focus of a key,
-/// and children only under the nodes that have them.
+/// children only under the nodes that have them, [`DEEPEST`] levels at
+/// most, and its numbers finite and in their ranges.
 fn valid(node: &Node) -> Result<(), Invalid> {
+    valid_at(node, 1)
+}
+
+/// [`valid`] of `node`, at the level `depth` of its tree.
+fn valid_at(node: &Node, depth: usize) -> Result<(), Invalid> {
+    if depth > DEEPEST {
+        return Err(Invalid::TooDeep);
+    }
+    numbers(node)?;
     if (node.kind.holds_state() || node.focusable) && node.key.is_none() {
         return Err(Invalid::NoKey);
     }
@@ -336,9 +357,54 @@ fn valid(node: &Node) -> Result<(), Invalid> {
         {
             return Err(Invalid::SameKey(key.clone()));
         }
-        valid(child)?;
+        valid_at(child, depth + 1)?;
     }
     Ok(())
+}
+
+/// Whether `node`'s numbers are finite and in their ranges: its lengths,
+/// paddings, gap, grow, radius, border and blur not negative, its fractions
+/// from 0 to 1, its shadow's offsets of any sign.
+fn numbers(node: &Node) -> Result<(), Invalid> {
+    let layout = &node.layout;
+    let style = &node.style;
+    let length = |length: Length| match length {
+        Length::Auto => true,
+        Length::Points(points) => points.is_finite() && points >= 0.0,
+        Length::Fraction(fraction) => (0.0..=1.0).contains(&fraction),
+    };
+    let size = |value: f32| value.is_finite() && value >= 0.0;
+    let padding = &layout.padding;
+    let checks = [
+        ("gap", size(layout.gap)),
+        (
+            "padding",
+            [padding.top, padding.right, padding.bottom, padding.left]
+                .into_iter()
+                .all(size),
+        ),
+        ("width", length(layout.width)),
+        ("height", length(layout.height)),
+        ("grow", size(layout.grow)),
+        ("radius", size(style.radius)),
+        (
+            "border",
+            style
+                .border
+                .as_ref()
+                .is_none_or(|border| size(border.width)),
+        ),
+        (
+            "shadow",
+            style.shadow.as_ref().is_none_or(|shadow| {
+                shadow.x.is_finite() && shadow.y.is_finite() && size(shadow.blur)
+            }),
+        ),
+    ];
+    match checks.into_iter().find(|(_, holds)| !holds) {
+        Some((name, _)) => Err(Invalid::Number(name)),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -561,5 +627,110 @@ mod tests {
             }
         );
         assert!(tree.focusable(icon));
+    }
+
+    #[test]
+    fn a_tree_too_deep_or_of_numbers_that_are_none_is_refused() {
+        use lokyr_plugin_sdk::view::{Border, Edges, Shadow};
+        let mut tree = Tree::new();
+        tree.update(&bar("~", "ready")).unwrap();
+        let root = tree.root();
+        // A chain of `DEEPEST` levels, then one more.
+        let chain = |levels: usize| {
+            (1..levels).fold(Node::text("leaf"), |inner, _| Node::container(vec![inner]))
+        };
+        let mut deep = Tree::new();
+        assert!(deep.update(&chain(DEEPEST)).is_ok());
+        assert_eq!(tree.update(&chain(DEEPEST + 1)), Err(Invalid::TooDeep));
+        assert_eq!(tree.update(&chain(5_000)), Err(Invalid::TooDeep));
+        // Numbers that are none, infinite or out of their ranges.
+        let laid = |layout: Layout| Node::container(vec![Node::spacer().layout(layout)]);
+        let styled = |style: Style| Node::container(vec![Node::spacer().style(style)]);
+        let refused = [
+            (
+                laid(Layout {
+                    gap: f32::NAN,
+                    ..Layout::default()
+                }),
+                "gap",
+            ),
+            (
+                laid(Layout {
+                    padding: Edges {
+                        left: -1.0,
+                        ..Edges::default()
+                    },
+                    ..Layout::default()
+                }),
+                "padding",
+            ),
+            (
+                laid(Layout {
+                    width: Length::Points(f32::INFINITY),
+                    ..Layout::default()
+                }),
+                "width",
+            ),
+            (
+                laid(Layout {
+                    height: Length::Fraction(1.5),
+                    ..Layout::default()
+                }),
+                "height",
+            ),
+            (
+                laid(Layout {
+                    grow: f32::NAN,
+                    ..Layout::default()
+                }),
+                "grow",
+            ),
+            (
+                styled(Style {
+                    radius: -2.0,
+                    ..Style::default()
+                }),
+                "radius",
+            ),
+            (
+                styled(Style {
+                    border: Some(Border {
+                        color: "separator".into(),
+                        width: f32::INFINITY,
+                    }),
+                    ..Style::default()
+                }),
+                "border",
+            ),
+            (
+                styled(Style {
+                    shadow: Some(Shadow {
+                        blur: f32::NAN,
+                        ..Shadow::default()
+                    }),
+                    ..Style::default()
+                }),
+                "shadow",
+            ),
+        ];
+        for (node, name) in refused {
+            assert_eq!(tree.update(&node), Err(Invalid::Number(name)), "{name}");
+        }
+        // The last valid tree stays.
+        assert_eq!(tree.root(), root);
+        // A shadow moved up and left, and a huge but finite border, read.
+        let fine = styled(Style {
+            border: Some(Border {
+                color: "separator".into(),
+                width: 1e30,
+            }),
+            shadow: Some(Shadow {
+                x: -4.0,
+                y: -2.0,
+                ..Shadow::default()
+            }),
+            ..Style::default()
+        });
+        assert!(tree.update(&fine).is_ok());
     }
 }

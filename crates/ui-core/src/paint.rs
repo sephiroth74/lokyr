@@ -145,8 +145,8 @@ impl<B: FontBackend> Painter<'_, B> {
             rect: Rect {
                 x: inner.x.saturating_sub_unsigned(outset),
                 y: inner.y.saturating_sub_unsigned(outset),
-                width: inner.width + 2 * outset,
-                height: inner.height + 2 * outset,
+                width: inner.width.saturating_add(outset.saturating_mul(2)),
+                height: inner.height.saturating_add(outset.saturating_mul(2)),
             },
             radius: style.radius * scale + width,
             fill: Color::CLEAR,
@@ -254,8 +254,8 @@ pub(crate) fn inside_border(rect: Rect, style: &Style, scale: f32) -> Rect {
     Rect {
         x: rect.x.saturating_add_unsigned(border),
         y: rect.y.saturating_add_unsigned(border),
-        width: rect.width.saturating_sub(2 * border),
-        height: rect.height.saturating_sub(2 * border),
+        width: rect.width.saturating_sub(border.saturating_mul(2)),
+        height: rect.height.saturating_sub(border.saturating_mul(2)),
     }
 }
 
@@ -773,6 +773,48 @@ mod tests {
             panic!("{items:#?}");
         };
         assert_eq!(last.last().unwrap().border_color, token("focus.ring"));
+    }
+
+    #[test]
+    fn huge_numbers_paint_without_overflowing() {
+        // A border and a box past any display, of numbers that a tree takes,
+        // the box focused and clipping its child inside its border: no
+        // arithmetic overflows, as a debug build would panic of it.
+        let huge = Node::container(vec![Node::text("x")])
+            .key("huge")
+            .focusable()
+            .layout(view::Layout {
+                width: view::Length::Points(5e9),
+                height: view::Length::Points(10.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("panel.bg")),
+                border: Some(Border {
+                    color: Token::from("panel.border"),
+                    width: 1e30,
+                }),
+                clip: true,
+                ..view::Style::default()
+            });
+        let root = Node::container(vec![huge.clone(), huge.key("other")]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, None, None, &mut font);
+        let first = tree.children(tree.root().unwrap())[0];
+        let tokens = &Theme::builtin().dark.tokens;
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            (true, Some(first)),
+        );
+        assert!(!items.is_empty());
     }
 
     #[test]

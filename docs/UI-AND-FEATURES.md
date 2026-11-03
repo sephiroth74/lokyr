@@ -11,6 +11,7 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - A widget that holds state keeps it in the host, by the node's key, which it requires: a text field's text, caret, selection and composition, a list's scroll and selection. Its plugin learns of the changes through events, whatever its thread or language, so that no key goes through the plugin and back.
 - `taffy` computes the layout, using a subset of flexbox: direction, gap, padding, alignment, sizes, grow.
 - Each new tree is diffed against the previous one by `key`, so only the changed parts are laid out and turned into display-list entries again.
+- A tree that nests past 64 levels, or whose numbers are not finite or out of their ranges, as a negative padding or a fraction past 1, is refused, and the last one stays: the diff, the layout and the paint recurse, and a plugin's tree must not take the app down.
 
 **Widgets**: those that the chrome and F3's plugins need, as the user chose on 1 November 2026. A plugin describes its UI with them and the host draws it: no plugin draws pixels or opens a native window, so that its UI takes the theme, the focus, the input method and accessibility, costs the frame no more than the host allows, and no plugin can pass itself off as the system.
 - container, text, icon, spacer, separator;

@@ -11,6 +11,9 @@
 //! kind; a node that holds state, as a widget whose state the host keeps,
 //! or that takes the keyboard's focus, needs its key. A node of a key
 //! learns of the pointer over it, as [`UiEventKind`] names what it did.
+//! The host refuses a tree that nests past 64 levels, or of a number that
+//! is none or infinite, a length, a gap, a padding, a grow, a radius, a
+//! border or a blur below 0, or a fraction past 0 to 1, keeping the last.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,6 +36,7 @@ pub struct Node {
     /// What it is.
     pub kind: Kind,
     /// Its place and size among its siblings, and its children's.
+    #[serde(default)]
     pub layout: Layout,
     /// How it draws.
     #[serde(default)]
@@ -43,6 +47,7 @@ pub struct Node {
     #[serde(default)]
     pub focusable: bool,
     /// Its children, a container's alone.
+    #[serde(default)]
     pub children: Vec<Node>,
 }
 
@@ -450,6 +455,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node, Node::spacer());
+        // A leaf without its layout and its children, as Luau's tables can
+        // leave them out.
+        let leaf: Node = serde_json::from_str(r#"{"key":null,"kind":{"text":"a"}}"#).unwrap();
+        assert_eq!(leaf, Node::text("a"));
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
