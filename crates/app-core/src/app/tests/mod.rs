@@ -628,10 +628,15 @@ fn a_window_s_state_follows_it_from_its_opening_to_its_closing() {
     };
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(frames(&app), 1);
+    // The resize draws at once, of the new size; the frame after it draws
+    // again only if what shows changed meanwhile, as the program's output
+    // that comes when it comes, or the glyphs that the first frame's budget
+    // left, which a loaded machine meets.
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+    assert_eq!(frames(&app), 2);
+    assert_eq!(shown(&app), ((800, 600), 2.0));
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(shown(&app), ((800, 600), 2.0));
-    assert_eq!(frames(&app), 2);
     // Closed, with its state and its workspace's window.
     fake.send(&mut app, window, WindowEvent::CloseRequested);
     assert!(app.windows.is_empty());
