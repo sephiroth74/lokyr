@@ -64,8 +64,13 @@ pub enum Invalid {
     /// Nodes nested past [`DEEPEST`] levels.
     TooDeep,
     /// A number of a node's layout or style that is not one, infinite, or
-    /// out of its range, as a negative padding: the property's name.
+    /// out of its range, as a negative padding, or a list's items past its
+    /// count: the property's name.
     Number(&'static str),
+    /// A list's row template of a node other than a container, a text, an
+    /// icon, a spacer or a separator, or of a key, a focus or a tooltip,
+    /// which a row of no node of the tree cannot have.
+    Template,
 }
 
 /// The levels of nodes that a tree nests at most, the root's the first:
@@ -375,6 +380,19 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
         return Err(Invalid::TooDeep);
     }
     numbers(node)?;
+    if let Kind::List(list) = &node.kind {
+        template(&list.row, depth + 1)?;
+        let given = list.first.checked_add(list.items.len());
+        if given.is_none_or(|given| given > list.count) {
+            return Err(Invalid::Number("count"));
+        }
+        if list
+            .row_height
+            .is_some_and(|height| !(height.is_finite() && height > 0.0))
+        {
+            return Err(Invalid::Number("row-height"));
+        }
+    }
     if (node.kind.holds_state() || node.focusable || node.tooltip.is_some()) && node.key.is_none() {
         return Err(Invalid::NoKey);
     }
@@ -390,6 +408,30 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
         valid_at(child, depth + 1, seen)?;
     }
     Ok(())
+}
+
+/// Whether `row`, a list's row template at the level `depth`, is one that a
+/// row takes: of containers, texts, icons, spacers and separators, of no
+/// key, focus or tooltip, [`DEEPEST`] levels at most, its numbers finite
+/// and in their ranges.
+fn template(row: &Node, depth: usize) -> Result<(), Invalid> {
+    if depth > DEEPEST {
+        return Err(Invalid::TooDeep);
+    }
+    numbers(row)?;
+    let plain = matches!(
+        row.kind,
+        Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Spacer | Kind::Separator
+    );
+    if !plain || row.key.is_some() || row.focusable || row.tooltip.is_some() {
+        return Err(Invalid::Template);
+    }
+    if !row.kind.has_children() && !row.children.is_empty() {
+        return Err(Invalid::Children);
+    }
+    row.children
+        .iter()
+        .try_for_each(|child| template(child, depth + 1))
 }
 
 /// Whether `node`'s numbers are finite and in their ranges: its lengths,
@@ -700,6 +742,49 @@ mod tests {
                 .map(|&id| tree.focusable(id))
                 .collect::<Vec<_>>(),
             [true, false, false]
+        );
+        // A list needs its key, its items within its count, a height of its
+        // rows above 0, and a template of plain nodes.
+        let list = |row: Node, count: usize, height: Option<f32>| {
+            let mut node = Node::list(row, count, (1, vec![Default::default(); 2])).key("rows");
+            if let Kind::List(list) = &mut node.kind {
+                list.row_height = height;
+            }
+            Node::container(vec![node])
+        };
+        let plain = || Node::container(vec![Node::icon("file"), Node::text("name")]);
+        assert!(tree.update(&list(plain(), 3, Some(20.0))).is_ok());
+        assert_eq!(
+            tree.update(&list(plain(), 2, None)),
+            Err(Invalid::Number("count"))
+        );
+        for height in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(
+                tree.update(&list(plain(), 3, Some(height))),
+                Err(Invalid::Number("row-height"))
+            );
+        }
+        for row in [
+            Node::container(vec![Node::button("Go").key("go")]),
+            Node::container(vec![Node::text("a").key("a")]),
+            Node::container(vec![Node::text("a").tooltip("tip")]),
+            Node::container(vec![]).focusable(),
+        ] {
+            assert_eq!(tree.update(&list(row, 3, None)), Err(Invalid::Template));
+        }
+        let mut under_text = Node::text("a");
+        under_text.children.push(Node::text("b"));
+        assert_eq!(
+            tree.update(&list(Node::container(vec![under_text]), 3, None)),
+            Err(Invalid::Children)
+        );
+        let deep = (0..DEEPEST).fold(Node::text("leaf"), |inner, _| Node::container(vec![inner]));
+        assert_eq!(tree.update(&list(deep, 3, None)), Err(Invalid::TooDeep));
+        let unkeyed = Node::container(vec![Node::list(plain(), 0, (0, vec![]))]);
+        assert_eq!(tree.update(&unkeyed), Err(Invalid::NoKey));
+        assert_eq!(
+            tree.update(&Node::container(vec![Node::scroll(vec![])])),
+            Err(Invalid::NoKey)
         );
         // A field holds its state by its key, and takes the focus of its
         // own.

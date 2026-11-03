@@ -13,7 +13,7 @@
 //! Places are in pixels from the root's top left corner, as the layout's
 //! frames are.
 
-use lokyr_plugin_sdk::view::{Key, Kind, PointerShape, UiEventKind};
+use lokyr_plugin_sdk::view::{self, Key, Kind, PointerShape, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::{Frame, Layout};
@@ -100,14 +100,16 @@ fn hit_node(
         ..local
     };
     let pixels = rect(frame);
-    let inner = if style.clip {
+    let inner = if clips(tree, id, style) {
         let inside = inside_border(pixels, style, layout.scale());
         Some(clip.map_or(inside, |clip| intersection(clip, inside)))
     } else {
         clip
     };
+    // A scroll area's children, moved up by its scroll.
+    let within = (frame.x, frame.y - layout.scrolled(id));
     for &child in tree.children(id).iter().rev() {
-        if hit_node(tree, layout, child, (frame.x, frame.y), inner, at, path) {
+        if hit_node(tree, layout, child, within, inner, at, path) {
             path.push(id);
             return true;
         }
@@ -192,23 +194,22 @@ fn areas_of(
         });
         Some(areas.len() - 1)
     };
-    let inner = if style.clip {
+    let inner = if clips(tree, id, style) {
         let inside = inside_border(pixels, style, layout.scale());
         Some(clip.map_or(inside, |clip| intersection(clip, inside)))
     } else {
         clip
     };
+    let within = (frame.x, frame.y - layout.scrolled(id));
     for &child in tree.children(id) {
-        areas_of(
-            tree,
-            layout,
-            child,
-            (frame.x, frame.y),
-            inner,
-            (shape, behind),
-            areas,
-        );
+        areas_of(tree, layout, child, within, inner, (shape, behind), areas);
     }
+}
+
+/// Whether `id` of `tree`, of `style`, clips its children: of its style,
+/// or as a scroll area does.
+fn clips(tree: &Tree, id: NodeId, style: &view::Style) -> bool {
+    style.clip || matches!(tree.kind(id), Some(Kind::Scroll))
 }
 
 /// The pointer over a view tree, and what it did there: the nodes of a key
@@ -313,12 +314,13 @@ impl Pointer {
                 kind: UiEventKind::ContextMenu,
             }),
             // A field selects of its own drags, which its plugin learns
-            // nothing of; a button and a toggle take no drag, and click as
-            // the button goes up over them.
+            // nothing of, as a list does of its clicks; a button and a
+            // toggle take no drag, and click as the button goes up over
+            // them.
             (Button::Primary, Some((node, _)))
                 if matches!(
                     tree.kind(node),
-                    Some(Kind::Field(_) | Kind::Button(_) | Kind::Toggle(_))
+                    Some(Kind::Field(_) | Kind::Button(_) | Kind::Toggle(_) | Kind::List(_))
                 ) => {}
             (Button::Primary, Some((node, key))) => {
                 self.drag = Some(Drag {
@@ -887,6 +889,51 @@ mod tests {
             [("replace", Click)]
         );
         assert_eq!(pointer.pressing(), None);
+    }
+
+    #[test]
+    fn a_scroll_area_s_children_are_hit_where_its_scroll_moved_them() {
+        // An area of 30 points, of boxes of 20, scrolled 25 down.
+        let boxes: Vec<Node> = (0..4)
+            .map(|index| {
+                sized(
+                    Node::container(vec![])
+                        .key(format!("box-{index}").as_str())
+                        .style(view::Style {
+                            pointer: Some(PointerShape::PointingHand),
+                            ..view::Style::default()
+                        }),
+                    Length::Points(40.0),
+                    Length::Points(20.0),
+                )
+            })
+            .collect();
+        let area = Node::scroll(boxes).key("area").layout(view::Layout {
+            direction: view::Direction::Column,
+            width: Length::Points(40.0),
+            height: Length::Points(30.0),
+            ..view::Layout::default()
+        });
+        let root = sized(
+            Node::container(vec![area]),
+            Length::Points(40.0),
+            Length::Points(60.0),
+        );
+        let (tree, mut layout) = laid(&root, 1.0);
+        let node = find(&tree, "area");
+        layout.scroll_by(&tree, node, 25.0);
+        // At 10 points down: the second box, from 20 to 40, moved to -5.
+        assert_eq!(keys(&tree, &layout, (5.0, 10.0)), ["-", "area", "box-1"]);
+        assert_eq!(keys(&tree, &layout, (5.0, 25.0)), ["-", "area", "box-2"]);
+        // Below the area, the last box, moved to 35, is clipped away.
+        assert_eq!(keys(&tree, &layout, (5.0, 45.0)), ["-"]);
+        // The pointer's areas follow it alike, within the area.
+        let hands: Vec<(i32, u32)> = areas(&tree, &layout)
+            .into_iter()
+            .filter(|area| area.shape == PointerShape::PointingHand)
+            .map(|area| (area.rect.y, area.rect.height))
+            .collect();
+        assert_eq!(hands, [(15, 15), (0, 15)]);
     }
 
     #[test]

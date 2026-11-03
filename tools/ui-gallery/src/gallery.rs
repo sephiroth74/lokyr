@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Border, Direction, Edges, Justify, Kind, Layout, Length, Node, PointerShape,
-    Shadow, Style, Token, UiEventKind,
+    self, Align, Border, Direction, Edges, Justify, Kind, Layout, Length, ListItem, Node,
+    PointerShape, Shadow, Style, Token, UiEventKind,
 };
 use lokyr_ui_core::interface;
 
@@ -16,6 +16,9 @@ const ICONS_A_ROW: usize = 4;
 
 /// A family, an emoji of five code points.
 const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+
+/// The rows of the gallery's list.
+const ROWS: usize = 100_000;
 
 /// The keys of the gallery's buttons.
 const BUTTONS: [&str; 5] = ["replace", "replace-all", "settings", "add", "trash"];
@@ -45,6 +48,10 @@ pub struct Gallery {
     /// The toggles that are on, by their keys, and the buttons' last press.
     toggles: BTreeMap<String, bool>,
     pressed: String,
+    /// The list's items that the host asked for last, from the first to
+    /// the end, and what its selection did.
+    window: (usize, usize),
+    listed: String,
 }
 
 impl Gallery {
@@ -72,6 +79,8 @@ impl Gallery {
             ],
             toggles: BTreeMap::from([("regex".to_owned(), true), ("pinned".to_owned(), true)]),
             pressed: "none yet".to_owned(),
+            window: (0, 0),
+            listed: "none yet".to_owned(),
         }
     }
 
@@ -97,6 +106,9 @@ impl Gallery {
             UiEventKind::Click if BUTTONS.contains(&key) => {
                 self.pressed = format!("click on `{key}`");
             }
+            UiEventKind::ListRange { first, count } => self.window = (first, first + count),
+            UiEventKind::Select { item } => self.listed = format!("selected item {item}"),
+            UiEventKind::Activate { item } => self.listed = format!("activated item {item}"),
             UiEventKind::Toggle { on } => {
                 self.toggles.insert(key.to_owned(), on);
                 self.pressed = format!("`{key}` {}", if on { "on" } else { "off" });
@@ -170,19 +182,94 @@ impl Gallery {
                 section("The pointer", self.pointer()),
                 section("The keyboard's focus", self.focus()),
                 section("Fields", self.fields()),
+                section("A list of 100 000 rows", self.list()),
             ],
         );
         let halves = Node::container(vec![half(left), half(right)]).layout(Layout {
             gap: 16.0,
             align: Align::Start,
+            padding: Edges {
+                top: 0.0,
+                right: 20.0,
+                bottom: 20.0,
+                left: 20.0,
+            },
             ..Layout::default()
         });
-        column(16.0, vec![self.header(), halves]).layout(Layout {
+        // The page below the header scrolls, of the window's height.
+        let page = Node::scroll(vec![halves]).key("page").layout(Layout {
+            direction: Direction::Column,
+            grow: 1.0,
+            height: Length::Points(0.0),
+            ..Layout::default()
+        });
+        let header = self.header().layout(Layout {
+            gap: 8.0,
+            align: Align::Center,
+            padding: Edges {
+                top: 20.0,
+                right: 20.0,
+                bottom: 0.0,
+                left: 20.0,
+            },
+            ..Layout::default()
+        });
+        column(16.0, vec![header, page]).layout(Layout {
             direction: Direction::Column,
             gap: 16.0,
-            padding: Edges::all(20.0),
             ..Layout::default()
         })
+    }
+
+    fn list(&self) -> Node {
+        let row = Node::container(vec![
+            Node::icon(""),
+            Node::text(""),
+            Node::spacer(),
+            secondary(""),
+        ])
+        .layout(Layout {
+            gap: 6.0,
+            align: Align::Center,
+            padding: Edges {
+                top: 2.0,
+                right: 8.0,
+                bottom: 2.0,
+                left: 8.0,
+            },
+            ..Layout::default()
+        });
+        let icons: Vec<&str> = interface::icons().collect();
+        let (first, end) = self.window;
+        let items = (first..end.min(ROWS))
+            .map(|index| ListItem {
+                texts: vec![
+                    icons[index % icons.len()].to_owned(),
+                    format!("Row {index}"),
+                    format!("{:08x}", (index as u64).wrapping_mul(2_654_435_761) as u32),
+                ],
+            })
+            .collect();
+        let mut list = Node::list(row, ROWS, (first, items))
+            .key("rows")
+            .layout(Layout {
+                height: Length::Points(220.0),
+                ..Layout::default()
+            })
+            .style(field());
+        if let Kind::List(list) = &mut list.kind {
+            list.row_height = Some(22.0);
+        }
+        let (first, end) = self.window;
+        column(
+            8.0,
+            vec![
+                list,
+                secondary(&format!("last: {}", self.listed)),
+                secondary(&format!("items given: {first} to {end}")),
+                secondary("the arrows, Page Up and Down, Home and End select; Return activates"),
+            ],
+        )
     }
 
     fn header(&self) -> Node {
@@ -873,6 +960,7 @@ mod tests {
             "find",
             "name",
             "narrow",
+            "rows",
         ];
         // Without the system's keyboard navigation, the buttons and the
         // toggles are left out, the disabled ones always.

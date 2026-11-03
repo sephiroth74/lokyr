@@ -71,6 +71,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
   - CJK text and emoji.
 
 **CPU per frame**: `tracing` spans and `os_signpost` (Instruments *Points of Interest*) for each phase: snapshot, shaping, display list, encoding, present.
+- **A list of the interface**: `cargo test --release -p lokyr-app --test list_frame -- --ignored --nocapture` times the frames of a list that scrolls, of 100 000 rows and of 1 000, in the system's font: its rows' layout, the plugin's render of the items that it asks for, and the paint. On an M-series Mac on 3 November 2026, about 25 µs a frame of either, 140 µs at most past the first, which draws the glyphs.
 
 ## Benchmarks and CI
 

@@ -13,6 +13,7 @@ use lokyr_text_core::FontBackend;
 use crate::field::{self, FieldState, Fields};
 use crate::font::Font;
 use crate::layout::{Frame, Layout, Measure};
+use crate::list::Lists;
 use crate::theme::Tokens;
 use crate::tree::{NodeId, Tree};
 use crate::widget;
@@ -41,6 +42,8 @@ pub struct Shown<'a> {
     /// The node that the primary button went down over, while the pointer
     /// is still over it, if one.
     pub pressed: Option<NodeId>,
+    /// The tree's lists, their rows that show laid out.
+    pub lists: &'a Lists,
 }
 
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
@@ -56,6 +59,20 @@ pub fn paint<B: FontBackend>(
     origin: (f32, f32),
     shown: Shown<'_>,
 ) -> Vec<Item> {
+    let text = tokens.get("text").unwrap_or(Color::BLACK);
+    paint_of(tree, layout, font, tokens, (origin, text), shown)
+}
+
+/// [`paint`], of `inherited` for the texts of the root that names no
+/// color, as a list's row selected has the selection's.
+fn paint_of<B: FontBackend>(
+    tree: &Tree,
+    layout: &Layout,
+    font: &mut Font<B>,
+    tokens: &Tokens,
+    (origin, inherited): ((f32, f32), Color),
+    shown: Shown<'_>,
+) -> Vec<Item> {
     let mut painter = Painter {
         tree,
         layout,
@@ -67,12 +84,13 @@ pub fn paint<B: FontBackend>(
         fields: shown.fields,
         hovered: shown.hovered,
         pressed: shown.pressed,
+        lists: shown.lists,
         clip: None,
         ring: None,
         items: Vec::new(),
     };
     if let Some(root) = tree.root() {
-        painter.node(root, tokens.get("text").unwrap_or(Color::BLACK));
+        painter.node(root, inherited);
     }
     let mut items = painter.items;
     match painter.ring {
@@ -95,6 +113,10 @@ pub fn paint<B: FontBackend>(
 /// The room inside a tooltip's edges, in points: above and below its
 /// text, and before and after it.
 const TOOLTIP_PADDING: (f32, f32) = (3.0, 7.0);
+
+/// A scroll's indicator, in points: its least height, its width, and its
+/// room from its box's right edge.
+const INDICATOR: (f32, f32, f32) = (24.0, 4.0, 2.0);
 
 /// How far below the pointer's place a tooltip goes, in points, past the
 /// arrow's tip.
@@ -175,6 +197,7 @@ struct Painter<'a, B> {
     fields: &'a Fields,
     hovered: Option<NodeId>,
     pressed: Option<NodeId>,
+    lists: &'a Lists,
     /// The clips of the node painted, as one: `None` for none.
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
@@ -249,14 +272,17 @@ impl<B: FontBackend> Painter<'_, B> {
                 };
                 self.widget((label, icon), frame, color);
             }
-            Kind::Container | Kind::Spacer | Kind::Separator => {}
+            Kind::List(list) => self.list(id, list, (frame, style), color),
+            Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
         if children.is_empty() {
             return;
         }
+        // A scroll area clips its children, which its scroll moves.
+        let clips = style.clip || matches!(kind, Kind::Scroll);
         let outer = self.clip;
-        if style.clip {
+        if clips {
             let inside = inside_border(rect(frame), style, self.layout.scale());
             self.items.push(Item::PushClip(inside));
             self.clip = Some(outer.map_or(inside, |outer| intersection(outer, inside)));
@@ -264,10 +290,112 @@ impl<B: FontBackend> Painter<'_, B> {
         for &child in children {
             self.node(child, color);
         }
-        if style.clip {
+        if matches!(kind, Kind::Scroll) {
+            let scale = self.layout.scale();
+            let room = self.layout.scroll_room(tree, id) / scale;
+            self.indicator(frame, (self.layout.scrolled(id) / scale, room));
+        }
+        if clips {
             self.items.push(Item::PopClip);
             self.clip = outer;
         }
+    }
+
+    /// The list `id`'s rows that show, of `list`, within its box at
+    /// `frame`, of `style`, inside its border: each of the selection's
+    /// background where it is selected, of the accent's while the list has
+    /// the keyboard's focus, its texts in `color`, or the selection's; and
+    /// its scroll's indicator.
+    fn list(
+        &mut self,
+        id: NodeId,
+        list: &view::List,
+        (frame, style): (Frame, &Style),
+        color: Color,
+    ) {
+        let Some(state) = self.tree.key(id).and_then(|key| self.lists.state(key)) else {
+            return;
+        };
+        let scale = self.layout.scale();
+        let inside = inside_border(rect(frame), style, scale);
+        self.items.push(Item::PushClip(inside));
+        let focused = self.focused == Some(id);
+        let (selection, selected_color) = if focused {
+            (
+                self.tokens.get("list.selection.bg"),
+                self.tokens.get("list.selection.fg").unwrap_or(color),
+            )
+        } else {
+            (self.tokens.get("list.selection.inactive.bg"), color)
+        };
+        let fields = Fields::new();
+        let lists = Lists::new();
+        for (index, top) in state.visible(list) {
+            let y = frame.y + top * scale;
+            let selected = state.selected() == Some(index);
+            if selected && let Some(selection) = selection {
+                let height = state.height_of(list, index) * scale;
+                let band = Rect {
+                    x: frame.x.round() as i32,
+                    y: y.round() as i32,
+                    width: frame.width.round() as u32,
+                    height: ((y + height).round() - y.round()).max(0.0) as u32,
+                };
+                self.push_shape(Shape::filled(band, selection));
+            }
+            let Some(row) = state.row(index) else {
+                continue;
+            };
+            let inherited = if selected { selected_color } else { color };
+            let items = paint_of(
+                row.tree(),
+                row.layout(),
+                &mut *self.font,
+                self.tokens,
+                ((frame.x, y), inherited),
+                Shown {
+                    dark: self.dark,
+                    focused: None,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &lists,
+                },
+            );
+            self.items.extend(items);
+        }
+        self.indicator(frame, state.extent(list));
+        self.items.push(Item::PopClip);
+    }
+
+    /// The indicator of a scroll within `frame`, scrolled down `scrolled`
+    /// points of `room`, at its right edge, as macOS's overlay scroll bars
+    /// show it: none of a content that fits.
+    fn indicator(&mut self, frame: Frame, (scrolled, room): (f32, f32)) {
+        let Some(color) = self.tokens.get("scrollbar") else {
+            return;
+        };
+        if room <= 0.0 {
+            return;
+        }
+        let scale = self.layout.scale();
+        let view = frame.height;
+        let total = view + room * scale;
+        let height = (view * view / total).max(INDICATOR.0 * scale).min(view);
+        let top = frame.y + (view - height) * (scrolled / room).clamp(0.0, 1.0);
+        let (width, inset) = (INDICATOR.1 * scale, INDICATOR.2 * scale);
+        self.push_shape(Shape {
+            radius: width / 2.0,
+            ..Shape::filled(
+                Rect {
+                    x: (frame.x + frame.width - width - inset).round() as i32,
+                    y: top.round() as i32,
+                    width: width.round() as u32,
+                    height: height.round() as u32,
+                },
+                color,
+            )
+        });
     }
 
     /// The ring of the focus around a node's box at `frame`, of `style`:
@@ -654,6 +782,8 @@ mod tests {
             fields: NONE.get_or_init(Fields::new),
             hovered: None,
             pressed: None,
+            // A tree of no lists: nothing to keep, as the test ends.
+            lists: Box::leak(Box::new(Lists::new())),
         }
     }
 
@@ -1173,6 +1303,7 @@ mod tests {
                     fields,
                     hovered: None,
                     pressed: None,
+                    lists: &Lists::new(),
                 },
             )
         };
@@ -1329,6 +1460,7 @@ mod tests {
                     fields,
                     hovered: None,
                     pressed: None,
+                    lists: &Lists::new(),
                 },
             )
         };
@@ -1427,6 +1559,7 @@ mod tests {
                     fields: &fields,
                     hovered,
                     pressed,
+                    lists: &Lists::new(),
                 },
             );
             let mut fills = Vec::new();
@@ -1550,6 +1683,7 @@ mod tests {
                 fields: &fields,
                 hovered: Some(first),
                 pressed: Some(first),
+                lists: &Lists::new(),
             },
         );
         (tree, layout, items)
@@ -1610,6 +1744,254 @@ mod tests {
             placed(2.0, (200.0, 100.0), (800.0, 600.0)),
             (rect(200, 140, 138, 38), 14)
         );
+    }
+
+    #[test]
+    fn a_list_paints_its_rows_that_show_its_selection_and_its_scroll() {
+        use lokyr_plugin_sdk::view::ListItem;
+        // 100 rows of 20 points in 100, at a scale of 1: 5 show.
+        let items = (0..100)
+            .map(|index| ListItem {
+                texts: vec![format!("{index:03}")],
+            })
+            .collect();
+        let mut node = Node::list(Node::text(""), 100, (0, items))
+            .key("rows")
+            .layout(view::Layout {
+                height: view::Length::Points(100.0),
+                ..view::Layout::default()
+            });
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &mut node.kind {
+            list.row_height = Some(20.0);
+        }
+        let root = Node::container(vec![node]).layout(view::Layout {
+            direction: view::Direction::Column,
+            padding: Edges::all(10.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let list = tree.children(tree.root().unwrap())[0];
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut font);
+        lists.select(&tree, list, 2);
+        let tokens = &Theme::builtin().dark.tokens;
+        let painted = |font: &mut Font<Blocks>, focused: Option<NodeId>, lists: &Lists| {
+            let fields = Fields::new();
+            paint(
+                &tree,
+                &layout,
+                font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists,
+                },
+            )
+        };
+        let split = |items: &[Item]| {
+            let mut shapes = Vec::new();
+            let mut glyphs = Vec::new();
+            for item in items {
+                match item {
+                    Item::Shapes(found) => shapes.extend(found.iter().copied()),
+                    Item::Glyphs(found) => glyphs.extend(found.iter().copied()),
+                    _ => {}
+                }
+            }
+            (shapes, glyphs)
+        };
+        // Focused: the selection of the accent, its row's text of the
+        // selection's; 3 glyphs a row, 5 rows; the list clipped within its
+        // box; the indicator at the top, 24 points of 100.
+        let items = painted(&mut font, Some(list), &lists);
+        assert!(matches!(
+            items.first(),
+            Some(Item::PushClip(Rect {
+                x: 10,
+                y: 10,
+                width: 180,
+                height: 100
+            }))
+        ));
+        let (shapes, glyphs) = split(&items);
+        let band = Rect {
+            x: 10,
+            y: 50,
+            width: 180,
+            height: 20,
+        };
+        assert!(shapes.contains(&Shape::filled(band, token("list.selection.bg"))));
+        assert_eq!(glyphs.len(), 15);
+        let in_band = |glyph: &PlacedGlyph| glyph.y >= 50 && glyph.y < 70;
+        assert!(
+            glyphs
+                .iter()
+                .filter(|glyph| in_band(glyph))
+                .all(|glyph| glyph.color == token("list.selection.fg"))
+        );
+        assert!(
+            glyphs
+                .iter()
+                .filter(|glyph| !in_band(glyph))
+                .all(|glyph| glyph.color == token("text"))
+        );
+        let indicator = shapes
+            .iter()
+            .find(|shape| shape.fill == token("scrollbar"))
+            .unwrap();
+        assert_eq!(
+            indicator.rect,
+            Rect {
+                x: 10 + 180 - 4 - 2,
+                y: 10,
+                width: 4,
+                height: 24
+            }
+        );
+        // Without the focus, the selection of a gray, its text as the
+        // others'.
+        let (shapes, glyphs) = split(&painted(&mut font, None, &lists));
+        assert!(shapes.contains(&Shape::filled(band, token("list.selection.inactive.bg"))));
+        assert!(glyphs.iter().all(|glyph| glyph.color == token("text")));
+        // Scrolled to the end, the indicator at the bottom.
+        lists.scroll(&tree, list, 1e9);
+        lists.lay_out(&tree, &layout, &mut font);
+        let (shapes, _) = split(&painted(&mut font, None, &lists));
+        let indicator = shapes
+            .iter()
+            .find(|shape| shape.fill == token("scrollbar"))
+            .unwrap();
+        assert_eq!(indicator.rect.y, 10 + 100 - 24);
+        // A list of no state yet paints none of its rows.
+        let (_, glyphs) = split(&painted(&mut font, None, &Lists::new()));
+        assert!(glyphs.is_empty());
+    }
+
+    #[test]
+    fn a_list_whose_rows_fit_shows_no_indicator() {
+        use lokyr_plugin_sdk::view::ListItem;
+        let items = (0..3)
+            .map(|index| ListItem {
+                texts: vec![format!("{index}")],
+            })
+            .collect();
+        let mut node = Node::list(Node::text(""), 3, (0, items))
+            .key("rows")
+            .layout(view::Layout {
+                height: view::Length::Points(100.0),
+                ..view::Layout::default()
+            });
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &mut node.kind {
+            list.row_height = Some(20.0);
+        }
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&Node::container(vec![node])).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut font);
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: None,
+                pressed: None,
+                lists: &lists,
+            },
+        );
+        let glyphs: usize = items
+            .iter()
+            .map(|item| match item {
+                Item::Glyphs(glyphs) => glyphs.len(),
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(glyphs, 3);
+        assert!(!items.iter().any(|item| matches!(
+            item,
+            Item::Shapes(shapes) if shapes.iter().any(|shape| shape.fill == token("scrollbar"))
+        )));
+    }
+
+    #[test]
+    fn a_scroll_area_clips_its_children_and_shows_its_scroll() {
+        let boxes: Vec<Node> = (0..10)
+            .map(|index| {
+                Node::container(vec![])
+                    .key(format!("box-{index}").as_str())
+                    .layout(view::Layout {
+                        height: view::Length::Points(20.0),
+                        ..view::Layout::default()
+                    })
+                    .style(view::Style {
+                        background: Some(Token::from("accent")),
+                        ..view::Style::default()
+                    })
+            })
+            .collect();
+        let area = Node::scroll(boxes).key("area").layout(view::Layout {
+            direction: view::Direction::Column,
+            height: view::Length::Points(50.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let root = Node::container(vec![area]).layout(view::Layout {
+            direction: view::Direction::Column,
+            ..view::Layout::default()
+        });
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        let node = tree.children(tree.root().unwrap())[0];
+        layout.scroll_by(&tree, node, 75.0);
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            shown(true, None),
+        );
+        let [Item::PushClip(clip), Item::Shapes(shapes), Item::PopClip] = &items[..] else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(
+            *clip,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 50
+            }
+        );
+        // The boxes moved up 75 points: the fourth from -15.
+        assert_eq!(shapes[3].rect.y, 60 - 75);
+        // 200 points in 50: 150 to scroll, half of it, the indicator 24
+        // points high, halfway down the 26 left.
+        let indicator = shapes.last().unwrap();
+        assert_eq!(indicator.fill, token("scrollbar"));
+        assert_eq!((indicator.rect.y, indicator.rect.height), (13, 24));
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub mod focus;
 pub mod font;
 pub mod interface;
 pub mod layout;
+pub mod list;
 pub mod paint;
 pub mod pane;
 pub mod pointer;

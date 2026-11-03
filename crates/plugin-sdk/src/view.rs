@@ -85,6 +85,49 @@ pub enum Kind {
     /// A line across its container, a point thick: upright in a row, flat
     /// in a column.
     Separator,
+    /// A list of many rows, of flat items and a row's template, whose rows
+    /// the host lays out and draws as they show alone, and whose scroll and
+    /// selection it keeps by the node's key: its plugin gives the items
+    /// that the host asks for, by `list-range`, and learns of its selection
+    /// by `select` and `activate`. It takes the room that its layout gives
+    /// it, a height or a grow.
+    List(List),
+    /// A container that scrolls its children up and down, as a wheel or a
+    /// trackpad moves them, whose scroll the host keeps by the node's key.
+    /// It takes the room that its layout gives it.
+    Scroll,
+}
+
+/// A list's own properties.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct List {
+    /// The template of a row: its texts and its icons, in the tree's order,
+    /// take an item's texts by their places, the first the first; one
+    /// that the item lacks keeps its own. Containers, texts, icons, spacers
+    /// and separators alone.
+    pub row: Box<Node>,
+    /// How many items the list has.
+    pub count: usize,
+    /// The place of the first of `items` among them all.
+    #[serde(default)]
+    pub first: usize,
+    /// The items from `first`, as many as the host asked for, or more.
+    #[serde(default)]
+    pub items: Vec<ListItem>,
+    /// The height of every row, in points; without it, each row takes its
+    /// own, which the host measures as it shows.
+    #[serde(default)]
+    pub row_height: Option<f32>,
+}
+
+/// A list's item: the texts that its row's template shows, by their
+/// places in it. Its index among the list's items tells it apart.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct ListItem {
+    /// Its texts.
+    pub texts: Vec<String>,
 }
 
 /// A text field's own properties.
@@ -131,16 +174,18 @@ impl Kind {
             Self::Container | Self::Text(_) | Self::Icon(_) | Self::Spacer | Self::Separator => {
                 false
             }
-            Self::Field(_) | Self::Button(_) | Self::Toggle(_) => true,
+            Self::Field(_) | Self::Button(_) | Self::Toggle(_) | Self::List(_) | Self::Scroll => {
+                true
+            }
         }
     }
 
     /// Whether a node of the kind takes the keyboard's focus of its own, as
-    /// a field, a button and a toggle do, unless they are disabled, whatever
-    /// its node says.
+    /// a field, a list, a button and a toggle do, unless they are disabled,
+    /// whatever its node says.
     pub fn takes_focus(&self) -> bool {
         match self {
-            Self::Field(_) => true,
+            Self::Field(_) | Self::List(_) => true,
             Self::Button(button) => !button.disabled,
             Self::Toggle(toggle) => !toggle.disabled,
             _ => false,
@@ -167,7 +212,7 @@ impl Kind {
 
     /// Whether a node of the kind has children.
     pub fn has_children(&self) -> bool {
-        matches!(self, Self::Container)
+        matches!(self, Self::Container | Self::Scroll)
     }
 }
 
@@ -337,6 +382,25 @@ pub enum UiEventKind {
     Toggle {
         /// Whether it is to be on.
         on: bool,
+    },
+    /// A list's selection moved to an item, by a click or the keys.
+    Select {
+        /// The item's index.
+        item: usize,
+    },
+    /// A list's item chosen, by a double click or Return.
+    Activate {
+        /// The item's index.
+        item: usize,
+    },
+    /// The host asks for a list's items from `first`, `count` of them, or
+    /// as many as the list has, about the rows that show: the next render
+    /// gives them.
+    ListRange {
+        /// The first item's index.
+        first: usize,
+        /// How many.
+        count: usize,
     },
 }
 
@@ -527,6 +591,27 @@ impl Node {
         Self::new(Kind::Separator)
     }
 
+    /// A list of `count` items, of rows of `row`'s template, which gives
+    /// `items` from `first`; its key, which it needs, follows.
+    pub fn list(row: Node, count: usize, (first, items): (usize, Vec<ListItem>)) -> Self {
+        Self::new(Kind::List(List {
+            row: Box::new(row),
+            count,
+            first,
+            items,
+            row_height: None,
+        }))
+    }
+
+    /// A container of `children` that scrolls them; its key, which it
+    /// needs, follows.
+    pub fn scroll(children: Vec<Node>) -> Self {
+        Self {
+            children,
+            ..Self::new(Kind::Scroll)
+        }
+    }
+
     /// Room that grows.
     pub fn spacer() -> Self {
         let mut spacer = Self::new(Kind::Spacer);
@@ -635,6 +720,31 @@ mod tests {
         assert_eq!(toggle, Node::toggle("regex", true).key("regex"));
         let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
         assert_eq!(separator, Node::separator());
+        // A list, of its window of items and its row's template; a scroll
+        // area.
+        let list: Node = serde_json::from_str(concat!(
+            r#"{"key":"rows","kind":{"list":{"row":{"key":null,"kind":{"text":""}},"#,
+            r#""count":100000,"first":20,"items":[{"texts":["row 20"]}],"row-height":22.0}}}"#
+        ))
+        .unwrap();
+        let mut expected = Node::list(
+            Node::text(""),
+            100_000,
+            (
+                20,
+                vec![ListItem {
+                    texts: vec!["row 20".to_owned()],
+                }],
+            ),
+        )
+        .key("rows");
+        if let Kind::List(list) = &mut expected.kind {
+            list.row_height = Some(22.0);
+        }
+        assert_eq!(list, expected);
+        let scroll: Node =
+            serde_json::from_str(r#"{"key":"area","kind":"scroll","children":[]}"#).unwrap();
+        assert_eq!(scroll, Node::scroll(vec![]).key("area"));
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
@@ -648,6 +758,12 @@ mod tests {
                 text: "main".to_owned(),
             },
             UiEventKind::Toggle { on: true },
+            UiEventKind::Select { item: 3 },
+            UiEventKind::Activate { item: 3 },
+            UiEventKind::ListRange {
+                first: 10,
+                count: 105,
+            },
         ];
         let json = serde_json::to_string(&events).unwrap();
         assert_eq!(
@@ -655,7 +771,9 @@ mod tests {
             concat!(
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma"},"#,
-                r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true}]"#
+                r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,
+                r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
+                r#"{"kind":"list-range","first":10,"count":105}]"#
             )
         );
         assert_eq!(

@@ -9,10 +9,13 @@
 //! tree's changes update: a change dirties its node and its ancestors,
 //! which the next layout lays out again, `taffy` keeping the others'
 //! layouts; and each text and icon keeps its measure until it changes.
+//! It keeps how far each scroll area is scrolled, which moves its
+//! children's frames without a layout.
 
 use std::collections::HashMap;
 
 use lokyr_plugin_sdk::view::{self, Align, Direction, Justify, Kind, Length};
+use taffy::Overflow;
 use taffy::prelude::{
     AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage,
     LengthPercentageAuto, Rect, Size, Style, TaffyTree,
@@ -94,6 +97,8 @@ pub struct Layout {
     taffy: TaffyTree<Leaf>,
     nodes: HashMap<NodeId, taffy::NodeId>,
     scale: f32,
+    /// How far each scroll area is scrolled down, in pixels.
+    scrolled: HashMap<NodeId, f32>,
 }
 
 impl Layout {
@@ -103,6 +108,7 @@ impl Layout {
             taffy: TaffyTree::new(),
             nodes: HashMap::new(),
             scale,
+            scrolled: HashMap::new(),
         }
     }
 
@@ -114,12 +120,13 @@ impl Layout {
             if let Some(node) = self.nodes.remove(id) {
                 let _ = self.taffy.remove(node);
             }
+            self.scrolled.remove(id);
         }
         for &id in &changes.added {
             let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) else {
                 continue;
             };
-            let style = style(kind, layout, self.scale);
+            let style = style_in(tree, id, style(kind, layout, self.scale));
             let made = match leaf(kind) {
                 Some(leaf) => self.taffy.new_leaf_with_context(style, leaf),
                 None => self.taffy.new_leaf(style),
@@ -134,11 +141,29 @@ impl Layout {
             else {
                 continue;
             };
-            let _ = self.taffy.set_style(node, style(kind, layout, self.scale));
+            let _ = self
+                .taffy
+                .set_style(node, style_in(tree, id, style(kind, layout, self.scale)));
             let leaf = leaf(kind);
             let kept = self.taffy.get_node_context(node).map(|kept| &kept.content);
             if kept != leaf.as_ref().map(|leaf| &leaf.content) {
                 let _ = self.taffy.set_node_context(node, leaf);
+            }
+        }
+        // The children of a scroll area that changed take its direction.
+        for &id in &changes.changed {
+            if !matches!(tree.kind(id), Some(Kind::Scroll)) {
+                continue;
+            }
+            for &child in tree.children(id) {
+                let (Some(&node), Some(kind), Some(layout)) =
+                    (self.nodes.get(&child), tree.kind(child), tree.layout(child))
+                else {
+                    continue;
+                };
+                let _ = self
+                    .taffy
+                    .set_style(node, style_in(tree, child, style(kind, layout, self.scale)));
             }
         }
         for &id in changes.added.iter().chain(&changes.rearranged) {
@@ -237,20 +262,68 @@ impl Layout {
                 )
             },
         );
+        self.clamp_scrolls(tree);
+    }
+
+    /// Keeps each scroll area of `tree` within its content, which a layout
+    /// can shrink.
+    fn clamp_scrolls(&mut self, tree: &Tree) {
+        let ids: Vec<NodeId> = self.scrolled.keys().copied().collect();
+        for id in ids {
+            let room = self.scroll_room(tree, id);
+            if let Some(scrolled) = self.scrolled.get_mut(&id) {
+                *scrolled = scrolled.min(room);
+            }
+        }
     }
 
     /// The frame of `id`, of the last layout, from the root's top left
-    /// corner, in pixels.
+    /// corner, in pixels, moved up as far as the scroll areas around it
+    /// are scrolled.
     pub fn frame(&self, tree: &Tree, id: NodeId) -> Option<Frame> {
         let mut frame = self.local(id)?;
         let mut parent = tree.parent(id);
         while let Some(above) = parent {
             let laid = self.local(above)?;
             frame.x += laid.x;
-            frame.y += laid.y;
+            frame.y += laid.y - self.scrolled(above);
             parent = tree.parent(above);
         }
         Some(frame)
+    }
+
+    /// How far the scroll area `id` is scrolled down, in pixels: 0 for
+    /// another node.
+    pub fn scrolled(&self, id: NodeId) -> f32 {
+        self.scrolled.get(&id).copied().unwrap_or(0.0)
+    }
+
+    /// Scrolls the scroll area `id` of `tree` down by `pixels`, up where
+    /// they are negative, within its content: whether it moved.
+    pub fn scroll_by(&mut self, tree: &Tree, id: NodeId, pixels: f32) -> bool {
+        let before = self.scrolled(id);
+        let after = (before + pixels).clamp(0.0, self.scroll_room(tree, id));
+        if after == before || !pixels.is_finite() {
+            return false;
+        }
+        self.scrolled.insert(id, after);
+        true
+    }
+
+    /// How far the scroll area `id` of `tree` can scroll down, in pixels:
+    /// its content's height, its children's and its padding's, past its
+    /// own.
+    pub fn scroll_room(&self, tree: &Tree, id: NodeId) -> f32 {
+        let (Some(frame), Some(layout)) = (self.local(id), tree.layout(id)) else {
+            return 0.0;
+        };
+        let bottom = tree
+            .children(id)
+            .iter()
+            .filter_map(|&child| self.local(child))
+            .map(|child| child.y + child.height)
+            .fold(0.0, f32::max);
+        (bottom + layout.padding.bottom * self.scale - frame.height).max(0.0)
     }
 
     /// The size of `id`'s text or icon, in points, as the last layout
@@ -302,12 +375,27 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
             icon: toggle.icon.clone(),
         },
         Kind::Separator => Content::Separator,
-        Kind::Container | Kind::Spacer => return None,
+        Kind::Container | Kind::Spacer | Kind::List(_) | Kind::Scroll => return None,
     };
     Some(Leaf {
         content,
         measured: None,
     })
+}
+
+/// `style`, of `id` of `tree`, as its parent has it: a child of a column
+/// that scrolls keeps its height, which the scroll shows.
+fn style_in(tree: &Tree, id: NodeId, mut style: Style) -> Style {
+    let scrolls = tree.parent(id).is_some_and(|parent| {
+        matches!(tree.kind(parent), Some(Kind::Scroll))
+            && tree
+                .layout(parent)
+                .is_some_and(|layout| layout.direction == Direction::Column)
+    });
+    if scrolls {
+        style.flex_shrink = 0.0;
+    }
+    style
 }
 
 /// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`:
@@ -359,6 +447,17 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
             height: LengthPercentageAuto::auto(),
         },
         align_self: matches!(kind, Kind::Separator).then_some(AlignItems::STRETCH),
+        // A scroll area keeps to the room that its layout gives it, its
+        // children to their own heights.
+        overflow: taffy::Point {
+            x: Overflow::Visible,
+            y: if matches!(kind, Kind::Scroll) {
+                Overflow::Scroll
+            } else {
+                Overflow::Visible
+            },
+        },
+        scrollbar_width: 0.0,
         flex_grow: layout.grow,
         ..Style::default()
     }
@@ -497,6 +596,67 @@ mod tests {
             let flat = tree.children(root)[1];
             assert_eq!(frame(flat), [0.0, 22.0, 300.0, 1.0]);
         }
+    }
+
+    #[test]
+    fn a_scroll_area_keeps_its_children_s_heights_and_moves_them_as_it_scrolls() {
+        let boxes = |count: usize| -> Vec<Node> {
+            (0..count)
+                .map(|index| {
+                    Node::container(vec![])
+                        .key(format!("box-{index}").as_str())
+                        .layout(view::Layout {
+                            height: Length::Points(10.0),
+                            ..view::Layout::default()
+                        })
+                })
+                .collect()
+        };
+        let area = |direction: Direction, count: usize| {
+            Node::container(vec![Node::scroll(boxes(count)).key("area").layout(
+                view::Layout {
+                    direction,
+                    padding: Edges::all(5.0),
+                    height: Length::Points(50.0),
+                    ..view::Layout::default()
+                },
+            )])
+        };
+        let mut tree = Tree::new();
+        let changes = tree.update(&area(Direction::Column, 8)).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        let mut font = Fixed::default();
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let node = tree.children(tree.root().unwrap())[0];
+        let child = |tree: &Tree, layout: &Layout, index: usize| {
+            layout.frame(tree, tree.children(node)[index]).unwrap()
+        };
+        // 8 boxes of 10 points and a padding of 5 about them, in 50: 40 to
+        // scroll, 80 pixels.
+        assert_eq!(child(&tree, &layout, 7).height, 20.0);
+        assert_eq!(layout.scroll_room(&tree, node), 80.0);
+        assert!(layout.scroll_by(&tree, node, 30.0));
+        assert_eq!(child(&tree, &layout, 0).y, 10.0 - 30.0);
+        assert!(!layout.scroll_by(&tree, node, f32::NAN));
+        // Of 4 boxes, the content fits again, and the scroll goes.
+        let changes = tree.update(&area(Direction::Column, 4)).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        assert_eq!(layout.scrolled(node), 0.0);
+        // The boxes of a row that scrolls, kept as it turns into a column,
+        // take the column's heights.
+        let mut tree = Tree::new();
+        let changes = tree.update(&area(Direction::Row, 8)).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let changes = tree.update(&area(Direction::Column, 8)).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let node = tree.children(tree.root().unwrap())[0];
+        let first = layout.frame(&tree, tree.children(node)[0]).unwrap();
+        assert_eq!(first.height, 20.0);
     }
 
     #[test]

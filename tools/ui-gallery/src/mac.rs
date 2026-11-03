@@ -22,6 +22,7 @@ use lokyr_ui_core::field::{Clipboard, Fields};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
+use lokyr_ui_core::list::{self, Lists};
 use lokyr_ui_core::paint::{self, Shown, paint};
 use lokyr_ui_core::pointer::{self, Button, NodeEvent, Pointer};
 use lokyr_ui_core::theme::Theme;
@@ -84,6 +85,7 @@ struct View {
     focus: Focus<u8>,
     fields: Fields,
     tooltip: Tooltip,
+    lists: Lists,
 }
 
 impl View {
@@ -96,6 +98,7 @@ impl View {
             focus: Focus::new(),
             fields: Fields::new(),
             tooltip: Tooltip::new(),
+            lists: Lists::new(),
         };
         view.render();
         view
@@ -110,15 +113,28 @@ impl View {
         self.layout.update(&self.tree, &changes);
         self.focus.updated(PANEL, &self.tree);
         self.fields.updated(&self.tree);
+        self.lists.updated(&self.tree);
         for (key, text) in self.gallery.take_texts() {
             self.fields.set_text(&view::Key(key), &text);
         }
     }
 
     /// Lays the view out in `width` pixels, and as high as the window
-    /// leaves it, `height`, its fields scrolled to their carets.
+    /// leaves it, `height`: its lists' rows that show, and the items that
+    /// they ask the gallery for, a few rounds at most; its fields scrolled
+    /// to their carets.
     fn lay_out(&mut self, font: &mut Font<CoreText>, width: f32, height: Option<f32>) {
-        self.layout.compute(&self.tree, Some(width), height, font);
+        for _ in 0..ROUNDS {
+            self.layout.compute(&self.tree, Some(width), height, font);
+            let events = self.lists.lay_out(&self.tree, &self.layout, font);
+            if events.is_empty() {
+                break;
+            }
+            for event in events {
+                self.gallery.event(&event.key.0, event.kind);
+            }
+            self.render();
+        }
         let focused = self.focused();
         self.fields.follow(&self.tree, &self.layout, focused, font);
     }
@@ -202,6 +218,7 @@ impl View {
                 fields: &self.fields,
                 hovered: self.pointer.hovered().next_back(),
                 pressed: self.pointer.pressing(),
+                lists: &self.lists,
             },
         );
         if let Some((text, at)) = self.tooltip.shown(&self.tree) {
@@ -425,19 +442,30 @@ impl App {
                         view.lay_out(&mut drawing.font, width, Some(height));
                     }
                     // A field under the primary button takes the caret
-                    // there, or selects.
+                    // there, or selects; a list selects the row there.
+                    let mut events = Vec::new();
                     if button == Button::Primary
                         && let Some(&node) = path.last()
-                        && matches!(view.tree.kind(node), Some(Kind::Field(_)))
                     {
-                        view.fields.press(
-                            (&view.tree, &view.layout),
-                            node,
-                            (at, clicks, mods.shift),
-                            &mut drawing.font,
-                        );
+                        match view.tree.kind(node) {
+                            Some(Kind::Field(_)) => view.fields.press(
+                                (&view.tree, &view.layout),
+                                node,
+                                (at, clicks, mods.shift),
+                                &mut drawing.font,
+                            ),
+                            Some(Kind::List(_)) => {
+                                events = view.lists.press(
+                                    (&view.tree, &view.layout),
+                                    node,
+                                    (at, clicks),
+                                );
+                            }
+                            _ => {}
+                        }
                     }
-                    view.pointer.pressed(&view.tree, &view.layout, at, button)
+                    events.extend(view.pointer.pressed(&view.tree, &view.layout, at, button));
+                    events
                 } else {
                     if button == Button::Primary {
                         view.fields.release();
@@ -496,7 +524,21 @@ impl App {
         let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing) else {
             return;
         };
-        let events = view.pointer.scrolled(&view.tree, &view.layout, at, delta);
+        // The innermost list or scroll area under the pointer takes the
+        // scroll; another node learns of it.
+        let path = pointer::hit(&view.tree, &view.layout, at);
+        let events = match list::scrollable(&view.tree, &path) {
+            Some(node) => {
+                list::scroll(
+                    (&view.tree, &mut view.layout, &mut view.lists),
+                    node,
+                    delta.1,
+                );
+                view.lay_out(&mut drawing.font, width, Some(height));
+                view.pointer.laid_out(&view.tree, &view.layout)
+            }
+            None => view.pointer.scrolled(&view.tree, &view.layout, at, delta),
+        };
         view.apply(&mut drawing.font, (width, height), events);
         view.tooltip.dismiss();
         self.wake_at(platform, None);
@@ -540,6 +582,7 @@ impl App {
         }
         if let Routed::Node { node, .. } = routed
             && let Some(events) = widget::key(&view.tree, node, &key)
+                .or_else(|| view.lists.key(&view.tree, node, &key))
         {
             view.typed(events);
             self.request_frame(platform);
@@ -804,11 +847,18 @@ pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
         }
         let width = SIZE.width as f32 * scale;
         view.lay_out(&mut drawing.font, width, None);
-        let root = view
-            .tree
-            .root()
-            .and_then(|root| view.layout.frame(&view.tree, root))
-            .ok_or("the gallery has no root")?;
+        let frame = |view: &View| {
+            view.tree
+                .root()
+                .and_then(|root| view.layout.frame(&view.tree, root))
+                .ok_or("the gallery has no root")
+        };
+        // As high as the page that scrolls, all of it shown.
+        let page = find(&view.tree, "page").ok_or("the gallery has no page")?;
+        let room = view.layout.scroll_room(&view.tree, page);
+        let height = frame(&view)?.height + room;
+        view.lay_out(&mut drawing.font, width, Some(height));
+        let root = frame(&view)?;
         let list = view.paint(&mut drawing.font, (0.0, 0.0), (width, f32::MAX));
         let updates = drawing.font.texture_updates();
         drawing

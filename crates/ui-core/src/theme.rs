@@ -81,6 +81,10 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("tooltip.bg", 0xfbfbfb, 1.0),
     ("tooltip.fg", 0x1e1e20, 1.0),
     ("tooltip.border", 0x000000, 0.15),
+    ("list.selection.bg", 0x0a64d8, 1.0),
+    ("list.selection.fg", 0xffffff, 1.0),
+    ("list.selection.inactive.bg", 0x000000, 0.1),
+    ("scrollbar", 0x000000, 0.3),
     ("tab.bar.bg", 0xe6e6e8, 1.0),
     ("tab.active.bg", 0xfafafa, 1.0),
     ("tab.active.fg", 0x1e1e20, 1.0),
@@ -114,6 +118,10 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("tooltip.bg", 0x323235, 1.0),
     ("tooltip.fg", 0xe6e6e6, 1.0),
     ("tooltip.border", 0xffffff, 0.15),
+    ("list.selection.bg", 0x2462c4, 1.0),
+    ("list.selection.fg", 0xffffff, 1.0),
+    ("list.selection.inactive.bg", 0xffffff, 0.12),
+    ("scrollbar", 0xffffff, 0.35),
     ("tab.bar.bg", 0x161618, 1.0),
     ("tab.active.bg", 0x1e1e20, 1.0),
     ("tab.active.fg", 0xe6e6e6, 1.0),
@@ -323,6 +331,7 @@ mod tests {
                 ("tab.inactive.fg", "tab.inactive.bg"),
                 ("accent", "panel.bg"),
                 ("tooltip.fg", "tooltip.bg"),
+                ("list.selection.fg", "list.selection.bg"),
             ] {
                 let under = opaque(token(background));
                 let ratio = contrast(opaque(token(text)), under);

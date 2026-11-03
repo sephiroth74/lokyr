@@ -25,6 +25,7 @@ use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
+use lokyr_ui_core::list::Lists;
 use lokyr_ui_core::paint::{Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
@@ -662,6 +663,7 @@ fn check_tree(
             fields: &Fields::new(),
             hovered,
             pressed,
+            lists: &Lists::new(),
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under

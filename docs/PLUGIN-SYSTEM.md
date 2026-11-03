@@ -159,7 +159,7 @@ return Search
 - **Errors**: host calls that can fail return their result, or `nil` and an error, as Lua's standard library does. A Lua error raised by a callback ends the call, and counts as a plugin failure.
 - **Data**:
   - Small values are plain tables, possibly nested: command arguments, view trees, events.
-  - The host stores view trees as a flat arena of nodes and diffs them between renders. A node that holds state, as a text field or a list, has a key, by which the host keeps its state, its text, caret, selection and composition, its scroll; the plugin learns of changes through events, and sets a field's text through a request. A large list is data, its items flat with a row's template, which the host instantiates for the rows that show.
+  - The host stores view trees as a flat arena of nodes and diffs them between renders. A node that holds state, as a text field or a list, has a key, by which the host keeps its state, its text, caret, selection and composition, its scroll; the plugin learns of changes through events, and sets a field's text through a request. A large list is data, its items flat with a row's template, which the host instantiates for the rows that show: its plugin gives its count and a window of its items, those that the host asks for about the rows that show, by `list-range`, as they scroll past the window.
   - Bulk data uses buffers. For example, a highlighter returns its spans in one `buffer`, which the host reads in one copy: reading 100000 spans from tables costs 6–7 ms, against about 1.5 ms through Lua's C API ([F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes)).
 - **Handles to host objects**: windows, tabs and panes are opaque integer ids, as in the Rust front end.
 - **Rows** are numbers, which output, the view's scrolling and the scrollback's limit leave a row, until it leaves the scrollback; a resize numbers the rows anew. A command of a cell, as a click's, takes the number of the row clicked, as the drawn frame showed it ([ARCHITECTURE.md](ARCHITECTURE.md#kernel-data-model)).
@@ -226,14 +226,17 @@ type Style = {
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "spacer",
+    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "spacer",
     text: string?, -- for text and icon nodes; a button's and a toggle's label
     icon: string?, -- a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
     disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
     placeholder: string?, -- for field nodes, shown while the field is empty
-    items: { ListItem }?, -- for list nodes, flat
-    row: Node?, -- for list nodes: the template of a row
+    count: number?, -- for list nodes, of all their items
+    first: number?, -- for list nodes, the index of the first of `items`
+    items: { ListItem }?, -- for list nodes, flat: a window of them, from `first`, as the host asks for them
+    row: Node?, -- for list nodes: the template of a row, of containers, texts, icons, spacers and separators
+    row_height: number?, -- for list nodes, of rows of one height; without it, each row takes its own
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
     tooltip: string?, -- shown as the pointer rests over the node, by its key
@@ -243,9 +246,10 @@ type Node = {
 }
 type View = Node
 
--- A list's item: its key, and the texts that its row's template shows, by
--- their places in it.
-type ListItem = { key: number, texts: { string } }
+-- A list's item: the texts that its row's template shows, by their places
+-- in it, its texts' and its icons' in the tree's order; its index tells it
+-- apart.
+type ListItem = { texts: { string } }
 
 -- A row's text, by its number, without the spaces that end it, but where it wraps into the next.
 type Line = { row: number, text: string, wrapped: boolean }
@@ -296,9 +300,11 @@ type UiEvent = {
     key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
-        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value" | "toggle",
+        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value" | "toggle"
+        | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
-    item: number?, -- a list's item
+    item: number?, -- a list's item, selected or activated
+    first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
