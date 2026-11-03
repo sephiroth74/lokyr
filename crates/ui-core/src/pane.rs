@@ -91,6 +91,12 @@ pub trait Glyphs {
     /// The glyph of one cell's text.
     fn glyph(&mut self, shown: &CellText<'_>) -> Option<AtlasGlyph>;
 
+    /// Whether the glyphs take the weight of the system's text: not by
+    /// default.
+    fn system_weight(&self) -> bool {
+        false
+    }
+
     /// Appends the glyphs of `run` to `out`: by default, each cell's own.
     fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
         for (index, cell) in run.cells.iter().enumerate() {
@@ -475,6 +481,7 @@ fn cells_of(
         glyphs: Vec::with_capacity(area),
         lines: Vec::new(),
         cursor: cursor.and_then(|look| place_cursor(snapshot, look, cell)),
+        system_weight: glyphs.system_weight(),
     };
     let selected = |column: u16, row: u16| {
         selection
@@ -1164,6 +1171,7 @@ pub fn cursor_cells(
             row: 0,
             ..cursor
         }),
+        system_weight: batch.system_weight,
     };
     settle_cursor(&mut cells, snapshot);
     // The grid shows its cells' backgrounds, and their text but under a

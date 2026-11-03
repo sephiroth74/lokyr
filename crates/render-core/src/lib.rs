@@ -288,6 +288,10 @@ pub struct CellBatch {
     /// The cursor, when it shows: a block goes over the backgrounds and
     /// under the glyphs, the other shapes over the glyphs.
     pub cursor: Option<CellCursor>,
+    /// Whether its glyphs of coverage take the weight of the system's text,
+    /// as the interface's always do: dark text on a light background
+    /// thinner than its coverage blended as it is drawn.
+    pub system_weight: bool,
 }
 
 /// A glyph placed anywhere, such as the chrome's text.
@@ -364,7 +368,8 @@ pub enum Item {
     },
     /// A pane's grid of cells.
     Cells(CellBatch),
-    /// Glyphs placed anywhere.
+    /// Glyphs placed anywhere, as the interface's text, of the weight of
+    /// the system's text.
     Glyphs(Vec<PlacedGlyph>),
     /// Shapes, each over those before it, its shadow under itself alone.
     Shapes(Vec<Shape>),

@@ -51,7 +51,8 @@ struct GlyphInstance {
     atlas: [u32; 2],
     /// The atlas: 0 for coverage's, 1 for colors'.
     texture: u32,
-    _padding: u32,
+    /// Whether its coverage takes the weight of the system's text: 1, or 0.
+    weight: u32,
     color: [f32; 4],
 }
 
@@ -425,7 +426,8 @@ impl MetalRenderer {
     /// Draws `list` into a texture of its own, `width` by `height` pixels,
     /// as a window's surface would show it, waits for the GPU, and reads
     /// its pixels back: RGBA, 8 bits a component in sRGB, a row after the
-    /// other from the top, as tests compare them with images.
+    /// other from the top, as tests compare them with images. Its time on
+    /// the GPU counts among [`Renderer::take_gpu_times`]'s.
     pub fn draw_offscreen(
         &mut self,
         list: &DisplayList,
@@ -451,6 +453,10 @@ impl MetalRenderer {
         let (commands, buffers) = self.encode(&texture, list)?;
         commands.commit();
         commands.waitUntilCompleted();
+        let time = commands.GPUEndTime() - commands.GPUStartTime();
+        if commands.status() == MTLCommandBufferStatus::Completed && time > 0.0 {
+            self.gpu_times.add(Duration::from_secs_f64(time));
+        }
         self.take_back(buffers);
         let mut pixels = vec![0_u8; width * height * 4];
         let region = MTLRegion {
@@ -753,7 +759,7 @@ impl Frame<'_> {
                     .iter()
                     .map(|glyph| {
                         let position = [glyph.x as f32, glyph.y as f32];
-                        glyph_instance(position, &glyph.region, glyph.color)
+                        glyph_instance(position, &glyph.region, glyph.color, true)
                     })
                     .collect();
                 self.glyphs(&instances);
@@ -928,7 +934,7 @@ impl Frame<'_> {
             .map(|glyph| {
                 let (x, y) = cell_origin(glyph.column, glyph.row);
                 let position = [(x + glyph.x) as f32, (y + glyph.y) as f32];
-                glyph_instance(position, &glyph.region, glyph.color)
+                glyph_instance(position, &glyph.region, glyph.color, batch.system_weight)
             })
             .collect();
         self.glyphs(&glyphs);
@@ -1055,7 +1061,12 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
     shadow.into_iter().chain(std::iter::once(own))
 }
 
-fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> GlyphInstance {
+fn glyph_instance(
+    position: [f32; 2],
+    region: &AtlasRegion,
+    color: Color,
+    system_weight: bool,
+) -> GlyphInstance {
     GlyphInstance {
         position,
         size: [region.width as f32, region.height as f32],
@@ -1064,7 +1075,7 @@ fn glyph_instance(position: [f32; 2], region: &AtlasRegion, color: Color) -> Gly
             Texture::Coverage => 0,
             Texture::Color => 1,
         },
-        _padding: 0,
+        weight: u32::from(system_weight),
         color: rgba(color),
     }
 }
@@ -1197,6 +1208,133 @@ mod tests {
             width,
             height,
         }
+    }
+
+    /// The GPU's time of a frame of a screen full of text, `width` by
+    /// `height` pixels, of cells of `cell` pixels and glyphs of `glyph`, of
+    /// light text on a dark background, its coverage as drawn and of the
+    /// system's weight, in turns, by the median of rounds of frames.
+    fn time_screen(width: u32, height: u32, cell: (u32, u32), glyph: (u32, u32)) {
+        let Ok(gpu) = Gpu::new() else {
+            return;
+        };
+        let mut renderer = MetalRenderer::new(&gpu, 1024, 32).expect("the shaders load");
+        // 95 glyphs of a coverage that has the mid-tones of antialiased
+        // text: a third of their pixels inked, of every value.
+        let mut seed = 7_u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            seed >> 16
+        };
+        let (glyph_width, glyph_height) = glyph;
+        let per_row = 1024 / glyph_width;
+        let regions: Vec<AtlasRegion> = (0..95)
+            .map(|index| {
+                region(
+                    Texture::Coverage,
+                    (index % per_row) * glyph_width,
+                    (index / per_row) * glyph_height,
+                    glyph_width,
+                    glyph_height,
+                )
+            })
+            .collect();
+        let uploads: Vec<TextureUpdate> = regions
+            .iter()
+            .map(|region| TextureUpdate::Upload {
+                region: *region,
+                data: (0..region.width * region.height)
+                    .map(|_| {
+                        if next() % 3 == 0 {
+                            (next() % 256) as u8
+                        } else {
+                            0
+                        }
+                    })
+                    .collect(),
+            })
+            .collect();
+        renderer.update_textures(&uploads).unwrap();
+        finish(&renderer);
+        let (columns, rows) = ((width / cell.0) as u16, (height / cell.1) as u16);
+        let light = Color::from_rgb8(0xe6, 0xe6, 0xe6);
+        let list = |system_weight: bool| DisplayList {
+            frame: 1,
+            background: Color::from_rgb8(0x1e, 0x1e, 0x20),
+            items: vec![Item::Cells(CellBatch {
+                x: 0,
+                y: 0,
+                columns,
+                rows,
+                cell_width: cell.0,
+                cell_height: cell.1,
+                backgrounds: vec![
+                    Color::from_rgb8(0x1e, 0x1e, 0x20);
+                    usize::from(columns) * usize::from(rows)
+                ],
+                glyphs: (0..rows)
+                    .flat_map(|row| (0..columns).map(move |column| (column, row)))
+                    .enumerate()
+                    .map(|(index, (column, row))| CellGlyph {
+                        column,
+                        row,
+                        region: regions[index % regions.len()],
+                        x: 0,
+                        y: 1,
+                        color: light,
+                    })
+                    .collect(),
+                lines: Vec::new(),
+                cursor: None,
+                system_weight,
+            })],
+        };
+        let (plain, system) = (list(false), list(true));
+        let mut frame = |list: &DisplayList, frames: u32| {
+            renderer.take_gpu_times();
+            for _ in 0..frames {
+                renderer.draw_offscreen(list, width, height).unwrap();
+            }
+            let times = renderer.take_gpu_times();
+            times.total.as_secs_f64() * 1e6 / f64::from(times.frames.max(1))
+        };
+        frame(&plain, 30);
+        frame(&system, 30);
+        // Pairs of rounds, each of the two first in turn, compared within
+        // the pair, as the GPU's clock drifts between them.
+        let (mut plains, mut ratios) = (Vec::new(), Vec::new());
+        for round in 0..40 {
+            let (first, second) = if round % 2 == 0 {
+                let plain = frame(&plain, 10);
+                (plain, frame(&system, 10))
+            } else {
+                let system = frame(&system, 10);
+                (frame(&plain, 10), system)
+            };
+            plains.push(first);
+            ratios.push(second / first);
+        }
+        let quartiles = |values: &mut Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            let at = |share: f64| values[((values.len() - 1) as f64 * share) as usize];
+            (at(0.25), at(0.5), at(0.75))
+        };
+        let (_, plain, _) = quartiles(&mut plains);
+        let (low, ratio, high) = quartiles(&mut ratios);
+        let percent = |ratio: f64| (ratio - 1.0) * 100.0;
+        println!(
+            "{width}x{height}, {columns}x{rows} cells: as drawn {plain:.0} µs a frame; of the system's weight {:+.1}% (quartiles {:+.1}% to {:+.1}%)",
+            percent(ratio),
+            percent(low),
+            percent(high)
+        );
+    }
+
+    #[test]
+    #[ignore = "a measure of the GPU's time, which `-- --ignored --nocapture` prints"]
+    fn a_screen_of_text_takes_the_gpu_s_time_of_either_weight() {
+        time_screen(3440, 1440, (8, 17), (8, 14));
+        time_screen(3456, 2234, (16, 34), (16, 28));
     }
 
     #[test]
@@ -1332,6 +1470,7 @@ mod tests {
                         thickness: 1,
                         color: white,
                     }),
+                    system_weight: false,
                 }),
                 // A clip outside the drawable leaves nothing to draw.
                 Item::PushClip(Rect {
@@ -1687,6 +1826,87 @@ mod tests {
     /// `list` drawn into a texture of `width` by `height` pixels, read
     /// back, a row of pixels at a time, four bytes a pixel: red, green,
     /// blue and opacity.
+    #[test]
+    fn a_glyph_of_the_system_s_weight_thins_dark_text_alone() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // A glyph of four pixels, of no, a quarter, half and whole coverage.
+        let coverage = region(Texture::Coverage, 0, 0, 4, 1);
+        renderer
+            .update_textures(&[TextureUpdate::Upload {
+                region: coverage,
+                data: vec![0, 64, 128, 255],
+            }])
+            .unwrap();
+        finish(&renderer);
+        let (black, white) = (Color::from_rgb8(0, 0, 0), Color::from_rgb8(255, 255, 255));
+        let row = |renderer: &mut MetalRenderer, item: Item, background: Color| {
+            let list = DisplayList {
+                frame: 1,
+                background,
+                items: vec![item],
+            };
+            let pixels = drawn(renderer, &list, 4, 1);
+            pixels[0]
+                .chunks(4)
+                .map(|pixel| pixel[1])
+                .collect::<Vec<u8>>()
+        };
+        let cells = |system_weight, color| {
+            Item::Cells(CellBatch {
+                columns: 1,
+                rows: 1,
+                cell_width: 4,
+                cell_height: 1,
+                backgrounds: vec![Color::CLEAR],
+                glyphs: vec![CellGlyph {
+                    column: 0,
+                    row: 0,
+                    region: coverage,
+                    x: 0,
+                    y: 0,
+                    color,
+                }],
+                system_weight,
+                ..CellBatch::default()
+            })
+        };
+        let placed = |color| {
+            Item::Glyphs(vec![PlacedGlyph {
+                region: coverage,
+                x: 0,
+                y: 0,
+                color,
+            }])
+        };
+        let near = |row: Vec<u8>, expected: [u8; 4]| {
+            assert!(
+                row.iter()
+                    .zip(expected)
+                    .all(|(&got, want)| got.abs_diff(want) <= 2),
+                "{row:?} against {expected:?}"
+            );
+        };
+        // Black on white: the coverage as drawn, then squared, as black's
+        // luminance is 0.
+        near(
+            row(&mut renderer, cells(false, black), white),
+            [255, 191, 127, 0],
+        );
+        near(
+            row(&mut renderer, cells(true, black), white),
+            [255, 239, 191, 0],
+        );
+        near(row(&mut renderer, placed(black), white), [255, 239, 191, 0]);
+        // White on black, of luminance 1: as drawn either way.
+        near(
+            row(&mut renderer, cells(true, white), black),
+            [0, 64, 128, 255],
+        );
+        near(row(&mut renderer, placed(white), black), [0, 64, 128, 255]);
+    }
+
     fn drawn(
         renderer: &mut MetalRenderer,
         list: &DisplayList,
@@ -1742,6 +1962,7 @@ mod tests {
                 glyphs: Vec::new(),
                 lines,
                 cursor: None,
+                system_weight: false,
             })],
             frame: 1,
         };

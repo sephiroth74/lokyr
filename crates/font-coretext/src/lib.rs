@@ -2,7 +2,8 @@
 //!
 //! Font discovery, fallback, shaping and rasterization, on CoreText: the
 //! [`CoreText`] backend finds a family's faces with font descriptors,
-//! measures them, and draws their glyphs.
+//! measures them, and draws their glyphs; and [`system_text`] draws a line
+//! as the system does, which Lokyr's text is measured against.
 
 #![cfg(target_os = "macos")]
 
@@ -28,6 +29,8 @@ use objc2_core_text::{
     kCTFontOpenTypeFeatureValue, kCTFontOpticalSizeAttribute, kCTFontStyleNameKey,
     kCTFontWeightTrait, kCTFontWidthTrait,
 };
+
+pub use system::{SystemText, system_text};
 
 /// The size at which the backend makes a face to read what does not depend
 /// on its size: its style, slant and weight.
@@ -927,5 +930,6 @@ fn be_i16(bytes: &[u8], at: usize) -> Option<i16> {
 }
 
 mod raster;
+mod system;
 #[cfg(test)]
 mod tests;

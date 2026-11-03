@@ -1400,6 +1400,10 @@ impl<B: FontBackend> GlyphSource for Font<B> {
         Font::glyph(self, shown)
     }
 
+    fn system_weight(&self) -> bool {
+        self.config.system_weight
+    }
+
     fn run(&mut self, run: &Run<'_>, out: &mut Vec<RunGlyph>) {
         self.lay_out(run, out);
     }

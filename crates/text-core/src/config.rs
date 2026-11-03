@@ -16,6 +16,7 @@
 //! builtin-powerline = true       # the powerline symbols drawn to the pixel
 //! antialias = true
 //! thin-strokes = "never"         # never | always | retina | dark | retina-dark
+//! system-weight = false          # true: dark text on light as thin as macOS's
 //! ```
 //!
 //! A value out of its range is an error of the value, which the reader of
@@ -70,6 +71,11 @@ pub struct FontConfig {
     /// Where the glyphs are drawn of thinner strokes, without the darkening
     /// that the system's font smoothing adds.
     pub thin_strokes: ThinStrokes,
+    /// Whether the text takes the weight of the system's text, as the
+    /// interface's does: dark text on a light background thinner than its
+    /// glyphs blended as they are drawn, light text on a dark one nearly
+    /// alike.
+    pub system_weight: bool,
 }
 
 /// Where the glyphs are drawn of thin strokes.
@@ -122,6 +128,7 @@ impl Default for FontConfig {
             builtin_powerline: true,
             antialias: true,
             thin_strokes: ThinStrokes::Never,
+            system_weight: false,
         }
     }
 }
@@ -306,6 +313,7 @@ mod tests {
             builtin-powerline = false
             antialias = false
             thin-strokes = "retina-dark"
+            system-weight = true
             "#,
         )
         .unwrap();
@@ -327,6 +335,7 @@ mod tests {
                 builtin_powerline: false,
                 antialias: false,
                 thin_strokes: ThinStrokes::RetinaDark,
+                system_weight: true,
             }
         );
     }

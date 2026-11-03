@@ -2524,7 +2524,7 @@ mod tests {
             ]
         );
         let font = keys::<FontConfig>();
-        assert_eq!(font.len(), 14);
+        assert_eq!(font.len(), 15);
         assert_eq!(
             keys::<TextConfig>(),
             ["bold", "italic", "ansi-colors", "bold-is-bright", "blink"]
@@ -2533,6 +2533,7 @@ mod tests {
         assert!(font.contains(&"bold-italic-style"));
         assert!(font.contains(&"non-ascii-family"));
         assert!(font.contains(&"builtin-powerline"));
+        assert!(font.contains(&"system-weight"));
     }
 
     /// The complete example of the configuration's guide reads, and holds

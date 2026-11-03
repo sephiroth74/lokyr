@@ -56,6 +56,7 @@ builtin-box-drawing = false          # true | false: box drawing, blocks and bra
 builtin-powerline = false            # true | false: the powerline symbols
 antialias = true                     # true | false
 thin-strokes = "retina-dark"         # never | always | retina | dark | retina-dark
+system-weight = true                 # true | false: the text of the weight of macOS's
 
 [text]
 bold = false                         # true | false: bold text in the bold face
@@ -303,6 +304,21 @@ Where the text is drawn of thinner strokes: without the darkening that macOS add
 - `"never"` draws the text as macOS does; `"always"` thin everywhere.
 - `"retina"` thin on a display of a scale of 2 or more, as the Mac's own; `"dark"` thin where a cell's background is darker than its text; `"retina-dark"` thin where both hold.
 - When font smoothing is off in macOS, as `defaults write -g AppleFontSmoothing -int 0` turns it off, every glyph is thin already.
+
+### `system-weight`
+
+<sub>Platforms: macOS</sub>
+
+Whether the text takes the weight of the text of macOS's own apps, as Lokyr's tabs and panels do.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- `true` draws dark text on a light background thinner, as macOS draws it: by a quarter at a scale of 1, by a sixth at 2. Light text on a dark background stays nearly as it is.
+- `false` draws the glyphs' edges as the font gives them, as before, which makes dark text on a light background look heavier than macOS's.
+- It costs nothing measurable, on the GPU or on the CPU.
+- It takes `thin-strokes` along: the darkening that macOS adds as it smooths fonts stays, or goes, as that key says.
 
 ## `[text]`
 

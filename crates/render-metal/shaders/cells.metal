@@ -5,9 +5,10 @@
 // the vertex's index, drawn as a strip.
 //
 // Colors are sRGB's encoded components, premultiplied by their opacity, and
-// the drawable's format keeps them encoded: blending mixes them as they are,
-// as macOS blends text. A drawable that is not opaque lets what is behind
-// the window show through.
+// the drawable's format keeps them encoded: blending mixes them as they are.
+// A glyph's coverage can take the weight of macOS's text, which thins dark
+// text on a light background where blending alone would not. A drawable
+// that is not opaque lets what is behind the window show through.
 
 #include <metal_stdlib>
 using namespace metal;
@@ -32,14 +33,15 @@ struct Rect {
 };
 
 // A glyph: where it goes and its size, in pixels; where its pixels are in
-// the atlas; which atlas, 0 for coverage's and 1 for colors'; the color
-// that fills a glyph of coverage.
+// the atlas; which atlas, 0 for coverage's and 1 for colors'; whether its
+// coverage takes the weight of the system's text, 1, or stays as drawn, 0;
+// the color that fills a glyph of coverage.
 struct Glyph {
     float2 position;
     float2 size;
     uint2 atlas;
     uint texture;
-    uint padding;
+    uint weight;
     float4 color;
 };
 
@@ -48,6 +50,8 @@ struct Fragment {
     float4 color [[flat]];
     uint2 atlas [[flat]];
     uint texture [[flat]];
+    // The exponent of a glyph's coverage: 1 for its coverage as drawn.
+    float exponent [[flat]];
     // The pixel within the glyph, at its centre.
     float2 local;
 };
@@ -72,6 +76,7 @@ vertex Fragment rect_vertex(uint vertex_id [[vertex_id]],
     out.color = rect.color;
     out.atlas = uint2(0);
     out.texture = 0;
+    out.exponent = 1.0;
     out.local = float2(0);
     return out;
 }
@@ -87,12 +92,28 @@ vertex Fragment background_vertex(uint vertex_id [[vertex_id]],
     out.color = colors[instance];
     out.atlas = uint2(0);
     out.texture = 0;
+    out.exponent = 1.0;
     out.local = float2(0);
     return out;
 }
 
 fragment float4 solid_fragment(Fragment in [[stage_in]]) {
     return in.color;
+}
+
+// The exponent of the coverage of a glyph of `color`, premultiplied, that
+// gives its text the weight of the system's: 2 less the luminance of its
+// color, as macOS thins dark text on a light background, and leaves light
+// text on a dark one nearly as drawn, which blending the encoded
+// components alone does not.
+static float weight_exponent(float4 color) {
+    if (color.a <= 0.0) {
+        return 1.0;
+    }
+    float3 encoded = color.rgb / color.a;
+    float3 linear = select(pow((encoded + 0.055) / 1.055, 2.4), encoded / 12.92,
+                           encoded <= 0.04045);
+    return 2.0 - dot(linear, float3(0.2126, 0.7152, 0.0722));
 }
 
 vertex Fragment glyph_vertex(uint vertex_id [[vertex_id]],
@@ -106,6 +127,7 @@ vertex Fragment glyph_vertex(uint vertex_id [[vertex_id]],
     out.color = glyph.color;
     out.atlas = glyph.atlas;
     out.texture = glyph.texture;
+    out.exponent = glyph.weight == 1 && glyph.texture == 0 ? weight_exponent(glyph.color) : 1.0;
     out.local = local;
     return out;
 }
@@ -120,7 +142,11 @@ fragment float4 glyph_fragment(Fragment in [[stage_in]],
     if (in.texture == 1) {
         return colors.read(pixel);
     }
-    return in.color * coverage.read(pixel).r;
+    float covered = coverage.read(pixel).r;
+    if (in.exponent != 1.0) {
+        covered = pow(covered, in.exponent);
+    }
+    return in.color * covered;
 }
 
 // A line across cells: the band of pixels that its pattern takes; its
