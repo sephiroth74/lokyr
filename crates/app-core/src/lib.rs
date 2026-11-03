@@ -4,6 +4,8 @@
 //! it composes, and the benches that measure them. The app gives it the
 //! platform's backend, which runs it, and its drawing's.
 
+#![deny(unsafe_code)]
+
 use std::sync::atomic::AtomicBool;
 
 mod app;
