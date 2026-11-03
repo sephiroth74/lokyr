@@ -53,6 +53,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSTextField",
     "NSTextInputClient",
     "NSTextInputContext",
+    "NSToolbar",
     "NSRunningApplication",
     "NSView",
     "NSWindow",

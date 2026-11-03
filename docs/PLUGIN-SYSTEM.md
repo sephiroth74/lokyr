@@ -32,16 +32,18 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 
 ### UI slots
 
-| Slot | Providers | Used for |
-|---|---|---|
-| `tab-bar` | One, chosen in the config | The tab bar |
-| `status-bar` | Many (ordered segments) | Status information |
-| `window-strip` | Many | A thin strip across the window's top, under the titlebar or the tab bar: the programs' progress |
-| `pane-header` | One | Pane titles in splits |
-| `pane-overlay` | Many | Find bar, hints, the command's sticky header, which takes no row of the grid |
-| `window-overlay` | Many | Command palette, notifications |
-| `popup` | Many | Custom menus and tooltips |
-| `sidebar` | Many (F5+) | Side panels |
+| Slot | Providers | Used for | Region |
+|---|---|---|---|
+| `tab-bar` | One, chosen in the config | The tab bar | In the titlebar past the window's buttons, of the titlebar's height, or below a titlebar of the window's title, of its view's height; at the window's top in full screen |
+| `status-bar` | Many (ordered segments) | Status information | Across the window's bottom, of its view's height, which the panes give up |
+| `window-strip` | Many | A thin strip across the window's top, under the titlebar or the tab bar: the programs' progress | Across the panes' top, over them, taking none of their rows |
+| `pane-header` | One | Pane titles in splits | Across its pane's top, of its view's height, above the grid |
+| `pane-overlay` | Many | Find bar, hints, the command's sticky header, which takes no row of the grid | Its pane's grid, where its floating panels anchor |
+| `window-overlay` | Many | Command palette, notifications | Below the titlebar and the tab bar, to the window's bottom |
+| `popup` | Many | Custom menus and tooltips | The whole window |
+| `sidebar` | Many (F5+) | Side panels | |
+
+A slot of no view takes no room. `ui-core`'s `chrome` gives the regions of a window's size, its titlebar's height and its buttons' room, the tab bar's place and the heights of the views, as the slots' trees take them laid out across the window; each slot's view is a surface of its own, drawn over the panes in the window's one drawable and taking the pointer before them.
 
 The dividers between panes are no slot's: the host draws them from the layout tree, in the theme's tokens, and gives their drags to `splits`, which decides what they do.
 

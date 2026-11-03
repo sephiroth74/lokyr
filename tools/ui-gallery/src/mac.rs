@@ -9,15 +9,16 @@ use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
-    AppEvent, Appearance, ContextMenu, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu,
-    MenuItem, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta,
-    Shortcut, ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, WindowAttributes,
-    WindowEvent, WindowId, WindowSize,
+    AppEvent, Appearance, ContentRect, ContextMenu, Handler, Ime, KeyCode, KeyEvent, KeyState,
+    MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape,
+    ScrollDelta, Shortcut, ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, Titlebar,
+    WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
 use lokyr_render_metal::{Gpu, MetalRenderer, Surface as Drawable};
 use lokyr_text_core::FontConfig;
+use lokyr_ui_core::chrome::TabBarPlace;
 use lokyr_ui_core::field::Clipboard;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::panel::MenuEntry;
@@ -78,28 +79,27 @@ struct App {
     /// The indeterminate progresses' sweeps that the window shows, and
     /// when they started.
     sweeps: (Vec<Sweep>, Instant),
+    /// The window's titlebar, as the gallery's tab bar's place asks, and
+    /// the parts of it that the tab bar takes.
+    titlebar: Titlebar,
+    titlebar_areas: Vec<ContentRect>,
 }
 
 impl App {
     /// The window's room for the view: its width and height in pixels,
-    /// below the titlebar, and the titlebar's height.
-    fn room(&self) -> Option<(f32, f32, f32)> {
+    /// the titlebar's too.
+    fn room(&self) -> Option<(f32, f32)> {
         let size = self.size?;
-        let bar = size.bar_pixels() as f32;
-        Some((
-            size.pixels.width as f32,
-            (size.pixels.height as f32 - bar).max(0.0),
-            bar,
-        ))
+        Some((size.pixels.width as f32, size.pixels.height as f32))
     }
 
     /// `position`, in points from the content's corner, in the view's
-    /// pixels from its root's.
+    /// pixels.
     fn at(&self, position: Point) -> Option<(f32, f32)> {
         let size = self.size?;
         Some((
             (position.x * size.scale) as f32,
-            (position.y * size.scale) as f32 - size.bar_pixels() as f32,
+            (position.y * size.scale) as f32,
         ))
     }
 
@@ -131,6 +131,7 @@ impl App {
         let mut view = View::new(Gallery::new(self.dark), size.scale as f32);
         // A menu's panel of menu items shows as the system's own menu.
         view.native_menus = true;
+        set_titlebar(&mut view, size);
         self.view = Some(view);
         self.drawing = Some(drawing);
         self.window = Some((window, surface));
@@ -146,6 +147,9 @@ impl App {
         {
             view.set_scale(scale);
             drawing.font.set_scale(scale);
+        }
+        if let Some(view) = &mut self.view {
+            set_titlebar(view, size);
         }
         self.size = Some(size);
         self.request_frame(platform);
@@ -173,13 +177,13 @@ impl App {
         menu.items = menu_items(&entries, &mut menu);
         let position = Point {
             x: f64::from(at.0) / size.scale,
-            y: (f64::from(at.1) + size.bar_pixels() as f64) / size.scale,
+            y: f64::from(at.1) / size.scale,
         };
         platform.show_context_menu(*window, position, &menu);
     }
 
     fn frame(&mut self, platform: &mut dyn Platform) {
-        let Some((width, height, bar)) = self.room() else {
+        let Some((width, height)) = self.room() else {
             return;
         };
         let (Some(view), Some(drawing), Some((window, surface)), Some(size)) =
@@ -200,7 +204,7 @@ impl App {
         let items = view.paint(
             &mut drawing.font,
             &variant.tokens,
-            ((0.0, bar), room),
+            ((0.0, 0.0), room),
             (view.gallery.dark(), now),
         );
         let background = variant.colors.background;
@@ -229,7 +233,7 @@ impl App {
             (
                 Point {
                     x: points(rect.x as f32),
-                    y: points(rect.y as f32 + bar),
+                    y: points(rect.y as f32),
                 },
                 Size {
                     width: points(rect.width as f32),
@@ -294,6 +298,34 @@ impl App {
             platform.set_sweeps(*window, &sweeps);
             self.sweeps.0 = sweeps;
         }
+        // The titlebar of the tab bar's place, whose height comes back as
+        // the window's size, and the tab bar's parts of it.
+        let titlebar = match view.gallery.tab_bar_place() {
+            TabBarPlace::Titlebar => Titlebar::Tabs,
+            TabBarPlace::BelowTitlebar => Titlebar::Titled,
+        };
+        if titlebar != self.titlebar {
+            platform.set_titlebar(*window, titlebar);
+            self.titlebar = titlebar;
+        }
+        let titlebar_areas: Vec<ContentRect> = view
+            .titlebar_areas()
+            .into_iter()
+            .map(|area| ContentRect {
+                origin: Point {
+                    x: points(area.x),
+                    y: points(area.y),
+                },
+                size: Size {
+                    width: points(area.width),
+                    height: points(area.height),
+                },
+            })
+            .collect();
+        if titlebar_areas != self.titlebar_areas {
+            platform.set_titlebar_areas(*window, &titlebar_areas);
+            self.titlebar_areas = titlebar_areas;
+        }
         // The input method's rectangle, of the field that has the focus,
         // by which it places its candidates and the palette of emoji.
         if let Some(area) = view.text_area(&mut drawing.font) {
@@ -301,7 +333,7 @@ impl App {
                 *window,
                 Point {
                     x: points(area.x),
-                    y: points(area.y + bar),
+                    y: points(area.y),
                 },
                 Size {
                     width: points(area.width),
@@ -440,6 +472,12 @@ impl App {
         }
         self.request_frame(platform);
     }
+}
+
+/// Gives `view` the window's chrome of `size`'s titlebar and buttons.
+fn set_titlebar(view: &mut View, size: WindowSize) {
+    let scale = size.scale;
+    view.set_titlebar(size.bar_pixels() as f32, (size.buttons * scale) as f32);
 }
 
 /// The platform's items of a native menu's `entries`, and the items that
@@ -651,6 +689,8 @@ pub fn run() -> Result<(), String> {
         dark: false,
         timer: None,
         sweeps: (Vec::new(), Instant::now()),
+        titlebar: Titlebar::Titled,
+        titlebar_areas: Vec::new(),
     };
     lokyr_platform_macos::run(app).map_err(|error| error.to_string())
 }

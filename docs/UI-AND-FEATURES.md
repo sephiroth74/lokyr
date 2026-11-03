@@ -82,12 +82,12 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 ### Window integration
 
 **macOS**
-- **Tab bar in the titlebar**: `NSWindow` with `fullSizeContentView`, a transparent titlebar and a hidden title. Our engine draws the tab bar where the titlebar would be.
+- **Tab bar in the titlebar**: `NSWindow` with `fullSizeContentView`, a transparent titlebar and a hidden title. Our engine draws the tab bar where the titlebar would be, past the window's buttons, in the compact and minimal styles; the regular style keeps a titlebar of the window's title and draws the bar below it, of its view's height ([Appearance](#appearance)).
 - **Native tabs disabled**: `tabbingMode = .disallowed` and `NSWindow.allowsAutomaticWindowTabbing = false`.
-- **Traffic lights**: an empty unified `NSToolbar` vertically centers them on the bar. Moving them by hand means fighting AppKit's relayout.
-- **Moving the window**: dragging the bar calls `performWindowDragWithEvent:`.
-- **Double-click on the bar**: follows the system preference (`AppleActionOnDoubleClick`).
-- **Fullscreen**: the bar appears together with the system titlebar.
+- **Traffic lights**: an empty compact unified `NSToolbar` (`unifiedCompact`) vertically centers them on the bar, which is 40 points high on macOS 26 and later, against 32 for the titlebar alone. Moving them by hand means fighting AppKit's relayout. The platform tells the room that they take at the bar's left, with a margin after them as wide as the one before them.
+- **Moving the window**: dragging the bar's room that its tabs leave calls `performWindowDragWithEvent:`. The host gives the platform the parts of the bar that are its view's own, the boxes of its nodes of a key under the root, where a press, its drags and its release go to the view, and the pointer's moves over the bar come to the app while the tabs are in it; the rest of the bar, the root's own box too, is the window's.
+- **Double-click on the bar**: follows the system preference (`AppleActionOnDoubleClick`), on the bar's room that its tabs leave; on a tab, it is the tab's.
+- **Fullscreen**: as the user chose on 3 November 2026, after iTerm2's, which shows its tab bar in full screen unless asked not to: the bar stays at the screen's top, of its view's height, without the window's buttons; the menu bar and the system's titlebar slide down over it as the pointer reaches the top, the empty toolbar hiding with them (`autoHideToolbar`), and take no room of the content's, as the window draws its chrome in its one drawable. `tabs` can hide the bar in full screen, shown a moment as the tab changes, as iTerm2 can.
 - **Resizing**: the content follows the window's edge through a live resize, drawn with Core Animation's transaction; the grid's size, as `100 × 33`, shows at the window's centre while a resize changes it, and goes a second after the last change, or after the drag ends.
 - **Dragging tabs between windows**: our own implementation, using a drag session and a ghost window.
 - **The quick terminal**: a borderless, non-activating `NSPanel` that a global key, Carbon's `RegisterEventHotKey`, which asks for no Accessibility permission, slides in from an edge of a screen over every app, on every Space or on its own and over the apps in full screen, and out again, as `NSAnimationContext` moves its frame; it takes the keys as it shows, and gives the focus back to the app that had it as it hides. Its pane runs while it is hidden, which keeps its last frame, so that it shows at once. The app holds its policy until the `quick-terminal` plugin takes it in F3.
@@ -102,8 +102,8 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 
 ### Appearance
 
-- **Styles**: `regular`, `compact` and `minimal`, like iTerm2's themes.
-- **Colors**: derived from the terminal theme when not specified (see [iTerm2 themes](#iterm2-themes)).
+- **Styles**: `regular`, `compact` and `minimal`, like iTerm2's themes: `regular`, the bar below a titlebar of the window's title; `compact`, the tabs in the titlebar, of the theme's colors of the chrome; `minimal`, the tabs in the titlebar too, of the colors of the terminal's theme.
+- **Colors**: the theme's tokens alone, `tab.bar.bg`, `tab.active.bg`, `tab.inactive.bg`, `tab.hover.bg` and their texts', so that the themes, still to define, restyle the bar; the window draws nothing of its own in it, and shows the terminal's background where the bar's view leaves room; derived from the terminal theme when not specified (see [iTerm2 themes](#iterm2-themes)).
 - **Per-tab colors**: from the config, from a menu, or from iTerm2's `OSC 6;1;bg;red|green|blue;brightness;N` sequence.
 - **States**: active, inactive and hover, with configurable separators and corner radius.
 

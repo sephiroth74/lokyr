@@ -1,9 +1,10 @@
-//! The gallery's view as a window's host shows it: the gallery's content
-//! and its floating panels, each a surface of its own, the panels over the
-//! content, and the keyboard's focus across them; what the pointer, the
-//! keyboard and the input method do to them, and the panels that a click
-//! outside them or Escape closes. The window's own pieces, the platform's
-//! timers, clipboard and composition, are the caller's.
+//! The gallery's view as a window's host shows it: the gallery's content,
+//! as a pane's, the window's chrome around it, and its floating panels,
+//! each a surface of its own, the panels over the rest, and the keyboard's
+//! focus across them; what the pointer, the keyboard and the input method
+//! do to them, and the panels that a click outside them or Escape closes.
+//! The window's own pieces, the platform's timers, clipboard and
+//! composition, are the caller's.
 
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -11,6 +12,7 @@ use std::time::Instant;
 use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
+use lokyr_ui_core::chrome::{self, Heights, TabBarPlace, Window};
 use lokyr_ui_core::field::{Carets, Clipboard};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
 use lokyr_ui_core::font::Font;
@@ -23,10 +25,20 @@ use lokyr_ui_core::theme::Tokens;
 use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent};
 
-use crate::gallery::{BELOW, FIND, Gallery, MENU, PanelAsk};
+use crate::gallery::{BELOW, FIND, Gallery, MENU, PanelAsk, Slot};
 
 /// The gallery's content, as a panel of the focus's.
 pub const MAIN: u8 = 0;
+
+/// The chrome's surfaces, past the panels', by their slots, in the order
+/// that they draw: the pane's header, the strip over the page, the status
+/// bar and the tab bar.
+const SLOTS: [(u8, Slot); 4] = [
+    (16, Slot::PaneHeader),
+    (17, Slot::WindowStrip),
+    (18, Slot::StatusBar),
+    (19, Slot::TabBar),
+];
 
 /// The rounds of events that a change of the trees can bring, as a hover
 /// that moves what is under the pointer, past which it waits for the next.
@@ -61,10 +73,16 @@ pub struct View {
     /// it takes until the button goes up, and the one that it is over.
     captured: Option<u8>,
     over: Option<u8>,
-    /// Where the pointer is, in pixels from the content's corner.
+    /// Where the pointer is, in pixels from the window's content's corner.
     at: (f32, f32),
-    /// The window's room for the content, in pixels.
+    /// The window's room, in pixels, and the page's in it.
     room: (f32, f32),
+    page: Frame,
+    /// The window's chrome, once the window told its titlebar: its
+    /// titlebar's height and its buttons' room, in pixels, and the slots'
+    /// surfaces and regions, by their ids.
+    chrome: Option<(f32, f32)>,
+    slots: BTreeMap<u8, (Surface, Option<Frame>)>,
     scale: f32,
     /// Whether the platform shows a menu's panel of menu items as its own.
     pub native_menus: bool,
@@ -96,6 +114,9 @@ impl View {
             over: None,
             at: (0.0, 0.0),
             room: (0.0, 0.0),
+            page: Frame::default(),
+            chrome: None,
+            slots: BTreeMap::new(),
             scale,
             native_menus: false,
             native: None,
@@ -121,18 +142,106 @@ impl View {
         self.render();
     }
 
-    /// The surface of `panel`, the content's of `MAIN`.
+    /// The surface of `panel`, the content's of `MAIN`, or of a slot's.
     pub fn surface(&self, panel: u8) -> Option<&Surface> {
         match panel {
             MAIN => Some(&self.main),
-            _ => self.surfaces.get(&panel).map(|(surface, _)| surface),
+            _ => self
+                .surfaces
+                .get(&panel)
+                .map(|(surface, _)| surface)
+                .or_else(|| self.slots.get(&panel).map(|(surface, _)| surface)),
         }
     }
 
     fn surface_mut(&mut self, panel: u8) -> Option<&mut Surface> {
         match panel {
             MAIN => Some(&mut self.main),
-            _ => self.surfaces.get_mut(&panel).map(|(surface, _)| surface),
+            _ => match self.surfaces.get_mut(&panel) {
+                Some((surface, _)) => Some(surface),
+                None => self.slots.get_mut(&panel).map(|(surface, _)| surface),
+            },
+        }
+    }
+
+    /// Gives the view the window's chrome, of a titlebar `titlebar` pixels
+    /// high over the window's top and the window's buttons `buttons` across
+    /// its left, the page in the pane's grid's region; the window's
+    /// coordinates are then the whole content's, the titlebar's too.
+    pub fn set_titlebar(&mut self, titlebar: f32, buttons: f32) {
+        self.chrome = Some((titlebar, buttons));
+        if self.slots.is_empty() {
+            for (id, _) in SLOTS {
+                self.slots.insert(id, (Surface::new(self.scale), None));
+            }
+            self.render();
+        }
+    }
+
+    /// The region of the slot of `id`, if it shows.
+    pub fn region(&self, id: u8) -> Option<Frame> {
+        self.slots.get(&id).and_then(|(_, frame)| *frame)
+    }
+
+    /// The page's region, in pixels of the window.
+    #[cfg(test)]
+    pub fn page(&self) -> Frame {
+        self.page
+    }
+
+    /// The parts of the titlebar that are the tab bar's own, in pixels of
+    /// the window, where a press goes to it: none but in the titlebar.
+    pub fn titlebar_areas(&self) -> Vec<Frame> {
+        let Some((surface, Some(frame))) = self.slots.get(&slot_id(Slot::TabBar)) else {
+            return Vec::new();
+        };
+        if self.gallery.tab_bar_place() != TabBarPlace::Titlebar
+            || self.chrome.is_none_or(|(titlebar, _)| titlebar <= 0.0)
+        {
+            return Vec::new();
+        }
+        chrome::titlebar_areas(&surface.tree, &surface.layout)
+            .into_iter()
+            .map(|area| Frame {
+                x: area.x + frame.x,
+                y: area.y + frame.y,
+                ..area
+            })
+            .collect()
+    }
+
+    /// The slot's surface under `at`, in pixels of the window, the topmost.
+    fn slot_under(&self, at: (f32, f32)) -> Option<u8> {
+        SLOTS.iter().rev().map(|&(id, _)| id).find(|id| {
+            self.region(*id).is_some_and(|frame| {
+                at.0 >= frame.x
+                    && at.1 >= frame.y
+                    && at.0 < frame.x + frame.width
+                    && at.1 < frame.y + frame.height
+            })
+        })
+    }
+
+    /// The page's surface and the chrome's that show, in the order that
+    /// they draw, each of its id and its region in the window.
+    fn placed(&self) -> Vec<(u8, &Surface, Frame)> {
+        let mut placed = vec![(MAIN, &self.main, self.page)];
+        for (id, _) in SLOTS {
+            if let (Some((surface, _)), Some(frame)) = (self.slots.get(&id), self.region(id)) {
+                placed.push((id, surface, frame));
+            }
+        }
+        placed
+    }
+
+    /// The corner of `panel`'s surface in the window, in pixels.
+    fn corner(&self, panel: u8) -> (f32, f32) {
+        if panel == MAIN {
+            return (self.page.x, self.page.y);
+        }
+        match self.panels.frame(panel).or_else(|| self.region(panel)) {
+            Some(frame) => (frame.x, frame.y),
+            None => (0.0, 0.0),
         }
     }
 
@@ -159,6 +268,11 @@ impl View {
         for (&panel, (surface, _)) in &mut self.surfaces {
             let _ = surface.update(&self.gallery.panel(panel));
             self.focus.updated(panel, &surface.tree);
+        }
+        for (id, slot) in SLOTS {
+            if let Some((surface, _)) = self.slots.get_mut(&id) {
+                let _ = surface.update(&self.gallery.slot(slot));
+            }
         }
     }
 
@@ -242,7 +356,8 @@ impl View {
         }
     }
 
-    /// The anchor of `place`, in pixels of the content.
+    /// The anchor of `place`, in pixels of the window: a corner's of the
+    /// page, the pane's overlays' region.
     fn anchor(&self, place: &Place) -> Anchor {
         match place {
             Place::Pointer(at) => Anchor::At(*at),
@@ -251,29 +366,105 @@ impl View {
                 .tree
                 .by_key(key)
                 .and_then(|node| self.main.layout.frame(&self.main.tree, node))
-                .map_or(Anchor::At(self.at), Anchor::Below),
-            Place::Corner(corner) => Anchor::Corner(
-                Frame {
-                    x: 0.0,
-                    y: 0.0,
-                    width: self.room.0,
-                    height: self.room.1,
-                },
-                *corner,
-                MARGIN * self.scale,
-            ),
+                .map_or(Anchor::At(self.at), |frame| {
+                    Anchor::Below(Frame {
+                        x: frame.x + self.page.x,
+                        y: frame.y + self.page.y,
+                        ..frame
+                    })
+                }),
+            Place::Corner(corner) => Anchor::Corner(self.page, *corner, MARGIN * self.scale),
         }
     }
 
-    /// Every surface: the content's, then the open panels'.
+    /// Every surface: the content's, the chrome's, then the open panels'.
     fn all(&self) -> impl Iterator<Item = &Surface> {
-        std::iter::once(&self.main).chain(self.surfaces.values().map(|(surface, _)| surface))
+        std::iter::once(&self.main)
+            .chain(self.slots.values().map(|(surface, _)| surface))
+            .chain(self.surfaces.values().map(|(surface, _)| surface))
     }
 
     /// Every surface, to change.
     fn all_mut(&mut self) -> impl Iterator<Item = &mut Surface> {
         std::iter::once(&mut self.main)
+            .chain(self.slots.values_mut().map(|(surface, _)| surface))
             .chain(self.surfaces.values_mut().map(|(surface, _)| surface))
+    }
+
+    /// Lays the chrome out in the window's room, each slot in its region,
+    /// and gives the page the pane's grid's region; without a chrome, the
+    /// whole room, `height` `None` for the page's own: the events of the
+    /// slots' layouts.
+    fn lay_out_chrome(
+        &mut self,
+        measure: &mut impl Measure,
+        height: Option<f32>,
+    ) -> Vec<NodeEvent> {
+        let width = self.room.0;
+        let Some((titlebar, buttons)) = self.chrome else {
+            self.page = Frame {
+                x: 0.0,
+                y: 0.0,
+                width,
+                height: height.unwrap_or(f32::MAX),
+            };
+            return Vec::new();
+        };
+        let place = self.gallery.tab_bar_place();
+        let mut events = Vec::new();
+        // Each slot's height, of its view laid out across the window.
+        let mut natural = |slots: &mut BTreeMap<u8, (Surface, Option<Frame>)>, slot: Slot| {
+            let (surface, _) = slots.get_mut(&slot_id(slot))?;
+            surface.tree.root()?;
+            events.extend(surface.lay_out((Some(width), None), measure));
+            surface.size().map(|size| size.1)
+        };
+        let tab_bar = match place {
+            TabBarPlace::Titlebar if titlebar > 0.0 => self
+                .slots
+                .get(&slot_id(Slot::TabBar))
+                .and_then(|(surface, _)| surface.tree.root())
+                .map(|_| titlebar),
+            _ => natural(&mut self.slots, Slot::TabBar),
+        };
+        let heights = Heights {
+            tab_bar: tab_bar.unwrap_or(0.0),
+            window_strip: natural(&mut self.slots, Slot::WindowStrip).unwrap_or(0.0),
+            status_bar: natural(&mut self.slots, Slot::StatusBar).unwrap_or(0.0),
+        };
+        let header = self
+            .slots
+            .get_mut(&slot_id(Slot::PaneHeader))
+            .filter(|(surface, _)| surface.tree.root().is_some())
+            .and_then(|(surface, _)| {
+                events.extend(surface.lay_out((Some(width), None), measure));
+                surface.size().map(|size| size.1)
+            })
+            .unwrap_or(0.0);
+        let window = Window {
+            size: (width, height.unwrap_or(self.room.1)),
+            titlebar,
+            buttons,
+        };
+        let regions = chrome::regions(&window, place, heights);
+        let pane = chrome::pane_regions(regions.panes, header);
+        self.page = pane.grid;
+        for (id, slot) in SLOTS {
+            let frame = match slot {
+                Slot::TabBar => regions.tab_bar,
+                Slot::WindowStrip => regions.window_strip,
+                Slot::StatusBar => regions.status_bar,
+                Slot::PaneHeader => pane.header,
+            };
+            if let Some((surface, region)) = self.slots.get_mut(&id) {
+                *region = frame;
+                if let Some(frame) = frame {
+                    events
+                        .extend(surface.lay_out((Some(frame.width), Some(frame.height)), measure));
+                }
+            }
+        }
+        events
     }
 
     /// The scale changed, to `scale` pixels a point.
@@ -292,7 +483,12 @@ impl View {
     pub fn lay_out(&mut self, measure: &mut (impl Measure + Carets), room: (f32, Option<f32>)) {
         self.room = (room.0, room.1.unwrap_or(f32::MAX));
         for _ in 0..ROUNDS {
-            let mut events = self.main.lay_out((Some(room.0), room.1), measure);
+            let mut events = self.lay_out_chrome(measure, room.1);
+            let page = (
+                Some(self.page.width),
+                room.1.map(|_| self.page.height.max(0.0)),
+            );
+            events.extend(self.main.lay_out(page, measure));
             let panels: Vec<u8> = self.panels.order().collect();
             for panel in panels {
                 let Some(place) = self.surfaces.get(&panel).map(|(_, place)| place.clone()) else {
@@ -314,6 +510,11 @@ impl View {
                 events.extend(surface.laid_out());
             }
             events.extend(self.main.laid_out());
+            for (surface, region) in self.slots.values_mut() {
+                if region.is_some() {
+                    events.extend(surface.laid_out());
+                }
+            }
             if events.is_empty() {
                 break;
             }
@@ -383,22 +584,22 @@ impl View {
         self.apply(events);
     }
 
-    /// The surface under `at`, in pixels of the content, the captured one
+    /// The surface under `at`, in pixels of the window, the captured one
     /// while a button is down, and `at` from its corner.
     fn target(&self, at: (f32, f32)) -> (u8, (f32, f32)) {
-        let panel = self
-            .captured
-            .or_else(|| self.panels.under(at))
-            .unwrap_or(MAIN);
+        let panel = self.captured.or_else(|| self.under(at)).unwrap_or(MAIN);
         (panel, self.local(panel, at))
     }
 
-    /// `at`, in pixels of the content, from `panel`'s corner.
+    /// The panel under `at`, or the chrome's slot, if one is.
+    fn under(&self, at: (f32, f32)) -> Option<u8> {
+        self.panels.under(at).or_else(|| self.slot_under(at))
+    }
+
+    /// `at`, in pixels of the window, from `panel`'s corner.
     fn local(&self, panel: u8, at: (f32, f32)) -> (f32, f32) {
-        match self.panels.frame(panel) {
-            Some(frame) if panel != MAIN => (at.0 - frame.x, at.1 - frame.y),
-            _ => at,
-        }
+        let corner = self.corner(panel);
+        (at.0 - corner.0, at.1 - corner.1)
     }
 
     /// The pointer moved to `at`, in pixels of the content, at `now`: the
@@ -494,7 +695,7 @@ impl View {
     /// A wheel or a trackpad scrolled at `at`, `delta` points across and
     /// towards the content above: the surface under it takes it.
     pub fn scrolled(&mut self, at: (f32, f32), delta: (f32, f32)) {
-        let panel = self.panels.under(at).unwrap_or(MAIN);
+        let panel = self.under(at).unwrap_or(MAIN);
         let local = self.local(panel, at);
         let events = self
             .surface_mut(panel)
@@ -555,10 +756,8 @@ impl View {
                 // A key that moves the focus takes the pointer back, as of
                 // a drag.
                 let mut events = Vec::new();
-                for panel in std::iter::once(MAIN).chain(self.panels.order().collect::<Vec<_>>()) {
-                    if let Some(surface) = self.surface_mut(panel) {
-                        events.extend(surface.pointer.cancel(&surface.tree));
-                    }
+                for surface in self.all_mut() {
+                    events.extend(surface.pointer.cancel(&surface.tree));
                 }
                 self.captured = None;
                 self.apply(events);
@@ -653,9 +852,9 @@ impl View {
         self.apply(events);
     }
 
-    /// The display list's items of the content and of the panels over it,
-    /// from `origin` in the window's pixels, of `tokens`, in the window's
-    /// `room` of pixels, of the transitions at `now`.
+    /// The display list's items of the content, of the chrome and of the
+    /// panels over them, from `origin` in the window's pixels, of `tokens`,
+    /// in the window's `room` of pixels, of the transitions at `now`.
     pub fn paint<B: FontBackend>(
         &self,
         font: &mut Font<B>,
@@ -665,9 +864,11 @@ impl View {
     ) -> Vec<Item> {
         let focused = self.focused();
         let focus_of = |panel: u8| focused.and_then(|(at, node)| (at == panel).then_some(node));
-        let mut items = self
-            .main
-            .paint(font, tokens, (origin, room), (dark, focus_of(MAIN), now));
+        let mut items = Vec::new();
+        for (id, surface, frame) in self.placed() {
+            let at = (origin.0 + frame.x, origin.1 + frame.y);
+            items.extend(surface.paint(font, tokens, (at, room), (dark, focus_of(id), now)));
+        }
         for panel in self.panels.order() {
             let (Some(frame), Some(surface)) = (self.panels.frame(panel), self.surface(panel))
             else {
@@ -679,8 +880,9 @@ impl View {
         items
     }
 
-    /// The areas of the pointer's shapes, in pixels of the content, the
-    /// topmost panel's first, as the pointer goes through a tooltip.
+    /// The areas of the pointer's shapes, in pixels of the window, the
+    /// topmost panel's first, as the pointer goes through a tooltip, then
+    /// the chrome's and the page's.
     pub fn areas(&self) -> Vec<Area> {
         let mut areas = Vec::new();
         for panel in self.panels.order().rev() {
@@ -706,38 +908,59 @@ impl View {
                     }),
             );
         }
-        areas.extend(pointer::areas(&self.main.tree, &self.main.layout));
+        let moved = |area: Area, (x, y): (f32, f32)| Area {
+            rect: lokyr_render_core::Rect {
+                x: area.rect.x + x as i32,
+                y: area.rect.y + y as i32,
+                ..area.rect
+            },
+            ..area
+        };
+        for (_, surface, frame) in self.placed().into_iter().rev() {
+            areas.extend(
+                pointer::areas(&surface.tree, &surface.layout)
+                    .into_iter()
+                    .map(|area| moved(area, (frame.x, frame.y))),
+            );
+        }
         areas
     }
 
     /// The sweeps of the indeterminate progresses, in pixels of the
-    /// content, but those that a panel over them covers.
+    /// window, but those that a panel over them covers.
     pub fn sweeps(&self, tokens: &Tokens) -> Vec<SweepArea> {
-        let mut sweeps: Vec<SweepArea> = self
-            .main
-            .sweeps(tokens)
-            .into_iter()
-            .filter(|sweep| !self.panels.covers(sweep.visible, None))
-            .collect();
+        let moved = |sweep: SweepArea, (x, y): (f32, f32)| {
+            let moved = |rect: lokyr_render_core::Rect| lokyr_render_core::Rect {
+                x: rect.x + x as i32,
+                y: rect.y + y as i32,
+                ..rect
+            };
+            SweepArea {
+                rect: moved(sweep.rect),
+                visible: moved(sweep.visible),
+                ..sweep
+            }
+        };
+        let mut sweeps = Vec::new();
+        for (_, surface, frame) in self.placed() {
+            sweeps.extend(
+                surface
+                    .sweeps(tokens)
+                    .into_iter()
+                    .map(|sweep| moved(sweep, (frame.x, frame.y))),
+            );
+        }
+        sweeps.retain(|sweep| !self.panels.covers(sweep.visible, None));
         for panel in self.panels.order() {
             let (Some(frame), Some(surface)) = (self.panels.frame(panel), self.surface(panel))
             else {
                 continue;
             };
-            let moved = |rect: lokyr_render_core::Rect| lokyr_render_core::Rect {
-                x: rect.x + frame.x as i32,
-                y: rect.y + frame.y as i32,
-                ..rect
-            };
             sweeps.extend(
                 surface
                     .sweeps(tokens)
                     .into_iter()
-                    .map(|sweep| SweepArea {
-                        rect: moved(sweep.rect),
-                        visible: moved(sweep.visible),
-                        ..sweep
-                    })
+                    .map(|sweep| moved(sweep, (frame.x, frame.y)))
                     .filter(|sweep| !self.panels.covers(sweep.visible, Some(panel))),
             );
         }
@@ -745,20 +968,25 @@ impl View {
     }
 
     /// The input method's rectangle of the field that has the focus, in
-    /// pixels of the content.
+    /// pixels of the window.
     pub fn text_area(&self, carets: &mut dyn Carets) -> Option<Frame> {
         let (panel, node) = self.focused()?;
         let area = self.surface(panel)?.text_area(node, carets)?;
-        let (x, y) = match self.panels.frame(panel) {
-            Some(frame) if panel != MAIN => (frame.x, frame.y),
-            _ => (0.0, 0.0),
-        };
+        let (x, y) = self.corner(panel);
         Some(Frame {
             x: area.x + x,
             y: area.y + y,
             ..area
         })
     }
+}
+
+/// The id of `slot`'s surface.
+fn slot_id(slot: Slot) -> u8 {
+    SLOTS
+        .iter()
+        .find(|(_, of)| *of == slot)
+        .map_or(0, |(id, _)| *id)
 }
 
 /// The choices of `entries`, of their submenus' too, by their keys: their
@@ -864,7 +1092,313 @@ mod tests {
             view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
         }
         let frame = view.main.layout.frame(&view.main.tree, node).unwrap();
-        (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0)
+        let page = view.page();
+        (
+            page.x + frame.x + frame.width / 2.0,
+            page.y + frame.y + frame.height / 2.0,
+        )
+    }
+
+    /// The middle of the node of `key` of `slot`'s view, in the window.
+    fn slot_middle(view: &View, slot: Slot, key: &str) -> (f32, f32) {
+        let id = slot_id(slot);
+        let surface = view.surface(id).unwrap();
+        let node = surface.tree.by_key(&key.into()).unwrap();
+        let frame = surface.layout.frame(&surface.tree, node).unwrap();
+        let region = view.region(id).unwrap();
+        (
+            region.x + frame.x + frame.width / 2.0,
+            region.y + frame.y + frame.height / 2.0,
+        )
+    }
+
+    /// The background of the tab bar's node of `key`.
+    fn tab_background(view: &View, key: &str) -> Option<String> {
+        let surface = view.surface(slot_id(Slot::TabBar))?;
+        let node = surface.tree.by_key(&key.into())?;
+        Some(surface.tree.style(node)?.background.clone()?.0)
+    }
+
+    fn frame(x: f32, y: f32, width: f32, height: f32) -> Frame {
+        Frame {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn the_chrome_s_slots_take_their_regions_and_the_page_the_rest() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        // The tab bar in the titlebar, past the window's buttons.
+        assert_eq!(
+            view.region(slot_id(Slot::TabBar)),
+            Some(frame(80.0, 0.0, ROOM.0 - 80.0, 40.0))
+        );
+        // The strip over the pane's top, its header there too, and the
+        // status bar across the bottom.
+        assert_eq!(
+            view.region(slot_id(Slot::WindowStrip)),
+            Some(frame(0.0, 40.0, ROOM.0, 2.0))
+        );
+        let header = view.region(slot_id(Slot::PaneHeader)).unwrap();
+        let status = view.region(slot_id(Slot::StatusBar)).unwrap();
+        assert_eq!((header.x, header.y, header.width), (0.0, 40.0, ROOM.0));
+        assert_eq!(status.y + status.height, ROOM.1);
+        assert!(header.height > 0.0 && status.height > 0.0);
+        // The page between them, its root of its room.
+        let page = view.page();
+        assert_eq!(
+            page,
+            frame(
+                0.0,
+                40.0 + header.height,
+                ROOM.0,
+                status.y - 40.0 - header.height
+            )
+        );
+        assert_eq!(view.main.size(), Some((page.width, page.height)));
+        // The tab bar's tabs and its button are its own in the titlebar,
+        // its bare room the window's.
+        let areas = view.titlebar_areas();
+        assert_eq!(areas.len(), 4, "{areas:?}");
+        for area in &areas {
+            assert!(
+                area.x >= 80.0 && area.y >= 0.0 && area.y + area.height <= 40.0,
+                "{area:?}"
+            );
+        }
+        let bar = view.region(slot_id(Slot::TabBar)).unwrap();
+        let last = areas.last().unwrap();
+        assert!(last.x + last.width < bar.x + bar.width);
+    }
+
+    #[test]
+    fn a_click_on_a_tab_chooses_it_and_the_page_s_nodes_take_theirs_below_the_chrome() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let tab = slot_middle(&view, Slot::TabBar, "bar.tab-1");
+        click(&mut view, tab);
+        assert_eq!(
+            tab_background(&view, "bar.tab-1").as_deref(),
+            Some("tab.active.bg")
+        );
+        assert_eq!(
+            tab_background(&view, "bar.tab-0").as_deref(),
+            Some("tab.inactive.bg")
+        );
+        // A new tab, chosen.
+        let new = slot_middle(&view, Slot::TabBar, "bar.new");
+        click(&mut view, new);
+        assert_eq!(
+            tab_background(&view, "bar.tab-3").as_deref(),
+            Some("tab.active.bg")
+        );
+        assert_eq!(view.titlebar_areas().len(), 5);
+        // The page's toggle, below the chrome, at its place in the window.
+        let at = middle(&mut view, "anim.boxed");
+        click(&mut view, at);
+        let boxed = view.main.tree.by_key(&"anim.boxed".into()).unwrap();
+        assert!(matches!(
+            view.main.tree.kind(boxed),
+            Some(lokyr_plugin_sdk::view::Kind::Toggle(toggle)) if !toggle.on
+        ));
+        // The pointer over a tab is over it.
+        let at = slot_middle(&view, Slot::TabBar, "bar.tab-0");
+        view.moved(at, &mut Fixed, Instant::now());
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        assert_eq!(
+            tab_background(&view, "bar.tab-0").as_deref(),
+            Some("tab.hover.bg")
+        );
+    }
+
+    #[test]
+    fn the_tab_bar_goes_below_a_titled_titlebar_and_takes_the_top_in_full_screen() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let toggle = slot_middle(&view, Slot::StatusBar, "status.titlebar");
+        click(&mut view, toggle);
+        assert_eq!(view.gallery.tab_bar_place(), TabBarPlace::BelowTitlebar);
+        // The platform's titlebar of the title, 32 points high.
+        view.set_titlebar(32.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let bar = view.region(slot_id(Slot::TabBar)).unwrap();
+        assert_eq!((bar.x, bar.y, bar.width), (0.0, 32.0, ROOM.0));
+        assert!(bar.height > 0.0);
+        assert!(view.titlebar_areas().is_empty());
+        assert_eq!(
+            view.page().y,
+            bar.y + bar.height + view.region(slot_id(Slot::PaneHeader)).unwrap().height
+        );
+        // A tab below the titlebar takes its clicks there.
+        let tab = slot_middle(&view, Slot::TabBar, "bar.tab-2");
+        click(&mut view, tab);
+        assert_eq!(
+            tab_background(&view, "bar.tab-2").as_deref(),
+            Some("tab.active.bg")
+        );
+        // Back in the titlebar, then in full screen: no titlebar, no
+        // buttons, the bar at the top of its view's height.
+        let toggle = slot_middle(&view, Slot::StatusBar, "status.titlebar");
+        click(&mut view, toggle);
+        view.set_titlebar(0.0, 0.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let bar = view.region(slot_id(Slot::TabBar)).unwrap();
+        assert_eq!((bar.x, bar.y, bar.width), (0.0, 0.0, ROOM.0));
+        assert!(bar.height > 0.0 && bar.height < 40.0, "{bar:?}");
+        assert!(view.titlebar_areas().is_empty());
+    }
+
+    /// Whether `rect` of the display list is `frame`'s.
+    fn is(rect: lokyr_render_core::Rect, frame: Frame) -> bool {
+        (rect.x, rect.y, rect.width, rect.height)
+            == (
+                frame.x as i32,
+                frame.y as i32,
+                frame.width as u32,
+                frame.height as u32,
+            )
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_chrome_draws_in_its_regions_over_the_page() {
+        use lokyr_font_coretext::CoreText;
+        use lokyr_render_core::Shape;
+        use lokyr_text_core::FontConfig;
+
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 1.0).unwrap();
+        let tokens = Theme::builtin().variant(false).tokens.clone();
+        let items = view.paint(
+            &mut font,
+            &tokens,
+            ((0.0, 0.0), ROOM),
+            (false, Instant::now()),
+        );
+        let shapes: Vec<&Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        // Each bar's background, of its region.
+        for slot in [Slot::TabBar, Slot::StatusBar, Slot::PaneHeader] {
+            let region = view.region(slot_id(slot)).unwrap();
+            assert!(
+                shapes.iter().any(|shape| is(shape.rect, region)),
+                "{slot:?} {region:?}"
+            );
+        }
+        // The page's, past the chrome, and the bars after it, over it.
+        let page = shapes
+            .iter()
+            .position(|shape| shape.rect.y >= view.page().y as i32)
+            .unwrap();
+        let bar = view.region(slot_id(Slot::TabBar)).unwrap();
+        let tab_bar = shapes.iter().position(|shape| is(shape.rect, bar)).unwrap();
+        assert!(page < tab_bar);
+    }
+
+    #[test]
+    fn the_page_s_pointer_areas_and_its_field_s_place_follow_it_below_the_chrome() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let at = middle(&mut view, "i-beam");
+        let inside = |rect: lokyr_render_core::Rect| {
+            at.0 >= rect.x as f32
+                && at.1 >= rect.y as f32
+                && at.0 < (rect.x + rect.width as i32) as f32
+                && at.1 < (rect.y + rect.height as i32) as f32
+        };
+        assert!(
+            view.areas().iter().any(|area| area.shape
+                == lokyr_plugin_sdk::view::PointerShape::Text
+                && inside(area.rect)),
+            "{at:?}"
+        );
+        let at = middle(&mut view, "name");
+        click(&mut view, at);
+        let area = view.text_area(&mut Fixed).unwrap();
+        assert!(
+            area.y <= at.1 && at.1 <= area.y + area.height && area.y >= view.page().y,
+            "{area:?} {at:?}"
+        );
+    }
+
+    #[test]
+    fn the_strip_takes_the_pointer_over_the_header_and_a_tab_its_scroll() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        // The strip over the pane's header, which it covers.
+        assert_eq!(view.target((10.0, 41.0)).0, slot_id(Slot::WindowStrip));
+        assert_eq!(view.target((10.0, 50.0)).0, slot_id(Slot::PaneHeader));
+        let tab = slot_middle(&view, Slot::TabBar, "bar.tab-1");
+        view.scrolled(tab, (0.0, 3.0));
+        assert!(
+            view.gallery.scrolled().starts_with("`bar.tab-1`"),
+            "{}",
+            view.gallery.scrolled()
+        );
+    }
+
+    #[test]
+    fn a_panel_below_its_button_follows_the_page_below_the_chrome() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let at = middle(&mut view, "open-below");
+        click(&mut view, at);
+        let button = view.main.tree.by_key(&"open-below".into()).unwrap();
+        let frame = view.main.layout.frame(&view.main.tree, button).unwrap();
+        let page = view.page();
+        let (top, bottom) = (page.y + frame.y, page.y + frame.y + frame.height);
+        let panel = view.panels.frame(BELOW).unwrap();
+        assert!(
+            panel.y == bottom || panel.y + panel.height == top,
+            "{panel:?} {top} {bottom}"
+        );
+    }
+
+    #[test]
+    fn the_find_bar_keeps_to_the_page_and_the_strip_s_sweep_shows_over_it() {
+        let mut view = view();
+        view.set_titlebar(40.0, 80.0);
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let at = middle(&mut view, "open-find");
+        click(&mut view, at);
+        let find = view.panels.frame(FIND).unwrap();
+        let page = view.page();
+        assert!(find.y >= page.y + MARGIN, "{find:?} {page:?}");
+        assert_eq!(find.x + find.width, page.x + page.width - MARGIN);
+        // The strip's sweep, at the pane's top, once it spins.
+        let tokens = Theme::builtin().variant(false).tokens.clone();
+        let strip = |view: &View| {
+            view.sweeps(&tokens)
+                .into_iter()
+                .filter(|sweep| sweep.rect.y == 40 && sweep.rect.height == 2)
+                .count()
+        };
+        assert_eq!(strip(&view), 0);
+        let spin = middle(&mut view, "spin");
+        click(&mut view, spin);
+        assert_eq!(strip(&view), 1);
+        // The page's, below the chrome, as the page is.
+        let sweeps = view.sweeps(&tokens);
+        assert!(sweeps.len() > 1);
+        assert!(sweeps.iter().all(|sweep| sweep.rect.y >= 40), "{sweeps:?}");
     }
 
     fn click(view: &mut View, at: (f32, f32)) {

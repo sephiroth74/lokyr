@@ -10,6 +10,7 @@ use lokyr_plugin_sdk::view::{
     PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
     UiEventKind,
 };
+use lokyr_ui_core::chrome::TabBarPlace;
 use lokyr_ui_core::interface;
 
 /// The icons a row of the icons' section.
@@ -26,6 +27,23 @@ const BUTTONS: [&str; 5] = ["replace", "replace-all", "settings", "add", "trash"
 
 /// Italy's flag, of two regional indicators.
 const ITALY: &str = "\u{1F1EE}\u{1F1F9}";
+
+/// The most tabs of the tab bar's.
+const TABS: usize = 6;
+
+/// A slot of the window's chrome, which the gallery fills as a plugin
+/// would.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Slot {
+    /// The tab bar, in the titlebar or below it.
+    TabBar,
+    /// The strip across the page's top, over it.
+    WindowStrip,
+    /// The status bar, across the window's bottom.
+    StatusBar,
+    /// The header of the page, as a pane's.
+    PaneHeader,
+}
 
 /// What the gallery shows: its appearance, and what the pointer and the
 /// keyboard did.
@@ -69,6 +87,11 @@ pub struct Gallery {
     order: Vec<usize>,
     boxed: bool,
     slow: bool,
+    /// The tab bar's tabs, the one chosen, and whether the bar goes in
+    /// the titlebar, or below a titlebar of the window's title.
+    tabs: usize,
+    chosen: usize,
+    in_titlebar: bool,
 }
 
 /// The gallery's menu, at the pointer.
@@ -127,7 +150,159 @@ impl Gallery {
             order: vec![0, 1, 2, 3],
             boxed: true,
             slow: false,
+            tabs: 3,
+            chosen: 0,
+            in_titlebar: true,
         }
+    }
+
+    /// Where the tab bar goes: in the titlebar, as the compact and minimal
+    /// styles have it, or below a titlebar of the window's title, as the
+    /// regular one.
+    pub fn tab_bar_place(&self) -> TabBarPlace {
+        if self.in_titlebar {
+            TabBarPlace::Titlebar
+        } else {
+            TabBarPlace::BelowTitlebar
+        }
+    }
+
+    /// The view of the chrome's `slot`.
+    pub fn slot(&self, slot: Slot) -> Node {
+        match slot {
+            Slot::TabBar => self.tab_bar(),
+            Slot::WindowStrip => self.window_strip(),
+            Slot::StatusBar => self.status_bar(),
+            Slot::PaneHeader => Node::container(vec![secondary(
+                "A pane's header: the page below is the pane's grid",
+            )])
+            .layout(Layout {
+                padding: Edges {
+                    top: 4.0,
+                    right: 12.0,
+                    bottom: 4.0,
+                    left: 12.0,
+                },
+                justify: Justify::Center,
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("panel.bg")),
+                ..Style::default()
+            }),
+        }
+    }
+
+    /// The tab bar: its tabs, the chosen one of the active tab's colors,
+    /// the others lighter under the pointer, and a button of a new one.
+    fn tab_bar(&self) -> Node {
+        let mut children: Vec<Node> = (0..self.tabs)
+            .map(|tab| {
+                let key = format!("bar.tab-{tab}");
+                let (background, color) = if tab == self.chosen {
+                    ("tab.active.bg", "tab.active.fg")
+                } else if self.hovered.contains(&key) {
+                    ("tab.hover.bg", "tab.inactive.fg")
+                } else {
+                    ("tab.inactive.bg", "tab.inactive.fg")
+                };
+                Node::container(vec![Node::text(format!("Tab {}", tab + 1))])
+                    .key(key.as_str())
+                    .layout(Layout {
+                        padding: Edges {
+                            top: 5.0,
+                            right: 14.0,
+                            bottom: 5.0,
+                            left: 14.0,
+                        },
+                        ..Layout::default()
+                    })
+                    .style(Style {
+                        background: Some(Token::from(background)),
+                        color: Some(Token::from(color)),
+                        radius: 6.0,
+                        ..Style::default()
+                    })
+            })
+            .collect();
+        let mut new = Node::icon_button("add").key("bar.new");
+        if let Kind::Button(button) = &mut new.kind {
+            button.disabled = self.tabs >= TABS;
+        }
+        children.push(new);
+        Node::container(children)
+            .layout(Layout {
+                gap: 4.0,
+                align: Align::Center,
+                padding: Edges {
+                    top: 4.0,
+                    right: 8.0,
+                    bottom: 4.0,
+                    left: 8.0,
+                },
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("tab.bar.bg")),
+                ..Style::default()
+            })
+    }
+
+    /// The window's strip: a hairline of the progress's value, or of no
+    /// value as the spinning toggle is on.
+    fn window_strip(&self) -> Node {
+        let state = if self.spinning {
+            ProgressState::Indeterminate
+        } else {
+            ProgressState::Normal
+        };
+        Node::progress(ProgressShape::Bar, state, self.percent as f32 / 100.0)
+            .layout(Layout {
+                width: Length::Fraction(1.0),
+                height: Length::Points(2.0),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                ..Style::default()
+            })
+    }
+
+    /// The status bar: the toggle of the tab bar's place, and what each
+    /// place is.
+    fn status_bar(&self) -> Node {
+        let place = if self.in_titlebar {
+            "Compact: the tabs in the titlebar, the window's buttons centred on them"
+        } else {
+            "Regular: the tabs below a titlebar of the window's title"
+        };
+        Node::container(vec![
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Tabs in the titlebar".to_owned(),
+                on: self.in_titlebar,
+                ..view::Toggle::default()
+            }))
+            .key("status.titlebar"),
+            Node::separator(),
+            secondary(place),
+            Node::spacer(),
+            secondary("The window's strip, over the page's top, shows the progress"),
+        ])
+        .layout(Layout {
+            gap: 10.0,
+            align: Align::Center,
+            padding: Edges {
+                top: 3.0,
+                right: 10.0,
+                bottom: 3.0,
+                left: 10.0,
+            },
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("tab.bar.bg")),
+            ..Style::default()
+        })
     }
 
     /// Whether it is dark.
@@ -155,6 +330,16 @@ impl Gallery {
             UiEventKind::Click if key == "anim.shuffle" => self.order.rotate_right(1),
             UiEventKind::Toggle { on } if key == "anim.boxed" => self.boxed = on,
             UiEventKind::Toggle { on } if key == "anim.slow" => self.slow = on,
+            UiEventKind::Click if key == "bar.new" && self.tabs < TABS => {
+                self.tabs += 1;
+                self.chosen = self.tabs - 1;
+            }
+            UiEventKind::Click if key.starts_with("bar.tab-") => {
+                if let Ok(tab) = key["bar.tab-".len()..].parse::<usize>() {
+                    self.chosen = tab.min(self.tabs.saturating_sub(1));
+                }
+            }
+            UiEventKind::Toggle { on } if key == "status.titlebar" => self.in_titlebar = on,
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
             UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
@@ -247,6 +432,12 @@ impl Gallery {
     #[cfg(test)]
     pub fn last_panel(&self) -> &str {
         &self.paneled
+    }
+
+    /// What the last scroll did.
+    #[cfg(test)]
+    pub fn scrolled(&self) -> &str {
+        &self.scrolled.0
     }
 
     /// What the gallery asks of its panels, since it was last asked.

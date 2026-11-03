@@ -41,6 +41,10 @@ pub struct WindowSize {
     /// The height, in points, of the titlebar over the content's top, which
     /// the content runs under; 0 without one.
     pub bar: f64,
+    /// The room, in points, at the titlebar's left that the window's
+    /// buttons take, with a margin after them as wide as the one before
+    /// them; 0 without them, as in full screen.
+    pub buttons: f64,
 }
 
 impl WindowSize {
@@ -55,6 +59,7 @@ impl WindowSize {
             },
             scale,
             bar: 0.0,
+            buttons: 0.0,
         }
     }
 
@@ -63,10 +68,51 @@ impl WindowSize {
         Self { bar, ..self }
     }
 
+    /// The size, with the window's buttons `buttons` points across the
+    /// titlebar's left.
+    pub fn with_buttons(self, buttons: f64) -> Self {
+        Self { buttons, ..self }
+    }
+
     /// The titlebar's height in pixels, rounded to the nearest.
     pub fn bar_pixels(&self) -> u32 {
         to_pixels(self.bar, self.scale)
     }
+}
+
+/// A rectangle of a window's content, in points from its top left corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContentRect {
+    /// Its top left corner.
+    pub origin: Point,
+    /// Its size.
+    pub size: Size,
+}
+
+impl ContentRect {
+    /// Whether it holds `point`, its left and top edges in, its right and
+    /// bottom ones out.
+    pub fn contains(&self, point: Point) -> bool {
+        point.x >= self.origin.x
+            && point.y >= self.origin.y
+            && point.x < self.origin.x + self.size.width
+            && point.y < self.origin.y + self.size.height
+    }
+}
+
+/// What a window's titlebar holds, over its content's top, which the
+/// content runs under.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Titlebar {
+    /// The system's, of the window's title.
+    #[default]
+    Titled,
+    /// Taller, of no title, for a tab bar that the content draws in it: on
+    /// the Mac, a compact toolbar's, empty, on which the window's buttons
+    /// stand centred. In full screen, the system's titlebar slides over the
+    /// content's top as the pointer reaches the screen's top, and leaves no
+    /// room of its own.
+    Tabs,
 }
 
 /// The pixels of a length in points, rounded; a negative length, or one

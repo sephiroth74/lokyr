@@ -30,7 +30,7 @@ mod tests;
 mod waker;
 
 pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
-pub use geometry::{PixelSize, Point, Size, WindowSize};
+pub use geometry::{ContentRect, PixelSize, Point, Size, Titlebar, WindowSize};
 pub use input::{
     Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
     ScrollDelta, ScrollPhase,
@@ -498,6 +498,21 @@ pub trait Platform {
     /// of the rest, in place of the areas before; none until the app asks.
     /// The pointer changes as it moves, without waking the app.
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]);
+
+    /// Gives `window` the titlebar `titlebar`, of the system's title by
+    /// default: its content's size then comes anew as
+    /// [`WindowEvent::Resized`], of the titlebar's height and of the room
+    /// of the window's buttons.
+    fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar);
+
+    /// The parts of `window`'s titlebar that are its content's, as the tabs
+    /// of a bar that it draws there, in place of those before: a press
+    /// there, its drags and its release come to the app, and the pointer's
+    /// moves over the titlebar too while the window's titlebar is of
+    /// [`Titlebar::Tabs`]. A press elsewhere on the titlebar is the
+    /// window's, which a drag moves and a double click zooms or minimizes,
+    /// as the system's settings say. None until the app gives them.
+    fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]);
 
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a

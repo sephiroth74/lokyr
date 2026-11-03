@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Layer, LayerPlace,
-    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, Sweep,
-    Target, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
-    WindowSize,
+    Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey, Layer,
+    LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size,
+    Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -720,6 +720,18 @@ impl Platform for Backend {
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
         if let Some(window) = self.windows.get(&window) {
             window.set_pointer_areas(areas);
+        }
+    }
+
+    fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_titlebar(titlebar);
+        }
+    }
+
+    fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_titlebar_areas(areas);
         }
     }
 

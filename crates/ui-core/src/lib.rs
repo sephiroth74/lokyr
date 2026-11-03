@@ -4,6 +4,7 @@
 //! updates by a diff, in [`tree`]; lays them out, with `taffy`, in
 //! [`layout`], their texts measured in the [`interface`]'s face; paints
 //! them into display list items, of the [`theme`]'s tokens, in [`paint`];
+//! places a window's slots around and over its panes, in [`chrome`];
 //! finds the nodes under the pointer, and tells them what it did and how it
 //! looks over them, in [`pointer`](mod@pointer); keeps the keyboard's focus
 //! on a pane or a panel's node, in [`focus`]; does what accessibility asks
@@ -17,6 +18,7 @@
 
 pub mod action;
 pub mod animation;
+pub mod chrome;
 pub mod cursor;
 pub mod field;
 pub mod focus;

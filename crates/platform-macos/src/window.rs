@@ -7,9 +7,9 @@ use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    Backdrop, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea,
-    PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, Sweep, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    Backdrop, ContentRect, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point,
+    PointerArea, PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, Sweep, Titlebar,
+    WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use std::path::PathBuf;
 
@@ -17,11 +17,12 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
-    NSBackingStoreType, NSColor, NSCursor, NSDragOperation, NSDraggingDestination, NSDraggingInfo,
-    NSEvent, NSEventPhase, NSEventType, NSPasteboard, NSPasteboardTypeFileURL,
-    NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey, NSResponder, NSScreen,
-    NSTextInputClient, NSTitlebarSeparatorStyle, NSView, NSWindow, NSWindowDelegate,
-    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
+    NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSCursor, NSDragOperation,
+    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType, NSPasteboard,
+    NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey,
+    NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSView,
+    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
+    NSWindowTabbingMode, NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -416,6 +417,46 @@ impl Window {
         }
     }
 
+    /// Gives the window the titlebar `titlebar`: of the window's title, or
+    /// an empty compact toolbar's, of no title, on which the window's
+    /// buttons stand centred; the content's size comes anew, of the
+    /// titlebar's height and of the buttons' room. A quick window has no
+    /// titlebar.
+    pub(crate) fn set_titlebar(&self, titlebar: Titlebar) {
+        if self.quick.is_some() || self.view.ivars().titlebar.replace(titlebar) == titlebar {
+            return;
+        }
+        match titlebar {
+            Titlebar::Tabs => {
+                let toolbar = NSToolbar::initWithIdentifier(
+                    NSToolbar::alloc(self.ns_window.mtm()),
+                    &NSString::from_str("titlebar"),
+                );
+                self.ns_window.setToolbar(Some(&toolbar));
+                self.ns_window
+                    .setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+                self.ns_window
+                    .setTitleVisibility(NSWindowTitleVisibility::Hidden);
+            }
+            Titlebar::Titled => {
+                self.ns_window.setToolbar(None);
+                self.ns_window
+                    .setToolbarStyle(NSWindowToolbarStyle::Automatic);
+                self.ns_window
+                    .setTitleVisibility(NSWindowTitleVisibility::Visible);
+            }
+        }
+        self.ns_window.invalidateCursorRectsForView(&self.view);
+        self.view
+            .post(WindowEvent::Resized(size_of(&self.ns_window)));
+    }
+
+    /// The parts of the titlebar that are the content's, in place of those
+    /// before.
+    pub(crate) fn set_titlebar_areas(&self, areas: &[ContentRect]) {
+        *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
+    }
+
     /// Gives the areas of `areas` their own pointers, over the rest's.
     pub(crate) fn set_pointer_areas(&self, areas: &[PointerArea]) {
         if *self.view.ivars().areas.borrow() != areas {
@@ -510,7 +551,26 @@ fn size_of(window: &NSWindow) -> WindowSize {
         },
         scale,
         bar,
+        buttons: buttons_of(window, &view),
     }
+}
+
+/// The room at the titlebar's left that `window`'s buttons take in its
+/// `view`, with a margin after them as wide as the one before them: none in
+/// full screen, whose titlebar slides over the content, nor without them.
+fn buttons_of(window: &NSWindow, view: &NSView) -> f64 {
+    if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
+        return 0.0;
+    }
+    let (Some(close), Some(zoom)) = (
+        window.standardWindowButton(NSWindowButton::CloseButton),
+        window.standardWindowButton(NSWindowButton::ZoomButton),
+    ) else {
+        return 0.0;
+    };
+    let close = close.convertRect_toView(close.bounds(), Some(view));
+    let zoom = zoom.convertRect_toView(zoom.bounds(), Some(view));
+    (zoom.origin.x + zoom.size.width + close.origin.x).max(0.0)
 }
 
 fn points(size: NSSize) -> Size {
@@ -537,6 +597,10 @@ pub(crate) struct ContentViewIvars {
     /// Whether the buttons held went down over the titlebar, whose drags
     /// and releases are the window's, not the content's.
     over_bar: Cell<bool>,
+    /// What the titlebar holds, and the parts of it that are the
+    /// content's, in points from the view's top left corner.
+    titlebar: Cell<Titlebar>,
+    titlebar_areas: RefCell<Vec<ContentRect>>,
 }
 
 define_class!(
@@ -641,10 +705,10 @@ define_class!(
 
         // SAFETY: AppKit's signature, for a move with no button held, which
         // comes while the window accepts them; one over the titlebar is
-        // the window's.
+        // the window's, but over a titlebar of the content's tabs.
         #[unsafe(method(mouseMoved:))]
         fn mouse_moved(&self, event: &NSEvent) {
-            if !self.is_over_bar(event) {
+            if !self.is_over_bar(event) || self.ivars().titlebar.get() == Titlebar::Tabs {
                 self.post_moved(event);
             }
         }
@@ -866,6 +930,8 @@ impl ContentView {
             pointer: Cell::new(PointerShape::Arrow),
             areas: RefCell::new(Vec::new()),
             over_bar: Cell::new(false),
+            titlebar: Cell::new(Titlebar::Titled),
+            titlebar_areas: RefCell::new(Vec::new()),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -948,12 +1014,23 @@ impl ContentView {
         local.y >= below.origin.y + below.size.height
     }
 
-    /// A button went down: over the titlebar, the window's, which the
-    /// content learns nothing of, with the drags and the releases that
-    /// follow; otherwise the content's. As the titlebar's drag can keep its
-    /// release, each press tells anew.
+    /// Whether `event` is over a part of the titlebar that is the
+    /// content's.
+    fn is_over_titlebar_area(&self, event: &NSEvent) -> bool {
+        let at = self.position(event);
+        self.ivars()
+            .titlebar_areas
+            .borrow()
+            .iter()
+            .any(|area| area.contains(at))
+    }
+
+    /// A button went down: over the titlebar, but over its parts that are
+    /// the content's, the window's, which the content learns nothing of,
+    /// with the drags and the releases that follow; otherwise the content's.
+    /// As the titlebar's drag can keep its release, each press tells anew.
     fn press(&self, event: &NSEvent) {
-        let over = self.is_over_bar(event);
+        let over = self.is_over_bar(event) && !self.is_over_titlebar_area(event);
         self.ivars().over_bar.set(over);
         if !over {
             self.post_button(event, true);
@@ -1171,6 +1248,17 @@ define_class!(
                 self.post(WindowEvent::Resized(size_of(&window)));
                 invalidate_text_area_of(&window);
             }
+        }
+
+        // In full screen, an empty toolbar hides with the menu bar, and
+        // slides down over the content with it, as the titlebar does.
+        #[unsafe(method(window:willUseFullScreenPresentationOptions:))]
+        fn window_will_use_full_screen_presentation_options(
+            &self,
+            _window: &NSWindow,
+            proposed: NSApplicationPresentationOptions,
+        ) -> NSApplicationPresentationOptions {
+            proposed | NSApplicationPresentationOptions::AutoHideToolbar
         }
 
         #[unsafe(method(windowWillStartLiveResize:))]

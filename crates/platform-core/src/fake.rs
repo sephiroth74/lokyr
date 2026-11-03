@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
-    LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace, ScreenRect, Size,
-    Sweep, Target, TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
+    Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace,
+    ScreenRect, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage, Waker, WindowAttributes,
+    WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -90,6 +90,11 @@ pub struct FakeWindow {
     pub appearance: Option<Appearance>,
     /// Whether it is a quick window, and its place while it shows.
     pub quick: Option<Option<QuickPlace>>,
+    /// Its titlebar, as the app gave it, which changes no size of the fake
+    /// one's.
+    pub titlebar: Titlebar,
+    /// The parts of its titlebar that the app gave as its content's.
+    pub titlebar_areas: Vec<ContentRect>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -682,6 +687,8 @@ impl Platform for Fake {
                 pointer_areas: Vec::new(),
                 appearance: None,
                 quick: None,
+                titlebar: Titlebar::default(),
+                titlebar_areas: Vec::new(),
             },
         );
         Ok(id)
@@ -713,6 +720,8 @@ impl Platform for Fake {
                 pointer_areas: Vec::new(),
                 appearance: None,
                 quick: Some(None),
+                titlebar: Titlebar::default(),
+                titlebar_areas: Vec::new(),
             },
         );
         Ok(id)
@@ -941,6 +950,18 @@ impl Platform for Fake {
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.pointer_areas = areas.to_vec();
+        }
+    }
+
+    fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.titlebar = titlebar;
+        }
+    }
+
+    fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.titlebar_areas = areas.to_vec();
         }
     }
 
