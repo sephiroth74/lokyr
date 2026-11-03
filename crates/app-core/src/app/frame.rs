@@ -19,7 +19,8 @@ use lokyr_platform_core::{
 use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
 };
-use lokyr_text_core::CellMetrics;
+use lokyr_text_core::{CellMetrics, FontBackend};
+use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{CursorLook, TextLook};
 use lokyr_ui_core::text::TextConfig;
 use lokyr_ui_core::theme::SelectionColors;
@@ -670,7 +671,7 @@ impl<B: Backend> App<B> {
             let label = self.texts.text(label);
             let fault = shown.category() == ErrorCategory::Fault;
             let area = (size.pixels.width, size.bar_pixels());
-            let glyph = |text: &cells::CellText<'_>| font.glyph(text);
+            let glyph = |text: &cells::CellText<'_>| weighed(font, text);
             let (rects, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
             items.extend(drawn);
             rects
@@ -732,7 +733,7 @@ impl<B: Backend> App<B> {
         if labelled {
             let text = size_label::text(grid.columns, grid.rows);
             let area = (size.pixels.width, size.pixels.height, size.bar_pixels());
-            let glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
+            let glyph = |shown: &cells::CellText<'_>| weighed(font, shown);
             items.extend(size_label::label(&text, &cell, area, glyph));
         }
         // A flash of the bell, the default text's color over the window.
@@ -763,7 +764,7 @@ impl<B: Backend> App<B> {
             };
             let area = (size.pixels.width, size.pixels.height, size.bar_pixels());
             let corner = self.config.debug.performance_corner;
-            let glyph = |shown: &cells::CellText<'_>| font.glyph(shown);
+            let glyph = |shown: &cells::CellText<'_>| weighed(font, shown);
             items.extend(performance::panel(lines, &cell, area, corner, glyph));
         }
         let list = DisplayList {
@@ -978,6 +979,20 @@ fn other_cells(
             batch
         })
         .collect()
+}
+
+/// The glyph of `shown`, of the terminal's font, for a text of the app's
+/// own drawn in it, as the notice's: of the system's weight where its
+/// coverage was smoothed and the terminal's text takes the weight.
+fn weighed<B: FontBackend>(
+    font: &mut Font<B>,
+    shown: &cells::CellText<'_>,
+) -> Option<cells::AtlasGlyph> {
+    let system_weight = cells::Glyphs::system_weight(&*font);
+    font.glyph(shown).map(|glyph| cells::AtlasGlyph {
+        smoothed: glyph.smoothed && system_weight,
+        ..glyph
+    })
 }
 
 /// The cells of `cell` pixels that `pixels` hold, one at least.

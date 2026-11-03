@@ -132,6 +132,9 @@ pub struct CellGlyph {
     /// The color that fills a glyph of coverage; a glyph of its own colors
     /// ignores it.
     pub color: Color,
+    /// Whether its coverage was drawn of the system's font smoothing, which
+    /// takes the system's weight where its batch asks for it.
+    pub smoothed: bool,
 }
 
 /// How a line across cells is drawn.
@@ -288,8 +291,8 @@ pub struct CellBatch {
     /// The cursor, when it shows: a block goes over the backgrounds and
     /// under the glyphs, the other shapes over the glyphs.
     pub cursor: Option<CellCursor>,
-    /// Whether its glyphs of coverage take the weight of the system's text,
-    /// as the interface's always do: dark text on a light background
+    /// Whether its glyphs of coverage drawn of the font smoothing take the
+    /// weight of the system's text: dark text on a light background
     /// thinner than its coverage blended as it is drawn.
     pub system_weight: bool,
 }
@@ -305,6 +308,10 @@ pub struct PlacedGlyph {
     pub y: i32,
     /// The color that fills a glyph of coverage.
     pub color: Color,
+    /// Whether its coverage takes the weight of the system's text: of a
+    /// glyph drawn of the font smoothing, of text that takes the weight, as
+    /// the interface's always does.
+    pub weight: bool,
 }
 
 /// A shape of the interface: a rectangle of rounded corners, filled inside
@@ -368,8 +375,7 @@ pub enum Item {
     },
     /// A pane's grid of cells.
     Cells(CellBatch),
-    /// Glyphs placed anywhere, as the interface's text, of the weight of
-    /// the system's text.
+    /// Glyphs placed anywhere, as the interface's text.
     Glyphs(Vec<PlacedGlyph>),
     /// Shapes, each over those before it, its shadow under itself alone.
     Shapes(Vec<Shape>),

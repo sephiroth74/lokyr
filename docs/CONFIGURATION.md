@@ -318,7 +318,8 @@ Whether the text takes the weight of the text of macOS's own apps, as Lokyr's ta
 - `true` draws dark text on a light background thinner, as macOS draws it: by a quarter at a scale of 1, by a sixth at 2. Light text on a dark background stays nearly as it is.
 - `false` draws the glyphs' edges as the font gives them, as before, which makes dark text on a light background look heavier than macOS's.
 - It costs nothing measurable, on the GPU or on the CPU.
-- It takes `thin-strokes` along: the darkening that macOS adds as it smooths fonts stays, or goes, as that key says.
+- It takes `thin-strokes` along: the darkening that macOS adds as it smooths fonts stays, or goes, as that key says. A thin glyph, or every glyph when font smoothing is off in macOS, stays as drawn, as macOS's own text then does.
+- The texts that Lokyr draws in the terminal's font, as the notices across the windows' top, the size shown as a window resizes and the performance's panel, follow it too.
 
 ## `[text]`
 

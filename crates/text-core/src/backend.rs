@@ -223,6 +223,13 @@ pub trait FontBackend {
         None
     }
 
+    /// Whether the glyphs that it draws of coverage take the system's font
+    /// smoothing, the darkening of their strokes that a thin glyph goes
+    /// without: `false` by default.
+    fn smooths(&mut self) -> bool {
+        false
+    }
+
     /// Whether `face` is the system's last resort, which draws a box of its
     /// block for any character that no other face has, as the cascade gives
     /// it: `false` when it cannot tell.

@@ -75,6 +75,7 @@ pub(crate) fn label(
             x: i32::try_from(pen).unwrap_or(i32::MAX) + found.left,
             y: i32::try_from(baseline).unwrap_or(i32::MAX) - found.top,
             color: TEXT,
+            weight: found.smoothed,
         });
     }
     vec![
@@ -122,6 +123,7 @@ mod tests {
                 },
                 left: 1,
                 top: 10,
+                smoothed: false,
             })
         };
         // A window of 400 by 300 pixels, its content 40 down: seven

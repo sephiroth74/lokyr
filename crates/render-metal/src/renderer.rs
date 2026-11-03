@@ -759,7 +759,7 @@ impl Frame<'_> {
                     .iter()
                     .map(|glyph| {
                         let position = [glyph.x as f32, glyph.y as f32];
-                        glyph_instance(position, &glyph.region, glyph.color, true)
+                        glyph_instance(position, &glyph.region, glyph.color, glyph.weight)
                     })
                     .collect();
                 self.glyphs(&instances);
@@ -934,7 +934,8 @@ impl Frame<'_> {
             .map(|glyph| {
                 let (x, y) = cell_origin(glyph.column, glyph.row);
                 let position = [(x + glyph.x) as f32, (y + glyph.y) as f32];
-                glyph_instance(position, &glyph.region, glyph.color, batch.system_weight)
+                let weight = batch.system_weight && glyph.smoothed;
+                glyph_instance(position, &glyph.region, glyph.color, weight)
             })
             .collect();
         self.glyphs(&glyphs);
@@ -1282,6 +1283,7 @@ mod tests {
                         x: 0,
                         y: 1,
                         color: light,
+                        smoothed: true,
                     })
                     .collect(),
                 lines: Vec::new(),
@@ -1443,6 +1445,7 @@ mod tests {
                             x: 1,
                             y: 3,
                             color: white,
+                            smoothed: false,
                         },
                         CellGlyph {
                             column: 2,
@@ -1451,6 +1454,7 @@ mod tests {
                             x: 1,
                             y: 1,
                             color: white,
+                            smoothed: false,
                         },
                     ],
                     lines: vec![CellLine {
@@ -1484,6 +1488,7 @@ mod tests {
                     x: 50,
                     y: 10,
                     color: white,
+                    weight: false,
                 }]),
                 Item::PopClip,
                 Item::PopClip,
@@ -1546,6 +1551,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 color: Color::from_rgb8(255, 255, 255),
+                weight: false,
             };
             SMALLEST
         ]));
@@ -1647,6 +1653,7 @@ mod tests {
             x: 0,
             y: 0,
             color: red,
+            weight: false,
         };
         let drawn = |renderer: &mut MetalRenderer, glyphs: Vec<PlacedGlyph>| {
             let list = DisplayList {
@@ -1867,6 +1874,7 @@ mod tests {
                     x: 0,
                     y: 0,
                     color,
+                    smoothed: true,
                 }],
                 system_weight,
                 ..CellBatch::default()
@@ -1878,6 +1886,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 color,
+                weight: true,
             }])
         };
         let near = |row: Vec<u8>, expected: [u8; 4]| {
@@ -1899,6 +1908,27 @@ mod tests {
             [255, 239, 191, 0],
         );
         near(row(&mut renderer, placed(black), white), [255, 239, 191, 0]);
+        // A glyph that was drawn without the font smoothing keeps its
+        // coverage, of the batch's weight or the glyph's.
+        let unsmoothed = |item: Item| match item {
+            Item::Cells(mut batch) => {
+                batch.glyphs[0].smoothed = false;
+                Item::Cells(batch)
+            }
+            Item::Glyphs(mut glyphs) => {
+                glyphs[0].weight = false;
+                Item::Glyphs(glyphs)
+            }
+            other => other,
+        };
+        near(
+            row(&mut renderer, unsmoothed(cells(true, black)), white),
+            [255, 191, 127, 0],
+        );
+        near(
+            row(&mut renderer, unsmoothed(placed(black)), white),
+            [255, 191, 127, 0],
+        );
         // White on black, of luminance 1: as drawn either way.
         near(
             row(&mut renderer, cells(true, white), black),

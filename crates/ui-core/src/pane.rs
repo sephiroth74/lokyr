@@ -22,6 +22,10 @@ pub struct AtlasGlyph {
     pub left: i32,
     /// How far its top edge is from the baseline, upwards.
     pub top: i32,
+    /// Whether its coverage was drawn of the system's font smoothing, which
+    /// the system's weight is of: not a thin glyph's, nor the terminal's own
+    /// drawings'.
+    pub smoothed: bool,
 }
 
 /// What a cell shows, for the caller to find its glyph.
@@ -209,6 +213,7 @@ impl RunBuilder {
                 // glyph above it.
                 y: baseline - placed.glyph.top - placed.y,
                 color: self.colors[placed.cell],
+                smoothed: placed.glyph.smoothed,
             });
         }
         self.text.clear();
@@ -962,6 +967,7 @@ pub fn preedit(
                 x: found.left,
                 y: i32::try_from(cell.baseline).unwrap_or(i32::MAX) - found.top,
                 color: foreground,
+                smoothed: found.smoothed,
             });
         }
         column += width;
@@ -1331,6 +1337,7 @@ mod tests {
                 },
                 left: 1,
                 top: 10,
+                smoothed: true,
             })
         }
     }
@@ -2041,6 +2048,7 @@ mod tests {
                             region,
                             left: 0,
                             top: 10,
+                            smoothed: true,
                         },
                         x: 0,
                         y: 0,

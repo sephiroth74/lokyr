@@ -30,6 +30,7 @@ use objc2_core_text::{
     kCTFontWeightTrait, kCTFontWidthTrait,
 };
 
+pub use raster::system_smooths_fonts;
 pub use system::{SystemText, system_text};
 
 /// The size at which the backend makes a face to read what does not depend
@@ -506,6 +507,10 @@ impl FontBackend for CoreText {
         });
         self.substitutes.insert(face, substitutes);
         substitutes
+    }
+
+    fn smooths(&mut self) -> bool {
+        self.smoothing
     }
 
     fn rasterize(

@@ -130,6 +130,9 @@ impl Hash for GlyphKey {
 #[derive(Debug)]
 pub struct Font<B> {
     backend: B,
+    /// Whether the backend draws its glyphs of coverage of the system's
+    /// font smoothing.
+    smooths: bool,
     config: FontConfig,
     resolved: Resolved,
     /// The faces of the text past ASCII, when the configuration names an
@@ -235,6 +238,7 @@ impl DrawnGlyph {
             },
             left: 0,
             top: 0,
+            smoothed: false,
         },
     };
 
@@ -430,7 +434,9 @@ impl<B: FontBackend> Font<B> {
         }
         let pixels = config.size.points() * scale;
         let cell = CellMetrics::new(&backend.metrics(resolved.faces.regular.id, pixels), &config);
+        let smooths = backend.smooths();
         Ok(Self {
+            smooths,
             backend,
             config,
             pixels,
@@ -522,7 +528,8 @@ impl<B: FontBackend> Font<B> {
 
     /// The glyph of `region` in the middle of its cell, of two columns when
     /// `wide`, across and down.
-    fn in_the_middle(&self, region: AtlasRegion, wide: bool) -> AtlasGlyph {
+    fn in_the_middle(&self, glyph: AtlasGlyph, wide: bool) -> AtlasGlyph {
+        let region = glyph.region;
         let half = |cell: u32, glyph: u32| (i64::from(cell) - i64::from(glyph)) / 2;
         let left = half(self.cell.width * if wide { 2 } else { 1 }, region.width);
         let below_top = half(self.cell.height, region.height);
@@ -531,6 +538,7 @@ impl<B: FontBackend> Font<B> {
             left: i32::try_from(left).unwrap_or(0),
             // The top edge's rows above the baseline.
             top: i32::try_from(i64::from(self.cell.baseline) - below_top).unwrap_or(0),
+            smoothed: glyph.smoothed,
         }
     }
 
@@ -736,7 +744,7 @@ impl<B: FontBackend> Font<B> {
         }
         let size = self.fitted_pixels(found.face, wide);
         let glyph = self.draw_at(found, size, thin, false)?;
-        Some(self.in_the_middle(glyph.region, wide))
+        Some(self.in_the_middle(glyph, wide))
     }
 
     /// The glyph `found` at `size` in the atlas, of thin strokes when
@@ -838,10 +846,18 @@ impl<B: FontBackend> Font<B> {
         if !self.drawn.contains(&(region, key)) {
             self.drawn.push((region, key));
         }
+        // The glyphs of coverage that the backend drew of its font
+        // smoothing: not the terminal's drawings, nor the thin ones.
+        let smoothed = self.smooths
+            && key.face != SPRITES
+            && !key.thin
+            && self.config.antialias
+            && region.texture == Texture::Coverage;
         let glyph = AtlasGlyph {
             region,
             left: placement.left,
             top: placement.top,
+            smoothed,
         };
         self.this_frame[slot] = DrawnGlyph {
             frame: Some(self.frame),
@@ -1129,6 +1145,7 @@ impl<B: FontBackend> Font<B> {
                 x: left,
                 y: (baseline - glyph.y).round() as i32 - drawn.top,
                 color,
+                weight: drawn.smoothed,
             });
         }
         (placed, end)
@@ -1185,6 +1202,7 @@ impl<B: FontBackend> Font<B> {
             x: middle(x, drawn.region.width),
             y: middle(y, drawn.region.height),
             color,
+            weight: drawn.smoothed,
         })
     }
 
@@ -1551,6 +1569,8 @@ mod tests {
         rendered: Vec<(FaceId, u16, Rendering)>,
         /// The faces asked whether they substitute glyphs in context.
         substituting: Vec<FaceId>,
+        /// Whether it draws its glyphs of the font smoothing.
+        smoothing: bool,
     }
 
     fn is_cjk(character: char) -> bool {
@@ -1739,6 +1759,10 @@ mod tests {
             }
         }
 
+        fn smooths(&mut self) -> bool {
+            self.smoothing
+        }
+
         fn rasterize(
             &mut self,
             face: FaceId,
@@ -1768,6 +1792,52 @@ mod tests {
             style,
             wide: false,
             dark: false,
+        }
+    }
+
+    #[test]
+    fn the_system_s_weight_is_of_smoothed_glyphs_alone() {
+        let font = |smoothing: bool, config: FontConfig| {
+            let backend = Squares {
+                smoothing,
+                ..Squares::default()
+            };
+            Font::new(backend, config, 1.0).unwrap()
+        };
+        let color = Color::from_rgb8(10, 20, 30);
+        let weights = |font: &mut Font<Squares>| {
+            let (glyphs, _) = font.interface_text("ab", (0.0, 20.0), color, false);
+            let cell = font.glyph(&shown("a", &Style::DEFAULT)).unwrap();
+            let sprite = font.glyph(&shown("\u{2500}", &Style::DEFAULT)).unwrap();
+            (
+                glyphs.iter().map(|glyph| glyph.weight).collect::<Vec<_>>(),
+                cell.smoothed,
+                sprite.smoothed,
+            )
+        };
+        // Smoothed: the text and the cell's glyph; never the terminal's own
+        // drawing.
+        let mut smoothed = font(true, FontConfig::default());
+        assert_eq!(weights(&mut smoothed), (vec![true, true], true, false));
+        // Without the backend's smoothing, of thin strokes, or without
+        // antialiasing: none.
+        let thin = FontConfig {
+            thin_strokes: ThinStrokes::Always,
+            ..FontConfig::default()
+        };
+        let aliased = FontConfig {
+            antialias: false,
+            ..FontConfig::default()
+        };
+        for (smoothing, config) in [
+            (false, FontConfig::default()),
+            (true, thin),
+            (true, aliased),
+        ] {
+            assert_eq!(
+                weights(&mut font(smoothing, config)),
+                (vec![false, false], false, false)
+            );
         }
     }
 

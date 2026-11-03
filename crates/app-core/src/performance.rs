@@ -323,6 +323,7 @@ pub(crate) fn panel(
                 x: i32::try_from(pen).unwrap_or(i32::MAX) + found.left,
                 y: i32::try_from(baseline).unwrap_or(i32::MAX) - found.top,
                 color: TEXT,
+                weight: found.smoothed,
             });
         }
     }
@@ -500,6 +501,7 @@ mod tests {
                 },
                 left: 1,
                 top: 11,
+                smoothed: false,
             })
         };
         let items = panel(&lines, &cell, (800, 600, 56), Corner::TopRight, glyph);

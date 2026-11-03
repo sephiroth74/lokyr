@@ -15,8 +15,6 @@ use objc2_core_text::{
     kCTForegroundColorFromContextAttributeName,
 };
 
-use crate::raster;
-
 /// The points around the line, on each side.
 const MARGIN: CGFloat = 4.0;
 
@@ -34,15 +32,14 @@ pub struct SystemText {
 
 /// `text` on one line, in the system's interface font of `points`, at
 /// `scale` pixels a point, in `foreground` on `background`, sRGB's
-/// components, as AppKit draws a label: of the system's font smoothing,
-/// at positions of fractions of a pixel. `None` if Core Graphics makes no
-/// bitmap of it.
+/// components, as AppKit draws a label: of font smoothing when
+/// `smoothing`, as the system's preference has it, at positions of
+/// fractions of a pixel. `None` if Core Graphics makes no bitmap of it.
 pub fn system_text(
     text: &str,
-    points: f64,
-    scale: f64,
-    foreground: [u8; 3],
-    background: [u8; 3],
+    (points, scale): (f64, f64),
+    (foreground, background): ([u8; 3], [u8; 3]),
+    smoothing: bool,
 ) -> Option<SystemText> {
     // SAFETY: the system's own font, of a size.
     let font = unsafe { CTFont::new_ui_font_for_language(CTFontUIFontType::System, points, None) }?;
@@ -107,7 +104,7 @@ pub fn system_text(
     CGContext::scale_ctm(drawing, scale, scale);
     CGContext::set_should_antialias(drawing, true);
     CGContext::set_allows_font_smoothing(drawing, true);
-    CGContext::set_should_smooth_fonts(drawing, raster::system_smooths_fonts());
+    CGContext::set_should_smooth_fonts(drawing, smoothing);
     CGContext::set_allows_font_subpixel_positioning(drawing, true);
     CGContext::set_should_subpixel_position_fonts(drawing, true);
     CGContext::set_rgb_fill_color(

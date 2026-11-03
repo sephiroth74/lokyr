@@ -120,7 +120,7 @@ pub(crate) fn rasterize_many(
 /// value is read as Core Foundation's preferences read an integer, from the
 /// application's domain or the global one, a string of digits too, as
 /// `defaults write -g AppleFontSmoothing 0` writes one.
-pub(crate) fn system_smooths_fonts() -> bool {
+pub fn system_smooths_fonts() -> bool {
     let key = CFString::from_static_str("AppleFontSmoothing");
     // SAFETY: Core Foundation's constant.
     let domain = unsafe { kCFPreferencesCurrentApplication };
