@@ -22,9 +22,10 @@ use lokyr_plugin_sdk::view::{
 use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
 use lokyr_text_core::{FontConfig, Size};
+use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
-use lokyr_ui_core::paint::paint;
+use lokyr_ui_core::paint::{Shown, paint};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::Tree;
@@ -537,7 +538,11 @@ fn check_view(dark: bool, scale: u32) {
         &mut drawing.font,
         &variant.tokens,
         (0.0, 0.0),
-        (dark, None),
+        Shown {
+            dark,
+            focused: None,
+            fields: &Fields::new(),
+        },
     );
     let list = DisplayList {
         background: lokyr_render_core::Color::from_rgb8(

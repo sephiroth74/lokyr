@@ -17,6 +17,7 @@
 
 pub mod action;
 pub mod cursor;
+pub mod field;
 pub mod focus;
 pub mod font;
 pub mod interface;

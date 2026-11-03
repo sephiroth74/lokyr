@@ -160,7 +160,8 @@ impl Tree {
     /// Whether `id` takes the keyboard's focus: `false` if the tree lacks
     /// it.
     pub fn focusable(&self, id: NodeId) -> bool {
-        self.entry(id).is_some_and(|entry| entry.focusable)
+        self.entry(id)
+            .is_some_and(|entry| entry.focusable || entry.kind.takes_focus())
     }
 
     /// The node of `key`, if the tree has one.
@@ -645,6 +646,13 @@ mod tests {
             }
         );
         assert!(tree.focusable(icon));
+        // A field holds its state by its key, and takes the focus of its
+        // own.
+        let field = Node::container(vec![Node::field("Find")]);
+        assert_eq!(tree.update(&field), Err(Invalid::NoKey));
+        tree.update(&Node::container(vec![Node::field("Find").key("find")]))
+            .unwrap();
+        assert!(tree.focusable(tree.children(tree.root().unwrap())[0]));
     }
 
     #[test]

@@ -18,6 +18,7 @@ use taffy::prelude::{
     LengthPercentageAuto, Rect, Size, Style, TaffyTree,
 };
 
+use crate::field;
 use crate::tree::{Changes, NodeId, Tree};
 
 /// What sizes the leaves of the view tree that take their content's size.
@@ -27,6 +28,13 @@ pub trait Measure {
 
     /// The size of the icon `name`, in points.
     fn icon(&mut self, name: &str) -> (f32, f32);
+
+    /// The natural size of a text field, in points: of its width, and of a
+    /// line of text within its padding.
+    fn field(&mut self) -> (f32, f32) {
+        let (_, line) = self.text("");
+        (field::WIDTH, line + 2.0 * field::PADDING.0)
+    }
 }
 
 /// A node's place and size, in pixels, from the root's top left corner.
@@ -54,6 +62,7 @@ struct Leaf {
 enum Content {
     Text(String),
     Icon(String),
+    Field,
 }
 
 /// The layout of a view tree.
@@ -191,6 +200,7 @@ impl Layout {
                             *leaf.measured.get_or_insert_with(|| match &leaf.content {
                                 Content::Text(text) => measure.text(text),
                                 Content::Icon(name) => measure.icon(name),
+                                Content::Field => measure.field(),
                             })
                         });
                         Size {
@@ -256,6 +266,7 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
     let content = match kind {
         Kind::Text(text) => Content::Text(text.clone()),
         Kind::Icon(name) => Content::Icon(name.clone()),
+        Kind::Field(_) => Content::Field,
         Kind::Container | Kind::Spacer => return None,
     };
     Some(Leaf {

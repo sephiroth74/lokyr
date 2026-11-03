@@ -15,6 +15,7 @@ use lokyr_text_core::{
 };
 use lokyr_vt_core::unicode;
 
+use crate::field::{self, Carets};
 use crate::interface::{self, InterfaceConfig, InterfaceFace};
 use crate::layout::Measure;
 use crate::pane::{AtlasGlyph, CellText, Glyphs as GlyphSource, Run, RunGlyph};
@@ -1154,6 +1155,34 @@ impl<B: FontBackend> Font<B> {
         (placed, end)
     }
 
+    /// The places between the grapheme clusters of `text` in the
+    /// interface's face, in points from its start, as
+    /// [`Font::interface_text`] draws it: each cluster's first byte and the
+    /// caret's place before it, the place of the shaping's first glyph of
+    /// that cluster or after it, then the text's end and its width.
+    pub fn interface_carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+        let (size, face) = {
+            let interface = self.interface();
+            (interface.size(), interface.face())
+        };
+        let features = Features { ligatures: true };
+        let width = self.backend.width(face, size, text, features);
+        let shaped = self
+            .shaped
+            .shape(&mut self.backend, face, size, features, text);
+        field::boundaries(text)
+            .into_iter()
+            .map(|byte| {
+                let x = shaped
+                    .iter()
+                    .find(|glyph| glyph.cluster as usize >= byte)
+                    .filter(|_| byte < text.len())
+                    .map_or(width, |glyph| glyph.x);
+                (byte, x)
+            })
+            .collect()
+    }
+
     /// The glyph of the icon `name`, in the middle of the square of `side`
     /// pixels whose top left corner is `(x, y)`, in `color`: the symbols'
     /// font's, at the size whose advance, an em, is the icon's ink, most of
@@ -1519,6 +1548,12 @@ impl<B: FontBackend> Measure for Font<B> {
     fn icon(&mut self, _name: &str) -> (f32, f32) {
         let line = self.interface().line();
         (line, line)
+    }
+}
+
+impl<B: FontBackend> Carets for Font<B> {
+    fn carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+        self.interface_carets(text)
     }
 }
 

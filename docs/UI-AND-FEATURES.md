@@ -15,7 +15,14 @@ This document covers our UI engine and the features the MVP cannot ship without:
 
 **Widgets**: those that the chrome and F3's plugins need, as the user chose on 1 November 2026. A plugin describes its UI with them and the host draws it: no plugin draws pixels or opens a native window, so that its UI takes the theme, the focus, the input method and accessibility, costs the frame no more than the host allows, and no plugin can pass itself off as the system.
 - container, text, icon, spacer, separator;
-- text field with IME, selection and clipboard, whose text the host holds;
+- text field with IME, selection and clipboard, whose text the host holds:
+  - one line, of a placeholder while it is empty, of the theme's `field.bg`, `field.border` and `field.selection` where its node gives no box of its own; it takes the keyboard's focus of its own, and a key, which it requires;
+  - its caret moves by whole grapheme clusters, so that it never stands inside an emoji of several code points or a letter and its marks, and by words, runs of letters and digits;
+  - macOS's keys of a text field: the arrows, with Option by words and with Command to the line's ends, Shift extending the selection; Backspace and Delete, with Option by words and with Command to the line's ends; Control-A, E, B, F, H, D and K; Command-A, C, X, V, Z and Shift-Command-Z; the keys that it leaves, as Command-W, go to the bindings;
+  - the pointer: a press places the caret, Shift extends the selection to it, a double click selects a word, a triple click the whole text, and a drag selects, which its plugin learns nothing of; Tab, as it gives it the focus, selects its whole text;
+  - a paste takes the clipboard's lines on one line; the field keeps its own undo, of 100 edits, typing undone at once until the caret moves;
+  - it scrolls across to its caret while it has the focus, and shows its text's start without it;
+  - its plugin learns of its text through `input-changed`, at each change, and `submit`, as Return goes to it, and sets it through a request, which tells no `input-changed`;
 - button and toggle;
 - virtualized list, of flat items and a row's template, and scroll area;
 - tooltip;

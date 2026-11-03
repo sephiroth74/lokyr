@@ -66,6 +66,18 @@ pub enum Kind {
     /// Room, which grows by default, as between the left and the right of a
     /// bar.
     Spacer,
+    /// A field of one line of text, whose text, caret and selection the
+    /// host keeps by the node's key, which its plugin learns of through
+    /// `input-changed` and `submit`, and sets through a request.
+    Field(Field),
+}
+
+/// A text field's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Field {
+    /// What it shows while it is empty, as `Find`.
+    pub placeholder: String,
 }
 
 impl Kind {
@@ -74,7 +86,14 @@ impl Kind {
     pub fn holds_state(&self) -> bool {
         match self {
             Self::Container | Self::Text(_) | Self::Icon(_) | Self::Spacer => false,
+            Self::Field(_) => true,
         }
+    }
+
+    /// Whether a node of the kind takes the keyboard's focus of its own, as
+    /// a field does, whatever its node says.
+    pub fn takes_focus(&self) -> bool {
+        matches!(self, Self::Field(_))
     }
 
     /// Whether a node of the kind has children.
@@ -234,6 +253,16 @@ pub enum UiEventKind {
         /// The value.
         value: String,
     },
+    /// A field's text changed, as its user edited it.
+    InputChanged {
+        /// Its text now.
+        text: String,
+    },
+    /// Return pressed in a field.
+    Submit {
+        /// Its text.
+        text: String,
+    },
 }
 
 /// A node's border.
@@ -383,6 +412,13 @@ impl Node {
         Self::new(Kind::Icon(name.into()))
     }
 
+    /// A text field, of its placeholder; its key, which it needs, follows.
+    pub fn field(placeholder: impl Into<String>) -> Self {
+        Self::new(Kind::Field(Field {
+            placeholder: placeholder.into(),
+        }))
+    }
+
     /// Room that grows.
     pub fn spacer() -> Self {
         let mut spacer = Self::new(Kind::Spacer);
@@ -461,17 +497,34 @@ mod tests {
         // leave them out.
         let leaf: Node = serde_json::from_str(r#"{"key":null,"kind":{"text":"a"}}"#).unwrap();
         assert_eq!(leaf, Node::text("a"));
+        // A field, of its placeholder or without it.
+        let field: Node =
+            serde_json::from_str(r#"{"key":"find","kind":{"field":{"placeholder":"Find"}}}"#)
+                .unwrap();
+        assert_eq!(field, Node::field("Find").key("find"));
+        let field: Node = serde_json::from_str(r#"{"key":"find","kind":{"field":{}}}"#).unwrap();
+        assert_eq!(field, Node::field("").key("find"));
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
             UiEventKind::SetValue {
                 value: "main".to_owned(),
             },
+            UiEventKind::InputChanged {
+                text: "ma".to_owned(),
+            },
+            UiEventKind::Submit {
+                text: "main".to_owned(),
+            },
         ];
         let json = serde_json::to_string(&events).unwrap();
         assert_eq!(
             json,
-            r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},{"kind":"set-value","value":"main"}]"#
+            concat!(
+                r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
+                r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma"},"#,
+                r#"{"kind":"submit","text":"main"}]"#
+            )
         );
         assert_eq!(
             serde_json::from_str::<Vec<UiEventKind>>(&json).unwrap(),

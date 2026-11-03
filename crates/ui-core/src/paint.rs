@@ -6,10 +6,11 @@
 //! over its siblings before it; and the ring of the keyboard's focus around
 //! the node that has it, over them all, within its ancestors' clips.
 
-use lokyr_plugin_sdk::view::{Kind, Style};
+use lokyr_plugin_sdk::view::{self, Kind, Style};
 use lokyr_render_core::{Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
+use crate::field::{self, FieldState, Fields};
 use crate::font::Font;
 use crate::layout::{Frame, Layout};
 use crate::theme::Tokens;
@@ -23,17 +24,30 @@ const RING: f32 = 3.0;
 /// of any drawable, which the clips around it cut.
 const ACROSS: (i32, u32) = (-(1 << 28), 1 << 29);
 
+/// What a tree shows beside its nodes: its appearance, the node with the
+/// keyboard's focus, and its fields' text, caret and selection.
+#[derive(Clone, Copy, Debug)]
+pub struct Shown<'a> {
+    /// Whether the appearance is dark.
+    pub dark: bool,
+    /// The node with the keyboard's focus, if the tree has it.
+    pub focused: Option<NodeId>,
+    /// The tree's fields.
+    pub fields: &'a Fields,
+}
+
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
 /// window's pixels: its colors of `tokens`, its texts and icons of `font`,
-/// at the layout's scale, of the dark appearance when `dark`; the ring of
-/// the focus around `focused`, if it is the tree's.
+/// at the layout's scale, as `shown` has it: of the dark appearance or the
+/// light one, the ring of the focus around its node, if it is the tree's,
+/// and its fields' text, caret and selection.
 pub fn paint<B: FontBackend>(
     tree: &Tree,
     layout: &Layout,
     font: &mut Font<B>,
     tokens: &Tokens,
     origin: (f32, f32),
-    (dark, focused): (bool, Option<NodeId>),
+    shown: Shown<'_>,
 ) -> Vec<Item> {
     let mut painter = Painter {
         tree,
@@ -41,8 +55,9 @@ pub fn paint<B: FontBackend>(
         font,
         tokens,
         origin,
-        dark,
-        focused,
+        dark: shown.dark,
+        focused: shown.focused,
+        fields: shown.fields,
         clip: None,
         ring: None,
         items: Vec::new(),
@@ -76,6 +91,7 @@ struct Painter<'a, B> {
     origin: (f32, f32),
     dark: bool,
     focused: Option<NodeId>,
+    fields: &'a Fields,
     /// The clips of the node painted, as one: `None` for none.
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
@@ -103,14 +119,20 @@ impl<B: FontBackend> Painter<'_, B> {
             .as_ref()
             .and_then(|token| self.tokens.get(&token.0))
             .unwrap_or(inherited);
+        // A field of no box of its own takes a field's.
+        let boxed;
+        let style = match kind {
+            Kind::Field(_) if style.background.is_none() && style.border.is_none() => {
+                boxed = field_box(style);
+                &boxed
+            }
+            _ => style,
+        };
         if self.focused == Some(id) {
             self.ring = self.ring(frame, style).map(|ring| (ring, self.clip));
         }
         if let Some(shape) = self.shape(frame, style) {
-            match self.items.last_mut() {
-                Some(Item::Shapes(shapes)) => shapes.push(shape),
-                _ => self.items.push(Item::Shapes(vec![shape])),
-            }
+            self.push_shape(shape);
         }
         match kind {
             Kind::Text(text) => {
@@ -118,6 +140,7 @@ impl<B: FontBackend> Painter<'_, B> {
                 self.text(text, frame, natural, color);
             }
             Kind::Icon(name) => self.icon(name, frame, color),
+            Kind::Field(field) => self.field(id, field, (frame, style), color),
             Kind::Container | Kind::Spacer => {}
         }
         let children = tree.children(id);
@@ -199,6 +222,82 @@ impl<B: FontBackend> Painter<'_, B> {
         })
     }
 
+    /// Adds `shape` to the shapes of the item before, if they are shapes.
+    fn push_shape(&mut self, shape: Shape) {
+        match self.items.last_mut() {
+            Some(Item::Shapes(shapes)) => shapes.push(shape),
+            _ => self.items.push(Item::Shapes(vec![shape])),
+        }
+    }
+
+    /// The field `id` within its box at `frame`, of `style`, inside its
+    /// border: its selection, behind its text, its text in `color` or its
+    /// placeholder in the secondary text's, scrolled across as its state
+    /// has it, and its caret, while it has the keyboard's focus.
+    fn field(
+        &mut self,
+        id: NodeId,
+        field: &view::Field,
+        (frame, style): (Frame, &Style),
+        color: Color,
+    ) {
+        let scale = self.layout.scale();
+        let state = self.tree.key(id).and_then(|key| self.fields.state(key));
+        let text = state.map_or("", FieldState::text);
+        let focused = self.focused == Some(id);
+        let face = self.font.interface();
+        let (line, ascent) = (face.line() * scale, face.ascent() * scale);
+        let top = (frame.y + (frame.height - line) / 2.0).round();
+        let baseline = top + ascent.round();
+        let scroll = state.map_or(0.0, FieldState::scroll);
+        let start = frame.x + field::PADDING.1 * scale - scroll * scale;
+        self.items
+            .push(Item::PushClip(inside_border(rect(frame), style, scale)));
+        let places = self.font.interface_carets(text);
+        let x = |byte: usize| {
+            let points = places
+                .iter()
+                .find(|(at, _)| *at >= byte)
+                .map_or(0.0, |&(_, x)| x);
+            (start + points * scale).round()
+        };
+        let line_rect = |left: f32, right: f32| Rect {
+            x: left as i32,
+            y: top as i32,
+            width: (right - left).max(0.0) as u32,
+            height: line.round() as u32,
+        };
+        let selection = state.map(FieldState::selection).unwrap_or_default();
+        if focused
+            && !selection.is_empty()
+            && let Some(selected) = self.tokens.get("field.selection")
+        {
+            let rect = line_rect(x(selection.start), x(selection.end));
+            self.push_shape(Shape::filled(rect, selected));
+        }
+        if text.is_empty() {
+            let placeholder = self.tokens.get("text.secondary").unwrap_or(color);
+            let (glyphs, _) = self.font.interface_text(
+                &field.placeholder,
+                (start, baseline),
+                placeholder,
+                self.dark,
+            );
+            self.glyphs(glyphs);
+        } else {
+            let (glyphs, _) = self
+                .font
+                .interface_text(text, (start, baseline), color, self.dark);
+            self.glyphs(glyphs);
+        }
+        if focused && selection.is_empty() {
+            let caret = x(state.map_or(0, FieldState::caret));
+            let width = scale.round().max(1.0);
+            self.push_shape(Shape::filled(line_rect(caret, caret + width), color));
+        }
+        self.items.push(Item::PopClip);
+    }
+
     /// The glyphs of `text`, on its line in the middle of `frame`, clipped
     /// across to it where `natural`, its width as the layout measured it, in
     /// points, passes it, as a title too long for its room: not down, where
@@ -251,6 +350,24 @@ impl<B: FontBackend> Painter<'_, B> {
             Some(Item::Glyphs(before)) => before.extend(glyphs),
             _ => self.items.push(Item::Glyphs(glyphs)),
         }
+    }
+}
+
+/// `style` of a field's box, as a field of no box of its own takes: the
+/// field's background, and its border, of rounded corners.
+fn field_box(style: &Style) -> Style {
+    Style {
+        background: Some(view::Token::from("field.bg")),
+        border: Some(view::Border {
+            color: view::Token::from("field.border"),
+            width: 1.0,
+        }),
+        radius: if style.radius > 0.0 {
+            style.radius
+        } else {
+            4.0
+        },
+        ..style.clone()
     }
 }
 
@@ -318,7 +435,21 @@ mod tests {
     };
 
     use super::*;
+
+    use crate::field::Clipboard;
     use crate::theme::Theme;
+    use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Mods};
+
+    /// What a tree of no fields shows, of the dark appearance when `dark`,
+    /// of the focus on `focused`.
+    fn shown(dark: bool, focused: Option<NodeId>) -> Shown<'static> {
+        static NONE: std::sync::OnceLock<Fields> = std::sync::OnceLock::new();
+        Shown {
+            dark,
+            focused,
+            fields: NONE.get_or_init(Fields::new),
+        }
+    }
 
     const SYMBOLS: FaceId = FaceId(1);
 
@@ -427,7 +558,7 @@ mod tests {
         layout.update(&tree, &changes);
         layout.compute(&tree, Some(width * scale), None, &mut font);
         let tokens = &Theme::builtin().dark.tokens;
-        let items = paint(&tree, &layout, &mut font, tokens, origin, (true, None));
+        let items = paint(&tree, &layout, &mut font, tokens, origin, shown(true, None));
         (tree, layout, items)
     }
 
@@ -689,7 +820,7 @@ mod tests {
                 &mut font,
                 tokens,
                 (10.0, 0.0),
-                (true, Some(field)),
+                shown(true, Some(field)),
             );
             let [
                 Item::Shapes(_),
@@ -730,7 +861,14 @@ mod tests {
                 }]
             );
             // Without the focus, or of a node that the tree lacks, no ring.
-            let unfocused = paint(&tree, &layout, &mut font, tokens, (10.0, 0.0), (true, None));
+            let unfocused = paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (10.0, 0.0),
+                shown(true, None),
+            );
             assert_eq!(unfocused[..], focused[..4]);
             let mut other = Tree::new();
             other
@@ -743,7 +881,7 @@ mod tests {
                 &mut font,
                 tokens,
                 (10.0, 0.0),
-                (true, Some(elsewhere)),
+                shown(true, Some(elsewhere)),
             );
             assert_eq!(wrong[..], focused[..4]);
         }
@@ -767,7 +905,7 @@ mod tests {
             &mut font,
             tokens,
             (0.0, 0.0),
-            (true, Some(field)),
+            shown(true, Some(field)),
         );
         let [.., Item::PopClip, Item::Shapes(ring)] = &items[..] else {
             panic!("{items:#?}");
@@ -784,12 +922,174 @@ mod tests {
             &mut font,
             tokens,
             (0.0, 0.0),
-            (true, Some(root)),
+            shown(true, Some(root)),
         );
         let Some(Item::Shapes(last)) = items.last() else {
             panic!("{items:#?}");
         };
         assert_eq!(last.last().unwrap().border_color, token("focus.ring"));
+    }
+
+    #[test]
+    fn a_field_paints_its_text_its_selection_and_its_caret_inside_its_border() {
+        struct Nothing;
+        impl Clipboard for Nothing {
+            fn read(&mut self) -> Option<String> {
+                None
+            }
+            fn write(&mut self, _: &str) {}
+        }
+        // At a scale of 2, a field of 160 by 21 points, its text of 13
+        // points, 7.8 a character, from its padding of 6, 12 pixels in, on
+        // its line 26 high, 8 down.
+        let scale = 2.0;
+        let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+        let mut tree = Tree::new();
+        let root = Node::container(vec![Node::field("Find").key("find")]);
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(scale);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0 * scale), None, &mut font);
+        let field = tree.children(tree.root().unwrap())[0];
+        assert_eq!(layout.frame(&tree, field).unwrap().height, 42.0);
+        let tokens = &Theme::builtin().dark.tokens;
+        let mut fields = Fields::new();
+        let painted = |font: &mut Font<Blocks>, fields: &Fields, focused: Option<NodeId>| {
+            paint(
+                &tree,
+                &layout,
+                font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused,
+                    fields,
+                },
+            )
+        };
+        let inside = Rect {
+            x: 2,
+            y: 2,
+            width: 316,
+            height: 38,
+        };
+        let line = |left: i32, right: i32| Rect {
+            x: left,
+            y: 8,
+            width: (right - left) as u32,
+            height: 26,
+        };
+        // Empty: its placeholder, in the secondary text's color.
+        let items = painted(&mut font, &fields, None);
+        let [
+            Item::Shapes(field_box),
+            Item::PushClip(clip),
+            Item::Glyphs(placeholder),
+            Item::PopClip,
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(field_box[0].fill, token("field.bg"));
+        assert_eq!(field_box[0].border_color, token("field.border"));
+        assert_eq!(*clip, inside);
+        assert_eq!(placeholder.len(), 4);
+        assert_eq!(placeholder[0].x, 12);
+        assert!(
+            placeholder
+                .iter()
+                .all(|glyph| glyph.color == token("text.secondary"))
+        );
+        // Focused, its caret after its text, of its color, a pixel a point
+        // wide; without the focus, no caret.
+        let key = view::Key::from("find");
+        fields.set_text(&key, "abc");
+        let items = painted(&mut font, &fields, Some(field));
+        let [
+            Item::Shapes(_),
+            Item::PushClip(_),
+            Item::Glyphs(text),
+            Item::Shapes(caret),
+            Item::PopClip,
+            Item::Shapes(_),
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(text.len(), 3);
+        assert_eq!(caret[..], [Shape::filled(line(59, 61), text[0].color)]);
+        let items = painted(&mut font, &fields, None);
+        assert!(matches!(
+            &items[..],
+            [
+                Item::Shapes(_),
+                Item::PushClip(_),
+                Item::Glyphs(_),
+                Item::PopClip
+            ]
+        ));
+        // A selection of `bc`, behind the text, and no caret; none shown
+        // without the focus.
+        let shift_left = KeyEvent {
+            key: Key::Left,
+            action: KeyAction::Press,
+            mods: Mods {
+                shift: true,
+                ..Mods::NONE
+            },
+            text: "",
+            unmodified: "",
+            base_layout: None,
+        };
+        for _ in 0..2 {
+            fields.key(&tree, field, &shift_left, &mut Nothing);
+        }
+        let items = painted(&mut font, &fields, Some(field));
+        let [
+            Item::Shapes(_),
+            Item::PushClip(_),
+            Item::Shapes(selection),
+            Item::Glyphs(_),
+            Item::PopClip,
+            Item::Shapes(_),
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(
+            selection[..],
+            [Shape::filled(line(28, 59), token("field.selection"))]
+        );
+        let items = painted(&mut font, &fields, None);
+        assert!(matches!(
+            &items[..],
+            [
+                Item::Shapes(_),
+                Item::PushClip(_),
+                Item::Glyphs(_),
+                Item::PopClip
+            ]
+        ));
+        // A text longer than its room, of 30 characters, 234 points, scrolled
+        // to its caret at its end: the caret at the room's right, 148 points
+        // from its left, and its first glyph 172 pixels left of its place.
+        fields.set_text(&key, &"x".repeat(30));
+        fields.follow(&tree, &layout, Some(field), &mut font);
+        let items = painted(&mut font, &fields, Some(field));
+        let [
+            Item::Shapes(_),
+            Item::PushClip(_),
+            Item::Glyphs(text),
+            Item::Shapes(caret),
+            Item::PopClip,
+            Item::Shapes(_),
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(text[0].x, 12 - 172);
+        assert_eq!(caret[0].rect, line(308, 310));
     }
 
     #[test]
@@ -829,7 +1129,7 @@ mod tests {
             &mut font,
             tokens,
             (0.0, 0.0),
-            (true, Some(first)),
+            shown(true, Some(first)),
         );
         assert!(!items.is_empty());
     }
@@ -866,7 +1166,14 @@ mod tests {
             layout.update(&tree, &changes);
             layout.compute(&tree, None, None, &mut font);
             let tokens = &Theme::builtin().light.tokens;
-            let items = paint(&tree, &layout, &mut font, tokens, (0.0, 0.0), (false, None));
+            let items = paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (0.0, 0.0),
+                shown(false, None),
+            );
             assert!(
                 !items.iter().any(|item| matches!(item, Item::PushClip(_))),
                 "{scale}: {items:#?}"

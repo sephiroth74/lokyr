@@ -8,22 +8,23 @@ use std::path::Path;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
-    AppEvent, Appearance, Handler, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, Platform,
-    Point, PointerArea, PointerShape, ScrollDelta, Size, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton,
+    Platform, Point, PointerArea, PointerShape, ScrollDelta, Size, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
-use lokyr_plugin_sdk::view::{self, UiEventKind};
+use lokyr_plugin_sdk::view::{self, Kind, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
 use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
 use lokyr_text_core::FontConfig;
+use lokyr_ui_core::field::{Clipboard, Fields};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
-use lokyr_ui_core::paint::paint;
+use lokyr_ui_core::paint::{Shown, paint};
 use lokyr_ui_core::pointer::{self, Button, NodeEvent, Pointer};
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
-use lokyr_vt_core::input::{self as vt, KeyAction, Mods};
+use lokyr_vt_core::input::{self as vt, KeyAction, Keypad, Mods};
 
 use crate::gallery::Gallery;
 
@@ -74,6 +75,7 @@ struct View {
     layout: Layout,
     pointer: Pointer,
     focus: Focus<u8>,
+    fields: Fields,
 }
 
 impl View {
@@ -84,24 +86,41 @@ impl View {
             layout: Layout::new(scale),
             pointer: Pointer::new(),
             focus: Focus::new(),
+            fields: Fields::new(),
         };
         view.render();
         view
     }
 
-    /// Takes the gallery's view anew, diffed against the last.
+    /// Takes the gallery's view anew, diffed against the last, and the
+    /// texts that it sets in its fields.
     fn render(&mut self) {
         let Ok(changes) = self.tree.update(&self.gallery.view()) else {
             return;
         };
         self.layout.update(&self.tree, &changes);
         self.focus.updated(PANEL, &self.tree);
+        self.fields.updated(&self.tree);
+        for (key, text) in self.gallery.take_texts() {
+            self.fields.set_text(&view::Key(key), &text);
+        }
     }
 
     /// Lays the view out in `width` pixels, and as high as the window
-    /// leaves it, `height`.
+    /// leaves it, `height`, its fields scrolled to their carets.
     fn lay_out(&mut self, font: &mut Font<CoreText>, width: f32, height: Option<f32>) {
         self.layout.compute(&self.tree, Some(width), height, font);
+        let focused = self.focused();
+        self.fields.follow(&self.tree, &self.layout, focused, font);
+    }
+
+    /// Hands the events of a field's text to the gallery, and takes its
+    /// view anew.
+    fn typed(&mut self, events: Vec<NodeEvent>) {
+        for event in events {
+            self.gallery.event(&event.key.0, event.kind);
+        }
+        self.render();
     }
 
     /// Hands `events` to the gallery, and takes its view anew, with the
@@ -161,7 +180,11 @@ impl View {
             font,
             &variant.tokens,
             origin,
-            (self.gallery.dark(), self.focused()),
+            Shown {
+                dark: self.gallery.dark(),
+                focused: self.focused(),
+                fields: &self.fields,
+            },
         );
         let background = variant.colors.background;
         DisplayList {
@@ -317,7 +340,13 @@ impl App {
             return;
         };
         let events = match press {
-            None => view.pointer.moved(&view.tree, &view.layout, at),
+            None => {
+                if view.fields.selecting() {
+                    view.fields
+                        .drag((&view.tree, &view.layout), at, &mut drawing.font);
+                }
+                view.pointer.moved(&view.tree, &view.layout, at)
+            }
             Some((button, pressed, mods, clicks)) => {
                 let button = match button {
                     MouseButton::Left if mods.control => Button::Secondary,
@@ -332,8 +361,24 @@ impl App {
                         view.tell_focus();
                         view.lay_out(&mut drawing.font, width, Some(height));
                     }
+                    // A field under the primary button takes the caret
+                    // there, or selects.
+                    if button == Button::Primary
+                        && let Some(&node) = path.last()
+                        && matches!(view.tree.kind(node), Some(Kind::Field(_)))
+                    {
+                        view.fields.press(
+                            (&view.tree, &view.layout),
+                            node,
+                            (at, clicks, mods.shift),
+                            &mut drawing.font,
+                        );
+                    }
                     view.pointer.pressed(&view.tree, &view.layout, at, button)
                 } else {
+                    if button == Button::Primary {
+                        view.fields.release();
+                    }
                     view.pointer
                         .released(&view.tree, &view.layout, at, button, clicks)
                 }
@@ -357,6 +402,24 @@ impl App {
 
     fn key(&mut self, platform: &mut dyn Platform, event: &KeyEvent) {
         let pressed = event.state != KeyState::Released;
+        let Some(key) = vt_key(event) else {
+            return;
+        };
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        let tree = &view.tree;
+        let routed = view.focus.key(|_| Some(tree), &key);
+        // A field takes its keys first, the app's those that it leaves.
+        if let Routed::Node { node, .. } = routed
+            && let Some(events) =
+                view.fields
+                    .key(&view.tree, node, &key, &mut Pasteboard(&mut *platform))
+        {
+            view.typed(events);
+            self.request_frame(platform);
+            return;
+        }
         if pressed && event.mods.super_key {
             match event.code {
                 KeyCode::KeyD => {
@@ -366,10 +429,8 @@ impl App {
                     } else {
                         Appearance::Light
                     }));
-                    if let Some(view) = &mut self.view {
-                        view.gallery.toggle_dark();
-                        view.render();
-                    }
+                    view.gallery.toggle_dark();
+                    view.render();
                     self.request_frame(platform);
                 }
                 KeyCode::KeyQ => platform.quit(),
@@ -377,14 +438,7 @@ impl App {
             }
             return;
         }
-        let Some(key) = vt_key(event) else {
-            return;
-        };
-        let Some(view) = &mut self.view else {
-            return;
-        };
-        let tree = &view.tree;
-        match view.focus.key(|_| Some(tree), &key) {
+        match routed {
             Routed::Focus => {
                 // A key that moves the focus takes the pointer back, as of
                 // a drag.
@@ -392,6 +446,10 @@ impl App {
                     view.gallery.event(&event.key.0, event.kind);
                 }
                 view.tell_focus();
+                // A field that Tab gives the focus selects all of its text.
+                if let Some(node) = view.focused() {
+                    view.fields.select_all(&view.tree, node);
+                }
             }
             Routed::Node { node, .. } if key.action == KeyAction::Press => {
                 let name = match key.key {
@@ -408,16 +466,57 @@ impl App {
         }
         self.request_frame(platform);
     }
+
+    /// Text that the input method typed, into the field with the focus.
+    fn committed(&mut self, platform: &mut dyn Platform, text: &str) {
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        let Some(events) = view
+            .focused()
+            .and_then(|node| view.fields.insert(&view.tree, node, text))
+        else {
+            return;
+        };
+        view.typed(events);
+        self.request_frame(platform);
+    }
 }
 
-/// `event`, as the focus takes it: Tab, Escape, Return and the keys that
-/// type a character; `None` for the others.
+/// The system's clipboard, as a field cuts, copies and pastes.
+struct Pasteboard<'a>(&'a mut dyn Platform);
+
+impl Clipboard for Pasteboard<'_> {
+    fn read(&mut self) -> Option<String> {
+        self.0.clipboard_text()
+    }
+
+    fn write(&mut self, text: &str) {
+        self.0.set_clipboard_text(text);
+    }
+}
+
+/// `event`, as the focus and the fields take it: the keys that move and
+/// edit, and those that type a character; `None` for the others.
 fn vt_key(event: &KeyEvent) -> Option<vt::KeyEvent<'_>> {
     let key = match event.code {
         KeyCode::Tab => vt::Key::Tab,
         KeyCode::Escape => vt::Key::Escape,
         KeyCode::Enter => vt::Key::Enter,
-        _ => vt::Key::Char(event.plain.chars().next()?),
+        KeyCode::NumpadEnter => vt::Key::Keypad(Keypad::Enter),
+        KeyCode::Backspace => vt::Key::Backspace,
+        KeyCode::Delete => vt::Key::Delete,
+        KeyCode::Insert => vt::Key::Insert,
+        KeyCode::Home => vt::Key::Home,
+        KeyCode::End => vt::Key::End,
+        KeyCode::PageUp => vt::Key::PageUp,
+        KeyCode::PageDown => vt::Key::PageDown,
+        KeyCode::ArrowUp => vt::Key::Up,
+        KeyCode::ArrowDown => vt::Key::Down,
+        KeyCode::ArrowLeft => vt::Key::Left,
+        KeyCode::ArrowRight => vt::Key::Right,
+        KeyCode::F(n) => vt::Key::F(n),
+        _ => vt::Key::Char(event.plain.chars().next().filter(|c| !c.is_control())?),
     };
     Some(vt::KeyEvent {
         key,
@@ -471,6 +570,7 @@ impl Handler for App {
                 clicks,
             } => self.mouse(platform, position, Some((button, pressed, mods, clicks))),
             WindowEvent::Key(event) => self.key(platform, &event),
+            WindowEvent::Ime(Ime::Commit(text)) => self.committed(platform, &text),
             WindowEvent::Scroll {
                 delta, position, ..
             } => {

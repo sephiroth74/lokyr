@@ -220,15 +220,15 @@ type Style = {
 }
 
 -- A view is a tree of nodes; the host flattens it into its arena. A node
--- that holds state, an input or a list, needs its key, by which the host
--- keeps that state; an input's text is the host's, which events tell. A key
+-- that holds state, a field or a list, needs its key, by which the host
+-- keeps that state; a field's text is the host's, which events tell. A key
 -- is unique in the whole tree, as "tab-3.close", as the events tell a node
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "input" | "list" | "spacer",
+    kind: "container" | "text" | "icon" | "field" | "list" | "spacer",
     text: string?, -- for text and icon nodes
-    placeholder: string?,
+    placeholder: string?, -- for field nodes, shown while the field is empty
     items: { ListItem }?, -- for list nodes, flat
     row: Node?, -- for list nodes: the template of a row
     style: Style?,
@@ -293,7 +293,7 @@ type UiEvent = {
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value",
-    text: string?, -- an input's text, as the host holds it
+    text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     item: number?, -- a list's item
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
@@ -330,6 +330,8 @@ type Cx = {
     },
     ui: {
         request_render: (slot: string) -> (),
+        -- Sets the text of a field of the slot's view, by its key: its caret at its end, and no "input-changed".
+        set_text: (slot: string, key: string, text: string) -> (boolean, Error?),
     },
     terminal: {
         -- Requires `terminal-read`; returns a `denied` error without it. Reads 100 000 rows at most, from the row numbered

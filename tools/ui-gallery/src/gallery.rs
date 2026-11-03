@@ -14,6 +14,12 @@ use lokyr_ui_core::interface;
 /// The icons a row of the icons' section.
 const ICONS_A_ROW: usize = 4;
 
+/// A family, an emoji of five code points.
+const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+
+/// Italy's flag, of two regional indicators.
+const ITALY: &str = "\u{1F1EE}\u{1F1F9}";
+
 /// What the gallery shows: its appearance, and what the pointer and the
 /// keyboard did.
 #[derive(Debug)]
@@ -28,6 +34,11 @@ pub struct Gallery {
     drag: String,
     /// What the scrolls did: the last, and their sum.
     scrolled: (String, f32, f32),
+    /// The fields' last change of text, and their last submit.
+    typed: (String, String),
+    /// The texts that the gallery sets in its fields, as a plugin asks the
+    /// host, by their keys, since the host took them last.
+    texts: Vec<(String, String)>,
 }
 
 impl Gallery {
@@ -42,6 +53,17 @@ impl Gallery {
             focus_events: "none yet".to_owned(),
             drag: "drag the chip, or a tab".to_owned(),
             scrolled: ("scroll over the box".to_owned(), 0.0, 0.0),
+            typed: ("none yet".to_owned(), "none yet".to_owned()),
+            texts: vec![
+                (
+                    "name".to_owned(),
+                    format!("Lokyr 中文 {FAMILY} {ITALY} cafe\u{301}"),
+                ),
+                (
+                    "narrow".to_owned(),
+                    "a text longer than its field, which scrolls".to_owned(),
+                ),
+            ],
         }
     }
 
@@ -63,6 +85,10 @@ impl Gallery {
             }
             UiEventKind::HoverLeave => {
                 self.hovered.remove(key);
+            }
+            UiEventKind::Click if key == "clear" => {
+                self.last = "click on `clear`".to_owned();
+                self.texts.push(("find".to_owned(), String::new()));
             }
             UiEventKind::Click => self.last = format!("click on `{key}`"),
             UiEventKind::DoubleClick => self.last = format!("double click on `{key}`"),
@@ -87,7 +113,15 @@ impl Gallery {
             UiEventKind::Focus => self.focus_events = format!("focus of `{key}`"),
             UiEventKind::Blur => self.focus_events = format!("blur of `{key}`"),
             UiEventKind::SetValue { value } => self.last = format!("`{key}` set to {value}"),
+            UiEventKind::InputChanged { text } => self.typed.0 = format!("`{key}`: {text}"),
+            UiEventKind::Submit { text } => self.typed.1 = format!("`{key}`: {text}"),
         }
+    }
+
+    /// The texts that the gallery sets in its fields, by their keys, since
+    /// it was last asked.
+    pub fn take_texts(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.texts)
     }
 
     /// The node of `key` has the keyboard's focus, or none has it.
@@ -119,6 +153,7 @@ impl Gallery {
                 section("Icons", icons()),
                 section("The pointer", self.pointer()),
                 section("The keyboard's focus", self.focus()),
+                section("Fields", self.fields()),
             ],
         );
         let halves = Node::container(vec![half(left), half(right)]).layout(Layout {
@@ -302,6 +337,42 @@ impl Gallery {
                 nodes,
                 secondary(&focus),
                 secondary(&format!("events: {}", self.focus_events)),
+            ],
+        )
+    }
+
+    fn fields(&self) -> Node {
+        let find = Node::field("Find").key("find").layout(Layout {
+            grow: 1.0,
+            ..Layout::default()
+        });
+        let clear = chip(
+            "clear",
+            "Clear",
+            self.hovered.contains("clear"),
+            PointerShape::PointingHand,
+        );
+        let name = Node::field("Name").key("name").layout(Layout {
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        });
+        let narrow = Node::field("A narrow field").key("narrow").layout(Layout {
+            width: Length::Points(120.0),
+            ..Layout::default()
+        });
+        let (typed, submitted) = &self.typed;
+        column(
+            8.0,
+            vec![
+                Node::container(vec![find, clear]).layout(Layout {
+                    gap: 8.0,
+                    align: Align::Center,
+                    ..Layout::default()
+                }),
+                name,
+                narrow,
+                secondary(&format!("input: {typed}")),
+                secondary(&format!("submit: {submitted}")),
             ],
         )
     }
@@ -696,7 +767,7 @@ mod tests {
             base_layout: None,
         };
         let mut order = Vec::new();
-        for _ in 0..6 {
+        for _ in 0..9 {
             let Target::Node { node, .. } = focus.target() else {
                 panic!("the focus left the panel");
             };
@@ -705,7 +776,17 @@ mod tests {
         }
         assert_eq!(
             order,
-            ["first", "second", "third", "group", "group.close", "first"]
+            [
+                "first",
+                "second",
+                "third",
+                "group",
+                "group.close",
+                "find",
+                "name",
+                "narrow",
+                "first"
+            ]
         );
     }
 

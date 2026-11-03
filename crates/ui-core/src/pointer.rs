@@ -13,7 +13,7 @@
 //! Places are in pixels from the root's top left corner, as the layout's
 //! frames are.
 
-use lokyr_plugin_sdk::view::{Key, PointerShape, UiEventKind};
+use lokyr_plugin_sdk::view::{Key, Kind, PointerShape, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::{Frame, Layout};
@@ -308,6 +308,10 @@ impl Pointer {
                 key,
                 kind: UiEventKind::ContextMenu,
             }),
+            // A field selects of its own drags, which its plugin learns
+            // nothing of.
+            (Button::Primary, Some((node, _)))
+                if matches!(tree.kind(node), Some(Kind::Field(_))) => {}
             (Button::Primary, Some((node, key))) => {
                 self.drag = Some(Drag {
                     node,
@@ -787,6 +791,20 @@ mod tests {
         relaid(&mut tree, &mut layout, &bar());
         pointer.left(&tree);
         assert_eq!(told(&pointer.laid_out(&tree, &layout)), []);
+    }
+
+    #[test]
+    fn a_field_s_drag_selects_and_its_plugin_learns_of_no_drag() {
+        let root = Node::container(vec![Node::field("Find").key("find")]);
+        let (tree, layout) = laid(&root, 1.0);
+        let mut pointer = Pointer::new();
+        pointer.pressed(&tree, &layout, (10.0, 8.0), Button::Primary);
+        assert_eq!(told(&pointer.moved(&tree, &layout, (60.0, 8.0))), []);
+        assert!(!pointer.dragging());
+        assert_eq!(
+            told(&pointer.released(&tree, &layout, (60.0, 8.0), Button::Primary, 1)),
+            [("find", Click)]
+        );
     }
 
     #[test]
