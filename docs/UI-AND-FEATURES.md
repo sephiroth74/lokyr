@@ -4,7 +4,7 @@ This document covers our UI engine and the features the MVP cannot ship without:
 
 ## UI engine
 
-`ui-core` is our small, platform-independent toolkit ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)). It draws all of the chrome on the GPU, into the same drawable as the panes.
+`ui-core` is our small, platform-independent toolkit ([ADR 0004](adr/0004-native-shell-and-gpu-chrome.md)). It draws all of the chrome on the GPU, into the same drawable as the panes. Why our own, rather than a framework of Rust's or the native toolkits, and what it takes from them: [UI-TOOLKITS.md](UI-TOOLKITS.md).
 
 **View tree and layout**
 - Plugins describe their UI as a view tree, plain data of `plugin-sdk`'s types, which the host stores as a flat arena of nodes (see [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md#the-luau-api) and [ADR 0028](adr/0028-plugin-calls-as-messages.md)).

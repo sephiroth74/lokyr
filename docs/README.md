@@ -22,6 +22,7 @@ Start with [ARCHITECTURE.md](ARCHITECTURE.md), then read the [ROADMAP.md](ROADMA
 | [PLUGIN-SYSTEM.md](PLUGIN-SYSTEM.md) | Extension points, execution model, Rust and Luau front ends, the Luau API, capabilities, lifecycle, limits |
 | [PACKAGE-MANAGER.md](PACKAGE-MANAGER.md) | Sleip, file formats, resolution, installation, index, registry |
 | [UI-AND-FEATURES.md](UI-AND-FEATURES.md) | UI engine, tabs, splits, search, iTerm2 themes, command palette |
+| [UI-TOOLKITS.md](UI-TOOLKITS.md) | A survey of Rust's UI frameworks and of the native toolkits, why Lokyr keeps its own, and the ideas taken from them |
 | [SECURITY.md](SECURITY.md) | Threat model, security defaults, IPC, packages, robustness, macOS environment |
 | [PERFORMANCE.md](PERFORMANCE.md) | Budgets, how to measure them, benchmarks and CI |
 | [CONFIGURATION.md](CONFIGURATION.md) | The user's guide to the config file: where it is, how it reloads, and every key, with its values and its default |
@@ -63,7 +64,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0001](adr/0001-language-rust.md) | Rust for the app, the CLI and the registry | Accepted; its wasmtime reasons outdated by 0012 |
 | [0002](adr/0002-micro-kernel-and-plugins.md) | Micro-kernel: mechanism in the core, policy in plugins | Accepted |
 | [0003](adr/0003-native-and-wasm-plugins.md) | Two tiers of plugins (native and Wasm) with one API | Accepted; third-party tier superseded by 0012; the calls as messages, per 0028 |
-| [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted |
+| [0004](adr/0004-native-shell-and-gpu-chrome.md) | Native shell per OS, our own GPU-drawn chrome | Accepted; confirmed by a survey of UI toolkits on 3 November 2026 |
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011; a font of symbols before the system's fallback, per 0025 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
