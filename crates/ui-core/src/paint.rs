@@ -405,7 +405,8 @@ impl<B: FontBackend> Painter<'_, B> {
             view::ProgressShape::Bar => {
                 let bar = rect(frame);
                 let radius = crate::progress::radius(progress, frame.height, scale);
-                if let Some(track) = track {
+                // A track of no color draws nothing.
+                if let Some(track) = track.filter(|track| track.alpha > 0.0) {
                     self.push_shape(Shape {
                         radius,
                         ..Shape::filled(bar, track)
@@ -427,7 +428,7 @@ impl<B: FontBackend> Painter<'_, B> {
                     span,
                     thickness,
                 };
-                if let Some(track) = track {
+                if let Some(track) = track.filter(|track| track.alpha > 0.0) {
                     self.push_shape(Shape {
                         arc: Some(arc(1.0)),
                         ..Shape::filled(square, track)
@@ -2025,6 +2026,25 @@ mod tests {
                 ]
             );
         }
+        // Of a transparent track, its fill alone.
+        let shapes = painted(
+            &mut font,
+            of(Progress {
+                value: 0.4,
+                ..Progress::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("transparent")),
+                ..view::Style::default()
+            }),
+        );
+        assert_eq!(
+            shapes,
+            [Shape {
+                radius: 4.0,
+                ..Shape::filled(Rect { width: 80, ..bar }, token("progress.normal"))
+            }]
+        );
         // Indeterminate, or of nothing yet: its track alone; past 1, full.
         for (state, value) in [
             (ProgressState::Indeterminate, 0.5),

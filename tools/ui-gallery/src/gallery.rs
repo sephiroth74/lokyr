@@ -277,6 +277,28 @@ impl Gallery {
             color: Some(Token::from("accent")),
             ..Style::default()
         });
+        // Hairlines over nothing: a point high, and half of one, a pixel at a
+        // scale of 2, of no track, indeterminate with the custom bar.
+        let hairline = |height: f32| {
+            of(Progress {
+                state: if self.spinning {
+                    ProgressState::Indeterminate
+                } else {
+                    ProgressState::Normal
+                },
+                value,
+                ..Progress::default()
+            })
+            .layout(Layout {
+                grow: 1.0,
+                height: Length::Points(height),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("transparent")),
+                ..Style::default()
+            })
+        };
         let ring = |state, side: f32, thickness: f32| {
             of(Progress {
                 state,
@@ -339,6 +361,8 @@ impl Gallery {
                 labelled("paused", bar(ProgressState::Paused)),
                 labelled("indeterminate", bar(ProgressState::Indeterminate)),
                 labelled("its own", custom),
+                labelled("1 pt, no track", hairline(1.0)),
+                labelled("1 px at 2x", hairline(0.5)),
                 rings,
                 controls,
             ],

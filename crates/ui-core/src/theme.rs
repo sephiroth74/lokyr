@@ -34,13 +34,21 @@ pub struct Variant {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tokens(HashMap<String, Color>);
 
+/// The token of no color, whatever a theme gives, as a progress's track
+/// that shows nothing.
+pub const TRANSPARENT: &str = "transparent";
+
 impl Tokens {
     /// The color of `token`; of the token without its last part where it
     /// has none, `tab.active` for `tab.active.bg`, then `tab`; `None` when
-    /// none of them has one.
+    /// none of them has one. [`TRANSPARENT`] is clear in every theme, as
+    /// the tokens that fall back to it are.
     pub fn get(&self, token: &str) -> Option<Color> {
         let mut name = token;
         loop {
+            if name == TRANSPARENT {
+                return Some(Color::CLEAR);
+            }
             if let Some(&color) = self.0.get(name) {
                 return Some(color);
             }
@@ -383,6 +391,10 @@ mod tests {
         assert_eq!(tokens.get("tab.active.fg"), Some(Color::from_rgb8(1, 2, 3)));
         assert_eq!(tokens.get("tab.hover"), Some(Color::from_rgb8(1, 2, 3)));
         assert_eq!(tokens.get("tabs"), None);
+        // Clear, whatever a theme says.
+        tokens.set("transparent", Color::from_rgb8(1, 2, 3));
+        assert_eq!(tokens.get("transparent"), Some(Color::CLEAR));
+        assert_eq!(tokens.get("transparent.bg"), Some(Color::CLEAR));
         assert_eq!(tokens.get("panel.bg"), None);
         assert_eq!(tokens.get(""), None);
         assert_eq!(
