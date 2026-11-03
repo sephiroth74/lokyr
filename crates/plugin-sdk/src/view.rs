@@ -166,11 +166,14 @@ pub enum PointerShape {
 }
 
 /// What happened to a node of a key, as the host tells the node's plugin:
-/// what the pointer did over it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+/// what the pointer did over it, its keyboard's focus, and what
+/// accessibility asked of it. It crosses the boundary as a flat table, of
+/// its `kind` and its values, as `{ kind = "drag-move", x = 12, y = 0 }`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum UiEventKind {
-    /// The primary button pressed and released over it.
+    /// The primary button pressed and released over it, or accessibility's
+    /// press, as a button's.
     Click,
     /// The second click of a double click, which comes after its click.
     DoubleClick,
@@ -183,6 +186,47 @@ pub enum UiEventKind {
     HoverEnter,
     /// The pointer left its box and its children's.
     HoverLeave,
+    /// The primary button went down over it and the pointer moved past the
+    /// threshold of a drag: its moves come to it alone until the button
+    /// goes up, wherever the pointer goes, and no click.
+    DragStart,
+    /// The pointer moved in a drag, `x` rightwards and `y` downwards of
+    /// where the drag started, in points.
+    DragMove {
+        /// Rightwards, in points.
+        x: f32,
+        /// Downwards, in points.
+        y: f32,
+    },
+    /// The button went up, and the drag ended there, `x` and `y` of where
+    /// it started, in points.
+    DragEnd {
+        /// Rightwards, in points.
+        x: f32,
+        /// Downwards, in points.
+        y: f32,
+    },
+    /// The drag ended without its end: the window lost the keyboard's
+    /// focus, Tab moved it, or the app took the pointer back.
+    DragCancel,
+    /// A wheel or a trackpad scrolled over it, `x` and `y` in points, a
+    /// positive `y` towards the content above, as the system's natural
+    /// scrolling has it.
+    Scroll {
+        /// Across, in points.
+        x: f32,
+        /// Up and down, in points.
+        y: f32,
+    },
+    /// It took the keyboard's focus.
+    Focus,
+    /// It lost the keyboard's focus.
+    Blur,
+    /// Accessibility set its value, as VoiceOver does of a field.
+    SetValue {
+        /// The value.
+        value: String,
+    },
 }
 
 /// A node's border.
@@ -406,9 +450,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node, Node::spacer());
+        let events = [
+            UiEventKind::DoubleClick,
+            UiEventKind::DragMove { x: 12.0, y: -1.5 },
+            UiEventKind::SetValue {
+                value: "main".to_owned(),
+            },
+        ];
+        let json = serde_json::to_string(&events).unwrap();
         assert_eq!(
-            serde_json::to_string(&[UiEventKind::DoubleClick, UiEventKind::HoverEnter]).unwrap(),
-            r#"["double-click","hover-enter"]"#
+            json,
+            r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},{"kind":"set-value","value":"main"}]"#
+        );
+        assert_eq!(
+            serde_json::from_str::<Vec<UiEventKind>>(&json).unwrap(),
+            events
         );
     }
 }

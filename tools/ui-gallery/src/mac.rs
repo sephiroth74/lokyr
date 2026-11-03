@@ -9,7 +9,8 @@ use std::path::Path;
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
     AppEvent, Appearance, Handler, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, Platform,
-    Point, PointerArea, PointerShape, Size, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Point, PointerArea, PointerShape, ScrollDelta, Size, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -34,6 +35,9 @@ const SIZE: Size = Size {
     width: 1120.0,
     height: 860.0,
 };
+
+/// The points of a line of a wheel's scroll, the interface text's line.
+const LINE: f64 = 16.0;
 
 /// The rounds of events that a change of the tree can bring, as a hover
 /// that moves what is under the pointer, past which it waits for the next.
@@ -113,7 +117,7 @@ impl View {
             if events.is_empty() {
                 return;
             }
-            for event in &events {
+            for event in events {
                 self.gallery.event(&event.key.0, event.kind);
             }
             self.render();
@@ -130,13 +134,18 @@ impl View {
         }
     }
 
-    /// Tells the gallery where the focus is.
+    /// Tells the gallery where the focus is, and the focus's and the
+    /// blur's events of its move.
     fn tell_focus(&mut self) {
         let key = self
             .focused()
             .and_then(|node| self.tree.key(node))
             .map(|key| key.0.clone());
         self.gallery.focused(key.as_deref());
+        let tree = &self.tree;
+        for (_, event) in self.focus.events(|_| Some(tree)) {
+            self.gallery.event(&event.key.0, event.kind);
+        }
         self.render();
     }
 
@@ -334,6 +343,18 @@ impl App {
         self.request_frame(platform);
     }
 
+    fn scrolled(&mut self, platform: &mut dyn Platform, position: Point, delta: (f32, f32)) {
+        let (Some(at), Some((width, height, _))) = (self.at(position), self.room()) else {
+            return;
+        };
+        let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing) else {
+            return;
+        };
+        let events = view.pointer.scrolled(&view.tree, &view.layout, at, delta);
+        view.apply(&mut drawing.font, (width, height), events);
+        self.request_frame(platform);
+    }
+
     fn key(&mut self, platform: &mut dyn Platform, event: &KeyEvent) {
         let pressed = event.state != KeyState::Released;
         if pressed && event.mods.super_key {
@@ -364,7 +385,14 @@ impl App {
         };
         let tree = &view.tree;
         match view.focus.key(|_| Some(tree), &key) {
-            Routed::Focus => view.tell_focus(),
+            Routed::Focus => {
+                // A key that moves the focus takes the pointer back, as of
+                // a drag.
+                for event in view.pointer.cancel(&view.tree) {
+                    view.gallery.event(&event.key.0, event.kind);
+                }
+                view.tell_focus();
+            }
             Routed::Node { node, .. } if key.action == KeyAction::Press => {
                 let name = match key.key {
                     vt::Key::Char(' ') => "Space",
@@ -443,6 +471,25 @@ impl Handler for App {
                 clicks,
             } => self.mouse(platform, position, Some((button, pressed, mods, clicks))),
             WindowEvent::Key(event) => self.key(platform, &event),
+            WindowEvent::Scroll {
+                delta, position, ..
+            } => {
+                // A line of the wheel is a line of the interface's text.
+                let (x, y) = match delta {
+                    ScrollDelta::Lines { x, y } => (x * LINE, y * LINE),
+                    ScrollDelta::Points { x, y } => (x, y),
+                };
+                self.scrolled(platform, position, (x as f32, y as f32));
+            }
+            WindowEvent::Focused(false) => {
+                if let Some(view) = &mut self.view {
+                    for event in view.pointer.cancel(&view.tree) {
+                        view.gallery.event(&event.key.0, event.kind);
+                    }
+                    view.render();
+                }
+                self.request_frame(platform);
+            }
             _ => {}
         }
     }

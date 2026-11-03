@@ -3,14 +3,19 @@
 //! keymap leaves, Tab and Shift-Tab move it among the panel's nodes that
 //! take it, in the tree's order, from the last round to the first, and
 //! Escape gives it back to the pane; every other key goes to the element
-//! that has it alone, and a key's release where its press went. The
-//! keymap's contexts tell where it is:
+//! that has it alone, and a key's release where its press went; after a
+//! click on a node that takes no focus, Tab goes on from there. Its moves
+//! come as events of a focus and a blur to the nodes. The keymap's
+//! contexts tell where it is:
 //! `pane.focused` while the pane has it, and, of each panel shown, of its
 //! plugin's namespace, `namespace.open`, and `namespace.focused` while the
 //! panel has it.
 
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent};
 
+use lokyr_plugin_sdk::view::UiEventKind;
+
+use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
 
 /// What has the keyboard's focus, of a window whose panels `P` names.
@@ -55,6 +60,11 @@ pub struct Focus<P> {
     /// The keys down, and where their presses went, where their releases
     /// go.
     held: Vec<(Key, Routed<P>)>,
+    /// The node of a panel last clicked that takes no focus, from which Tab
+    /// goes on, until the focus moves.
+    anchor: Option<(P, NodeId)>,
+    /// The node whose focus the events told last.
+    told: Option<(P, NodeId)>,
 }
 
 impl<P> Default for Focus<P> {
@@ -63,6 +73,8 @@ impl<P> Default for Focus<P> {
             focused: None,
             place: 0,
             held: Vec::new(),
+            anchor: None,
+            told: None,
         }
     }
 }
@@ -89,6 +101,7 @@ impl<P: Copy + Eq> Focus<P> {
         };
         self.focused = Some((panel, node));
         self.place = place;
+        self.anchor = None;
         true
     }
 
@@ -103,17 +116,22 @@ impl<P: Copy + Eq> Focus<P> {
 
     /// Gives the focus to the innermost node of `path` that takes it, a
     /// hit's of the pointer's press over `panel`, whose tree is `tree`:
-    /// whether one does; the focus stays where it was otherwise.
+    /// whether one does; the focus stays where it was otherwise, and Tab
+    /// goes on from the topmost node of `path`, until the focus moves.
     pub fn pressed(&mut self, panel: P, tree: &Tree, path: &[NodeId]) -> bool {
-        path.iter()
-            .rev()
-            .find(|&&id| tree.focusable(id))
-            .is_some_and(|&node| self.focus(panel, tree, node))
+        match path.iter().rev().find(|&&id| tree.focusable(id)) {
+            Some(&node) => self.focus(panel, tree, node),
+            None => {
+                self.anchor = path.last().map(|&node| (panel, node));
+                false
+            }
+        }
     }
 
     /// Gives the focus back to the pane.
     pub fn pane(&mut self) {
         self.focused = None;
+        self.anchor = None;
     }
 
     /// `panel` closed: the focus goes back to the pane if it had it.
@@ -121,6 +139,28 @@ impl<P: Copy + Eq> Focus<P> {
         if self.focused.is_some_and(|(focused, _)| focused == panel) {
             self.pane();
         }
+        if self.anchor.is_some_and(|(anchored, _)| anchored == panel) {
+            self.anchor = None;
+        }
+    }
+
+    /// What the focus's moves since the last call did to the nodes, each
+    /// with its panel, whose tree `tree` gives: a blur for the node that had
+    /// it, if its tree still has it, then a focus for the node that has it.
+    pub fn events<'t>(&mut self, tree: impl Fn(P) -> Option<&'t Tree>) -> Vec<(P, NodeEvent)> {
+        if self.told == self.focused {
+            return Vec::new();
+        }
+        let told = |(panel, node): (P, NodeId), kind| {
+            let key = tree(panel)?.key(node)?.clone();
+            Some((panel, NodeEvent { node, key, kind }))
+        };
+        let events = [
+            self.told.and_then(|was| told(was, UiEventKind::Blur)),
+            self.focused.and_then(|is| told(is, UiEventKind::Focus)),
+        ];
+        self.told = self.focused;
+        events.into_iter().flatten().collect()
     }
 
     /// The tree of `panel` changed, to `tree`: the node with the focus, if
@@ -133,6 +173,12 @@ impl<P: Copy + Eq> Focus<P> {
         };
         if focused != panel {
             return;
+        }
+        if self
+            .anchor
+            .is_some_and(|(anchored, node)| anchored == panel && tree.kind(node).is_none())
+        {
+            self.anchor = None;
         }
         let order = order(tree);
         if let Some(place) = order.iter().position(|&id| id == node) {
@@ -217,6 +263,15 @@ impl<P: Copy + Eq> Focus<P> {
             self.pane();
             return;
         }
+        // From the node last clicked, the next or the one before it of
+        // those that take the focus, in the tree's order.
+        if let Some((anchored, anchor)) = self.anchor.take()
+            && anchored == panel
+            && let Some(next) = beside(tree, anchor, back)
+        {
+            self.focus(panel, tree, next);
+            return;
+        }
         let place = order
             .iter()
             .position(|&id| id == node)
@@ -249,6 +304,32 @@ impl<P: Copy + Eq> Focus<P> {
             }
         }
         names
+    }
+}
+
+/// The node of `tree` that takes the focus next after `anchor`, or the one
+/// before it if `back`, in the tree's order, round from an end to the
+/// other; `None` if none does, or the tree lacks `anchor`.
+fn beside(tree: &Tree, anchor: NodeId, back: bool) -> Option<NodeId> {
+    fn walk(tree: &Tree, id: NodeId, all: &mut Vec<NodeId>) {
+        all.push(id);
+        for &child in tree.children(id) {
+            walk(tree, child, all);
+        }
+    }
+    let mut all = Vec::new();
+    walk(tree, tree.root()?, &mut all);
+    let at = all.iter().position(|&id| id == anchor)?;
+    let takes = |id: &&NodeId| tree.focusable(**id);
+    if back {
+        all[..at]
+            .iter()
+            .rev()
+            .chain(all[at..].iter().rev())
+            .find(takes)
+            .copied()
+    } else {
+        all[at + 1..].iter().chain(&all[..=at]).find(takes).copied()
     }
 }
 
@@ -498,6 +579,65 @@ mod tests {
         assert_eq!(focused(&focus, &tree), "field");
         focus.closed(SEARCH);
         assert_eq!(focus.target(), Target::Pane);
+    }
+
+    #[test]
+    fn the_focus_s_moves_come_as_events_and_tab_goes_on_from_the_last_click() {
+        use UiEventKind::{Blur, Focus as Focused};
+        let mut tree = tree_of(&find_bar());
+        let mut focus = Focus::new();
+        let told = |focus: &mut Focus<u8>, tree: &Tree| {
+            focus
+                .events(|_| Some(tree))
+                .into_iter()
+                .map(|(panel, event)| (panel, event.key.0, event.kind))
+                .collect::<Vec<_>>()
+        };
+        let event = |key: &str, kind| (SEARCH, key.to_owned(), kind);
+        assert_eq!(told(&mut focus, &tree), []);
+        focus.first(SEARCH, &tree);
+        assert_eq!(told(&mut focus, &tree), [event("field", Focused)]);
+        assert_eq!(told(&mut focus, &tree), []);
+        focus.key(|_| Some(&tree), &press(Key::Tab, Mods::default()));
+        assert_eq!(
+            told(&mut focus, &tree),
+            [event("field", Blur), event("case", Focused)]
+        );
+        focus.pane();
+        assert_eq!(told(&mut focus, &tree), [event("case", Blur)]);
+        // A node taken away is not told of its blur.
+        focus.first(SEARCH, &tree);
+        told(&mut focus, &tree);
+        let mut bar = find_bar();
+        bar.children.remove(0);
+        tree.update(&bar).unwrap();
+        focus.updated(SEARCH, &tree);
+        assert_eq!(told(&mut focus, &tree), [event("case", Focused)]);
+        // A click on the label, which takes no focus, leaves the focus on
+        // the field; Tab goes on from the label, to the button after it.
+        let tree = tree_of(&find_bar());
+        focus.first(SEARCH, &tree);
+        let root = tree.root().unwrap();
+        let count = tree.children(root)[2];
+        assert!(!focus.pressed(SEARCH, &tree, &[root, count]));
+        assert_eq!(focused(&focus, &tree), "field");
+        let tab = |focus: &mut Focus<u8>, mods| {
+            focus.key(|_| Some(&tree), &press(Key::Tab, mods));
+            focused(focus, &tree)
+        };
+        assert_eq!(tab(&mut focus, Mods::default()), "previous");
+        // Then as the focus has it.
+        assert_eq!(tab(&mut focus, Mods::default()), "next");
+        // Shift-Tab, from the label, to the toggle before it.
+        assert!(!focus.pressed(SEARCH, &tree, &[root, count]));
+        assert_eq!(tab(&mut focus, SHIFT), "case");
+        // A click in another panel moves nothing here; the focus's own
+        // move forgets the click.
+        assert!(!focus.pressed(OTHER, &tree, &[root, count]));
+        assert_eq!(tab(&mut focus, Mods::default()), "previous");
+        assert!(!focus.pressed(SEARCH, &tree, &[root, count]));
+        focus.first(SEARCH, &tree);
+        assert_eq!(tab(&mut focus, Mods::default()), "case");
     }
 
     #[test]

@@ -290,11 +290,11 @@ type UiEvent = {
     key: number,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
-        | "drag-start" | "drag-move" | "drag-end" | "accessibility-action",
+        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value",
     text: string?, -- an input's text, as the host holds it
     item: number?, -- a list's item
-    position: { x: number, y: number }?, -- a drag's, from its start
-    action: string?, -- VoiceOver's: "press", "focus", "set-value", …
+    x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
+    value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
 }
 
 type Cx = {

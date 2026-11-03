@@ -43,7 +43,7 @@ impl Button {
 }
 
 /// What the pointer did to a node of a key.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NodeEvent {
     /// The node.
     pub node: NodeId,
@@ -217,7 +217,31 @@ pub struct Pointer {
     at: Option<(f32, f32)>,
     hovered: Vec<(NodeId, Key)>,
     pressed: [Option<NodeId>; 3],
+    drag: Option<Drag>,
     shape: PointerShape,
+}
+
+/// How far the pointer moves, in points, with the primary button down,
+/// before a drag starts: a click's tremor no drag.
+pub const DRAG_THRESHOLD: f32 = 4.0;
+
+/// The primary button's press over a node of a key, which a move past the
+/// threshold makes a drag of it.
+#[derive(Debug)]
+struct Drag {
+    node: NodeId,
+    key: Key,
+    /// Where the button went down, in pixels.
+    start: (f32, f32),
+    /// Whether the pointer moved past the threshold.
+    started: bool,
+}
+
+impl Drag {
+    /// How far `at` is from the drag's start, in points at `scale`.
+    fn offset(&self, at: (f32, f32), scale: f32) -> (f32, f32) {
+        ((at.0 - self.start.0) / scale, (at.1 - self.start.1) / scale)
+    }
 }
 
 impl Pointer {
@@ -227,16 +251,19 @@ impl Pointer {
     }
 
     /// The pointer moved to `at`: the nodes that it left, the innermost
-    /// first, and those that it came over, the outermost first.
+    /// first, and those that it came over, the outermost first; then, with
+    /// the primary button held since it went down over a node of a key,
+    /// the drag's start past the threshold, and its moves, to that node
+    /// alone.
     pub fn moved(&mut self, tree: &Tree, layout: &Layout, at: (f32, f32)) -> Vec<NodeEvent> {
-        self.at = Some(at);
-        let path = hit(tree, layout, at);
-        self.shape = shape(tree, &path);
-        self.hover(tree, &path)
+        let mut events = self.hover_at(tree, layout, at);
+        events.extend(self.drag_to(tree, layout, at));
+        events
     }
 
     /// The pointer left the tree, as it went out of its window: it leaves
-    /// every node that it was over.
+    /// every node that it was over. A drag goes on, as the system gives
+    /// its moves outside the window.
     pub fn left(&mut self, tree: &Tree) -> Vec<NodeEvent> {
         self.at = None;
         self.shape = PointerShape::default();
@@ -245,16 +272,25 @@ impl Pointer {
 
     /// The tree changed, or its layout, under the pointer that did not move:
     /// the nodes that it is no longer over, and those that it is now over.
-    /// A node taken away is left without an event.
+    /// A node taken away is left without an event, and its drag ends
+    /// without one.
     pub fn laid_out(&mut self, tree: &Tree, layout: &Layout) -> Vec<NodeEvent> {
+        if self
+            .drag
+            .as_ref()
+            .is_some_and(|drag| tree.key(drag.node) != Some(&drag.key))
+        {
+            self.drag = None;
+        }
         match self.at {
-            Some(at) => self.moved(tree, layout, at),
+            Some(at) => self.hover_at(tree, layout, at),
             None => self.hover(tree, &[]),
         }
     }
 
     /// `button` went down at `at`: the hover's events, as the pointer came
-    /// there, then the context menu's, of the secondary button.
+    /// there, then the context menu's, of the secondary button; the primary
+    /// one's, over a node of a key, may start a drag of it.
     pub fn pressed(
         &mut self,
         tree: &Tree,
@@ -262,23 +298,31 @@ impl Pointer {
         at: (f32, f32),
         button: Button,
     ) -> Vec<NodeEvent> {
-        let mut events = self.moved(tree, layout, at);
+        let mut events = self.hover_at(tree, layout, at);
         let target = self.target();
         self.pressed[button.index()] = target.as_ref().map(|(id, _)| *id);
-        if button == Button::Secondary
-            && let Some((node, key)) = target
-        {
-            events.push(NodeEvent {
+        match (button, target) {
+            (Button::Secondary, Some((node, key))) => events.push(NodeEvent {
                 node,
                 key,
                 kind: UiEventKind::ContextMenu,
-            });
+            }),
+            (Button::Primary, Some((node, key))) => {
+                self.drag = Some(Drag {
+                    node,
+                    key,
+                    start: at,
+                    started: false,
+                });
+            }
+            _ => {}
         }
         events
     }
 
     /// `button` went up at `at`, of `clicks` in a row, as the system's
-    /// double click's interval counts them: the hover's events, then a
+    /// double click's interval counts them: the hover's events, then the
+    /// end of a drag of the primary button, which clicks nothing, or a
     /// click, if it went down over the same node, and the second click's
     /// double click.
     pub fn released(
@@ -289,22 +333,119 @@ impl Pointer {
         button: Button,
         clicks: u32,
     ) -> Vec<NodeEvent> {
-        let mut events = self.moved(tree, layout, at);
+        let mut events = self.hover_at(tree, layout, at);
         let pressed = self.pressed[button.index()].take();
+        if button == Button::Primary
+            && let Some(drag) = self.drag.take()
+            && drag.started
+        {
+            if tree.key(drag.node) == Some(&drag.key) {
+                let (x, y) = drag.offset(at, layout.scale());
+                events.push(NodeEvent {
+                    node: drag.node,
+                    key: drag.key,
+                    kind: UiEventKind::DragEnd { x, y },
+                });
+            }
+            return events;
+        }
         let Some((node, key)) = self.target().filter(|(id, _)| Some(*id) == pressed) else {
             return events;
         };
-        let kinds: &[UiEventKind] = match button {
-            Button::Primary if clicks == 2 => &[UiEventKind::Click, UiEventKind::DoubleClick],
-            Button::Primary => &[UiEventKind::Click],
-            Button::Middle => &[UiEventKind::MiddleClick],
-            Button::Secondary => &[],
+        let kinds = match button {
+            Button::Primary if clicks == 2 => vec![UiEventKind::Click, UiEventKind::DoubleClick],
+            Button::Primary => vec![UiEventKind::Click],
+            Button::Middle => vec![UiEventKind::MiddleClick],
+            Button::Secondary => Vec::new(),
         };
-        events.extend(kinds.iter().map(|&kind| NodeEvent {
+        events.extend(kinds.into_iter().map(|kind| NodeEvent {
             node,
             key: key.clone(),
             kind,
         }));
+        events
+    }
+
+    /// The app took the pointer back, as the window lost the keyboard's
+    /// focus or Tab moved it: a drag under way is cancelled, and no button
+    /// that is down clicks as it goes up.
+    pub fn cancel(&mut self, tree: &Tree) -> Vec<NodeEvent> {
+        self.pressed = [None; 3];
+        match self.drag.take() {
+            Some(drag) if drag.started && tree.key(drag.node) == Some(&drag.key) => {
+                vec![NodeEvent {
+                    node: drag.node,
+                    key: drag.key,
+                    kind: UiEventKind::DragCancel,
+                }]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// A wheel or a trackpad scrolled at `at`, `delta` points across and
+    /// up: the hover's events, then the scroll, to the innermost node of a
+    /// key under the pointer.
+    pub fn scrolled(
+        &mut self,
+        tree: &Tree,
+        layout: &Layout,
+        at: (f32, f32),
+        (x, y): (f32, f32),
+    ) -> Vec<NodeEvent> {
+        let mut events = self.hover_at(tree, layout, at);
+        if let Some((node, key)) = self.target() {
+            events.push(NodeEvent {
+                node,
+                key,
+                kind: UiEventKind::Scroll { x, y },
+            });
+        }
+        events
+    }
+
+    /// Whether a drag is under way, past its threshold.
+    pub fn dragging(&self) -> bool {
+        self.drag.as_ref().is_some_and(|drag| drag.started)
+    }
+
+    /// The pointer at `at`: the hover's events.
+    fn hover_at(&mut self, tree: &Tree, layout: &Layout, at: (f32, f32)) -> Vec<NodeEvent> {
+        self.at = Some(at);
+        let path = hit(tree, layout, at);
+        self.shape = shape(tree, &path);
+        self.hover(tree, &path)
+    }
+
+    /// The drag's events of the pointer at `at`: its start, once past the
+    /// threshold, and its move; none without one, or of a node taken away,
+    /// whose drag ends.
+    fn drag_to(&mut self, tree: &Tree, layout: &Layout, at: (f32, f32)) -> Vec<NodeEvent> {
+        let Some(drag) = &mut self.drag else {
+            return Vec::new();
+        };
+        if tree.key(drag.node) != Some(&drag.key) {
+            self.drag = None;
+            return Vec::new();
+        }
+        let (x, y) = drag.offset(at, layout.scale());
+        let mut events = Vec::new();
+        if !drag.started {
+            if x.hypot(y) < DRAG_THRESHOLD {
+                return events;
+            }
+            drag.started = true;
+            events.push(NodeEvent {
+                node: drag.node,
+                key: drag.key.clone(),
+                kind: UiEventKind::DragStart,
+            });
+        }
+        events.push(NodeEvent {
+            node: drag.node,
+            key: drag.key.clone(),
+            kind: UiEventKind::DragMove { x, y },
+        });
         events
     }
 
@@ -464,7 +605,7 @@ mod tests {
     fn told(events: &[NodeEvent]) -> Vec<(&str, UiEventKind)> {
         events
             .iter()
-            .map(|event| (event.key.0.as_str(), event.kind))
+            .map(|event| (event.key.0.as_str(), event.kind.clone()))
             .collect()
     }
 
@@ -636,6 +777,111 @@ mod tests {
         relaid(&mut tree, &mut layout, &bar());
         pointer.left(&tree);
         assert_eq!(told(&pointer.laid_out(&tree, &layout)), []);
+    }
+
+    #[test]
+    fn a_drag_starts_past_its_threshold_and_its_moves_go_to_its_node_alone() {
+        use UiEventKind::{DragCancel, DragEnd, DragMove, DragStart, Scroll};
+        // At a scale of 2: the first tab's pixels from 0 to 200.
+        let (mut tree, mut layout) = laid(&bar(), 2.0);
+        let mut pointer = Pointer::new();
+        let dragged = |events: Vec<NodeEvent>| {
+            events
+                .into_iter()
+                .filter(|event| !matches!(event.kind, HoverEnter | HoverLeave))
+                .map(|event| (event.key.0, event.kind))
+                .collect::<Vec<_>>()
+        };
+        let one = |kind| ("one".to_owned(), kind);
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        // 2.5 points, short of the threshold: nothing.
+        assert_eq!(dragged(pointer.moved(&tree, &layout, (25.0, 30.0))), []);
+        assert!(!pointer.dragging());
+        // 4.5 points: the drag starts, of its first move.
+        assert_eq!(
+            dragged(pointer.moved(&tree, &layout, (29.0, 30.0))),
+            [one(DragStart), one(DragMove { x: 4.5, y: 0.0 })]
+        );
+        assert!(pointer.dragging());
+        // Over the second tab, the moves still the first's, the hover the
+        // second's.
+        let events = pointer.moved(&tree, &layout, (300.0, 34.0));
+        assert_eq!(
+            told(&events),
+            [
+                ("one", HoverLeave),
+                ("two", HoverEnter),
+                ("one", DragMove { x: 140.0, y: 2.0 })
+            ]
+        );
+        // Up over the second tab: the drag's end, and no click.
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (300.0, 34.0), Button::Primary, 1)),
+            [("one".to_owned(), DragEnd { x: 140.0, y: 2.0 })]
+        );
+        assert!(!pointer.dragging());
+        // A drag that ends over its own node clicks nothing either.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        pointer.moved(&tree, &layout, (40.0, 30.0));
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (40.0, 30.0), Button::Primary, 1)),
+            [one(DragEnd { x: 10.0, y: 0.0 })]
+        );
+        // Short of the threshold, a click.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        pointer.moved(&tree, &layout, (24.0, 30.0));
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (24.0, 30.0), Button::Primary, 1)),
+            [one(Click)]
+        );
+        // Cancelled: no end, and no click as the button goes up.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        pointer.moved(&tree, &layout, (40.0, 30.0));
+        assert_eq!(dragged(pointer.cancel(&tree)), [one(DragCancel)]);
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (40.0, 30.0), Button::Primary, 1)),
+            []
+        );
+        // A press cancelled before its drag started: nothing, and no click.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        assert_eq!(dragged(pointer.cancel(&tree)), []);
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (20.0, 30.0), Button::Primary, 1)),
+            []
+        );
+        // The secondary button drags nothing.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Secondary);
+        assert_eq!(dragged(pointer.moved(&tree, &layout, (60.0, 30.0))), []);
+        pointer.released(&tree, &layout, (60.0, 30.0), Button::Secondary, 1);
+        // Its node taken away, the drag ends without an event.
+        pointer.pressed(&tree, &layout, (20.0, 30.0), Button::Primary);
+        pointer.moved(&tree, &layout, (40.0, 30.0));
+        relaid(
+            &mut tree,
+            &mut layout,
+            &Node::container(vec![tab("two", "Two")]),
+        );
+        pointer.laid_out(&tree, &layout);
+        assert!(!pointer.dragging());
+        assert_eq!(dragged(pointer.moved(&tree, &layout, (60.0, 30.0))), []);
+        assert_eq!(
+            dragged(pointer.released(&tree, &layout, (60.0, 30.0), Button::Primary, 1)),
+            []
+        );
+        // A scroll, to the innermost node of a key under the pointer.
+        let (tree, layout) = laid(&bar(), 2.0);
+        let scrolled =
+            |pointer: &mut Pointer, at| dragged(pointer.scrolled(&tree, &layout, at, (0.0, -12.0)));
+        let scroll = Scroll { x: 0.0, y: -12.0 };
+        assert_eq!(
+            scrolled(&mut pointer, (20.0, 30.0)),
+            [("one".to_owned(), scroll.clone())]
+        );
+        assert_eq!(
+            scrolled(&mut pointer, (184.0, 30.0)),
+            [("one.close".to_owned(), scroll)]
+        );
+        assert_eq!(scrolled(&mut pointer, (100.0, 80.0)), []);
     }
 
     /// A column of 100 points: `a`, a row 20 high, of `a1`, 50 by 60,

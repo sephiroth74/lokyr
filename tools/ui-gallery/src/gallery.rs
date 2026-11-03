@@ -22,6 +22,12 @@ pub struct Gallery {
     hovered: BTreeSet<String>,
     last: String,
     focused: Option<String>,
+    /// The last focus and blur, as their events told them.
+    focus_events: String,
+    /// What the drag did last.
+    drag: String,
+    /// What the scrolls did: the last, and their sum.
+    scrolled: (String, f32, f32),
 }
 
 impl Gallery {
@@ -33,6 +39,9 @@ impl Gallery {
             hovered: BTreeSet::new(),
             last: "nothing yet".to_owned(),
             focused: None,
+            focus_events: "none yet".to_owned(),
+            drag: "drag the chip, or a tab".to_owned(),
+            scrolled: ("scroll over the box".to_owned(), 0.0, 0.0),
         }
     }
 
@@ -59,6 +68,25 @@ impl Gallery {
             UiEventKind::DoubleClick => self.last = format!("double click on `{key}`"),
             UiEventKind::MiddleClick => self.last = format!("middle click on `{key}`"),
             UiEventKind::ContextMenu => self.last = format!("context menu on `{key}`"),
+            UiEventKind::DragStart => self.drag = format!("dragging `{key}`"),
+            UiEventKind::DragMove { x, y } => {
+                self.drag = format!("dragging `{key}` by {x:.0}, {y:.0}");
+            }
+            UiEventKind::DragEnd { x, y } => {
+                self.drag = format!("dropped `{key}` at {x:.0}, {y:.0}");
+            }
+            UiEventKind::DragCancel => self.drag = format!("drag of `{key}` cancelled"),
+            UiEventKind::Scroll { x, y } => {
+                let (_, across, down) = self.scrolled;
+                self.scrolled = (format!("`{key}` by {x:.0}, {y:.0}"), across + x, down + y);
+            }
+            // A move's blur comes before its focus.
+            UiEventKind::Focus if self.focus_events.starts_with("blur") => {
+                self.focus_events = format!("{}, then focus of `{key}`", self.focus_events);
+            }
+            UiEventKind::Focus => self.focus_events = format!("focus of `{key}`"),
+            UiEventKind::Blur => self.focus_events = format!("blur of `{key}`"),
+            UiEventKind::SetValue { value } => self.last = format!("`{key}` set to {value}"),
         }
     }
 
@@ -82,6 +110,7 @@ impl Gallery {
                 section("Rows: aligned across", aligned()),
                 section("Columns", columns()),
                 section("Boxes and clips", boxes()),
+                section("Drags and scrolls", self.drags()),
             ],
         );
         let right = column(
@@ -187,6 +216,37 @@ impl Gallery {
         )
     }
 
+    fn drags(&self) -> Node {
+        let draggable = chip(
+            "drag",
+            "Drag me",
+            self.hovered.contains("drag"),
+            PointerShape::PointingHand,
+        );
+        let scroll = Node::container(vec![Node::text("Scroll over me")])
+            .key("scroll")
+            .layout(Layout {
+                padding: Edges::all(10.0),
+                justify: Justify::Center,
+                width: Length::Points(160.0),
+                ..Layout::default()
+            })
+            .style(field());
+        let (last, across, down) = &self.scrolled;
+        column(
+            8.0,
+            vec![
+                Node::container(vec![draggable, scroll]).layout(Layout {
+                    gap: 12.0,
+                    align: Align::Center,
+                    ..Layout::default()
+                }),
+                secondary(&format!("drag: {}", self.drag)),
+                secondary(&format!("scroll: {last}; in all {across:.0}, {down:.0}")),
+            ],
+        )
+    }
+
     fn focus(&self) -> Node {
         let focusable = |key: &str, label: &str| {
             chip(key, label, false, PointerShape::PointingHand).focusable()
@@ -236,7 +296,14 @@ impl Gallery {
             Some(key) => format!("focus: `{key}`; Space or Return press it"),
             None => "focus: none; Tab takes the first, a click the one under it".to_owned(),
         };
-        column(8.0, vec![nodes, secondary(&focus)])
+        column(
+            8.0,
+            vec![
+                nodes,
+                secondary(&focus),
+                secondary(&format!("events: {}", self.focus_events)),
+            ],
+        )
     }
 }
 
@@ -595,9 +662,20 @@ mod tests {
         gallery.event("tab", UiEventKind::HoverEnter);
         gallery.event("tab.close", UiEventKind::HoverEnter);
         gallery.event("tab.close", UiEventKind::Click);
+        gallery.event("drag", UiEventKind::DragMove { x: 12.0, y: 3.0 });
+        gallery.event("scroll", UiEventKind::Scroll { x: 0.0, y: -16.0 });
+        gallery.event("scroll", UiEventKind::Scroll { x: 0.0, y: -16.0 });
+        gallery.event("first", UiEventKind::Blur);
+        gallery.event("second", UiEventKind::Focus);
         gallery.focused(Some("second"));
         gallery.toggle_dark();
         tree.update(&gallery.view()).unwrap();
+        assert_eq!(gallery.drag, "dragging `drag` by 12, 3");
+        assert_eq!(gallery.scrolled.2, -32.0);
+        assert_eq!(
+            gallery.focus_events,
+            "blur of `first`, then focus of `second`"
+        );
         assert!(gallery.dark());
         assert_eq!(gallery.last, "click on `tab.close`");
     }
