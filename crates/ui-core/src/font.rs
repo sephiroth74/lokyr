@@ -1167,6 +1167,11 @@ impl<B: FontBackend> Font<B> {
         color: Color,
         dark: bool,
     ) -> Option<PlacedGlyph> {
+        // A square of less than a pixel draws nothing, where a font of no
+        // size would draw at the system's default.
+        if side.is_nan() || side < 1.0 {
+            return None;
+        }
         let character = interface::icon(name)?;
         let face = self.backend.symbols()?;
         let glyph = match self.icons.get(&character) {
@@ -2860,6 +2865,15 @@ mod system {
             font.interface_icon("no-such-icon", (0.0, 0.0), 32.0, color, false)
                 .is_none()
         );
+        // A square of no size, or of less than a pixel, draws nothing, where
+        // CoreText's font of no size is of 12 points.
+        for side in [0.0, 0.5, -3.0, f32::NAN] {
+            assert!(
+                font.interface_icon("close", (100.0, 100.0), side, color, false)
+                    .is_none(),
+                "{side}"
+            );
+        }
         // A family that is not installed: the system's, which tells it.
         let named = |name: &str| InterfaceConfig {
             font_family: Some(lokyr_text_core::Name::try_from(name.to_owned()).unwrap()),

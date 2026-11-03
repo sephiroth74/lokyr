@@ -217,6 +217,12 @@ impl Layout {
         Some(frame)
     }
 
+    /// The size of `id`'s text or icon, in points, as the last layout
+    /// measured it: its natural size, whatever room its frame takes.
+    pub(crate) fn measured(&self, id: NodeId) -> Option<(f32, f32)> {
+        self.taffy.get_node_context(*self.nodes.get(&id)?)?.measured
+    }
+
     /// The frame of `id`, of the last layout, from its parent's top left
     /// corner, in pixels.
     pub(crate) fn local(&self, id: NodeId) -> Option<Frame> {

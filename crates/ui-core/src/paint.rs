@@ -19,6 +19,10 @@ use crate::tree::{NodeId, Tree};
 /// in points.
 const RING: f32 = 3.0;
 
+/// The top and the height of a clip across alone, a text's: down the whole
+/// of any drawable, which the clips around it cut.
+const ACROSS: (i32, u32) = (-(1 << 28), 1 << 29);
+
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
 /// window's pixels: its colors of `tokens`, its texts and icons of `font`,
 /// at the layout's scale, of the dark appearance when `dark`; the ring of
@@ -109,7 +113,10 @@ impl<B: FontBackend> Painter<'_, B> {
             }
         }
         match kind {
-            Kind::Text(text) => self.text(text, frame, color),
+            Kind::Text(text) => {
+                let natural = self.layout.measured(id).map(|(width, _)| width);
+                self.text(text, frame, natural, color);
+            }
             Kind::Icon(name) => self.icon(name, frame, color),
             Kind::Container | Kind::Spacer => {}
         }
@@ -193,17 +200,26 @@ impl<B: FontBackend> Painter<'_, B> {
     }
 
     /// The glyphs of `text`, on its line in the middle of `frame`, clipped
-    /// to it where they reach past it.
-    fn text(&mut self, text: &str, frame: Frame, color: Color) {
+    /// across to it where `natural`, its width as the layout measured it, in
+    /// points, passes it, as a title too long for its room: not down, where
+    /// an accent above the line or a descent below it keeps its ink.
+    fn text(&mut self, text: &str, frame: Frame, natural: Option<f32>, color: Color) {
         let scale = self.layout.scale();
         let face = self.font.interface();
         let (line, ascent) = (face.line() * scale, face.ascent() * scale);
         let baseline = (frame.y + (frame.height - line) / 2.0 + ascent).round();
-        let (glyphs, end) = self
+        let (glyphs, _) = self
             .font
             .interface_text(text, (frame.x, baseline), color, self.dark);
-        if end > frame.x + frame.width {
-            self.items.push(Item::PushClip(rect(frame)));
+        // A pixel past the frame, as the layout's rounding of edges takes
+        // up to one from a text's width.
+        let past = natural.is_some_and(|width| width * scale > frame.width + 1.0);
+        if past {
+            self.items.push(Item::PushClip(Rect {
+                y: ACROSS.0,
+                height: ACROSS.1,
+                ..rect(frame)
+            }));
             self.items.push(Item::Glyphs(glyphs));
             self.items.push(Item::PopClip);
         } else {
@@ -594,13 +610,14 @@ mod tests {
         else {
             panic!("{items:#?}");
         };
+        // Across alone, as an accent above the line keeps its ink.
         assert_eq!(
             *text,
             Rect {
                 x: 0,
-                y: 0,
+                y: ACROSS.0,
                 width: 40,
-                height: 13
+                height: ACROSS.1
             }
         );
         assert_eq!(glyphs.len(), 16);
@@ -815,6 +832,46 @@ mod tests {
             (true, Some(first)),
         );
         assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn an_icon_of_no_width_paints_nothing() {
+        let row = Node::container(vec![Node::icon("close").layout(view::Layout {
+            width: view::Length::Points(0.0),
+            ..view::Layout::default()
+        })]);
+        let (_, _, items) = painted(&row, 1.0, 100.0, (0.0, 0.0));
+        assert!(items.is_empty(), "{items:#?}");
+    }
+
+    /// Texts of the system's font at their natural width, of CoreText's
+    /// glyphs, whose ink reaches a pixel past their advance: no clip.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_text_of_its_natural_width_takes_no_clip() {
+        use lokyr_font_coretext::CoreText;
+        let texts = ["~/lokyr", "let", "Hello, world", "Ångström", "fn main() {}"];
+        for scale in [1.0, 2.0] {
+            let mut font = Font::new(CoreText::new(), FontConfig::default(), scale).unwrap();
+            let row = Node::container(texts.iter().map(|&text| Node::text(text)).collect()).layout(
+                view::Layout {
+                    gap: 8.0,
+                    align: view::Align::Start,
+                    ..view::Layout::default()
+                },
+            );
+            let mut tree = Tree::new();
+            let changes = tree.update(&row).unwrap();
+            let mut layout = Layout::new(scale);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, None, None, &mut font);
+            let tokens = &Theme::builtin().light.tokens;
+            let items = paint(&tree, &layout, &mut font, tokens, (0.0, 0.0), (false, None));
+            assert!(
+                !items.iter().any(|item| matches!(item, Item::PushClip(_))),
+                "{scale}: {items:#?}"
+            );
+        }
     }
 
     #[test]
