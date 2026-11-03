@@ -56,6 +56,34 @@ pub struct Gallery {
     /// is indeterminate.
     percent: u32,
     spinning: bool,
+    /// The panels to open or to close, as a plugin asks the host, since
+    /// the host took them last, and what they did.
+    asks: Vec<PanelAsk>,
+    paneled: String,
+    /// Whether the note shows, which its button switches, as the pointer
+    /// goes through it.
+    note: bool,
+}
+
+/// The gallery's menu, at the pointer.
+pub const MENU: u8 = 1;
+
+/// The gallery's find bar, in the window's top right corner.
+pub const FIND: u8 = 2;
+
+/// The gallery's panel below its button.
+pub const BELOW: u8 = 3;
+
+/// The gallery's note, a tooltip in the window's bottom left corner.
+pub const NOTE: u8 = 4;
+
+/// What the gallery asks of its panels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanelAsk {
+    /// To open one, or raise it.
+    Open(u8),
+    /// To close one.
+    Close(u8),
 }
 
 impl Gallery {
@@ -87,6 +115,9 @@ impl Gallery {
             listed: "none yet".to_owned(),
             percent: 40,
             spinning: false,
+            asks: Vec::new(),
+            paneled: "none yet".to_owned(),
+            note: false,
         }
     }
 
@@ -108,6 +139,9 @@ impl Gallery {
             }
             UiEventKind::HoverLeave => {
                 self.hovered.remove(key);
+            }
+            UiEventKind::Click if key.starts_with("open-") || self.panel_key(key) => {
+                self.panel_click(key);
             }
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
@@ -154,6 +188,164 @@ impl Gallery {
         }
     }
 
+    /// Whether `key` is of a node of a panel's, or of a button that opens
+    /// one.
+    fn panel_key(&self, key: &str) -> bool {
+        ["menu.", "find-bar.", "below."]
+            .iter()
+            .any(|prefix| key.starts_with(prefix))
+    }
+
+    /// A click on `key`, of a panel's node or of a button that opens one.
+    fn panel_click(&mut self, key: &str) {
+        let ask = match key {
+            "open-menu" => PanelAsk::Open(MENU),
+            "open-find" => PanelAsk::Open(FIND),
+            "open-below" => PanelAsk::Open(BELOW),
+            "open-note" => {
+                self.note = !self.note;
+                if self.note {
+                    PanelAsk::Open(NOTE)
+                } else {
+                    self.paneled = "closed the note".to_owned();
+                    PanelAsk::Close(NOTE)
+                }
+            }
+            "find-bar.close" => PanelAsk::Close(FIND),
+            "below.close" => PanelAsk::Close(BELOW),
+            chosen if chosen.starts_with("menu.") => {
+                self.paneled = format!("chose `{chosen}`");
+                PanelAsk::Close(MENU)
+            }
+            _ => return,
+        };
+        if let PanelAsk::Open(_) = ask {
+            self.paneled = format!("opened by `{key}`");
+        }
+        self.asks.push(ask);
+    }
+
+    /// What the gallery asks of its panels, since it was last asked.
+    pub fn take_panels(&mut self) -> Vec<PanelAsk> {
+        std::mem::take(&mut self.asks)
+    }
+
+    /// A panel closed, as the host closed it, as by Escape or a click
+    /// outside it.
+    pub fn closed(&mut self, panel: u8) {
+        self.paneled = format!("closed panel {panel}");
+    }
+
+    /// The view of the panel `panel`: its toggles of the state that their
+    /// clicks asked for.
+    pub fn panel(&self, panel: u8) -> Node {
+        let on = |key: &str| self.toggles.get(key).copied().unwrap_or(false);
+        let box_of = |children: Vec<Node>, direction: Direction| {
+            Node::container(children)
+                .layout(Layout {
+                    direction,
+                    gap: 6.0,
+                    padding: Edges::all(8.0),
+                    align: Align::Center,
+                    ..Layout::default()
+                })
+                .style(Style {
+                    background: Some(Token::from("panel.bg")),
+                    border: Some(Border {
+                        color: Token::from("panel.border"),
+                        width: 1.0,
+                    }),
+                    radius: 8.0,
+                    shadow: Some(Shadow::default()),
+                    ..Style::default()
+                })
+        };
+        match panel {
+            MENU => {
+                let item = |key: &str, label: &str| {
+                    Node::button(label).key(key).layout(Layout {
+                        width: Length::Fraction(1.0),
+                        ..Layout::default()
+                    })
+                };
+                box_of(
+                    vec![
+                        item("menu.copy", "Copy"),
+                        item("menu.paste", "Paste"),
+                        Node::separator(),
+                        item("menu.split", "Split Right"),
+                    ],
+                    Direction::Column,
+                )
+                .layout(Layout {
+                    direction: Direction::Column,
+                    gap: 4.0,
+                    padding: Edges::all(6.0),
+                    width: Length::Points(160.0),
+                    ..Layout::default()
+                })
+            }
+            FIND => box_of(
+                vec![
+                    Node::icon("search").style(Style {
+                        color: Some(Token::from("text.secondary")),
+                        ..Style::default()
+                    }),
+                    Node::field("Find").key("find-bar.field"),
+                    Node::toggle("case-sensitive", on("find-bar.case"))
+                        .key("find-bar.case")
+                        .tooltip("Match Case"),
+                    Node::toggle("regex", on("find-bar.regex"))
+                        .key("find-bar.regex")
+                        .tooltip("Regular Expression"),
+                    Node::icon_button("close")
+                        .key("find-bar.close")
+                        .tooltip("Close"),
+                ],
+                Direction::Row,
+            ),
+            BELOW => box_of(
+                vec![
+                    Node::text("Anchored below its button"),
+                    Node::field("Name").key("below.field"),
+                    Node::button("Done").key("below.close"),
+                ],
+                Direction::Column,
+            ),
+            _ => box_of(
+                vec![secondary(
+                    "A note of the tooltip's role: the pointer goes through it",
+                )],
+                Direction::Row,
+            ),
+        }
+    }
+
+    fn panels(&self) -> Node {
+        let opener = |key: &str, label: &str| Node::button(label).key(key);
+        column(
+            8.0,
+            vec![
+                Node::container(vec![
+                    opener("open-menu", "A menu at the pointer"),
+                    opener("open-find", "A find bar"),
+                    opener("open-below", "A panel below this"),
+                    opener(
+                        "open-note",
+                        if self.note { "Hide the note" } else { "A note" },
+                    ),
+                ])
+                .layout(Layout {
+                    gap: 8.0,
+                    align: Align::Center,
+                    ..Layout::default()
+                }),
+                secondary(&format!("last: {}", self.paneled)),
+                secondary("Escape closes them; a click outside, the menu and the panel below"),
+            ],
+        )
+    }
+
     /// The texts that the gallery sets in its fields, by their keys, since
     /// it was last asked.
     pub fn take_texts(&mut self) -> Vec<(String, String)> {
@@ -193,6 +385,7 @@ impl Gallery {
                 section("The keyboard's focus", self.focus()),
                 section("Fields", self.fields()),
                 section("A list of 100 000 rows", self.list()),
+                section("Floating panels", self.panels()),
             ],
         );
         let halves = Node::container(vec![half(left), half(right)]).layout(Layout {
@@ -1125,7 +1318,34 @@ mod tests {
             "more",
             "spin",
         ];
-        assert_eq!(order(true), [&controls[..], &rest[..]].concat());
+        let openers = ["open-menu", "open-find", "open-below", "open-note"];
+        assert_eq!(
+            order(true),
+            [&controls[..], &rest[..], &openers[..]].concat()
+        );
+    }
+
+    #[test]
+    fn the_find_bar_s_toggles_take_the_state_that_their_clicks_ask_for() {
+        let mut gallery = Gallery::new(false);
+        let toggle = |gallery: &Gallery, key: &str| {
+            let view = gallery.panel(FIND);
+            let mut tree = Tree::new();
+            tree.update(&view).unwrap();
+            let node = tree.by_key(&key.into()).unwrap();
+            match tree.kind(node) {
+                Some(Kind::Toggle(toggle)) => toggle.on,
+                _ => panic!("no toggle"),
+            }
+        };
+        assert!(!toggle(&gallery, "find-bar.case"));
+        gallery.event("find-bar.case", UiEventKind::Toggle { on: true });
+        assert!(toggle(&gallery, "find-bar.case"));
+        assert!(!toggle(&gallery, "find-bar.regex"));
+        gallery.event("find-bar.regex", UiEventKind::Toggle { on: true });
+        gallery.event("find-bar.case", UiEventKind::Toggle { on: false });
+        assert!(toggle(&gallery, "find-bar.regex"));
+        assert!(!toggle(&gallery, "find-bar.case"));
     }
 
     #[test]

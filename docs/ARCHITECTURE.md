@@ -119,7 +119,7 @@ lokyr/
 │   ├── search/            literal and regex search over the grid
 │   ├── kernel/            modules: workspace and layout tree, commands, keymap, events, config, texts (l10n), services, shell integration's scripts and marks; serves the HostApi's messages
 │   ├── app-core/          the window's controller: windows' and panes' state, input's routing, gestures, confirmations, layout geometry, frame composition; generic over a `Backend`, its GPU's Renderer and Surface and its FontBackend; tested with the fake platform and a fake drawing
-│   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), hit testing, AccessKit, display list
+│   ├── ui-core/           view tree, layout (taffy), widgets (IME text field, lists, menus), surfaces and floating panels, hit testing, AccessKit, display list
 │   ├── text-core/         FontBackend trait (discovery, fallback, shaping, rasterization), shaping cache, glyph atlas, box-drawing sprites, UCD tables, the symbols' font
 │   ├── render-core/       Renderer and Surface traits, display-list types, shaders
 │   ├── platform-core/     traits: app, windows, quick windows, global keys, events, IME, clipboard, menus, notifications, appearance, targets that open; the fake platform and the conformance suite

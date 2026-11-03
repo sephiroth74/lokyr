@@ -14,28 +14,20 @@ use lokyr_platform_core::{
     ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, WindowAttributes, WindowEvent,
     WindowId, WindowSize,
 };
-use lokyr_plugin_sdk::view::{self, Kind, UiEventKind};
+use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
-use lokyr_render_metal::{Gpu, MetalRenderer, Surface};
+use lokyr_render_metal::{Gpu, MetalRenderer, Surface as Drawable};
 use lokyr_text_core::FontConfig;
-use lokyr_ui_core::field::{Clipboard, Fields};
-use lokyr_ui_core::focus::{Focus, Routed, Target};
+use lokyr_ui_core::field::Clipboard;
 use lokyr_ui_core::font::Font;
-use lokyr_ui_core::layout::Layout;
-use lokyr_ui_core::list::{self, Lists};
-use lokyr_ui_core::paint::{self, Shown, paint};
-use lokyr_ui_core::pointer::{self, Button, NodeEvent, Pointer};
+use lokyr_ui_core::pointer::Button;
 use lokyr_ui_core::progress;
 use lokyr_ui_core::theme::Theme;
-use lokyr_ui_core::tooltip::Tooltip;
 use lokyr_ui_core::tree::{NodeId, Tree};
-use lokyr_ui_core::widget;
 use lokyr_vt_core::input::{self as vt, KeyAction, Keypad, Mods};
 
 use crate::gallery::Gallery;
-
-/// The gallery's one panel.
-const PANEL: u8 = 0;
+use crate::view::{Keyed, MAIN, View};
 
 /// The command of the menu's Quit.
 const QUIT: &str = "gallery.quit";
@@ -48,10 +40,6 @@ const SIZE: Size = Size {
 
 /// The points of a line of a wheel's scroll, the interface text's line.
 const LINE: f64 = 16.0;
-
-/// The rounds of events that a change of the tree can bring, as a hover
-/// that moves what is under the pointer, past which it waits for the next.
-const ROUNDS: usize = 4;
 
 /// What draws the gallery: the GPU, its renderer and the fonts.
 struct Drawing {
@@ -76,177 +64,11 @@ impl Drawing {
     }
 }
 
-/// The gallery's view, kept and laid out, and what the pointer and the
-/// keyboard do over it.
-struct View {
-    gallery: Gallery,
-    tree: Tree,
-    layout: Layout,
-    pointer: Pointer,
-    focus: Focus<u8>,
-    fields: Fields,
-    tooltip: Tooltip,
-    lists: Lists,
-}
-
-impl View {
-    fn new(gallery: Gallery, scale: f32) -> Self {
-        let mut view = Self {
-            gallery,
-            tree: Tree::new(),
-            layout: Layout::new(scale),
-            pointer: Pointer::new(),
-            focus: Focus::new(),
-            fields: Fields::new(),
-            tooltip: Tooltip::new(),
-            lists: Lists::new(),
-        };
-        view.render();
-        view
-    }
-
-    /// Takes the gallery's view anew, diffed against the last, and the
-    /// texts that it sets in its fields.
-    fn render(&mut self) {
-        let Ok(changes) = self.tree.update(&self.gallery.view()) else {
-            return;
-        };
-        self.layout.update(&self.tree, &changes);
-        self.focus.updated(PANEL, &self.tree);
-        self.fields.updated(&self.tree);
-        self.lists.updated(&self.tree);
-        for (key, text) in self.gallery.take_texts() {
-            self.fields.set_text(&view::Key(key), &text);
-        }
-    }
-
-    /// Lays the view out in `width` pixels, and as high as the window
-    /// leaves it, `height`: its lists' rows that show, and the items that
-    /// they ask the gallery for, a few rounds at most; its fields scrolled
-    /// to their carets.
-    fn lay_out(&mut self, font: &mut Font<CoreText>, width: f32, height: Option<f32>) {
-        for _ in 0..ROUNDS {
-            self.layout.compute(&self.tree, Some(width), height, font);
-            let events = self.lists.lay_out(&self.tree, &self.layout, font);
-            if events.is_empty() {
-                break;
-            }
-            for event in events {
-                self.gallery.event(&event.key.0, event.kind);
-            }
-            self.render();
-        }
-        let focused = self.focused();
-        self.fields.follow(&self.tree, &self.layout, focused, font);
-    }
-
-    /// Hands the events of a field's text to the gallery, and takes its
-    /// view anew.
-    fn typed(&mut self, events: Vec<NodeEvent>) {
-        for event in events {
-            self.gallery.event(&event.key.0, event.kind);
-        }
-        self.render();
-    }
-
-    /// Hands `events` to the gallery, and takes its view anew, with the
-    /// events that the new layout brings, a few rounds at most.
-    fn apply(
-        &mut self,
-        font: &mut Font<CoreText>,
-        (width, height): (f32, f32),
-        events: Vec<NodeEvent>,
-    ) {
-        let mut events = events;
-        for _ in 0..ROUNDS {
-            if events.is_empty() {
-                return;
-            }
-            for event in events {
-                self.gallery.event(&event.key.0, event.kind);
-            }
-            self.render();
-            self.lay_out(font, width, Some(height));
-            events = self.pointer.laid_out(&self.tree, &self.layout);
-        }
-    }
-
-    /// The node with the keyboard's focus.
-    fn focused(&self) -> Option<NodeId> {
-        match self.focus.target() {
-            Target::Node { node, .. } => Some(node),
-            Target::Pane => None,
-        }
-    }
-
-    /// Tells the gallery where the focus is, and the focus's and the
-    /// blur's events of its move.
-    fn tell_focus(&mut self) {
-        let key = self
-            .focused()
-            .and_then(|node| self.tree.key(node))
-            .map(|key| key.0.clone());
-        self.gallery.focused(key.as_deref());
-        let tree = &self.tree;
-        for (_, event) in self.focus.events(|_| Some(tree)) {
-            self.gallery.event(&event.key.0, event.kind);
-        }
-        self.render();
-    }
-
-    /// The display list of the view, from `origin`, over the theme's
-    /// background, and its tooltip over it, within the window's `room`,
-    /// in pixels.
-    fn paint(
-        &self,
-        font: &mut Font<CoreText>,
-        origin: (f32, f32),
-        room: (f32, f32),
-    ) -> DisplayList {
-        let theme = Theme::builtin();
-        let variant = theme.variant(self.gallery.dark());
-        let dark = self.gallery.dark();
-        font.begin_frame();
-        let mut items = paint(
-            &self.tree,
-            &self.layout,
-            font,
-            &variant.tokens,
-            origin,
-            Shown {
-                dark,
-                focused: self.focused(),
-                fields: &self.fields,
-                hovered: self.pointer.hovered().next_back(),
-                pressed: self.pointer.pressing(),
-                lists: &self.lists,
-            },
-        );
-        if let Some((text, at)) = self.tooltip.shown(&self.tree) {
-            let at = (at.0 + origin.0, at.1 + origin.1);
-            let scale = self.layout.scale();
-            items.extend(paint::tooltip(
-                font,
-                &variant.tokens,
-                text,
-                (at, room),
-                (scale, dark),
-            ));
-        }
-        let background = variant.colors.background;
-        DisplayList {
-            background: Color::from_rgb8(background.r, background.g, background.b),
-            items,
-            frame: font.atlas_frame(),
-        }
-    }
-}
-
 /// The gallery's window, and what draws it.
 struct App {
     drawing: Option<Drawing>,
     view: Option<View>,
-    window: Option<(WindowId, Surface)>,
+    window: Option<(WindowId, Drawable)>,
     size: Option<WindowSize>,
     areas: Vec<PointerArea>,
     dark: bool,
@@ -298,7 +120,7 @@ impl App {
         let handle = platform
             .window_handle(window)
             .ok_or("the window has no view")?;
-        let surface = Surface::new(&drawing.gpu, handle).map_err(|error| error.to_string())?;
+        let surface = Drawable::new(&drawing.gpu, handle).map_err(|error| error.to_string())?;
         platform.track_mouse_moves(window, true);
         platform.set_appearance(Some(if self.dark {
             Appearance::Dark
@@ -316,9 +138,9 @@ impl App {
     fn resized(&mut self, platform: &mut dyn Platform, size: WindowSize) {
         let scale = size.scale as f32;
         if let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing)
-            && view.layout.scale() != scale
+            && view.main.layout.scale() != scale
         {
-            view.layout.set_scale(&view.tree, scale);
+            view.set_scale(scale);
             drawing.font.set_scale(scale);
         }
         self.size = Some(size);
@@ -341,9 +163,23 @@ impl App {
             return;
         };
         drawing.font.set_drawing(drawing.renderer.drawing_from());
-        view.lay_out(&mut drawing.font, width, Some(height));
+        view.lay_out(&mut drawing.font, (width, Some(height)));
         let room = (size.pixels.width as f32, size.pixels.height as f32);
-        let list = view.paint(&mut drawing.font, (0.0, bar), room);
+        let theme = Theme::builtin();
+        let variant = theme.variant(view.gallery.dark());
+        drawing.font.begin_frame();
+        let items = view.paint(
+            &mut drawing.font,
+            &variant.tokens,
+            ((0.0, bar), room),
+            view.gallery.dark(),
+        );
+        let background = variant.colors.background;
+        let list = DisplayList {
+            background: Color::from_rgb8(background.r, background.g, background.b),
+            items,
+            frame: drawing.font.atlas_frame(),
+        };
         let updates = drawing.font.texture_updates();
         surface.resize(size.pixels.width, size.pixels.height, size.scale);
         let drawn = drawing
@@ -353,34 +189,7 @@ impl App {
         if let Err(error) = drawn {
             eprintln!("ui-gallery: {error}");
         }
-        // The pointer's shapes over the view, which the window server
-        // shows as it moves.
         let scale = size.scale;
-        let areas: Vec<PointerArea> = pointer::areas(&view.tree, &view.layout)
-            .into_iter()
-            .map(|area| PointerArea {
-                origin: Point {
-                    x: f64::from(area.rect.x) / scale,
-                    y: (f64::from(area.rect.y) + f64::from(bar)) / scale,
-                },
-                size: Size {
-                    width: f64::from(area.rect.width) / scale,
-                    height: f64::from(area.rect.height) / scale,
-                },
-                shape: match area.shape {
-                    view::PointerShape::Arrow => PointerShape::Arrow,
-                    view::PointerShape::Text => PointerShape::Text,
-                    view::PointerShape::PointingHand => PointerShape::PointingHand,
-                },
-            })
-            .collect();
-        if areas != self.areas {
-            platform.set_pointer_areas(*window, &areas);
-            self.areas = areas;
-        }
-        // The indeterminate progresses, which the window server moves.
-        let theme = Theme::builtin();
-        let tokens = &theme.variant(view.gallery.dark()).tokens;
         let points = |pixels: f32| f64::from(pixels) / scale;
         let place = |rect: lokyr_render_core::Rect| {
             (
@@ -394,7 +203,31 @@ impl App {
                 },
             )
         };
-        let sweeps: Vec<Sweep> = progress::sweeps(&view.tree, &view.layout, tokens)
+        // The pointer's shapes over the view, which the window server
+        // shows as it moves.
+        let areas: Vec<PointerArea> = view
+            .areas()
+            .into_iter()
+            .map(|area| {
+                let (origin, size) = place(area.rect);
+                PointerArea {
+                    origin,
+                    size,
+                    shape: match area.shape {
+                        view::PointerShape::Arrow => PointerShape::Arrow,
+                        view::PointerShape::Text => PointerShape::Text,
+                        view::PointerShape::PointingHand => PointerShape::PointingHand,
+                    },
+                }
+            })
+            .collect();
+        if areas != self.areas {
+            platform.set_pointer_areas(*window, &areas);
+            self.areas = areas;
+        }
+        // The indeterminate progresses, which the window server moves.
+        let sweeps: Vec<Sweep> = view
+            .sweeps(&variant.tokens)
             .into_iter()
             .map(|area| {
                 let (origin, size) = place(area.rect);
@@ -429,19 +262,16 @@ impl App {
         }
         // The input method's rectangle, of the field that has the focus,
         // by which it places its candidates and the palette of emoji.
-        if let Some(area) = view.focused().and_then(|node| {
-            view.fields
-                .text_area(&view.tree, &view.layout, node, &mut drawing.font)
-        }) {
+        if let Some(area) = view.text_area(&mut drawing.font) {
             platform.set_text_area(
                 *window,
                 Point {
-                    x: f64::from(area.x) / scale,
-                    y: (f64::from(area.y) + f64::from(bar)) / scale,
+                    x: points(area.x),
+                    y: points(area.y + bar),
                 },
                 Size {
-                    width: f64::from(area.width) / scale,
-                    height: f64::from(area.height) / scale,
+                    width: points(area.width),
+                    height: points(area.height),
                 },
             );
         }
@@ -453,33 +283,14 @@ impl App {
         position: Point,
         press: Option<(MouseButton, bool, Modifiers, u32)>,
     ) {
-        let (Some(at), Some((width, height, _))) = (self.at(position), self.room()) else {
+        let Some(at) = self.at(position) else {
             return;
         };
         let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing) else {
             return;
         };
-        // A press keeps a field's composition as it stands, which the input
-        // method then forgets.
-        if press.is_some_and(|(_, pressed, ..)| pressed)
-            && let Some(node) = view.fields.composing(&view.tree)
-            && let Some((window, _)) = &self.window
-        {
-            let events = view
-                .fields
-                .keep_composition(&view.tree, node)
-                .unwrap_or_default();
-            platform.end_composition(*window);
-            view.typed(events);
-        }
-        let events = match press {
-            None => {
-                if view.fields.selecting() {
-                    view.fields
-                        .drag((&view.tree, &view.layout), at, &mut drawing.font);
-                }
-                view.pointer.moved(&view.tree, &view.layout, at)
-            }
+        match press {
+            None => view.moved(at, &mut drawing.font, Instant::now()),
             Some((button, pressed, mods, clicks)) => {
                 let button = match button {
                     MouseButton::Left if mods.control => Button::Secondary,
@@ -489,53 +300,18 @@ impl App {
                     _ => return,
                 };
                 if pressed {
-                    let path = pointer::hit(&view.tree, &view.layout, at);
-                    if view.focus.pressed(PANEL, &view.tree, &path) {
-                        view.tell_focus();
-                        view.lay_out(&mut drawing.font, width, Some(height));
+                    // A press keeps a field's composition as it stands,
+                    // which the input method then forgets.
+                    let kept = view.pressed(at, (button, clicks, mods.shift), &mut drawing.font);
+                    if kept && let Some((window, _)) = &self.window {
+                        platform.end_composition(*window);
                     }
-                    // A field under the primary button takes the caret
-                    // there, or selects; a list selects the row there.
-                    let mut events = Vec::new();
-                    if button == Button::Primary
-                        && let Some(&node) = path.last()
-                    {
-                        match view.tree.kind(node) {
-                            Some(Kind::Field(_)) => view.fields.press(
-                                (&view.tree, &view.layout),
-                                node,
-                                (at, clicks, mods.shift),
-                                &mut drawing.font,
-                            ),
-                            Some(Kind::List(_)) => {
-                                events = view.lists.press(
-                                    (&view.tree, &view.layout),
-                                    node,
-                                    (at, clicks),
-                                );
-                            }
-                            _ => {}
-                        }
-                    }
-                    events.extend(view.pointer.pressed(&view.tree, &view.layout, at, button));
-                    events
                 } else {
-                    if button == Button::Primary {
-                        view.fields.release();
-                    }
-                    view.pointer
-                        .released(&view.tree, &view.layout, at, button, clicks)
+                    view.released(at, (button, clicks));
                 }
             }
-        };
-        view.apply(&mut drawing.font, (width, height), events);
-        // A press hides the tooltip; a move follows it.
-        if press.is_some() {
-            view.tooltip.dismiss();
         }
-        let deadline = view
-            .tooltip
-            .hover(&view.tree, view.pointer.hovered(), at, Instant::now());
+        let deadline = self.view.as_ref().and_then(View::deadline);
         self.wake_at(platform, deadline);
         self.request_frame(platform);
     }
@@ -563,37 +339,21 @@ impl App {
         let Some(view) = &mut self.view else {
             return;
         };
-        if view.tooltip.tick(Instant::now()) {
+        if view.tick(Instant::now()) {
             self.request_frame(platform);
         }
-        let deadline = self.view.as_ref().and_then(|view| view.tooltip.deadline());
+        let deadline = self.view.as_ref().and_then(View::deadline);
         self.wake_at(platform, deadline);
     }
 
     fn scrolled(&mut self, platform: &mut dyn Platform, position: Point, delta: (f32, f32)) {
-        let (Some(at), Some((width, height, _))) = (self.at(position), self.room()) else {
+        let Some(at) = self.at(position) else {
             return;
         };
-        let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing) else {
+        let Some(view) = &mut self.view else {
             return;
         };
-        // The innermost list or scroll area under the pointer takes the
-        // scroll; another node learns of it.
-        let path = pointer::hit(&view.tree, &view.layout, at);
-        let events = match list::scrollable(&view.tree, &path) {
-            Some(node) => {
-                list::scroll(
-                    (&view.tree, &mut view.layout, &mut view.lists),
-                    node,
-                    delta.1,
-                );
-                view.lay_out(&mut drawing.font, width, Some(height));
-                view.pointer.laid_out(&view.tree, &view.layout)
-            }
-            None => view.pointer.scrolled(&view.tree, &view.layout, at, delta),
-        };
-        view.apply(&mut drawing.font, (width, height), events);
-        view.tooltip.dismiss();
+        view.scrolled(at, delta);
         self.wake_at(platform, None);
         self.request_frame(platform);
     }
@@ -606,9 +366,9 @@ impl App {
         let Some(view) = &mut self.view else {
             return;
         };
-        // A key hides the tooltip.
+        // A key hides the tooltips.
         if pressed {
-            let shown = view.tooltip.dismiss();
+            let shown = view.dismiss_tooltips();
             self.wake_at(platform, None);
             if shown {
                 self.request_frame(platform);
@@ -619,67 +379,17 @@ impl App {
         };
         // Tab reaches the buttons and the toggles as the system's keyboard
         // navigation has it, which it reads at each key.
-        view.focus.set_every_control(platform.keyboard_navigation());
-        let tree = &view.tree;
-        let routed = view.focus.key(|_| Some(tree), &key);
-        // A field takes its keys first, the app's those that it leaves;
-        // a button and a toggle, Space and Return.
-        if let Routed::Node { node, .. } = routed
-            && let Some(events) =
-                view.fields
-                    .key(&view.tree, node, &key, &mut Pasteboard(&mut *platform))
-        {
-            view.typed(events);
-            self.request_frame(platform);
-            return;
-        }
-        if let Routed::Node { node, .. } = routed
-            && let Some(events) = widget::key(&view.tree, node, &key)
-                .or_else(|| view.lists.key(&view.tree, node, &key))
-        {
-            view.typed(events);
-            self.request_frame(platform);
-            return;
-        }
-        if pressed && event.mods.super_key {
-            if event.code == KeyCode::KeyD {
-                self.dark = !self.dark;
-                platform.set_appearance(Some(if self.dark {
-                    Appearance::Dark
-                } else {
-                    Appearance::Light
-                }));
-                view.gallery.toggle_dark();
-                view.render();
-                self.request_frame(platform);
-            }
-            return;
-        }
-        match routed {
-            Routed::Focus => {
-                // A key that moves the focus takes the pointer back, as of
-                // a drag.
-                for event in view.pointer.cancel(&view.tree) {
-                    view.gallery.event(&event.key.0, event.kind);
-                }
-                view.tell_focus();
-                // A field that Tab gives the focus selects all of its text.
-                if let Some(node) = view.focused() {
-                    view.fields.select_all(&view.tree, node);
-                }
-            }
-            Routed::Node { node, .. } if key.action == KeyAction::Press => {
-                let name = match key.key {
-                    vt::Key::Char(' ') => "Space",
-                    vt::Key::Enter => "Return",
-                    _ => return,
-                };
-                if let Some(pressed) = view.tree.key(node).map(|key| key.0.clone()) {
-                    view.gallery.pressed(&pressed, name);
-                    view.render();
-                }
-            }
-            Routed::Node { .. } | Routed::Pane => return,
+        let every_control = platform.keyboard_navigation();
+        let keyed = view.key(&key, &mut Pasteboard(&mut *platform), every_control);
+        if keyed == Keyed::Left && pressed && event.mods.super_key && event.code == KeyCode::KeyD {
+            self.dark = !self.dark;
+            platform.set_appearance(Some(if self.dark {
+                Appearance::Dark
+            } else {
+                Appearance::Light
+            }));
+            view.gallery.toggle_dark();
+            view.render();
         }
         self.request_frame(platform);
     }
@@ -690,19 +400,10 @@ impl App {
         let Some(view) = &mut self.view else {
             return;
         };
-        let Some(node) = view.focused() else {
-            return;
-        };
-        let events = match ime {
-            Ime::Preedit { text, selection } => {
-                view.fields.compose(&view.tree, node, &text, selection)
-            }
-            Ime::Commit(text) => view.fields.commit(&view.tree, node, &text),
-        };
-        let Some(events) = events else {
-            return;
-        };
-        view.typed(events);
+        match ime {
+            Ime::Preedit { text, selection } => view.ime(&text, selection, false),
+            Ime::Commit(text) => view.ime(&text, 0..0, true),
+        }
         self.request_frame(platform);
     }
 }
@@ -811,11 +512,7 @@ impl Handler for App {
             }
             WindowEvent::Focused(false) => {
                 if let Some(view) = &mut self.view {
-                    for event in view.pointer.cancel(&view.tree) {
-                        view.gallery.event(&event.key.0, event.kind);
-                    }
-                    view.tooltip.dismiss();
-                    view.render();
+                    view.cancel();
                 }
                 self.wake_at(platform, None);
                 self.request_frame(platform);
@@ -885,7 +582,8 @@ pub fn run() -> Result<(), String> {
 }
 
 /// Draws the gallery offscreen at `scale`, light and dark, the pointer
-/// over a tab's close and the focus on a node, into PNGs in `directory`.
+/// over a tab's close, the focus on a node, and the find bar and the note
+/// open, into PNGs in `directory`.
 pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
     let mut drawing = Drawing::new(scale)?;
@@ -894,26 +592,43 @@ pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
         gallery.event("tab", UiEventKind::HoverEnter);
         gallery.event("tab.close", UiEventKind::HoverEnter);
         gallery.event("hand", UiEventKind::Click);
+        // The find bar and the note open over the page.
+        gallery.event("open-find", UiEventKind::Click);
+        gallery.event("open-note", UiEventKind::Click);
         let mut view = View::new(gallery, scale);
-        if let Some(second) = find(&view.tree, "second") {
-            view.focus.focus(PANEL, &view.tree, second);
-            view.tell_focus();
+        if let Some(second) = find(&view.main.tree, "second") {
+            view.focus.focus(MAIN, &view.main.tree, second);
         }
         let width = SIZE.width as f32 * scale;
-        view.lay_out(&mut drawing.font, width, None);
+        view.lay_out(&mut drawing.font, (width, None));
         let frame = |view: &View| {
-            view.tree
+            view.main
+                .tree
                 .root()
-                .and_then(|root| view.layout.frame(&view.tree, root))
+                .and_then(|root| view.main.layout.frame(&view.main.tree, root))
                 .ok_or("the gallery has no root")
         };
         // As high as the page that scrolls, all of it shown.
-        let page = find(&view.tree, "page").ok_or("the gallery has no page")?;
-        let room = view.layout.scroll_room(&view.tree, page);
+        let page = find(&view.main.tree, "page").ok_or("the gallery has no page")?;
+        let room = view.main.layout.scroll_room(&view.main.tree, page);
         let height = frame(&view)?.height + room;
-        view.lay_out(&mut drawing.font, width, Some(height));
+        view.lay_out(&mut drawing.font, (width, Some(height)));
         let root = frame(&view)?;
-        let list = view.paint(&mut drawing.font, (0.0, 0.0), (width, f32::MAX));
+        let theme = Theme::builtin();
+        let variant = theme.variant(dark);
+        drawing.font.begin_frame();
+        let items = view.paint(
+            &mut drawing.font,
+            &variant.tokens,
+            ((0.0, 0.0), (width, f32::MAX)),
+            dark,
+        );
+        let background = variant.colors.background;
+        let list = DisplayList {
+            background: Color::from_rgb8(background.r, background.g, background.b),
+            items,
+            frame: drawing.font.atlas_frame(),
+        };
         let updates = drawing.font.texture_updates();
         drawing
             .renderer

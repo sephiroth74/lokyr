@@ -10,6 +10,8 @@
 mod gallery;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod view;
 
 use std::process::ExitCode;
 
