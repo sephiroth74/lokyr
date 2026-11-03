@@ -9,10 +9,10 @@ use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
-    AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem,
-    Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta, Shortcut,
-    ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    AppEvent, Appearance, ContextMenu, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu,
+    MenuItem, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta,
+    Shortcut, ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, WindowAttributes,
+    WindowEvent, WindowId, WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -20,6 +20,7 @@ use lokyr_render_metal::{Gpu, MetalRenderer, Surface as Drawable};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::field::Clipboard;
 use lokyr_ui_core::font::Font;
+use lokyr_ui_core::panel::MenuEntry;
 use lokyr_ui_core::pointer::Button;
 use lokyr_ui_core::progress;
 use lokyr_ui_core::theme::Theme;
@@ -127,7 +128,10 @@ impl App {
         } else {
             Appearance::Light
         }));
-        self.view = Some(View::new(Gallery::new(self.dark), size.scale as f32));
+        let mut view = View::new(Gallery::new(self.dark), size.scale as f32);
+        // A menu's panel of menu items shows as the system's own menu.
+        view.native_menus = true;
+        self.view = Some(view);
         self.drawing = Some(drawing);
         self.window = Some((window, surface));
         self.size = Some(size);
@@ -147,10 +151,31 @@ impl App {
         self.request_frame(platform);
     }
 
-    fn request_frame(&self, platform: &mut dyn Platform) {
+    fn request_frame(&mut self, platform: &mut dyn Platform) {
         if let Some((window, _)) = &self.window {
             platform.request_frame(*window);
         }
+        self.show_native(platform);
+    }
+
+    /// Shows the native menu that a menu's panel became, if one waits, at
+    /// its place: its items' choices come back as the window's context
+    /// commands.
+    fn show_native(&mut self, platform: &mut dyn Platform) {
+        let (Some(view), Some((window, _)), Some(size)) = (&mut self.view, &self.window, self.size)
+        else {
+            return;
+        };
+        let Some((entries, at)) = view.take_native() else {
+            return;
+        };
+        let mut menu = ContextMenu::default();
+        menu.items = menu_items(&entries, &mut menu);
+        let position = Point {
+            x: f64::from(at.0) / size.scale,
+            y: (f64::from(at.1) + size.bar_pixels() as f64) / size.scale,
+        };
+        platform.show_context_menu(*window, position, &menu);
     }
 
     fn frame(&mut self, platform: &mut dyn Platform) {
@@ -408,6 +433,40 @@ impl App {
     }
 }
 
+/// The platform's items of a native menu's `entries`, and the items that
+/// `menu` dims and ticks, of their nodes' keys as their commands.
+fn menu_items(entries: &[MenuEntry], menu: &mut ContextMenu) -> Vec<MenuItem> {
+    entries
+        .iter()
+        .map(|entry| match entry {
+            MenuEntry::Item {
+                key,
+                title,
+                ticked,
+                event,
+            } => {
+                if event.is_none() {
+                    menu.dimmed.push(key.0.clone());
+                }
+                if *ticked {
+                    menu.ticked.push(key.0.clone());
+                }
+                MenuItem::Command {
+                    title: title.clone(),
+                    command: key.0.clone(),
+                    shortcut: None,
+                }
+            }
+            MenuEntry::Separator => MenuItem::Separator,
+            MenuEntry::Submenu { title, entries } => MenuItem::Submenu(Menu {
+                title: title.clone(),
+                items: menu_items(entries, menu),
+                role: None,
+            }),
+        })
+        .collect()
+}
+
 /// The system's clipboard, as a field cuts, copies and pastes.
 struct Pasteboard<'a>(&'a mut dyn Platform);
 
@@ -500,6 +559,12 @@ impl Handler for App {
             } => self.mouse(platform, position, Some((button, pressed, mods, clicks))),
             WindowEvent::Key(event) => self.key(platform, &event),
             WindowEvent::Ime(ime) => self.ime(platform, ime),
+            WindowEvent::ContextCommand(command) => {
+                if let Some(view) = &mut self.view {
+                    view.chosen(&command);
+                }
+                self.request_frame(platform);
+            }
             WindowEvent::Scroll {
                 delta, position, ..
             } => {

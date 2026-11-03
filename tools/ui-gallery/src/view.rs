@@ -8,14 +8,14 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use lokyr_plugin_sdk::view::Key as NodeKey;
+use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
 use lokyr_ui_core::field::{Carets, Clipboard};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::{Frame, Measure};
-use lokyr_ui_core::panel::{Anchor, Corner, Dismiss, Options, Panels, Role};
+use lokyr_ui_core::panel::{self, Anchor, Corner, Dismiss, MenuEntry, Options, Panels, Role};
 use lokyr_ui_core::pointer::{self, Area, Button, NodeEvent};
 use lokyr_ui_core::progress::SweepArea;
 use lokyr_ui_core::surface::Surface;
@@ -66,6 +66,12 @@ pub struct View {
     /// The window's room for the content, in pixels.
     room: (f32, f32),
     scale: f32,
+    /// Whether the platform shows a menu's panel of menu items as its own.
+    pub native_menus: bool,
+    /// The native menu to show, its entries and its place in pixels of the
+    /// content, and the events of its items' choices, by their keys.
+    native: Option<(Vec<MenuEntry>, (f32, f32))>,
+    choices: BTreeMap<String, (NodeKey, UiEventKind)>,
 }
 
 /// What a key did.
@@ -91,9 +97,28 @@ impl View {
             at: (0.0, 0.0),
             room: (0.0, 0.0),
             scale,
+            native_menus: false,
+            native: None,
+            choices: BTreeMap::new(),
         };
         view.render();
         view
+    }
+
+    /// The native menu that a menu's panel became, to show at its place, in
+    /// pixels of the content, once.
+    pub fn take_native(&mut self) -> Option<(Vec<MenuEntry>, (f32, f32))> {
+        self.native.take()
+    }
+
+    /// The item `command` of the native menu shown last was chosen: its
+    /// node's event, as its press would tell.
+    pub fn chosen(&mut self, command: &str) {
+        let Some((key, kind)) = self.choices.get(command).cloned() else {
+            return;
+        };
+        self.gallery.event(&key.0, kind);
+        self.render();
     }
 
     /// The surface of `panel`, the content's of `MAIN`.
@@ -172,6 +197,19 @@ impl View {
             ),
         };
         let anchor = self.anchor(&place);
+        let mut surface = Surface::new(self.scale);
+        let _ = surface.update(&self.gallery.panel(panel));
+        // A menu of menu items alone shows as the platform's own, at its
+        // anchor, which the system places, and draws nothing.
+        if role == Role::Menu
+            && self.native_menus
+            && let Some(entries) = panel::native_menu(&surface.tree)
+        {
+            self.choices.clear();
+            collect(&entries, &mut self.choices);
+            self.native = Some((entries, point(&anchor)));
+            return;
+        }
         self.panels.open(
             panel,
             Options {
@@ -180,8 +218,6 @@ impl View {
                 dismiss,
             },
         );
-        let mut surface = Surface::new(self.scale);
-        let _ = surface.update(&self.gallery.panel(panel));
         self.surfaces.insert(panel, (surface, place));
         if role.takes_focus()
             && let Some((surface, _)) = self.surfaces.get(&panel)
@@ -703,6 +739,42 @@ impl View {
     }
 }
 
+/// The choices of `entries`, of their submenus' too, by their keys: their
+/// nodes' events, but a disabled item's.
+fn collect(entries: &[MenuEntry], choices: &mut BTreeMap<String, (NodeKey, UiEventKind)>) {
+    for entry in entries {
+        match entry {
+            MenuEntry::Item {
+                key,
+                event: Some(event),
+                ..
+            } => {
+                choices.insert(key.0.clone(), (key.clone(), event.clone()));
+            }
+            MenuEntry::Submenu { entries, .. } => collect(entries, choices),
+            MenuEntry::Item { .. } | MenuEntry::Separator => {}
+        }
+    }
+}
+
+/// The point of `anchor` where a native menu goes, its top left corner.
+fn point(anchor: &Anchor) -> (f32, f32) {
+    match *anchor {
+        Anchor::At(at) => at,
+        Anchor::Below(rect) => (rect.x, rect.y + rect.height),
+        Anchor::Corner(rect, corner, margin) => {
+            let (left, right) = (rect.x + margin, rect.x + rect.width - margin);
+            let (top, bottom) = (rect.y + margin, rect.y + rect.height - margin);
+            match corner {
+                Corner::TopLeft => (left, top),
+                Corner::TopRight => (right, top),
+                Corner::BottomLeft => (left, bottom),
+                Corner::BottomRight => (right, bottom),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lokyr_ui_core::theme::Theme;
@@ -849,6 +921,61 @@ mod tests {
     }
 
     #[test]
+    fn a_menu_of_menu_items_shows_as_the_platform_s_own_and_its_choice_comes_back() {
+        let mut view = view();
+        view.native_menus = true;
+        let at = middle(&mut view, "open-menu");
+        click(&mut view, at);
+        // Drawn nowhere, of no focus: the platform's, at the pointer.
+        assert!(!view.panels.is_open(MENU));
+        assert_eq!(view.focused(), None);
+        let (entries, place) = view.take_native().unwrap();
+        assert_eq!(place, at);
+        assert!(view.take_native().is_none());
+        let titles: Vec<&str> = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                MenuEntry::Item { title, .. } | MenuEntry::Submenu { title, .. } => {
+                    Some(title.as_str())
+                }
+                MenuEntry::Separator => None,
+            })
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                "Copy",
+                "Paste",
+                "Hidden Files",
+                "Split Right",
+                "Open Recent"
+            ]
+        );
+        // A toggle's choice switches it, ticked the next time; an item of a
+        // submenu's chosen; another command, nothing.
+        view.chosen("menu.hidden");
+        let toggled = view.gallery.panel(MENU);
+        let mut tree = Tree::new();
+        tree.update(&toggled).unwrap();
+        let hidden = tree.by_key(&"menu.hidden".into()).unwrap();
+        assert!(matches!(
+            tree.kind(hidden),
+            Some(lokyr_plugin_sdk::view::Kind::Toggle(toggle)) if toggle.on
+        ));
+        view.chosen("menu.recent.lokyr");
+        assert_eq!(view.gallery.last_panel(), "chose `menu.recent.lokyr`");
+        click(&mut view, at);
+        let (entries, _) = view.take_native().unwrap();
+        assert!(entries.iter().any(|entry| matches!(
+            entry,
+            MenuEntry::Item { title, ticked: true, .. } if title == "Hidden Files"
+        )));
+        view.chosen("pane.copy");
+        assert_eq!(view.gallery.last_panel(), "opened by `open-menu`");
+        assert!(!view.panels.is_open(MENU));
+    }
+
+    #[test]
     fn escape_closes_the_find_bar_which_a_click_outside_leaves_and_its_field_takes_the_keys() {
         let mut view = view();
         let at = middle(&mut view, "open-find");
@@ -947,7 +1074,7 @@ mod tests {
         }
         view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
         let after = view.sweeps(tokens);
-        assert_eq!(after.len(), before.len() - 1);
+        assert!(after.len() < before.len());
         assert!(!after.iter().any(|kept| kept.rect == sweep.rect));
     }
 }

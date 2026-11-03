@@ -136,7 +136,8 @@ pub(crate) fn context(
     let mut commands = Vec::new();
     collect(&menu.items, &mut commands);
     let dimmed = Rc::new(RefCell::new(menu.dimmed.iter().cloned().collect()));
-    let target = target(mtm, shared, Some(window), commands, (dimmed, Rc::default()));
+    let ticked = Rc::new(RefCell::new(menu.ticked.iter().cloned().collect()));
+    let target = target(mtm, shared, Some(window), commands, (dimmed, ticked));
     let menu = Menu {
         title: String::new(),
         items: menu.items.clone(),

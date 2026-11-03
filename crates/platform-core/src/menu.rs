@@ -21,8 +21,8 @@ pub struct Menu {
     pub role: Option<MenuRole>,
 }
 
-/// A menu that opens at the pointer over a window, as a right click opens
-/// it.
+/// A menu that opens over a window, at the pointer as a right click opens
+/// it, or at a menu panel's anchor.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ContextMenu {
     /// Its items, from the top: a command's comes as
@@ -32,6 +32,8 @@ pub struct ContextMenu {
     /// The commands whose items are dimmed: the others' are enabled, as the
     /// main menu's dimmed ones are not.
     pub dimmed: Vec<String>,
+    /// The commands whose items are ticked, as a toggle's that is on.
+    pub ticked: Vec<String>,
 }
 
 /// The part that a menu plays for the system.

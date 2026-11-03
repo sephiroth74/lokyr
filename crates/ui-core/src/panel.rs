@@ -11,10 +11,18 @@
 //! click outside it closes without the click going on; or a dialog, which
 //! takes the keyboard as it opens. A click outside a panel, or Escape
 //! within it, closes it where its plugin asks so.
+//!
+//! A menu's panel of menu items alone, buttons and toggles of labels,
+//! separators, and submenus, each a container of a text, its title, then
+//! its items, becomes the platform's own menu where it has one, which the
+//! system places, out of the window too: [`native_menu`] gives its entries,
+//! each of the event that its node's press would tell.
 
+use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::Frame;
+use crate::tree::{NodeId, Tree};
 
 /// Where a panel goes.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -294,6 +302,86 @@ impl<P: Copy + Eq> Panels<P> {
     }
 }
 
+/// An entry of a native menu, of a menu's panel.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MenuEntry {
+    /// An item, of a button or a toggle: its node's key, its title, whether
+    /// it is ticked, as a toggle that is on, and the event of its choice, as
+    /// its node's press, none of a disabled one, which is dimmed.
+    Item {
+        /// Its node's key.
+        key: NodeKey,
+        /// Its title, its node's label.
+        title: String,
+        /// Whether it is ticked.
+        ticked: bool,
+        /// The event of its choice, `None` of a disabled one.
+        event: Option<UiEventKind>,
+    },
+    /// A line between groups of items.
+    Separator,
+    /// A menu within the menu, of its title and its entries.
+    Submenu {
+        /// Its title.
+        title: String,
+        /// Its entries.
+        entries: Vec<MenuEntry>,
+    },
+}
+
+/// The entries of the native menu of a menu's panel of `tree`, if its
+/// root's children are menu items alone: buttons and toggles of labels and
+/// keys, separators, and submenus, containers of a text, their title, then
+/// their items; `None` of any other node, as the panel then draws in the
+/// window.
+pub fn native_menu(tree: &Tree) -> Option<Vec<MenuEntry>> {
+    let root = tree.root()?;
+    let entries = entries(tree, tree.children(root))?;
+    (!entries.is_empty()).then_some(entries)
+}
+
+/// The entries of the nodes `ids` of `tree`, if each is a menu's item.
+fn entries(tree: &Tree, ids: &[NodeId]) -> Option<Vec<MenuEntry>> {
+    ids.iter().map(|&id| entry(tree, id)).collect()
+}
+
+/// The entry of `id` of `tree`, if it is a menu's item.
+fn entry(tree: &Tree, id: NodeId) -> Option<MenuEntry> {
+    let item = |title: &str, ticked: bool, event: Option<UiEventKind>| {
+        let key = tree.key(id)?.clone();
+        (!title.is_empty()).then(|| MenuEntry::Item {
+            key,
+            title: title.to_owned(),
+            ticked,
+            event,
+        })
+    };
+    match tree.kind(id)? {
+        Kind::Button(button) => item(
+            &button.label,
+            false,
+            (!button.disabled).then_some(UiEventKind::Click),
+        ),
+        Kind::Toggle(toggle) => item(
+            &toggle.label,
+            toggle.on,
+            (!toggle.disabled).then_some(UiEventKind::Toggle { on: !toggle.on }),
+        ),
+        Kind::Separator => Some(MenuEntry::Separator),
+        Kind::Container => {
+            let (&first, items) = tree.children(id).split_first()?;
+            let Some(Kind::Text(title)) = tree.kind(first) else {
+                return None;
+            };
+            Some(MenuEntry::Submenu {
+                title: title.clone(),
+                entries: entries(tree, items)?,
+            })
+        }
+        _ => None,
+    }
+}
+
 /// Whether `frame` holds `at`.
 fn holds(frame: Frame, (x, y): (f32, f32)) -> bool {
     x >= frame.x && x < frame.x + frame.width && y >= frame.y && y < frame.y + frame.height
@@ -460,6 +548,83 @@ mod tests {
         assert!(panels.close(4));
         assert!(!panels.close(4));
         assert!(!panels.anchor(4, Anchor::At((0.0, 0.0))));
+    }
+
+    #[test]
+    fn a_menu_s_panel_of_menu_items_alone_becomes_a_native_menu() {
+        use lokyr_plugin_sdk::view::{self, Node};
+        let tree = |root: Node| {
+            let mut tree = Tree::new();
+            tree.update(&root).unwrap();
+            tree
+        };
+        let disabled = Node::new(Kind::Button(view::Button {
+            label: "Paste".to_owned(),
+            disabled: true,
+            ..view::Button::default()
+        }))
+        .key("paste");
+        let hidden = Node::new(Kind::Toggle(view::Toggle {
+            label: "Hidden Files".to_owned(),
+            on: true,
+            ..view::Toggle::default()
+        }))
+        .key("hidden");
+        let menu = Node::container(vec![
+            Node::button("Copy").key("copy"),
+            disabled,
+            Node::separator(),
+            hidden,
+            Node::container(vec![
+                Node::text("Open Recent"),
+                Node::button("lokyr").key("recent.lokyr"),
+            ]),
+        ]);
+        let item = |key: &str, title: &str, ticked, event| MenuEntry::Item {
+            key: NodeKey::from(key),
+            title: title.to_owned(),
+            ticked,
+            event,
+        };
+        assert_eq!(
+            native_menu(&tree(menu)),
+            Some(vec![
+                item("copy", "Copy", false, Some(UiEventKind::Click)),
+                item("paste", "Paste", false, None),
+                MenuEntry::Separator,
+                item(
+                    "hidden",
+                    "Hidden Files",
+                    true,
+                    Some(UiEventKind::Toggle { on: false })
+                ),
+                MenuEntry::Submenu {
+                    title: "Open Recent".to_owned(),
+                    entries: vec![item(
+                        "recent.lokyr",
+                        "lokyr",
+                        false,
+                        Some(UiEventKind::Click)
+                    )],
+                },
+            ])
+        );
+        // A node of no menu's item, a button of an icon alone, a container
+        // of no title, a root of no children or that is no container: drawn.
+        for root in [
+            Node::container(vec![
+                Node::button("Copy").key("copy"),
+                Node::text("3 of 12"),
+            ]),
+            Node::container(vec![Node::icon_button("add").key("add")]),
+            Node::container(vec![Node::container(vec![
+                Node::button("Copy").key("copy"),
+            ])]),
+            Node::container(vec![]),
+            Node::button("Copy").key("copy"),
+        ] {
+            assert_eq!(native_menu(&tree(root)), None);
+        }
     }
 
     #[test]

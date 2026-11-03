@@ -146,6 +146,12 @@ impl Gallery {
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
             UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
+            // A toggle of the menu, chosen, closes it, as a menu's item.
+            UiEventKind::Toggle { on } if key.starts_with("menu.") => {
+                self.toggles.insert(key.to_owned(), on);
+                self.paneled = format!("`{key}` {}", if on { "on" } else { "off" });
+                self.asks.push(PanelAsk::Close(MENU));
+            }
             UiEventKind::Click if BUTTONS.contains(&key) => {
                 self.pressed = format!("click on `{key}`");
             }
@@ -225,6 +231,12 @@ impl Gallery {
         self.asks.push(ask);
     }
 
+    /// What the panels did last.
+    #[cfg(test)]
+    pub fn last_panel(&self) -> &str {
+        &self.paneled
+    }
+
     /// What the gallery asks of its panels, since it was last asked.
     pub fn take_panels(&mut self) -> Vec<PanelAsk> {
         std::mem::take(&mut self.asks)
@@ -268,12 +280,39 @@ impl Gallery {
                         ..Layout::default()
                     })
                 };
+                let hidden = Node::new(Kind::Toggle(view::Toggle {
+                    label: "Hidden Files".to_owned(),
+                    on: on("menu.hidden"),
+                    ..view::Toggle::default()
+                }))
+                .key("menu.hidden")
+                .layout(Layout {
+                    width: Length::Fraction(1.0),
+                    ..Layout::default()
+                });
+                let recent = column(
+                    4.0,
+                    vec![
+                        secondary("Open Recent"),
+                        item("menu.recent.lokyr", "~/Projects/lokyr"),
+                        item("menu.recent.notes", "~/Notes"),
+                    ],
+                )
+                .layout(Layout {
+                    direction: Direction::Column,
+                    gap: 4.0,
+                    width: Length::Fraction(1.0),
+                    ..Layout::default()
+                });
                 box_of(
                     vec![
                         item("menu.copy", "Copy"),
                         item("menu.paste", "Paste"),
                         Node::separator(),
+                        hidden,
                         item("menu.split", "Split Right"),
+                        Node::separator(),
+                        recent,
                     ],
                     Direction::Column,
                 )

@@ -141,7 +141,11 @@ impl<B: Backend> App<B> {
                 shortcut: None,
             }));
         }
-        let menu = ContextMenu { items, dimmed };
+        let menu = ContextMenu {
+            items,
+            dimmed,
+            ticked: Vec::new(),
+        };
         platform.show_context_menu(window, position, &menu);
     }
 
