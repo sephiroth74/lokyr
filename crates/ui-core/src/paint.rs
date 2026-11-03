@@ -231,16 +231,21 @@ impl<B: FontBackend> Painter<'_, B> {
             ),
             _ => ((0.0, 0.0), own),
         };
-        let start = self.items.len();
-        let ringed = self.ring.is_some();
-        self.node_itself(id, inherited);
         let (dx, dy) = (offset.0.round() as i32, offset.1.round() as i32);
         if (dx, dy) == (0, 0) && opacity >= 1.0 {
+            self.node_itself(id, inherited);
             return;
         }
-        for item in &mut self.items[start..] {
+        // Its subtree's items apart, as the items before them would take
+        // its first shapes and glyphs into theirs, which do not move.
+        let before = std::mem::take(&mut self.items);
+        let ringed = self.ring.is_some();
+        self.node_itself(id, inherited);
+        let mut own = std::mem::replace(&mut self.items, before);
+        for item in &mut own {
             moved(item, (dx, dy), opacity);
         }
+        self.items.extend(own);
         if !ringed && let Some((ring, _)) = &mut self.ring {
             ring.rect.x += dx;
             ring.rect.y += dy;
@@ -2212,7 +2217,8 @@ mod tests {
 
         use crate::animation::Animations;
         // A box of a text, of a linear transition, half opaque, moved 20
-        // points right by its parent's padding.
+        // points right by its parent's padding, its parent of a background,
+        // whose shape its own would join.
         let root = |padding: f32| {
             Node::container(vec![
                 Node::container(vec![Node::text("x")])
@@ -2233,6 +2239,10 @@ mod tests {
                     ..Edges::default()
                 },
                 ..view::Layout::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("panel.bg")),
+                ..view::Style::default()
             })
         };
         let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
@@ -2278,12 +2288,13 @@ mod tests {
             }
             (shapes, glyphs)
         };
-        // Halfway: 10 points left of its place, its text with it; half
-        // opaque, its text too.
+        // Halfway: 10 points left of its place, its text with it, over its
+        // parent's background, which stays; half opaque, its text too.
         let half = start + Duration::from_millis(100);
         let (shapes, glyphs) = split(&painted(&mut font, half, None));
-        assert_eq!(shapes[0].rect.x, 10);
-        assert_eq!(shapes[0].fill.alpha, token("accent").alpha * 0.5);
+        assert_eq!(shapes[0].rect.x, 0);
+        assert_eq!(shapes[1].rect.x, 10);
+        assert_eq!(shapes[1].fill.alpha, token("accent").alpha * 0.5);
         assert_eq!(glyphs[0].x, 10);
         assert_eq!(glyphs[0].color.alpha, token("text").alpha * 0.5);
         // At its end, at its place; the focus's ring with it before.
@@ -2292,7 +2303,7 @@ mod tests {
             start + Duration::from_millis(200),
             None,
         ));
-        assert_eq!((shapes[0].rect.x, glyphs[0].x), (20, 20));
+        assert_eq!((shapes[1].rect.x, glyphs[0].x), (20, 20));
         let ringed = painted(&mut font, half, Some(box_node));
         let (shapes, _) = split(&ringed);
         let ring = shapes.last().unwrap();
@@ -2306,8 +2317,8 @@ mod tests {
             (0.0, 0.0),
             shown(true, None),
         ));
-        assert_eq!(shapes[0].rect.x, 20);
-        assert_eq!(shapes[0].fill.alpha, token("accent").alpha * 0.5);
+        assert_eq!(shapes[1].rect.x, 20);
+        assert_eq!(shapes[1].fill.alpha, token("accent").alpha * 0.5);
     }
 
     #[test]

@@ -64,10 +64,11 @@ pub struct Gallery {
     /// Whether the note shows, which its button switches, as the pointer
     /// goes through it.
     note: bool,
-    /// The order of the tabs that move, and whether the box that fades
-    /// shows.
+    /// The order of the tabs that move, whether the box that fades shows,
+    /// and whether both take ten times their time.
     order: Vec<usize>,
     boxed: bool,
+    slow: bool,
 }
 
 /// The gallery's menu, at the pointer.
@@ -125,6 +126,7 @@ impl Gallery {
             note: false,
             order: vec![0, 1, 2, 3],
             boxed: true,
+            slow: false,
         }
     }
 
@@ -152,6 +154,7 @@ impl Gallery {
             }
             UiEventKind::Click if key == "anim.shuffle" => self.order.rotate_right(1),
             UiEventKind::Toggle { on } if key == "anim.boxed" => self.boxed = on,
+            UiEventKind::Toggle { on } if key == "anim.slow" => self.slow = on,
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
             UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
@@ -370,9 +373,14 @@ impl Gallery {
     }
 
     fn animations(&self) -> Node {
+        let times = if self.slow { 10.0 } else { 1.0 };
         let moving = Transition {
-            duration: 0.3,
+            duration: 0.3 * times,
             easing: Easing::EaseInOut,
+        };
+        let fading = Transition {
+            duration: Transition::default().duration * times,
+            ..Transition::default()
         };
         let tabs = self
             .order
@@ -406,7 +414,7 @@ impl Gallery {
                 background: Some(Token::from("toggle.on.bg")),
                 radius: 6.0,
                 opacity: Some(if self.boxed { 1.0 } else { 0.0 }),
-                transition: Some(Transition::default()),
+                transition: Some(fading),
                 ..Style::default()
             });
         let controls = Node::container(vec![
@@ -417,6 +425,12 @@ impl Gallery {
                 ..view::Toggle::default()
             }))
             .key("anim.boxed"),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Slow motion".to_owned(),
+                on: self.slow,
+                ..view::Toggle::default()
+            }))
+            .key("anim.slow"),
         ])
         .layout(Layout {
             gap: 8.0,
@@ -1442,6 +1456,7 @@ mod tests {
             "open-note",
             "anim.shuffle",
             "anim.boxed",
+            "anim.slow",
         ];
         assert_eq!(
             order(true),

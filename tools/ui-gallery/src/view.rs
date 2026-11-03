@@ -981,6 +981,16 @@ mod tests {
         click(&mut view, at);
         view.animate(after, true);
         assert!(!view.animating(after));
+        // In slow motion, the tabs slide for 3 seconds.
+        let slow = after + Duration::from_secs(1);
+        let toggle = middle(&mut view, "anim.slow");
+        view.animate(slow, false);
+        click(&mut view, toggle);
+        view.animate(slow, false);
+        click(&mut view, at);
+        view.animate(slow, false);
+        assert!(view.animating(slow + Duration::from_millis(2999)));
+        assert!(!view.animating(slow + Duration::from_millis(3000)));
     }
 
     #[test]
