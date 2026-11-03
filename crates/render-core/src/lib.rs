@@ -314,8 +314,9 @@ pub struct PlacedGlyph {
     pub weight: bool,
 }
 
-/// A shape of the interface: a rectangle of rounded corners, filled inside
-/// its border, over its shadow, as a panel or a button.
+/// A shape of the interface: a rectangle of rounded corners, filled to its
+/// edges under its border, over its shadow, as a panel or a button; none of
+/// no width or height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shape {
     /// Its rectangle, the border's outer edges.
@@ -323,7 +324,7 @@ pub struct Shape {
     /// The radius of its corners, in pixels: 0 for square ones, and at most
     /// half its shorter side.
     pub radius: f32,
-    /// What fills it inside its border; [`Color::CLEAR`] for nothing.
+    /// What fills it, under its border too; [`Color::CLEAR`] for nothing.
     pub fill: Color,
     /// Its border's width, in pixels, inside its edges: 0 for none.
     pub border: f32,

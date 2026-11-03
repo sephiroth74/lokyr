@@ -157,8 +157,13 @@ impl<B: FontBackend> Painter<'_, B> {
     }
 
     /// The shape of a node's box at `frame`, of `style`: `None` for a box
-    /// that draws nothing, or whose tokens the theme lacks.
+    /// that draws nothing, of no width or height, or whose tokens the theme
+    /// lacks.
     fn shape(&self, frame: Frame, style: &Style) -> Option<Shape> {
+        let pixels = rect(frame);
+        if pixels.width == 0 || pixels.height == 0 {
+            return None;
+        }
         let scale = self.layout.scale();
         let color = |token: &lokyr_plugin_sdk::view::Token| self.tokens.get(&token.0);
         let fill = style.background.as_ref().and_then(color);
@@ -178,7 +183,7 @@ impl<B: FontBackend> Painter<'_, B> {
             return None;
         }
         Some(Shape {
-            rect: rect(frame),
+            rect: pixels,
             radius: style.radius * scale,
             fill: fill.unwrap_or(Color::CLEAR),
             border: border.map_or(0.0, |_| border_pixels(style, scale) as f32),
@@ -768,6 +773,27 @@ mod tests {
             panic!("{items:#?}");
         };
         assert_eq!(last.last().unwrap().border_color, token("focus.ring"));
+    }
+
+    #[test]
+    fn a_box_of_no_width_paints_nothing() {
+        let empty = Node::container(vec![])
+            .layout(view::Layout {
+                width: view::Length::Points(0.0),
+                height: view::Length::Points(10.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("panel.bg")),
+                shadow: Some(view::Shadow::default()),
+                ..view::Style::default()
+            });
+        let row = Node::container(vec![empty]).layout(view::Layout {
+            align: view::Align::Start,
+            ..view::Layout::default()
+        });
+        let (_, _, items) = painted(&row, 1.0, 100.0, (0.0, 0.0));
+        assert!(items.is_empty(), "{items:#?}");
     }
 
     #[test]

@@ -286,14 +286,16 @@ static float rounded_box(float2 p, float2 extent, float radius) {
 // The error function, within 5e-4: Abramowitz and Stegun's 7.1.27.
 static float erf_approximation(float x) {
     float a = abs(x);
-    float t = 1.0 + (0.278393 + (0.230389 + 0.078108 * a * a) * a) * a;
+    float t = 1.0 + (0.278393 + (0.230389 + (0.000972 + 0.078108 * a) * a) * a) * a;
     t *= t;
     return sign(x) * (1.0 - 1.0 / (t * t));
 }
 
 // A shadow covers a pixel as a Gaussian blur of the outline's edge, the
 // error function across its distance; a shape, the part of the pixel within
-// its outline, filled within its border's inner outline.
+// its outline, filled to it, and its border over the fill, between its
+// outline and the border's inner one, so that a border not opaque shows the
+// fill under it, as CSS's `border-box` has it.
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
     float distance = rounded_box(p, in.extent, in.radius);
@@ -313,5 +315,6 @@ fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
             inner = min(clamp(0.5 - within, 0.0, 1.0), outer);
         }
     }
-    return in.fill * inner + in.border_color * (outer - inner);
+    float ring = outer - inner;
+    return in.border_color * ring + in.fill * (outer - in.border_color.a * ring);
 }

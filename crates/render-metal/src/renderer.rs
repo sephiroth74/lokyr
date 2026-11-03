@@ -1023,6 +1023,8 @@ fn rect_instance(rect: &Rect, color: Color) -> RectInstance {
 /// The instances of `shape`: its shadow's, if it casts one, under its own.
 fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
     let rect = shape.rect;
+    // A shape of no width or height draws nothing, nor casts a shadow.
+    let drawn = rect.width > 0 && rect.height > 0;
     let size = [rect.width as f32, rect.height as f32];
     let extent = [size[0] / 2.0, size[1] / 2.0];
     let center = [rect.x as f32 + extent[0], rect.y as f32 + extent[1]];
@@ -1059,7 +1061,10 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
         fill: rgba(shape.fill),
         border_color: rgba(shape.border_color),
     };
-    shadow.into_iter().chain(std::iter::once(own))
+    shadow
+        .into_iter()
+        .chain(std::iter::once(own))
+        .filter(move |_| drawn)
 }
 
 fn glyph_instance(
@@ -1761,6 +1766,68 @@ mod tests {
     }
 
     #[test]
+    fn a_border_not_opaque_shows_the_fill_under_it_and_a_shape_of_no_size_draws_nothing() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (dark, panel) = (
+            Color::from_rgb8(30, 30, 32),
+            Color::from_rgb8(246, 246, 246),
+        );
+        let (red, blue, white) = (
+            Color::from_rgb8(255, 0, 0),
+            Color::from_rgb8(0, 0, 255),
+            Color::from_rgb8(255, 255, 255),
+        );
+        // A light panel of a border of black at 0.14, over a dark
+        // background; a red circle of a blue border; a shadowed shape of no
+        // width.
+        let bordered = Shape {
+            border: 2.0,
+            border_color: Color::BLACK.with_alpha(0.14),
+            ..Shape::filled(rect(2, 2, 16, 12), panel)
+        };
+        let round = Shape {
+            radius: 8.0,
+            border: 2.0,
+            border_color: blue,
+            ..Shape::filled(rect(20, 2, 16, 16), red)
+        };
+        let empty = Shape {
+            shadow: Some(Shadow {
+                x: 0.0,
+                y: 0.0,
+                blur: 8.0,
+                color: Color::BLACK.with_alpha(0.5),
+            }),
+            ..Shape::filled(rect(4, 18, 0, 0), panel)
+        };
+        let list = |background| DisplayList {
+            frame: 1,
+            background,
+            items: vec![Item::Shapes(vec![bordered, round, empty])],
+        };
+        let rows = drawn(&mut renderer, &list(dark), 40, 24);
+        let pixel = |rows: &[Vec<u8>], x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        // The border over the panel's fill, 246 of 0.86, not over the dark
+        // background behind it, 30 of 0.86; the fill inside it.
+        let ring = pixel(&rows, 2, 6);
+        assert!(
+            ring.iter().all(|&value| value.abs_diff(212) <= 2),
+            "{ring:?}"
+        );
+        assert_eq!(pixel(&rows, 8, 8), [246, 246, 246]);
+        // Nothing of the shape of no width, nor of its shadow.
+        assert_eq!(pixel(&rows, 4, 18), [30, 30, 32]);
+        assert_eq!(pixel(&rows, 6, 20), [30, 30, 32]);
+        // At the circle's edge, on white, its border's blue over the white
+        // alone, none of the red fill under it.
+        let rows = drawn(&mut renderer, &list(white), 40, 24);
+        let edge = pixel(&rows, 22, 4);
+        assert!(edge[0] < 250 && edge[0].abs_diff(edge[1]) <= 1, "{edge:?}");
+    }
+
+    #[test]
     fn a_shadow_darkens_under_its_shape_alone_and_fades() {
         let Some((_, mut renderer)) = renderer() else {
             return;
@@ -1830,9 +1897,6 @@ mod tests {
         assert!(renderer.drawing.is_empty());
     }
 
-    /// `list` drawn into a texture of `width` by `height` pixels, read
-    /// back, a row of pixels at a time, four bytes a pixel: red, green,
-    /// blue and opacity.
     #[test]
     fn a_glyph_of_the_system_s_weight_thins_dark_text_alone() {
         let Some((_, mut renderer)) = renderer() else {
@@ -1937,6 +2001,9 @@ mod tests {
         near(row(&mut renderer, placed(white), black), [0, 64, 128, 255]);
     }
 
+    /// `list` drawn into a texture of `width` by `height` pixels, read
+    /// back, a row of pixels at a time, four bytes a pixel: red, green,
+    /// blue and opacity.
     fn drawn(
         renderer: &mut MetalRenderer,
         list: &DisplayList,
