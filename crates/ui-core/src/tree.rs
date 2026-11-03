@@ -393,6 +393,32 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
             return Err(Invalid::Number("row-height"));
         }
     }
+    if let Kind::Progress(progress) = &node.kind {
+        let positive = |value: f32| value.is_finite() && value > 0.0;
+        let checks = [
+            ("value", (0.0..=1.0).contains(&progress.value)),
+            (
+                "radius",
+                progress
+                    .radius
+                    .is_none_or(|radius| radius.is_finite() && radius >= 0.0),
+            ),
+            ("thickness", positive(progress.thickness)),
+            (
+                "segment",
+                positive(progress.segment) && progress.segment <= 1.0,
+            ),
+            (
+                "period",
+                progress
+                    .period
+                    .is_none_or(|period| positive(period) && period <= 60.0),
+            ),
+        ];
+        if let Some((name, _)) = checks.into_iter().find(|(_, holds)| !holds) {
+            return Err(Invalid::Number(name));
+        }
+    }
     if (node.kind.holds_state() || node.focusable || node.tooltip.is_some()) && node.key.is_none() {
         return Err(Invalid::NoKey);
     }
@@ -786,6 +812,28 @@ mod tests {
             tree.update(&Node::container(vec![Node::scroll(vec![])])),
             Err(Invalid::NoKey)
         );
+        // A progress's numbers within their ranges.
+        use lokyr_plugin_sdk::view::Progress;
+        let progress = |change: fn(&mut Progress)| {
+            let mut progress = Progress::default();
+            change(&mut progress);
+            Node::container(vec![Node::new(Kind::Progress(progress))])
+        };
+        assert!(tree.update(&progress(|_| {})).is_ok());
+        type Change = fn(&mut Progress);
+        let cases: [(&str, Change); 8] = [
+            ("value", |p| p.value = 1.5),
+            ("value", |p| p.value = f32::NAN),
+            ("radius", |p| p.radius = Some(-1.0)),
+            ("thickness", |p| p.thickness = 0.0),
+            ("segment", |p| p.segment = 0.0),
+            ("segment", |p| p.segment = 1.5),
+            ("period", |p| p.period = Some(0.0)),
+            ("period", |p| p.period = Some(61.0)),
+        ];
+        for (name, change) in cases {
+            assert_eq!(tree.update(&progress(change)), Err(Invalid::Number(name)));
+        }
         // A field holds its state by its key, and takes the focus of its
         // own.
         let field = Node::container(vec![Node::field("Find")]);

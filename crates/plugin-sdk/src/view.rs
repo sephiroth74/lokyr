@@ -2,8 +2,9 @@
 //! and the host lays out, draws and keeps, plain data that crosses the
 //! plugins' boundary alike from the main thread, a worker or a Luau VM.
 //!
-//! A node is a container of others, a text, an icon, a spacer, a separator
-//! or a widget, a field, a button or a toggle, with the properties of its
+//! A node is a container of others, a text, an icon, a spacer, a separator,
+//! a progress or a widget, a field, a button, a toggle, a list or a scroll
+//! area, with the properties of its
 //! layout and of its style, whose colors are the theme's tokens, so that a
 //! theme restyles every plugin's UI. A node
 //! keeps its place from one render to the next by its key, unique in its
@@ -96,6 +97,75 @@ pub enum Kind {
     /// trackpad moves them, whose scroll the host keeps by the node's key.
     /// It takes the room that its layout gives it.
     Scroll,
+    /// A progress, a bar or a ring, of a state and how far it is, of the
+    /// size that its layout gives it; its track of its style's background
+    /// and its fill of its style's color, its state's tokens without them.
+    /// An indeterminate one moves without the app's frames, as the window
+    /// server moves it.
+    Progress(Progress),
+}
+
+/// A progress's own properties.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Progress {
+    /// Its state.
+    pub state: ProgressState,
+    /// How far it is, from 0 to 1, but of an indeterminate one.
+    pub value: f32,
+    /// Its shape.
+    pub shape: ProgressShape,
+    /// The radius of a bar's corners, in points: half its height, a pill's,
+    /// without it; 0 for square ones.
+    pub radius: Option<f32>,
+    /// The thickness of a ring's line, in points.
+    pub thickness: f32,
+    /// The part of an indeterminate one that moves, of a bar's width or of
+    /// a ring's turn, from 0 to 1.
+    pub segment: f32,
+    /// How long an indeterminate one's sweep across, or turn round, takes,
+    /// in seconds: 1.5 for a bar, 1 for a ring, without it.
+    pub period: Option<f32>,
+}
+
+impl Default for Progress {
+    fn default() -> Self {
+        Self {
+            state: ProgressState::Normal,
+            value: 0.0,
+            shape: ProgressShape::Bar,
+            radius: None,
+            thickness: 2.0,
+            segment: 0.3,
+            period: None,
+        }
+    }
+}
+
+/// A progress's state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProgressState {
+    /// Under way, as far as its value, of the accent's color.
+    #[default]
+    Normal,
+    /// Failed, as far as it went, red.
+    Error,
+    /// Paused, as far as it went, yellow.
+    Paused,
+    /// Under way, of no known end: a part of it moves.
+    Indeterminate,
+}
+
+/// A progress's shape.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProgressShape {
+    /// A bar, filled from the left.
+    #[default]
+    Bar,
+    /// A ring, filled clockwise from the top, as a spinner of macOS's.
+    Ring,
 }
 
 /// A list's own properties.
@@ -171,9 +241,12 @@ impl Kind {
     /// needs the node's key.
     pub fn holds_state(&self) -> bool {
         match self {
-            Self::Container | Self::Text(_) | Self::Icon(_) | Self::Spacer | Self::Separator => {
-                false
-            }
+            Self::Container
+            | Self::Text(_)
+            | Self::Icon(_)
+            | Self::Spacer
+            | Self::Separator
+            | Self::Progress(_) => false,
             Self::Field(_) | Self::Button(_) | Self::Toggle(_) | Self::List(_) | Self::Scroll => {
                 true
             }
@@ -603,6 +676,16 @@ impl Node {
         }))
     }
 
+    /// A progress of `state`, as far as `value`, from 0 to 1, in `shape`.
+    pub fn progress(shape: ProgressShape, state: ProgressState, value: f32) -> Self {
+        Self::new(Kind::Progress(Progress {
+            state,
+            value,
+            shape,
+            ..Progress::default()
+        }))
+    }
+
     /// A container of `children` that scrolls them; its key, which it
     /// needs, follows.
     pub fn scroll(children: Vec<Node>) -> Self {
@@ -745,6 +828,40 @@ mod tests {
         let scroll: Node =
             serde_json::from_str(r#"{"key":"area","kind":"scroll","children":[]}"#).unwrap();
         assert_eq!(scroll, Node::scroll(vec![]).key("area"));
+        // A progress, of its properties left out as their defaults.
+        let ring: Node = serde_json::from_str(
+            r#"{"key":null,"kind":{"progress":{"state":"indeterminate","shape":"ring","period":0.7}}}"#,
+        )
+        .unwrap();
+        let mut expected = Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0);
+        if let Kind::Progress(progress) = &mut expected.kind {
+            progress.period = Some(0.7);
+        }
+        assert_eq!(ring, expected);
+        let bar: Node =
+            serde_json::from_str(r#"{"key":null,"kind":{"progress":{"value":0.4,"radius":0.0}}}"#)
+                .unwrap();
+        let Kind::Progress(bar) = bar.kind else {
+            panic!("no progress");
+        };
+        assert_eq!(
+            (
+                bar.state,
+                bar.shape,
+                bar.value,
+                bar.radius,
+                bar.thickness,
+                bar.segment
+            ),
+            (
+                ProgressState::Normal,
+                ProgressShape::Bar,
+                0.4,
+                Some(0.0),
+                2.0,
+                0.3
+            )
+        );
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },

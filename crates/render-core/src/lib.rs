@@ -315,8 +315,9 @@ pub struct PlacedGlyph {
 }
 
 /// A shape of the interface: a rectangle of rounded corners, filled to its
-/// edges under its border, over its shadow, as a panel or a button; none of
-/// no width or height.
+/// edges under its border, over its shadow, as a panel or a button; or an
+/// arc of the ring inscribed in its rectangle, as a progress's; none of no
+/// width or height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shape {
     /// Its rectangle, the border's outer edges.
@@ -332,6 +333,23 @@ pub struct Shape {
     pub border_color: Color,
     /// Its shadow, if it casts one.
     pub shadow: Option<Shadow>,
+    /// The arc of the ring inscribed in its rectangle that it draws, of its
+    /// fill, in place of the rectangle, its border and its shadow.
+    pub arc: Option<Arc>,
+}
+
+/// An arc of a ring: a line along the circle inscribed in a shape's
+/// rectangle, inside it, from a place of the turn clockwise.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arc {
+    /// Where it starts, in turns clockwise from the top: 0 at the top, a
+    /// quarter at the right.
+    pub start: f32,
+    /// How much of the turn it takes, clockwise: 1 for the whole ring, 0
+    /// for nothing.
+    pub span: f32,
+    /// How thick its line is, in pixels, inwards from the circle.
+    pub thickness: f32,
 }
 
 impl Shape {
@@ -345,6 +363,7 @@ impl Shape {
             border: 0.0,
             border_color: Color::CLEAR,
             shadow: None,
+            arc: None,
         }
     }
 }

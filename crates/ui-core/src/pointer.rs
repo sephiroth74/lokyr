@@ -17,7 +17,7 @@ use lokyr_plugin_sdk::view::{self, Key, Kind, PointerShape, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::{Frame, Layout};
-use crate::paint::{bottom, inside_border, intersection, rect, right};
+use crate::paint::{bottom, inside_border, intersection, is_empty, rect, right};
 use crate::tree::{NodeId, Tree};
 use crate::widget;
 
@@ -555,10 +555,6 @@ fn within(inner: Rect, outer: Rect) -> bool {
             && inner.y >= outer.y
             && right(inner) <= right(outer)
             && bottom(inner) <= bottom(outer))
-}
-
-fn is_empty(rect: Rect) -> bool {
-    rect.width == 0 || rect.height == 0
 }
 
 #[cfg(test)]

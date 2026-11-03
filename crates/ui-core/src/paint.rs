@@ -7,7 +7,7 @@
 //! the node that has it, over them all, within its ancestors' clips.
 
 use lokyr_plugin_sdk::view::{self, Kind, Style};
-use lokyr_render_core::{Color, Item, PlacedGlyph, Rect, Shadow, Shape};
+use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
 use crate::field::{self, FieldState, Fields};
@@ -171,6 +171,7 @@ pub fn tooltip<B: FontBackend>(
             blur: 3.0 * scale,
             color: shadow,
         }),
+        arc: None,
     };
     let baseline = y + (down * scale).round() + (ascent * scale).round();
     let (glyphs, _) = font.interface_text(
@@ -226,10 +227,19 @@ impl<B: FontBackend> Painter<'_, B> {
             .and_then(|token| self.tokens.get(&token.0))
             .unwrap_or(inherited);
         // A field, a button, a toggle and a separator of no box of their
-        // own take theirs, a button's and a toggle's of their state.
+        // own take theirs, a button's and a toggle's of their state; a
+        // progress's background is its track's, which it draws itself.
         let boxed;
         let own = style.background.is_none() && style.border.is_none();
+        let given = style;
         let style = match kind {
+            Kind::Progress(_) => {
+                boxed = Style {
+                    background: None,
+                    ..style.clone()
+                };
+                &boxed
+            }
             Kind::Field(_) if own => {
                 boxed = field_box(style);
                 &boxed
@@ -273,6 +283,7 @@ impl<B: FontBackend> Painter<'_, B> {
                 self.widget((label, icon), frame, color);
             }
             Kind::List(list) => self.list(id, list, (frame, style), color),
+            Kind::Progress(progress) => self.progress(progress, frame, given),
             Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -368,6 +379,70 @@ impl<B: FontBackend> Painter<'_, B> {
         self.items.push(Item::PopClip);
     }
 
+    /// A progress at `frame`, of `style`: its track, of the style's
+    /// background or `progress.track`, and its fill as far as its value, of
+    /// the style's color or its state's token; a bar's from its left, of
+    /// its corners' radius, a ring's clockwise from its top, of its line's
+    /// thickness. An indeterminate one's track alone, as the window server
+    /// moves its part over it.
+    fn progress(&mut self, progress: &view::Progress, frame: Frame, style: &Style) {
+        let scale = self.layout.scale();
+        let token = |token: Option<&view::Token>, fallback: &str| {
+            token
+                .and_then(|token| self.tokens.get(&token.0))
+                .or_else(|| self.tokens.get(fallback))
+        };
+        let state = match progress.state {
+            view::ProgressState::Normal | view::ProgressState::Indeterminate => "progress.normal",
+            view::ProgressState::Error => "progress.error",
+            view::ProgressState::Paused => "progress.paused",
+        };
+        let track = token(style.background.as_ref(), "progress.track");
+        let fill = token(style.color.as_ref(), state);
+        let value = progress.value.clamp(0.0, 1.0);
+        let filled = progress.state != view::ProgressState::Indeterminate && value > 0.0;
+        match progress.shape {
+            view::ProgressShape::Bar => {
+                let bar = rect(frame);
+                let radius = crate::progress::radius(progress, frame.height, scale);
+                if let Some(track) = track {
+                    self.push_shape(Shape {
+                        radius,
+                        ..Shape::filled(bar, track)
+                    });
+                }
+                if let Some(fill) = fill.filter(|_| filled) {
+                    let width = (bar.width as f32 * value).round() as u32;
+                    self.push_shape(Shape {
+                        radius,
+                        ..Shape::filled(Rect { width, ..bar }, fill)
+                    });
+                }
+            }
+            view::ProgressShape::Ring => {
+                let square = rect(crate::progress::ring_square(frame));
+                let thickness = progress.thickness * scale;
+                let arc = |span| Arc {
+                    start: 0.0,
+                    span,
+                    thickness,
+                };
+                if let Some(track) = track {
+                    self.push_shape(Shape {
+                        arc: Some(arc(1.0)),
+                        ..Shape::filled(square, track)
+                    });
+                }
+                if let Some(fill) = fill.filter(|_| filled) {
+                    self.push_shape(Shape {
+                        arc: Some(arc(value)),
+                        ..Shape::filled(square, fill)
+                    });
+                }
+            }
+        }
+    }
+
     /// The indicator of a scroll within `frame`, scrolled down `scrolled`
     /// points of `room`, at its right edge, as macOS's overlay scroll bars
     /// show it: none of a content that fits.
@@ -419,6 +494,7 @@ impl<B: FontBackend> Painter<'_, B> {
             border: width,
             border_color: color,
             shadow: None,
+            arc: None,
         })
     }
 
@@ -455,6 +531,7 @@ impl<B: FontBackend> Painter<'_, B> {
             border: border.map_or(0.0, |_| border_pixels(style, scale) as f32),
             border_color: border.unwrap_or(Color::CLEAR),
             shadow,
+            arc: None,
         })
     }
 
@@ -735,6 +812,11 @@ pub(crate) fn intersection(a: Rect, b: Rect) -> Rect {
         width: u32::try_from(right - i64::from(left)).unwrap_or(0),
         height: u32::try_from(bottom - i64::from(top)).unwrap_or(0),
     }
+}
+
+/// Whether `rect` covers no pixel.
+pub(crate) fn is_empty(rect: Rect) -> bool {
+    rect.width == 0 || rect.height == 0
 }
 
 /// The column past `rect`'s right edge.
@@ -1194,6 +1276,7 @@ mod tests {
                     border: 3.0 * scale,
                     border_color: token("focus.ring"),
                     shadow: None,
+                    arc: None,
                 }]
             );
             // Without the focus, or of a node that the tree lacks, no ring.
@@ -1875,6 +1958,150 @@ mod tests {
         // A list of no state yet paints none of its rows.
         let (_, glyphs) = split(&painted(&mut font, None, &Lists::new()));
         assert!(glyphs.is_empty());
+    }
+
+    #[test]
+    fn a_progress_paints_its_track_and_its_fill_of_its_state_and_shape() {
+        use lokyr_plugin_sdk::view::{Kind, Progress, ProgressShape, ProgressState};
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let painted = |font: &mut Font<Blocks>, node: Node| -> Vec<Shape> {
+            let mut tree = Tree::new();
+            let root = Node::container(vec![node]).layout(view::Layout {
+                direction: view::Direction::Column,
+                ..view::Layout::default()
+            });
+            let changes = tree.update(&root).unwrap();
+            let mut layout = Layout::new(2.0);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(200.0), None, font);
+            paint(
+                &tree,
+                &layout,
+                font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                shown(true, None),
+            )
+            .into_iter()
+            .flat_map(|item| match item {
+                Item::Shapes(shapes) => shapes,
+                _ => Vec::new(),
+            })
+            .collect()
+        };
+        let of = |progress: Progress| Node::new(Kind::Progress(progress));
+        // A bar 100 points wide, 4 high, at a scale of 2: its track, a
+        // pill's, and 40 of its 100, of the state's color.
+        let bar = Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 8,
+        };
+        for (state, color) in [
+            (ProgressState::Normal, "progress.normal"),
+            (ProgressState::Error, "progress.error"),
+            (ProgressState::Paused, "progress.paused"),
+        ] {
+            let shapes = painted(
+                &mut font,
+                of(Progress {
+                    state,
+                    value: 0.4,
+                    ..Progress::default()
+                }),
+            );
+            assert_eq!(
+                shapes,
+                [
+                    Shape {
+                        radius: 4.0,
+                        ..Shape::filled(bar, token("progress.track"))
+                    },
+                    Shape {
+                        radius: 4.0,
+                        ..Shape::filled(Rect { width: 80, ..bar }, token(color))
+                    }
+                ]
+            );
+        }
+        // Indeterminate, or of nothing yet: its track alone; past 1, full.
+        for (state, value) in [
+            (ProgressState::Indeterminate, 0.5),
+            (ProgressState::Normal, 0.0),
+        ] {
+            let shapes = painted(
+                &mut font,
+                of(Progress {
+                    state,
+                    value,
+                    ..Progress::default()
+                }),
+            );
+            assert_eq!(shapes.len(), 1);
+        }
+        // Of its own colors and square corners.
+        let shapes = painted(
+            &mut font,
+            of(Progress {
+                value: 1.0,
+                radius: Some(0.0),
+                ..Progress::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("field.border")),
+                color: Some(Token::from("search.match.current")),
+                ..view::Style::default()
+            }),
+        );
+        assert_eq!(
+            shapes,
+            [
+                Shape::filled(bar, token("field.border")),
+                Shape::filled(bar, token("search.match.current"))
+            ]
+        );
+        // A ring of 20 points: its track all round and its fill a quarter,
+        // of its line 3 points thick, 6 pixels, in its square.
+        let shapes = painted(
+            &mut font,
+            of(Progress {
+                shape: ProgressShape::Ring,
+                value: 0.25,
+                thickness: 3.0,
+                ..Progress::default()
+            })
+            .layout(view::Layout {
+                height: view::Length::Points(20.0),
+                ..view::Layout::default()
+            }),
+        );
+        let square = Rect {
+            x: 80,
+            y: 0,
+            width: 40,
+            height: 40,
+        };
+        let arc = |span| {
+            Some(Arc {
+                start: 0.0,
+                span,
+                thickness: 6.0,
+            })
+        };
+        assert_eq!(
+            shapes,
+            [
+                Shape {
+                    arc: arc(1.0),
+                    ..Shape::filled(square, token("progress.track"))
+                },
+                Shape {
+                    arc: arc(0.25),
+                    ..Shape::filled(square, token("progress.normal"))
+                }
+            ]
+        );
     }
 
     #[test]

@@ -592,6 +592,75 @@ fn widgets_tree() -> Node {
     })
 }
 
+/// The progresses of the images, of the states that the GPU draws, the
+/// indeterminate one's moving part the window server's: bars normal, in
+/// error and paused, of their pills, and one of its own colors, square and
+/// 10 points high; rings of each, of lines 2, 3 and 4 points thick.
+fn progress_tree() -> Node {
+    use lokyr_plugin_sdk::view::{Progress, ProgressShape, ProgressState};
+    let states = [
+        (ProgressState::Normal, 0.4),
+        (ProgressState::Error, 0.7),
+        (ProgressState::Paused, 0.55),
+    ];
+    let mut bars: Vec<Node> = states
+        .into_iter()
+        .map(|(state, value)| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                ..Progress::default()
+            }))
+        })
+        .collect();
+    bars.push(
+        Node::new(Kind::Progress(Progress {
+            value: 0.65,
+            radius: Some(0.0),
+            ..Progress::default()
+        }))
+        .layout(Box {
+            height: Length::Points(10.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("field.border".into()),
+            color: Some("accent".into()),
+            ..Style::default()
+        }),
+    );
+    let rings: Vec<Node> = states
+        .into_iter()
+        .zip([(16.0, 2.0), (24.0, 3.0), (32.0, 4.0)])
+        .map(|((state, value), (side, thickness))| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                shape: ProgressShape::Ring,
+                thickness,
+                ..Progress::default()
+            }))
+            .layout(Box {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Box::default()
+            })
+        })
+        .collect();
+    let rings = Node::container(rings).layout(Box {
+        gap: 16.0,
+        align: Align::Center,
+        ..Box::default()
+    });
+    bars.push(rings);
+    Node::container(bars).layout(Box {
+        direction: Direction::Column,
+        gap: 12.0,
+        padding: Edges::all(16.0),
+        ..Box::default()
+    })
+}
+
 /// The node of `key` in `tree`.
 fn find(tree: &Tree, key: &str) -> NodeId {
     tree.by_key(&key.into()).unwrap()
@@ -874,6 +943,17 @@ fn buttons_toggles_separators_and_a_tooltip_draw_as_their_golden_images() {
     for dark in [false, true] {
         for scale in [1, 2] {
             check_widgets(dark, scale);
+        }
+    }
+}
+
+#[test]
+fn progresses_draw_as_their_golden_images() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_tree("progress", &progress_tree(), (dark, scale), |_| {
+                (None, None, None, None)
+            });
         }
     }
 }

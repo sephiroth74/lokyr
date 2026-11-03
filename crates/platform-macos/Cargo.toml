@@ -62,6 +62,7 @@ objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
     "std",
     "objc2-core-foundation",
+    "objc2-core-graphics",
     "CAAnimation",
     "CABase",
     "CADisplayLink",
@@ -69,7 +70,10 @@ objc2-quartz-core = { workspace = true, features = [
     "CAMediaTiming",
     "CAMediaTimingFunction",
     "CAMetalLayer",
+    "CAShapeLayer",
+    "CATransaction",
 ] }
+objc2-core-graphics = { workspace = true, features = ["std", "CGColor", "CGPath"] }
 objc2-foundation = { workspace = true, features = [
     "std",
     "block2",

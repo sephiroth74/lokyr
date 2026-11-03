@@ -234,7 +234,9 @@ fragment float4 line_fragment(LineFragment in [[stage_in]]) {
 // A shape of the interface: the quad that it covers; its outline's centre,
 // half its size, and its corners' radius; its border's width, inside its
 // edges; the deviation of its blur, for a shadow, or a negative one for the
-// shape itself; what fills it, or its shadow; and its border's color.
+// shape itself; what fills it, or its shadow; its border's color; and the
+// arc of its inscribed ring that it draws instead, its start and its span in
+// turns clockwise from the top, its thickness, and 1, or 0 for none.
 struct Shape {
     float2 position;
     float2 size;
@@ -246,6 +248,7 @@ struct Shape {
     float padding;
     float4 fill;
     float4 border_color;
+    float4 arc;
 };
 
 struct ShapeFragment {
@@ -257,6 +260,7 @@ struct ShapeFragment {
     float sigma [[flat]];
     float4 fill [[flat]];
     float4 border_color [[flat]];
+    float4 arc [[flat]];
 };
 
 vertex ShapeFragment shape_vertex(uint vertex_id [[vertex_id]],
@@ -273,6 +277,7 @@ vertex ShapeFragment shape_vertex(uint vertex_id [[vertex_id]],
     out.sigma = shape.sigma;
     out.fill = shape.fill;
     out.border_color = shape.border_color;
+    out.arc = shape.arc;
     return out;
 }
 
@@ -296,8 +301,30 @@ static float erf_approximation(float x) {
 // its outline, filled to it, and its border over the fill, between its
 // outline and the border's inner one, so that a border not opaque shows the
 // fill under it, as CSS's `border-box` has it.
+// The part of a pixel at `p`, from a ring's centre, that an arc covers: its
+// line, of `thickness`, inside the circle of `outer`, from `start` of the
+// turn clockwise for `span` of it, the drawable's y going down; its ends
+// cut across the line, smoothed as its sides are.
+static float arc_coverage(float2 p, float outer, float4 arc) {
+    float thickness = min(arc.z, outer);
+    float middle = outer - thickness / 2.0;
+    float across = clamp(thickness / 2.0 + 0.5 - abs(length(p) - middle), 0.0, 1.0);
+    float span = arc.y;
+    if (span >= 1.0) {
+        return across;
+    }
+    float turns = fract(atan2(p.x, -p.y) / (2.0 * M_PI_F) + 1.0);
+    float t = fract(turns - arc.x + 1.0);
+    float inside = t <= span ? min(t, span - t) : -min(t - span, 1.0 - t);
+    float along = clamp(inside * 2.0 * M_PI_F * middle + 0.5, 0.0, 1.0);
+    return across * along;
+}
+
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
+    if (in.arc.w > 0.0) {
+        return in.fill * arc_coverage(p, min(in.extent.x, in.extent.y), in.arc);
+    }
     float distance = rounded_box(p, in.extent, in.radius);
     if (in.sigma >= 0.0) {
         float cover = in.sigma > 0.0

@@ -11,8 +11,8 @@ use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
     AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem,
     Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta, Shortcut,
-    ShortcutKey, Size, StandardAction, TimerId, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    ShortcutKey, Size, StandardAction, Sweep, SweepShape, TimerId, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, Kind, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -25,6 +25,7 @@ use lokyr_ui_core::layout::Layout;
 use lokyr_ui_core::list::{self, Lists};
 use lokyr_ui_core::paint::{self, Shown, paint};
 use lokyr_ui_core::pointer::{self, Button, NodeEvent, Pointer};
+use lokyr_ui_core::progress;
 use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tooltip::Tooltip;
 use lokyr_ui_core::tree::{NodeId, Tree};
@@ -251,6 +252,9 @@ struct App {
     dark: bool,
     /// The timer of the tooltip's delay, and when it fires.
     timer: Option<(TimerId, Instant)>,
+    /// The indeterminate progresses' sweeps that the window shows, and
+    /// when they started.
+    sweeps: (Vec<Sweep>, Instant),
 }
 
 impl App {
@@ -373,6 +377,55 @@ impl App {
         if areas != self.areas {
             platform.set_pointer_areas(*window, &areas);
             self.areas = areas;
+        }
+        // The indeterminate progresses, which the window server moves.
+        let theme = Theme::builtin();
+        let tokens = &theme.variant(view.gallery.dark()).tokens;
+        let points = |pixels: f32| f64::from(pixels) / scale;
+        let place = |rect: lokyr_render_core::Rect| {
+            (
+                Point {
+                    x: points(rect.x as f32),
+                    y: points(rect.y as f32 + bar),
+                },
+                Size {
+                    width: points(rect.width as f32),
+                    height: points(rect.height as f32),
+                },
+            )
+        };
+        let sweeps: Vec<Sweep> = progress::sweeps(&view.tree, &view.layout, tokens)
+            .into_iter()
+            .map(|area| {
+                let (origin, size) = place(area.rect);
+                Sweep {
+                    origin,
+                    size,
+                    within: place(area.visible),
+                    radius: points(area.radius),
+                    shape: match area.shape {
+                        progress::SweepShape::Bar { width } => SweepShape::Bar {
+                            width: points(width),
+                        },
+                        progress::SweepShape::Ring { span, thickness } => SweepShape::Ring {
+                            span: f64::from(span),
+                            thickness: points(thickness),
+                        },
+                    },
+                    color: [
+                        f64::from(area.color.red),
+                        f64::from(area.color.green),
+                        f64::from(area.color.blue),
+                        f64::from(area.color.alpha),
+                    ],
+                    period: area.period,
+                    start: self.sweeps.1,
+                }
+            })
+            .collect();
+        if sweeps != self.sweeps.0 {
+            platform.set_sweeps(*window, &sweeps);
+            self.sweeps.0 = sweeps;
         }
         // The input method's rectangle, of the field that has the focus,
         // by which it places its candidates and the palette of emoji.
@@ -826,6 +879,7 @@ pub fn run() -> Result<(), String> {
         areas: Vec::new(),
         dark: false,
         timer: None,
+        sweeps: (Vec::new(), Instant::now()),
     };
     lokyr_platform_macos::run(app).map_err(|error| error.to_string())
 }

@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use lokyr_plugin_sdk::view::{self, Align, Direction, Justify, Kind, Length};
+use lokyr_plugin_sdk::view::{self, Align, Direction, Justify, Kind, Length, ProgressShape};
 use taffy::Overflow;
 use taffy::prelude::{
     AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage,
@@ -22,7 +22,7 @@ use taffy::prelude::{
 };
 
 use crate::tree::{Changes, NodeId, Tree};
-use crate::{field, widget};
+use crate::{field, progress, widget};
 
 /// What sizes the leaves of the view tree that take their content's size.
 pub trait Measure {
@@ -90,6 +90,7 @@ enum Content {
     Field,
     Button { label: String, icon: String },
     Separator,
+    Progress(ProgressShape),
 }
 
 /// The layout of a view tree.
@@ -252,6 +253,7 @@ impl Layout {
                                 Content::Field => measure.field(),
                                 Content::Button { label, icon } => measure.button(label, icon),
                                 Content::Separator => measure.separator(),
+                                Content::Progress(shape) => progress::natural(*shape),
                             })
                         });
                         Size {
@@ -375,6 +377,7 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
             icon: toggle.icon.clone(),
         },
         Kind::Separator => Content::Separator,
+        Kind::Progress(progress) => Content::Progress(progress.shape),
         Kind::Container | Kind::Spacer | Kind::List(_) | Kind::Scroll => return None,
     };
     Some(Leaf {

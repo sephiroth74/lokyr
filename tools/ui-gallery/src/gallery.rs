@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
     self, Align, Border, Direction, Edges, Justify, Kind, Layout, Length, ListItem, Node,
-    PointerShape, Shadow, Style, Token, UiEventKind,
+    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, UiEventKind,
 };
 use lokyr_ui_core::interface;
 
@@ -52,6 +52,10 @@ pub struct Gallery {
     /// the end, and what its selection did.
     window: (usize, usize),
     listed: String,
+    /// How far the progresses are, in percents, and whether the custom bar
+    /// is indeterminate.
+    percent: u32,
+    spinning: bool,
 }
 
 impl Gallery {
@@ -81,6 +85,8 @@ impl Gallery {
             pressed: "none yet".to_owned(),
             window: (0, 0),
             listed: "none yet".to_owned(),
+            percent: 40,
+            spinning: false,
         }
     }
 
@@ -103,6 +109,9 @@ impl Gallery {
             UiEventKind::HoverLeave => {
                 self.hovered.remove(key);
             }
+            UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
+            UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
+            UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
             UiEventKind::Click if BUTTONS.contains(&key) => {
                 self.pressed = format!("click on `{key}`");
             }
@@ -173,6 +182,7 @@ impl Gallery {
                 section("Boxes and clips", boxes()),
                 section("Drags and scrolls", self.drags()),
                 section("Buttons, toggles and separators", self.buttons()),
+                section("Progress", self.progress()),
             ],
         );
         let right = column(
@@ -219,6 +229,120 @@ impl Gallery {
             gap: 16.0,
             ..Layout::default()
         })
+    }
+
+    fn progress(&self) -> Node {
+        let value = self.percent as f32 / 100.0;
+        let of = |progress: Progress| Node::new(Kind::Progress(progress));
+        let bar = |state| {
+            of(Progress {
+                state,
+                value,
+                ..Progress::default()
+            })
+            .layout(Layout {
+                grow: 1.0,
+                ..Layout::default()
+            })
+        };
+        let labelled = |name: &str, node: Node| {
+            Node::container(vec![label(name), node]).layout(Layout {
+                gap: 8.0,
+                align: Align::Center,
+                ..Layout::default()
+            })
+        };
+        // A bar of its own looks: 10 points high, square, of the accent's
+        // fill over a field's background, or indeterminate, of half its
+        // width, quick.
+        let custom = of(Progress {
+            state: if self.spinning {
+                ProgressState::Indeterminate
+            } else {
+                ProgressState::Normal
+            },
+            value,
+            radius: Some(0.0),
+            segment: 0.5,
+            period: Some(0.8),
+            ..Progress::default()
+        })
+        .layout(Layout {
+            grow: 1.0,
+            height: Length::Points(10.0),
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("field.border")),
+            color: Some(Token::from("accent")),
+            ..Style::default()
+        });
+        let ring = |state, side: f32, thickness: f32| {
+            of(Progress {
+                state,
+                value,
+                shape: ProgressShape::Ring,
+                thickness,
+                ..Progress::default()
+            })
+            .layout(Layout {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Layout::default()
+            })
+        };
+        let rings = Node::container(vec![
+            ring(ProgressState::Normal, 16.0, 2.0),
+            ring(ProgressState::Error, 24.0, 3.0),
+            ring(ProgressState::Paused, 32.0, 4.0),
+            ring(ProgressState::Indeterminate, 16.0, 2.0),
+            of(Progress {
+                state: ProgressState::Indeterminate,
+                shape: ProgressShape::Ring,
+                thickness: 4.0,
+                segment: 0.25,
+                period: Some(0.7),
+                ..Progress::default()
+            })
+            .layout(Layout {
+                width: Length::Points(32.0),
+                height: Length::Points(32.0),
+                ..Layout::default()
+            }),
+        ])
+        .layout(Layout {
+            gap: 12.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
+        let controls = Node::container(vec![
+            Node::button("−10%").key("less"),
+            Node::button("+10%").key("more"),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Indeterminate".to_owned(),
+                on: self.spinning,
+                ..view::Toggle::default()
+            }))
+            .key("spin"),
+            secondary(&format!("{}%", self.percent)),
+        ])
+        .layout(Layout {
+            gap: 8.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
+        column(
+            8.0,
+            vec![
+                labelled("normal", bar(ProgressState::Normal)),
+                labelled("error", bar(ProgressState::Error)),
+                labelled("paused", bar(ProgressState::Paused)),
+                labelled("indeterminate", bar(ProgressState::Indeterminate)),
+                labelled("its own", custom),
+                rings,
+                controls,
+            ],
+        )
     }
 
     fn list(&self) -> Node {
@@ -973,6 +1097,9 @@ mod tests {
             "regex",
             "whole-word",
             "wrap",
+            "less",
+            "more",
+            "spin",
         ];
         assert_eq!(order(true), [&controls[..], &rest[..]].concat());
     }

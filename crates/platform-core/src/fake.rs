@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     Alert, AlertId, AppEvent, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Handler, Layer,
     LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace, ScreenRect, Size,
-    Target, TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
+    Sweep, Target, TargetKind, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
     WindowId, WindowSize,
 };
 
@@ -73,6 +73,8 @@ pub struct FakeWindow {
     pub layers: HashMap<Layer, LayerPlace>,
     /// How many times the app placed a layer, or hid it.
     pub layer_places: usize,
+    /// The sweeps that the app showed last.
+    pub sweeps: Vec<Sweep>,
     /// Whether it opened at the frame kept last.
     pub restore: bool,
     /// Whether it opened of the size of the frame kept last.
@@ -659,6 +661,7 @@ impl Platform for Fake {
                 remember: attributes.remember,
                 layers: HashMap::new(),
                 layer_places: 0,
+                sweeps: Vec::new(),
                 restore: attributes.restore,
                 restore_size: attributes.restore_size,
                 mouse_moves: false,
@@ -689,6 +692,7 @@ impl Platform for Fake {
                 remember: false,
                 layers: HashMap::new(),
                 layer_places: 0,
+                sweeps: Vec::new(),
                 restore: false,
                 restore_size: false,
                 mouse_moves: false,
@@ -795,6 +799,12 @@ impl Platform for Fake {
                 None => state.layers.remove(&layer),
             };
             state.layer_places += 1;
+        }
+    }
+
+    fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.sweeps = sweeps.to_vec();
         }
     }
 

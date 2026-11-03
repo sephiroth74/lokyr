@@ -26,6 +26,7 @@ pub mod list;
 pub mod paint;
 pub mod pane;
 pub mod pointer;
+pub mod progress;
 pub mod text;
 pub mod theme;
 pub mod tooltip;

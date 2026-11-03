@@ -142,6 +142,53 @@ pub struct Blink {
     pub fade_in_curve: Easing,
 }
 
+/// The part of an indeterminate progress that the window server moves
+/// without the app's frames: a segment across a bar, from out of its left
+/// edge to out of its right one, or an arc round a ring, clockwise, round
+/// again, within the bar or the ring and the part of the window where it
+/// shows; where the system reduces motion, held still, its opacity
+/// pulsing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sweep {
+    /// The bar's top left corner, or the ring's square's, in points from
+    /// the content's.
+    pub origin: Point,
+    /// Its size, in points.
+    pub size: Size,
+    /// The part of the window where it shows, its top left corner and its
+    /// size, in points, which clips it.
+    pub within: (Point, Size),
+    /// The radius of the bar's corners and of the segment's, in points.
+    pub radius: f64,
+    /// What moves.
+    pub shape: SweepShape,
+    /// The segment's color: sRGB's encoded components, from 0 to 1, and its
+    /// opacity.
+    pub color: [f64; 4],
+    /// How long a sweep takes, from one edge to the other.
+    pub period: Duration,
+    /// When the sweeps started, at the bar's left, so that a sweep placed
+    /// again goes on where it was.
+    pub start: Instant,
+}
+
+/// What a sweep moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SweepShape {
+    /// A segment of a bar, across it.
+    Bar {
+        /// Its width, in points.
+        width: f64,
+    },
+    /// An arc of a ring, round it, from its top.
+    Ring {
+        /// The part of the turn that it takes, from 0 to 1.
+        span: f64,
+        /// Its line's thickness, in points.
+        thickness: f64,
+    },
+}
+
 /// How a fade goes, from its start to its end.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Easing {
@@ -325,6 +372,11 @@ pub trait Platform {
     /// Places `layer` of `window`, which shows what the renderer drew into
     /// it, blinking as the place says; `None` hides it.
     fn place_layer(&mut self, window: WindowId, layer: Layer, place: Option<&LayerPlace>);
+
+    /// Shows `sweeps` over `window`'s content, under its layers, in place of
+    /// those that it showed: none hides them. Those as they were go on
+    /// unchanged.
+    fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]);
 
     /// Asks for one [`WindowEvent::Frame`] of a window: at once, once the
     /// current call returns, if the window drew no frame since its display's

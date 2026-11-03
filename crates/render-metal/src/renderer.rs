@@ -88,6 +88,9 @@ struct ShapeInstance {
     _padding: f32,
     fill: [f32; 4],
     border_color: [f32; 4],
+    /// An arc's start and span, in turns, its thickness, and 1, or 0 for a
+    /// shape of no arc.
+    arc: [f32; 4],
 }
 
 /// A grid, as the shaders take it.
@@ -1047,6 +1050,7 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
             _padding: 0.0,
             fill: rgba(shadow.color),
             border_color: [0.0; 4],
+            arc: [0.0; 4],
         }
     });
     let own = ShapeInstance {
@@ -1060,7 +1064,17 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = ShapeInstance> {
         _padding: 0.0,
         fill: rgba(shape.fill),
         border_color: rgba(shape.border_color),
+        arc: shape.arc.map_or([0.0; 4], |arc| {
+            [
+                arc.start.rem_euclid(1.0),
+                arc.span.clamp(0.0, 1.0),
+                arc.thickness.max(0.0),
+                1.0,
+            ]
+        }),
     };
+    // An arc casts no shadow.
+    let shadow = shadow.filter(|_| shape.arc.is_none());
     shadow
         .into_iter()
         .chain(std::iter::once(own))
@@ -1156,7 +1170,7 @@ fn make_texture(
 #[cfg(test)]
 mod tests {
     use lokyr_render_core::Surface as _;
-    use lokyr_render_core::{CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph, Shadow};
+    use lokyr_render_core::{Arc, CellCursor, CellGlyph, CellLine, LineStyle, PlacedGlyph, Shadow};
     use objc2_quartz_core::CAMetalLayer;
 
     use super::*;
@@ -1763,6 +1777,68 @@ mod tests {
         assert_eq!(pixel(28, 3), [255, 0, 0]);
         let edge = pixel(22, 4);
         assert!(edge[1] > 0 && edge[1] < 255, "{edge:?}");
+    }
+
+    #[test]
+    fn an_arc_draws_its_part_of_the_ring_inside_its_shape() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        let (white, red) = (Color::from_rgb8(255, 255, 255), Color::from_rgb8(255, 0, 0));
+        let arc = |x, start, span| Shape {
+            arc: Some(Arc {
+                start,
+                span,
+                thickness: 4.0,
+            }),
+            // An arc takes neither a border nor a shadow.
+            border: 3.0,
+            border_color: Color::from_rgb8(0, 0, 255),
+            shadow: Some(Shadow {
+                x: 0.0,
+                y: 0.0,
+                blur: 0.0,
+                color: Color::BLACK,
+            }),
+            ..Shape::filled(rect(x, 0, 20, 20), red)
+        };
+        // A quarter from the top, round to the right; a whole ring; a
+        // quarter from three quarters, round from the left to the top.
+        let list = DisplayList {
+            frame: 1,
+            background: white,
+            items: vec![Item::Shapes(vec![
+                arc(0, 0.0, 0.25),
+                arc(24, 0.0, 1.0),
+                arc(48, 0.75, 0.25),
+            ])],
+        };
+        let rows = drawn(&mut renderer, &list, 72, 20);
+        let pixel = |x: usize, y: usize| rows[y][x * 4..][..3].to_vec();
+        let red = [255, 0, 0];
+        let white = [255, 255, 255];
+        // The first: its line 4 pixels in, at the top right; not at the
+        // left, the bottom, its middle or its corner.
+        assert_eq!(pixel(14, 2), red);
+        assert_eq!(pixel(17, 6), red);
+        assert_eq!(pixel(5, 2), white);
+        assert_eq!(pixel(2, 10), white);
+        assert_eq!(pixel(10, 17), white);
+        assert_eq!(pixel(10, 10), white);
+        assert_eq!(pixel(0, 0), white);
+        // The ring: all round, its middle open.
+        for (x, y) in [(34, 1), (42, 10), (34, 18), (25, 10)] {
+            assert_eq!(pixel(x, y), red, "{x}, {y}");
+        }
+        assert_eq!(pixel(34, 10), white);
+        assert_eq!(pixel(24, 0), white);
+        // The last: at the top left, not at the right.
+        assert_eq!(pixel(53, 2), red);
+        assert_eq!(pixel(62, 2), white);
+        // Its ends cut across the line: the first's start between the top's
+        // two middle pixels.
+        assert!(pixel(9, 1)[1] > 240, "{:?}", pixel(9, 1));
+        assert!(pixel(10, 1)[1] < 15, "{:?}", pixel(10, 1));
     }
 
     #[test]

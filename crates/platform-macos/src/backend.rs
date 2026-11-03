@@ -8,8 +8,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
     Alert, AlertId, Appearance, Backdrop, ContextMenu, Error, GlobalKey, Layer, LayerPlace,
-    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, Target,
-    TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size, Sweep,
+    Target, TimerId, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId,
+    WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -665,6 +666,12 @@ impl Platform for Backend {
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size) {
         if let Some(window) = self.windows.get(&window) {
             window.set_text_area(origin, size);
+        }
+    }
+
+    fn set_sweeps(&mut self, window: WindowId, sweeps: &[Sweep]) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_sweeps(sweeps);
         }
     }
 

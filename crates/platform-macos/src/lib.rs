@@ -23,6 +23,7 @@ mod open;
 mod quick;
 mod secure;
 mod shared;
+mod sweep;
 mod text_input;
 mod timer;
 mod updates;

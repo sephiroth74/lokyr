@@ -8,7 +8,7 @@ use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
     Backdrop, Dropped, Ime, Layer, LayerPlace, MouseButton, PixelSize, Point, PointerArea,
-    PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, WindowAttributes, WindowEvent,
+    PointerShape, QuickPlace, ScrollDelta, ScrollPhase, Size, Sweep, WindowAttributes, WindowEvent,
     WindowId, WindowSize,
 };
 use std::path::PathBuf;
@@ -36,14 +36,17 @@ use crate::keys;
 use crate::layer::LayerView;
 use crate::quick::{self, Quick};
 use crate::shared::{Pending, Shared};
+use crate::sweep::SweepsView;
 use crate::text_input::{self, Handled, Step, TextInput};
 
 /// A window that the app opened.
 pub(crate) struct Window {
     ns_window: Retained<NSWindow>,
     view: Retained<ContentView>,
-    /// The view of the text that blinks, over the content's, and of the
-    /// cursor's cells, over everything.
+    /// The view of the indeterminate progresses' sweeps, over the
+    /// content's; of the text that blinks, over it; and of the cursor's
+    /// cells, over everything.
+    sweeps: Retained<SweepsView>,
     blinking_text: Retained<LayerView>,
     cursor: Retained<LayerView>,
     pacer: Pacer,
@@ -162,6 +165,7 @@ impl Window {
         ns_window.setTabbingMode(NSWindowTabbingMode::Disallowed);
         let view = ContentView::new(mtm, content, shared.clone(), id, option_as_meta);
         ns_window.setContentView(Some(&view));
+        let sweeps = SweepsView::new(mtm, &view);
         let blinking_text = LayerView::new(mtm, &view);
         let cursor = LayerView::new(mtm, &view);
         // The keys go to the view.
@@ -178,6 +182,7 @@ impl Window {
         Self {
             ns_window,
             view,
+            sweeps,
             blinking_text,
             cursor,
             pacer,
@@ -215,6 +220,11 @@ impl Window {
     pub(crate) fn place_layer(&self, layer: Layer, place: Option<&LayerPlace>) {
         self.layer(layer)
             .place(place, self.view.bounds().size.height);
+    }
+
+    /// Shows `sweeps`, in place of those that it showed.
+    pub(crate) fn set_sweeps(&self, sweeps: &[Sweep]) {
+        self.sweeps.set(sweeps);
     }
 
     /// The shortest time between two refreshes of the display that the

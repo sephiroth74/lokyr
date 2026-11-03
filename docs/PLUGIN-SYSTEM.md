@@ -226,12 +226,22 @@ type Style = {
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll" | "spacer",
+    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
+        | "progress" | "spacer",
     text: string?, -- for text and icon nodes; a button's and a toggle's label
     icon: string?, -- a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
     disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
     placeholder: string?, -- for field nodes, shown while the field is empty
+    progress: {
+        state: ("normal" | "error" | "paused" | "indeterminate")?,
+        value: number?, -- from 0 to 1
+        shape: ("bar" | "ring")?,
+        radius: number?, -- a bar's corners', a pill's without it
+        thickness: number?, -- a ring's line's
+        segment: number?, -- an indeterminate one's moving part, of the bar or of the turn, from 0 to 1
+        period: number?, -- an indeterminate one's sweep or turn, in seconds
+    }?, -- for progress nodes: its track of the style's background, its fill of the style's color
     count: number?, -- for list nodes, of all their items
     first: number?, -- for list nodes, the index of the first of `items`
     items: { ListItem }?, -- for list nodes, flat: a window of them, from `first`, as the host asks for them
