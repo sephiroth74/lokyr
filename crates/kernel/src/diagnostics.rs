@@ -16,6 +16,9 @@ pub enum About {
     /// The global keys, which the system gives once no other app takes
     /// them, or the config takes others.
     GlobalKeys,
+    /// The `TERM` that the programs take, which a name of a terminfo entry
+    /// fixes.
+    Term,
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,

@@ -89,5 +89,6 @@ open-file-dont-ask = Non chiedere più per i file
 notice-config = Il file di configurazione non si applica:
 notice-font = Manca un font:
 notice-global-keys = Un tasto globale non funziona:
+notice-term = Il tipo di terminale è sconosciuto:
 notice-failed = Un comando non è riuscito:
 notice-fault = Un plugin si è fermato:

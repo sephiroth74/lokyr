@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
 use lokyr_kernel::config::{
     self, AppConfig, AppearanceMode, ClipboardRead, CloseOnExit, Config, ConfirmPaste,
-    NewDirectory, OpenFile, OpenUrl, StartDirectory,
+    NewDirectory, OpenFile, OpenUrl, StartDirectory, Term,
 };
 use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 use lokyr_kernel::keymap::{self, Binding, Context, Invocation, Keymap, When};
@@ -240,10 +240,42 @@ const GLYPHS_BUDGET: (Duration, Duration) = (Duration::from_millis(2), Duration:
 pub fn check<B: Backend>(config: &Config) -> Result<(), String> {
     drawing::font::<B>(config.font.clone())?;
     texts(&config.app.language, &[]);
+    let resources = environment::resources();
+    let own = Environment {
+        terminfo: environment::terminfo(resources.as_deref()),
+        ..Environment::default()
+    };
+    if let Some(text) = undescribed(&config.terminal.term, &own, &programs_terminfo_dirs()) {
+        eprintln!("lokyr: {text}");
+    }
     if let Some(icons) = Icons::find() {
         variant(&icons.variants(), &config.app.icon);
     }
     Ok(())
+}
+
+/// Where the programs that the app starts look for terminfo entries, of
+/// the app's home and `TERMINFO_DIRS`, which they inherit.
+fn programs_terminfo_dirs() -> Vec<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    environment::terminfo_dirs(
+        home.as_deref(),
+        std::env::var_os("TERMINFO_DIRS").as_deref(),
+    )
+}
+
+/// What is wrong with `term`, if no terminfo entry describes it where the
+/// programs look, of `dirs`, nor the terminal's own entry, which
+/// `environment` names: its programs take a terminal that they know
+/// nothing of for a dumb one, whose line editors draw a line wrongly.
+fn undescribed(term: &Term, environment: &Environment, dirs: &[PathBuf]) -> Option<String> {
+    let term = term.as_str();
+    let own = matches!(term, "xterm-lokyr" | "lokyr") && environment.terminfo.is_some();
+    (!own && !environment::describes(dirs, term)).then(|| {
+        format!(
+            "no terminfo entry describes `{term}`, the `term` of `[terminal]`, where programs look for one, so they take the terminal for a dumb one, whose line editing draws wrongly: `xterm-256color`, the default, is described everywhere"
+        )
+    })
 }
 
 /// The variant of `variants` that `wanted` names; for a name that is none
@@ -453,6 +485,8 @@ pub struct App<B: Backend> {
     /// The environment of the programs that the app starts, which the
     /// start completes with the user's locale.
     environment: Environment,
+    /// Where the programs look for the terminfo entry of their `TERM`.
+    terminfo_dirs: Vec<PathBuf>,
     /// The memory that the windows' scrollbacks share, which the config
     /// sizes.
     budget: Arc<Budget>,
@@ -585,6 +619,7 @@ impl<B: Backend> App<B> {
                     ..Environment::default()
                 }
             },
+            terminfo_dirs: programs_terminfo_dirs(),
             budget,
             quick: None,
             global_keys: Vec::new(),
@@ -932,6 +967,24 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Tells that no terminfo entry describes the `TERM` of the config,
+    /// where the programs look, or takes the notice of it away.
+    fn tell_term(&mut self, platform: &mut dyn Platform) {
+        match undescribed(
+            &self.config.terminal.term,
+            &self.environment,
+            &self.terminfo_dirs,
+        ) {
+            Some(text) => {
+                self.report(
+                    platform,
+                    Diagnostic::new(Code::Unavailable, text, About::Term),
+                );
+            }
+            None => self.resolve(platform, &About::Term),
+        }
+    }
+
     /// Takes `config` in place of the one in force, whole, in every window;
     /// or nothing of it, if its font fails.
     fn apply(&mut self, platform: &mut dyn Platform, config: Config) {
@@ -961,11 +1014,15 @@ impl<B: Backend> App<B> {
         let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
+        let term_changed = config.terminal.term != self.config.terminal.term;
         self.settle_update_checks(platform, config.updates.check);
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
         self.config = config;
+        if term_changed {
+            self.tell_term(platform);
+        }
         // The open windows keep their frames, or not, as the user moves or
         // resizes them from now; a man page's never does.
         if remember_changed {
@@ -2210,6 +2267,7 @@ impl<B: Backend> App<B> {
         self.show_appearance(platform);
         self.show_performance(platform);
         self.tell_font(platform);
+        self.tell_term(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
         self.show_icon(platform);

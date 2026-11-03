@@ -663,6 +663,7 @@ impl<B: Backend> App<B> {
                 (About::Config, _) => "notice-config",
                 (About::Font, _) => "notice-font",
                 (About::GlobalKeys, _) => "notice-global-keys",
+                (About::Term, _) => "notice-term",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
             };

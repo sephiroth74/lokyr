@@ -55,6 +55,49 @@ fn an_invalid_config_shows_its_notice_until_one_that_reads() {
 }
 
 #[test]
+fn a_term_that_no_terminfo_entry_describes_shows_its_notice_until_one_that_is() {
+    let root = std::env::temp_dir().join(format!("lokyr-term-notice-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("78")).unwrap();
+    std::fs::write(root.join("78").join("xterm-256color"), b"entry").unwrap();
+    let term = |name: &str| Term::try_from(name.to_owned()).unwrap();
+    let mut config = Config::default();
+    config.terminal.term = term("xtermxterm-256color");
+    let mut fake = Fake::default();
+    let mut app = app(config, quiet());
+    app.terminfo_dirs = vec![root.clone()];
+    app.environment.terminfo = None;
+    fake.start(&mut app);
+    let shown = app.diagnostics.shown().cloned().expect("a notice");
+    assert_eq!(
+        (shown.code, &shown.about),
+        (Code::Unavailable, &About::Term)
+    );
+    assert!(
+        shown
+            .text
+            .starts_with("no terminfo entry describes `xtermxterm-256color`, "),
+        "{}",
+        shown.text
+    );
+    // A name that an entry describes takes it away.
+    let mut retermed = |app: &mut App, name: &str| {
+        let mut config = app.config.clone();
+        config.terminal.term = term(name);
+        app.apply(&mut fake, config);
+        app.diagnostics.shown().map(|shown| shown.about.clone())
+    };
+    assert_eq!(retermed(&mut app, "xterm-256color"), None);
+    // The terminal's own entry, where the app has it, as its programs find
+    // it through `TERMINFO`.
+    assert_eq!(retermed(&mut app, "lokyr"), Some(About::Term));
+    app.environment.terminfo = Some(root.clone());
+    assert_eq!(retermed(&mut app, "xterm-lokyr"), None);
+    assert_eq!(retermed(&mut app, "nothing-of-the-kind"), Some(About::Term));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn a_font_that_is_not_installed_shows_its_notice_until_one_that_is() {
     let family = |name: &str| Some(name.to_owned().try_into().unwrap());
     let mut config = Config::default();

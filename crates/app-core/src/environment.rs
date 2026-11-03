@@ -3,6 +3,7 @@
 //! the app starts without one, as from the Dock, from the user's languages
 //! and regions.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -108,6 +109,61 @@ fn terminfo_in(bundled: Option<PathBuf>, source: PathBuf) -> Option<PathBuf> {
         .find(|directory| has(directory))
 }
 
+/// The directories of the system's terminfo database, where its own
+/// library looks past the user's.
+#[cfg(target_os = "macos")]
+const SYSTEM_TERMINFO: &[&str] = &["/usr/share/terminfo"];
+
+/// The directories of the system's terminfo database, where its own
+/// library looks past the user's, as ncurses's builds name them.
+#[cfg(not(target_os = "macos"))]
+const SYSTEM_TERMINFO: &[&str] = &[
+    "/etc/terminfo",
+    "/lib/terminfo",
+    "/usr/share/terminfo",
+    "/usr/lib/terminfo",
+];
+
+/// Where the programs that the app starts look for a terminal's terminfo
+/// entry, in ncurses's order (<https://invisible-island.net/ncurses/man/terminfo.5.html#h3-Fetching-Compiled-Descriptions>):
+/// `.terminfo` in `home`, the directories of `dirs`, as `TERMINFO_DIRS`
+/// gives them, an empty one standing for the system's, then the
+/// system's. Never `TERMINFO`, which the programs do not inherit.
+pub(crate) fn terminfo_dirs(home: Option<&Path>, dirs: Option<&OsStr>) -> Vec<PathBuf> {
+    let system = || SYSTEM_TERMINFO.iter().map(PathBuf::from);
+    let mut found: Vec<PathBuf> = home
+        .map(|home| home.join(".terminfo"))
+        .into_iter()
+        .collect();
+    if let Some(dirs) = dirs {
+        for dir in std::env::split_paths(dirs) {
+            if dir.as_os_str().is_empty() {
+                found.extend(system());
+            } else {
+                found.push(dir);
+            }
+        }
+    }
+    found.extend(system());
+    found
+}
+
+/// Whether one of `dirs` holds the entry of `term`: in the directory of its
+/// first character, or, as macOS's `tic` writes it, of that character's hex
+/// code.
+pub(crate) fn describes(dirs: &[PathBuf], term: &str) -> bool {
+    let Some(first) = term.chars().next() else {
+        return false;
+    };
+    let letter = first.to_string();
+    let hex = format!("{:02x}", u32::from(first));
+    dirs.iter().any(|dir| {
+        [&letter, &hex]
+            .iter()
+            .any(|first| dir.join(first).join(term).is_file())
+    })
+}
+
 /// The UTF-8 locales that the system has, by their names, in order: on
 /// macOS, the directories of `/usr/share/locale`.
 #[cfg(target_os = "macos")]
@@ -203,6 +259,47 @@ pub(crate) fn utf8_locale(locales: &[String], available: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_terminfo_entry_is_found_where_programs_look_and_nowhere_else() {
+        let root = std::env::temp_dir().join(format!("lokyr-entries-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let (letters, hexes) = (root.join("letters"), root.join("hexes"));
+        let entry = |dir: &Path, first: &str, term: &str| {
+            fs::create_dir_all(dir.join(first)).unwrap();
+            fs::write(dir.join(first).join(term), b"entry").unwrap();
+        };
+        entry(&home.join(".terminfo"), "m", "mine");
+        entry(&letters, "x", "xterm-letters");
+        entry(&hexes, "78", "xterm-hexes");
+        // TERMINFO_DIRS's own, an empty one standing for the system's.
+        let joined =
+            std::env::join_paths([letters.as_os_str(), OsStr::new(""), hexes.as_os_str()]).unwrap();
+        let dirs = terminfo_dirs(Some(&home), Some(&joined));
+        assert_eq!(dirs[0], home.join(".terminfo"));
+        assert_eq!(dirs[1], letters);
+        assert_eq!(dirs[2], PathBuf::from(SYSTEM_TERMINFO[0]));
+        assert_eq!(dirs[1 + 1 + SYSTEM_TERMINFO.len()], hexes);
+        assert_eq!(
+            dirs.last(),
+            Some(&PathBuf::from(*SYSTEM_TERMINFO.last().unwrap()))
+        );
+        for term in ["mine", "xterm-letters", "xterm-hexes"] {
+            assert!(describes(&dirs, term), "{term}");
+        }
+        for term in ["xtermxterm-256color", "", "xterm-letter"] {
+            assert!(!describes(&dirs, term), "{term}");
+        }
+        // Without `TERMINFO_DIRS`, its directories hold nothing.
+        let dirs = terminfo_dirs(Some(&home), None);
+        assert!(describes(&dirs, "mine"));
+        assert!(!describes(&dirs, "xterm-hexes"));
+        // A directory, not an entry.
+        fs::create_dir_all(letters.join("x").join("xterm-dir")).unwrap();
+        assert!(!describes(&[letters], "xterm-dir"));
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     fn names(names: &[&str]) -> Vec<String> {
         names.iter().map(|&name| name.to_owned()).collect()

@@ -772,6 +772,7 @@ The `TERM` that programs see, which tells them what the terminal can do: letters
 - It changes only what programs are told, never what the terminal does, which is the same whatever the name.
 - `"xterm-lokyr"` describes Lokyr itself, with the capabilities that the plain names lack, as undercurls and the keyboard protocol that reports every key; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
 - It applies to the windows that open after the change: the programs of a window keep the `TERM` that they started with.
+- A name that no terminfo entry describes where programs look for one, in `~/.terminfo`, the directories of `TERMINFO_DIRS` and the system's, shows a notice across the windows' top, and `lokyr +validate-config` tells it: programs take a terminal that they know nothing of for a dumb one, and a shell's line editing then draws wrongly. Lokyr keeps the name, as a host that you reach over ssh can describe it.
 
 ### `unicode-widths`
 
