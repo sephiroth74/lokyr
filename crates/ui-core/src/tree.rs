@@ -3,9 +3,11 @@
 //! and which a new tree updates in place, diffed against the last: among a
 //! node's children, a child takes the place of the one of its key, or,
 //! without one, of the next of its kind in their order, so that only what
-//! changed is laid out and drawn again. A tree of keys twice among
-//! siblings, of children under a node that has none, or of a node that
-//! holds state without its key, changes nothing, the last staying.
+//! changed is laid out and drawn again. A node's key is unique in its whole
+//! tree, as the events tell a node by its key alone, which [`Tree::by_key`]
+//! finds. A tree of a key twice, of children under a node that has none,
+//! of a node that holds state without its key, too deep, or of numbers
+//! that are none, changes nothing, the last staying.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
@@ -52,7 +54,7 @@ impl Changes {
 /// Why a tree is refused.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Invalid {
-    /// Two siblings of the same key.
+    /// Two nodes of the same key, anywhere in the tree.
     SameKey(Key),
     /// A node that holds state, or takes the keyboard's focus, without its
     /// key.
@@ -97,6 +99,8 @@ pub struct Tree {
     slots: Vec<Slot>,
     free: Vec<u32>,
     root: Option<NodeId>,
+    /// The node of each key.
+    keys: HashMap<Key, NodeId>,
 }
 
 impl Tree {
@@ -157,6 +161,11 @@ impl Tree {
     /// it.
     pub fn focusable(&self, id: NodeId) -> bool {
         self.entry(id).is_some_and(|entry| entry.focusable)
+    }
+
+    /// The node of `key`, if the tree has one.
+    pub fn by_key(&self, key: &Key) -> Option<NodeId> {
+        self.keys.get(key).copied()
     }
 
     /// The parent of `id`, if the tree has it and it is not the root.
@@ -299,6 +308,9 @@ impl Tree {
             }
         };
         changes.added.push(id);
+        if let Some(key) = &node.key {
+            self.keys.insert(key.clone(), id);
+        }
         let children: Vec<NodeId> = node
             .children
             .iter()
@@ -324,22 +336,29 @@ impl Tree {
         slot.generation = slot.generation.wrapping_add(1);
         self.free.push(id.index);
         changes.removed.push(id);
+        // Its key may be another node's already, of the same render.
+        if let Some(key) = &entry.key
+            && self.keys.get(key) == Some(&id)
+        {
+            self.keys.remove(key);
+        }
         for child in entry.children {
             self.remove(child, changes);
         }
     }
 }
 
-/// Whether `node`'s tree is one that the arena takes: its siblings of
-/// different keys, its nodes that hold state or take the focus of a key,
-/// children only under the nodes that have them, [`DEEPEST`] levels at
-/// most, and its numbers finite and in their ranges.
+/// Whether `node`'s tree is one that the arena takes: its keys unique in
+/// it, its nodes that hold state or take the focus of a key, children only
+/// under the nodes that have them, [`DEEPEST`] levels at most, and its
+/// numbers finite and in their ranges.
 fn valid(node: &Node) -> Result<(), Invalid> {
-    valid_at(node, 1)
+    valid_at(node, 1, &mut HashSet::new())
 }
 
-/// [`valid`] of `node`, at the level `depth` of its tree.
-fn valid_at(node: &Node, depth: usize) -> Result<(), Invalid> {
+/// [`valid`] of `node`, at the level `depth` of its tree, of the keys
+/// `seen` before it.
+fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Result<(), Invalid> {
     if depth > DEEPEST {
         return Err(Invalid::TooDeep);
     }
@@ -350,14 +369,13 @@ fn valid_at(node: &Node, depth: usize) -> Result<(), Invalid> {
     if !node.kind.has_children() && !node.children.is_empty() {
         return Err(Invalid::Children);
     }
-    let mut keys = HashSet::new();
+    if let Some(key) = &node.key
+        && !seen.insert(key)
+    {
+        return Err(Invalid::SameKey(key.clone()));
+    }
     for child in &node.children {
-        if let Some(key) = &child.key
-            && !keys.insert(key)
-        {
-            return Err(Invalid::SameKey(key.clone()));
-        }
-        valid_at(child, depth + 1)?;
+        valid_at(child, depth + 1, seen)?;
     }
     Ok(())
 }
@@ -732,5 +750,43 @@ mod tests {
             ..Style::default()
         });
         assert!(tree.update(&fine).is_ok());
+    }
+
+    #[test]
+    fn a_key_is_unique_in_the_whole_tree_and_found_by_it() {
+        let tab = |key: &str| Node::container(vec![Node::icon("close").key("close")]).key(key);
+        let mut tree = Tree::new();
+        // Two tabs' children `close`: two nodes of one key, in two branches.
+        assert_eq!(
+            tree.update(&Node::container(vec![tab("a"), tab("b")])),
+            Err(Invalid::SameKey(Key::from("close")))
+        );
+        let tab = |key: &str| {
+            Node::container(vec![
+                Node::icon("close").key(format!("{key}.close").as_str()),
+            ])
+            .key(key)
+        };
+        tree.update(&Node::container(vec![tab("a"), tab("b")]))
+            .unwrap();
+        let close = tree.by_key(&Key::from("a.close")).unwrap();
+        assert_eq!(tree.key(close), Some(&Key::from("a.close")));
+        // Moved to the other tab: another node, which its key finds.
+        let moved = Node::container(vec![
+            Node::container(vec![]).key("a"),
+            Node::container(vec![
+                Node::icon("close").key("b.close"),
+                Node::icon("close").key("a.close"),
+            ])
+            .key("b"),
+        ]);
+        tree.update(&moved).unwrap();
+        let again = tree.by_key(&Key::from("a.close")).unwrap();
+        assert_ne!(again, close);
+        assert_eq!(tree.parent(again), tree.by_key(&Key::from("b")));
+        // Taken away: found no more.
+        tree.update(&Node::container(vec![])).unwrap();
+        assert_eq!(tree.by_key(&Key::from("a.close")), None);
+        assert_eq!(tree.by_key(&Key::from("a")), None);
     }
 }

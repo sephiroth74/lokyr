@@ -1408,7 +1408,7 @@ fn a_plugin_s_namespace_is_its_own_and_its_prefix_gives_it_nothing() {
                 |cx| {
                     cx.register_command(Command {
                         capabilities: vec![Capability::PtyWrite],
-                        ..command("pane.paste")
+                        ..command("edit.paste")
                     })
                 },
                 |_, _, _| Ok(()),
@@ -1428,19 +1428,30 @@ fn a_plugin_s_namespace_is_its_own_and_its_prefix_gives_it_nothing() {
     );
     assert_eq!(taken.unwrap_err().code, Code::AlreadyRegistered);
     assert_eq!(plugins.status("mallory/core"), None);
+    // One of a namespace of the app's own contexts, whose panels would
+    // hold as `pane.focused`.
+    for name in ["acme/pane", "acme/selection", "acme/alternate-screen"] {
+        let reserved = plugins.add_declared(declared(name), scripted(|_| Ok(()), |_, _, _| Ok(())));
+        assert_eq!(
+            reserved.unwrap_err().code,
+            Code::AlreadyRegistered,
+            "{name}"
+        );
+        assert_eq!(plugins.status(name), None);
+    }
     // One whose namespace another's commands have.
     let log = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&log);
     plugins
         .add_declared(
-            declared("acme/pane"),
+            declared("acme/edit"),
             scripted(
                 move |cx| {
                     let mut seen = seen.borrow_mut();
                     let code = |done: Result<(), Error>| done.err().map(|error| error.code);
-                    seen.push(code(cx.register_command(command("pane.evil"))));
+                    seen.push(code(cx.register_command(command("edit.evil"))));
                     seen.push(code(cx.register_command(command("other.x"))));
-                    seen.push(code(cx.run_command("pane.paste", Args::new())));
+                    seen.push(code(cx.run_command("edit.paste", Args::new())));
                     seen.push(code(cx.emit("other.event", "x/1", Data::Nil)));
                     Ok(())
                 },
@@ -1458,7 +1469,7 @@ fn a_plugin_s_namespace_is_its_own_and_its_prefix_gives_it_nothing() {
             Some(Code::InvalidName)
         ]
     );
-    assert!(app.registry.get("pane.evil").is_none());
+    assert!(app.registry.get("edit.evil").is_none());
     assert!(plugins.take_requests().is_empty());
 }
 

@@ -265,6 +265,19 @@ impl Plugins {
             .as_ref()
             .map_or(name, Manifest::namespace)
             .to_owned();
+        // The namespaces of the app's own contexts, which a plugin's panels
+        // would give as `namespace.focused`, holding as the app's.
+        if crate::keymap::CONTEXTS
+            .iter()
+            .any(|context| context.split('.').next() == Some(namespace.as_str()))
+        {
+            return Err(Error::new(
+                Code::AlreadyRegistered,
+                format!(
+                    "the plugin `{name}` takes the namespace `{namespace}`, of the app's own contexts"
+                ),
+            ));
+        }
         if let Some(other) = self
             .entries
             .iter()

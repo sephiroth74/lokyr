@@ -13,7 +13,7 @@
 
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent};
 
-use lokyr_plugin_sdk::view::UiEventKind;
+use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
 
 use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
@@ -63,8 +63,11 @@ pub struct Focus<P> {
     /// The node of a panel last clicked that takes no focus, from which Tab
     /// goes on, until the focus moves.
     anchor: Option<(P, NodeId)>,
-    /// The node whose focus the events told last.
-    told: Option<(P, NodeId)>,
+    /// The key of the node with the focus, by which its plugin knows it,
+    /// and which the focus follows to the node that a render makes of it.
+    key: Option<NodeKey>,
+    /// The panel and the key of the node whose focus the events told last.
+    told: Option<(P, NodeKey)>,
 }
 
 impl<P> Default for Focus<P> {
@@ -74,6 +77,7 @@ impl<P> Default for Focus<P> {
             place: 0,
             held: Vec::new(),
             anchor: None,
+            key: None,
             told: None,
         }
     }
@@ -100,6 +104,7 @@ impl<P: Copy + Eq> Focus<P> {
             return false;
         };
         self.focused = Some((panel, node));
+        self.key = tree.key(node).cloned();
         self.place = place;
         self.anchor = None;
         true
@@ -131,6 +136,7 @@ impl<P: Copy + Eq> Focus<P> {
     /// Gives the focus back to the pane.
     pub fn pane(&mut self) {
         self.focused = None;
+        self.key = None;
         self.anchor = None;
     }
 
@@ -145,22 +151,40 @@ impl<P: Copy + Eq> Focus<P> {
     }
 
     /// What the focus's moves since the last call did to the nodes, each
-    /// with its panel, whose tree `tree` gives: a blur for the node that had
-    /// it, if its tree still has it, then a focus for the node that has it.
+    /// with its panel, whose tree `tree` gives, by their keys, as their
+    /// plugins know them: a blur for the key that had it, if its tree still
+    /// has it, then a focus for the node that has it.
     pub fn events<'t>(&mut self, tree: impl Fn(P) -> Option<&'t Tree>) -> Vec<(P, NodeEvent)> {
-        if self.told == self.focused {
+        let now = self.focused.zip(self.key.clone());
+        let told_now = now.as_ref().map(|((panel, _), key)| (*panel, key.clone()));
+        if self.told == told_now {
             return Vec::new();
         }
-        let told = |(panel, node): (P, NodeId), kind| {
-            let key = tree(panel)?.key(node)?.clone();
-            Some((panel, NodeEvent { node, key, kind }))
-        };
-        let events = [
-            self.told.and_then(|was| told(was, UiEventKind::Blur)),
-            self.focused.and_then(|is| told(is, UiEventKind::Focus)),
-        ];
-        self.told = self.focused;
-        events.into_iter().flatten().collect()
+        let mut events = Vec::new();
+        if let Some((panel, key)) = self.told.take()
+            && let Some(node) = tree(panel).and_then(|tree| tree.by_key(&key))
+        {
+            events.push((
+                panel,
+                NodeEvent {
+                    node,
+                    key,
+                    kind: UiEventKind::Blur,
+                },
+            ));
+        }
+        if let Some(((panel, node), key)) = now {
+            events.push((
+                panel,
+                NodeEvent {
+                    node,
+                    key,
+                    kind: UiEventKind::Focus,
+                },
+            ));
+        }
+        self.told = told_now;
+        events
     }
 
     /// The tree of `panel` changed, to `tree`: the node with the focus, if
@@ -185,9 +209,17 @@ impl<P: Copy + Eq> Focus<P> {
             self.place = place;
             return;
         }
+        // The node of its key, wherever the render put it.
+        let kept = self.key.as_ref().and_then(|key| tree.by_key(key));
+        if let Some(place) = kept.and_then(|kept| order.iter().position(|&id| id == kept)) {
+            self.focused = Some((panel, order[place]));
+            self.place = place;
+            return;
+        }
         match order.get(self.place).or(order.last()) {
             Some(&next) => {
                 self.focused = Some((panel, next));
+                self.key = tree.key(next).cloned();
                 self.place = self.place.min(order.len() - 1);
             }
             None => self.pane(),
@@ -196,9 +228,9 @@ impl<P: Copy + Eq> Focus<P> {
 
     /// Where `key`, which the keymap left, goes: the pane, or the node with
     /// the focus, or the focus, which Tab, Shift-Tab and Escape over a node
-    /// move; a release where its press went, as the release of a key that
-    /// moved the focus goes nowhere, even to a node gone since. `tree`
-    /// gives a panel's tree.
+    /// move; a repeat and a release where its press went, as the release of
+    /// a key that moved the focus goes nowhere, even to a node gone since,
+    /// and Tab's repeat moves the focus again. `tree` gives a panel's tree.
     pub fn key<'t>(
         &mut self,
         tree: impl FnOnce(P) -> Option<&'t Tree>,
@@ -212,6 +244,17 @@ impl<P: Copy + Eq> Focus<P> {
                 Some((panel, node)) => Routed::Node { panel, node },
                 None => Routed::Pane,
             };
+        }
+        // A repeat goes where its press went: Escape's, which gave the focus
+        // to the pane, nowhere, not to its program; Tab's moves the focus
+        // again while a node has it.
+        if key.action == KeyAction::Repeat
+            && let Some(&(_, went)) = self.held.iter().find(|(held, _)| *held == key.key)
+        {
+            let moves_again = key.key == Key::Tab && self.focused.is_some();
+            if went != Routed::Focus || !moves_again {
+                return went;
+            }
         }
         let routed = self.route(tree, key);
         if key.action == KeyAction::Press {
@@ -282,6 +325,7 @@ impl<P: Copy + Eq> Focus<P> {
             (place + 1) % order.len()
         };
         self.focused = Some((panel, order[next]));
+        self.key = tree.key(order[next]).cloned();
         self.place = next;
     }
 
@@ -481,6 +525,7 @@ mod tests {
             ..Mods::default()
         };
         assert_eq!(key(&mut focus, press(Key::Tab, control)), at_field);
+        assert_eq!(key(&mut focus, release(Key::Tab)), at_field);
         assert_eq!(key(&mut focus, press(Key::Escape, SHIFT)), at_field);
         // Escape gives the focus to the pane, but its release goes nowhere,
         // and the release of the key pressed over the field to the field.
@@ -511,6 +556,77 @@ mod tests {
         let routed = focus.key(|_| None, &press(Key::Char('c'), Mods::default()));
         assert_eq!(routed, Routed::Pane);
         assert_eq!(focus.target(), Target::Pane);
+    }
+
+    #[test]
+    fn a_repeat_goes_where_its_press_went() {
+        let tree = tree_of(&find_bar());
+        let field = tree.children(tree.root().unwrap())[0];
+        let mut focus = Focus::new();
+        focus.first(SEARCH, &tree);
+        let repeat = |key| KeyEvent {
+            action: KeyAction::Repeat,
+            ..press(key, Mods::default())
+        };
+        let mut key = |event| focus.key(|_| Some(&tree), &event);
+        // Escape held over the field: its press gives the focus to the
+        // pane, its repeats go nowhere, not to the pane's program.
+        assert_eq!(key(press(Key::Escape, Mods::default())), Routed::Focus);
+        assert_eq!(key(repeat(Key::Escape)), Routed::Focus);
+        assert_eq!(key(repeat(Key::Escape)), Routed::Focus);
+        assert_eq!(key(release(Key::Escape)), Routed::Focus);
+        // Pressed again over the pane, its repeats are the pane's.
+        assert_eq!(key(press(Key::Escape, Mods::default())), Routed::Pane);
+        assert_eq!(key(repeat(Key::Escape)), Routed::Pane);
+        assert_eq!(key(release(Key::Escape)), Routed::Pane);
+        // A letter held over the field repeats there, though the focus
+        // moved to the pane meanwhile; Tab held moves the focus again.
+        focus.first(SEARCH, &tree);
+        let at_field = Routed::Node {
+            panel: SEARCH,
+            node: field,
+        };
+        let mut key = |event| focus.key(|_| Some(&tree), &event);
+        assert_eq!(key(press(Key::Char('a'), Mods::default())), at_field);
+        assert_eq!(key(press(Key::Tab, Mods::default())), Routed::Focus);
+        assert_eq!(key(repeat(Key::Tab)), Routed::Focus);
+        assert_eq!(key(repeat(Key::Char('a'))), at_field);
+        assert_eq!(focused(&focus, &tree), "previous");
+    }
+
+    #[test]
+    fn the_focus_follows_its_key_to_the_node_that_a_render_makes() {
+        use UiEventKind::{Blur, Focus as Focused};
+        let mut tree = tree_of(&find_bar());
+        let mut focus = Focus::new();
+        let told = |focus: &mut Focus<u8>, tree: &Tree| {
+            focus
+                .events(|_| Some(tree))
+                .into_iter()
+                .map(|(_, event)| (event.key.0, event.kind))
+                .collect::<Vec<_>>()
+        };
+        focus.first(SEARCH, &tree);
+        focus.key(|_| Some(&tree), &press(Key::Tab, Mods::default()));
+        assert_eq!(focused(&focus, &tree), "case");
+        told(&mut focus, &tree);
+        // The toggle moved to the end of the buttons' group: another node
+        // of its key, of another place in the order, which keeps the focus,
+        // and no event.
+        let mut bar = find_bar();
+        let case = bar.children.remove(1);
+        bar.children[2].children.push(case);
+        tree.update(&bar).unwrap();
+        focus.updated(SEARCH, &tree);
+        assert_eq!(focused(&focus, &tree), "case");
+        assert_eq!(told(&mut focus, &tree), []);
+        // Tab goes on from its new place, the last, round to the first.
+        focus.key(|_| Some(&tree), &press(Key::Tab, Mods::default()));
+        assert_eq!(focused(&focus, &tree), "field");
+        assert_eq!(
+            told(&mut focus, &tree),
+            [("case".to_owned(), Blur), ("field".to_owned(), Focused)]
+        );
     }
 
     #[test]

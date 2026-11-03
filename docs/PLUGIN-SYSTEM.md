@@ -221,9 +221,11 @@ type Style = {
 
 -- A view is a tree of nodes; the host flattens it into its arena. A node
 -- that holds state, an input or a list, needs its key, by which the host
--- keeps that state; an input's text is the host's, which events tell.
+-- keeps that state; an input's text is the host's, which events tell. A key
+-- is unique in the whole tree, as "tab-3.close", as the events tell a node
+-- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
-    key: number?,
+    key: string?,
     kind: "container" | "text" | "icon" | "input" | "list" | "spacer",
     text: string?, -- for text and icon nodes
     placeholder: string?,
@@ -287,7 +289,7 @@ type Event =
 
 type UiEvent = {
     slot: string,
-    key: number,
+    key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value",

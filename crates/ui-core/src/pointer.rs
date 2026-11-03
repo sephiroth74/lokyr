@@ -216,7 +216,8 @@ fn areas_of(
 pub struct Pointer {
     at: Option<(f32, f32)>,
     hovered: Vec<(NodeId, Key)>,
-    pressed: [Option<NodeId>; 3],
+    /// The key of the node that each button went down over.
+    pressed: [Option<Key>; 3],
     drag: Option<Drag>,
     shape: PointerShape,
 }
@@ -278,7 +279,7 @@ impl Pointer {
         if self
             .drag
             .as_ref()
-            .is_some_and(|drag| tree.key(drag.node) != Some(&drag.key))
+            .is_some_and(|drag| tree.by_key(&drag.key).is_none())
         {
             self.drag = None;
         }
@@ -300,7 +301,7 @@ impl Pointer {
     ) -> Vec<NodeEvent> {
         let mut events = self.hover_at(tree, layout, at);
         let target = self.target();
-        self.pressed[button.index()] = target.as_ref().map(|(id, _)| *id);
+        self.pressed[button.index()] = target.as_ref().map(|(_, key)| key.clone());
         match (button, target) {
             (Button::Secondary, Some((node, key))) => events.push(NodeEvent {
                 node,
@@ -339,17 +340,20 @@ impl Pointer {
             && let Some(drag) = self.drag.take()
             && drag.started
         {
-            if tree.key(drag.node) == Some(&drag.key) {
+            if let Some(node) = tree.by_key(&drag.key) {
                 let (x, y) = drag.offset(at, layout.scale());
                 events.push(NodeEvent {
-                    node: drag.node,
+                    node,
                     key: drag.key,
                     kind: UiEventKind::DragEnd { x, y },
                 });
             }
             return events;
         }
-        let Some((node, key)) = self.target().filter(|(id, _)| Some(*id) == pressed) else {
+        let Some((node, key)) = self
+            .target()
+            .filter(|(_, key)| Some(key) == pressed.as_ref())
+        else {
             return events;
         };
         let kinds = match button {
@@ -370,11 +374,11 @@ impl Pointer {
     /// focus or Tab moved it: a drag under way is cancelled, and no button
     /// that is down clicks as it goes up.
     pub fn cancel(&mut self, tree: &Tree) -> Vec<NodeEvent> {
-        self.pressed = [None; 3];
+        self.pressed = Default::default();
         match self.drag.take() {
-            Some(drag) if drag.started && tree.key(drag.node) == Some(&drag.key) => {
+            Some(drag) if drag.started && tree.by_key(&drag.key).is_some() => {
                 vec![NodeEvent {
-                    node: drag.node,
+                    node: tree.by_key(&drag.key).unwrap_or(drag.node),
                     key: drag.key,
                     kind: UiEventKind::DragCancel,
                 }]
@@ -418,16 +422,18 @@ impl Pointer {
     }
 
     /// The drag's events of the pointer at `at`: its start, once past the
-    /// threshold, and its move; none without one, or of a node taken away,
-    /// whose drag ends.
+    /// threshold, and its move, to the node of its key, wherever a render
+    /// put it; none without one, or once its key left the tree, whose drag
+    /// ends.
     fn drag_to(&mut self, tree: &Tree, layout: &Layout, at: (f32, f32)) -> Vec<NodeEvent> {
         let Some(drag) = &mut self.drag else {
             return Vec::new();
         };
-        if tree.key(drag.node) != Some(&drag.key) {
+        let Some(node) = tree.by_key(&drag.key) else {
             self.drag = None;
             return Vec::new();
-        }
+        };
+        drag.node = node;
         let (x, y) = drag.offset(at, layout.scale());
         let mut events = Vec::new();
         if !drag.started {
@@ -465,27 +471,31 @@ impl Pointer {
         self.hovered.last().cloned()
     }
 
-    /// Takes the nodes of a key on `path` as those that the pointer is over:
-    /// a leave for each of those before that it is not over, if the tree
-    /// still has it, from the innermost; an enter for each new one, from
-    /// the outermost.
+    /// Takes the nodes of a key on `path` as those that the pointer is over,
+    /// by their keys: a leave for each key before that it is not over, if
+    /// the tree still has the key, from the innermost; an enter for each
+    /// new key, from the outermost.
     fn hover(&mut self, tree: &Tree, path: &[NodeId]) -> Vec<NodeEvent> {
         let now: Vec<(NodeId, Key)> = path
             .iter()
             .filter_map(|&id| Some((id, tree.key(id)?.clone())))
             .collect();
         let mut events = Vec::new();
-        for (node, key) in self.hovered.iter().rev() {
-            if !now.iter().any(|(id, _)| id == node) && tree.key(*node) == Some(key) {
+        // By their keys, as their plugins know them: a node that a render
+        // made anew of its key is the same to them.
+        for (_, key) in self.hovered.iter().rev() {
+            if !now.iter().any(|(_, now)| now == key)
+                && let Some(node) = tree.by_key(key)
+            {
                 events.push(NodeEvent {
-                    node: *node,
+                    node,
                     key: key.clone(),
                     kind: UiEventKind::HoverLeave,
                 });
             }
         }
         for (node, key) in &now {
-            if !self.hovered.iter().any(|(id, _)| id == node) {
+            if !self.hovered.iter().any(|(_, before)| before == key) {
                 events.push(NodeEvent {
                     node: *node,
                     key: key.clone(),
@@ -882,6 +892,99 @@ mod tests {
             [("one.close".to_owned(), scroll)]
         );
         assert_eq!(scrolled(&mut pointer, (100.0, 80.0)), []);
+    }
+
+    /// Two groups, `a` over `b`, each a row 30 high, of which `item`, 50
+    /// by 20, is in `in_a` or else in `b`; an icon in place of a container
+    /// when `icon`.
+    fn groups(in_a: bool, icon: bool) -> Node {
+        let item = sized(
+            if icon {
+                Node::icon("close")
+            } else {
+                Node::container(vec![])
+            }
+            .key("item"),
+            Length::Points(50.0),
+            Length::Points(20.0),
+        );
+        let group = |key: &str, children| {
+            sized(
+                Node::container(children).key(key),
+                Length::Points(200.0),
+                Length::Points(30.0),
+            )
+        };
+        let (a, b) = if in_a {
+            (vec![item], vec![])
+        } else {
+            (vec![], vec![item])
+        };
+        Node::container(vec![group("a", a), group("b", b)]).layout(view::Layout {
+            direction: view::Direction::Column,
+            ..view::Layout::default()
+        })
+    }
+
+    #[test]
+    fn a_node_that_moves_keeps_its_events_by_its_key() {
+        use UiEventKind::{DragEnd, DragMove, DragStart};
+        let (mut tree, mut layout) = laid(&groups(true, false), 1.0);
+        let mut pointer = Pointer::new();
+        let at = (10.0, 10.0);
+        assert_eq!(
+            told(&pointer.moved(&tree, &layout, at)),
+            [("a", HoverEnter), ("item", HoverEnter)]
+        );
+        // Made anew of another kind under the pointer: the same to its
+        // plugin, which knows it by its key.
+        relaid(&mut tree, &mut layout, &groups(true, true));
+        assert_eq!(told(&pointer.laid_out(&tree, &layout)), []);
+        // Moved to `b`, away from the pointer: left, of its key.
+        relaid(&mut tree, &mut layout, &groups(false, false));
+        let events = pointer.laid_out(&tree, &layout);
+        assert_eq!(told(&events), [("item", HoverLeave)]);
+        assert_eq!(Some(events[0].node), tree.by_key(&Key::from("item")));
+        // Back under the pointer: entered once.
+        relaid(&mut tree, &mut layout, &groups(true, false));
+        assert_eq!(
+            told(&pointer.laid_out(&tree, &layout)),
+            [("item", HoverEnter)]
+        );
+        // A drag of it goes on as it moves to `b`, to its new node, and
+        // ends there.
+        pointer.pressed(&tree, &layout, at, Button::Primary);
+        assert_eq!(
+            told(&pointer.moved(&tree, &layout, (20.0, 10.0))),
+            [("item", DragStart), ("item", DragMove { x: 10.0, y: 0.0 })]
+        );
+        relaid(&mut tree, &mut layout, &groups(false, false));
+        pointer.laid_out(&tree, &layout);
+        let moved = pointer.moved(&tree, &layout, (30.0, 40.0));
+        let drag: Vec<_> = moved
+            .iter()
+            .filter(|event| matches!(event.kind, DragMove { .. }))
+            .collect();
+        assert_eq!(drag.len(), 1);
+        assert_eq!(Some(drag[0].node), tree.by_key(&Key::from("item")));
+        let released = pointer.released(&tree, &layout, (30.0, 40.0), Button::Primary, 1);
+        assert!(
+            told(&released).contains(&("item", DragEnd { x: 20.0, y: 30.0 })),
+            "{released:?}"
+        );
+        // Its key taken from the tree: no event of it.
+        let gone = Node::container(vec![sized(
+            Node::container(vec![]).key("a"),
+            Length::Points(200.0),
+            Length::Points(30.0),
+        )]);
+        pointer.moved(&tree, &layout, at);
+        relaid(&mut tree, &mut layout, &gone);
+        assert!(
+            !told(&pointer.laid_out(&tree, &layout))
+                .iter()
+                .any(|(key, _)| *key == "item")
+        );
     }
 
     /// A column of 100 points: `a`, a row 20 high, of `a1`, 50 by 60,

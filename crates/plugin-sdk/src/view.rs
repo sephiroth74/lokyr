@@ -6,19 +6,21 @@
 //! properties of its layout and of its style, whose colors are the theme's
 //! tokens, so that a theme restyles every plugin's UI; the widgets come as
 //! their own kinds. A node
-//! keeps its place from one render to the next by its key, unique among
-//! its siblings, or, without one, by its order among its siblings of its
-//! kind; a node that holds state, as a widget whose state the host keeps,
-//! or that takes the keyboard's focus, needs its key. A node of a key
-//! learns of the pointer over it, as [`UiEventKind`] names what it did.
+//! keeps its place from one render to the next by its key, unique in its
+//! whole tree, as `tab-3.close`, or, without one, by its order among its
+//! siblings of its kind; a node that holds state, as a widget whose state
+//! the host keeps, or that takes the keyboard's focus, needs its key. A
+//! node of a key learns of the pointer over it, as [`UiEventKind`] names
+//! what it did, by its key alone, wherever a render puts it.
 //! The host refuses a tree that nests past 64 levels, or of a number that
 //! is none or infinite, a length, a gap, a padding, a grow, a radius, a
 //! border or a blur below 0, or a fraction past 0 to 1, keeping the last.
 
 use serde::{Deserialize, Serialize};
 
-/// A node's key, unique among its siblings: what keeps the node, and the
-/// state that the host keeps of it, from one render to the next.
+/// A node's key, unique in its whole tree: what keeps the node, and the
+/// state that the host keeps of it, from one render to the next, and what
+/// its events tell it by.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Key(pub String);
 
