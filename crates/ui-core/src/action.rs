@@ -1,14 +1,16 @@
 //! What accessibility asks of a node of a view tree, as VoiceOver's
-//! actions: a press, which clicks it, as a button's; a focus, which gives
+//! actions: a press, which clicks it, as a button's, or switches a toggle,
+//! and does nothing to a widget disabled; a focus, which gives
 //! it the keyboard's focus; and a value set, which its plugin learns of.
 //! Each goes to the node, or to its nearest ancestor that takes it: of a
 //! key for a press or a value, that takes the focus for a focus.
 
-use lokyr_plugin_sdk::view::UiEventKind;
+use lokyr_plugin_sdk::view::{Kind, UiEventKind};
 
 use crate::focus::Focus;
 use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
+use crate::widget;
 
 /// What accessibility asks of a node.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,7 +43,14 @@ pub fn perform<P: Copy + Eq>(
         Action::Press => UiEventKind::Click,
         Action::SetValue(value) => UiEventKind::SetValue { value },
     };
-    nearest(&|id| tree.key(id).is_some())
+    let keyed = nearest(&|id| tree.key(id).is_some());
+    if kind == UiEventKind::Click
+        && let Some(id) = keyed
+        && matches!(tree.kind(id), Some(Kind::Button(_) | Kind::Toggle(_)))
+    {
+        return widget::pressed(tree, id).into_iter().collect();
+    }
+    keyed
         .and_then(|id| {
             Some(NodeEvent {
                 node: id,
@@ -58,6 +67,36 @@ mod tests {
     use lokyr_plugin_sdk::view::Node;
 
     use super::*;
+
+    #[test]
+    fn accessibility_s_press_switches_a_toggle_and_presses_no_widget_disabled() {
+        use lokyr_plugin_sdk::view::{self, Kind};
+        let mut tree = Tree::new();
+        tree.update(&Node::container(vec![
+            Node::toggle("regex", true).key("regex"),
+            Node::new(Kind::Button(view::Button {
+                label: "Replace All".to_owned(),
+                disabled: true,
+                ..view::Button::default()
+            }))
+            .key("all"),
+        ]))
+        .unwrap();
+        let root = tree.root().unwrap();
+        let (toggle, disabled) = (tree.children(root)[0], tree.children(root)[1]);
+        let mut focus = Focus::new();
+        let events = perform(Action::Press, (0_u8, &tree, toggle), &mut focus);
+        assert!(matches!(
+            &events[..],
+            [NodeEvent {
+                kind: UiEventKind::Toggle { on: false },
+                ..
+            }]
+        ));
+        assert!(perform(Action::Press, (0, &tree, disabled), &mut focus).is_empty());
+        assert!(perform(Action::Focus, (0, &tree, disabled), &mut focus).is_empty());
+        assert_eq!(focus.target(), crate::focus::Target::Pane);
+    }
 
     #[test]
     fn accessibility_presses_focuses_and_sets_values() {

@@ -226,13 +226,17 @@ type Style = {
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "field" | "list" | "spacer",
-    text: string?, -- for text and icon nodes
+    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "spacer",
+    text: string?, -- for text and icon nodes; a button's and a toggle's label
+    icon: string?, -- a button's and a toggle's icon, before its label
+    on: boolean?, -- for toggle nodes, the plugin's state
+    disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
     placeholder: string?, -- for field nodes, shown while the field is empty
     items: { ListItem }?, -- for list nodes, flat
     row: Node?, -- for list nodes: the template of a row
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
+    tooltip: string?, -- shown as the pointer rests over the node, by its key
     children: { Node }?,
     role: string?,
     label: string?,
@@ -292,11 +296,12 @@ type UiEvent = {
     key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
-        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value",
+        | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value" | "toggle",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     item: number?, -- a list's item
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
+    on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
 }
 
 type Cx = {

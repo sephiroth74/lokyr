@@ -62,6 +62,7 @@ type TokenColor = (&'static str, u32, f32);
 const LIGHT_TOKENS: &[TokenColor] = &[
     ("text", 0x1e1e20, 1.0),
     ("text.secondary", 0x6c6c72, 1.0),
+    ("text.disabled", 0xa8a8ae, 1.0),
     ("accent", 0x0a64d8, 1.0),
     ("separator", 0x000000, 0.1),
     ("shadow", 0x000000, 0.25),
@@ -74,6 +75,12 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("focus.ring", 0x0a64d8, 0.5),
     ("button.bg", 0x000000, 0.06),
     ("button.hover.bg", 0x000000, 0.1),
+    ("button.pressed.bg", 0x000000, 0.16),
+    ("toggle.on.bg", 0x0a64d8, 0.12),
+    ("toggle.on.fg", 0x0a5cc6, 1.0),
+    ("tooltip.bg", 0xfbfbfb, 1.0),
+    ("tooltip.fg", 0x1e1e20, 1.0),
+    ("tooltip.border", 0x000000, 0.15),
     ("tab.bar.bg", 0xe6e6e8, 1.0),
     ("tab.active.bg", 0xfafafa, 1.0),
     ("tab.active.fg", 0x1e1e20, 1.0),
@@ -88,6 +95,7 @@ const LIGHT_TOKENS: &[TokenColor] = &[
 const DARK_TOKENS: &[TokenColor] = &[
     ("text", 0xe6e6e6, 1.0),
     ("text.secondary", 0x9a9aa0, 1.0),
+    ("text.disabled", 0x5e5e64, 1.0),
     ("accent", 0x4c9bff, 1.0),
     ("separator", 0xffffff, 0.1),
     ("shadow", 0x000000, 0.5),
@@ -100,6 +108,12 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("focus.ring", 0x4c9bff, 0.6),
     ("button.bg", 0xffffff, 0.08),
     ("button.hover.bg", 0xffffff, 0.12),
+    ("button.pressed.bg", 0xffffff, 0.18),
+    ("toggle.on.bg", 0x4c9bff, 0.2),
+    ("toggle.on.fg", 0x7ab6ff, 1.0),
+    ("tooltip.bg", 0x323235, 1.0),
+    ("tooltip.fg", 0xe6e6e6, 1.0),
+    ("tooltip.border", 0xffffff, 0.15),
     ("tab.bar.bg", 0x161618, 1.0),
     ("tab.active.bg", 0x1e1e20, 1.0),
     ("tab.active.fg", 0xe6e6e6, 1.0),
@@ -308,6 +322,7 @@ mod tests {
                 ("tab.active.fg", "tab.active.bg"),
                 ("tab.inactive.fg", "tab.inactive.bg"),
                 ("accent", "panel.bg"),
+                ("tooltip.fg", "tooltip.bg"),
             ] {
                 let under = opaque(token(background));
                 let ratio = contrast(opaque(token(text)), under);
@@ -329,6 +344,13 @@ mod tests {
             for shown in [matched, current] {
                 let ratio = contrast(variant.colors.foreground, shown);
                 assert!(ratio > 4.5, "{name}: {ratio:.2}");
+            }
+            // A toggle that is on reads on its tint over a panel, and on
+            // the panel when the pointer is over it, a button's hover.
+            let panel = opaque(token("panel.bg"));
+            for under in [token("toggle.on.bg"), token("button.hover.bg")] {
+                let ratio = contrast(opaque(token("toggle.on.fg")), over(under, panel));
+                assert!(ratio >= 4.5, "{name}: toggle.on.fg: {ratio:.2}");
             }
             // The active tab is the terminal's background.
             assert_eq!(opaque(token("tab.active.bg")), background, "{name}");

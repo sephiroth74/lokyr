@@ -2,14 +2,15 @@
 //! and the host lays out, draws and keeps, plain data that crosses the
 //! plugins' boundary alike from the main thread, a worker or a Luau VM.
 //!
-//! A node is a container of others, a text, an icon or a spacer, with the
-//! properties of its layout and of its style, whose colors are the theme's
-//! tokens, so that a theme restyles every plugin's UI; the widgets come as
-//! their own kinds. A node
+//! A node is a container of others, a text, an icon, a spacer, a separator
+//! or a widget, a field, a button or a toggle, with the properties of its
+//! layout and of its style, whose colors are the theme's tokens, so that a
+//! theme restyles every plugin's UI. A node
 //! keeps its place from one render to the next by its key, unique in its
 //! whole tree, as `tab-3.close`, or, without one, by its order among its
 //! siblings of its kind; a node that holds state, as a widget whose state
-//! the host keeps, or that takes the keyboard's focus, needs its key. A
+//! the host keeps, that takes the keyboard's focus, or that has a tooltip,
+//! needs its key. A
 //! node of a key learns of the pointer over it, as [`UiEventKind`] names
 //! what it did, by its key alone, wherever a render puts it.
 //! The host refuses a tree that nests past 64 levels, or of a number that
@@ -48,6 +49,10 @@ pub struct Node {
     /// a key alone, as the host keeps the focus by it.
     #[serde(default)]
     pub focusable: bool,
+    /// What a tooltip tells of it, as the pointer rests over it: a node of
+    /// a key alone, as the host follows the pointer by it.
+    #[serde(default)]
+    pub tooltip: Option<String>,
     /// Its children, a container's alone.
     #[serde(default)]
     pub children: Vec<Node>,
@@ -70,6 +75,16 @@ pub enum Kind {
     /// host keeps by the node's key, which its plugin learns of through
     /// `input-changed` and `submit`, and sets through a request.
     Field(Field),
+    /// A button, of a label, an icon or both, which a click, Space or
+    /// Return presses: its plugin learns of it as a `click`.
+    Button(Button),
+    /// A button that stays on or off, as a find bar's case-sensitive
+    /// option, which a click, Space or Return switches: its plugin learns
+    /// of the state asked as a `toggle`, and gives it in its next render.
+    Toggle(Toggle),
+    /// A line across its container, a point thick: upright in a row, flat
+    /// in a column.
+    Separator,
 }
 
 /// A text field's own properties.
@@ -80,20 +95,74 @@ pub struct Field {
     pub placeholder: String,
 }
 
+/// A button's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Button {
+    /// Its label, if it has one.
+    pub label: String,
+    /// Its icon of the host's, by its name, if it has one, before its
+    /// label.
+    pub icon: String,
+    /// Whether it is dimmed, and takes neither a click nor the focus.
+    pub disabled: bool,
+}
+
+/// A toggle's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Toggle {
+    /// Its label, if it has one.
+    pub label: String,
+    /// Its icon of the host's, by its name, if it has one, before its
+    /// label.
+    pub icon: String,
+    /// Whether it is on.
+    pub on: bool,
+    /// Whether it is dimmed, and takes neither a click nor the focus.
+    pub disabled: bool,
+}
+
 impl Kind {
     /// Whether a node of the kind holds state that the host keeps, which
     /// needs the node's key.
     pub fn holds_state(&self) -> bool {
         match self {
-            Self::Container | Self::Text(_) | Self::Icon(_) | Self::Spacer => false,
-            Self::Field(_) => true,
+            Self::Container | Self::Text(_) | Self::Icon(_) | Self::Spacer | Self::Separator => {
+                false
+            }
+            Self::Field(_) | Self::Button(_) | Self::Toggle(_) => true,
         }
     }
 
     /// Whether a node of the kind takes the keyboard's focus of its own, as
-    /// a field does, whatever its node says.
+    /// a field, a button and a toggle do, unless they are disabled, whatever
+    /// its node says.
     pub fn takes_focus(&self) -> bool {
-        matches!(self, Self::Field(_))
+        match self {
+            Self::Field(_) => true,
+            Self::Button(button) => !button.disabled,
+            Self::Toggle(toggle) => !toggle.disabled,
+            _ => false,
+        }
+    }
+
+    /// Whether a node of the kind is a control, as macOS has them, a button
+    /// or a toggle: a click gives it no focus, which stays where it was,
+    /// and Tab reaches it only as the system's keyboard navigation reaches
+    /// every control.
+    pub fn is_control(&self) -> bool {
+        matches!(self, Self::Button(_) | Self::Toggle(_))
+    }
+
+    /// Whether a node of the kind is a widget that is disabled, which takes
+    /// neither the pointer's presses nor the focus.
+    pub fn disabled(&self) -> bool {
+        match self {
+            Self::Button(button) => button.disabled,
+            Self::Toggle(toggle) => toggle.disabled,
+            _ => false,
+        }
     }
 
     /// Whether a node of the kind has children.
@@ -263,6 +332,12 @@ pub enum UiEventKind {
         /// Its text.
         text: String,
     },
+    /// A toggle clicked, or pressed by Space or Return: the state asked of
+    /// it, the other than its render's.
+    Toggle {
+        /// Whether it is to be on.
+        on: bool,
+    },
 }
 
 /// A node's border.
@@ -390,6 +465,7 @@ impl Node {
             layout: Layout::default(),
             style: Style::default(),
             focusable: false,
+            tooltip: None,
             children: Vec::new(),
         }
     }
@@ -417,6 +493,38 @@ impl Node {
         Self::new(Kind::Field(Field {
             placeholder: placeholder.into(),
         }))
+    }
+
+    /// A button of `label`; its key, which it needs, follows.
+    pub fn button(label: impl Into<String>) -> Self {
+        Self::new(Kind::Button(Button {
+            label: label.into(),
+            ..Button::default()
+        }))
+    }
+
+    /// A button of the icon `name` alone, which its tooltip names; its
+    /// key, which it needs, follows.
+    pub fn icon_button(name: impl Into<String>) -> Self {
+        Self::new(Kind::Button(Button {
+            icon: name.into(),
+            ..Button::default()
+        }))
+    }
+
+    /// A toggle of the icon `name`, on or off; its key, which it needs,
+    /// follows.
+    pub fn toggle(name: impl Into<String>, on: bool) -> Self {
+        Self::new(Kind::Toggle(Toggle {
+            icon: name.into(),
+            on,
+            ..Toggle::default()
+        }))
+    }
+
+    /// A line across its container.
+    pub fn separator() -> Self {
+        Self::new(Kind::Separator)
     }
 
     /// Room that grows.
@@ -451,6 +559,13 @@ impl Node {
     #[must_use]
     pub fn focusable(mut self) -> Self {
         self.focusable = true;
+        self
+    }
+
+    /// The node with its tooltip.
+    #[must_use]
+    pub fn tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        self.tooltip = Some(tooltip.into());
         self
     }
 }
@@ -504,6 +619,22 @@ mod tests {
         assert_eq!(field, Node::field("Find").key("find"));
         let field: Node = serde_json::from_str(r#"{"key":"find","kind":{"field":{}}}"#).unwrap();
         assert_eq!(field, Node::field("").key("find"));
+        // A button, a toggle and a separator, of their properties left out
+        // as their defaults; a tooltip.
+        let button: Node = serde_json::from_str(
+            r#"{"key":"add","kind":{"button":{"icon":"add"}},"tooltip":"New Tab"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            button,
+            Node::icon_button("add").key("add").tooltip("New Tab")
+        );
+        let toggle: Node =
+            serde_json::from_str(r#"{"key":"regex","kind":{"toggle":{"icon":"regex","on":true}}}"#)
+                .unwrap();
+        assert_eq!(toggle, Node::toggle("regex", true).key("regex"));
+        let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
+        assert_eq!(separator, Node::separator());
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
@@ -516,6 +647,7 @@ mod tests {
             UiEventKind::Submit {
                 text: "main".to_owned(),
             },
+            UiEventKind::Toggle { on: true },
         ];
         let json = serde_json::to_string(&events).unwrap();
         assert_eq!(
@@ -523,7 +655,7 @@ mod tests {
             concat!(
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma"},"#,
-                r#"{"kind":"submit","text":"main"}]"#
+                r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true}]"#
             )
         );
         assert_eq!(

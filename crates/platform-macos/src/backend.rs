@@ -278,6 +278,12 @@ impl Platform for Backend {
         appearance::current(self.mtm)
     }
 
+    fn keyboard_navigation(&self) -> bool {
+        // AppKit reads the preference at each call, cheaply, and tells no
+        // change of it.
+        NSApplication::sharedApplication(self.mtm).isFullKeyboardAccessEnabled()
+    }
+
     fn set_appearance(&mut self, appearance: Option<Appearance>) {
         appearance::set(self.mtm, appearance);
     }

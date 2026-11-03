@@ -3,11 +3,11 @@
 //! the pointer and the keyboard try, whose events the gallery shows and
 //! draws again, as a plugin learns of them and renders anew.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, Justify, Layout, Length, Node, PointerShape, Shadow, Style,
-    Token, UiEventKind,
+    self, Align, Border, Direction, Edges, Justify, Kind, Layout, Length, Node, PointerShape,
+    Shadow, Style, Token, UiEventKind,
 };
 use lokyr_ui_core::interface;
 
@@ -16,6 +16,9 @@ const ICONS_A_ROW: usize = 4;
 
 /// A family, an emoji of five code points.
 const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+
+/// The keys of the gallery's buttons.
+const BUTTONS: [&str; 5] = ["replace", "replace-all", "settings", "add", "trash"];
 
 /// Italy's flag, of two regional indicators.
 const ITALY: &str = "\u{1F1EE}\u{1F1F9}";
@@ -39,6 +42,9 @@ pub struct Gallery {
     /// The texts that the gallery sets in its fields, as a plugin asks the
     /// host, by their keys, since the host took them last.
     texts: Vec<(String, String)>,
+    /// The toggles that are on, by their keys, and the buttons' last press.
+    toggles: BTreeMap<String, bool>,
+    pressed: String,
 }
 
 impl Gallery {
@@ -64,6 +70,8 @@ impl Gallery {
                     "a text longer than its field, which scrolls".to_owned(),
                 ),
             ],
+            toggles: BTreeMap::from([("regex".to_owned(), true), ("pinned".to_owned(), true)]),
+            pressed: "none yet".to_owned(),
         }
     }
 
@@ -85,6 +93,13 @@ impl Gallery {
             }
             UiEventKind::HoverLeave => {
                 self.hovered.remove(key);
+            }
+            UiEventKind::Click if BUTTONS.contains(&key) => {
+                self.pressed = format!("click on `{key}`");
+            }
+            UiEventKind::Toggle { on } => {
+                self.toggles.insert(key.to_owned(), on);
+                self.pressed = format!("`{key}` {}", if on { "on" } else { "off" });
             }
             UiEventKind::Click if key == "clear" => {
                 self.last = "click on `clear`".to_owned();
@@ -145,6 +160,7 @@ impl Gallery {
                 section("Columns", columns()),
                 section("Boxes and clips", boxes()),
                 section("Drags and scrolls", self.drags()),
+                section("Buttons, toggles and separators", self.buttons()),
             ],
         );
         let right = column(
@@ -337,6 +353,73 @@ impl Gallery {
                 nodes,
                 secondary(&focus),
                 secondary(&format!("events: {}", self.focus_events)),
+            ],
+        )
+    }
+
+    fn buttons(&self) -> Node {
+        let button = |key: &str, label: &str, icon: &str, disabled: bool| {
+            Node::new(Kind::Button(view::Button {
+                label: label.to_owned(),
+                icon: icon.to_owned(),
+                disabled,
+            }))
+            .key(key)
+        };
+        let toggle = |key: &str, icon: &str, tooltip: &str, disabled: bool| {
+            Node::new(Kind::Toggle(view::Toggle {
+                icon: icon.to_owned(),
+                on: self.toggles.get(key).copied().unwrap_or(false),
+                disabled,
+                ..view::Toggle::default()
+            }))
+            .key(key)
+            .tooltip(tooltip)
+        };
+        let row = |children| {
+            Node::container(children).layout(Layout {
+                gap: 8.0,
+                align: Align::Center,
+                ..Layout::default()
+            })
+        };
+        let buttons = row(vec![
+            button("replace", "Replace", "", false).tooltip("Replace the match"),
+            button("replace-all", "Replace All", "", true).tooltip("No match to replace"),
+            Node::separator(),
+            button("settings", "Settings", "settings", false),
+            button("add", "", "add", false).tooltip("New Tab"),
+            button("trash", "", "trash", true),
+        ]);
+        let toggles = row(vec![
+            toggle("case-sensitive", "case-sensitive", "Match Case", false),
+            toggle("regex", "regex", "Regular Expression", false),
+            toggle("whole-word", "whole-word", "Whole Word", false),
+            Node::separator(),
+            toggle("pinned", "pin", "Pinned, and disabled", true),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Wrap Around".to_owned(),
+                on: self.toggles.get("wrap").copied().unwrap_or(false),
+                ..view::Toggle::default()
+            }))
+            .key("wrap"),
+        ]);
+        let on: Vec<&str> = self
+            .toggles
+            .iter()
+            .filter(|(_, on)| **on)
+            .map(|(key, _)| key.as_str())
+            .collect();
+        column(
+            8.0,
+            vec![
+                buttons,
+                toggles,
+                Node::separator(),
+                secondary(&format!("last: {}", self.pressed)),
+                secondary(&format!("on: {}", on.join(", "))),
+                secondary("rest the pointer on a button or a toggle for its tooltip"),
+                secondary("a click leaves the focus; Tab reaches them with Keyboard navigation on"),
             ],
         )
     }
@@ -756,8 +839,6 @@ mod tests {
         let gallery = Gallery::new(false);
         let mut tree = Tree::new();
         tree.update(&gallery.view()).unwrap();
-        let mut focus = Focus::new();
-        assert!(focus.first(0, &tree));
         let tab = KeyEvent {
             key: Key::Tab,
             action: KeyAction::Press,
@@ -766,28 +847,46 @@ mod tests {
             unmodified: "",
             base_layout: None,
         };
-        let mut order = Vec::new();
-        for _ in 0..9 {
-            let Target::Node { node, .. } = focus.target() else {
-                panic!("the focus left the panel");
-            };
-            order.push(tree.key(node).unwrap().0.clone());
-            focus.key(|_| Some(&tree), &tab);
-        }
-        assert_eq!(
-            order,
-            [
-                "first",
-                "second",
-                "third",
-                "group",
-                "group.close",
-                "find",
-                "name",
-                "narrow",
-                "first"
-            ]
-        );
+        let order = |every: bool| {
+            let mut focus = Focus::new();
+            focus.set_every_control(every);
+            assert!(focus.first(0, &tree));
+            let mut order = Vec::new();
+            loop {
+                let Target::Node { node, .. } = focus.target() else {
+                    panic!("the focus left the panel");
+                };
+                let key = tree.key(node).unwrap().0.clone();
+                if order.first() == Some(&key) {
+                    return order;
+                }
+                order.push(key);
+                focus.key(|_| Some(&tree), &tab);
+            }
+        };
+        let rest = [
+            "first",
+            "second",
+            "third",
+            "group",
+            "group.close",
+            "find",
+            "name",
+            "narrow",
+        ];
+        // Without the system's keyboard navigation, the buttons and the
+        // toggles are left out, the disabled ones always.
+        assert_eq!(order(false), rest);
+        let controls = [
+            "replace",
+            "settings",
+            "add",
+            "case-sensitive",
+            "regex",
+            "whole-word",
+            "wrap",
+        ];
+        assert_eq!(order(true), [&controls[..], &rest[..]].concat());
     }
 
     #[test]

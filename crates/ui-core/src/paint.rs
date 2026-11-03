@@ -12,9 +12,10 @@ use lokyr_text_core::FontBackend;
 
 use crate::field::{self, FieldState, Fields};
 use crate::font::Font;
-use crate::layout::{Frame, Layout};
+use crate::layout::{Frame, Layout, Measure};
 use crate::theme::Tokens;
 use crate::tree::{NodeId, Tree};
+use crate::widget;
 
 /// The width of the ring of the keyboard's focus, outside its node's box,
 /// in points.
@@ -25,7 +26,8 @@ const RING: f32 = 3.0;
 const ACROSS: (i32, u32) = (-(1 << 28), 1 << 29);
 
 /// What a tree shows beside its nodes: its appearance, the node with the
-/// keyboard's focus, and its fields' text, caret and selection.
+/// keyboard's focus, its fields' text, caret and selection, and the nodes
+/// that the pointer is over and presses, as its buttons show them.
 #[derive(Clone, Copy, Debug)]
 pub struct Shown<'a> {
     /// Whether the appearance is dark.
@@ -34,6 +36,11 @@ pub struct Shown<'a> {
     pub focused: Option<NodeId>,
     /// The tree's fields.
     pub fields: &'a Fields,
+    /// The innermost node of a key that the pointer is over, if one.
+    pub hovered: Option<NodeId>,
+    /// The node that the primary button went down over, while the pointer
+    /// is still over it, if one.
+    pub pressed: Option<NodeId>,
 }
 
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
@@ -58,6 +65,8 @@ pub fn paint<B: FontBackend>(
         dark: shown.dark,
         focused: shown.focused,
         fields: shown.fields,
+        hovered: shown.hovered,
+        pressed: shown.pressed,
         clip: None,
         ring: None,
         items: Vec::new(),
@@ -83,6 +92,78 @@ pub fn paint<B: FontBackend>(
     items
 }
 
+/// The room inside a tooltip's edges, in points: above and below its
+/// text, and before and after it.
+const TOOLTIP_PADDING: (f32, f32) = (3.0, 7.0);
+
+/// How far below the pointer's place a tooltip goes, in points, past the
+/// arrow's tip.
+const TOOLTIP_BELOW: f32 = 20.0;
+
+/// The room that a tooltip keeps from its window's edges, in points.
+const TOOLTIP_MARGIN: f32 = 4.0;
+
+/// The display list of a tooltip of `text`, as the pointer was at `at`, in
+/// the window's pixels, of `font` at `scale` and `tokens`' colors: a box of
+/// a border, rounded corners and a shadow, below the pointer, or above it
+/// where the window's `room`, its width and height in pixels, has none
+/// below, and within its edges.
+pub fn tooltip<B: FontBackend>(
+    font: &mut Font<B>,
+    tokens: &Tokens,
+    text: &str,
+    (at, room): ((f32, f32), (f32, f32)),
+    (scale, dark): (f32, bool),
+) -> Vec<Item> {
+    let (down, across) = TOOLTIP_PADDING;
+    let natural = Measure::text(&mut *font, text).0;
+    let face = font.interface();
+    let (line, ascent) = (face.line(), face.ascent());
+    let width = ((natural + 2.0 * across) * scale).ceil();
+    let height = ((line + 2.0 * down) * scale).ceil();
+    let margin = TOOLTIP_MARGIN * scale;
+    let x = at.0.min(room.0 - width - margin).max(margin).round();
+    let below = at.1 + TOOLTIP_BELOW * scale;
+    let y = if below + height + margin <= room.1 {
+        below
+    } else {
+        at.1 - height - margin
+    }
+    .max(margin)
+    .round();
+    let color = |token: &str, fallback| tokens.get(token).unwrap_or(fallback);
+    let shape = Shape {
+        rect: Rect {
+            x: x as i32,
+            y: y as i32,
+            width: width as u32,
+            height: height as u32,
+        },
+        radius: 4.0 * scale,
+        fill: color("tooltip.bg", Color::from_rgb8(255, 255, 255)),
+        border: scale.round().max(1.0),
+        border_color: color("tooltip.border", Color::CLEAR),
+        shadow: tokens.get("shadow").map(|shadow| Shadow {
+            x: 0.0,
+            y: scale,
+            blur: 3.0 * scale,
+            color: shadow,
+        }),
+    };
+    let baseline = y + (down * scale).round() + (ascent * scale).round();
+    let (glyphs, _) = font.interface_text(
+        text,
+        (x + across * scale, baseline),
+        color("tooltip.fg", Color::BLACK),
+        dark,
+    );
+    let mut items = vec![Item::Shapes(vec![shape])];
+    if !glyphs.is_empty() {
+        items.push(Item::Glyphs(glyphs));
+    }
+    items
+}
+
 struct Painter<'a, B> {
     tree: &'a Tree,
     layout: &'a Layout,
@@ -92,6 +173,8 @@ struct Painter<'a, B> {
     dark: bool,
     focused: Option<NodeId>,
     fields: &'a Fields,
+    hovered: Option<NodeId>,
+    pressed: Option<NodeId>,
     /// The clips of the node painted, as one: `None` for none.
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
@@ -119,11 +202,25 @@ impl<B: FontBackend> Painter<'_, B> {
             .as_ref()
             .and_then(|token| self.tokens.get(&token.0))
             .unwrap_or(inherited);
-        // A field of no box of its own takes a field's.
+        // A field, a button, a toggle and a separator of no box of their
+        // own take theirs, a button's and a toggle's of their state.
         let boxed;
+        let own = style.background.is_none() && style.border.is_none();
         let style = match kind {
-            Kind::Field(_) if style.background.is_none() && style.border.is_none() => {
+            Kind::Field(_) if own => {
                 boxed = field_box(style);
+                &boxed
+            }
+            Kind::Button(_) | Kind::Toggle(_) if own => {
+                let state = (self.hovered == Some(id), self.pressed == Some(id));
+                boxed = widget_box(kind, style, state);
+                &boxed
+            }
+            Kind::Separator if own => {
+                boxed = Style {
+                    background: Some(view::Token::from("separator")),
+                    ..style.clone()
+                };
                 &boxed
             }
             _ => style,
@@ -141,7 +238,18 @@ impl<B: FontBackend> Painter<'_, B> {
             }
             Kind::Icon(name) => self.icon(name, frame, color),
             Kind::Field(field) => self.field(id, field, (frame, style), color),
-            Kind::Container | Kind::Spacer => {}
+            Kind::Button(view::Button { label, icon, .. })
+            | Kind::Toggle(view::Toggle { label, icon, .. }) => {
+                let color = match kind {
+                    _ if kind.disabled() => self.tokens.get("text.disabled").unwrap_or(color),
+                    Kind::Toggle(toggle) if toggle.on => {
+                        self.tokens.get("toggle.on.fg").unwrap_or(color)
+                    }
+                    _ => color,
+                };
+                self.widget((label, icon), frame, color);
+            }
+            Kind::Container | Kind::Spacer | Kind::Separator => {}
         }
         let children = tree.children(id);
         if children.is_empty() {
@@ -350,6 +458,49 @@ impl<B: FontBackend> Painter<'_, B> {
         }
     }
 
+    /// A button's or a toggle's content, of `label` and `icon`, either
+    /// empty, side by side in the middle of `frame`, in `color`: its label
+    /// clipped across where its frame is too narrow for it.
+    fn widget(&mut self, (label, icon): (&str, &str), frame: Frame, color: Color) {
+        let scale = self.layout.scale();
+        let side = if icon.is_empty() {
+            0.0
+        } else {
+            self.font.interface().line() * scale
+        };
+        let natural = if label.is_empty() {
+            0.0
+        } else {
+            Measure::text(&mut *self.font, label).0
+        };
+        let gap = if label.is_empty() || icon.is_empty() {
+            0.0
+        } else {
+            widget::GAP * scale
+        };
+        let (_, across) = widget::padding(label);
+        let room = (frame.width - 2.0 * across * scale - side - gap).max(0.0);
+        let width = (natural * scale).min(room);
+        let left = (frame.x + (frame.width - (side + gap + width)) / 2.0).round();
+        if !icon.is_empty() {
+            let at = Frame {
+                x: left,
+                y: (frame.y + (frame.height - side) / 2.0).round(),
+                width: side,
+                height: side,
+            };
+            self.icon(icon, at, color);
+        }
+        if !label.is_empty() {
+            let at = Frame {
+                x: left + side + gap,
+                width,
+                ..frame
+            };
+            self.text(label, at, Some(natural), color);
+        }
+    }
+
     /// The glyph of the icon `name`, in the middle of `frame`.
     fn icon(&mut self, name: &str, frame: Frame, color: Color) {
         let side = frame.width.min(frame.height);
@@ -374,6 +525,35 @@ impl<B: FontBackend> Painter<'_, B> {
             Some(Item::Glyphs(before)) => before.extend(glyphs),
             _ => self.items.push(Item::Glyphs(glyphs)),
         }
+    }
+}
+
+/// `style` of the box of a button or a toggle, `kind`, of no box of its
+/// own, of rounded corners, as its state has it, the pointer over it and
+/// its primary button down over it: a button's background, lighter or
+/// darker of the pointer, as a toggle's of a label when it is off; a
+/// toggle of an icon alone shows none without the pointer, as a find
+/// bar's; a toggle's tint when it is on; a widget disabled shows no
+/// pointer.
+fn widget_box(kind: &Kind, style: &Style, (hovered, pressed): (bool, bool)) -> Style {
+    let disabled = kind.disabled();
+    let on = matches!(kind, Kind::Toggle(toggle) if toggle.on);
+    let background = match kind {
+        _ if pressed && !disabled => Some("button.pressed.bg"),
+        _ if on => Some("toggle.on.bg"),
+        _ if hovered && !disabled => Some("button.hover.bg"),
+        Kind::Button(_) => Some("button.bg"),
+        Kind::Toggle(toggle) if !toggle.label.is_empty() => Some("button.bg"),
+        _ => None,
+    };
+    Style {
+        background: background.map(view::Token::from),
+        radius: if style.radius > 0.0 {
+            style.radius
+        } else {
+            widget::RADIUS
+        },
+        ..style.clone()
     }
 }
 
@@ -472,6 +652,8 @@ mod tests {
             dark,
             focused,
             fields: NONE.get_or_init(Fields::new),
+            hovered: None,
+            pressed: None,
         }
     }
 
@@ -989,6 +1171,8 @@ mod tests {
                     dark: true,
                     focused,
                     fields,
+                    hovered: None,
+                    pressed: None,
                 },
             )
         };
@@ -1143,6 +1327,8 @@ mod tests {
                     dark: true,
                     focused: Some(field),
                     fields,
+                    hovered: None,
+                    pressed: None,
                 },
             )
         };
@@ -1188,6 +1374,241 @@ mod tests {
                 Shape::filled(rect(43, 31, 31, 2), color),
                 Shape::filled(rect(43, 31, 16, 4), color)
             ]
+        );
+    }
+
+    #[test]
+    fn buttons_and_toggles_paint_of_their_state() {
+        use lokyr_plugin_sdk::view::Kind;
+        let disabled = Node::new(Kind::Button(view::Button {
+            label: "All".to_owned(),
+            disabled: true,
+            ..view::Button::default()
+        }))
+        .key("all");
+        let labelled = Node::new(Kind::Toggle(view::Toggle {
+            label: "Wrap".to_owned(),
+            ..view::Toggle::default()
+        }))
+        .key("wrap");
+        let root = Node::container(vec![
+            Node::button("Go").key("go"),
+            Node::toggle("regex", false).key("off"),
+            Node::toggle("regex", true).key("on"),
+            disabled,
+            Node::separator(),
+            labelled,
+        ])
+        .layout(view::Layout {
+            gap: 4.0,
+            padding: Edges::all(4.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        let node = |index: usize| tree.children(tree.root().unwrap())[index];
+        let [go, off, on, all, separator, wrap] = [0, 1, 2, 3, 4, 5].map(node);
+        let tokens = &Theme::builtin().dark.tokens;
+        let mut painted = |hovered: Option<NodeId>, pressed: Option<NodeId>| {
+            let fields = Fields::new();
+            let items = paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: None,
+                    fields: &fields,
+                    hovered,
+                    pressed,
+                },
+            );
+            let mut fills = Vec::new();
+            let mut glyphs = Vec::new();
+            for item in items {
+                match item {
+                    Item::Shapes(shapes) => {
+                        fills.extend(shapes.into_iter().map(|shape| (shape.rect, shape.fill)));
+                    }
+                    Item::Glyphs(placed) => glyphs.extend(placed),
+                    _ => {}
+                }
+            }
+            (fills, glyphs)
+        };
+        let box_of = |fills: &[(Rect, Color)], id: NodeId| {
+            let at = rect(layout.frame(&tree, id).unwrap());
+            fills
+                .iter()
+                .find(|(rect, _)| *rect == at)
+                .map(|&(_, fill)| fill)
+        };
+        let ink_of = |glyphs: &[PlacedGlyph], id: NodeId| {
+            let at = rect(layout.frame(&tree, id).unwrap());
+            let colors: Vec<Color> = glyphs
+                .iter()
+                .filter(|glyph| glyph.x >= at.x && glyph.x < at.x + at.width as i32)
+                .map(|glyph| glyph.color)
+                .collect();
+            assert!(!colors.is_empty());
+            assert!(colors.iter().all(|&color| color == colors[0]));
+            colors[0]
+        };
+        // At rest: a button's background, none of a toggle of an icon that
+        // is off, a tint of one that is on, a button's of one of a label;
+        // a disabled button's background, of its dimmed label; the
+        // separator's line.
+        let (fills, glyphs) = painted(None, None);
+        assert_eq!(box_of(&fills, go), Some(token("button.bg")));
+        assert_eq!(box_of(&fills, off), None);
+        assert_eq!(box_of(&fills, on), Some(token("toggle.on.bg")));
+        assert_eq!(box_of(&fills, all), Some(token("button.bg")));
+        assert_eq!(box_of(&fills, separator), Some(token("separator")));
+        assert_eq!(box_of(&fills, wrap), Some(token("button.bg")));
+        assert_eq!(ink_of(&glyphs, go), token("text"));
+        assert_eq!(ink_of(&glyphs, off), token("text"));
+        assert_eq!(ink_of(&glyphs, on), token("toggle.on.fg"));
+        assert_eq!(ink_of(&glyphs, all), token("text.disabled"));
+        // The pointer over them, and pressing them.
+        let (fills, _) = painted(Some(off), None);
+        assert_eq!(box_of(&fills, off), Some(token("button.hover.bg")));
+        let (fills, _) = painted(Some(go), Some(go));
+        assert_eq!(box_of(&fills, go), Some(token("button.pressed.bg")));
+        let (fills, _) = painted(Some(on), Some(on));
+        assert_eq!(box_of(&fills, on), Some(token("button.pressed.bg")));
+        let (fills, _) = painted(Some(on), None);
+        assert_eq!(box_of(&fills, on), Some(token("toggle.on.bg")));
+        // A widget disabled shows neither.
+        let (fills, _) = painted(Some(all), Some(all));
+        assert_eq!(box_of(&fills, all), Some(token("button.bg")));
+        // A label too long for its button's room is clipped across, within
+        // its padding.
+        let narrow = Node::container(vec![Node::button("Replace All").key("all").layout(
+            view::Layout {
+                width: view::Length::Points(40.0),
+                ..view::Layout::default()
+            },
+        )]);
+        let (tree, layout, items) = painted_tree(
+            &narrow,
+            &mut Font::new(Blocks, FontConfig::default(), 1.0).unwrap(),
+        );
+        let all = rect(
+            layout
+                .frame(&tree, tree.children(tree.root().unwrap())[0])
+                .unwrap(),
+        );
+        let clipped = items.iter().find_map(|item| match item {
+            Item::PushClip(clip) => Some(*clip),
+            _ => None,
+        });
+        assert_eq!(
+            clipped.map(|clip| (clip.x, clip.width)),
+            Some((all.x + 8, all.width - 16))
+        );
+        // Of a box of its own, the plugin's style draws it, whatever its
+        // state.
+        let own = Node::container(vec![Node::button("Go").key("go").style(view::Style {
+            background: Some(Token::from("accent")),
+            ..view::Style::default()
+        })]);
+        let (_, _, items) = painted_tree(
+            &own,
+            &mut Font::new(Blocks, FontConfig::default(), 1.0).unwrap(),
+        );
+        assert!(items.iter().any(|item| matches!(
+            item,
+            Item::Shapes(shapes) if shapes.iter().any(|shape| shape.fill == token("accent") && shape.radius == 0.0)
+        )));
+    }
+
+    /// `root` laid out at a scale of 1 in 400 points, and painted of the
+    /// pointer over its first child and pressing it.
+    fn painted_tree(root: &Node, font: &mut Font<Blocks>) -> (Tree, Layout, Vec<Item>) {
+        let mut tree = Tree::new();
+        let changes = tree.update(root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, font);
+        let first = tree.children(tree.root().unwrap())[0];
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: Some(first),
+                pressed: Some(first),
+            },
+        );
+        (tree, layout, items)
+    }
+
+    #[test]
+    fn a_tooltip_goes_below_the_pointer_within_its_window() {
+        let tokens = &Theme::builtin().dark.tokens;
+        // `New Tab`, 7 characters of 7.8 points, and 7 at each side; a
+        // line of 13, and 3 above and below.
+        let placed = |scale: f32, at: (f32, f32), room: (f32, f32)| {
+            let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+            let items = tooltip(&mut font, tokens, "New Tab", (at, room), (scale, true));
+            let [Item::Shapes(shapes), Item::Glyphs(glyphs)] = &items[..] else {
+                panic!("{items:#?}");
+            };
+            assert_eq!(glyphs.len(), 7);
+            assert!(
+                glyphs
+                    .iter()
+                    .all(|glyph| glyph.color == token("tooltip.fg"))
+            );
+            let shape = &shapes[0];
+            assert_eq!(shape.fill, token("tooltip.bg"));
+            assert_eq!(shape.border_color, token("tooltip.border"));
+            assert_eq!(shape.border, scale);
+            assert!(shape.shadow.is_some());
+            (shape.rect, glyphs[0].x - shape.rect.x)
+        };
+        let rect = |x, y, width, height| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        // 20 points below the pointer, its text 7 in.
+        assert_eq!(
+            placed(1.0, (100.0, 50.0), (400.0, 300.0)),
+            (rect(100, 70, 69, 19), 7)
+        );
+        // Kept 4 points from the right edge, and above the pointer where
+        // the bottom has no room.
+        assert_eq!(
+            placed(1.0, (380.0, 50.0), (400.0, 300.0)).0,
+            rect(327, 70, 69, 19)
+        );
+        assert_eq!(
+            placed(1.0, (100.0, 290.0), (400.0, 300.0)).0,
+            rect(100, 267, 69, 19)
+        );
+        // Within the window's left and top too.
+        assert_eq!(
+            placed(1.0, (-10.0, -50.0), (400.0, 300.0)).0,
+            rect(4, 4, 69, 19)
+        );
+        // Twice the scale, twice the pixels.
+        assert_eq!(
+            placed(2.0, (200.0, 100.0), (800.0, 600.0)),
+            (rect(200, 140, 138, 38), 14)
         );
     }
 

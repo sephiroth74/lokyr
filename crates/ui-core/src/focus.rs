@@ -4,7 +4,10 @@
 //! take it, in the tree's order, from the last round to the first, and
 //! Escape gives it back to the pane; every other key goes to the element
 //! that has it alone, and a key's release where its press went; after a
-//! click on a node that takes no focus, Tab goes on from there. Its moves
+//! click on a node that takes no focus, Tab goes on from there. A click on
+//! a control, a button or a toggle, leaves the focus where it was, as
+//! macOS's controls do, and Tab reaches the controls only as the system's
+//! keyboard navigation reaches every control. Its moves
 //! come as events of a focus and a blur to the nodes. The keymap's
 //! contexts tell where it is:
 //! `pane.focused` while the pane has it, and, of each panel shown, of its
@@ -13,7 +16,7 @@
 
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent};
 
-use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
+use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
 
 use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
@@ -68,6 +71,9 @@ pub struct Focus<P> {
     key: Option<NodeKey>,
     /// The panel and the key of the node whose focus the events told last.
     told: Option<(P, NodeKey)>,
+    /// Whether Tab reaches every control, as the system's keyboard
+    /// navigation has it.
+    every_control: bool,
 }
 
 impl<P> Default for Focus<P> {
@@ -79,6 +85,7 @@ impl<P> Default for Focus<P> {
             anchor: None,
             key: None,
             told: None,
+            every_control: false,
         }
     }
 }
@@ -110,11 +117,19 @@ impl<P: Copy + Eq> Focus<P> {
         true
     }
 
+    /// Whether Tab reaches every control, the buttons and the toggles, as
+    /// the system's keyboard navigation reaches them, Keyboard navigation
+    /// in macOS's settings, or the fields and the other nodes that take
+    /// the focus alone, as by default.
+    pub fn set_every_control(&mut self, every: bool) {
+        self.every_control = every;
+    }
+
     /// Gives the focus to the first node of `panel` that takes it, as a
     /// panel that opens takes the keyboard: whether one does.
     pub fn first(&mut self, panel: P, tree: &Tree) -> bool {
-        match order(tree).first() {
-            Some(&node) => self.focus(panel, tree, node),
+        match order(tree).into_iter().find(|&id| self.tabs_to(tree, id)) {
+            Some(node) => self.focus(panel, tree, node),
             None => false,
         }
     }
@@ -122,15 +137,26 @@ impl<P: Copy + Eq> Focus<P> {
     /// Gives the focus to the innermost node of `path` that takes it, a
     /// hit's of the pointer's press over `panel`, whose tree is `tree`:
     /// whether one does; the focus stays where it was otherwise, and Tab
-    /// goes on from the topmost node of `path`, until the focus moves.
+    /// goes on from the topmost node of `path`, until the focus moves. A
+    /// control, disabled or not, on the way leaves the focus where it was,
+    /// and Tab where it went on from.
     pub fn pressed(&mut self, panel: P, tree: &Tree, path: &[NodeId]) -> bool {
-        match path.iter().rev().find(|&&id| tree.focusable(id)) {
-            Some(&node) => self.focus(panel, tree, node),
-            None => {
-                self.anchor = path.last().map(|&node| (panel, node));
-                false
+        for &id in path.iter().rev() {
+            if tree.kind(id).is_some_and(Kind::is_control) {
+                return false;
+            }
+            if tree.focusable(id) {
+                return self.focus(panel, tree, id);
             }
         }
+        self.anchor = path.last().map(|&node| (panel, node));
+        false
+    }
+
+    /// Whether Tab reaches `id` of `tree`: a node that takes the focus, a
+    /// control only as the system's keyboard navigation reaches them.
+    fn tabs_to(&self, tree: &Tree, id: NodeId) -> bool {
+        tabs_to(tree, id, self.every_control)
     }
 
     /// Gives the focus back to the pane.
@@ -302,28 +328,38 @@ impl<P: Copy + Eq> Focus<P> {
     /// the other; to the pane if none does.
     fn step(&mut self, panel: P, node: NodeId, tree: &Tree, back: bool) {
         let order = order(tree);
-        if order.is_empty() {
+        let every = self.every_control;
+        let tabs_to = |id: NodeId| tabs_to(tree, id, every);
+        if !order.iter().any(|&id| tabs_to(id)) {
             self.pane();
             return;
         }
         // From the node last clicked, the next or the one before it of
-        // those that take the focus, in the tree's order.
+        // those that Tab reaches, in the tree's order.
         if let Some((anchored, anchor)) = self.anchor.take()
             && anchored == panel
-            && let Some(next) = beside(tree, anchor, back)
+            && let Some(next) = beside(tree, anchor, back, &tabs_to)
         {
             self.focus(panel, tree, next);
             return;
         }
+        // From the node with the focus, which a control that Tab does not
+        // reach can be, as accessibility gave it.
+        let count = order.len();
         let place = order
             .iter()
             .position(|&id| id == node)
-            .unwrap_or(self.place.min(order.len() - 1));
-        let next = if back {
-            (place + order.len() - 1) % order.len()
-        } else {
-            (place + 1) % order.len()
-        };
+            .unwrap_or(self.place.min(count - 1));
+        let next = (1..=count)
+            .map(|step| {
+                if back {
+                    (place + count - step) % count
+                } else {
+                    (place + step) % count
+                }
+            })
+            .find(|&at| tabs_to(order[at]))
+            .unwrap_or(place);
         self.focused = Some((panel, order[next]));
         self.key = tree.key(order[next]).cloned();
         self.place = next;
@@ -351,10 +387,22 @@ impl<P: Copy + Eq> Focus<P> {
     }
 }
 
-/// The node of `tree` that takes the focus next after `anchor`, or the one
-/// before it if `back`, in the tree's order, round from an end to the
-/// other; `None` if none does, or the tree lacks `anchor`.
-fn beside(tree: &Tree, anchor: NodeId, back: bool) -> Option<NodeId> {
+/// Whether Tab reaches `id` of `tree`: a node that takes the focus; a
+/// control only when it reaches `every` control.
+fn tabs_to(tree: &Tree, id: NodeId, every: bool) -> bool {
+    tree.focusable(id) && (every || !tree.kind(id).is_some_and(Kind::is_control))
+}
+
+/// The node of `tree` that Tab reaches, as `tabs_to` tells, next after
+/// `anchor`, or the one before it if `back`, in the tree's order, round
+/// from an end to the other; `None` if none does, or the tree lacks
+/// `anchor`.
+fn beside(
+    tree: &Tree,
+    anchor: NodeId,
+    back: bool,
+    tabs_to: &dyn Fn(NodeId) -> bool,
+) -> Option<NodeId> {
     fn walk(tree: &Tree, id: NodeId, all: &mut Vec<NodeId>) {
         all.push(id);
         for &child in tree.children(id) {
@@ -364,7 +412,7 @@ fn beside(tree: &Tree, anchor: NodeId, back: bool) -> Option<NodeId> {
     let mut all = Vec::new();
     walk(tree, tree.root()?, &mut all);
     let at = all.iter().position(|&id| id == anchor)?;
-    let takes = |id: &&NodeId| tree.focusable(**id);
+    let takes = |id: &&NodeId| tabs_to(**id);
     if back {
         all[..at]
             .iter()
@@ -788,5 +836,126 @@ mod tests {
         let label = tree_of(&Node::container(vec![Node::text("label")]));
         assert!(!focus.first(OTHER, &label));
         assert_eq!(focused(&focus, &nested), "close");
+    }
+
+    /// A find bar of controls: its field, two toggles, a disabled button in
+    /// a group that takes the focus, and a button.
+    fn controls_bar() -> Node {
+        use lokyr_plugin_sdk::view::{self, Kind};
+        let disabled = Node::new(Kind::Button(view::Button {
+            label: "All".to_owned(),
+            disabled: true,
+            ..view::Button::default()
+        }))
+        .key("all");
+        Node::container(vec![
+            Node::field("Find").key("field"),
+            Node::toggle("case-sensitive", false).key("case"),
+            Node::toggle("regex", true).key("regex"),
+            Node::container(vec![disabled]).key("group").focusable(),
+            Node::button("Done").key("done"),
+        ])
+    }
+
+    #[test]
+    fn a_click_on_a_control_leaves_the_focus_where_it_was() {
+        let tree = tree_of(&controls_bar());
+        let root = tree.root().unwrap();
+        let [field, case, _, group, done] = tree.children(root).to_vec()[..] else {
+            panic!();
+        };
+        let all = tree.children(group)[0];
+        let mut focus = Focus::new();
+        assert!(focus.pressed(SEARCH, &tree, &[root, field]));
+        // A toggle and a button clicked: the field keeps it, and gets no
+        // event.
+        focus.events(|_| Some(&tree));
+        assert!(!focus.pressed(SEARCH, &tree, &[root, case]));
+        assert!(!focus.pressed(SEARCH, &tree, &[root, done]));
+        assert_eq!(focused(&focus, &tree), "field");
+        assert!(focus.events(|_| Some(&tree)).is_empty());
+        // A disabled button keeps its group from taking it.
+        assert!(!focus.pressed(SEARCH, &tree, &[root, group, all]));
+        assert_eq!(focused(&focus, &tree), "field");
+        // Nor does Tab go on from a control clicked: from the field still.
+        focus.key(|_| Some(&tree), &press(Key::Tab, Mods::default()));
+        assert_eq!(focused(&focus, &tree), "group");
+        // Accessibility's focus reaches a control.
+        assert!(focus.focus(SEARCH, &tree, case));
+        assert_eq!(focused(&focus, &tree), "case");
+    }
+
+    #[test]
+    fn tab_reaches_the_controls_as_the_system_s_keyboard_navigation_has_it() {
+        let tree = tree_of(&controls_bar());
+        let tab = press(Key::Tab, Mods::default());
+        let back = press(Key::Tab, SHIFT);
+        let round = |focus: &mut Focus<u8>, key: &KeyEvent<'_>| {
+            let mut keys = Vec::new();
+            for _ in 0..4 {
+                focus.key(|_| Some(&tree), key);
+                keys.push(focused(focus, &tree));
+            }
+            keys
+        };
+        // Without it, the field and the group alone, either way.
+        let mut focus = Focus::new();
+        assert!(focus.first(SEARCH, &tree));
+        assert_eq!(focused(&focus, &tree), "field");
+        assert_eq!(
+            round(&mut focus, &tab),
+            ["group", "field", "group", "field"]
+        );
+        assert_eq!(
+            round(&mut focus, &back),
+            ["group", "field", "group", "field"]
+        );
+        // With it, every control that is not disabled.
+        focus.set_every_control(true);
+        assert_eq!(round(&mut focus, &tab), ["case", "regex", "group", "done"]);
+        assert_eq!(
+            round(&mut focus, &back),
+            ["group", "regex", "case", "field"]
+        );
+        // From a control that accessibility focused, without it: the next
+        // that Tab reaches.
+        focus.set_every_control(false);
+        let root = tree.root().unwrap();
+        focus.focus(SEARCH, &tree, tree.children(root)[2]);
+        focus.key(|_| Some(&tree), &tab);
+        assert_eq!(focused(&focus, &tree), "group");
+        focus.focus(SEARCH, &tree, tree.children(root)[2]);
+        focus.key(|_| Some(&tree), &back);
+        assert_eq!(focused(&focus, &tree), "field");
+        // A panel of controls alone: the first, without it, is none, and
+        // Tab from one gives the focus back to the pane.
+        let controls = tree_of(&Node::container(vec![
+            Node::button("Done").key("done"),
+            Node::toggle("regex", false).key("regex"),
+        ]));
+        let mut focus = Focus::new();
+        assert!(!focus.first(SEARCH, &controls));
+        focus.focus(
+            SEARCH,
+            &controls,
+            controls.children(controls.root().unwrap())[0],
+        );
+        focus.key(|_| Some(&controls), &tab);
+        assert_eq!(focus.target(), Target::Pane);
+        // From a label clicked, Tab goes on to the next that it reaches,
+        // past a control.
+        let mut focus = Focus::new();
+        let labelled = tree_of(&Node::container(vec![
+            Node::field("Find").key("find"),
+            Node::text("label").key("label"),
+            Node::button("Done").key("done"),
+            Node::field("Replace").key("replace"),
+        ]));
+        let root = labelled.root().unwrap();
+        let label = labelled.children(root)[1];
+        assert!(focus.first(SEARCH, &labelled));
+        focus.pressed(SEARCH, &labelled, &[root, label]);
+        focus.key(|_| Some(&labelled), &tab);
+        assert_eq!(focused(&focus, &labelled), "replace");
     }
 }

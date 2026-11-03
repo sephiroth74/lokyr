@@ -134,6 +134,8 @@ pub struct Fake {
     /// The system's appearance, and the app's own.
     appearance: Appearance,
     own_appearance: Option<Appearance>,
+    /// Whether the system's keyboard navigation reaches every control.
+    keyboard_navigation: bool,
     windows: BTreeMap<WindowId, FakeWindow>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
@@ -214,6 +216,7 @@ impl Fake {
             scale,
             appearance: Appearance::Light,
             own_appearance: None,
+            keyboard_navigation: false,
             windows: BTreeMap::new(),
             focused: None,
             menu: None,
@@ -250,6 +253,11 @@ impl Fake {
             quit: false,
             quit_refusals: 0,
         }
+    }
+
+    /// Turns the system's keyboard navigation, of every control, on or off.
+    pub fn set_keyboard_navigation(&mut self, on: bool) {
+        self.keyboard_navigation = on;
     }
 
     /// Starts the application, as a backend's `run` does.
@@ -597,6 +605,10 @@ impl Platform for Fake {
 
     fn appearance(&self) -> Appearance {
         self.own_appearance.unwrap_or(self.appearance)
+    }
+
+    fn keyboard_navigation(&self) -> bool {
+        self.keyboard_navigation
     }
 
     fn set_appearance(&mut self, appearance: Option<Appearance>) {

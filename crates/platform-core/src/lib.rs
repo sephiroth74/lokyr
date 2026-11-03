@@ -231,6 +231,11 @@ pub trait Platform {
     /// The appearance that the app has: its own, or the system's.
     fn appearance(&self) -> Appearance;
 
+    /// Whether the system's keyboard navigation reaches every control, as
+    /// Tab moves the focus, the buttons too: Keyboard navigation in macOS's
+    /// settings. Without it, Tab reaches the fields and the lists alone.
+    fn keyboard_navigation(&self) -> bool;
+
     /// Gives the app the appearance `appearance`, its windows' and its
     /// menus' too, whatever the system's is, or the system's again with
     /// `None`. [`Platform::appearance`] tells it at once; a change can come

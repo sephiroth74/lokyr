@@ -5,12 +5,14 @@
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
     AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem,
     Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta, Shortcut,
-    ShortcutKey, Size, StandardAction, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    ShortcutKey, Size, StandardAction, TimerId, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, Kind, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -20,10 +22,12 @@ use lokyr_ui_core::field::{Clipboard, Fields};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
-use lokyr_ui_core::paint::{Shown, paint};
+use lokyr_ui_core::paint::{self, Shown, paint};
 use lokyr_ui_core::pointer::{self, Button, NodeEvent, Pointer};
 use lokyr_ui_core::theme::Theme;
+use lokyr_ui_core::tooltip::Tooltip;
 use lokyr_ui_core::tree::{NodeId, Tree};
+use lokyr_ui_core::widget;
 use lokyr_vt_core::input::{self as vt, KeyAction, Keypad, Mods};
 
 use crate::gallery::Gallery;
@@ -79,6 +83,7 @@ struct View {
     pointer: Pointer,
     focus: Focus<u8>,
     fields: Fields,
+    tooltip: Tooltip,
 }
 
 impl View {
@@ -90,6 +95,7 @@ impl View {
             pointer: Pointer::new(),
             focus: Focus::new(),
             fields: Fields::new(),
+            tooltip: Tooltip::new(),
         };
         view.render();
         view
@@ -172,23 +178,43 @@ impl View {
     }
 
     /// The display list of the view, from `origin`, over the theme's
-    /// background.
-    fn paint(&self, font: &mut Font<CoreText>, origin: (f32, f32)) -> DisplayList {
+    /// background, and its tooltip over it, within the window's `room`,
+    /// in pixels.
+    fn paint(
+        &self,
+        font: &mut Font<CoreText>,
+        origin: (f32, f32),
+        room: (f32, f32),
+    ) -> DisplayList {
         let theme = Theme::builtin();
         let variant = theme.variant(self.gallery.dark());
+        let dark = self.gallery.dark();
         font.begin_frame();
-        let items = paint(
+        let mut items = paint(
             &self.tree,
             &self.layout,
             font,
             &variant.tokens,
             origin,
             Shown {
-                dark: self.gallery.dark(),
+                dark,
                 focused: self.focused(),
                 fields: &self.fields,
+                hovered: self.pointer.hovered().next_back(),
+                pressed: self.pointer.pressing(),
             },
         );
+        if let Some((text, at)) = self.tooltip.shown(&self.tree) {
+            let at = (at.0 + origin.0, at.1 + origin.1);
+            let scale = self.layout.scale();
+            items.extend(paint::tooltip(
+                font,
+                &variant.tokens,
+                text,
+                (at, room),
+                (scale, dark),
+            ));
+        }
         let background = variant.colors.background;
         DisplayList {
             background: Color::from_rgb8(background.r, background.g, background.b),
@@ -206,6 +232,8 @@ struct App {
     size: Option<WindowSize>,
     areas: Vec<PointerArea>,
     dark: bool,
+    /// The timer of the tooltip's delay, and when it fires.
+    timer: Option<(TimerId, Instant)>,
 }
 
 impl App {
@@ -293,7 +321,8 @@ impl App {
         };
         drawing.font.set_drawing(drawing.renderer.drawing_from());
         view.lay_out(&mut drawing.font, width, Some(height));
-        let list = view.paint(&mut drawing.font, (0.0, bar));
+        let room = (size.pixels.width as f32, size.pixels.height as f32);
+        let list = view.paint(&mut drawing.font, (0.0, bar), room);
         let updates = drawing.font.texture_updates();
         surface.resize(size.pixels.width, size.pixels.height, size.scale);
         let drawn = drawing
@@ -419,7 +448,45 @@ impl App {
             }
         };
         view.apply(&mut drawing.font, (width, height), events);
+        // A press hides the tooltip; a move follows it.
+        if press.is_some() {
+            view.tooltip.dismiss();
+        }
+        let deadline = view
+            .tooltip
+            .hover(&view.tree, view.pointer.hovered(), at, Instant::now());
+        self.wake_at(platform, deadline);
         self.request_frame(platform);
+    }
+
+    /// Wakes at `deadline` for the tooltip that waits, by the one timer,
+    /// moved or cancelled as the deadline changes.
+    fn wake_at(&mut self, platform: &mut dyn Platform, deadline: Option<Instant>) {
+        if self.timer.map(|(_, at)| at) == deadline {
+            return;
+        }
+        if let Some((timer, _)) = self.timer.take() {
+            platform.cancel_timer(timer);
+        }
+        if let Some(at) = deadline {
+            self.timer = Some((platform.start_timer(at), at));
+        }
+    }
+
+    /// The tooltip's timer fired: the tooltip shows, if its time came.
+    fn timer(&mut self, platform: &mut dyn Platform, timer: TimerId) {
+        if self.timer.is_none_or(|(waited, _)| waited != timer) {
+            return;
+        }
+        self.timer = None;
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        if view.tooltip.tick(Instant::now()) {
+            self.request_frame(platform);
+        }
+        let deadline = self.view.as_ref().and_then(|view| view.tooltip.deadline());
+        self.wake_at(platform, deadline);
     }
 
     fn scrolled(&mut self, platform: &mut dyn Platform, position: Point, delta: (f32, f32)) {
@@ -431,6 +498,8 @@ impl App {
         };
         let events = view.pointer.scrolled(&view.tree, &view.layout, at, delta);
         view.apply(&mut drawing.font, (width, height), events);
+        view.tooltip.dismiss();
+        self.wake_at(platform, None);
         self.request_frame(platform);
     }
 
@@ -442,13 +511,35 @@ impl App {
         let Some(view) = &mut self.view else {
             return;
         };
+        // A key hides the tooltip.
+        if pressed {
+            let shown = view.tooltip.dismiss();
+            self.wake_at(platform, None);
+            if shown {
+                self.request_frame(platform);
+            }
+        }
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        // Tab reaches the buttons and the toggles as the system's keyboard
+        // navigation has it, which it reads at each key.
+        view.focus.set_every_control(platform.keyboard_navigation());
         let tree = &view.tree;
         let routed = view.focus.key(|_| Some(tree), &key);
-        // A field takes its keys first, the app's those that it leaves.
+        // A field takes its keys first, the app's those that it leaves;
+        // a button and a toggle, Space and Return.
         if let Routed::Node { node, .. } = routed
             && let Some(events) =
                 view.fields
                     .key(&view.tree, node, &key, &mut Pasteboard(&mut *platform))
+        {
+            view.typed(events);
+            self.request_frame(platform);
+            return;
+        }
+        if let Routed::Node { node, .. } = routed
+            && let Some(events) = widget::key(&view.tree, node, &key)
         {
             view.typed(events);
             self.request_frame(platform);
@@ -590,6 +681,7 @@ impl Handler for App {
         match event {
             AppEvent::QuitRequested => platform.quit(),
             AppEvent::Command(command) if command == QUIT => platform.quit(),
+            AppEvent::Timer(timer) => self.timer(platform, timer),
             _ => {}
         }
     }
@@ -626,8 +718,10 @@ impl Handler for App {
                     for event in view.pointer.cancel(&view.tree) {
                         view.gallery.event(&event.key.0, event.kind);
                     }
+                    view.tooltip.dismiss();
                     view.render();
                 }
+                self.wake_at(platform, None);
                 self.request_frame(platform);
             }
             _ => {}
@@ -688,6 +782,7 @@ pub fn run() -> Result<(), String> {
         size: None,
         areas: Vec::new(),
         dark: false,
+        timer: None,
     };
     lokyr_platform_macos::run(app).map_err(|error| error.to_string())
 }
@@ -714,7 +809,7 @@ pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
             .root()
             .and_then(|root| view.layout.frame(&view.tree, root))
             .ok_or("the gallery has no root")?;
-        let list = view.paint(&mut drawing.font, (0.0, 0.0));
+        let list = view.paint(&mut drawing.font, (0.0, 0.0), (width, f32::MAX));
         let updates = drawing.font.texture_updates();
         drawing
             .renderer

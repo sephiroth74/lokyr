@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use lokyr_font_coretext::CoreText;
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, Layout as Box, Length, Node, Shadow, Style,
+    self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
 };
 use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
@@ -25,10 +25,10 @@ use lokyr_text_core::{FontConfig, Size};
 use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
-use lokyr_ui_core::paint::{Shown, paint};
+use lokyr_ui_core::paint::{Shown, paint, tooltip};
 use lokyr_ui_core::pane::{self as cells, CursorLook, Selection, TextLook};
 use lokyr_ui_core::theme::Theme;
-use lokyr_ui_core::tree::Tree;
+use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{Options, SelectionShape, SelectionUnit, Snapshot, Terminal};
 
@@ -516,23 +516,141 @@ fn view_tree() -> Node {
     })
 }
 
+/// The buttons, the toggles and the separators of the images, in their
+/// states: a button at rest, one pressed, one disabled, one of an icon
+/// alone, which has the focus, one of an icon and a label; a toggle of an
+/// icon off, one on, one off under the pointer, a disabled one on, one of
+/// a label off; upright separators between the groups, and a flat one
+/// under them; room below for the tooltip of the toggle under the pointer.
+fn widgets_tree() -> Node {
+    let button = |key: &str, label: &str, icon: &str, disabled: bool| {
+        Node::new(Kind::Button(view::Button {
+            label: label.to_owned(),
+            icon: icon.to_owned(),
+            disabled,
+        }))
+        .key(key)
+    };
+    let toggle = |key: &str, label: &str, icon: &str, (on, disabled): (bool, bool)| {
+        Node::new(Kind::Toggle(view::Toggle {
+            label: label.to_owned(),
+            icon: icon.to_owned(),
+            on,
+            disabled,
+        }))
+        .key(key)
+    };
+    let row = |children| {
+        Node::container(children).layout(Box {
+            gap: 8.0,
+            align: Align::Center,
+            ..Box::default()
+        })
+    };
+    let buttons = row(vec![
+        button("replace", "Replace", "", false),
+        button("pressed", "Replace", "", false),
+        button("all", "Replace All", "", true),
+        Node::separator(),
+        button("add", "", "add", false),
+        button("settings", "Settings", "settings", false),
+    ]);
+    let toggles = row(vec![
+        toggle("case", "", "case-sensitive", (false, false)),
+        toggle("regex", "", "regex", (true, false)),
+        toggle("word", "", "whole-word", (false, false)).tooltip("Whole Word"),
+        Node::separator(),
+        toggle("pin", "", "pin", (true, true)),
+        toggle("wrap", "Wrap Around", "", (false, false)),
+    ]);
+    let panel = Node::container(vec![buttons, toggles, Node::separator()])
+        .layout(Box {
+            direction: Direction::Column,
+            gap: 10.0,
+            padding: Edges::all(12.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("panel.bg".into()),
+            border: Some(Border {
+                color: "panel.border".into(),
+                width: 1.0,
+            }),
+            radius: 8.0,
+            ..Style::default()
+        });
+    Node::container(vec![panel]).layout(Box {
+        direction: Direction::Column,
+        padding: Edges {
+            top: 16.0,
+            right: 16.0,
+            bottom: 48.0,
+            left: 16.0,
+        },
+        ..Box::default()
+    })
+}
+
+/// The node of `key` in `tree`.
+fn find(tree: &Tree, key: &str) -> NodeId {
+    tree.by_key(&key.into()).unwrap()
+}
+
 /// Draws the view tree at `scale`, in the dark variant or the light one,
 /// and compares the image with its golden one.
 fn check_view(dark: bool, scale: u32) {
+    check_tree("view", &view_tree(), (dark, scale), |_| {
+        (None, None, None, None)
+    });
+}
+
+/// Draws the widgets' tree at `scale`, in the dark variant or the light
+/// one, of the focus on the button of an icon, the pointer over the
+/// toggle off and pressing a button, and the toggle's tooltip, and
+/// compares the image with its golden one.
+fn check_widgets(dark: bool, scale: u32) {
+    check_tree("widgets", &widgets_tree(), (dark, scale), |tree| {
+        (
+            Some(find(tree, "add")),
+            Some(find(tree, "word")),
+            Some(find(tree, "pressed")),
+            Some("Whole Word"),
+        )
+    });
+}
+
+/// Draws `root` at `scale`, in the dark variant or the light one, of the
+/// node with the focus, the one under the pointer, the one pressed and a
+/// tooltip under that one, as `states` gives them of the tree, and
+/// compares the image with its golden one, `{name}-{appearance}-{scale}x`.
+fn check_tree(
+    name: &str,
+    root: &Node,
+    (dark, scale): (bool, u32),
+    states: impl Fn(
+        &Tree,
+    ) -> (
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<&'static str>,
+    ),
+) {
     let Some(mut drawing) = Drawing::new(scale as f32) else {
         return;
     };
     let variant = Theme::builtin().variant(dark).clone();
     let mut tree = Tree::new();
-    let changes = tree.update(&view_tree()).unwrap();
+    let changes = tree.update(root).unwrap();
     let mut layout = Layout::new(scale as f32);
     layout.update(&tree, &changes);
     let width = VIEW_WIDTH * scale as f32;
     layout.compute(&tree, Some(width), None, &mut drawing.font);
-    let root = layout.frame(&tree, tree.root().unwrap()).unwrap();
-    let (width, height) = (root.width as u32, root.height as u32);
+    let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    let (width, height) = (frame.width as u32, frame.height as u32);
+    let (focused, hovered, pressed, tip) = states(&tree);
     drawing.font.begin_frame();
-    let items = paint(
+    let mut items = paint(
         &tree,
         &layout,
         &mut drawing.font,
@@ -540,10 +658,25 @@ fn check_view(dark: bool, scale: u32) {
         (0.0, 0.0),
         Shown {
             dark,
-            focused: None,
+            focused,
             fields: &Fields::new(),
+            hovered,
+            pressed,
         },
     );
+    // The tooltip, as the pointer rested at the middle of the node under
+    // it.
+    if let (Some(text), Some(node)) = (tip, hovered) {
+        let over = layout.frame(&tree, node).unwrap();
+        let at = (over.x + over.width / 2.0, over.y + over.height / 2.0);
+        items.extend(tooltip(
+            &mut drawing.font,
+            &variant.tokens,
+            text,
+            (at, (frame.width, frame.height)),
+            (scale as f32, dark),
+        ));
+    }
     let list = DisplayList {
         background: lokyr_render_core::Color::from_rgb8(
             variant.colors.background.r,
@@ -562,7 +695,7 @@ fn check_view(dark: bool, scale: u32) {
     let appearance = if dark { "dark" } else { "light" };
     let most = (f64::from(width * height) * SHARE) as usize;
     compare(
-        &format!("view-{appearance}-{scale}x"),
+        &format!("{name}-{appearance}-{scale}x"),
         (width, height, &pixels),
         most,
     );
@@ -730,6 +863,15 @@ fn a_view_tree_draws_as_its_golden_images_light_and_dark() {
     for dark in [false, true] {
         for scale in [1, 2] {
             check_view(dark, scale);
+        }
+    }
+}
+
+#[test]
+fn buttons_toggles_separators_and_a_tooltip_draw_as_their_golden_images() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_widgets(dark, scale);
         }
     }
 }

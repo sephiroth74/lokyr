@@ -27,4 +27,6 @@ pub mod pane;
 pub mod pointer;
 pub mod text;
 pub mod theme;
+pub mod tooltip;
 pub mod tree;
+pub mod widget;

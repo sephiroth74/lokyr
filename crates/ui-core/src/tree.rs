@@ -82,6 +82,7 @@ struct Entry {
     layout: Layout,
     style: Style,
     focusable: bool,
+    tooltip: Option<String>,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
 }
@@ -164,6 +165,11 @@ impl Tree {
             .is_some_and(|entry| entry.focusable || entry.kind.takes_focus())
     }
 
+    /// The tooltip of `id`, if it has one.
+    pub fn tooltip(&self, id: NodeId) -> Option<&str> {
+        self.entry(id).and_then(|entry| entry.tooltip.as_deref())
+    }
+
     /// The node of `key`, if the tree has one.
     pub fn by_key(&self, key: &Key) -> Option<NodeId> {
         self.keys.get(key).copied()
@@ -218,9 +224,13 @@ impl Tree {
             entry.layout = new.layout;
             changes.changed.push(old);
         }
-        if entry.style != new.style || entry.focusable != new.focusable {
+        if entry.style != new.style
+            || entry.focusable != new.focusable
+            || entry.tooltip != new.tooltip
+        {
             entry.style = new.style.clone();
             entry.focusable = new.focusable;
+            entry.tooltip.clone_from(&new.tooltip);
             changes.restyled.push(old);
         }
         self.reconcile_children(old, &new.children, changes);
@@ -283,6 +293,7 @@ impl Tree {
             layout: node.layout,
             style: node.style.clone(),
             focusable: node.focusable,
+            tooltip: node.tooltip.clone(),
             parent,
             children: Vec::new(),
         };
@@ -364,7 +375,7 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
         return Err(Invalid::TooDeep);
     }
     numbers(node)?;
-    if (node.kind.holds_state() || node.focusable) && node.key.is_none() {
+    if (node.kind.holds_state() || node.focusable || node.tooltip.is_some()) && node.key.is_none() {
         return Err(Invalid::NoKey);
     }
     if !node.kind.has_children() && !node.children.is_empty() {
@@ -646,6 +657,50 @@ mod tests {
             }
         );
         assert!(tree.focusable(icon));
+        // A tooltip needs its key; one that changes restyles its node.
+        let unkeyed = Node::container(vec![Node::icon("add").tooltip("New Tab")]);
+        assert_eq!(tree.update(&unkeyed), Err(Invalid::NoKey));
+        let tip =
+            |tooltip: &str| Node::container(vec![Node::icon("add").key("add").tooltip(tooltip)]);
+        tree.update(&tip("New Tab")).unwrap();
+        let add = tree.children(tree.root().unwrap())[0];
+        assert_eq!(tree.tooltip(add), Some("New Tab"));
+        assert_eq!(
+            tree.update(&tip("New Window")).unwrap(),
+            Changes {
+                restyled: vec![add],
+                ..Changes::default()
+            }
+        );
+        assert_eq!(tree.tooltip(add), Some("New Window"));
+        // A button and a toggle need their keys, and take the focus unless
+        // they are disabled.
+        for node in [Node::button("Replace"), Node::toggle("regex", false)] {
+            assert_eq!(
+                tree.update(&Node::container(vec![node])),
+                Err(Invalid::NoKey)
+            );
+        }
+        let disabled = Node::new(Kind::Button(lokyr_plugin_sdk::view::Button {
+            label: "Replace All".to_owned(),
+            disabled: true,
+            ..Default::default()
+        }))
+        .key("all");
+        tree.update(&Node::container(vec![
+            Node::button("Replace").key("replace"),
+            disabled,
+            Node::separator(),
+        ]))
+        .unwrap();
+        let children = tree.children(tree.root().unwrap()).to_vec();
+        assert_eq!(
+            children
+                .iter()
+                .map(|&id| tree.focusable(id))
+                .collect::<Vec<_>>(),
+            [true, false, false]
+        );
         // A field holds its state by its key, and takes the focus of its
         // own.
         let field = Node::container(vec![Node::field("Find")]);

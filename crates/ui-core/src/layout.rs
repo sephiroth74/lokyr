@@ -18,8 +18,8 @@ use taffy::prelude::{
     LengthPercentageAuto, Rect, Size, Style, TaffyTree,
 };
 
-use crate::field;
 use crate::tree::{Changes, NodeId, Tree};
+use crate::{field, widget};
 
 /// What sizes the leaves of the view tree that take their content's size.
 pub trait Measure {
@@ -34,6 +34,28 @@ pub trait Measure {
     fn field(&mut self) -> (f32, f32) {
         let (_, line) = self.text("");
         (field::WIDTH, line + 2.0 * field::PADDING.0)
+    }
+
+    /// The size of a button or a toggle of `label` and `icon`, either
+    /// empty, in points: its padding around them, side by side.
+    fn button(&mut self, label: &str, icon: &str) -> (f32, f32) {
+        let text = if label.is_empty() {
+            (0.0, 0.0)
+        } else {
+            self.text(label)
+        };
+        let glyph = if icon.is_empty() {
+            (0.0, 0.0)
+        } else {
+            self.icon(icon)
+        };
+        widget::size(label, icon, (text, glyph))
+    }
+
+    /// The size of a separator, in points, a point thick: its parent
+    /// stretches it across.
+    fn separator(&mut self) -> (f32, f32) {
+        (1.0, 1.0)
     }
 }
 
@@ -63,6 +85,8 @@ enum Content {
     Text(String),
     Icon(String),
     Field,
+    Button { label: String, icon: String },
+    Separator,
 }
 
 /// The layout of a view tree.
@@ -201,6 +225,8 @@ impl Layout {
                                 Content::Text(text) => measure.text(text),
                                 Content::Icon(name) => measure.icon(name),
                                 Content::Field => measure.field(),
+                                Content::Button { label, icon } => measure.button(label, icon),
+                                Content::Separator => measure.separator(),
                             })
                         });
                         Size {
@@ -267,6 +293,15 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
         Kind::Text(text) => Content::Text(text.clone()),
         Kind::Icon(name) => Content::Icon(name.clone()),
         Kind::Field(_) => Content::Field,
+        Kind::Button(button) => Content::Button {
+            label: button.label.clone(),
+            icon: button.icon.clone(),
+        },
+        Kind::Toggle(toggle) => Content::Button {
+            label: toggle.label.clone(),
+            icon: toggle.icon.clone(),
+        },
+        Kind::Separator => Content::Separator,
         Kind::Container | Kind::Spacer => return None,
     };
     Some(Leaf {
@@ -277,7 +312,7 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
 
 /// `taffy`'s style of `layout`, of a node of `kind`, in pixels at `scale`:
 /// a text shrinks below its content's width, as a title too long for its
-/// room, which its box clips.
+/// room, which its box clips; a separator stretches across its parent.
 fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
     let pixels = |points: f32| LengthPercentage::length(points * scale);
     let length = |length: Length| match length {
@@ -323,6 +358,7 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
             },
             height: LengthPercentageAuto::auto(),
         },
+        align_self: matches!(kind, Kind::Separator).then_some(AlignItems::STRETCH),
         flex_grow: layout.grow,
         ..Style::default()
     }
@@ -408,6 +444,59 @@ mod tests {
         assert_eq!(status.x + status.width, 198.0);
         assert_eq!(spacer.x, title.x + title.width + 4.0);
         assert_eq!(spacer.x + spacer.width + 4.0, status.x);
+    }
+
+    #[test]
+    fn buttons_take_their_content_and_separators_stretch_across() {
+        // A row, its items in the middle: a button of a label, one of an
+        // icon, one of both, a toggle, and a separator; under it, a
+        // separator across the column.
+        let row = Node::container(vec![
+            Node::button("Replace").key("replace"),
+            Node::icon_button("add").key("add"),
+            Node::new(Kind::Button(view::Button {
+                label: "Gear".to_owned(),
+                icon: "settings".to_owned(),
+                disabled: false,
+            }))
+            .key("settings"),
+            Node::separator(),
+            Node::toggle("regex", true).key("regex"),
+        ])
+        .layout(view::Layout {
+            gap: 4.0,
+            align: Align::Center,
+            ..view::Layout::default()
+        });
+        let column = Node::container(vec![row, Node::separator()]).layout(view::Layout {
+            direction: Direction::Column,
+            ..view::Layout::default()
+        });
+        for scale in [1.0, 2.0] {
+            let (tree, layout, _) = laid(&column, scale, 300.0 * scale);
+            let root = tree.root().unwrap();
+            let row = tree.children(root)[0];
+            let frame = |id| {
+                let frame = layout.frame(&tree, id).unwrap();
+                [frame.x, frame.y, frame.width, frame.height].map(|value| value / scale)
+            };
+            let [replace, add, settings, upright, regex] = tree.children(row).to_vec()[..] else {
+                panic!();
+            };
+            // A label of 7 characters, 42 points, and 8 at each side; 3
+            // above and below its line of 14, in the middle of the row,
+            // which an icon's 16 makes 22 high.
+            assert_eq!(frame(replace), [0.0, 1.0, 58.0, 20.0]);
+            assert_eq!(frame(add), [62.0, 0.0, 22.0, 22.0]);
+            // The icon, 4 points, then the label, 24.
+            assert_eq!(frame(settings), [88.0, 0.0, 60.0, 22.0]);
+            // Upright, a point wide, as tall as the row.
+            assert_eq!(frame(upright), [152.0, 0.0, 1.0, 22.0]);
+            assert_eq!(frame(regex), [157.0, 0.0, 22.0, 22.0]);
+            // Flat, a point high, as wide as the column.
+            let flat = tree.children(root)[1];
+            assert_eq!(frame(flat), [0.0, 22.0, 300.0, 1.0]);
+        }
     }
 
     #[test]

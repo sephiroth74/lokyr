@@ -19,6 +19,7 @@ use lokyr_render_core::Rect;
 use crate::layout::{Frame, Layout};
 use crate::paint::{bottom, inside_border, intersection, rect, right};
 use crate::tree::{NodeId, Tree};
+use crate::widget;
 
 /// A button of the pointer, as the view tree's events tell them apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -300,7 +301,10 @@ impl Pointer {
         button: Button,
     ) -> Vec<NodeEvent> {
         let mut events = self.hover_at(tree, layout, at);
-        let target = self.target();
+        // A widget disabled takes no press.
+        let target = self
+            .target()
+            .filter(|(node, _)| !tree.kind(*node).is_some_and(Kind::disabled));
         self.pressed[button.index()] = target.as_ref().map(|(_, key)| key.clone());
         match (button, target) {
             (Button::Secondary, Some((node, key))) => events.push(NodeEvent {
@@ -309,9 +313,13 @@ impl Pointer {
                 kind: UiEventKind::ContextMenu,
             }),
             // A field selects of its own drags, which its plugin learns
-            // nothing of.
+            // nothing of; a button and a toggle take no drag, and click as
+            // the button goes up over them.
             (Button::Primary, Some((node, _)))
-                if matches!(tree.kind(node), Some(Kind::Field(_))) => {}
+                if matches!(
+                    tree.kind(node),
+                    Some(Kind::Field(_) | Kind::Button(_) | Kind::Toggle(_))
+                ) => {}
             (Button::Primary, Some((node, key))) => {
                 self.drag = Some(Drag {
                     node,
@@ -360,6 +368,13 @@ impl Pointer {
         else {
             return events;
         };
+        // A button clicks, and a toggle switches, at each click of a row.
+        if button == Button::Primary
+            && matches!(tree.kind(node), Some(Kind::Button(_) | Kind::Toggle(_)))
+        {
+            events.extend(widget::pressed(tree, node));
+            return events;
+        }
         let kinds = match button {
             Button::Primary if clicks == 2 => vec![UiEventKind::Click, UiEventKind::DoubleClick],
             Button::Primary => vec![UiEventKind::Click],
@@ -466,8 +481,15 @@ impl Pointer {
     }
 
     /// The nodes of a key that the pointer is over, from the outermost.
-    pub fn hovered(&self) -> impl Iterator<Item = NodeId> + '_ {
+    pub fn hovered(&self) -> impl DoubleEndedIterator<Item = NodeId> + '_ {
         self.hovered.iter().map(|(id, _)| *id)
+    }
+
+    /// The node that the primary button went down over, while the pointer
+    /// is still over it, as a button shows itself pressed.
+    pub fn pressing(&self) -> Option<NodeId> {
+        let (node, key) = self.target()?;
+        (self.pressed[Button::Primary.index()].as_ref() == Some(&key)).then_some(node)
     }
 
     /// The innermost node of a key that the pointer is over.
@@ -791,6 +813,80 @@ mod tests {
         relaid(&mut tree, &mut layout, &bar());
         pointer.left(&tree);
         assert_eq!(told(&pointer.laid_out(&tree, &layout)), []);
+    }
+
+    #[test]
+    fn a_button_clicks_a_toggle_switches_and_a_widget_disabled_takes_nothing() {
+        use lokyr_plugin_sdk::view::{self, Kind as NodeKind};
+        let disabled = Node::new(NodeKind::Button(view::Button {
+            label: "Replace All".to_owned(),
+            disabled: true,
+            ..view::Button::default()
+        }))
+        .key("all");
+        let root = Node::container(vec![
+            Node::button("Replace").key("replace"),
+            Node::toggle("regex", false).key("regex"),
+            disabled,
+        ])
+        .key("bar");
+        let (tree, layout) = laid(&root, 1.0);
+        let at = |key: &str| {
+            let frame = layout.frame(&tree, find(&tree, key)).unwrap();
+            (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0)
+        };
+        let mut pointer = Pointer::new();
+        let mut click = |key: &str, clicks: u32| {
+            let events = pointer.pressed(&tree, &layout, at(key), Button::Primary);
+            let pressing = pointer.pressing();
+            let mut told: Vec<_> = told(&events)
+                .into_iter()
+                .filter(|(_, kind)| !matches!(kind, HoverEnter | HoverLeave))
+                .map(|(key, kind)| (key.to_owned(), kind))
+                .collect();
+            let events = pointer.released(&tree, &layout, at(key), Button::Primary, clicks);
+            told.extend(
+                self::told(&events)
+                    .into_iter()
+                    .filter(|(_, kind)| !matches!(kind, HoverEnter | HoverLeave))
+                    .map(|(key, kind)| (key.to_owned(), kind)),
+            );
+            (told, pressing)
+        };
+        let replace = find(&tree, "replace");
+        // A click; the second of a double click a click again, no double
+        // click; the button pressed while it is down.
+        assert_eq!(
+            click("replace", 1),
+            (vec![("replace".to_owned(), Click)], Some(replace))
+        );
+        assert_eq!(click("replace", 2).0, [("replace".to_owned(), Click)]);
+        // A toggle asks for the other state, and clicks nothing.
+        assert_eq!(
+            click("regex", 1).0,
+            [("regex".to_owned(), UiEventKind::Toggle { on: true })]
+        );
+        // A widget disabled is pressed by nothing, and tells nothing, nor
+        // does the box under it.
+        assert_eq!(click("all", 1), (vec![], None));
+        // Down over a button, out of it and back: pressed while over it,
+        // and a move past the threshold drags nothing.
+        pointer.pressed(&tree, &layout, at("replace"), Button::Primary);
+        let events = pointer.moved(&tree, &layout, at("regex"));
+        assert!(
+            told(&events)
+                .iter()
+                .all(|(_, kind)| matches!(kind, HoverEnter | HoverLeave))
+        );
+        assert!(!pointer.dragging());
+        assert_eq!(pointer.pressing(), None);
+        pointer.moved(&tree, &layout, at("replace"));
+        assert_eq!(pointer.pressing(), Some(replace));
+        assert_eq!(
+            told(&pointer.released(&tree, &layout, at("replace"), Button::Primary, 1)),
+            [("replace", Click)]
+        );
+        assert_eq!(pointer.pressing(), None);
     }
 
     #[test]
