@@ -37,6 +37,7 @@ menu-show-all = Show All
 menu-minimize = Minimize
 menu-zoom = Zoom
 menu-bring-all-to-front = Bring All to Front
+menu-emoji-symbols = Emoji & Symbols
 menu-appearance = Appearance
 menu-appearance-system = Automatic
 menu-appearance-light = Light

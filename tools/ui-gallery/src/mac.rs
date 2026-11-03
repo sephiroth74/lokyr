@@ -8,9 +8,9 @@ use std::path::Path;
 
 use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
-    AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton,
-    Platform, Point, PointerArea, PointerShape, ScrollDelta, Size, WindowAttributes, WindowEvent,
-    WindowId, WindowSize,
+    AppEvent, Appearance, Handler, Ime, KeyCode, KeyEvent, KeyState, MainMenu, Menu, MenuItem,
+    Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape, ScrollDelta, Shortcut,
+    ShortcutKey, Size, StandardAction, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, Kind, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -30,6 +30,9 @@ use crate::gallery::Gallery;
 
 /// The gallery's one panel.
 const PANEL: u8 = 0;
+
+/// The command of the menu's Quit.
+const QUIT: &str = "gallery.quit";
 
 /// The window's size, in points.
 const SIZE: Size = Size {
@@ -421,20 +424,16 @@ impl App {
             return;
         }
         if pressed && event.mods.super_key {
-            match event.code {
-                KeyCode::KeyD => {
-                    self.dark = !self.dark;
-                    platform.set_appearance(Some(if self.dark {
-                        Appearance::Dark
-                    } else {
-                        Appearance::Light
-                    }));
-                    view.gallery.toggle_dark();
-                    view.render();
-                    self.request_frame(platform);
-                }
-                KeyCode::KeyQ => platform.quit(),
-                _ => {}
+            if event.code == KeyCode::KeyD {
+                self.dark = !self.dark;
+                platform.set_appearance(Some(if self.dark {
+                    Appearance::Dark
+                } else {
+                    Appearance::Light
+                }));
+                view.gallery.toggle_dark();
+                view.render();
+                self.request_frame(platform);
             }
             return;
         }
@@ -542,6 +541,7 @@ fn vt_key(event: &KeyEvent) -> Option<vt::KeyEvent<'_>> {
 impl Handler for App {
     fn started(&mut self, platform: &mut dyn Platform) {
         self.dark = platform.appearance() == Appearance::Dark;
+        platform.set_main_menu(&main_menu());
         if let Err(error) = self.open(platform) {
             eprintln!("ui-gallery: {error}");
             platform.quit();
@@ -549,8 +549,10 @@ impl Handler for App {
     }
 
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
-        if event == AppEvent::QuitRequested {
-            platform.quit();
+        match event {
+            AppEvent::QuitRequested => platform.quit(),
+            AppEvent::Command(command) if command == QUIT => platform.quit(),
+            _ => {}
         }
     }
 
@@ -592,6 +594,50 @@ impl Handler for App {
             }
             _ => {}
         }
+    }
+}
+
+/// The gallery's menus: the application's, to hide it and quit, and the
+/// Edit menu's palette of emoji and symbols, which types into a field.
+fn main_menu() -> MainMenu {
+    let keys = |key: char, control: bool| {
+        Some(Shortcut {
+            key: ShortcutKey::Char(key),
+            command: true,
+            shift: false,
+            alt: false,
+            control,
+        })
+    };
+    MainMenu {
+        menus: vec![
+            Menu {
+                title: "UI gallery".to_owned(),
+                items: vec![
+                    MenuItem::Standard {
+                        title: "Hide UI gallery".to_owned(),
+                        action: StandardAction::Hide,
+                        shortcut: keys('h', false),
+                    },
+                    MenuItem::Separator,
+                    MenuItem::Command {
+                        title: "Quit UI gallery".to_owned(),
+                        command: QUIT.to_owned(),
+                        shortcut: keys('q', false),
+                    },
+                ],
+                role: None,
+            },
+            Menu {
+                title: "Edit".to_owned(),
+                items: vec![MenuItem::Standard {
+                    title: "Emoji & Symbols".to_owned(),
+                    action: StandardAction::CharacterPalette,
+                    shortcut: keys(' ', true),
+                }],
+                role: None,
+            },
+        ],
     }
 }
 

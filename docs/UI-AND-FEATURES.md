@@ -38,6 +38,7 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - Accessibility's actions, as VoiceOver's: a press clicks a node, as a button's; a focus moves the keyboard's focus to it; a value set comes to it as `set-value`, each to the node or to its nearest ancestor that takes it.
 - The keymap's contexts tell where it is: `pane.focused` while the pane has it; of a plugin's panels, `namespace.open` while one shows and `namespace.focused` while one has it, as `search.open` and `search.focused`.
 - The platform IME client (`NSTextInputClient`, text-input-v3, XIM) is routed to that element, along with the cursor position for the candidate window.
+- The Edit menu ends with the system's palette of emoji and symbols, ⌃⌘Space on macOS, whose character comes as an input method's commit: to the pane's program, or into the field that has the focus.
 
 **Accessibility**
 - AccessKit receives a tree built from the view tree, with a role and a label on every node.

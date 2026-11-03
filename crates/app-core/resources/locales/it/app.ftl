@@ -35,6 +35,7 @@ menu-show-all = Mostra tutte
 menu-minimize = Contrai
 menu-zoom = Zoom
 menu-bring-all-to-front = Porta tutto in primo piano
+menu-emoji-symbols = Emoji e simboli
 menu-appearance = Aspetto
 menu-appearance-system = Automatico
 menu-appearance-light = Chiaro

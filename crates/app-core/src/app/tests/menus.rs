@@ -62,9 +62,19 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Paste cmd+v",
             "-",
             "Select All cmd+a",
-            "Clear cmd+k"
+            "Clear cmd+k",
+            "-",
+            "Emoji & Symbols ctrl+cmd+ "
         ]
     );
+    // The last does the system's own, which opens its palette.
+    assert!(matches!(
+        menu.menus[2].items.last(),
+        Some(MenuItem::Standard {
+            action: lokyr_platform_core::StandardAction::CharacterPalette,
+            ..
+        })
+    ));
     // The commands that take an argument that they need have no item,
     // as `links.open` and `pane.send-text`.
     assert_eq!(
@@ -120,7 +130,9 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Paste cmd+v",
             "-",
             "Select All cmd+a",
-            "Clear cmd+k"
+            "Clear cmd+k",
+            "-",
+            "Emoji & Symbols ctrl+cmd+ "
         ]
     );
 }
@@ -256,7 +268,9 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Incolla cmd+v",
             "-",
             "Seleziona tutto cmd+a",
-            "Cancella cmd+k"
+            "Cancella cmd+k",
+            "-",
+            "Emoji e simboli ctrl+cmd+ "
         ]
     );
     assert_eq!(menu_items(&fake, 3)[0], "Aumenta cmd+=");

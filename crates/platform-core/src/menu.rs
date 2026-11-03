@@ -88,6 +88,10 @@ pub enum StandardAction {
     Zoom,
     /// Brings every window of the application to the front.
     BringAllToFront,
+    /// Opens the system's palette of emoji and symbols, whose character
+    /// comes to the window that has the focus as an input method's
+    /// [`Ime::Commit`](crate::Ime::Commit).
+    CharacterPalette,
 }
 
 /// The keys that choose a menu item.

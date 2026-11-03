@@ -425,7 +425,7 @@ fn cell_args(column: u16, row: i64) -> Args {
 /// each with the keys that `keymap` binds it to: the application's menu,
 /// with the system's items to hide it; the shell's, of the windows', the
 /// tabs', the panes' and the input's; the edit's, of the clipboard's and the
-/// editing's; the view's; the windows', with the system's items; and the
+/// editing's, with the system's palette of emoji and symbols; the view's; the windows', with the system's items; and the
 /// help's, which the system gives a search of the menus. A line parts the
 /// commands of a category or a namespace from the next. Its titles are
 /// `texts`'.
@@ -488,6 +488,23 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
         items,
         role,
     };
+    // The system's palette of emoji and symbols last, of its key on the
+    // Mac, as AppKit adds it to the Edit menus of its own items.
+    let mut edit = items(&[Category::Clipboard, Category::Edit]);
+    if !edit.is_empty() {
+        edit.push(MenuItem::Separator);
+    }
+    edit.push(standard(
+        "menu-emoji-symbols",
+        StandardAction::CharacterPalette,
+        Some(Shortcut {
+            key: ShortcutKey::Char(' '),
+            command: true,
+            shift: false,
+            alt: false,
+            control: true,
+        }),
+    ));
     // Check for Updates… first, where macOS's apps have it, then Settings
     // and Secure Keyboard Entry, then the system's items.
     let of = |item: &MenuItem, names: &[&str]| matches!(item, MenuItem::Command { command, .. } if names.contains(&command.as_str()));
@@ -542,11 +559,7 @@ pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> 
                 ]),
                 None,
             ),
-            menu(
-                "menu-edit",
-                items(&[Category::Clipboard, Category::Edit]),
-                None,
-            ),
+            menu("menu-edit", edit, None),
             menu("menu-view", view, None),
             menu(
                 "menu-window",
