@@ -387,8 +387,25 @@ pub enum When {
     Or(Box<When>, Box<When>),
 }
 
-/// The names that a `when` can use.
+/// The names of the host's contexts that a `when` can use, beside those of
+/// the plugins' panels, which [`is_panel_context`] tells.
 pub const CONTEXTS: [&str; 3] = ["pane.focused", "selection", "alternate-screen"];
+
+/// Whether `name` is a context of a plugin's panels: `namespace.open`,
+/// while one of them shows, or `namespace.focused`, while one of them has
+/// the keyboard's focus, of the plugin's namespace, as `search.open`; not
+/// of the first part of a host's context, as `pane` or `selection`, whose
+/// names are those of [`CONTEXTS`] alone.
+pub fn is_panel_context(name: &str) -> bool {
+    let Some((namespace, state)) = name.split_once('.') else {
+        return false;
+    };
+    matches!(state, "open" | "focused")
+        && crate::commands::is_part(namespace)
+        && !CONTEXTS
+            .iter()
+            .any(|host| host.split('.').next() == Some(namespace))
+}
 
 /// The levels that a `when` nests at most: of `!`, of parentheses, and of
 /// the operands of `&&` and `||`, so that its parsing and its evaluation,
@@ -453,7 +470,7 @@ fn tokens(text: &str) -> Result<Vec<String>, String> {
                         break;
                     }
                 }
-                if !CONTEXTS.contains(&name.as_str()) {
+                if !CONTEXTS.contains(&name.as_str()) && !is_panel_context(&name) {
                     return Err(format!("`{name}` is no context, in `{text}`"));
                 }
                 tokens.push(name);

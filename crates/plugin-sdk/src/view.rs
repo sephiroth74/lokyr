@@ -9,8 +9,8 @@
 //! keeps its place from one render to the next by its key, unique among
 //! its siblings, or, without one, by its order among its siblings of its
 //! kind; a node that holds state, as a widget whose state the host keeps,
-//! needs its key. A node of a key learns of the pointer over it, as
-//! [`UiEventKind`] names what it did.
+//! or that takes the keyboard's focus, needs its key. A node of a key
+//! learns of the pointer over it, as [`UiEventKind`] names what it did.
 
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +37,11 @@ pub struct Node {
     /// How it draws.
     #[serde(default)]
     pub style: Style,
+    /// Whether it takes the keyboard's focus, which Tab and Shift-Tab move
+    /// among its panel's nodes that take it, in the tree's order: a node of
+    /// a key alone, as the host keeps the focus by it.
+    #[serde(default)]
+    pub focusable: bool,
     /// Its children, a container's alone.
     pub children: Vec<Node>,
 }
@@ -304,6 +309,7 @@ impl Node {
             kind,
             layout: Layout::default(),
             style: Style::default(),
+            focusable: false,
             children: Vec::new(),
         }
     }
@@ -353,6 +359,13 @@ impl Node {
         self.style = style;
         self
     }
+
+    /// The node, taking the keyboard's focus.
+    #[must_use]
+    pub fn focusable(mut self) -> Self {
+        self.focusable = true;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -362,7 +375,7 @@ mod tests {
     #[test]
     fn a_tree_crosses_the_boundary_as_it_is() {
         let tree = Node::container(vec![
-            Node::icon("terminal").key("icon"),
+            Node::icon("terminal").key("icon").focusable(),
             Node::text("~/Projects"),
             Node::spacer(),
         ])

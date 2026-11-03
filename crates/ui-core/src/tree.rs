@@ -33,8 +33,8 @@ pub struct Changes {
     /// The nodes kept whose children changed: added, taken away, or moved
     /// among them.
     pub rearranged: Vec<NodeId>,
-    /// The nodes kept whose style alone changed, which draw again without
-    /// being laid out again.
+    /// The nodes kept whose style alone changed, or whether they take the
+    /// keyboard's focus, which draw again without being laid out again.
     pub restyled: Vec<NodeId>,
 }
 
@@ -54,7 +54,8 @@ impl Changes {
 pub enum Invalid {
     /// Two siblings of the same key.
     SameKey(Key),
-    /// A node that holds state, without its key.
+    /// A node that holds state, or takes the keyboard's focus, without its
+    /// key.
     NoKey,
     /// Children under a node that has none.
     Children,
@@ -67,6 +68,7 @@ struct Entry {
     kind: Kind,
     layout: Layout,
     style: Style,
+    focusable: bool,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
 }
@@ -140,6 +142,12 @@ impl Tree {
         self.entry(id).map(|entry| &entry.style)
     }
 
+    /// Whether `id` takes the keyboard's focus: `false` if the tree lacks
+    /// it.
+    pub fn focusable(&self, id: NodeId) -> bool {
+        self.entry(id).is_some_and(|entry| entry.focusable)
+    }
+
     /// The parent of `id`, if the tree has it and it is not the root.
     pub fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.entry(id)?.parent
@@ -189,8 +197,9 @@ impl Tree {
             entry.layout = new.layout;
             changes.changed.push(old);
         }
-        if entry.style != new.style {
+        if entry.style != new.style || entry.focusable != new.focusable {
             entry.style = new.style.clone();
+            entry.focusable = new.focusable;
             changes.restyled.push(old);
         }
         self.reconcile_children(old, &new.children, changes);
@@ -252,6 +261,7 @@ impl Tree {
             kind: node.kind.clone(),
             layout: node.layout,
             style: node.style.clone(),
+            focusable: node.focusable,
             parent,
             children: Vec::new(),
         };
@@ -310,10 +320,10 @@ impl Tree {
 }
 
 /// Whether `node`'s tree is one that the arena takes: its siblings of
-/// different keys, its nodes that hold state of a key, and children only
-/// under the nodes that have them.
+/// different keys, its nodes that hold state or take the focus of a key,
+/// and children only under the nodes that have them.
 fn valid(node: &Node) -> Result<(), Invalid> {
-    if node.kind.holds_state() && node.key.is_none() {
+    if (node.kind.holds_state() || node.focusable) && node.key.is_none() {
         return Err(Invalid::NoKey);
     }
     if !node.kind.has_children() && !node.children.is_empty() {
@@ -527,9 +537,29 @@ mod tests {
             tree.update(&Node::container(vec![under_text])),
             Err(Invalid::Children)
         );
+        // A node that takes the focus needs its key, which keeps the focus.
+        let unkeyed = Node::container(vec![Node::container(vec![]).focusable()]);
+        assert_eq!(tree.update(&unkeyed), Err(Invalid::NoKey));
         // The last valid tree stays.
         assert_eq!(tree.root(), Some(root));
         assert_eq!(tree.len(), 5);
         assert!(tree.update(&bar("~", "ready")).unwrap().is_empty());
+        // Whether a node takes the focus is restyled alone.
+        let mut focusing = bar("~", "ready");
+        focusing.children[0] = focusing.children[0].clone().key("icon").focusable();
+        let mut keyed = bar("~", "ready");
+        keyed.children[0] = keyed.children[0].clone().key("icon");
+        tree.update(&keyed).unwrap();
+        let icon = tree.children(root)[0];
+        assert!(!tree.focusable(icon));
+        let changes = tree.update(&focusing).unwrap();
+        assert_eq!(
+            changes,
+            Changes {
+                restyled: vec![icon],
+                ..Changes::default()
+            }
+        );
+        assert!(tree.focusable(icon));
     }
 }

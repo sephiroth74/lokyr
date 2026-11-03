@@ -47,7 +47,7 @@ impl Uses {
 
 /// Whether `name` is a name of a part: lowercase letters, digits and `-`,
 /// from a letter.
-fn is_part(name: &str) -> bool {
+pub(crate) fn is_part(name: &str) -> bool {
     let mut bytes = name.bytes();
     bytes.next().is_some_and(|first| first.is_ascii_lowercase())
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')

@@ -537,7 +537,7 @@ fn check_view(dark: bool, scale: u32) {
         &mut drawing.font,
         &variant.tokens,
         (0.0, 0.0),
-        dark,
+        (dark, None),
     );
     let list = DisplayList {
         background: lokyr_render_core::Color::from_rgb8(

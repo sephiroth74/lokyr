@@ -146,8 +146,20 @@ fn a_when_holds_in_its_contexts() {
     let when = When::parse("!(selection || alternate-screen)").unwrap();
     assert!(when.holds(&context(&[])));
     assert!(!when.holds(&context(&["alternate-screen"])));
+    // The plugins' panels' contexts, of their namespaces.
+    let when = When::parse("pane.focused && !search.open || search-plus.focused").unwrap();
+    assert!(when.holds(&context(&["pane.focused"])));
+    assert!(!when.holds(&context(&["pane.focused", "search.open"])));
+    assert!(when.holds(&context(&["search.open", "search-plus.focused"])));
     for text in [
         "focus",
+        "pane.open",
+        "pane.focsued",
+        "search.shown",
+        "search.open.now",
+        "search",
+        "9search.open",
+        "selection.open",
         "selection & pane.focused",
         "(selection",
         "selection &&",

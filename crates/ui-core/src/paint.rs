@@ -3,7 +3,8 @@
 //! tokens give; its text's or its icon's glyphs, in the interface's face, in
 //! its color or the nearest ancestor's; and the clips of the nodes that
 //! clip their children; in the tree's order, a node over its parent and
-//! over its siblings before it.
+//! over its siblings before it; and the ring of the keyboard's focus around
+//! the node that has it, over them all, within its ancestors' clips.
 
 use lokyr_plugin_sdk::view::{Kind, Style};
 use lokyr_render_core::{Color, Item, PlacedGlyph, Rect, Shadow, Shape};
@@ -14,16 +15,21 @@ use crate::layout::{Frame, Layout};
 use crate::theme::Tokens;
 use crate::tree::{NodeId, Tree};
 
+/// The width of the ring of the keyboard's focus, outside its node's box,
+/// in points.
+const RING: f32 = 3.0;
+
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
 /// window's pixels: its colors of `tokens`, its texts and icons of `font`,
-/// at the layout's scale, of the dark appearance when `dark`.
+/// at the layout's scale, of the dark appearance when `dark`; the ring of
+/// the focus around `focused`, if it is the tree's.
 pub fn paint<B: FontBackend>(
     tree: &Tree,
     layout: &Layout,
     font: &mut Font<B>,
     tokens: &Tokens,
     origin: (f32, f32),
-    dark: bool,
+    (dark, focused): (bool, Option<NodeId>),
 ) -> Vec<Item> {
     let mut painter = Painter {
         tree,
@@ -32,12 +38,30 @@ pub fn paint<B: FontBackend>(
         tokens,
         origin,
         dark,
+        focused,
+        clip: None,
+        ring: None,
         items: Vec::new(),
     };
     if let Some(root) = tree.root() {
         painter.node(root, tokens.get("text").unwrap_or(Color::BLACK));
     }
-    painter.items
+    let mut items = painter.items;
+    match painter.ring {
+        Some((ring, Some(clip))) => {
+            items.extend([
+                Item::PushClip(clip),
+                Item::Shapes(vec![ring]),
+                Item::PopClip,
+            ]);
+        }
+        Some((ring, None)) => match items.last_mut() {
+            Some(Item::Shapes(shapes)) => shapes.push(ring),
+            _ => items.push(Item::Shapes(vec![ring])),
+        },
+        None => {}
+    }
+    items
 }
 
 struct Painter<'a, B> {
@@ -47,6 +71,11 @@ struct Painter<'a, B> {
     tokens: &'a Tokens,
     origin: (f32, f32),
     dark: bool,
+    focused: Option<NodeId>,
+    /// The clips of the node painted, as one: `None` for none.
+    clip: Option<Rect>,
+    /// The ring of the focus, and the clips of its node.
+    ring: Option<(Shape, Option<Rect>)>,
     items: Vec<Item>,
 }
 
@@ -70,6 +99,9 @@ impl<B: FontBackend> Painter<'_, B> {
             .as_ref()
             .and_then(|token| self.tokens.get(&token.0))
             .unwrap_or(inherited);
+        if self.focused == Some(id) {
+            self.ring = self.ring(frame, style).map(|ring| (ring, self.clip));
+        }
         if let Some(shape) = self.shape(frame, style) {
             match self.items.last_mut() {
                 Some(Item::Shapes(shapes)) => shapes.push(shape),
@@ -85,17 +117,43 @@ impl<B: FontBackend> Painter<'_, B> {
         if children.is_empty() {
             return;
         }
+        let outer = self.clip;
         if style.clip {
-            let scale = self.layout.scale();
-            self.items
-                .push(Item::PushClip(inside_border(rect(frame), style, scale)));
+            let inside = inside_border(rect(frame), style, self.layout.scale());
+            self.items.push(Item::PushClip(inside));
+            self.clip = Some(outer.map_or(inside, |outer| intersection(outer, inside)));
         }
         for &child in children {
             self.node(child, color);
         }
         if style.clip {
             self.items.push(Item::PopClip);
+            self.clip = outer;
         }
+    }
+
+    /// The ring of the focus around a node's box at `frame`, of `style`:
+    /// outside its edges, its corners round of the box's radius and its
+    /// own width; `None` if the theme lacks its color.
+    fn ring(&self, frame: Frame, style: &Style) -> Option<Shape> {
+        let color = self.tokens.get("focus.ring")?;
+        let scale = self.layout.scale();
+        let width = (RING * scale).round().max(1.0);
+        let inner = rect(frame);
+        let outset = width as u32;
+        Some(Shape {
+            rect: Rect {
+                x: inner.x.saturating_sub_unsigned(outset),
+                y: inner.y.saturating_sub_unsigned(outset),
+                width: inner.width + 2 * outset,
+                height: inner.height + 2 * outset,
+            },
+            radius: style.radius * scale + width,
+            fill: Color::CLEAR,
+            border: width,
+            border_color: color,
+            shadow: None,
+        })
     }
 
     /// The shape of a node's box at `frame`, of `style`: `None` for a box
@@ -194,6 +252,29 @@ pub(crate) fn inside_border(rect: Rect, style: &Style, scale: f32) -> Rect {
         width: rect.width.saturating_sub(2 * border),
         height: rect.height.saturating_sub(2 * border),
     }
+}
+
+/// Where `a` and `b` overlap: an empty rectangle where they do not.
+pub(crate) fn intersection(a: Rect, b: Rect) -> Rect {
+    let (left, top) = (a.x.max(b.x), a.y.max(b.y));
+    let right = right(a).min(right(b));
+    let bottom = bottom(a).min(bottom(b));
+    Rect {
+        x: left,
+        y: top,
+        width: u32::try_from(right - i64::from(left)).unwrap_or(0),
+        height: u32::try_from(bottom - i64::from(top)).unwrap_or(0),
+    }
+}
+
+/// The column past `rect`'s right edge.
+pub(crate) fn right(rect: Rect) -> i64 {
+    i64::from(rect.x) + i64::from(rect.width)
+}
+
+/// The row past `rect`'s bottom edge.
+pub(crate) fn bottom(rect: Rect) -> i64 {
+    i64::from(rect.y) + i64::from(rect.height)
 }
 
 /// The pixels of `frame`, whose edges the layout rounded.
@@ -325,7 +406,7 @@ mod tests {
         layout.update(&tree, &changes);
         layout.compute(&tree, Some(width * scale), None, &mut font);
         let tokens = &Theme::builtin().dark.tokens;
-        let items = paint(&tree, &layout, &mut font, tokens, origin, true);
+        let items = paint(&tree, &layout, &mut font, tokens, origin, (true, None));
         (tree, layout, items)
     }
 
@@ -526,6 +607,165 @@ mod tests {
                 height: 11
             }
         );
+    }
+
+    #[test]
+    fn the_focus_s_ring_goes_round_its_node_over_the_others_within_its_clips() {
+        // A panel that clips, inside its border of 1, a field of a radius
+        // of 4 at 8 points from its corner, of 40 by 20, and a box after it
+        // that covers its ring's right.
+        let field = Node::container(vec![])
+            .key("field")
+            .focusable()
+            .layout(view::Layout {
+                width: view::Length::Points(40.0),
+                height: view::Length::Points(20.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                radius: 4.0,
+                ..view::Style::default()
+            });
+        let after = Node::container(vec![])
+            .layout(view::Layout {
+                width: view::Length::Points(20.0),
+                height: view::Length::Points(20.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                background: Some(Token::from("button.bg")),
+                ..view::Style::default()
+            });
+        let root = Node::container(vec![field, after])
+            .layout(view::Layout {
+                padding: Edges::all(8.0),
+                ..view::Layout::default()
+            })
+            .style(view::Style {
+                border: Some(Border {
+                    color: Token::from("panel.border"),
+                    width: 1.0,
+                }),
+                clip: true,
+                ..view::Style::default()
+            });
+        for scale in [1.0, 2.0] {
+            let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+            let mut tree = Tree::new();
+            let changes = tree.update(&root).unwrap();
+            let mut layout = Layout::new(scale);
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(100.0 * scale), None, &mut font);
+            let field = tree.children(tree.root().unwrap())[0];
+            let tokens = &Theme::builtin().dark.tokens;
+            let s = scale as i32;
+            let focused = paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (10.0, 0.0),
+                (true, Some(field)),
+            );
+            let [
+                Item::Shapes(_),
+                Item::PushClip(_),
+                Item::Shapes(_),
+                Item::PopClip,
+                Item::PushClip(clip),
+                Item::Shapes(ring),
+                Item::PopClip,
+            ] = &focused[..]
+            else {
+                panic!("{focused:#?}");
+            };
+            // The panel's clip, inside its border.
+            assert_eq!(
+                *clip,
+                Rect {
+                    x: 10 + s,
+                    y: s,
+                    width: (100 * s - 2 * s) as u32,
+                    height: (36 * s - 2 * s) as u32,
+                }
+            );
+            assert_eq!(
+                ring[..],
+                [Shape {
+                    rect: Rect {
+                        x: 10 + 5 * s,
+                        y: 5 * s,
+                        width: (46 * s) as u32,
+                        height: (26 * s) as u32,
+                    },
+                    radius: 7.0 * scale,
+                    fill: Color::CLEAR,
+                    border: 3.0 * scale,
+                    border_color: token("focus.ring"),
+                    shadow: None,
+                }]
+            );
+            // Without the focus, or of a node that the tree lacks, no ring.
+            let unfocused = paint(&tree, &layout, &mut font, tokens, (10.0, 0.0), (true, None));
+            assert_eq!(unfocused[..], focused[..4]);
+            let mut other = Tree::new();
+            other
+                .update(&Node::container(vec![Node::spacer(); 4]))
+                .unwrap();
+            let elsewhere = *other.children(other.root().unwrap()).last().unwrap();
+            let wrong = paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (10.0, 0.0),
+                (true, Some(elsewhere)),
+            );
+            assert_eq!(wrong[..], focused[..4]);
+        }
+        // A ring of a node after one that clips, out of its clip.
+        let clipper = Node::container(vec![Node::text("x")]).style(view::Style {
+            clip: true,
+            ..view::Style::default()
+        });
+        let field = Node::container(vec![]).key("field").focusable();
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&Node::container(vec![clipper, field])).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        let field = tree.children(tree.root().unwrap())[1];
+        let tokens = &Theme::builtin().dark.tokens;
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            (true, Some(field)),
+        );
+        let [.., Item::PopClip, Item::Shapes(ring)] = &items[..] else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(ring[0].border_color, token("focus.ring"));
+        // A ring without a clip around it follows the shapes before it.
+        let (tree, layout, _) = painted(&panel("abc"), 1.0, 200.0, (0.0, 0.0));
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let tokens = &Theme::builtin().dark.tokens;
+        let root = tree.root().unwrap();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            (true, Some(root)),
+        );
+        let Some(Item::Shapes(last)) = items.last() else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(last.last().unwrap().border_color, token("focus.ring"));
     }
 
     #[test]

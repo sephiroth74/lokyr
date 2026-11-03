@@ -17,7 +17,7 @@ use lokyr_plugin_sdk::view::{Key, PointerShape, UiEventKind};
 use lokyr_render_core::Rect;
 
 use crate::layout::{Frame, Layout};
-use crate::paint::{inside_border, rect};
+use crate::paint::{bottom, inside_border, intersection, rect, right};
 use crate::tree::{NodeId, Tree};
 
 /// A button of the pointer, as the view tree's events tell them apart.
@@ -364,19 +364,6 @@ fn contains(rect: Rect, (x, y): (f32, f32)) -> bool {
     x >= left && y >= top && x < left + rect.width as f32 && y < top + rect.height as f32
 }
 
-/// Where `a` and `b` overlap: an empty rectangle where they do not.
-fn intersection(a: Rect, b: Rect) -> Rect {
-    let (left, top) = (a.x.max(b.x), a.y.max(b.y));
-    let right = right(a).min(right(b));
-    let bottom = bottom(a).min(bottom(b));
-    Rect {
-        x: left,
-        y: top,
-        width: u32::try_from(right - i64::from(left)).unwrap_or(0),
-        height: u32::try_from(bottom - i64::from(top)).unwrap_or(0),
-    }
-}
-
 /// Whether `a` and `b` have a pixel in common.
 fn overlap(a: Rect, b: Rect) -> bool {
     !is_empty(intersection(a, b))
@@ -393,14 +380,6 @@ fn within(inner: Rect, outer: Rect) -> bool {
 
 fn is_empty(rect: Rect) -> bool {
     rect.width == 0 || rect.height == 0
-}
-
-fn right(rect: Rect) -> i64 {
-    i64::from(rect.x) + i64::from(rect.width)
-}
-
-fn bottom(rect: Rect) -> i64 {
-    i64::from(rect.y) + i64::from(rect.height)
 }
 
 #[cfg(test)]
