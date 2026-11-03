@@ -363,6 +363,46 @@ pub struct Style {
     /// How the pointer looks over its box, and over its children's that
     /// name none; `None` for its parent's, and at the root the arrow.
     pub pointer: Option<PointerShape>,
+    /// How opaque it draws, with its children, from 0 to 1; `None` for
+    /// opaque.
+    pub opacity: Option<f32>,
+    /// How its changes of place and of opacity go, as a render moves it or
+    /// changes its opacity: over a time, of a curve; `None` at once.
+    pub transition: Option<Transition>,
+}
+
+/// How a node's changes of place and of opacity go.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Transition {
+    /// How long they take, in seconds.
+    pub duration: f32,
+    /// Their curve.
+    pub easing: Easing,
+}
+
+impl Default for Transition {
+    fn default() -> Self {
+        Self {
+            duration: 0.2,
+            easing: Easing::EaseOut,
+        }
+    }
+}
+
+/// How a transition goes, from its start to its end.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Easing {
+    /// At a constant rate.
+    Linear,
+    /// Slow at its start.
+    EaseIn,
+    /// Slow at its end.
+    #[default]
+    EaseOut,
+    /// Slow at its start and at its end.
+    EaseInOut,
 }
 
 /// How the pointer looks over a node.
@@ -766,9 +806,23 @@ mod tests {
             color: Some(Token::from("text.secondary")),
             clip: true,
             pointer: Some(PointerShape::PointingHand),
+            opacity: Some(0.5),
+            transition: Some(Transition::default()),
         });
         let json = serde_json::to_string(&tree).unwrap();
         assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), tree);
+        // A transition of its curve alone, of the default time.
+        let style: Style =
+            serde_json::from_str(r#"{"opacity":0.25,"transition":{"easing":"ease-in-out"}}"#)
+                .unwrap();
+        assert_eq!(style.opacity, Some(0.25));
+        assert_eq!(
+            style.transition,
+            Some(Transition {
+                duration: 0.2,
+                easing: Easing::EaseInOut
+            })
+        );
         // A layout's properties left out take their defaults, and a style
         // left out the default style.
         let node: Node = serde_json::from_str(

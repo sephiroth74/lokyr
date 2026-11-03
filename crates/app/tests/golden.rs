@@ -733,6 +733,7 @@ fn check_tree(
             hovered,
             pressed,
             lists: &Lists::new(),
+            motion: None,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under

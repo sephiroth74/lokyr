@@ -283,6 +283,10 @@ pub trait Platform {
     /// settings. Without it, Tab reaches the fields and the lists alone.
     fn keyboard_navigation(&self) -> bool;
 
+    /// Whether the system reduces motion, Reduce motion in macOS's
+    /// accessibility settings: the interface's transitions end at once.
+    fn reduce_motion(&self) -> bool;
+
     /// Gives the app the appearance `appearance`, its windows' and its
     /// menus' too, whatever the system's is, or the system's again with
     /// `None`. [`Platform::appearance`] tells it at once; a change can come

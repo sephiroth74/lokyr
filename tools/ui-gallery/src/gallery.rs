@@ -6,8 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Border, Direction, Edges, Justify, Kind, Layout, Length, ListItem, Node,
-    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, UiEventKind,
+    self, Align, Border, Direction, Easing, Edges, Justify, Kind, Layout, Length, ListItem, Node,
+    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
+    UiEventKind,
 };
 use lokyr_ui_core::interface;
 
@@ -63,6 +64,10 @@ pub struct Gallery {
     /// Whether the note shows, which its button switches, as the pointer
     /// goes through it.
     note: bool,
+    /// The order of the tabs that move, and whether the box that fades
+    /// shows.
+    order: Vec<usize>,
+    boxed: bool,
 }
 
 /// The gallery's menu, at the pointer.
@@ -118,6 +123,8 @@ impl Gallery {
             asks: Vec::new(),
             paneled: "none yet".to_owned(),
             note: false,
+            order: vec![0, 1, 2, 3],
+            boxed: true,
         }
     }
 
@@ -143,6 +150,8 @@ impl Gallery {
             UiEventKind::Click if key.starts_with("open-") || self.panel_key(key) => {
                 self.panel_click(key);
             }
+            UiEventKind::Click if key == "anim.shuffle" => self.order.rotate_right(1),
+            UiEventKind::Toggle { on } if key == "anim.boxed" => self.boxed = on,
             UiEventKind::Click if key == "less" => self.percent = self.percent.saturating_sub(10),
             UiEventKind::Click if key == "more" => self.percent = (self.percent + 10).min(100),
             UiEventKind::Toggle { on } if key == "spin" => self.spinning = on,
@@ -360,6 +369,74 @@ impl Gallery {
         }
     }
 
+    fn animations(&self) -> Node {
+        let moving = Transition {
+            duration: 0.3,
+            easing: Easing::EaseInOut,
+        };
+        let tabs = self
+            .order
+            .iter()
+            .map(|&tab| {
+                chip(
+                    &format!("anim.tab-{tab}"),
+                    &format!("Tab {}", tab + 1),
+                    false,
+                    PointerShape::Arrow,
+                )
+                .style(Style {
+                    background: Some(Token::from("tab.inactive.bg")),
+                    border: Some(Border {
+                        color: Token::from("separator"),
+                        width: 1.0,
+                    }),
+                    radius: 6.0,
+                    transition: Some(moving),
+                    ..Style::default()
+                })
+            })
+            .collect();
+        let faded = Node::container(vec![Node::text("A box that fades")])
+            .key("anim.box")
+            .layout(Layout {
+                padding: Edges::all(8.0),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("toggle.on.bg")),
+                radius: 6.0,
+                opacity: Some(if self.boxed { 1.0 } else { 0.0 }),
+                transition: Some(Transition::default()),
+                ..Style::default()
+            });
+        let controls = Node::container(vec![
+            Node::button("Move the last first").key("anim.shuffle"),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Show the box".to_owned(),
+                on: self.boxed,
+                ..view::Toggle::default()
+            }))
+            .key("anim.boxed"),
+        ])
+        .layout(Layout {
+            gap: 8.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
+        column(
+            8.0,
+            vec![
+                Node::container(tabs).layout(Layout {
+                    gap: 6.0,
+                    ..Layout::default()
+                }),
+                controls,
+                faded,
+                secondary("Reduce motion in the system's settings makes them instant"),
+            ],
+        )
+    }
+
     fn panels(&self) -> Node {
         let opener = |key: &str, label: &str| Node::button(label).key(key);
         column(
@@ -425,6 +502,7 @@ impl Gallery {
                 section("Fields", self.fields()),
                 section("A list of 100 000 rows", self.list()),
                 section("Floating panels", self.panels()),
+                section("Animations", self.animations()),
             ],
         );
         let halves = Node::container(vec![half(left), half(right)]).layout(Layout {
@@ -1357,7 +1435,14 @@ mod tests {
             "more",
             "spin",
         ];
-        let openers = ["open-menu", "open-find", "open-below", "open-note"];
+        let openers = [
+            "open-menu",
+            "open-find",
+            "open-below",
+            "open-note",
+            "anim.shuffle",
+            "anim.boxed",
+        ];
         assert_eq!(
             order(true),
             [&controls[..], &rest[..], &openers[..]].concat()

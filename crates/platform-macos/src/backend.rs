@@ -279,6 +279,10 @@ impl Platform for Backend {
         appearance::current(self.mtm)
     }
 
+    fn reduce_motion(&self) -> bool {
+        objc2_app_kit::NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion()
+    }
+
     fn keyboard_navigation(&self) -> bool {
         // AppKit reads the preference at each call, cheaply, and tells no
         // change of it.

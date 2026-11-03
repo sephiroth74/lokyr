@@ -265,11 +265,21 @@ impl View {
         }
     }
 
+    /// Every surface: the content's, then the open panels'.
+    fn all(&self) -> impl Iterator<Item = &Surface> {
+        std::iter::once(&self.main).chain(self.surfaces.values().map(|(surface, _)| surface))
+    }
+
+    /// Every surface, to change.
+    fn all_mut(&mut self) -> impl Iterator<Item = &mut Surface> {
+        std::iter::once(&mut self.main)
+            .chain(self.surfaces.values_mut().map(|(surface, _)| surface))
+    }
+
     /// The scale changed, to `scale` pixels a point.
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
-        self.main.layout.set_scale(&self.main.tree, scale);
-        for (surface, _) in self.surfaces.values_mut() {
+        for surface in self.all_mut() {
             surface.layout.set_scale(&surface.tree, scale);
         }
     }
@@ -316,6 +326,21 @@ impl View {
                 surface.follow(node, measure);
             }
         }
+    }
+
+    /// The last layout, at `now`: the nodes of transitions that it moved
+    /// slide, and those whose opacity changed fade, unless `reduced`, as
+    /// the system reduces motion.
+    pub fn animate(&mut self, now: Instant, reduced: bool) {
+        for surface in self.all_mut() {
+            surface.animate(now, reduced);
+        }
+    }
+
+    /// Whether a transition runs at `now`, for which the window draws a
+    /// frame at each refresh of the display, and none once they end.
+    pub fn animating(&self, now: Instant) -> bool {
+        self.all().any(|surface| surface.animating(now))
     }
 
     /// The events of the surfaces to the gallery, which renders anew.
@@ -593,8 +618,8 @@ impl View {
 
     /// Time passed, to `now`: whether a tooltip that waited shows now.
     pub fn tick(&mut self, now: Instant) -> bool {
-        let mut shown = self.main.tooltip.tick(now);
-        for (surface, _) in self.surfaces.values_mut() {
+        let mut shown = false;
+        for surface in self.all_mut() {
             shown |= surface.tooltip.tick(now);
         }
         shown
@@ -602,8 +627,7 @@ impl View {
 
     /// The time that a tooltip waits for, the soonest, if one waits.
     pub fn deadline(&self) -> Option<Instant> {
-        std::iter::once(&self.main)
-            .chain(self.surfaces.values().map(|(surface, _)| surface))
+        self.all()
             .filter_map(|surface| surface.tooltip.deadline())
             .min()
     }
@@ -611,8 +635,8 @@ impl View {
     /// A key or the window's loss of its focus: the tooltips hide; whether
     /// one showed.
     pub fn dismiss_tooltips(&mut self) -> bool {
-        let mut shown = self.main.tooltip.dismiss();
-        for (surface, _) in self.surfaces.values_mut() {
+        let mut shown = false;
+        for surface in self.all_mut() {
             shown |= surface.tooltip.dismiss();
         }
         shown
@@ -621,10 +645,8 @@ impl View {
     /// The window lost the keyboard's focus: the pointer's drags cancel.
     pub fn cancel(&mut self) {
         let mut events = Vec::new();
-        for panel in std::iter::once(MAIN).chain(self.panels.order().collect::<Vec<_>>()) {
-            if let Some(surface) = self.surface_mut(panel) {
-                events.extend(surface.pointer.cancel(&surface.tree));
-            }
+        for surface in self.all_mut() {
+            events.extend(surface.pointer.cancel(&surface.tree));
         }
         self.captured = None;
         self.dismiss_tooltips();
@@ -633,26 +655,26 @@ impl View {
 
     /// The display list's items of the content and of the panels over it,
     /// from `origin` in the window's pixels, of `tokens`, in the window's
-    /// `room` of pixels.
+    /// `room` of pixels, of the transitions at `now`.
     pub fn paint<B: FontBackend>(
         &self,
         font: &mut Font<B>,
         tokens: &Tokens,
         (origin, room): ((f32, f32), (f32, f32)),
-        dark: bool,
+        (dark, now): (bool, Instant),
     ) -> Vec<Item> {
         let focused = self.focused();
         let focus_of = |panel: u8| focused.and_then(|(at, node)| (at == panel).then_some(node));
         let mut items = self
             .main
-            .paint(font, tokens, (origin, room), (dark, focus_of(MAIN)));
+            .paint(font, tokens, (origin, room), (dark, focus_of(MAIN), now));
         for panel in self.panels.order() {
             let (Some(frame), Some(surface)) = (self.panels.frame(panel), self.surface(panel))
             else {
                 continue;
             };
             let at = (origin.0 + frame.x, origin.1 + frame.y);
-            items.extend(surface.paint(font, tokens, (at, room), (dark, focus_of(panel))));
+            items.extend(surface.paint(font, tokens, (at, room), (dark, focus_of(panel), now)));
         }
         items
     }
@@ -921,6 +943,47 @@ mod tests {
     }
 
     #[test]
+    fn a_transition_runs_to_its_end_and_no_frame_is_asked_for_after_it() {
+        use std::time::Duration;
+        let mut view = view();
+        let start = Instant::now();
+        view.animate(start, false);
+        assert!(!view.animating(start));
+        // The last tab moved first: the tabs slide, for 0.3 seconds.
+        let at = middle(&mut view, "anim.shuffle");
+        view.animate(start, false);
+        click(&mut view, at);
+        view.animate(start, false);
+        assert!(view.animating(start));
+        let tab = view.main.tree.by_key(&"anim.tab-3".into()).unwrap();
+        let place = view.main.layout.frame(&view.main.tree, tab).unwrap();
+        let shown = view.main.animations.offset(&"anim.tab-3".into(), start);
+        assert!(shown.0 > 0.0, "{shown:?} {place:?}");
+        assert!(view.animating(start + Duration::from_millis(299)));
+        assert!(!view.animating(start + Duration::from_millis(300)));
+        // The box hidden fades, for 0.2 seconds.
+        let later = start + Duration::from_secs(1);
+        let toggle = middle(&mut view, "anim.boxed");
+        view.animate(later, false);
+        click(&mut view, toggle);
+        view.animate(later, false);
+        let faded = view.main.animations.opacity(
+            &"anim.box".into(),
+            0.0,
+            later + Duration::from_millis(100),
+        );
+        assert!(faded > 0.0 && faded < 1.0, "{faded}");
+        assert!(!view.animating(later + Duration::from_millis(200)));
+        // Where the system reduces motion, at once.
+        let at = middle(&mut view, "anim.shuffle");
+        let after = later + Duration::from_secs(1);
+        view.animate(after, true);
+        click(&mut view, at);
+        view.animate(after, true);
+        assert!(!view.animating(after));
+    }
+
+    #[test]
     fn a_menu_of_menu_items_shows_as_the_platform_s_own_and_its_choice_comes_back() {
         let mut view = view();
         view.native_menus = true;
@@ -1021,6 +1084,30 @@ mod tests {
         );
         assert!(!view.panels.is_open(FIND));
         assert_eq!(view.focused(), None);
+    }
+
+    #[test]
+    fn a_panel_s_tooltip_waits_shows_and_hides_as_the_content_s() {
+        use std::time::Duration;
+        let mut view = view();
+        let at = middle(&mut view, "open-find");
+        click(&mut view, at);
+        let frame = view.panels.frame(FIND).unwrap();
+        let bar = view.surface(FIND).unwrap();
+        let case = bar.tree.by_key(&"find-bar.case".into()).unwrap();
+        let place = bar.layout.frame(&bar.tree, case).unwrap();
+        let over = (frame.x + place.x + 4.0, frame.y + place.y + 4.0);
+        let start = Instant::now();
+        view.moved(over, &mut Fixed, start);
+        let deadline = view.deadline().unwrap();
+        assert!(view.tick(deadline));
+        let tip = view.surface(FIND).unwrap();
+        assert_eq!(
+            tip.tooltip.shown(&tip.tree).map(|(text, _)| text),
+            Some("Match Case")
+        );
+        assert!(view.dismiss_tooltips());
+        assert!(!view.tick(deadline + Duration::from_secs(5)));
     }
 
     #[test]

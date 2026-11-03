@@ -486,6 +486,18 @@ fn numbers(node: &Node) -> Result<(), Invalid> {
         ("grow", size(layout.grow)),
         ("radius", size(style.radius)),
         (
+            "opacity",
+            style
+                .opacity
+                .is_none_or(|opacity| (0.0..=1.0).contains(&opacity)),
+        ),
+        (
+            "transition",
+            style
+                .transition
+                .is_none_or(|transition| (0.0..=10.0).contains(&transition.duration)),
+        ),
+        (
             "border",
             style
                 .border
@@ -811,6 +823,56 @@ mod tests {
         assert_eq!(
             tree.update(&Node::container(vec![Node::scroll(vec![])])),
             Err(Invalid::NoKey)
+        );
+        // An opacity from 0 to 1, a transition of 10 seconds at most.
+        let styled = |style: lokyr_plugin_sdk::view::Style| {
+            Node::container(vec![Node::container(vec![]).style(style)])
+        };
+        for (style, name) in [
+            (
+                lokyr_plugin_sdk::view::Style {
+                    opacity: Some(1.5),
+                    ..Default::default()
+                },
+                "opacity",
+            ),
+            (
+                lokyr_plugin_sdk::view::Style {
+                    opacity: Some(f32::NAN),
+                    ..Default::default()
+                },
+                "opacity",
+            ),
+            (
+                lokyr_plugin_sdk::view::Style {
+                    transition: Some(lokyr_plugin_sdk::view::Transition {
+                        duration: 11.0,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                "transition",
+            ),
+            (
+                lokyr_plugin_sdk::view::Style {
+                    transition: Some(lokyr_plugin_sdk::view::Transition {
+                        duration: -1.0,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                "transition",
+            ),
+        ] {
+            assert_eq!(tree.update(&styled(style)), Err(Invalid::Number(name)));
+        }
+        assert!(
+            tree.update(&styled(lokyr_plugin_sdk::view::Style {
+                opacity: Some(0.0),
+                transition: Some(Default::default()),
+                ..Default::default()
+            }))
+            .is_ok()
         );
         // A progress's numbers within their ranges.
         use lokyr_plugin_sdk::view::Progress;

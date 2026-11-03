@@ -12,6 +12,7 @@ use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
 use lokyr_vt_core::input::KeyEvent;
 
+use crate::animation::Animations;
 use crate::field::{Carets, Clipboard, Fields};
 use crate::font::Font;
 use crate::layout::{Frame, Layout, Measure};
@@ -38,6 +39,8 @@ pub struct Surface {
     pub lists: Lists,
     /// Its tooltip.
     pub tooltip: Tooltip,
+    /// Its nodes' transitions.
+    pub animations: Animations,
 }
 
 /// What a press of the pointer did to a surface.
@@ -63,6 +66,7 @@ impl Surface {
             fields: Fields::new(),
             lists: Lists::new(),
             tooltip: Tooltip::new(),
+            animations: Animations::new(),
         }
     }
 
@@ -87,6 +91,20 @@ impl Surface {
     ) -> Vec<NodeEvent> {
         self.layout.compute(&self.tree, width, height, measure);
         self.lists.lay_out(&self.tree, &self.layout, measure)
+    }
+
+    /// Its last layout, at `now`: its nodes of transitions that it moved
+    /// slide, and those whose opacity changed fade, unless the system
+    /// reduces motion, `reduced`.
+    pub fn animate(&mut self, now: Instant, reduced: bool) {
+        self.animations
+            .laid_out(&self.tree, &self.layout, now, reduced);
+    }
+
+    /// Whether a transition runs at `now`, for which the host draws a frame
+    /// at each refresh of the display.
+    pub fn animating(&self, now: Instant) -> bool {
+        self.animations.running(now)
     }
 
     /// Scrolls its fields to their carets, the focused one's, and the
@@ -244,14 +262,14 @@ impl Surface {
 
     /// The display list of the surface, from `origin` in the window's
     /// pixels, of `tokens`' colors, of the dark appearance or the light
-    /// one, of the focus's ring around `focused`: its nodes, then its
-    /// tooltip, within the window's `room`.
+    /// one, of the focus's ring around `focused`, of its transitions at
+    /// `now`: its nodes, then its tooltip, within the window's `room`.
     pub fn paint<B: FontBackend>(
         &self,
         font: &mut Font<B>,
         tokens: &Tokens,
         (origin, room): ((f32, f32), (f32, f32)),
-        (dark, focused): (bool, Option<NodeId>),
+        (dark, focused, now): (bool, Option<NodeId>, Instant),
     ) -> Vec<Item> {
         let mut items = paint::paint(
             &self.tree,
@@ -266,6 +284,7 @@ impl Surface {
                 hovered: self.pointer.hovered().next_back(),
                 pressed: self.pointer.pressing(),
                 lists: &self.lists,
+                motion: Some((&self.animations, now)),
             },
         );
         if let Some((text, at)) = self.tooltip.shown(&self.tree) {

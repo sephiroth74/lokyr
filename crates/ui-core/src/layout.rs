@@ -294,6 +294,21 @@ impl Layout {
         Some(frame)
     }
 
+    /// The frame of `id`, of the last layout, from the root's top left
+    /// corner, in pixels, as the layout placed it, of no scroll: what a
+    /// scroll does not move.
+    pub fn placed(&self, tree: &Tree, id: NodeId) -> Option<Frame> {
+        let mut frame = self.local(id)?;
+        let mut parent = tree.parent(id);
+        while let Some(above) = parent {
+            let laid = self.local(above)?;
+            frame.x += laid.x;
+            frame.y += laid.y;
+            parent = tree.parent(above);
+        }
+        Some(frame)
+    }
+
     /// How far the scroll area `id` is scrolled down, in pixels: 0 for
     /// another node.
     pub fn scrolled(&self, id: NodeId) -> f32 {

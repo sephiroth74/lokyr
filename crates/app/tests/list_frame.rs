@@ -113,6 +113,7 @@ fn measure(count: usize) -> (Duration, Duration, Duration) {
                 hovered: None,
                 pressed: None,
                 lists: &lists,
+                motion: None,
             },
         );
         assert!(!items.is_empty());

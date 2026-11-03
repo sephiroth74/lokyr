@@ -6,10 +6,13 @@
 //! over its siblings before it; and the ring of the keyboard's focus around
 //! the node that has it, over them all, within its ancestors' clips.
 
+use std::time::Instant;
+
 use lokyr_plugin_sdk::view::{self, Kind, Style};
 use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
+use crate::animation::Animations;
 use crate::field::{self, FieldState, Fields};
 use crate::font::Font;
 use crate::layout::{Frame, Layout, Measure};
@@ -44,6 +47,9 @@ pub struct Shown<'a> {
     pub pressed: Option<NodeId>,
     /// The tree's lists, their rows that show laid out.
     pub lists: &'a Lists,
+    /// The transitions of its nodes, and the time to draw them at; `None`
+    /// for none.
+    pub motion: Option<(&'a Animations, Instant)>,
 }
 
 /// The display list of `tree`, laid out in `layout`, from `origin` in the
@@ -85,6 +91,7 @@ fn paint_of<B: FontBackend>(
         hovered: shown.hovered,
         pressed: shown.pressed,
         lists: shown.lists,
+        motion: shown.motion,
         clip: None,
         ring: None,
         items: Vec::new(),
@@ -199,6 +206,7 @@ struct Painter<'a, B> {
     hovered: Option<NodeId>,
     pressed: Option<NodeId>,
     lists: &'a Lists,
+    motion: Option<(&'a Animations, Instant)>,
     /// The clips of the node painted, as one: `None` for none.
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
@@ -208,8 +216,38 @@ struct Painter<'a, B> {
 
 impl<B: FontBackend> Painter<'_, B> {
     /// Paints `id` and its children, of `inherited` for their text where
-    /// they name no color.
+    /// they name no color: moved as its transition slides it, and of its
+    /// opacity, as its transition fades it, of its children too.
     fn node(&mut self, id: NodeId, inherited: Color) {
+        let own = self
+            .tree
+            .style(id)
+            .and_then(|style| style.opacity)
+            .unwrap_or(1.0);
+        let (offset, opacity) = match (self.motion, self.tree.key(id)) {
+            (Some((animations, now)), Some(key)) => (
+                animations.offset(key, now),
+                animations.opacity(key, own, now),
+            ),
+            _ => ((0.0, 0.0), own),
+        };
+        let start = self.items.len();
+        let ringed = self.ring.is_some();
+        self.node_itself(id, inherited);
+        let (dx, dy) = (offset.0.round() as i32, offset.1.round() as i32);
+        if (dx, dy) == (0, 0) && opacity >= 1.0 {
+            return;
+        }
+        for item in &mut self.items[start..] {
+            moved(item, (dx, dy), opacity);
+        }
+        if !ringed && let Some((ring, _)) = &mut self.ring {
+            ring.rect.x += dx;
+            ring.rect.y += dy;
+        }
+    }
+
+    fn node_itself(&mut self, id: NodeId, inherited: Color) {
         let tree = self.tree;
         let (Some(frame), Some(kind), Some(style)) =
             (self.layout.frame(tree, id), tree.kind(id), tree.style(id))
@@ -371,6 +409,7 @@ impl<B: FontBackend> Painter<'_, B> {
                     hovered: None,
                     pressed: None,
                     lists: &lists,
+                    motion: None,
                 },
             );
             self.items.extend(items);
@@ -734,6 +773,41 @@ impl<B: FontBackend> Painter<'_, B> {
     }
 }
 
+/// `item` moved by `offset` pixels, and of `opacity` of its colors'.
+fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
+    let fade = |color: &mut Color| color.alpha *= opacity;
+    match item {
+        Item::Rect { rect, color } => {
+            rect.x += dx;
+            rect.y += dy;
+            fade(color);
+        }
+        Item::Glyphs(glyphs) => {
+            for glyph in glyphs {
+                glyph.x += dx;
+                glyph.y += dy;
+                fade(&mut glyph.color);
+            }
+        }
+        Item::Shapes(shapes) => {
+            for shape in shapes {
+                shape.rect.x += dx;
+                shape.rect.y += dy;
+                fade(&mut shape.fill);
+                fade(&mut shape.border_color);
+                if let Some(shadow) = &mut shape.shadow {
+                    fade(&mut shadow.color);
+                }
+            }
+        }
+        Item::PushClip(rect) => {
+            rect.x += dx;
+            rect.y += dy;
+        }
+        Item::Cells(_) | Item::PopClip => {}
+    }
+}
+
 /// `style` of the box of a button or a toggle, `kind`, of no box of its
 /// own, of rounded corners, as its state has it, the pointer over it and
 /// its primary button down over it: a button's background, lighter or
@@ -867,6 +941,7 @@ mod tests {
             pressed: None,
             // A tree of no lists: nothing to keep, as the test ends.
             lists: Box::leak(Box::new(Lists::new())),
+            motion: None,
         }
     }
 
@@ -1388,6 +1463,7 @@ mod tests {
                     hovered: None,
                     pressed: None,
                     lists: &Lists::new(),
+                    motion: None,
                 },
             )
         };
@@ -1545,6 +1621,7 @@ mod tests {
                     hovered: None,
                     pressed: None,
                     lists: &Lists::new(),
+                    motion: None,
                 },
             )
         };
@@ -1644,6 +1721,7 @@ mod tests {
                     hovered,
                     pressed,
                     lists: &Lists::new(),
+                    motion: None,
                 },
             );
             let mut fills = Vec::new();
@@ -1768,6 +1846,7 @@ mod tests {
                 hovered: Some(first),
                 pressed: Some(first),
                 lists: &Lists::new(),
+                motion: None,
             },
         );
         (tree, layout, items)
@@ -1879,6 +1958,7 @@ mod tests {
                     hovered: None,
                     pressed: None,
                     lists,
+                    motion: None,
                 },
             )
         };
@@ -2125,6 +2205,112 @@ mod tests {
     }
 
     #[test]
+    fn a_node_that_slides_moves_and_fades_with_its_children() {
+        use std::time::{Duration, Instant};
+
+        use lokyr_plugin_sdk::view::{Easing, Transition};
+
+        use crate::animation::Animations;
+        // A box of a text, of a linear transition, half opaque, moved 20
+        // points right by its parent's padding.
+        let root = |padding: f32| {
+            Node::container(vec![
+                Node::container(vec![Node::text("x")])
+                    .key("box")
+                    .style(view::Style {
+                        background: Some(Token::from("accent")),
+                        opacity: Some(0.5),
+                        transition: Some(Transition {
+                            duration: 0.2,
+                            easing: Easing::Linear,
+                        }),
+                        ..view::Style::default()
+                    }),
+            ])
+            .layout(view::Layout {
+                padding: Edges {
+                    left: padding,
+                    ..Edges::default()
+                },
+                ..view::Layout::default()
+            })
+        };
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let start = Instant::now();
+        for padding in [0.0, 20.0] {
+            let changes = tree.update(&root(padding)).unwrap();
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(200.0), None, &mut font);
+            animations.laid_out(&tree, &layout, start, false);
+        }
+        let box_node = tree.children(tree.root().unwrap())[0];
+        let painted = |font: &mut Font<Blocks>, now: Instant, focused: Option<NodeId>| {
+            let fields = Fields::new();
+            paint(
+                &tree,
+                &layout,
+                font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &Lists::new(),
+                    motion: Some((&animations, now)),
+                },
+            )
+        };
+        let split = |items: &[Item]| {
+            let mut shapes = Vec::new();
+            let mut glyphs = Vec::new();
+            for item in items {
+                match item {
+                    Item::Shapes(found) => shapes.extend(found.iter().copied()),
+                    Item::Glyphs(found) => glyphs.extend(found.iter().copied()),
+                    _ => {}
+                }
+            }
+            (shapes, glyphs)
+        };
+        // Halfway: 10 points left of its place, its text with it; half
+        // opaque, its text too.
+        let half = start + Duration::from_millis(100);
+        let (shapes, glyphs) = split(&painted(&mut font, half, None));
+        assert_eq!(shapes[0].rect.x, 10);
+        assert_eq!(shapes[0].fill.alpha, token("accent").alpha * 0.5);
+        assert_eq!(glyphs[0].x, 10);
+        assert_eq!(glyphs[0].color.alpha, token("text").alpha * 0.5);
+        // At its end, at its place; the focus's ring with it before.
+        let (shapes, glyphs) = split(&painted(
+            &mut font,
+            start + Duration::from_millis(200),
+            None,
+        ));
+        assert_eq!((shapes[0].rect.x, glyphs[0].x), (20, 20));
+        let ringed = painted(&mut font, half, Some(box_node));
+        let (shapes, _) = split(&ringed);
+        let ring = shapes.last().unwrap();
+        assert_eq!(ring.rect.x, 10 - 3);
+        // Without the motion, at its place, of its opacity still.
+        let (shapes, _) = split(&paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            shown(true, None),
+        ));
+        assert_eq!(shapes[0].rect.x, 20);
+        assert_eq!(shapes[0].fill.alpha, token("accent").alpha * 0.5);
+    }
+
+    #[test]
     fn a_list_whose_rows_fit_shows_no_indicator() {
         use lokyr_plugin_sdk::view::ListItem;
         let items = (0..3)
@@ -2163,6 +2349,7 @@ mod tests {
                 hovered: None,
                 pressed: None,
                 lists: &lists,
+                motion: None,
             },
         );
         let glyphs: usize = items

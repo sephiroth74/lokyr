@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 pub mod action;
+pub mod animation;
 pub mod cursor;
 pub mod field;
 pub mod focus;

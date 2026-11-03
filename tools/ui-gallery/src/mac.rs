@@ -189,6 +189,10 @@ impl App {
         };
         drawing.font.set_drawing(drawing.renderer.drawing_from());
         view.lay_out(&mut drawing.font, (width, Some(height)));
+        // The transitions that the layout started, which end at once where
+        // the system reduces motion.
+        let now = Instant::now();
+        view.animate(now, platform.reduce_motion());
         let room = (size.pixels.width as f32, size.pixels.height as f32);
         let theme = Theme::builtin();
         let variant = theme.variant(view.gallery.dark());
@@ -197,7 +201,7 @@ impl App {
             &mut drawing.font,
             &variant.tokens,
             ((0.0, bar), room),
-            view.gallery.dark(),
+            (view.gallery.dark(), now),
         );
         let background = variant.colors.background;
         let list = DisplayList {
@@ -213,6 +217,11 @@ impl App {
             .and_then(|()| drawing.renderer.draw(surface, &list));
         if let Err(error) = drawn {
             eprintln!("ui-gallery: {error}");
+        }
+        // A frame at each refresh of the display while a transition runs,
+        // and none once they end.
+        if view.animating(now) {
+            platform.request_frame(*window);
         }
         let scale = size.scale;
         let points = |pixels: f32| f64::from(pixels) / scale;
@@ -686,7 +695,7 @@ pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
             &mut drawing.font,
             &variant.tokens,
             ((0.0, 0.0), (width, f32::MAX)),
-            dark,
+            (dark, Instant::now()),
         );
         let background = variant.colors.background;
         let list = DisplayList {

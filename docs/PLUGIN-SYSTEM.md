@@ -217,6 +217,8 @@ type Style = {
     foreground: Color?,
     corner_radius: number?,
     pointer: ("arrow" | "text" | "pointing-hand")?, -- its children's too, unless they give their own
+    opacity: number?, -- from 0 to 1, of its children too
+    transition: { duration: number?, easing: ("linear" | "ease-in" | "ease-out" | "ease-in-out")? }?, -- its moves and fades, over seconds
 }
 
 -- A view is a tree of nodes; the host flattens it into its arena. A node
