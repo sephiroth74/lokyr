@@ -662,6 +662,12 @@ impl Platform for Backend {
         }
     }
 
+    fn end_composition(&mut self, window: WindowId) {
+        if let Some(window) = self.windows.get(&window) {
+            window.end_composition();
+        }
+    }
+
     fn set_option_as_meta(&mut self, left: bool, right: bool) {
         self.option_as_meta.set((left, right));
     }

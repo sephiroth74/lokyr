@@ -401,6 +401,11 @@ pub trait Platform {
     /// the input method places its candidates.
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size);
 
+    /// Ends the input method's composition in `window`, whose text the app
+    /// keeps as it stands, as a click elsewhere keeps it: the input method
+    /// forgets it, and types nothing of it.
+    fn end_composition(&mut self, window: WindowId);
+
     /// Makes `window` translucent, over `backdrop`, which covers its whole
     /// frame, the titlebar too, under what the app draws: what is behind
     /// the window shows through it, and through what the app draws clear;

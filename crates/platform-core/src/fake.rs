@@ -59,6 +59,8 @@ pub struct FakeWindow {
     pub frames_asked: usize,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
+    /// How many times the app ended the input method's composition.
+    pub compositions_ended: usize,
     /// Its backdrop, when it is translucent.
     pub translucent: Option<Backdrop>,
     /// Whether it asked for a frame while it was hidden or covered, which
@@ -639,6 +641,7 @@ impl Platform for Fake {
                 frame_requested: false,
                 frames_asked: 0,
                 text_area: None,
+                compositions_ended: 0,
                 translucent: None,
                 frame_held: false,
                 remember: attributes.remember,
@@ -668,6 +671,7 @@ impl Platform for Fake {
                 frame_requested: false,
                 frames_asked: 0,
                 text_area: None,
+                compositions_ended: 0,
                 translucent: None,
                 frame_held: false,
                 remember: false,
@@ -881,6 +885,12 @@ impl Platform for Fake {
     fn set_text_area(&mut self, window: WindowId, origin: Point, size: Size) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.text_area = Some((origin, size));
+        }
+    }
+
+    fn end_composition(&mut self, window: WindowId) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.compositions_ended += 1;
         }
     }
 

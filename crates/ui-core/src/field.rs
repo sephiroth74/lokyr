@@ -14,7 +14,14 @@
 //! line's ends, Shift extending the selection; Backspace and Delete, with
 //! Option by words and with Command to the line's ends; Emacs's Control-A,
 //! E, B, F, H, D and K; Command-A, C, X, V, Z and Shift-Command-Z.
+//!
+//! An input method's composition shows at the caret, in place of the
+//! selection, until the input method commits it, or a click elsewhere or a
+//! move of the focus keeps it as it stands; the input method's rectangle is
+//! the whole composition's, by which it places its candidates, or the
+//! caret's without one.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -22,7 +29,7 @@ use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
 use lokyr_vt_core::unicode::Segmenter;
 
-use crate::layout::Layout;
+use crate::layout::{Frame, Layout};
 use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
 
@@ -68,6 +75,25 @@ pub struct FieldState {
     /// Whether the last edit typed text, which typing more joins, as one
     /// undo takes back a word typed.
     typing: bool,
+    /// The input method's composition at the caret, and the part of it
+    /// that it selects, in bytes of it, or its cursor where empty.
+    composition: Option<(String, Range<usize>)>,
+}
+
+/// What a field shows: its text, with the input method's composition at
+/// its caret, and where its caret, its selection and the composition are,
+/// as bytes of it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Showing<'a> {
+    /// The text.
+    pub text: Cow<'a, str>,
+    /// The caret: `None` while the composition selects a part of itself,
+    /// which takes the caret's place.
+    pub caret: Option<usize>,
+    /// The selection: empty without one, and while it composes.
+    pub selection: Range<usize>,
+    /// The composition, and the part of it that the input method selects.
+    pub composition: Option<(Range<usize>, Range<usize>)>,
 }
 
 /// What an undo brings back.
@@ -97,6 +123,38 @@ impl FieldState {
     /// The points of the text scrolled out at the left.
     pub fn scroll(&self) -> f32 {
         self.scroll
+    }
+
+    /// The input method's composition, and the part of it that it selects,
+    /// if it composes.
+    pub fn composition(&self) -> Option<(&str, Range<usize>)> {
+        self.composition
+            .as_ref()
+            .map(|(text, selected)| (text.as_str(), selected.clone()))
+    }
+
+    /// What the field shows: its text, with the composition at its caret.
+    pub fn showing(&self) -> Showing<'_> {
+        let Some((composed, selected)) = &self.composition else {
+            return Showing {
+                text: Cow::Borrowed(&self.text),
+                caret: Some(self.caret),
+                selection: self.selection(),
+                composition: None,
+            };
+        };
+        let mut text = String::with_capacity(self.text.len() + composed.len());
+        text.push_str(&self.text[..self.caret]);
+        text.push_str(composed);
+        text.push_str(&self.text[self.caret..]);
+        let start = self.caret;
+        let within = start + selected.start..start + selected.end;
+        Showing {
+            text: Cow::Owned(text),
+            caret: within.is_empty().then_some(within.start),
+            selection: start..start,
+            composition: Some((start..start + composed.len(), within)),
+        }
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -348,10 +406,9 @@ impl Fields {
     }
 
     /// Types `text` into the field `node` of `tree`, over its selection, as
-    /// a key types it or an input method commits it, its controls left out:
-    /// the events of its text, or `None` if `node` is no field or nothing
-    /// is left to type.
-    pub fn insert(&mut self, tree: &Tree, node: NodeId, text: &str) -> Option<Vec<NodeEvent>> {
+    /// a key types it, its controls left out: the events of its text, or
+    /// `None` if `node` is no field or nothing is left to type.
+    fn insert(&mut self, tree: &Tree, node: NodeId, text: &str) -> Option<Vec<NodeEvent>> {
         let key = field_key(tree, node)?;
         let typed: String = text.chars().filter(|c| !c.is_control()).collect();
         if typed.is_empty() {
@@ -361,6 +418,114 @@ impl Fields {
         let selection = state.selection();
         let changed = state.edit(selection, &typed, true);
         Some(changed_events(node, key, state, changed))
+    }
+
+    /// The input method composes `text` in the field `node` of `tree`, of
+    /// which it selects `selected`, in bytes, or puts its cursor where it
+    /// is empty; an empty `text` ends the composition without typing it. A
+    /// composition that starts takes the selection's place, as the
+    /// selection goes: the events of the text, or `None` if `node` is no
+    /// field.
+    pub fn compose(
+        &mut self,
+        tree: &Tree,
+        node: NodeId,
+        text: &str,
+        selected: Range<usize>,
+    ) -> Option<Vec<NodeEvent>> {
+        let key = field_key(tree, node)?;
+        let state = self.states.entry(key.clone()).or_default();
+        if text.is_empty() {
+            state.composition = None;
+            return Some(Vec::new());
+        }
+        let mut changed = false;
+        if state.composition.is_none() {
+            let selection = state.selection();
+            changed = state.edit(selection, "", false);
+        }
+        // A place past the text is its end, and one within a character
+        // that character's start.
+        let place = |at: usize| text.floor_char_boundary(at);
+        let within = place(selected.start)..place(selected.end);
+        state.composition = Some((text.to_owned(), within));
+        Some(changed_events(node, key, state, changed))
+    }
+
+    /// The input method commits `text` into the field `node` of `tree`,
+    /// which ends its composition: the events of its text, or `None` if
+    /// `node` is no field.
+    pub fn commit(&mut self, tree: &Tree, node: NodeId, text: &str) -> Option<Vec<NodeEvent>> {
+        let key = field_key(tree, node)?;
+        self.states.entry(key.clone()).or_default().composition = None;
+        Some(self.insert(tree, node, text).unwrap_or_default())
+    }
+
+    /// The field of `tree` that the input method composes in, if one does.
+    pub fn composing(&self, tree: &Tree) -> Option<NodeId> {
+        self.states
+            .iter()
+            .find(|(_, state)| state.composition.is_some())
+            .and_then(|(key, _)| tree.by_key(key))
+    }
+
+    /// Keeps the composition of the field `node` of `tree` as it stands,
+    /// typed, as a click elsewhere or a move of the focus ends it, which the
+    /// input method is then told to forget: the events of its text, or
+    /// `None` if `node` is no field.
+    pub fn keep_composition(&mut self, tree: &Tree, node: NodeId) -> Option<Vec<NodeEvent>> {
+        let key = field_key(tree, node)?;
+        let composed = self
+            .states
+            .get_mut(key)
+            .and_then(|state| state.composition.take())
+            .map(|(text, _)| text)
+            .unwrap_or_default();
+        Some(self.insert(tree, node, &composed).unwrap_or_default())
+    }
+
+    /// The input method's rectangle in the field `node` of `tree`, as
+    /// `layout` lays it out, in pixels from the tree's corner: the whole
+    /// composition's, by which it places its candidates, or the caret's,
+    /// a pixel wide, without one; on the field's line, within its padding.
+    pub fn text_area(
+        &self,
+        tree: &Tree,
+        layout: &Layout,
+        node: NodeId,
+        carets: &mut dyn Carets,
+    ) -> Option<Frame> {
+        let state = self.states.get(field_key(tree, node)?);
+        let frame = layout.frame(tree, node)?;
+        let scale = layout.scale();
+        let showing = state.map(FieldState::showing);
+        let (text, span) = match &showing {
+            Some(showing) => {
+                let caret = showing.caret.unwrap_or(showing.selection.start);
+                let span = showing
+                    .composition
+                    .as_ref()
+                    .map_or(caret..caret, |(composition, _)| composition.clone());
+                (showing.text.as_ref(), span)
+            }
+            None => ("", 0..0),
+        };
+        let places = carets.carets(text);
+        let x = |byte: usize| {
+            let points = places
+                .iter()
+                .find(|(at, _)| *at >= byte)
+                .map_or(0.0, |&(_, x)| x);
+            let scroll = state.map_or(0.0, FieldState::scroll);
+            frame.x + (PADDING.1 + points - scroll) * scale
+        };
+        let (left, right) = (x(span.start), x(span.end));
+        Some(Frame {
+            x: left,
+            y: frame.y + PADDING.0 * scale,
+            width: (right - left).max(1.0),
+            height: (frame.height - 2.0 * PADDING.0 * scale).max(0.0),
+        })
     }
 
     /// The pointer's primary button went down at `at`, in pixels from the
@@ -468,14 +633,23 @@ impl Fields {
                 continue;
             };
             let room = (frame.width / scale - 2.0 * PADDING.1).max(0.0);
-            let places = carets.carets(&state.text);
+            // The caret of the text that shows, or the end of a
+            // composition that selects a part of itself.
+            let showing = state.showing();
+            let at = showing.caret.unwrap_or_else(|| {
+                showing
+                    .composition
+                    .as_ref()
+                    .map_or(state.caret, |(composition, _)| composition.end)
+            });
+            let places = carets.carets(&showing.text);
             let x = |byte: usize| {
                 places
                     .iter()
                     .find(|(at, _)| *at >= byte)
                     .map_or(0.0, |&(_, x)| x)
             };
-            let (caret, width) = (x(state.caret), x(state.text.len()));
+            let (caret, width) = (x(at), x(showing.text.len()));
             let mut scroll = state.scroll;
             if caret - scroll > room {
                 scroll = caret - room;
@@ -1040,12 +1214,154 @@ mod tests {
         assert_eq!(field.shown(), "ab\u{F8FF}\u{B4}|");
         // A commit of an input method, at the caret, over the selection.
         field.press(Key::Left, mods(true, false, false, false), "");
-        let events = field.fields.insert(&field.tree, field.node, "中文");
+        let events = field.fields.commit(&field.tree, field.node, "中文");
         assert_eq!(events.map(|events| events.len()), Some(1));
         assert_eq!(field.shown(), "ab\u{F8FF}中文|");
-        assert_eq!(field.fields.insert(&field.tree, field.node, "\n"), None);
+        assert_eq!(
+            field.fields.commit(&field.tree, field.node, "\n"),
+            Some(vec![])
+        );
         let root = field.tree.root().unwrap();
-        assert_eq!(field.fields.insert(&field.tree, root, "x"), None);
+        assert_eq!(field.fields.commit(&field.tree, root, "x"), None);
+    }
+
+    /// The field's text as it shows, `|` at its caret, `_` around its
+    /// composition and `*` around the part of it that the input method
+    /// selects.
+    fn composed(fields: &Fields) -> String {
+        let showing = fields.state(&NodeKey::from("find")).unwrap().showing();
+        // Each mark, at its place, of its order among those of one place:
+        // the openings, the caret, the ends.
+        let mut marks: Vec<(usize, u8, char)> = Vec::new();
+        if let Some((composition, selected)) = &showing.composition {
+            marks.extend([(composition.start, 0, '_'), (composition.end, 4, '_')]);
+            if !selected.is_empty() {
+                marks.extend([(selected.start, 1, '*'), (selected.end, 3, '*')]);
+            }
+        }
+        marks.extend(showing.caret.map(|caret| (caret, 2, '|')));
+        marks.sort_unstable();
+        let mut text = String::new();
+        let mut marks = marks.into_iter().peekable();
+        for (at, c) in showing
+            .text
+            .char_indices()
+            .chain([(showing.text.len(), '\0')])
+        {
+            while let Some((_, _, mark)) = marks.next_if(|&(place, ..)| place == at) {
+                text.push(mark);
+            }
+            if c != '\0' {
+                text.push(c);
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn a_composition_shows_at_the_caret_until_its_commit() {
+        let mut field = Typing::new();
+        field.kind("abcd");
+        field.press(Key::Left, NONE, "");
+        field.press(Key::Left, NONE, "");
+        let (tree, node) = (&field.tree, field.node);
+        let fields = &mut field.fields;
+        assert_eq!(fields.composing(tree), None);
+        // Composed, its cursor at its end: the text stays, and tells
+        // nothing.
+        assert_eq!(fields.compose(tree, node, "にほ", 6..6), Some(vec![]));
+        assert_eq!(composed(fields), "ab_にほ|_cd");
+        assert_eq!(fields.state(&NodeKey::from("find")).unwrap().text(), "abcd");
+        assert_eq!(fields.composing(tree), Some(node));
+        // A clause selected takes the caret's place.
+        fields.compose(tree, node, "日本語", 0..6);
+        assert_eq!(composed(fields), "ab_*日本*語_cd");
+        // A place within a character is that character's start, and one
+        // past the text its end.
+        fields.compose(tree, node, "か", 1..1);
+        assert_eq!(composed(fields), "ab_|か_cd");
+        fields.compose(tree, node, "か", 2..9);
+        assert_eq!(composed(fields), "ab_*か*_cd");
+        // The commit types it, and tells it.
+        let events = fields.commit(tree, node, "日本").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(composed(fields), "ab日本|cd");
+        assert_eq!(fields.composing(tree), None);
+        // An empty composition ends it, typing nothing.
+        fields.compose(tree, node, "か", 3..3);
+        assert_eq!(fields.compose(tree, node, "", 0..0), Some(vec![]));
+        assert_eq!(composed(fields), "ab日本|cd");
+        let root = tree.root().unwrap();
+        assert_eq!(fields.compose(tree, root, "か", 0..0), None);
+    }
+
+    #[test]
+    fn a_composition_takes_the_selection_s_place_and_a_click_keeps_it() {
+        let mut field = Typing::new();
+        field.kind("abcd");
+        field.press(Key::Left, mods(true, false, false, false), "");
+        field.press(Key::Left, mods(true, false, false, false), "");
+        let (tree, node) = (&field.tree, field.node);
+        let fields = &mut field.fields;
+        // The selection goes as the composition starts, which tells it;
+        // the composition's next steps leave the text.
+        let events = fields.compose(tree, node, "か", 3..3).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(composed(fields), "ab_か|_");
+        assert_eq!(fields.compose(tree, node, "かな", 6..6), Some(vec![]));
+        // Kept as it stands, as a click elsewhere keeps it.
+        let events = fields.keep_composition(tree, node).unwrap();
+        assert!(matches!(
+            &events[..],
+            [NodeEvent { kind: UiEventKind::InputChanged { text }, .. }] if text == "abかな"
+        ));
+        assert_eq!(composed(fields), "abかな|");
+        assert_eq!(fields.composing(tree), None);
+        // Nothing to keep, nothing told.
+        assert_eq!(fields.keep_composition(tree, node), Some(vec![]));
+        // Undone at once with the typing before it, as one word.
+        field.press(Key::Char('z'), mods(false, false, false, true), "");
+        assert_eq!(field.shown(), "ab|");
+    }
+
+    #[test]
+    fn the_input_method_s_rectangle_is_the_composition_s_or_the_caret_s() {
+        // At a scale of 2: the text 12 pixels in, its line 8 pixels down,
+        // 28 high; 20 pixels an ASCII character, 40 another.
+        let mut field = Typing::new();
+        let (tree, layout, node) = field_tree(2.0);
+        field.tree = tree;
+        field.node = node;
+        field.kind("abcd");
+        field.press(Key::Left, NONE, "");
+        field.press(Key::Left, NONE, "");
+        let frame = layout.frame(&field.tree, node).unwrap();
+        let area = |fields: &Fields| {
+            let area = fields
+                .text_area(&field.tree, &layout, node, &mut Fixed)
+                .unwrap();
+            (area.x - frame.x, area.y - frame.y, area.width, area.height)
+        };
+        assert_eq!(area(&field.fields), (52.0, 8.0, 1.0, 28.0));
+        field.fields.compose(&field.tree, node, "にほ", 6..6);
+        assert_eq!(area(&field.fields), (52.0, 8.0, 80.0, 28.0));
+        // A field of no state yet, its start; a node that is no field,
+        // none.
+        // Scrolled, of 30 characters, 300 points, by 152.
+        field
+            .fields
+            .set_text(&NodeKey::from("find"), &"x".repeat(30));
+        field
+            .fields
+            .follow(&field.tree, &layout, Some(node), &mut Fixed);
+        assert_eq!(area(&field.fields), (308.0, 8.0, 1.0, 28.0));
+        let fields = Fields::new();
+        assert_eq!(area(&fields), (12.0, 8.0, 1.0, 28.0));
+        let root = field.tree.root().unwrap();
+        assert_eq!(
+            fields.text_area(&field.tree, &layout, root, &mut Fixed),
+            None
+        );
     }
 
     #[test]
@@ -1138,6 +1454,16 @@ mod tests {
         fields.key(&tree, node, &home, &mut board);
         fields.follow(&tree, &layout, Some(node), &mut Fixed);
         assert_eq!(fields.state(&key).unwrap().scroll(), 0.0);
+        // A composition at the end of 14 characters, 140 points, scrolls
+        // to its caret, its end, at 200: a clause selected too.
+        fields.set_text(&key, &"x".repeat(14));
+        fields.compose(&tree, node, "日本語", 9..9);
+        fields.follow(&tree, &layout, Some(node), &mut Fixed);
+        assert_eq!(fields.state(&key).unwrap().scroll(), 200.0 - room);
+        fields.set_text(&key, &"x".repeat(14));
+        fields.compose(&tree, node, "日本語", 0..3);
+        fields.follow(&tree, &layout, Some(node), &mut Fixed);
+        assert_eq!(fields.state(&key).unwrap().scroll(), 200.0 - room);
         // A text that fits scrolls not at all.
         fields.set_text(&key, "short");
         fields.follow(&tree, &layout, Some(node), &mut Fixed);

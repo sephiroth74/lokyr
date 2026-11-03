@@ -328,6 +328,24 @@ impl App {
             platform.set_pointer_areas(*window, &areas);
             self.areas = areas;
         }
+        // The input method's rectangle, of the field that has the focus,
+        // by which it places its candidates and the palette of emoji.
+        if let Some(area) = view.focused().and_then(|node| {
+            view.fields
+                .text_area(&view.tree, &view.layout, node, &mut drawing.font)
+        }) {
+            platform.set_text_area(
+                *window,
+                Point {
+                    x: f64::from(area.x) / scale,
+                    y: (f64::from(area.y) + f64::from(bar)) / scale,
+                },
+                Size {
+                    width: f64::from(area.width) / scale,
+                    height: f64::from(area.height) / scale,
+                },
+            );
+        }
     }
 
     fn mouse(
@@ -342,6 +360,19 @@ impl App {
         let (Some(view), Some(drawing)) = (&mut self.view, &mut self.drawing) else {
             return;
         };
+        // A press keeps a field's composition as it stands, which the input
+        // method then forgets.
+        if press.is_some_and(|(_, pressed, ..)| pressed)
+            && let Some(node) = view.fields.composing(&view.tree)
+            && let Some((window, _)) = &self.window
+        {
+            let events = view
+                .fields
+                .keep_composition(&view.tree, node)
+                .unwrap_or_default();
+            platform.end_composition(*window);
+            view.typed(events);
+        }
         let events = match press {
             None => {
                 if view.fields.selecting() {
@@ -466,15 +497,22 @@ impl App {
         self.request_frame(platform);
     }
 
-    /// Text that the input method typed, into the field with the focus.
-    fn committed(&mut self, platform: &mut dyn Platform, text: &str) {
+    /// What the input method composes or types, into the field with the
+    /// focus.
+    fn ime(&mut self, platform: &mut dyn Platform, ime: Ime) {
         let Some(view) = &mut self.view else {
             return;
         };
-        let Some(events) = view
-            .focused()
-            .and_then(|node| view.fields.insert(&view.tree, node, text))
-        else {
+        let Some(node) = view.focused() else {
+            return;
+        };
+        let events = match ime {
+            Ime::Preedit { text, selection } => {
+                view.fields.compose(&view.tree, node, &text, selection)
+            }
+            Ime::Commit(text) => view.fields.commit(&view.tree, node, &text),
+        };
+        let Some(events) = events else {
             return;
         };
         view.typed(events);
@@ -572,7 +610,7 @@ impl Handler for App {
                 clicks,
             } => self.mouse(platform, position, Some((button, pressed, mods, clicks))),
             WindowEvent::Key(event) => self.key(platform, &event),
-            WindowEvent::Ime(Ime::Commit(text)) => self.committed(platform, &text),
+            WindowEvent::Ime(ime) => self.ime(platform, ime),
             WindowEvent::Scroll {
                 delta, position, ..
             } => {

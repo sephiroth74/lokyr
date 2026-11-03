@@ -378,6 +378,21 @@ impl Window {
         }
     }
 
+    /// Ends the input method's composition, whose text the app keeps:
+    /// the view forgets it, and the text typed before it, as the caret
+    /// moved, before the input method is told to discard it, so that what
+    /// the input method calls back as it does finds nothing to type.
+    pub(crate) fn end_composition(&self) {
+        let composed = {
+            let mut input = self.view.ivars().input.borrow_mut();
+            input.typed.clear();
+            input.marked.take().is_some()
+        };
+        if composed && let Some(context) = self.view.inputContext() {
+            context.discardMarkedText();
+        }
+    }
+
     /// Whether the pointer's moves without a button come to the view.
     pub(crate) fn track_mouse_moves(&self, track: bool) {
         self.ns_window.setAcceptsMouseMovedEvents(track);

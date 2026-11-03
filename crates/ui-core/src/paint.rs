@@ -243,7 +243,8 @@ impl<B: FontBackend> Painter<'_, B> {
     ) {
         let scale = self.layout.scale();
         let state = self.tree.key(id).and_then(|key| self.fields.state(key));
-        let text = state.map_or("", FieldState::text);
+        let showing = state.map(FieldState::showing);
+        let text = showing.as_ref().map_or("", |showing| showing.text.as_ref());
         let focused = self.focused == Some(id);
         let face = self.font.interface();
         let (line, ascent) = (face.line() * scale, face.ascent() * scale);
@@ -261,18 +262,22 @@ impl<B: FontBackend> Painter<'_, B> {
                 .map_or(0.0, |&(_, x)| x);
             (start + points * scale).round()
         };
-        let line_rect = |left: f32, right: f32| Rect {
+        let span = |left: f32, right: f32, (y, height): (f32, f32)| Rect {
             x: left as i32,
-            y: top as i32,
+            y: y as i32,
             width: (right - left).max(0.0) as u32,
-            height: line.round() as u32,
+            height: height as u32,
         };
-        let selection = state.map(FieldState::selection).unwrap_or_default();
+        let on_line = (top, line.round());
+        let selection = showing
+            .as_ref()
+            .map(|showing| showing.selection.clone())
+            .unwrap_or_default();
         if focused
             && !selection.is_empty()
             && let Some(selected) = self.tokens.get("field.selection")
         {
-            let rect = line_rect(x(selection.start), x(selection.end));
+            let rect = span(x(selection.start), x(selection.end), on_line);
             self.push_shape(Shape::filled(rect, selected));
         }
         if text.is_empty() {
@@ -290,10 +295,29 @@ impl<B: FontBackend> Painter<'_, B> {
                 .interface_text(text, (start, baseline), color, self.dark);
             self.glyphs(glyphs);
         }
-        if focused && selection.is_empty() {
-            let caret = x(state.map_or(0, FieldState::caret));
-            let width = scale.round().max(1.0);
-            self.push_shape(Shape::filled(line_rect(caret, caret + width), color));
+        // The composition underlined, as macOS marks it, its selected part
+        // of a line twice as thick.
+        let thin = scale.round().max(1.0);
+        if let Some((composition, selected)) = showing.as_ref().and_then(|s| s.composition.clone())
+        {
+            let under = baseline + thin;
+            self.push_shape(Shape::filled(
+                span(x(composition.start), x(composition.end), (under, thin)),
+                color,
+            ));
+            if !selected.is_empty() {
+                self.push_shape(Shape::filled(
+                    span(x(selected.start), x(selected.end), (under, 2.0 * thin)),
+                    color,
+                ));
+            }
+        }
+        if focused
+            && selection.is_empty()
+            && let Some(caret) = showing.as_ref().map_or(Some(0), |showing| showing.caret)
+        {
+            let caret = x(caret);
+            self.push_shape(Shape::filled(span(caret, caret + thin, on_line), color));
         }
         self.items.push(Item::PopClip);
     }
@@ -1090,6 +1114,81 @@ mod tests {
         };
         assert_eq!(text[0].x, 12 - 172);
         assert_eq!(caret[0].rect, line(308, 310));
+    }
+
+    #[test]
+    fn a_composition_paints_underlined_and_its_selected_part_twice_as_thick() {
+        // At a scale of 2, as the field's test: 7.8 points a character, the
+        // text from 12 pixels in, its baseline at 29, a line 2 pixels thick.
+        let scale = 2.0;
+        let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+        let mut tree = Tree::new();
+        let root = Node::container(vec![Node::field("Find").key("find")]);
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(scale);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0 * scale), None, &mut font);
+        let field = tree.children(tree.root().unwrap())[0];
+        let tokens = &Theme::builtin().dark.tokens;
+        let mut fields = Fields::new();
+        fields.set_text(&view::Key::from("find"), "ab");
+        let mut painted = |fields: &Fields| {
+            paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: Some(field),
+                    fields,
+                },
+            )
+        };
+        // `にほ` after `ab`, the input method's cursor after `に`: its
+        // line from 43 to 74, under the baseline, and the caret at 59.
+        fields.compose(&tree, field, "にほ", 3..3);
+        let items = painted(&fields);
+        let [
+            Item::Shapes(_),
+            Item::PushClip(_),
+            Item::Glyphs(text),
+            Item::Shapes(marks),
+            Item::PopClip,
+            Item::Shapes(_),
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        let color = text[0].color;
+        assert_eq!(text.len(), 4);
+        let rect = |x, y, width, height| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        assert_eq!(
+            marks[..],
+            [
+                Shape::filled(rect(43, 31, 31, 2), color),
+                Shape::filled(rect(59, 8, 2, 26), color)
+            ]
+        );
+        // `に` selected: its part twice as thick, and no caret.
+        fields.compose(&tree, field, "にほ", 0..3);
+        let items = painted(&fields);
+        let [_, _, _, Item::Shapes(marks), Item::PopClip, _] = &items[..] else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(
+            marks[..],
+            [
+                Shape::filled(rect(43, 31, 31, 2), color),
+                Shape::filled(rect(43, 31, 16, 4), color)
+            ]
+        );
     }
 
     #[test]
