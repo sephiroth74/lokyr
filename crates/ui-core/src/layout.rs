@@ -206,21 +206,27 @@ impl Layout {
     /// The frame of `id`, of the last layout, from the root's top left
     /// corner, in pixels.
     pub fn frame(&self, tree: &Tree, id: NodeId) -> Option<Frame> {
+        let mut frame = self.local(id)?;
+        let mut parent = tree.parent(id);
+        while let Some(above) = parent {
+            let laid = self.local(above)?;
+            frame.x += laid.x;
+            frame.y += laid.y;
+            parent = tree.parent(above);
+        }
+        Some(frame)
+    }
+
+    /// The frame of `id`, of the last layout, from its parent's top left
+    /// corner, in pixels.
+    pub(crate) fn local(&self, id: NodeId) -> Option<Frame> {
         let laid = self.taffy.layout(*self.nodes.get(&id)?).ok()?;
-        let mut frame = Frame {
+        Some(Frame {
             x: laid.location.x,
             y: laid.location.y,
             width: laid.size.width,
             height: laid.size.height,
-        };
-        let mut parent = tree.parent(id);
-        while let Some(above) = parent {
-            let laid = self.taffy.layout(*self.nodes.get(&above)?).ok()?;
-            frame.x += laid.location.x;
-            frame.y += laid.location.y;
-            parent = tree.parent(above);
-        }
-        Some(frame)
+        })
     }
 
     fn set_children(&mut self, tree: &Tree, id: NodeId) {

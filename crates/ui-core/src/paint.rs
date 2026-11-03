@@ -86,8 +86,9 @@ impl<B: FontBackend> Painter<'_, B> {
             return;
         }
         if style.clip {
+            let scale = self.layout.scale();
             self.items
-                .push(Item::PushClip(self.inside_border(frame, style)));
+                .push(Item::PushClip(inside_border(rect(frame), style, scale)));
         }
         for &child in children {
             self.node(child, color);
@@ -106,7 +107,7 @@ impl<B: FontBackend> Painter<'_, B> {
         let border = style
             .border
             .as_ref()
-            .and_then(|border| Some((color(&border.color)?, border.width)));
+            .and_then(|border| color(&border.color));
         let shadow = style.shadow.as_ref().and_then(|shadow| {
             Some(Shadow {
                 x: shadow.x * scale,
@@ -122,27 +123,10 @@ impl<B: FontBackend> Painter<'_, B> {
             rect: rect(frame),
             radius: style.radius * scale,
             fill: fill.unwrap_or(Color::CLEAR),
-            // Whole pixels, a hairline one at least.
-            border: border.map_or(0.0, |(_, width)| (width * scale).round().max(1.0)),
-            border_color: border.map_or(Color::CLEAR, |(color, _)| color),
+            border: border.map_or(0.0, |_| border_pixels(style, scale) as f32),
+            border_color: border.unwrap_or(Color::CLEAR),
             shadow,
         })
-    }
-
-    /// The pixels of `frame` inside its border, of `style`, which its
-    /// children keep within.
-    fn inside_border(&self, frame: Frame, style: &Style) -> Rect {
-        let rect = rect(frame);
-        let Some(shape) = self.shape(frame, style).filter(|shape| shape.border > 0.0) else {
-            return rect;
-        };
-        let border = shape.border as u32;
-        Rect {
-            x: rect.x + border as i32,
-            y: rect.y + border as i32,
-            width: rect.width.saturating_sub(2 * border),
-            height: rect.height.saturating_sub(2 * border),
-        }
     }
 
     /// The glyphs of `text`, on its line in the middle of `frame`, clipped
@@ -191,8 +175,29 @@ impl<B: FontBackend> Painter<'_, B> {
     }
 }
 
+/// The width of the border of `style`, in whole pixels at `scale`, a
+/// hairline one at least; 0 without a border.
+fn border_pixels(style: &Style, scale: f32) -> u32 {
+    style
+        .border
+        .as_ref()
+        .map_or(0, |border| (border.width * scale).round().max(1.0) as u32)
+}
+
+/// The pixels of `rect`, a node's box of `style`, inside its border at
+/// `scale`, which its children keep within when it clips them.
+pub(crate) fn inside_border(rect: Rect, style: &Style, scale: f32) -> Rect {
+    let border = border_pixels(style, scale);
+    Rect {
+        x: rect.x.saturating_add_unsigned(border),
+        y: rect.y.saturating_add_unsigned(border),
+        width: rect.width.saturating_sub(2 * border),
+        height: rect.height.saturating_sub(2 * border),
+    }
+}
+
 /// The pixels of `frame`, whose edges the layout rounded.
-fn rect(frame: Frame) -> Rect {
+pub(crate) fn rect(frame: Frame) -> Rect {
     Rect {
         x: frame.x.round() as i32,
         y: frame.y.round() as i32,

@@ -9,7 +9,8 @@
 //! keeps its place from one render to the next by its key, unique among
 //! its siblings, or, without one, by its order among its siblings of its
 //! kind; a node that holds state, as a widget whose state the host keeps,
-//! needs its key.
+//! needs its key. A node of a key learns of the pointer over it, as
+//! [`UiEventKind`] names what it did.
 
 use serde::{Deserialize, Serialize};
 
@@ -139,8 +140,44 @@ pub struct Style {
     /// `None` for its parent's, and at the root the theme's `text`.
     pub color: Option<Token>,
     /// Whether its children draw within its box alone, as a list's rows
-    /// within the list.
+    /// within the list, and the pointer finds them there alone.
     pub clip: bool,
+    /// How the pointer looks over its box, and over its children's that
+    /// name none; `None` for its parent's, and at the root the arrow.
+    pub pointer: Option<PointerShape>,
+}
+
+/// How the pointer looks over a node.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PointerShape {
+    /// The arrow.
+    #[default]
+    Arrow,
+    /// The text's I-beam, as over text to select or to edit.
+    Text,
+    /// The pointing hand, as over a link or a button.
+    PointingHand,
+}
+
+/// What happened to a node of a key, as the host tells the node's plugin:
+/// what the pointer did over it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UiEventKind {
+    /// The primary button pressed and released over it.
+    Click,
+    /// The second click of a double click, which comes after its click.
+    DoubleClick,
+    /// The middle button pressed and released over it, as a tab closes.
+    MiddleClick,
+    /// The secondary button pressed over it, or the primary one with
+    /// Control, which opens a context menu.
+    ContextMenu,
+    /// The pointer came over its box, or over one of its children's.
+    HoverEnter,
+    /// The pointer left its box and its children's.
+    HoverLeave,
 }
 
 /// A node's border.
@@ -345,6 +382,7 @@ mod tests {
             shadow: Some(Shadow::default()),
             color: Some(Token::from("text.secondary")),
             clip: true,
+            pointer: Some(PointerShape::PointingHand),
         });
         let json = serde_json::to_string(&tree).unwrap();
         assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), tree);
@@ -355,5 +393,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node, Node::spacer());
+        assert_eq!(
+            serde_json::to_string(&[UiEventKind::DoubleClick, UiEventKind::HoverEnter]).unwrap(),
+            r#"["double-click","hover-enter"]"#
+        );
     }
 }
