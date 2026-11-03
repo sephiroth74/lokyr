@@ -216,6 +216,7 @@ type Style = {
     background: Color?,
     foreground: Color?,
     corner_radius: number?,
+    pointer: ("arrow" | "text" | "pointing-hand")?, -- its children's too, unless they give their own
 }
 
 -- A view is a tree of nodes; the host flattens it into its arena. A node
@@ -286,7 +287,7 @@ type Event =
 type UiEvent = {
     slot: string,
     key: number,
-    kind: "click" | "double-click" | "hover-enter" | "hover-leave" | "context-menu"
+    kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "accessibility-action",
     text: string?, -- an input's text, as the host holds it

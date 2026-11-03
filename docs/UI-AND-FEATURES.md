@@ -35,6 +35,8 @@ This document covers our UI engine and the features the MVP cannot ship without:
 
 **Text and icons**: the chrome's text is the interface's font, the system's by default, at the optical size of its points, so that a display of twice the pixels draws the same forms twice as large and the layout's measures hold at every scale; its glyphs share the atlas of the terminal's. The icons are the codicons of the Symbols Nerd Font that the app carries, by their names (`terminal`, `close`, `search`, …), in the text's color.
 
+**The pointer**: the node under the pointer is the topmost whose box holds it, within its ancestors' clips, as the tree draws a node over its parent and over its siblings before it. Its events go to the nodes of a key, by which their plugins know them: the hover to each node of a key that the pointer is over, its ancestors with it, so that the pointer over a tab's close is over the tab too; a click, a double click, a middle click and the context menu's to the innermost node of a key, the button down and up over it, the context menu's as it goes down. A node's style gives the pointer's shape over it, the arrow, the I-beam or the pointing hand, which its children take unless they give their own; the window server shows it as the pointer moves, of areas that the host gives it, without waking the app.
+
 **Animations**
 - Host-driven transitions (opacity, position), e.g. when tabs are reordered.
 - The display link runs only while an animation is in progress.
