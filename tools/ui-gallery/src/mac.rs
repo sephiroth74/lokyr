@@ -461,12 +461,10 @@ pub fn run() -> Result<(), String> {
     lokyr_platform_macos::run(app).map_err(|error| error.to_string())
 }
 
-/// Draws the gallery offscreen at a scale of 2, light and dark, the
-/// pointer over a tab's close and the focus on a node, into PNGs in
-/// `directory`.
-pub fn images(directory: &Path) -> Result<(), String> {
+/// Draws the gallery offscreen at `scale`, light and dark, the pointer
+/// over a tab's close and the focus on a node, into PNGs in `directory`.
+pub fn images(directory: &Path, scale: f32) -> Result<(), String> {
     std::fs::create_dir_all(directory).map_err(|error| error.to_string())?;
-    let scale = 2.0;
     let mut drawing = Drawing::new(scale)?;
     for dark in [false, true] {
         let mut gallery = Gallery::new(dark);
