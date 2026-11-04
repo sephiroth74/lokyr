@@ -38,10 +38,9 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | `status-bar` | Many (ordered segments) | Status information | Across the window's bottom, of its view's height, which the panes give up |
 | `window-strip` | Many | A thin strip across the window's top, under the titlebar or the tab bar: the programs' progress | Across the panes' top, over them, taking none of their rows |
 | `pane-header` | One | Pane titles in splits | Across its pane's top, of its view's height, above the grid |
-| `pane-overlay` | Many | Find bar, hints, the command's sticky header, which takes no row of the grid | Its pane's grid, where its floating panels anchor |
-| `window-overlay` | Many | Command palette, notifications | Below the titlebar and the tab bar, to the window's bottom |
-| `popup` | Many | Custom menus and tooltips | The whole window |
 | `sidebar` | Many (F5+) | Side panels | |
+
+The overlays and the popups are no slots: a plugin's floating panels, which it opens and closes, anchored to a cell, the cursor, the pointer, a node of its views, or a corner of a pane or of the window's room below the tab bar, as the find bar, the hints, the command's sticky header, the palette and the menus are.
 
 A slot of no view takes no room, and a slot of many shares its width equally among its plugins' views, in their order. `ui-core`'s `chrome` gives the regions of a window's size, its titlebar's height and its buttons' room, the tab bar's place and the heights of the views, as the slots' trees take them laid out across the window; each slot's view is a surface of its own, drawn over the panes in the window's one drawable and taking the pointer before them.
 
@@ -598,7 +597,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
 | `quick-terminal` | The quick terminal's policy, which the app holds in F2 | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
-| `command-header` | The command whose output the view shows, at the pane's top, in the `pane-overlay` slot, over OSC 133's marks, as iTerm2's | F3 |
+| `command-header` | The command whose output the view shows, at the pane's top, in a panel of its pane's top corner, over OSC 133's marks, as iTerm2's | F3 |
 | `copy-mode` | The keyboard's selection over the screen and the scrollback, as tmux's and vim's | F3 |
 | `tmux-cc`, `triggers`, `profiles`, `broadcast` | iTerm2 power features | F5b |
 | `images` | Inline images | F5c |
@@ -620,7 +619,7 @@ Plugins that we write as a third party would, in Luau, in a repository of their 
 
 As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap):
 
-- **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and, once shell integration marks the commands, in F5a, `snap.output`, a command with its output. Each opens a preview in the `window-overlay` slot, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
+- **Commands**: `snap.selection`, the selection; `snap.screen`, the visible screen; and, once shell integration marks the commands, in F5a, `snap.output`, a command with its output. Each opens a preview in a panel over the window, the image as it will be, with a shutter and toggles of the frame's parts, which save the image or copy it.
 - **The image**: the text with its colors, styles and the terminal's font, in a frame as a macOS window's, with its three buttons and a title, the pane's; rounded corners, a shadow, padding and a background around it. The host draws it: an `image` service renders cells offscreen, with the terminal's own renderer, so that the image is what the window shows, and returns a PNG, at the display's scale or another. Any plugin can use the service, without a capability.
 - **Its config**, after CodeSnap's settings:
 

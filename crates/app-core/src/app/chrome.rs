@@ -133,6 +133,20 @@ impl<B: Backend> App<B> {
         rendered
     }
 
+    /// Asks for a frame of each window that shows a view whose plugin
+    /// rendered it anew since the window took its tree.
+    pub(super) fn frame_rendered(&self, platform: &mut dyn Platform) {
+        for (&window, state) in &self.windows {
+            let stale = state
+                .chrome
+                .iter()
+                .any(|view| self.plugins.rendered(&view.plugin, &view.view) != view.shown);
+            if stale {
+                platform.request_frame(window);
+            }
+        }
+    }
+
     /// Takes into `window`'s surfaces, of `scale` pixels a point, the trees
     /// that their plugins rendered since they took one: a view that shows
     /// nothing has an empty surface, a tree that the host refuses leaves

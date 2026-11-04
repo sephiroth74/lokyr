@@ -2475,3 +2475,130 @@ fn a_plugin_opens_and_closes_a_panel_which_tells_it_as_it_closes() {
     assert_eq!(log.borrow().last().unwrap(), "closed corner");
     assert!(plugins.views().is_empty());
 }
+
+/// A plugin whose `look.open` would open the panel `looked`, as it only
+/// looks whether it applies.
+struct Looker;
+
+impl Plugin for Looker {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("look.open"))
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        let window = cx.focused_window().unwrap();
+        cx.open_panel(
+            "looked",
+            PanelOptions {
+                anchor: Anchor::Pointer(window),
+                role: lokyr_plugin_sdk::ui::Role::Menu,
+                close_outside: true,
+                close_escape: true,
+            },
+        )
+        .is_ok()
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        Some(Node::text("looked"))
+    }
+}
+
+#[test]
+fn a_panel_opens_once_of_its_id_and_no_tree_of_a_closed_panel_or_window_stays() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let window = host::WindowId(window.get());
+    let options = PanelOptions {
+        anchor: Anchor::Pointer(window),
+        role: lokyr_plugin_sdk::ui::Role::Menu,
+        close_outside: true,
+        close_escape: true,
+    };
+    // Opened twice, closed, and opened again, in one call.
+    let answer: Answer = Rc::new(move |cx, _| {
+        vec![
+            cx.open_panel("menu", options.clone()),
+            cx.open_panel("menu", options.clone()),
+            cx.close_panel("menu"),
+            cx.open_panel("menu", options.clone()),
+        ]
+    });
+    let (mut plugins, log, answers, _) = viewers(&answer);
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let bar = ViewId::StatusBar(window);
+    plugins
+        .render("lokyr/bars", &bar, &mut app.context())
+        .unwrap();
+    let click = UiEvent {
+        view: bar.clone(),
+        key: Key::from("go"),
+        kind: lokyr_plugin_sdk::view::UiEventKind::Click,
+    };
+    plugins
+        .ui_event("lokyr/bars", &click, &mut app.context())
+        .unwrap();
+    let codes: Vec<Option<u16>> = answers
+        .borrow()
+        .iter()
+        .map(|answer| answer.as_ref().err().map(|error| error.code.number()))
+        .collect();
+    assert_eq!(codes, [None, Some(106), None, None]);
+    // The close told at once, and one render, of the panel opened again,
+    // which stays open whatever the app does of the close.
+    let menu = PanelId::from("menu");
+    let panel = ViewId::Panel(menu.clone());
+    assert_eq!(
+        plugins.take_renders(),
+        [("lokyr/bars".to_owned(), panel.clone())]
+    );
+    let requests = plugins.take_requests();
+    assert!(matches!(
+        requests.as_slice(),
+        [
+            Request::OpenPanel { .. },
+            Request::ClosePanel { .. },
+            Request::OpenPanel { .. }
+        ]
+    ));
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(log.borrow().last().unwrap(), "closed menu");
+    plugins
+        .render("lokyr/bars", &panel, &mut app.context())
+        .unwrap();
+    assert!(plugins.tree("lokyr/bars", &panel).is_some());
+    // Closed as the app tells: a render of it after keeps nothing.
+    plugins.panel_closed("lokyr/bars", &menu);
+    plugins
+        .render("lokyr/bars", &panel, &mut app.context())
+        .unwrap();
+    assert!(plugins.rendered("lokyr/bars", &panel).is_none());
+    // Nor does one of a window that closed.
+    plugins.post(Event::Workspace(WorkspaceEvent::WindowClosed { window }));
+    app.workspace.close_window(WindowId::of(window.0));
+    plugins
+        .render("lokyr/bars", &bar, &mut app.context())
+        .unwrap();
+    assert!(plugins.views().is_empty(), "{:?}", plugins.views());
+}
+
+#[test]
+fn a_look_leaves_the_panels_as_they_were() {
+    let mut app = App::default();
+    let shown = window(&mut app, "sleep 30");
+    app.focused = Some(shown);
+    let mut plugins = Plugins::new();
+    plugins.add("looker", Box::new(Looker)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(
+        plugins
+            .applies("look.open", &Args::new(), &mut app.context())
+            .unwrap()
+    );
+    assert!(plugins.take_requests().is_empty());
+    let looked = ViewId::Panel(PanelId::from("looked"));
+    plugins
+        .render("looker", &looked, &mut app.context())
+        .unwrap();
+    assert!(plugins.views().is_empty(), "{:?}", plugins.views());
+}

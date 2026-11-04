@@ -469,7 +469,7 @@ commands = ["pane.copy", "tabs.*"]
 [contributes]
 commands = [{ name = "search-plus.open", title = "Advanced search" }]
 keybindings = [{ key = "cmd+shift+f", command = "search-plus.open" }]
-slots = ["pane-overlay"]
+slots = ["status-bar"]
 config-schema = "schema.json"
 
 [dependencies]
@@ -490,7 +490,7 @@ config-schema = "schema.json"
         assert_eq!(manifest.uses, ["pane.copy", "tabs.*"]);
         assert_eq!(manifest.contributes.commands[0].name, "search-plus.open");
         assert_eq!(manifest.contributes.keybindings[0].key, "cmd+shift+f");
-        assert_eq!(manifest.contributes.slots, ["pane-overlay"]);
+        assert_eq!(manifest.contributes.slots, ["status-bar"]);
         assert_eq!(manifest.platforms, ["macos"]);
         assert_eq!(manifest.dependencies["lokyr/themes"], "^0.3");
     }

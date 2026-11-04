@@ -24,7 +24,7 @@ pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
-pub use lokyr_plugin_sdk::message::{Mods, POINTER};
+pub use lokyr_plugin_sdk::message::{Data, Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
@@ -104,8 +104,8 @@ pub enum Request {
         /// Its anchor, its role and what closes it.
         options: PanelOptions,
     },
-    /// Close a panel of a plugin's, which [`Plugins::panel_closed`] then
-    /// tells.
+    /// Close a panel of a plugin's, which the plugins' host forgot as its
+    /// plugin asked, and whose closing it tells.
     ClosePanel {
         /// The plugin.
         plugin: String,
@@ -645,7 +645,9 @@ impl Plugins {
 
     /// Asks the plugin `name` for the tree of `view`, one of its views, and
     /// keeps it: a disabled plugin is not asked, and keeps its last; a
-    /// fault when it panicked, which disables it, its last tree staying.
+    /// panel that is not open, or a view of a window or a pane that closed,
+    /// is not asked, as no tree of it stays; a fault when it panicked, which
+    /// disables it, its last tree staying.
     pub fn render(
         &mut self,
         name: &str,
@@ -663,6 +665,16 @@ impl Plugins {
             ));
         };
         if self.entries[at].state.status != Status::Active {
+            return Ok(());
+        }
+        let shows = match view {
+            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+                context.workspace.window(WindowId::of(window.0)).is_some()
+            }
+            ViewId::PaneHeader(pane) => context.workspace.pane(PaneId::of(pane.0)).is_some(),
+            ViewId::Panel(id) => self.entries[at].state.panels.contains_key(id),
+        };
+        if !shows {
             return Ok(());
         }
         let tree = call(
@@ -916,7 +928,8 @@ fn call<T>(
 }
 
 /// Calls `call` on `entry`'s plugin, as [`call`] does, but drops its
-/// writes and its requests, as the call only looks.
+/// writes and its requests, as the call only looks: the panels that it
+/// opens or closes stay as they were.
 fn look<T>(
     entry: &mut Entry,
     context: &mut Context<'_>,
@@ -924,6 +937,7 @@ fn look<T>(
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
+    let panels = entry.state.panels.clone();
     let outcome = within(
         entry,
         context,
@@ -931,6 +945,7 @@ fn look<T>(
         bindings_changed,
         call,
     );
+    entry.state.panels = panels;
     outcome.unwrap_or_else(|fault| fault)
 }
 
@@ -1891,6 +1906,12 @@ impl Host<'_, '_> {
                 if id.0.is_empty() {
                     return Err(Error::new(Code::InvalidName, "a panel's id is not empty"));
                 }
+                if self.state.panels.contains_key(&id) {
+                    return Err(Error::new(
+                        Code::AlreadyRegistered,
+                        format!("the plugin has a panel `{}` open", id.0),
+                    ));
+                }
                 let window = self.anchor_window(&options.anchor)?;
                 self.state.panels.insert(id.clone(), window);
                 let view = ViewId::Panel(id.clone());
@@ -1910,12 +1931,20 @@ impl Host<'_, '_> {
                 }
             }
             Asked::ClosePanel(id) => {
-                if !self.state.panels.contains_key(&id) {
+                if self.state.panels.remove(&id).is_none() {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("the plugin has no panel `{}` open", id.0),
                     ));
                 }
+                // Forgotten now, so that the same call can open it again: no
+                // tree of it stays, a render of it asked for keeps none, and
+                // its plugin hears that it closed.
+                self.state.views.remove(&ViewId::Panel(id.clone()));
+                self.out.events.push((
+                    Some(self.state.name.clone()),
+                    Event::PanelClosed(id.clone()),
+                ));
                 Request::ClosePanel {
                     plugin: self.state.name.clone(),
                     id,

@@ -388,6 +388,9 @@ pub struct App<B: Backend> {
     /// The timer of the soonest tooltip of a slot's view that waits to
     /// show, and its time.
     tooltip_timer: Option<(TimerId, Instant)>,
+    /// The timer of the turn that delivers the plugins' events that their
+    /// calls left.
+    deliver_timer: Option<TimerId>,
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
@@ -601,6 +604,7 @@ impl<B: Backend> App<B> {
             blink_timer: None,
             label_timer: None,
             tooltip_timer: None,
+            deliver_timer: None,
             exit_timer: None,
             bench_deadline: None,
             told_timer: None,
@@ -2010,10 +2014,12 @@ impl<B: Backend> App<B> {
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
                 // The windows show no plugin's panels yet: a panel closes as
-                // it opens, as its plugin then hears.
-                Request::OpenPanel { plugin, id, .. } | Request::ClosePanel { plugin, id } => {
+                // it opens, as its plugin then hears; one that its plugin
+                // closed, the plugins' host forgot already.
+                Request::OpenPanel { plugin, id, .. } => {
                     self.plugins.panel_closed(&plugin, &id);
                 }
+                Request::ClosePanel { .. } => {}
                 // A field's text and a list's selection in a slot's view.
                 Request::SetText {
                     plugin,
@@ -2039,6 +2045,8 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: {error}");
             }
         }
+        // A window that shows a view rendered anew draws it.
+        self.frame_rendered(platform);
         // A plugin that stopped, whose views show as they were and take no
         // event, tells it in a notice.
         for (plugin, fault) in self.plugins.take_disabled() {
@@ -2119,8 +2127,12 @@ impl<B: Backend> App<B> {
         }
         self.after_plugins(platform, 0);
         // What the calls' writes changed of the workspace shows now, and
-        // waits for the next delivery.
+        // waits for the next delivery, which a turn of its own brings, as
+        // no event of the platform's may come soon.
         self.events(platform);
+        if self.plugins.has_events() && self.deliver_timer.is_none() {
+            self.deliver_timer = Some(platform.start_timer(Instant::now()));
+        }
     }
 
     /// Takes the workspace's events, whose changes the plugins take. A
@@ -2690,6 +2702,10 @@ impl<B: Backend> App<B> {
             }
             AppEvent::Timer(timer) if self.access_timer == Some(timer) => {
                 self.accessibility_due(platform);
+            }
+            // A turn for the plugins' events, which its end delivers.
+            AppEvent::Timer(timer) if self.deliver_timer == Some(timer) => {
+                self.deliver_timer = None;
             }
             // A tooltip of a slot's view shows.
             AppEvent::Timer(timer) if self.tooltip_timer.is_some_and(|(due, _)| due == timer) => {

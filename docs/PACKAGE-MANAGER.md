@@ -77,7 +77,7 @@ commands = ["pane.copy", "tabs.*"]   # the commands that the plugin runs
 [contributes]
 commands = [{ name = "search-plus.open", title = "Advanced search" }]
 keybindings = [{ key = "cmd+shift+f", command = "search-plus.open" }]
-slots = ["pane-overlay"]
+slots = ["status-bar"]
 config-schema = "schema.json"
 
 [dependencies]              # other plugins required at runtime

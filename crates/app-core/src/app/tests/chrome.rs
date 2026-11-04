@@ -19,28 +19,63 @@ const STATUS: f32 = 22.0;
 
 /// A plugin of every slot: each view a box of its slot's height, of its
 /// view's name, or none for the slots of `empty`; it panics at its renders
-/// once `panics` holds, and `bars.again` asks for a render of each view.
+/// once `panics` holds, `bars.again` asks for a render of each view, and
+/// `bars.panel` emits `bars.open`, at whose delivery it opens a panel, whose
+/// closings it counts in `closed`.
 struct Bars {
     empty: Rc<RefCell<Vec<Slot>>>,
     panics: Rc<Cell<bool>>,
     views: Vec<ViewId>,
+    closed: Rc<Cell<usize>>,
 }
 
 impl plugins::Plugin for Bars {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        cx.register_command(Command {
-            name: "bars.again".to_owned(),
-            title: "Again".to_owned(),
-            category: Category::View,
-            capabilities: Vec::new(),
-            params: Vec::new(),
-            when: None,
-        })
+        for name in ["bars.again", "bars.panel"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        cx.subscribe(&["bars.open"])
     }
 
-    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "bars.panel" {
+            return cx.emit("bars.open", "bars.open", plugins::Data::Nil);
+        }
         for view in &self.views {
             cx.request_render(view.clone())?;
+        }
+        Ok(())
+    }
+
+    fn on_event(
+        &mut self,
+        cx: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            match event {
+                plugins::Event::PanelClosed(_) => self.closed.set(self.closed.get() + 1),
+                plugins::Event::Custom { .. } => {
+                    let window = cx.focused_window().expect("a window");
+                    cx.open_panel(
+                        "menu",
+                        lokyr_kernel::plugins::ui::PanelOptions {
+                            anchor: lokyr_kernel::plugins::ui::Anchor::Pointer(window),
+                            role: lokyr_kernel::plugins::ui::Role::Menu,
+                            close_outside: true,
+                            close_escape: true,
+                        },
+                    )?;
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -90,6 +125,7 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
         empty: Rc::clone(&empty),
         panics: Rc::clone(&panics),
         views: Vec::new(),
+        closed: Rc::new(Cell::new(0)),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -180,4 +216,45 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
         "{}",
         shown.text
     );
+}
+
+#[test]
+fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
+    let closed = Rc::new(Cell::new(0));
+    let bars = Bars {
+        empty: Rc::new(RefCell::new(Vec::new())),
+        panics: Rc::new(Cell::new(false)),
+        views: Vec::new(),
+        closed: Rc::clone(&closed),
+    };
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(manifest, Box::new(bars));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // A command whose plugin renders its view again, and asks nothing else:
+    // its window draws it.
+    fake.send_app(&mut app, AppEvent::Command("bars.again".to_owned()));
+    assert!(fake.window(window).unwrap().frame_requested);
+    // A panel that a delivery's call opens, and that closes as it opens, as
+    // the windows show none yet: its plugin hears so in a turn of its own,
+    // which no event of the platform's need bring.
+    fake.send_app(&mut app, AppEvent::Command("bars.panel".to_owned()));
+    assert_eq!(closed.get(), 0);
+    assert!(app.deliver_timer.is_some());
+    fake.fire_timers(&mut app, Instant::now());
+    assert_eq!(closed.get(), 1);
+    assert!(app.deliver_timer.is_none());
 }

@@ -180,7 +180,7 @@ The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Gh
 
 ## The command's sticky header
 
-The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in the `pane-overlay` slot, over the grid's top rows, which it takes no row of, so that the grid keeps its size as it shows and hides, over OSC 133's marks.
+The `command-header` plugin, as the user asked on 1 November 2026, after iTerm2: the command whose output the view shows stays at the pane's top, in a panel of its pane's top corner, over the grid's top rows, which it takes no row of, so that the grid keeps its size as it shows and hides, over OSC 133's marks.
 - As the scroll goes up past a command, the header gives way to the command before it; down, to the next.
 - A click on it scrolls to the command.
 - The actions on a command's output, to copy it, select it, tell its details, run it again, fold it or share it, come with F5a's blocks.
@@ -344,7 +344,7 @@ minimum-contrast = 1.0
 The `command-palette` plugin (⌘⇧P on macOS, Ctrl+Shift+P on Linux):
 - fuzzy search over registered commands (title, shortcut, plugin), with recent commands first;
 - theme picker with live preview;
-- uses the `window-overlay` slot and an IME-capable text field.
+- shows in a panel over the window, of an IME-capable text field.
 - runs the commands as the user's, and lists every command with its plugin and keys, through the capability `user-commands`, which a palette of a third party asks for at install ([ADR 0024](adr/0024-user-commands.md)).
 
 ## Basic actions

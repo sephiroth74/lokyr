@@ -315,8 +315,8 @@ pub enum Request {
         item: usize,
     },
     /// Opens a panel of the plugin's, of an id that none of its open panels
-    /// has, as the call returns, and asks for its render: over its window,
-    /// at its anchor.
+    /// has, `already-registered` otherwise, as the call returns, and asks
+    /// for its render: over its window, at its anchor.
     OpenPanel {
         /// Its id.
         id: PanelId,
