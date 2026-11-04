@@ -113,9 +113,10 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 ### Appearance
 
 - **Styles**: `regular`, `compact` and `minimal`, like iTerm2's themes: `regular`, the bar below a titlebar of the window's title; `compact`, the tabs in the titlebar, of the theme's colors of the chrome; `minimal`, the tabs in the titlebar too, of the colors of the terminal's theme.
+- **Position**: as the user asked on 4 November 2026, after iTerm2's, the bar at the window's top, bottom, left or right. At the top, as the styles put it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below a titlebar of the window's title to the window's bottom, its tabs one below another, each of its title and its shortcut, which scrolls past the window's height, of a width that the config gives and a drag of its edge changes. `compact` and `minimal` put the tabs in the titlebar at the top alone, and elsewhere give the tabs' look alone. The host lays the panes out in the room that the bar leaves, the bar's place told by its plugin, and with a single tab the bar, a column too, takes no room.
 - **Colors**: the theme's tokens alone, `tab.bar.bg`, `tab.active.bg`, `tab.inactive.bg`, `tab.hover.bg` and their texts', so that the themes, still to define, restyle the bar; the window draws nothing of its own in it, and shows the terminal's background where the bar's view leaves room; derived from the terminal theme when not specified (see [iTerm2 themes](#iterm2-themes)).
 - **Per-tab colors**: from the config, from a menu, or from iTerm2's `OSC 6;1;bg;red|green|blue;brightness;N` sequence.
-- **States**: active, inactive and hover, with configurable separators and corner radius.
+- **States**: active, inactive and hover, with configurable separators and corner radius. Under the pointer, as the user asked on 4 November 2026, a tab's hover background fades in, and out as the pointer leaves, of about 0.15 s, which the host draws of the node's hover style, as the pointer moves, without a render of the plugin's; Reduce motion makes it instant.
 
 ### Tab contents
 
@@ -123,7 +124,8 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
   1. a name set by the user;
   2. the title set by the program (OSC 0/2);
   3. the foreground process plus cwd.
-- **Index** for ⌘1–9 (optional).
+- **Shortcut**, as the user asked on 4 November 2026, after iTerm2's: on each of the first nine tabs, the keys that select it, `tabs.goto` of its index, as the keymap binds them and the platform writes them, ⌘1 to ⌘9 by default, so that a binding of the user's shows as it is; none on a tab of no binding (optional, `show-index`).
+- **New tab**: a button at the end of the tabs, as iTerm2's.
 - **Indicators**:
   - activity (new output in a hidden tab);
   - bell;
@@ -136,7 +138,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 ### Interaction
 
 - Click to select, middle-click to close, drag to reorder (animated); Escape during a drag puts the tab back.
-- A tab dragged out of the bar follows the pointer as an image of itself over a thumbnail of its panes; the window shows the tab next to it, as if it had closed, once the tab that it showed leaves the bar. Where it is dropped decides, as the user chose on 4 November 2026, after iTerm2's:
+- A tab dragged out of the bar follows the pointer as an image of itself over an image of its window's panes, as the user asked on 4 November 2026: as they showed when the drag started, not live, scaled down, which the host draws once as the drag starts, a hidden tab's too; the window shows the tab next to it, as if it had closed, once the tab that it showed leaves the bar. Where it is dropped decides, as the user chose on 4 November 2026, after iTerm2's:
   - on a window's bar, its own or another's, it goes there, at the place under the pointer;
   - on a window's panes, its own or another's, it becomes a split of the pane under the pointer, in its half nearest the pointer, left, right, top or bottom, which lights up as the pointer passes; a tab of splits goes in whole, its layout in that half;
   - outside every window of Lokyr, it becomes a new window, of its window's size, the tab under the point where it was dropped.
@@ -158,7 +160,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 
 ```toml
 [plugins.tabs]
-position = "top"          # top | bottom | left
+position = "top"          # top | bottom | left | right
 style = "compact"         # regular | compact | minimal
 hide-when-single = true
 show-index = true
@@ -170,7 +172,8 @@ max-width = 260
 ## The programs' progress
 
 The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Ghostty: a program's progress, of OSC 9;4, as Gradle's, which the VT core reads.
-- **Where**: a thin bar in the `window-strip` slot, across the window's top under the titlebar, and on the tab of its pane with the `tabs` plugin.
+- **Where**: a thin bar in the `window-strip` slot, across the window's top under the titlebar, and on the tab of its pane with the `tabs` plugin, as the user asked on 4 November 2026, after iTerm2's: the tab's outline, of its corners' radius, filled from its left end along its top and its bottom at once as far as the percentage, as the strip fills.
+- **Motion**: a change of the percentage slides the fill from where it was, eased, of about 0.2 s, in the strip and on the tab; the slides and the indeterminate sweeps go on layers that the window server animates, so that a program's percentage, of many changes a second, costs the app no frames.
 - **States**: normal, in the accent's color, with its percentage; error, red; paused, yellow; indeterminate, which moves without frames of the app's; and none, which takes the bar away.
 
 ## The command's sticky header
