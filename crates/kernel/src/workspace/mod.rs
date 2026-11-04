@@ -33,7 +33,7 @@ use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget};
 
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
-pub use pane::{Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE};
+pub use pane::{ANSWER_WAIT, Environment, Exited, Grid, Pane, RESIZE_PACE, Settings, TOLD_PACE};
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);

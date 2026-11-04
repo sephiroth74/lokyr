@@ -31,6 +31,14 @@ const EXIT_WAIT: Duration = Duration::from_secs(1);
 /// one.
 pub const RESIZE_PACE: Duration = Duration::from_millis(25);
 
+/// How long a pane's screen waits, as its program learns of a new size, for
+/// the program's output, its drawing at that size, before it shows the
+/// terminal: shown at once, the screen would show the prompt that the
+/// resize cleared, until the shell's drawing came, a frame later, so that
+/// the prompt flickered through a resize. A program that draws nothing at
+/// a new size has its screen shown this late.
+pub const ANSWER_WAIT: Duration = Duration::from_millis(50);
+
 /// The shortest time between two looks at what a pane's session told, its
 /// bells and its terminal's events: a frame's at 60 Hz.
 pub const TOLD_PACE: Duration = Duration::from_micros(16_667);
@@ -150,6 +158,11 @@ pub struct Pane {
     /// resize ends; `None` out of a live resize, or once the terminal took
     /// it.
     held: Option<Grid>,
+    /// The slices of output that the session had parsed as the program last
+    /// learnt of a new size, and when the screen stops waiting for more: the
+    /// screen shows the terminal once a slice comes, or then; `None` once it
+    /// does.
+    answer: Option<(u64, Instant)>,
     /// Whether the terminal's grid changed since the program was told,
     /// though it may be back at the grid told: a resize there and back
     /// changes the screen, as it clears the prompt and cuts the alternate
@@ -268,6 +281,7 @@ impl Pane {
             grid,
             told: (grid, None),
             held: None,
+            answer: None,
             changed: false,
             ended: None,
             kept: false,
@@ -364,9 +378,22 @@ impl Pane {
     }
 
     /// Brings the screen up to date with the session's, unless a
-    /// synchronized update holds it, when it stays as it was. Returns
-    /// whether the screen changed.
+    /// synchronized update holds it, or the program has not answered a new
+    /// size that it learnt of within [`ANSWER_WAIT`], when it stays as it
+    /// was. Returns whether the screen changed.
     pub fn update(&mut self) -> bool {
+        // As its program draws again at a new size, the screen waits for its
+        // drawing, as a synchronized update would.
+        if let Some((slices, until)) = self.answer {
+            let answered = self
+                .session
+                .as_ref()
+                .is_none_or(|session| session.slices() > slices);
+            if !answered && Instant::now() < until {
+                return false;
+            }
+            self.answer = None;
+        }
         let copied = self
             .session
             .as_ref()
@@ -453,6 +480,11 @@ impl Pane {
         let Some(session) = &self.session else {
             return None;
         };
+        // The screen waits for the program's drawing, from the first size
+        // that it has not answered.
+        if self.answer.is_none() {
+            self.answer = Some((session.slices(), now + ANSWER_WAIT));
+        }
         let told = if told == self.grid {
             session.signal_resize()
         } else {
@@ -462,6 +494,12 @@ impl Pane {
             eprintln!("lokyr: the terminal cannot take its new size: {error}");
         }
         None
+    }
+
+    /// When the screen stops waiting for the program's drawing at the size
+    /// that it learnt of, if it waits, as a frame then shows the terminal.
+    pub fn answer_due(&self) -> Option<Instant> {
+        self.answer.map(|(_, until)| until)
     }
 
     /// The grid that the program was told last.
@@ -1142,6 +1180,49 @@ mod tests {
         assert_eq!(pane.pace(due), None);
         assert_eq!(pane.told(), grid(95));
         wait_for(&mut pane, "W", 3);
+    }
+
+    #[test]
+    fn a_new_size_s_screen_waits_for_the_program_s_drawing_at_it() {
+        let grid = |columns| Grid {
+            columns,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+        let spawned = |script: &str| {
+            Pane::spawn(
+                &Program::command("/bin/sh", ["-c", script]),
+                &Environment::default(),
+                &Settings::default(),
+                grid(80),
+                &Colors::default(),
+                &Texts::new("en", &KERNEL),
+                || {},
+            )
+        };
+        // A program that draws a while after its signal: the screen stays
+        // as it was until its drawing comes.
+        let mut answering =
+            spawned("trap 'sleep 0.2; echo W' WINCH; echo ready; while :; do sleep 0.01; done");
+        wait_for(&mut answering, "ready", 1);
+        assert_eq!(answering.resize(grid(90), Instant::now()), None);
+        assert!(answering.answer_due().is_some());
+        assert!(!answering.update());
+        assert_eq!(answering.snapshot().cols(), 80);
+        wait_for(&mut answering, "W", 1);
+        assert_eq!(answering.snapshot().cols(), 90);
+        assert_eq!(answering.answer_due(), None);
+        // One that draws nothing: the screen shows once the wait ends.
+        let mut quiet = spawned("echo ready; sleep 30");
+        wait_for(&mut quiet, "ready", 1);
+        let start = Instant::now();
+        assert_eq!(quiet.resize(grid(90), start), None);
+        assert_eq!(quiet.answer_due(), Some(start + ANSWER_WAIT));
+        assert!(!quiet.update());
+        std::thread::sleep(ANSWER_WAIT);
+        assert!(quiet.update());
+        assert_eq!(quiet.snapshot().cols(), 90);
     }
 
     #[test]

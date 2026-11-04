@@ -30,6 +30,14 @@ mod panes;
 type App = super::App<fakes::Gpu>;
 type Drawing = super::Drawing<fakes::Gpu>;
 
+/// Lets `window`'s screen show its terminal past the wait for its
+/// program's drawing at a new size, which the tests' programs never do,
+/// with a frame.
+fn settle(fake: &mut Fake, app: &mut App, window: WindowId) {
+    std::thread::sleep(lokyr_kernel::workspace::ANSWER_WAIT);
+    fake.send(app, window, WindowEvent::Frame);
+}
+
 /// A program that runs until its terminal hangs up, and writes nothing.
 fn quiet() -> Program {
     Program::command("/bin/cat", [] as [&str; 0])
@@ -1920,6 +1928,7 @@ fn the_screen_and_its_scrollback_reflow_with_the_window() {
     // Half as wide, the line takes two rows, and the screen keeps its
     // height.
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 500.0)));
+    settle(&mut fake, &mut app, window);
     let narrow = screen(&app, window);
     assert_eq!(narrow.len(), 62);
     assert_eq!(narrow[59..], ["3000", &line[..100], &line[100..]]);
@@ -1938,6 +1947,7 @@ fn the_screen_and_its_scrollback_reflow_with_the_window() {
         );
     }
     fake.send(&mut app, window, WindowEvent::Resized(points(800.0, 500.0)));
+    settle(&mut fake, &mut app, window);
     assert_eq!(screen(&app, window), before);
 }
 

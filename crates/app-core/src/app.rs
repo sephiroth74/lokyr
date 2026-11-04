@@ -2636,6 +2636,9 @@ impl<B: Backend> App<B> {
                 if let Some(next) = next {
                     self.pace_at(platform, next);
                 }
+                // The screens that waited for their programs' drawing at a
+                // new size show, whether it came or not.
+                self.request_frames(platform);
             }
             // The performance's panel measures again.
             AppEvent::Timer(timer)

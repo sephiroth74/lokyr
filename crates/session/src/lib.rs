@@ -415,9 +415,9 @@ impl Session {
         self.pty.resize(size)
     }
 
-    /// How many slices of output the I/O thread has parsed.
-    #[cfg(test)]
-    fn slices(&self) -> u64 {
+    /// How many slices of output the I/O thread has parsed, as an embedder
+    /// that waits for the program's answer to its new size counts them.
+    pub fn slices(&self) -> u64 {
         self.shared.slices.load(Ordering::Acquire)
     }
 }

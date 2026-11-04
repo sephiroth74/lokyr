@@ -375,6 +375,7 @@ fn the_grid_fits_the_window_less_its_padding() {
     change(&mut fake, &mut app);
     assert!(fake.window(window).unwrap().frame_requested);
     fake.send(&mut app, window, WindowEvent::Frame);
+    settle(&mut fake, &mut app, window);
     let snapshot = app.pane(window).snapshot();
     assert_eq!((snapshot.cols(), snapshot.rows()), (105, 31));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -779,6 +780,7 @@ fn a_window_of_two_panes_draws_both_each_in_its_room() {
         .unwrap();
     let drawn = |fake: &mut Fake, app: &mut App| {
         fake.send(app, window, WindowEvent::Frame);
+        settle(fake, app, window);
         let views = app.windows[&window].views.clone();
         let shown = app.windows[&window].shown.as_ref().expect("a frame");
         let batches: Vec<CellBatch> = shown

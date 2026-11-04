@@ -450,6 +450,12 @@ impl<B: Backend> App<B> {
             } else {
                 pane.resize(view.grid, now)
             };
+            // A frame shows its screen as the wait for its program's drawing
+            // at a new size ends.
+            let told = match (told, pane.answer_due()) {
+                (Some(told), Some(answer)) => Some(told.min(answer)),
+                (told, answer) => told.or(answer),
+            };
             due = match (due, told) {
                 (Some(due), Some(told)) => Some(std::cmp::min(due, told)),
                 (due, told) => due.or(told),
