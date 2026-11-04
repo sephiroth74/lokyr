@@ -1692,6 +1692,20 @@ mod tests {
             vec![glyph(Texture::Coverage), glyph(Texture::Color)],
         );
         assert_eq!(coverage_then_color, [0, 255, 0, 255]);
+        // A glyph of its own colors takes its color's opacity, as a fade
+        // gives it: none, the blue alone; half, the green over the blue,
+        // each of half.
+        let faded = |opacity| PlacedGlyph {
+            color: Color::WHITE.with_alpha(opacity),
+            ..glyph(Texture::Color)
+        };
+        assert_eq!(drawn(&mut renderer, vec![faded(0.0)]), [0, 0, 255, 255]);
+        let half = drawn(&mut renderer, vec![faded(0.5)]);
+        assert_eq!(half[0], 0);
+        assert!(
+            half[1].abs_diff(half[2]) <= 2 && (100..=200).contains(&half[1]),
+            "{half:?}"
+        );
     }
 
     #[test]

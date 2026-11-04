@@ -931,8 +931,9 @@ impl View {
     }
 
     /// The sweeps of the indeterminate progresses, in pixels of the
-    /// window, but those that a panel over them covers.
-    pub fn sweeps(&self, tokens: &Tokens) -> Vec<SweepArea> {
+    /// window, of their nodes' transitions at `now`, but those that a panel
+    /// over them covers.
+    pub fn sweeps(&self, tokens: &Tokens, now: Instant) -> Vec<SweepArea> {
         let moved = |sweep: SweepArea, (x, y): (f32, f32)| {
             let moved = |rect: lokyr_render_core::Rect| lokyr_render_core::Rect {
                 x: rect.x + x as i32,
@@ -949,7 +950,7 @@ impl View {
         for (_, surface, frame) in self.placed() {
             sweeps.extend(
                 surface
-                    .sweeps(tokens)
+                    .sweeps(tokens, now)
                     .into_iter()
                     .map(|sweep| moved(sweep, (frame.x, frame.y))),
             );
@@ -962,7 +963,7 @@ impl View {
             };
             sweeps.extend(
                 surface
-                    .sweeps(tokens)
+                    .sweeps(tokens, now)
                     .into_iter()
                     .map(|sweep| moved(sweep, (frame.x, frame.y)))
                     .filter(|sweep| !self.panels.covers(sweep.visible, Some(panel))),
@@ -1392,7 +1393,7 @@ mod tests {
         // The strip's sweep, at the pane's top, once it spins.
         let tokens = Theme::builtin().variant(false).tokens.clone();
         let strip = |view: &View| {
-            view.sweeps(&tokens)
+            view.sweeps(&tokens, Instant::now())
                 .into_iter()
                 .filter(|sweep| sweep.rect.y == 40 && sweep.rect.height == 2)
                 .count()
@@ -1402,7 +1403,7 @@ mod tests {
         click(&mut view, spin);
         assert_eq!(strip(&view), 1);
         // The page's, below the chrome, as the page is.
-        let sweeps = view.sweeps(&tokens);
+        let sweeps = view.sweeps(&tokens, Instant::now());
         assert!(sweeps.len() > 1);
         assert!(sweeps.iter().all(|sweep| sweep.rect.y >= 40), "{sweeps:?}");
     }
@@ -1766,7 +1767,7 @@ mod tests {
         // view; a menu over it leaves it out.
         let tokens = &Theme::builtin().light.tokens;
         middle(&mut view, "less");
-        let before = view.sweeps(tokens);
+        let before = view.sweeps(tokens, Instant::now());
         let sweep = *before
             .iter()
             .find(|sweep| matches!(sweep.shape, lokyr_ui_core::progress::SweepShape::Bar { .. }))
@@ -1777,7 +1778,7 @@ mod tests {
             *place = Place::Pointer((sweep.visible.x as f32 + 4.0, sweep.visible.y as f32 - 4.0));
         }
         view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
-        let after = view.sweeps(tokens);
+        let after = view.sweeps(tokens, Instant::now());
         assert!(after.len() < before.len());
         assert!(!after.iter().any(|kept| kept.rect == sweep.rect));
     }

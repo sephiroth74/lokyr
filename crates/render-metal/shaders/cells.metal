@@ -133,14 +133,15 @@ vertex Fragment glyph_vertex(uint vertex_id [[vertex_id]],
 }
 
 // A glyph of coverage, filled with its color, which comes premultiplied; or
-// of its own colors, premultiplied as the atlas holds them. The two kinds
-// draw in one pass, each over those before it.
+// of its own colors, premultiplied as the atlas holds them, of its color's
+// opacity, as a fade gives it. The two kinds draw in one pass, each over
+// those before it.
 fragment float4 glyph_fragment(Fragment in [[stage_in]],
                                texture2d<float, access::read> coverage [[texture(0)]],
                                texture2d<float, access::read> colors [[texture(1)]]) {
     uint2 pixel = in.atlas + uint2(in.local);
     if (in.texture == 1) {
-        return colors.read(pixel);
+        return colors.read(pixel) * in.color.a;
     }
     float covered = coverage.read(pixel).r;
     if (in.exponent != 1.0) {
@@ -296,11 +297,6 @@ static float erf_approximation(float x) {
     return sign(x) * (1.0 - 1.0 / (t * t));
 }
 
-// A shadow covers a pixel as a Gaussian blur of the outline's edge, the
-// error function across its distance; a shape, the part of the pixel within
-// its outline, filled to it, and its border over the fill, between its
-// outline and the border's inner one, so that a border not opaque shows the
-// fill under it, as CSS's `border-box` has it.
 // The part of a pixel at `p`, from a ring's centre, that an arc covers: its
 // line, of `thickness`, inside the circle of `outer`, from `start` of the
 // turn clockwise for `span` of it, the drawable's y going down; its ends
@@ -320,6 +316,11 @@ static float arc_coverage(float2 p, float outer, float4 arc) {
     return across * along;
 }
 
+// A shadow covers a pixel as a Gaussian blur of the outline's edge, the
+// error function across its distance; a shape, the part of the pixel within
+// its outline, filled to it, and its border over the fill, between its
+// outline and the border's inner one, so that a border not opaque shows the
+// fill under it, as CSS's `border-box` has it.
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
     if (in.arc.w > 0.0) {

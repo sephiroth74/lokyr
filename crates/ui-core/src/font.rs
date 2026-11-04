@@ -44,6 +44,10 @@ const SHAPED_GLYPHS: usize = 1 << 17;
 /// fields and their compositions ask for them each frame.
 const CARET_TEXTS: usize = 8;
 
+/// An icon's largest side, in pixels, past which it draws nothing: 512
+/// points at a scale of 2, a megabyte of the atlas.
+const ICON_LARGEST: f32 = 1024.0;
+
 /// The slots of the glyphs that a frame drew, a power of two.
 const DRAWN_SLOTS: usize = 512;
 
@@ -1153,6 +1157,12 @@ impl<B: FontBackend> Font<B> {
             };
             let left = pixel + drawn.left;
             end = end.max((left + drawn.region.width as i32) as f32);
+            // A glyph of its own colors, as an emoji, of an opaque color,
+            // whose opacity a fade takes alone, and not the text's.
+            let color = match drawn.region.texture {
+                Texture::Color => Color::WHITE,
+                Texture::Coverage => color,
+            };
             placed.push(PlacedGlyph {
                 region: drawn.region,
                 x: left,
@@ -1217,8 +1227,10 @@ impl<B: FontBackend> Font<B> {
         dark: bool,
     ) -> Option<PlacedGlyph> {
         // A square of less than a pixel draws nothing, where a font of no
-        // size would draw at the system's default.
-        if side.is_nan() || side < 1.0 {
+        // size would draw at the system's default; and one past the largest,
+        // whose glyph would take much of the atlas, or more memory than the
+        // app has.
+        if side.is_nan() || !(1.0..=ICON_LARGEST).contains(&side) {
             return None;
         }
         let character = interface::icon(name)?;
@@ -3194,6 +3206,31 @@ mod system {
                 "{side}"
             );
         }
+        // An emoji of an opaque white, whose opacity a fade takes alone,
+        // a letter of the text's color.
+        let (glyphs, _) = font.interface_text("a🦀", (0.0, 30.0), color.with_alpha(0.5), false);
+        let of = |texture| {
+            glyphs
+                .iter()
+                .find(|glyph| glyph.region.texture == texture)
+                .unwrap()
+                .color
+        };
+        assert_eq!(of(Texture::Color), Color::WHITE);
+        assert_eq!(of(Texture::Coverage), color.with_alpha(0.5));
+        // Nor one past the largest, of 10⁹ pixels, which aborted the app
+        // out of memory; the largest draws.
+        for side in [ICON_LARGEST + 1.0, 1e9, f32::INFINITY] {
+            assert!(
+                font.interface_icon("close", (0.0, 0.0), side, color, false)
+                    .is_none(),
+                "{side}"
+            );
+        }
+        assert!(
+            font.interface_icon("close", (0.0, 0.0), ICON_LARGEST, color, false)
+                .is_some()
+        );
         // A family that is not installed: the system's, which tells it.
         let named = |name: &str| InterfaceConfig {
             font_family: Some(lokyr_text_core::Name::try_from(name.to_owned()).unwrap()),

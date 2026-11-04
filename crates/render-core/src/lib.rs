@@ -47,6 +47,9 @@ impl Color {
     /// Opaque black.
     pub const BLACK: Self = Self::from_rgb8(0, 0, 0);
 
+    /// Opaque white.
+    pub const WHITE: Self = Self::from_rgb8(255, 255, 255);
+
     /// Nothing: black, of no opacity.
     pub const CLEAR: Self = Self::BLACK.with_alpha(0.0);
 
@@ -306,7 +309,8 @@ pub struct PlacedGlyph {
     pub x: i32,
     /// Where its top edge goes.
     pub y: i32,
-    /// The color that fills a glyph of coverage.
+    /// The color that fills a glyph of coverage; of a glyph of its own
+    /// colors, its opacity alone, which a fade takes.
     pub color: Color,
     /// Whether its coverage takes the weight of the system's text: of a
     /// glyph drawn of the font smoothing, of text that takes the weight, as

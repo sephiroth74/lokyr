@@ -4,11 +4,12 @@
 //! frames: a segment across a bar, an arc round a ring, each within the
 //! clips of the nodes around it.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::view::{Kind, Progress, ProgressShape, ProgressState};
 use lokyr_render_core::{Color, Rect};
 
+use crate::animation::Animations;
 use crate::layout::{Frame, Layout};
 use crate::paint::{inside_border, intersection, is_empty, rect};
 use crate::theme::Tokens;
@@ -90,22 +91,42 @@ pub fn radius(progress: &Progress, height: f32, scale: f32) -> f32 {
 }
 
 /// The sweeps of the indeterminate progresses of `tree`, laid out in
-/// `layout`, of `tokens`' colors, in the tree's order: those that its
-/// clips hide are left out.
-pub fn sweeps(tree: &Tree, layout: &Layout, tokens: &Tokens) -> Vec<SweepArea> {
+/// `layout`, of `tokens`' colors, in the tree's order, as `paint` draws
+/// their nodes: of the opacity of their nodes and of those around them,
+/// and where the transitions of `motion` at its time slide and fade them;
+/// those that their clips hide, or of no opacity, are left out.
+pub fn sweeps(
+    tree: &Tree,
+    layout: &Layout,
+    tokens: &Tokens,
+    motion: Option<(&Animations, Instant)>,
+) -> Vec<SweepArea> {
     let mut sweeps = Vec::new();
     if let Some(root) = tree.root() {
-        walk(tree, layout, tokens, root, None, &mut sweeps);
+        let shown = Shown {
+            clip: None,
+            offset: (0, 0),
+            opacity: 1.0,
+        };
+        walk((tree, layout, tokens, motion), root, shown, &mut sweeps);
     }
     sweeps
 }
 
-fn walk(
-    tree: &Tree,
-    layout: &Layout,
-    tokens: &Tokens,
-    id: NodeId,
+/// What the nodes around a node do to its sweep: their clips, of no clip
+/// for `None`; how far their transitions moved them, in pixels; and the
+/// opacity of them all.
+#[derive(Clone, Copy)]
+struct Shown {
     clip: Option<Rect>,
+    offset: (i32, i32),
+    opacity: f32,
+}
+
+fn walk(
+    (tree, layout, tokens, motion): (&Tree, &Layout, &Tokens, Option<(&Animations, Instant)>),
+    id: NodeId,
+    around: Shown,
     sweeps: &mut Vec<SweepArea>,
 ) {
     let (Some(kind), Some(style), Some(frame)) =
@@ -113,6 +134,32 @@ fn walk(
     else {
         return;
     };
+    // Its own opacity, and its transition's, as `paint` takes them.
+    let own = style.opacity.unwrap_or(1.0);
+    let (offset, opacity) = match (motion, tree.key(id)) {
+        (Some((animations, now)), Some(key)) => (
+            animations.offset(key, now),
+            animations.opacity(key, own, now),
+        ),
+        _ => ((0.0, 0.0), own),
+    };
+    let around = Shown {
+        offset: (
+            around.offset.0.saturating_add(offset.0.round() as i32),
+            around.offset.1.saturating_add(offset.1.round() as i32),
+        ),
+        opacity: around.opacity * opacity,
+        ..around
+    };
+    if around.opacity <= 0.0 {
+        return;
+    }
+    let frame = Frame {
+        x: frame.x + around.offset.0 as f32,
+        y: frame.y + around.offset.1 as f32,
+        ..frame
+    };
+    let clip = around.clip;
     let scale = layout.scale();
     if let Kind::Progress(progress) = kind
         && progress.state == ProgressState::Indeterminate
@@ -153,7 +200,10 @@ fn walk(
                 rect: pixels,
                 visible,
                 radius: radius(progress, frame.height, scale),
-                color,
+                color: Color {
+                    alpha: color.alpha * around.opacity,
+                    ..color
+                },
                 shape,
                 period,
             });
@@ -166,7 +216,15 @@ fn walk(
         clip
     };
     for &child in tree.children(id) {
-        walk(tree, layout, tokens, child, inner, sweeps);
+        walk(
+            (tree, layout, tokens, motion),
+            child,
+            Shown {
+                clip: inner,
+                ..around
+            },
+            sweeps,
+        );
     }
 }
 
@@ -311,7 +369,7 @@ mod tests {
         });
         let (tree, layout) = laid(vec![bar, ring, normal, hidden], 2.0);
         let tokens = &Theme::builtin().dark.tokens;
-        let sweeps = sweeps(&tree, &layout, tokens);
+        let sweeps = sweeps(&tree, &layout, tokens, None);
         assert_eq!(sweeps.len(), 3);
         // The bar: of the style's color, a quarter of its 400 pixels, a
         // pill's corners, the bar's period.
@@ -357,5 +415,92 @@ mod tests {
         assert_eq!(clipped.rect.height, 20);
         assert_eq!(clipped.visible.height, 10);
         assert_eq!(clipped.visible.y, clipped.rect.y);
+    }
+
+    #[test]
+    fn a_sweep_takes_the_opacity_and_the_slide_of_its_nodes() {
+        use std::time::Duration;
+
+        use lokyr_plugin_sdk::view::{Easing, Transition};
+
+        use crate::animation::Animations;
+
+        let spinning = || {
+            of(Progress {
+                state: ProgressState::Indeterminate,
+                ..Progress::default()
+            })
+            .layout(view::Layout {
+                height: Length::Points(10.0),
+                ..view::Layout::default()
+            })
+        };
+        let within = |opacity: f32, child: Node| {
+            Node::container(vec![child]).style(Style {
+                opacity: Some(opacity),
+                ..Style::default()
+            })
+        };
+        // Of a node of no opacity, none; of one of half inside one of
+        // half, a quarter of its color's.
+        let (tree, layout) = laid(
+            vec![
+                within(0.0, spinning()),
+                within(0.5, within(0.5, spinning())),
+            ],
+            1.0,
+        );
+        let tokens = &Theme::builtin().dark.tokens;
+        let shown = sweeps(&tree, &layout, tokens, None);
+        assert_eq!(shown.len(), 1);
+        let normal = token("progress.normal");
+        assert_eq!(
+            shown[0].color,
+            Color {
+                alpha: normal.alpha * 0.25,
+                ..normal
+            }
+        );
+        // A box of a transition that a layout moved down by 20 points:
+        // halfway, its sweep 10 points above its place, and of half its
+        // fade from none.
+        let moving = |above: f32, opacity: f32| {
+            Node::container(vec![
+                Node::container(vec![]).layout(view::Layout {
+                    height: Length::Points(above),
+                    ..view::Layout::default()
+                }),
+                Node::container(vec![spinning()]).key("box").style(Style {
+                    opacity: Some(opacity),
+                    transition: Some(Transition {
+                        duration: 0.2,
+                        easing: Easing::Linear,
+                    }),
+                    ..Style::default()
+                }),
+            ])
+            .layout(view::Layout {
+                direction: Direction::Column,
+                ..view::Layout::default()
+            })
+        };
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let start = Instant::now();
+        for (above, opacity) in [(0.0, 0.0), (20.0, 1.0)] {
+            let changes = tree.update(&moving(above, opacity)).unwrap();
+            layout.update(&tree, &changes);
+            layout.compute(&tree, Some(200.0), None, &mut Fixed);
+            animations.laid_out(&tree, &layout, start, false);
+        }
+        let half = start + Duration::from_millis(100);
+        let shown = sweeps(&tree, &layout, tokens, Some((&animations, half)));
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].rect.y, 10);
+        assert!(
+            (shown[0].color.alpha - normal.alpha * 0.5).abs() < 1e-3,
+            "{shown:?}"
+        );
     }
 }

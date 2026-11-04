@@ -311,9 +311,14 @@ impl Surface {
     }
 
     /// The sweeps of its indeterminate progresses, in pixels from the
-    /// tree's corner.
-    pub fn sweeps(&self, tokens: &Tokens) -> Vec<SweepArea> {
-        progress::sweeps(&self.tree, &self.layout, tokens)
+    /// tree's corner, of their nodes' transitions at `now`.
+    pub fn sweeps(&self, tokens: &Tokens, now: Instant) -> Vec<SweepArea> {
+        progress::sweeps(
+            &self.tree,
+            &self.layout,
+            tokens,
+            Some((&self.animations, now)),
+        )
     }
 
     /// The size of the tree's root, in pixels, of the last layout.
@@ -562,5 +567,51 @@ mod tests {
         assert!(surface.text_area(find, &mut Fixed).is_some());
         assert!(surface.text_area(go, &mut Fixed).is_none());
         assert_eq!(surface.size().map(|(width, _)| width), Some(200.0));
+    }
+
+    #[test]
+    fn a_sweep_fades_in_as_its_node_does() {
+        use std::time::Duration;
+
+        use lokyr_plugin_sdk::view::{Easing, Progress, ProgressState, Style, Transition};
+
+        use crate::theme::Theme;
+
+        let spinning = |opacity: f32| {
+            Node::container(vec![
+                Node::new(Kind::Progress(Progress {
+                    state: ProgressState::Indeterminate,
+                    ..Progress::default()
+                }))
+                .layout(view::Layout {
+                    height: Length::Points(10.0),
+                    ..view::Layout::default()
+                }),
+            ])
+            .key("box")
+            .style(Style {
+                opacity: Some(opacity),
+                transition: Some(Transition {
+                    duration: 0.2,
+                    easing: Easing::Linear,
+                }),
+                ..Style::default()
+            })
+        };
+        let mut surface = Surface::new(1.0);
+        let start = Instant::now();
+        for opacity in [0.0, 1.0] {
+            surface.update(&spinning(opacity)).unwrap();
+            surface.lay_out((Some(200.0), None), &mut Fixed);
+            surface.animate(start, false);
+        }
+        let tokens = &Theme::builtin().dark.tokens;
+        let normal = tokens.get("progress.normal").unwrap();
+        let half = surface.sweeps(tokens, start + Duration::from_millis(100));
+        assert_eq!(half.len(), 1);
+        assert!(
+            (half[0].color.alpha - normal.alpha * 0.5).abs() < 1e-3,
+            "{half:?}"
+        );
     }
 }

@@ -247,8 +247,7 @@ impl<B: FontBackend> Painter<'_, B> {
         }
         self.items.extend(own);
         if !ringed && let Some((ring, _)) = &mut self.ring {
-            ring.rect.x += dx;
-            ring.rect.y += dy;
+            moved_shape(ring, (dx, dy), opacity);
         }
     }
 
@@ -792,13 +791,7 @@ fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
         }
         Item::Shapes(shapes) => {
             for shape in shapes {
-                shape.rect.x += dx;
-                shape.rect.y += dy;
-                fade(&mut shape.fill);
-                fade(&mut shape.border_color);
-                if let Some(shadow) = &mut shape.shadow {
-                    fade(&mut shadow.color);
-                }
+                moved_shape(shape, (dx, dy), opacity);
             }
         }
         Item::PushClip(rect) => {
@@ -806,6 +799,18 @@ fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
             rect.y += dy;
         }
         Item::Cells(_) | Item::PopClip => {}
+    }
+}
+
+/// `shape` moved by `offset` pixels, and of `opacity` of its colors'.
+fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
+    let fade = |color: &mut Color| color.alpha *= opacity;
+    shape.rect.x += dx;
+    shape.rect.y += dy;
+    fade(&mut shape.fill);
+    fade(&mut shape.border_color);
+    if let Some(shadow) = &mut shape.shadow {
+        fade(&mut shadow.color);
     }
 }
 
@@ -1262,6 +1267,39 @@ mod tests {
                 width: 6,
                 height: 11
             }
+        );
+    }
+
+    #[test]
+    fn the_focus_s_ring_fades_with_its_node() {
+        let field = Node::container(vec![]).key("field").focusable();
+        let faded = Node::container(vec![field]).style(view::Style {
+            opacity: Some(0.5),
+            ..view::Style::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&Node::container(vec![faded])).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        let field = tree.by_key(&"field".into()).unwrap();
+        let tokens = &Theme::builtin().dark.tokens;
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            shown(true, Some(field)),
+        );
+        let Some(Item::Shapes(ring)) = items.last() else {
+            panic!("{items:#?}");
+        };
+        let full = token("focus.ring");
+        assert_eq!(
+            ring.last().unwrap().border_color,
+            full.with_alpha(full.alpha * 0.5)
         );
     }
 

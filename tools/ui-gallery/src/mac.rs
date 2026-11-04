@@ -265,7 +265,7 @@ impl App {
         }
         // The indeterminate progresses, which the window server moves.
         let sweeps: Vec<Sweep> = view
-            .sweeps(&variant.tokens)
+            .sweeps(&variant.tokens, now)
             .into_iter()
             .map(|area| {
                 let (origin, size) = place(area.rect);

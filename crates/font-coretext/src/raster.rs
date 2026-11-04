@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 
-use lokyr_text_core::{Bitmap, BitmapFormat, GlyphId, Raster, Rendering, Synthesis};
+use lokyr_text_core::{Bitmap, BitmapFormat, GRAY_MAX, GlyphId, Raster, Rendering, Synthesis};
 use objc2_core_foundation::CFRetained;
 use objc2_core_foundation::{CFString, CGFloat, CGPoint, CGRect, kCFPreferencesCurrentApplication};
 use objc2_core_graphics::{
@@ -191,11 +191,22 @@ pub(crate) fn rasterize(
     let right = (bounds.origin.x + bounds.size.width + margin + offset).ceil();
     let bottom = (bounds.origin.y - margin).floor();
     let top = (bounds.origin.y + bounds.size.height + margin).ceil();
-    // A cast from a float saturates, and takes NaN to 0.
+    // A cast from a float saturates, and takes NaN to 0. A bitmap past the
+    // atlas's largest side, which the atlas would refuse, is none, as one
+    // of a side of 10⁹ pixels would ask for more memory than there is, or,
+    // its size wrapping, a buffer smaller than its context is told.
     let width = (right - left) as usize;
     let height = (top - bottom) as usize;
     let bytes = if color { 4 } else { 1 };
-    let mut data = vec![0_u8; width * height * bytes];
+    let largest = GRAY_MAX as usize;
+    let Some(length) = width
+        .checked_mul(height)
+        .and_then(|area| area.checked_mul(bytes))
+        .filter(|_| width <= largest && height <= largest)
+    else {
+        return Bitmap::empty(format);
+    };
+    let mut data = vec![0_u8; length];
 
     let (space, info) = if color {
         // SAFETY: Core Graphics' constant.

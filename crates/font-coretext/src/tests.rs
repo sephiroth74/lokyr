@@ -1061,3 +1061,27 @@ fn the_interface_s_family_is_the_system_s_and_its_text_has_its_width() {
             < 0.01
     );
 }
+
+#[test]
+fn a_glyph_past_the_atlas_s_largest_side_rasterizes_as_none() {
+    let mut backend = CoreText::new();
+    // Of a side of 10⁹ pixels, a buffer past the memory, refused.
+    let huge = glyph(&mut backend, "Menlo", 'M', 1e9, Synthesis::default());
+    assert_eq!((huge.width, huge.height), (0, 0));
+    assert!(huge.data.is_empty());
+    // An emoji of 10 000 pixels, past the atlas's side too.
+    let menlo = regular(&mut backend, "Menlo");
+    let emoji = backend.fallback(menlo, "🦀").unwrap();
+    let crab = backend.glyph(emoji, '🦀').unwrap();
+    let large = backend.rasterize(
+        emoji,
+        crab,
+        10_000.0,
+        Synthesis::default(),
+        Rendering::default(),
+    );
+    assert_eq!((large.width, large.height), (0, 0));
+    // One within it, drawn.
+    let drawn = glyph(&mut backend, "Menlo", 'M', 1000.0, Synthesis::default());
+    assert!(drawn.width > 0 && drawn.width <= lokyr_text_core::GRAY_MAX);
+}
