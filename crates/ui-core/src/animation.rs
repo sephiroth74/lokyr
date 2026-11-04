@@ -1,8 +1,12 @@
 //! The transitions of a view tree's nodes, which the host drives: a node of
-//! a transition that a layout moves slides from where it showed to its new
-//! place, and one whose opacity a render changes fades from the opacity
-//! that it showed to its new one, over the transition's time and along its
-//! curve; a change during a transition goes on from where it was. The host
+//! a transition that the layout of a new render moves slides from where it
+//! showed to its new place, and one whose opacity a render changes fades
+//! from the opacity that it showed to its new one, over the transition's
+//! time and along its curve; a change during a transition goes on from
+//! where it was. A node's place is its place in points from the nearest
+//! node around it of a transition, which slides it with its own; and a
+//! layout of no new render, as a resize's or another display's scale,
+//! moves nodes without a slide. The host
 //! draws a frame at each refresh of the display while one runs, and none
 //! once they all end; where the system reduces motion, they end at once.
 
@@ -11,23 +15,39 @@ use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::view::{Easing, Key, Transition};
 
-use crate::layout::{Frame, Layout};
+use crate::layout::Layout;
 use crate::tree::{NodeId, Tree};
 
 /// The transitions of a tree's nodes, by their keys.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Animations {
     nodes: HashMap<Key, Animated>,
+    /// The tree's revision of the last layout.
+    revision: Option<u64>,
+    /// The pixels a point of the last layout.
+    scale: f32,
+}
+
+impl Default for Animations {
+    fn default() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            revision: None,
+            scale: 1.0,
+        }
+    }
 }
 
 /// A node of a transition, as it showed last and as it moves.
 #[derive(Debug)]
 struct Animated {
-    /// Its place, in pixels, as its last layout put it.
-    frame: Frame,
+    /// Its place, in points from the nearest node around it of a
+    /// transition, as its last layout put it.
+    place: (f32, f32),
     /// Its opacity, as its last render gave it.
     opacity: f32,
-    /// Its move, from where it showed, as it slides to its place.
+    /// Its move, from where it showed, in points, as it slides to its
+    /// place.
     moving: Option<Run<(f32, f32)>>,
     /// Its fade, from the opacity that it showed to its own.
     fading: Option<Run<(f32, f32)>>,
@@ -83,29 +103,42 @@ impl Animations {
     }
 
     /// `tree` was laid out in `layout`, at `now`: each node of a transition
-    /// that moved starts to slide from where it showed, and each whose
-    /// opacity changed to fade, unless `reduced`, as the system reduces
-    /// motion, which ends them at once; the nodes gone, or of no
+    /// that moved since a new render starts to slide from where it showed,
+    /// and each whose opacity changed to fade, unless `reduced`, as the
+    /// system reduces motion, which ends them at once; a layout of the same
+    /// render moves them without a slide; the nodes gone, or of no
     /// transition, are forgotten.
     pub fn laid_out(&mut self, tree: &Tree, layout: &Layout, now: Instant, reduced: bool) {
+        let rendered = self.revision != Some(tree.revision());
+        self.revision = Some(tree.revision());
+        let scale = layout.scale();
+        self.scale = scale;
         let mut seen = Vec::new();
         if let Some(root) = tree.root() {
-            walk(tree, root, &mut seen);
+            walk(tree, root, None, &mut seen);
         }
+        // Of no scroll, which moves a node without a transition; in points,
+        // which a display's scale does not change.
+        let points = |id| {
+            layout
+                .placed(tree, id)
+                .map(|frame| (frame.x / scale, frame.y / scale))
+        };
         let mut kept = HashMap::new();
-        for (node, transition) in seen {
-            // Of no scroll, which moves a node without a transition.
-            let (Some(key), Some(frame), Some(style)) =
-                (tree.key(node), layout.placed(tree, node), tree.style(node))
+        for (node, transition, around) in seen {
+            let (Some(key), Some(place), Some(style)) =
+                (tree.key(node), points(node), tree.style(node))
             else {
                 continue;
             };
+            let base = around.and_then(points).unwrap_or((0.0, 0.0));
+            let place = (place.0 - base.0, place.1 - base.1);
             let opacity = style.opacity.unwrap_or(1.0);
             let Some(mut animated) = self.nodes.remove(key) else {
                 kept.insert(
                     key.clone(),
                     Animated {
-                        frame,
+                        place,
                         opacity,
                         moving: None,
                         fading: None,
@@ -120,8 +153,8 @@ impl Animations {
                 duration: Duration::from_micros((transition.duration.max(0.0) * 1e6).round() as u64),
                 easing: transition.easing,
             };
-            let (dx, dy) = (animated.frame.x - frame.x, animated.frame.y - frame.y);
-            if (dx, dy) != (0.0, 0.0) {
+            let (dx, dy) = (animated.place.0 - place.0, animated.place.1 - place.1);
+            if rendered && (dx, dy) != (0.0, 0.0) {
                 let (x, y) = animated.offset(now);
                 animated.moving = (!reduced).then(|| run((x + dx, y + dy)));
             }
@@ -129,7 +162,7 @@ impl Animations {
                 let from = animated.shown_opacity(now);
                 animated.fading = (!reduced).then(|| run((from, opacity)));
             }
-            animated.frame = frame;
+            animated.place = place;
             animated.opacity = opacity;
             kept.insert(key.clone(), animated);
         }
@@ -145,12 +178,14 @@ impl Animations {
         })
     }
 
-    /// How far the node of `key` shows from its place at `now`, in pixels,
-    /// as it slides to it.
+    /// How far the node of `key` shows from its place at `now`, in pixels
+    /// of the last layout, as it slides to it, past the slides of the
+    /// nodes around it.
     pub fn offset(&self, key: &Key, now: Instant) -> (f32, f32) {
-        self.nodes
-            .get(key)
-            .map_or((0.0, 0.0), |animated| animated.offset(now))
+        self.nodes.get(key).map_or((0.0, 0.0), |animated| {
+            let (x, y) = animated.offset(now);
+            (x * self.scale, y * self.scale)
+        })
     }
 
     /// The opacity that the node of `key` shows at `now`, as it fades; its
@@ -184,15 +219,23 @@ impl Animated {
     }
 }
 
-/// The nodes of `id`'s subtree of a key and a transition, with it.
-fn walk(tree: &Tree, id: NodeId, seen: &mut Vec<(NodeId, Transition)>) {
+/// The nodes of `id`'s subtree of a key and a transition, with it and the
+/// nearest node around each of them, from `around`.
+fn walk(
+    tree: &Tree,
+    id: NodeId,
+    around: Option<NodeId>,
+    seen: &mut Vec<(NodeId, Transition, Option<NodeId>)>,
+) {
+    let mut inner = around;
     if tree.key(id).is_some()
         && let Some(transition) = tree.style(id).and_then(|style| style.transition)
     {
-        seen.push((id, transition));
+        seen.push((id, transition, around));
+        inner = Some(id);
     }
     for &child in tree.children(id) {
-        walk(tree, child, seen);
+        walk(tree, child, inner, seen);
     }
 }
 
@@ -279,6 +322,79 @@ mod tests {
         let end = half + Duration::from_millis(200);
         assert_eq!(animations.offset(&key("c"), end), (0.0, 0.0));
         assert!(!animations.running(end));
+    }
+
+    #[test]
+    fn a_node_inside_a_sliding_one_slides_with_it_alone() {
+        let sliding = |node: Node| {
+            node.style(Style {
+                transition: Some(LINEAR),
+                ..Style::default()
+            })
+        };
+        // A box of a transition, its child of one, past a room of `left`.
+        let nested = |left: f32| {
+            let child = sliding(Node::container(vec![]).key("child").layout(view::Layout {
+                width: Length::Points(10.0),
+                height: Length::Points(10.0),
+                ..view::Layout::default()
+            }));
+            Node::container(vec![
+                Node::container(vec![]).layout(view::Layout {
+                    width: Length::Points(left),
+                    ..view::Layout::default()
+                }),
+                sliding(Node::container(vec![child]).key("parent")),
+            ])
+            .layout(view::Layout {
+                direction: Direction::Row,
+                ..view::Layout::default()
+            })
+        };
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(2.0);
+        let mut animations = Animations::new();
+        let start = Instant::now();
+        for left in [0.0, 20.0] {
+            laid(&mut tree, &mut layout, &nested(left));
+            animations.laid_out(&tree, &layout, start, false);
+        }
+        // Halfway, the box 10 points, 20 pixels, short of its place, and
+        // its child of no slide of its own, which the box's moves.
+        let half = start + Duration::from_millis(100);
+        assert_eq!(animations.offset(&Key::from("parent"), half), (-20.0, 0.0));
+        assert_eq!(animations.offset(&Key::from("child"), half), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_layout_of_the_same_render_slides_nothing() {
+        let centred = |order: &[&str]| {
+            let mut row = row(order, None);
+            row.layout.justify = view::Justify::Center;
+            row
+        };
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let start = Instant::now();
+        laid(&mut tree, &mut layout, &centred(&["a", "b", "c"]));
+        animations.laid_out(&tree, &layout, start, false);
+        // A resize, which moves the centred boxes, and another display's
+        // scale: no slide.
+        layout.compute(&tree, Some(300.0), None, &mut Fixed);
+        animations.laid_out(&tree, &layout, start, false);
+        assert!(!animations.running(start));
+        layout.set_scale(&tree, 2.0);
+        layout.compute(&tree, Some(600.0), None, &mut Fixed);
+        animations.laid_out(&tree, &layout, start, false);
+        assert!(!animations.running(start));
+        // A new render slides from where the resize put them: `c` to the
+        // front, 40 points, 80 pixels, from its place.
+        let changes = tree.update(&centred(&["c", "a", "b"])).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(600.0), None, &mut Fixed);
+        animations.laid_out(&tree, &layout, start, false);
+        assert_eq!(animations.offset(&Key::from("c"), start), (80.0, 0.0));
     }
 
     #[test]

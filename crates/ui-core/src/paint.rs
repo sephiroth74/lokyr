@@ -773,19 +773,21 @@ impl<B: FontBackend> Painter<'_, B> {
     }
 }
 
-/// `item` moved by `offset` pixels, and of `opacity` of its colors'.
+/// `item` moved by `offset` pixels, and of `opacity` of its colors': its
+/// places saturating, as the rest of the paint's arithmetic, of a node
+/// placed past the pixels' range.
 fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
     let fade = |color: &mut Color| color.alpha *= opacity;
     match item {
         Item::Rect { rect, color } => {
-            rect.x += dx;
-            rect.y += dy;
+            rect.x = rect.x.saturating_add(dx);
+            rect.y = rect.y.saturating_add(dy);
             fade(color);
         }
         Item::Glyphs(glyphs) => {
             for glyph in glyphs {
-                glyph.x += dx;
-                glyph.y += dy;
+                glyph.x = glyph.x.saturating_add(dx);
+                glyph.y = glyph.y.saturating_add(dy);
                 fade(&mut glyph.color);
             }
         }
@@ -795,8 +797,8 @@ fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
             }
         }
         Item::PushClip(rect) => {
-            rect.x += dx;
-            rect.y += dy;
+            rect.x = rect.x.saturating_add(dx);
+            rect.y = rect.y.saturating_add(dy);
         }
         Item::Cells(_) | Item::PopClip => {}
     }
@@ -805,8 +807,8 @@ fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
 /// `shape` moved by `offset` pixels, and of `opacity` of its colors'.
 fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
     let fade = |color: &mut Color| color.alpha *= opacity;
-    shape.rect.x += dx;
-    shape.rect.y += dy;
+    shape.rect.x = shape.rect.x.saturating_add(dx);
+    shape.rect.y = shape.rect.y.saturating_add(dy);
     fade(&mut shape.fill);
     fade(&mut shape.border_color);
     if let Some(shadow) = &mut shape.shadow {
@@ -1268,6 +1270,50 @@ mod tests {
                 height: 11
             }
         );
+    }
+
+    #[test]
+    fn a_move_past_the_pixels_range_saturates() {
+        let mut item = Item::Rect {
+            rect: Rect {
+                x: i32::MAX - 1,
+                y: i32::MIN + 1,
+                width: 1,
+                height: 1,
+            },
+            color: Color::BLACK,
+        };
+        moved(&mut item, (10, -10), 1.0);
+        let Item::Rect { rect, .. } = item else {
+            panic!("{item:?}");
+        };
+        assert_eq!((rect.x, rect.y), (i32::MAX, i32::MIN));
+        let mut clip = Item::PushClip(Rect {
+            x: i32::MIN,
+            y: i32::MAX,
+            width: 1,
+            height: 1,
+        });
+        moved(&mut clip, (-1, 1), 1.0);
+        assert!(matches!(
+            clip,
+            Item::PushClip(Rect {
+                x: i32::MIN,
+                y: i32::MAX,
+                ..
+            })
+        ));
+        let mut ring = Shape::filled(
+            Rect {
+                x: i32::MAX,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            Color::BLACK,
+        );
+        moved_shape(&mut ring, (5, 0), 1.0);
+        assert_eq!(ring.rect.x, i32::MAX);
     }
 
     #[test]

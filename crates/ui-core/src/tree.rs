@@ -107,6 +107,8 @@ pub struct Tree {
     root: Option<NodeId>,
     /// The node of each key.
     keys: HashMap<Key, NodeId>,
+    /// The updates that it took.
+    revision: u64,
 }
 
 impl Tree {
@@ -119,6 +121,7 @@ impl Tree {
     /// nodes kept keep their ids. A tree that is not valid changes nothing.
     pub fn update(&mut self, root: &Node) -> Result<Changes, Invalid> {
         valid(root)?;
+        self.revision = self.revision.wrapping_add(1);
         let mut changes = Changes::default();
         let id = match self.root {
             Some(old) => self.reconcile(old, root, None, &mut changes),
@@ -126,6 +129,12 @@ impl Tree {
         };
         self.root = Some(id);
         Ok(changes)
+    }
+
+    /// How many updates it took, which tells a layout of a new render from
+    /// another of the same, as a resize's.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// The root, if the tree has one.
