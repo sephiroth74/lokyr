@@ -401,13 +401,47 @@ impl<B: FontBackend> Painter<'_, B> {
             height: (frame.y + frame.height - middle).max(0.0),
             ..frame
         };
+        // The box but under the control, as macOS's: its line stops at the
+        // control's sides, which a track that is not opaque would show
+        // through; drawn of three clips, left of the control, right of it
+        // and below it.
         if let Some(fill) = self.tokens.get("tabs.box.bg") {
-            self.push_shape(Shape {
+            let shape = Shape {
                 radius: tabs::RADIUS * scale,
                 border: scale.round().max(1.0),
                 border_color: self.tokens.get("tabs.box.border").unwrap_or(Color::CLEAR),
                 ..Shape::filled(rect(boxed), fill)
-            });
+            };
+            let (outer, under) = (rect(boxed), rect(control));
+            let (left, right) = (under.x, under.x.saturating_add_unsigned(under.width));
+            let below = under.y.saturating_add_unsigned(under.height);
+            let (outer_right, outer_bottom) = (
+                outer.x.saturating_add_unsigned(outer.width),
+                outer.y.saturating_add_unsigned(outer.height),
+            );
+            let span = |from: i32, to: i32| to.saturating_sub(from).max(0).unsigned_abs();
+            let parts = [
+                Rect {
+                    width: span(outer.x, left),
+                    ..outer
+                },
+                Rect {
+                    x: right,
+                    width: span(right, outer_right),
+                    ..outer
+                },
+                Rect {
+                    x: left,
+                    y: below,
+                    width: span(left, right),
+                    height: span(below, outer_bottom),
+                },
+            ];
+            for part in parts.into_iter().filter(|part| !is_empty(*part)) {
+                self.items.push(Item::PushClip(part));
+                self.push_shape(shape);
+                self.items.push(Item::PopClip);
+            }
         }
         let radius = widget::RADIUS * scale;
         if let Some(track) = self.tokens.get("tabs.bg") {
@@ -1423,12 +1457,42 @@ mod tests {
             (shapes[0].rect.y, shapes[0].rect.width),
             (middle, frame.width as u32)
         );
+        // The box of three clips, left of the control, right of it and
+        // below it, so that its line does not cross the tabs.
+        assert_eq!(shapes[..3], [shapes[0]; 3]);
+        let clips: Vec<Rect> = items
+            .windows(2)
+            .filter_map(|pair| match pair {
+                [Item::PushClip(clip), Item::Shapes(shapes)]
+                    if shapes[0].fill == token("tabs.box.bg") =>
+                {
+                    Some(*clip)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(clips.len(), 3);
+        let under = rect(control);
+        assert!(
+            clips
+                .iter()
+                .all(|clip| is_empty(intersection(*clip, under))),
+            "{clips:?}"
+        );
+        // And all of the box but the control's part of it.
+        let outer = shapes[0].rect;
+        let overlap = intersection(outer, under);
+        let covered: u32 = clips.iter().map(|clip| clip.width * clip.height).sum();
         assert_eq!(
-            (shapes[1].fill, shapes[1].rect),
+            covered,
+            outer.width * outer.height - overlap.width * overlap.height
+        );
+        assert_eq!(
+            (shapes[3].fill, shapes[3].rect),
             (token("tabs.bg"), rect(control))
         );
         assert_eq!(
-            (shapes[2].fill, shapes[2].rect),
+            (shapes[4].fill, shapes[4].rect),
             (token("tabs.chosen.bg"), rect(segments[0]))
         );
         let lines: Vec<i32> = shapes
