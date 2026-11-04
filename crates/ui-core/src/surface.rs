@@ -189,6 +189,15 @@ impl Surface {
         pressed
     }
 
+    /// The app took the pointer back, as the window lost the keyboard's
+    /// focus or a key moved the focus: a drag under way is cancelled, and a
+    /// field's selection that a drag makes ends, as no button that is down
+    /// clicks as it goes up.
+    pub fn cancel(&mut self) -> Vec<NodeEvent> {
+        self.fields.release();
+        self.pointer.cancel(&self.tree)
+    }
+
     /// `button` went up at `at`, of `clicks` in a row: a field's selection
     /// ends; the pointer's events, a click's or a drag's end.
     pub fn released(&mut self, at: (f32, f32), (button, clicks): (Button, u32)) -> Vec<NodeEvent> {
@@ -474,6 +483,10 @@ mod tests {
         surface.pressed(start, (Button::Primary, 1, false), &mut Fixed);
         assert!(surface.fields.selecting());
         surface.released(start, (Button::Primary, 1));
+        assert!(!surface.fields.selecting());
+        // And until the app takes the pointer back, as Tab moves the focus.
+        surface.pressed(start, (Button::Primary, 1, false), &mut Fixed);
+        surface.cancel();
         assert!(!surface.fields.selecting());
         // Nothing to keep the next time; a click of the button.
         let at = middle(&surface, "go");

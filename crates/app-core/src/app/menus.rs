@@ -424,15 +424,15 @@ fn cell_args(column: u16, row: i64) -> Args {
     ])
 }
 
-/// The main menu, of the commands of `commands` that run without
-/// arguments, by their categories, in the order of their registrations,
-/// each with the keys that `keymap` binds it to: the application's menu,
-/// with the system's items to hide it; the shell's, of the windows', the
-/// tabs', the panes' and the input's; the edit's, of the clipboard's and the
-/// editing's, with the system's palette of emoji and symbols; the view's; the windows', with the system's items; and the
-/// help's, which the system gives a search of the menus. A line parts the
-/// commands of a category or a namespace from the next. Its titles are
-/// `texts`'.
+/// The main menu, of the commands of `commands` that run without arguments,
+/// by their categories, in the order of their registrations, each with the
+/// keys that `keymap` binds it to: the application's menu, with the system's
+/// items to hide it; the shell's, of the windows', the tabs', the panes' and
+/// the input's; the edit's, of the clipboard's and the editing's, with the
+/// system's palette of emoji and symbols; the view's; the windows', with the
+/// system's items; and the help's, which the system gives a search of the
+/// menus. A line parts the commands of a category or a namespace from the
+/// next. Its titles are `texts`'.
 pub(super) fn main_menu(commands: &Registry, keymap: &Keymap, texts: &Texts) -> MainMenu {
     let items = |categories: &[Category]| {
         let shown: Vec<&Command> = commands

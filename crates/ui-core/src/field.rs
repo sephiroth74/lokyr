@@ -13,7 +13,9 @@
 //! the arrows by clusters, with Option by words and with Command to the
 //! line's ends, Shift extending the selection; Backspace and Delete, with
 //! Option by words and with Command to the line's ends; Emacs's Control-A,
-//! E, B, F, H, D and K; Command-A, C, X, V, Z and Shift-Command-Z.
+//! E, B, F, H, D and K; Command-A, C, X, V, Z and Shift-Command-Z, at
+//! their places of a Latin layout where the layout's own letters are not
+//! ASCII, as Russian's.
 //!
 //! An input method's composition shows at the caret, in place of the
 //! selection, until the input method commits it, or a click elsewhere or a
@@ -395,7 +397,14 @@ impl Fields {
             }]);
         }
         if command && !control {
-            let changed = match event.key {
+            // The letter of the key's place on a Latin layout, where its
+            // layout's own is no ASCII, as Command-С of a Russian layout
+            // copies.
+            let letter = match event.key {
+                Key::Char(c) if !c.is_ascii() => event.base_layout.map_or(event.key, Key::Char),
+                other => other,
+            };
+            let changed = match letter {
                 Key::Char('a') => {
                     state.anchor = 0;
                     state.caret = state.text.len();
@@ -416,12 +425,14 @@ impl Fields {
                     }
                     state.edit(selection, "", Joining::Nothing)
                 }
-                Key::Char('v') => match clipboard.read() {
-                    Some(pasted) => {
+                // A paste of nothing on one line, as of controls alone,
+                // changes nothing.
+                Key::Char('v') => match clipboard.read().map(|pasted| single_line(&pasted)) {
+                    Some(line) if !line.is_empty() => {
                         let selection = state.selection();
-                        state.edit(selection, &single_line(&pasted), Joining::Nothing)
+                        state.edit(selection, &line, Joining::Nothing)
                     }
-                    None => false,
+                    _ => false,
                 },
                 Key::Char('z') if shift => state.redo(),
                 Key::Char('z') => state.undo(),
@@ -735,16 +746,26 @@ fn caret_at(
         .map(|&(byte, _)| byte)
 }
 
-/// `text` on one line: its line breaks and tabs as spaces, its other
-/// controls left out, as a paste into a field of one line takes it.
+/// `text` on one line, as a paste into a field of one line takes it: each
+/// of its line breaks a space, of CR, LF, CRLF, NEL and Unicode's line and
+/// paragraph separators, those at its end left out, as a line copied from
+/// the terminal ends in one; its tabs spaces, and its other controls left
+/// out.
 fn single_line(text: &str) -> String {
-    text.chars()
-        .filter_map(|c| match c {
-            '\n' | '\r' | '\t' => Some(' '),
-            c if c.is_control() => None,
-            c => Some(c),
-        })
-        .collect()
+    let breaks = |c: char| matches!(c, '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}');
+    let text = text.trim_end_matches(breaks);
+    let mut line = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            // A CRLF's LF gives its space.
+            '\r' if chars.peek() == Some(&'\n') => {}
+            c if breaks(c) || c == '\t' => line.push(' '),
+            c if c.is_control() => {}
+            c => line.push(c),
+        }
+    }
+    line
 }
 
 /// `text` cut to `chars` characters at most, at the start of the cluster
@@ -973,13 +994,25 @@ mod tests {
         /// The key `key` pressed of `mods`, typing `text`: its events, as
         /// `kind: text` strings.
         fn press(&mut self, key: Key, mods: Mods, text: &str) -> Option<Vec<String>> {
+            self.press_at(key, None, mods, text)
+        }
+
+        /// The key `key` pressed at the place of `base_layout` on a Latin
+        /// layout, of `mods`, typing `text`: its events.
+        fn press_at(
+            &mut self,
+            key: Key,
+            base_layout: Option<char>,
+            mods: Mods,
+            text: &str,
+        ) -> Option<Vec<String>> {
             let event = KeyEvent {
                 key,
                 action: KeyAction::Press,
                 mods,
                 text,
                 unmodified: text,
-                base_layout: None,
+                base_layout,
             };
             let events = self
                 .fields
@@ -1607,6 +1640,58 @@ mod tests {
         field.fields.set_text(&key, &ACUTE.repeat(LONGEST));
         let state = field.fields.state(&key).unwrap();
         assert_eq!(state.text, ACUTE.repeat(LONGEST / 2));
+    }
+
+    #[test]
+    fn the_command_keys_of_a_russian_layout_are_those_of_their_places() {
+        let mut field = Typing::new();
+        let command = mods(false, false, false, true);
+        field.kind("abc");
+        // ⌘A, ⌘C, ⌘X, ⌘V and ⌘Z at their places, whose letters are
+        // Russian's: ф, с, ч, м and я.
+        let at = |field: &mut Typing, letter: char, place: char| {
+            field.press_at(Key::Char(letter), Some(place), command, "")
+        };
+        assert_eq!(at(&mut field, 'ф', 'a'), Some(vec![]));
+        assert_eq!(field.shown(), "[abc]");
+        assert_eq!(at(&mut field, 'с', 'c'), Some(vec![]));
+        assert_eq!(field.board.0.as_deref(), Some("abc"));
+        assert_eq!(at(&mut field, 'ч', 'x'), Some(vec!["input ".to_owned()]));
+        assert_eq!(at(&mut field, 'м', 'v'), Some(vec!["input abc".to_owned()]));
+        assert_eq!(at(&mut field, 'я', 'z'), Some(vec!["input ".to_owned()]));
+        // Without a place, a letter that is no ASCII is left to the
+        // bindings; an ASCII letter is its own, as Dvorak's C at QWERTY's I.
+        assert_eq!(field.press_at(Key::Char('с'), None, command, ""), None);
+        field.kind("xy");
+        at(&mut field, 'ф', 'a');
+        field.board = Board(None);
+        assert_eq!(at(&mut field, 'c', 'i'), Some(vec![]));
+        assert_eq!(field.board.0.as_deref(), Some("xy"));
+    }
+
+    #[test]
+    fn a_paste_s_line_breaks_are_spaces_but_those_at_its_end() {
+        let mut field = Typing::new();
+        let command = mods(false, false, false, true);
+        let pasted = |field: &mut Typing, text: &str| {
+            field.board = Board(Some(text.to_owned()));
+            field.press(Key::Char('v'), command, "v").unwrap()
+        };
+        // A line copied from the terminal, of its line's end.
+        assert_eq!(
+            pasted(&mut field, "make test\r\n"),
+            vec!["input make test".to_owned()]
+        );
+        field.press(Key::Char('a'), command, "a");
+        let breaks = "a\r\nb\rc\nd\u{85}e\u{2028}f\u{2029}g\th\u{7}i\n\n";
+        assert_eq!(
+            pasted(&mut field, breaks),
+            vec!["input a b c d e f g hi".to_owned()]
+        );
+        // Controls alone change nothing, the selection kept.
+        field.press(Key::Char('a'), command, "a");
+        assert_eq!(pasted(&mut field, "\u{7}\n"), Vec::<String>::new());
+        assert_eq!(field.shown(), "[a b c d e f g hi]");
     }
 
     #[test]

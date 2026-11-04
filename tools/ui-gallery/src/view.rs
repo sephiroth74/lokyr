@@ -757,7 +757,7 @@ impl View {
                 // a drag.
                 let mut events = Vec::new();
                 for surface in self.all_mut() {
-                    events.extend(surface.pointer.cancel(&surface.tree));
+                    events.extend(surface.cancel());
                 }
                 self.captured = None;
                 self.apply(events);
@@ -845,7 +845,7 @@ impl View {
     pub fn cancel(&mut self) {
         let mut events = Vec::new();
         for surface in self.all_mut() {
-            events.extend(surface.pointer.cancel(&surface.tree));
+            events.extend(surface.cancel());
         }
         self.captured = None;
         self.dismiss_tooltips();
@@ -1623,6 +1623,22 @@ mod tests {
             .state(&"find-bar.field".into())
             .unwrap();
         assert_eq!(field.text(), "aにほ");
+        // A press in its field selects as the pointer moves, until Tab
+        // takes the pointer back, as the window's loss of the focus does.
+        let bar = view.surface(FIND).unwrap();
+        let node = bar.tree.by_key(&"find-bar.field".into()).unwrap();
+        let place = bar.layout.frame(&bar.tree, node).unwrap();
+        let inside = (frame.x + place.x + 8.0, frame.y + place.y + 8.0);
+        let selecting = |view: &View| view.surface(FIND).unwrap().fields.selecting();
+        view.pressed(inside, (Button::Primary, 1, false), &mut Fixed);
+        assert!(selecting(&view));
+        view.key(&press(Key::Tab, ""), &mut Board, true);
+        assert!(!selecting(&view));
+        view.pressed(inside, (Button::Primary, 1, false), &mut Fixed);
+        view.cancel();
+        assert!(!selecting(&view));
+        view.released(inside, (Button::Primary, 1));
+        click(&mut view, inside);
         // Escape, its focus in it, closes it.
         assert_eq!(
             view.key(&press(Key::Escape, ""), &mut Board, false),

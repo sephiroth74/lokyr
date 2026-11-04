@@ -566,7 +566,7 @@ fn vt_key(event: &KeyEvent) -> Option<vt::KeyEvent<'_>> {
         },
         text: &event.text,
         unmodified: &event.unmodified,
-        base_layout: None,
+        base_layout: event.code.base_layout(),
     })
 }
 
@@ -786,4 +786,28 @@ fn write_png(path: &Path, (width, height): (u32, u32), pixels: &[u8]) -> Result<
         .write_header()
         .and_then(|mut writer| writer.write_image_data(pixels))
         .map_err(|error| format!("{}: {error}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_key_tells_its_place_on_a_latin_layout() {
+        // Command-С of a Russian layout, at C's place.
+        let event = KeyEvent {
+            code: KeyCode::KeyC,
+            state: KeyState::Pressed,
+            mods: Modifiers {
+                super_key: true,
+                ..Modifiers::default()
+            },
+            text: String::new(),
+            unmodified: "с".to_owned(),
+            plain: "с".to_owned(),
+            time: None,
+        };
+        let key = vt_key(&event).unwrap();
+        assert_eq!((key.key, key.base_layout), (vt::Key::Char('с'), Some('c')));
+    }
 }
