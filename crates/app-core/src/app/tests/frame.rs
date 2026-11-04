@@ -507,27 +507,32 @@ fn a_live_resize_draws_once_a_refresh() {
 }
 
 #[test]
-fn a_live_resize_tells_the_program_its_grid_as_it_ends() {
+fn a_live_resize_gives_its_grids_with_their_signals_at_the_pace() {
     let (mut fake, mut app) = started();
     let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::Frame);
-    let told = app.pane(window).told();
-    // A step leaves the terminal as it was, and the program, which would
-    // redraw at each, its prompt cleared, learns of nothing.
+    let shown = |app: &App| (app.pane(window).grid(), app.pane(window).told());
+    let laid_out = |app: &App| app.windows[&window].views[0].grid;
+    // The first step gives the terminal its grid and the program its
+    // signal, together.
     fake.send(&mut app, window, WindowEvent::LiveResize(true));
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
-    let laid_out = app.windows[&window].views[0].grid;
-    assert_ne!(laid_out, told);
-    assert_eq!(
-        (app.pane(window).grid(), app.pane(window).told()),
-        (told, told)
-    );
-    // Its end gives both the grid at once.
+    let first = laid_out(&app);
+    assert_eq!(shown(&app), (first, first));
+    // A step within the pace leaves the terminal as it was, whose prompt
+    // the program has not drawn again yet.
+    let earlier = Instant::now() - Duration::from_millis(50);
+    app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
+    fake.send(&mut app, window, WindowEvent::Resized(points(500.0, 360.0)));
+    let second = laid_out(&app);
+    assert_ne!(second, first);
+    assert_eq!(shown(&app), (first, first));
+    // Its end gives the terminal the last at once, and the program within
+    // the pace.
     fake.send(&mut app, window, WindowEvent::LiveResize(false));
-    assert_eq!(
-        (app.pane(window).grid(), app.pane(window).told()),
-        (laid_out, laid_out)
-    );
+    assert_eq!(app.pane(window).grid(), second);
+    fake.fire_timers(&mut app, Instant::now() + RESIZE_PACE);
+    assert_eq!(shown(&app), (second, second));
 }
 
 #[test]

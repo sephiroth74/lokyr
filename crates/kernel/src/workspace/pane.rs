@@ -25,19 +25,11 @@ use crate::l10n::{Arg, Texts};
 /// before it tells that the program ended, without its status.
 const EXIT_WAIT: Duration = Duration::from_secs(1);
 
-/// How often a pane tells its program a new size at most: a live resize
-/// changes the grid at each step, and the program, which redraws on each
-/// SIGWINCH, learns of the steps a few times a second, and of the last one.
-pub const RESIZE_PACE: Duration = Duration::from_millis(50);
-
-/// How long a live resize of the window holds a grid before a pane takes
-/// it: the terminal keeps its grid through the resize's steps, whose text
-/// stays as it was, and takes the last as the resize pauses this long, and
-/// at once as it ends, as it tells the program. A step's grid taken at
-/// once would clear the prompt, which the shell draws again only as it
-/// learns of the grid, so that the prompt flickered through a resize, or
-/// went until its end.
-pub const RESIZE_PAUSE: Duration = Duration::from_millis(500);
+/// How often a pane tells its program a new size at most, as Ghostty
+/// coalesces a resize's steps: the program, which redraws on each
+/// SIGWINCH, learns of the steps up to 40 times a second, and of the last
+/// one.
+pub const RESIZE_PACE: Duration = Duration::from_millis(25);
 
 /// The shortest time between two looks at what a pane's session told, its
 /// bells and its terminal's events: a frame's at 60 Hz.
@@ -153,11 +145,11 @@ pub struct Pane {
     /// The grid that the program was told last, through the PTY, and when,
     /// unless it was told only as it started.
     told: (Grid, Option<Instant>),
-    /// The grid that a live resize gave last, and when, which the terminal
-    /// takes, and the program learns of, once the resize pauses for
-    /// [`RESIZE_PAUSE`] or ends; `None` out of a live resize, or once the
-    /// terminal took it.
-    held: Option<(Grid, Instant)>,
+    /// The grid that a live resize gave last, which the terminal takes as
+    /// the program learns of it, at [`RESIZE_PACE`], and at once as the
+    /// resize ends; `None` out of a live resize, or once the terminal took
+    /// it.
+    held: Option<Grid>,
     /// Whether the terminal's grid changed since the program was told,
     /// though it may be back at the grid told: a resize there and back
     /// changes the screen, as it clears the prompt and cuts the alternate
@@ -408,14 +400,14 @@ impl Pane {
         self.pace(now)
     }
 
-    /// Holds `grid`, a step of a live resize of the window: the terminal
-    /// keeps its grid, and takes this one, as the program learns of it, once
-    /// the resize holds it for [`RESIZE_PAUSE`]; returns when.
+    /// Holds `grid`, a step of a live resize of the window, which the
+    /// terminal takes as the program learns of it, at once when it was told
+    /// no grid within [`RESIZE_PACE`], and at that pace after: taken at each
+    /// step, its prompt would clear, which the shell draws again only as it
+    /// learns of the grid, so that the prompt flickered through a resize.
+    /// Returns when to take it, if it waits.
     pub fn resize_live(&mut self, grid: Grid, now: Instant) -> Option<Instant> {
-        let target = self.held.map_or(self.grid, |(held, _)| held);
-        if grid != target {
-            self.held = (grid != self.grid).then_some((grid, now));
-        }
+        self.held = (grid != self.grid).then_some(grid);
         self.pace(now)
     }
 
@@ -423,29 +415,31 @@ impl Pane {
     /// the program learns of it, within [`RESIZE_PACE`], as [`Pane::pace`]
     /// does.
     pub fn end_live_resize(&mut self, now: Instant) -> Option<Instant> {
-        if let Some((grid, _)) = self.held.take() {
-            self.resize(grid, now)
-        } else {
-            self.pace(now)
+        match self.held.take() {
+            Some(grid) => self.resize(grid, now),
+            None => self.pace(now),
         }
     }
 
     /// Tells the program the terminal's grid, when it changed since it was
     /// told, so that it draws again at that size; unless it was told one
-    /// within [`RESIZE_PACE`] before `now`, or a live resize changed it
-    /// within [`RESIZE_PAUSE`]: then returns when to tell it. A grid back at
-    /// the one told is told by SIGWINCH alone, as the PTY's size, unchanged,
-    /// would not signal it.
+    /// within [`RESIZE_PACE`] before `now`: then returns when to tell it,
+    /// and when the terminal takes the grid that a live resize holds. A grid
+    /// back at the one told is told by SIGWINCH alone, as the PTY's size,
+    /// unchanged, would not signal it.
     pub fn pace(&mut self, now: Instant) -> Option<Instant> {
-        // A live resize's grid, held long enough, the terminal takes.
-        if let Some((grid, at)) = self.held {
-            if now < at + RESIZE_PAUSE {
-                return Some(at + RESIZE_PAUSE);
+        let (told, at) = self.told;
+        // A live resize's grid the terminal takes as the program learns of
+        // it, at the pace.
+        if let Some(grid) = self.held {
+            if let Some(at) = at
+                && now < at + RESIZE_PACE
+            {
+                return Some(at + RESIZE_PACE);
             }
             self.held = None;
             return self.resize(grid, now);
         }
-        let (told, at) = self.told;
         if !self.changed || self.kept {
             return None;
         }
@@ -1102,7 +1096,7 @@ mod tests {
     }
 
     #[test]
-    fn a_live_resize_s_grid_waits_for_its_pause_or_its_end() {
+    fn a_live_resize_s_grid_goes_with_its_signal_at_the_pace() {
         let grid = |columns| Grid {
             columns,
             rows: 24,
@@ -1121,43 +1115,33 @@ mod tests {
             || {},
         );
         wait_for(&mut pane, "ready", 1);
-        // The terminal keeps its grid through the steps, and the program
-        // learns of none, until the resize pauses, which each step of
-        // another grid starts again.
+        // The first step at once, the terminal's grid and the program's
+        // together.
         let start = Instant::now();
-        let step = Duration::from_millis(100);
-        assert_eq!(
-            pane.resize_live(grid(90), start),
-            Some(start + RESIZE_PAUSE)
-        );
-        assert_eq!((pane.grid(), pane.told()), (grid(80), grid(80)));
-        let later = start + step;
-        assert_eq!(
-            pane.resize_live(grid(100), later),
-            Some(later + RESIZE_PAUSE)
-        );
-        assert_eq!(
-            pane.resize_live(grid(100), later + step),
-            Some(later + RESIZE_PAUSE)
-        );
-        assert_eq!(pane.pace(later + step), Some(later + RESIZE_PAUSE));
-        assert_eq!((pane.grid(), pane.told()), (grid(80), grid(80)));
-        // The pause past, the terminal takes the last, as the program does.
-        assert_eq!(pane.pace(later + RESIZE_PAUSE), None);
-        assert_eq!((pane.grid(), pane.told()), (grid(100), grid(100)));
+        assert_eq!(pane.resize_live(grid(90), start), None);
+        assert_eq!((pane.grid(), pane.told()), (grid(90), grid(90)));
         wait_for(&mut pane, "W", 1);
-        // A step back to the terminal's grid holds nothing; the end takes
-        // the last at once.
-        let then = later + RESIZE_PAUSE * 2;
-        assert_eq!(pane.resize_live(grid(95), then), Some(then + RESIZE_PAUSE));
-        assert_eq!(pane.resize_live(grid(100), then + step), None);
+        // A step within the pace waits for it, the terminal as it was.
+        let step = Duration::from_millis(10);
         assert_eq!(
-            pane.resize_live(grid(95), then + step * 2),
-            Some(then + step * 2 + RESIZE_PAUSE)
+            pane.resize_live(grid(100), start + step),
+            Some(start + RESIZE_PACE)
         );
-        assert_eq!(pane.end_live_resize(then + step * 3), None);
-        assert_eq!((pane.grid(), pane.told()), (grid(95), grid(95)));
+        assert_eq!((pane.grid(), pane.told()), (grid(90), grid(90)));
+        assert_eq!(pane.pace(start + RESIZE_PACE), None);
+        assert_eq!((pane.grid(), pane.told()), (grid(100), grid(100)));
         wait_for(&mut pane, "W", 2);
+        // A step back to the terminal's grid holds nothing; the end takes
+        // the last at once, the program within the pace.
+        let later = start + RESIZE_PACE + step;
+        assert!(pane.resize_live(grid(95), later).is_some());
+        assert_eq!(pane.resize_live(grid(100), later), None);
+        assert!(pane.resize_live(grid(95), later).is_some());
+        let due = pane.end_live_resize(later).expect("the pace");
+        assert_eq!(pane.grid(), grid(95));
+        assert_eq!(pane.pace(due), None);
+        assert_eq!(pane.told(), grid(95));
+        wait_for(&mut pane, "W", 3);
     }
 
     #[test]
@@ -1203,14 +1187,15 @@ mod tests {
         assert_ne!(pane.told(), grid(205));
         assert_eq!(pane.pace(timer.unwrap()), None);
         assert_eq!(pane.told(), grid(205));
-        // The first step at once, then one every 50 ms at most.
+        // The first step at once, then one each pace at most.
         assert_eq!(tells[0], start);
         assert!(
             tells
                 .windows(2)
                 .all(|pair| pair[1] - pair[0] >= RESIZE_PACE)
         );
-        assert!(tells.len() <= 21, "{}", tells.len());
+        let most = 1 + (step * 125).as_millis() / RESIZE_PACE.as_millis();
+        assert!(tells.len() as u128 <= most, "{}", tells.len());
         // Unchanged, the grid tells nothing, and takes no timer.
         let later = timer.unwrap() + RESIZE_PACE;
         assert_eq!(pane.resize(grid(205), later), None);
