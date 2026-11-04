@@ -231,7 +231,7 @@ impl Gallery {
                     })
             })
             .collect();
-        let mut new = Node::icon_button("add").key("bar.new");
+        let mut new = Node::icon_button("add").key("bar.new").label("New Tab");
         if let Kind::Button(button) = &mut new.kind {
             button.disabled = self.tabs >= TABS;
         }
@@ -399,7 +399,12 @@ impl Gallery {
             }
             UiEventKind::Focus => self.focus_events = format!("focus of `{key}`"),
             UiEventKind::Blur => self.focus_events = format!("blur of `{key}`"),
-            UiEventKind::SetValue { value } => self.last = format!("`{key}` set to {value}"),
+            // A value that accessibility sets is the field's text, as the
+            // host sets it.
+            UiEventKind::SetValue { value } => {
+                self.last = format!("`{key}` set to {value}");
+                self.texts.push((key.to_owned(), value));
+            }
             UiEventKind::InputChanged { text } => self.typed.0 = format!("`{key}`: {text}"),
             UiEventKind::Submit { text } => self.typed.1 = format!("`{key}`: {text}"),
         }
@@ -559,7 +564,8 @@ impl Gallery {
                         .tooltip("Close"),
                 ],
                 Direction::Row,
-            ),
+            )
+            .label("Find"),
             BELOW => box_of(
                 vec![
                     Node::text("Anchored below its button"),
@@ -930,6 +936,7 @@ impl Gallery {
             .collect();
         let mut list = Node::list(row, ROWS, (first, items))
             .key("rows")
+            .label("Rows")
             .layout(Layout {
                 height: Length::Points(220.0),
                 ..Layout::default()

@@ -54,10 +54,42 @@ pub struct Node {
     /// a key alone, as the host follows the pointer by it.
     #[serde(default)]
     pub tooltip: Option<String>,
+    /// What accessibility, as VoiceOver, calls it, in place of its own
+    /// text, a button's or a toggle's label, or its tooltip: what a button
+    /// of an icon alone gives, or a container that is a group of meaning.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// What accessibility takes it for, in place of what its kind is: a
+    /// container a group, a toolbar, a status or an alert, a text a
+    /// heading, an icon an image.
+    #[serde(default)]
+    pub role: Option<Role>,
     /// Its children, a container's, a scroll area's, and a view of tabs',
     /// its page, alone.
     #[serde(default)]
     pub children: Vec<Node>,
+}
+
+/// What accessibility takes a node for, in place of what its kind is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Role {
+    /// A group of nodes of one meaning, of its label, as a find bar's
+    /// options.
+    Group,
+    /// A row of buttons and toggles.
+    Toolbar,
+    /// What tells a state that changes, as a count of matches, which a
+    /// client reads as it changes.
+    Status,
+    /// What tells of something that needs the user's attention, which a
+    /// client reads at once.
+    Alert,
+    /// A text that heads what follows it.
+    Heading,
+    /// An icon of a meaning, of its label; without one, an icon is left out
+    /// as a decoration.
+    Image,
 }
 
 /// What a node is.
@@ -711,6 +743,8 @@ impl Node {
             style: Style::default(),
             focusable: false,
             tooltip: None,
+            label: None,
+            role: None,
             children: Vec::new(),
         }
     }
@@ -857,6 +891,20 @@ impl Node {
         self.tooltip = Some(tooltip.into());
         self
     }
+
+    /// The node of what accessibility calls it.
+    #[must_use]
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// The node of what accessibility takes it for.
+    #[must_use]
+    pub fn role(mut self, role: Role) -> Self {
+        self.role = Some(role);
+        self
+    }
 }
 
 #[cfg(test)]
@@ -866,7 +914,11 @@ mod tests {
     #[test]
     fn a_tree_crosses_the_boundary_as_it_is() {
         let tree = Node::container(vec![
-            Node::icon("terminal").key("icon").focusable(),
+            Node::icon("terminal")
+                .key("icon")
+                .focusable()
+                .label("Terminal")
+                .role(Role::Image),
             Node::text("~/Projects"),
             Node::spacer(),
         ])

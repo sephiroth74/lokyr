@@ -115,7 +115,7 @@ fn step(tabs: &Tabs, forward: bool) -> Option<usize> {
 
 /// The `select` of the tab `item` of the view `node` of `tree`, of
 /// `tabs`: none of a tab chosen already, disabled or that it lacks.
-fn chosen(tree: &Tree, node: NodeId, tabs: &Tabs, item: usize) -> Option<NodeEvent> {
+pub(crate) fn chosen(tree: &Tree, node: NodeId, tabs: &Tabs, item: usize) -> Option<NodeEvent> {
     let tab = tabs.tabs.get(item)?;
     if tab.disabled || item == tabs.chosen {
         return None;

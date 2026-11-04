@@ -9,9 +9,12 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+use accesskit::{ActionRequest, TreeUpdate};
 use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
+use lokyr_ui_core::access::WindowTree;
+use lokyr_ui_core::access::view::{self as access, SurfaceAccess};
 use lokyr_ui_core::chrome::{self, Heights, TabBarPlace, Window};
 use lokyr_ui_core::field::{Carets, Clipboard};
 use lokyr_ui_core::focus::{Focus, Routed, Target};
@@ -256,8 +259,17 @@ impl View {
     pub fn render(&mut self) {
         let _ = self.main.update(&self.gallery.view());
         self.focus.updated(MAIN, &self.main.tree);
+        // Each text to the field of its key, of whichever surface.
         for (key, text) in self.gallery.take_texts() {
-            self.main.fields.set_text(&NodeKey(key), &text);
+            let key = NodeKey(key);
+            if let Some(surface) = self
+                .all_mut()
+                .find(|surface| surface.tree.by_key(&key).is_some())
+            {
+                surface.fields.set_text(&key, &text);
+            } else {
+                self.main.fields.set_text(&key, &text);
+            }
         }
         for ask in self.gallery.take_panels() {
             match ask {
@@ -546,6 +558,60 @@ impl View {
     /// frame at each refresh of the display, and none once they end.
     pub fn animating(&self, now: Instant) -> bool {
         self.all().any(|surface| surface.animating(now))
+    }
+
+    /// The window's tree of accessibility, titled `title`: the content,
+    /// the chrome's slots and the open panels, in the order that they draw,
+    /// the keyboard's focus at its node.
+    pub fn accessibility(&self, title: &str) -> TreeUpdate {
+        let mut tree = WindowTree::new();
+        let mut add = |number: u8, surface: &Surface, panel: Option<Role>| {
+            tree.surface(&SurfaceAccess {
+                number,
+                surface,
+                corner: self.corner(number),
+                panel,
+            });
+        };
+        add(MAIN, &self.main, None);
+        for (&slot, (surface, _)) in &self.slots {
+            add(slot, surface, None);
+        }
+        for panel in self.panels.order() {
+            if let Some((surface, _)) = self.surfaces.get(&panel) {
+                add(
+                    panel,
+                    surface,
+                    self.panels.options(panel).map(|options| options.role),
+                );
+            }
+        }
+        let focus = self
+            .focused()
+            .map(|(panel, node)| access::node_id(panel, node));
+        tree.finish(title, focus)
+    }
+
+    /// Does a client's `request` of accessibility to the node, the row or
+    /// the tab that it names, whose events the gallery takes, and those of
+    /// the focus that it moved.
+    pub fn access(&mut self, request: &ActionRequest) {
+        let Some(panel) = access::surface_of(request.target_node) else {
+            return;
+        };
+        let surface = match panel {
+            MAIN => Some(&mut self.main),
+            _ => match self.surfaces.get_mut(&panel) {
+                Some((surface, _)) => Some(surface),
+                None => self.slots.get_mut(&panel).map(|(surface, _)| surface),
+            },
+        };
+        let Some(surface) = surface else {
+            return;
+        };
+        let events = access::perform(request, (panel, surface), &mut self.focus);
+        self.apply(events);
+        self.tell_focus();
     }
 
     /// The events of the surfaces to the gallery, which renders anew.
@@ -1846,5 +1912,100 @@ mod tests {
         let after = view.sweeps(tokens, Instant::now());
         assert!(after.len() < before.len());
         assert!(!after.iter().any(|kept| kept.rect == sweep.rect));
+    }
+
+    /// A client's `action` of the node `target`, of `data`.
+    fn asked(
+        action: accesskit::Action,
+        target: accesskit::NodeId,
+        data: Option<accesskit::ActionData>,
+    ) -> ActionRequest {
+        ActionRequest {
+            action,
+            target_tree: accesskit::TreeId::ROOT,
+            target_node: target,
+            data,
+        }
+    }
+
+    /// The id of the node of `key` of the surface `panel`, and its node in
+    /// `tree`.
+    fn of(
+        view: &View,
+        tree: &TreeUpdate,
+        panel: u8,
+        key: &str,
+    ) -> (accesskit::NodeId, accesskit::Node) {
+        let node = view
+            .surface(panel)
+            .unwrap()
+            .tree
+            .by_key(&key.into())
+            .unwrap();
+        let id = access::node_id(panel, node);
+        let found = tree.nodes.iter().find(|(at, _)| *at == id).unwrap();
+        (id, found.1.clone())
+    }
+
+    #[test]
+    fn accessibility_reads_presses_and_fills_the_gallery_s_widgets() {
+        use accesskit::{Action, ActionData, Role, Toggled};
+        let mut view = view();
+        let tree = view.accessibility("Gallery");
+        assert_eq!(tree.focus, lokyr_ui_core::access::WINDOW);
+        // The field, of its text; the toggle, of its state; the list, of
+        // its label and its rows.
+        let (name, field) = of(&view, &tree, MAIN, "name");
+        assert_eq!(field.role(), Role::TextInput);
+        assert!(field.value().unwrap().starts_with("Lokyr"));
+        let (spin, toggle) = of(&view, &tree, MAIN, "spin");
+        assert_eq!(toggle.toggled(), Some(Toggled::False));
+        let (rows, list) = of(&view, &tree, MAIN, "rows");
+        assert_eq!((list.role(), list.label()), (Role::ListBox, Some("Rows")));
+        assert!(!list.children().is_empty());
+        // A press switches the toggle, a value set fills the field, and a
+        // focus moves the keyboard's to the list.
+        view.access(&asked(Action::Click, spin, None));
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let value = Some(ActionData::Value("main".into()));
+        view.access(&asked(Action::SetValue, name, value));
+        view.access(&asked(Action::Focus, rows, None));
+        let tree = view.accessibility("Gallery");
+        assert_eq!(
+            of(&view, &tree, MAIN, "spin").1.toggled(),
+            Some(Toggled::True)
+        );
+        assert_eq!(of(&view, &tree, MAIN, "name").1.value(), Some("main"));
+        assert_eq!(tree.focus, rows);
+        assert!(
+            tree.nodes
+                .iter()
+                .any(|(_, node)| node.label() == Some("events: focus of `rows`"))
+        );
+        // The find bar, a group of its label over the content, whose field
+        // a value set fills too.
+        view.gallery.event("open-find", UiEventKind::Click);
+        view.render();
+        view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        let tree = view.accessibility("Gallery");
+        let bar = view.surface(FIND).unwrap();
+        let root = access::node_id(FIND, bar.tree.root().unwrap());
+        let window = &tree.nodes[0].1;
+        assert_eq!(window.children().last(), Some(&root));
+        let group = &tree.nodes.iter().find(|(at, _)| *at == root).unwrap().1;
+        assert_eq!((group.role(), group.label()), (Role::Group, Some("Find")));
+        let (field, _) = of(&view, &tree, FIND, "find-bar.field");
+        let value = Some(ActionData::Value("needle".into()));
+        view.access(&asked(Action::SetValue, field, value));
+        let tree = view.accessibility("Gallery");
+        assert_eq!(
+            of(&view, &tree, FIND, "find-bar.field").1.value(),
+            Some("needle")
+        );
+        // Its toggles, of their tooltips.
+        let (_, case) = of(&view, &tree, FIND, "find-bar.case");
+        assert_eq!(case.label(), Some("Match Case"));
+        // An id of no surface does nothing.
+        view.access(&asked(Action::Click, lokyr_ui_core::access::WINDOW, None));
     }
 }

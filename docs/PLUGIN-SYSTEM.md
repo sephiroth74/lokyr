@@ -258,7 +258,11 @@ type Node = {
     focusable: boolean?, -- takes the keyboard's focus, by its key
     tooltip: string?, -- shown as the pointer rests over the node, by its key
     children: { Node }?,
-    role: string?,
+    -- What accessibility, as VoiceOver, takes the node for, in place of its kind's: a container a group, a
+    -- toolbar, a status or an alert, a text a heading, an icon an image; a widget keeps its own.
+    role: ("group" | "toolbar" | "status" | "alert" | "heading" | "image")?,
+    -- What accessibility calls it, in place of its text, a button's or a toggle's label, or its tooltip: what a
+    -- button of an icon alone gives, without a tooltip; an icon of none is left out, as a decoration.
     label: string?,
 }
 type View = Node

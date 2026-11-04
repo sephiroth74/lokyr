@@ -34,6 +34,9 @@ use crate::view::{Keyed, MAIN, View};
 /// The command of the menu's Quit.
 const QUIT: &str = "gallery.quit";
 
+/// The window's title.
+const TITLE: &str = "Lokyr's UI gallery";
+
 /// The window's size, in points.
 const SIZE: Size = Size {
     width: 1120.0,
@@ -83,6 +86,9 @@ struct App {
     /// the parts of it that the tab bar takes.
     titlebar: Titlebar,
     titlebar_areas: Vec<ContentRect>,
+    /// The tree of accessibility that the platform took last, once a
+    /// client asked for it.
+    given: Option<accesskit::TreeUpdate>,
 }
 
 impl App {
@@ -105,7 +111,7 @@ impl App {
 
     fn open(&mut self, platform: &mut dyn Platform) -> Result<(), String> {
         let attributes = WindowAttributes {
-            title: "Lokyr's UI gallery".to_owned(),
+            title: TITLE.to_owned(),
             size: SIZE,
             remember: false,
             restore: false,
@@ -234,6 +240,15 @@ impl App {
         // and none once they end.
         if view.animating(now) {
             platform.request_frame(*window);
+        }
+        // The tree of accessibility, as the frame changed it, once a client
+        // asked for it.
+        if platform.accessibility_asked(*window) {
+            let tree = view.accessibility(TITLE);
+            if self.given.as_ref() != Some(&tree) {
+                platform.update_accessibility(*window, tree.clone());
+                self.given = Some(tree);
+            }
         }
         let scale = size.scale;
         let points = |pixels: f32| f64::from(pixels) / scale;
@@ -610,6 +625,20 @@ impl Handler for App {
             }
             WindowEvent::Frame => self.frame(platform),
             WindowEvent::CloseRequested => platform.quit(),
+            // A client asked for the tree: the whole of the last frame's.
+            WindowEvent::AccessibilityAsked => {
+                if let (Some(view), Some((window, _))) = (&self.view, &self.window) {
+                    let tree = view.accessibility(TITLE);
+                    platform.update_accessibility(*window, tree.clone());
+                    self.given = Some(tree);
+                }
+            }
+            WindowEvent::AccessibilityAction(request) => {
+                if let Some(view) = &mut self.view {
+                    view.access(&request);
+                }
+                self.request_frame(platform);
+            }
             WindowEvent::MouseMoved { position, .. } => self.mouse(platform, position, None),
             WindowEvent::MouseButton {
                 button,
@@ -705,6 +734,7 @@ pub fn run() -> Result<(), String> {
         sweeps: (Vec::new(), Instant::now()),
         titlebar: Titlebar::Titled,
         titlebar_areas: Vec::new(),
+        given: None,
     };
     lokyr_platform_macos::run(app).map_err(|error| error.to_string())
 }

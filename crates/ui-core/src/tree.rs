@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
-use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Style};
+use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Role, Style};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
 /// taken away ends, so that its id finds no other node in its slot.
@@ -20,6 +20,18 @@ use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Style};
 pub struct NodeId {
     index: u32,
     generation: u32,
+}
+
+impl NodeId {
+    /// Its slot in the arena.
+    pub(crate) fn index(self) -> u32 {
+        self.index
+    }
+
+    /// Its slot's generation.
+    pub(crate) fn generation(self) -> u32 {
+        self.generation
+    }
 }
 
 /// What an update changed, by the nodes' ids, each in the new tree's order.
@@ -35,8 +47,9 @@ pub struct Changes {
     /// The nodes kept whose children changed: added, taken away, or moved
     /// among them.
     pub rearranged: Vec<NodeId>,
-    /// The nodes kept whose style alone changed, or whether they take the
-    /// keyboard's focus, which draw again without being laid out again.
+    /// The nodes kept whose style alone changed, whether they take the
+    /// keyboard's focus, their tooltip, or what accessibility calls them or
+    /// takes them for, which draw again without being laid out again.
     pub restyled: Vec<NodeId>,
 }
 
@@ -88,6 +101,8 @@ struct Entry {
     style: Style,
     focusable: bool,
     tooltip: Option<String>,
+    label: Option<String>,
+    role: Option<Role>,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
 }
@@ -184,6 +199,25 @@ impl Tree {
         self.entry(id).and_then(|entry| entry.tooltip.as_deref())
     }
 
+    /// What accessibility calls `id`, if its node says.
+    pub fn label(&self, id: NodeId) -> Option<&str> {
+        self.entry(id).and_then(|entry| entry.label.as_deref())
+    }
+
+    /// What accessibility takes `id` for, if its node says.
+    pub fn role(&self, id: NodeId) -> Option<Role> {
+        self.entry(id).and_then(|entry| entry.role)
+    }
+
+    /// The node in the slot `index`, if one is.
+    pub(crate) fn at(&self, index: u32) -> Option<NodeId> {
+        let slot = self.slots.get(index as usize)?;
+        slot.entry.as_ref().map(|_| NodeId {
+            index,
+            generation: slot.generation,
+        })
+    }
+
     /// The node of `key`, if the tree has one.
     pub fn by_key(&self, key: &Key) -> Option<NodeId> {
         self.keys.get(key).copied()
@@ -241,10 +275,14 @@ impl Tree {
         if entry.style != new.style
             || entry.focusable != new.focusable
             || entry.tooltip != new.tooltip
+            || entry.label != new.label
+            || entry.role != new.role
         {
             entry.style = new.style.clone();
             entry.focusable = new.focusable;
             entry.tooltip.clone_from(&new.tooltip);
+            entry.label.clone_from(&new.label);
+            entry.role = new.role;
             changes.restyled.push(old);
         }
         self.reconcile_children(old, &new.children, changes);
@@ -308,6 +346,8 @@ impl Tree {
             style: node.style.clone(),
             focusable: node.focusable,
             tooltip: node.tooltip.clone(),
+            label: node.label.clone(),
+            role: node.role,
             parent,
             children: Vec::new(),
         };
@@ -768,6 +808,31 @@ mod tests {
             }
         );
         assert_eq!(tree.tooltip(add), Some("New Window"));
+        // So does what accessibility calls it, or takes it for.
+        let labelled = |label: &str, role: Role| {
+            Node::container(vec![
+                Node::icon("add")
+                    .key("add")
+                    .tooltip("New Window")
+                    .label(label)
+                    .role(role),
+            ])
+        };
+        tree.update(&labelled("New", Role::Image)).unwrap();
+        assert_eq!(
+            (tree.label(add), tree.role(add)),
+            (Some("New"), Some(Role::Image))
+        );
+        for (label, role) in [("Add", Role::Image), ("Add", Role::Group)] {
+            assert_eq!(
+                tree.update(&labelled(label, role)).unwrap(),
+                Changes {
+                    restyled: vec![add],
+                    ..Changes::default()
+                }
+            );
+            assert_eq!((tree.label(add), tree.role(add)), (Some(label), Some(role)));
+        }
         // A button and a toggle need their keys, and take the focus unless
         // they are disabled.
         for node in [Node::button("Replace"), Node::toggle("regex", false)] {

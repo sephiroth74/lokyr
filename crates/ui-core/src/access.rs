@@ -11,6 +11,11 @@
 //! line break. A run holds 255 characters at most, as AccessKit counts its
 //! words' starts in bytes, so that a longer row is runs of the same line,
 //! one after the other: 258 of a row of `u16::MAX` columns and its break.
+//!
+//! The window's surfaces, its content's, its chrome's and its panels',
+//! come after its panes, as [`view`] builds them of their view trees.
+
+pub mod view;
 
 use accesskit::{
     Action, Node, NodeId, Rect, Role, TextPosition, TextSelection, TreeId, TreeInfo, TreeUpdate,
@@ -52,7 +57,8 @@ pub fn pane_id(number: u32) -> NodeId {
     NodeId((u64::from(number) + 1) << PANE)
 }
 
-/// The pane whose node, or one of whose rows' nodes, `node` is.
+/// The pane whose node, or one of whose rows' nodes, `node` is: none of a
+/// surface's node, whose id's top bits are past a pane's number.
 pub fn pane_of(node: NodeId) -> Option<u32> {
     (node.0 >> PANE)
         .checked_sub(1)
@@ -67,28 +73,53 @@ fn run_id(number: u32, row: u16, run: u64) -> NodeId {
 /// The window's tree, whole: titled `title`, of `panes`, the pane
 /// `focused` of the keyboard's focus, or the window of none.
 pub fn window(title: &str, panes: &[PaneAccess<'_>], focused: Option<u32>) -> TreeUpdate {
-    let mut window = Node::new(Role::Window);
-    window.set_label(title);
-    window.set_children(
-        panes
-            .iter()
-            .map(|pane| pane_id(pane.number))
-            .collect::<Vec<_>>(),
-    );
-    let mut nodes = vec![(WINDOW, window)];
+    let mut tree = WindowTree::new();
     for pane in panes {
-        nodes.extend(pane_nodes(pane));
+        tree.pane(pane);
     }
-    let focus = focused
-        .filter(|number| panes.iter().any(|pane| pane.number == *number))
-        .map_or(WINDOW, pane_id);
-    let mut tree = TreeInfo::new(WINDOW);
-    tree.toolkit_name = Some("Lokyr".to_owned());
-    TreeUpdate {
-        nodes,
-        tree: Some(tree),
-        tree_id: TreeId::ROOT,
-        focus,
+    tree.finish(title, focused.map(pane_id))
+}
+
+/// A window's tree as it is built: its panes and its surfaces, in the
+/// order that they draw, each over those before it.
+#[derive(Debug, Default)]
+pub struct WindowTree {
+    nodes: Vec<(NodeId, Node)>,
+    children: Vec<NodeId>,
+}
+
+impl WindowTree {
+    /// A window of nothing yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds `pane`.
+    pub fn pane(&mut self, pane: &PaneAccess<'_>) {
+        self.children.push(pane_id(pane.number));
+        self.nodes.extend(pane_nodes(pane));
+    }
+
+    /// The window's tree whole, titled `title`, the keyboard's focus on the
+    /// node `focus`, or on the window's where it is none of the tree's.
+    pub fn finish(self, title: &str, focus: Option<NodeId>) -> TreeUpdate {
+        let focus = focus
+            .filter(|focus| self.nodes.iter().any(|(id, _)| id == focus))
+            .unwrap_or(WINDOW);
+        let mut window = Node::new(Role::Window);
+        window.set_label(title);
+        window.set_children(self.children);
+        let mut nodes = Vec::with_capacity(self.nodes.len() + 1);
+        nodes.push((WINDOW, window));
+        nodes.extend(self.nodes);
+        let mut tree = TreeInfo::new(WINDOW);
+        tree.toolkit_name = Some("Lokyr".to_owned());
+        TreeUpdate {
+            nodes,
+            tree: Some(tree),
+            tree_id: TreeId::ROOT,
+            focus,
+        }
     }
 }
 

@@ -396,6 +396,25 @@ impl Lists {
         }
     }
 
+    /// Selects the item `item` of the list `node` of `tree`, and shows its
+    /// row, as accessibility's press of the row: its `select`, unless it
+    /// was selected already.
+    pub fn choose(&mut self, tree: &Tree, node: NodeId, item: usize) -> Vec<NodeEvent> {
+        let (Some(Kind::List(list)), Some(key)) = (tree.kind(node), tree.key(node)) else {
+            return Vec::new();
+        };
+        let state = self.states.entry(key.clone()).or_default();
+        state
+            .select(list, item)
+            .map(|kind| NodeEvent {
+                node,
+                key: key.clone(),
+                kind,
+            })
+            .into_iter()
+            .collect()
+    }
+
     /// What `key` does to the list `node` of `tree`, which has the
     /// keyboard's focus: the arrows up and down move the selection by a
     /// row, Page Up and Page Down by the rows that show, Home and End to

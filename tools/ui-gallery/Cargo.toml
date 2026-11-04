@@ -14,6 +14,7 @@ name = "ui-gallery"
 path = "src/main.rs"
 
 [dependencies]
+accesskit.workspace = true
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
 lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
