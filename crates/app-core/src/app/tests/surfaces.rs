@@ -640,3 +640,82 @@ fn the_hover_follows_a_node_that_slides_under_a_pointer_that_stays() {
         .collect();
     assert!(hovered.contains(&"name".to_owned()), "{hovered:?}");
 }
+
+/// The last tree given to `window`, and the id of its node labelled
+/// `label`, if it has one.
+fn labelled(fake: &Fake, window: WindowId, label: &str) -> Option<accesskit::NodeId> {
+    let tree = fake.window(window)?.accessibility.last()?;
+    tree.nodes
+        .iter()
+        .find(|(_, node)| node.label() == Some(label))
+        .map(|(id, _)| *id)
+}
+
+/// The last tree given to `window`, and the id of its field of the
+/// placeholder `placeholder`, if it has one.
+fn field_of(fake: &Fake, window: WindowId, placeholder: &str) -> Option<accesskit::NodeId> {
+    let tree = fake.window(window)?.accessibility.last()?;
+    tree.nodes
+        .iter()
+        .find(|(_, node)| node.placeholder() == Some(placeholder))
+        .map(|(id, _)| *id)
+}
+
+/// A client's `action` on the node `target`.
+fn act(action: accesskit::Action, target: accesskit::NodeId) -> WindowEvent {
+    WindowEvent::AccessibilityAction(accesskit::ActionRequest {
+        action,
+        target_tree: accesskit::TreeId::ROOT,
+        target_node: target,
+        data: None,
+    })
+}
+
+#[test]
+fn the_slots_views_are_in_the_window_s_tree_after_the_panes_which_a_client_presses() {
+    let (mut fake, mut app, window, heard) = widgets(reader(""));
+    assert!(fake.ask_accessibility(&mut app, window));
+    // The pane's terminal first, then the bars' nodes, as they draw.
+    let tree = fake
+        .window(window)
+        .unwrap()
+        .accessibility
+        .last()
+        .unwrap()
+        .clone();
+    let (_, root) = tree
+        .nodes
+        .iter()
+        .find(|(id, _)| *id == lokyr_ui_core::access::WINDOW)
+        .unwrap();
+    let pane = app.focused(window).unwrap();
+    let pane_node = lokyr_ui_core::access::pane_id(u32::try_from(pane.get()).unwrap());
+    assert_eq!(root.children().first(), Some(&pane_node));
+    let go = labelled(&fake, window, "Go").expect("the bar's button");
+    assert!(lokyr_ui_core::access::view::surface_of(go).is_some());
+    assert!(root.children().len() > 1, "{:?}", root.children());
+    // A client's press, a click to its plugin.
+    fake.send(&mut app, window, act(accesskit::Action::Click, go));
+    assert_eq!(heard_of(&heard, "go"), [UiEventKind::Click]);
+}
+
+#[test]
+fn the_tree_s_focus_is_a_field_s_that_has_the_keys_until_a_client_focuses_the_pane() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    assert!(fake.ask_accessibility(&mut app, window));
+    let given = fake.window(window).unwrap().accessibility.len();
+    // A click on the field: the tree again, of its focus.
+    let name = middle(&fake, &app, window, "name");
+    click_at(&mut fake, &mut app, window, name);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    let trees = &fake.window(window).unwrap().accessibility;
+    assert!(trees.len() > given);
+    let field = field_of(&fake, window, "Name").expect("the field");
+    assert_eq!(trees.last().unwrap().focus, field);
+    // A client's focus of the pane gives it the keys back.
+    let pane = app.focused(window).unwrap();
+    let pane_node = lokyr_ui_core::access::pane_id(u32::try_from(pane.get()).unwrap());
+    fake.send(&mut app, window, act(accesskit::Action::Focus, pane_node));
+    assert!(app.windows[&window].pane_has_focus());
+}

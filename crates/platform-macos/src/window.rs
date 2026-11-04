@@ -1402,6 +1402,10 @@ define_class!(
                 self.keep_frame(&window);
                 self.post(WindowEvent::Resized(size_of(&window)));
                 invalidate_text_area_of(&window);
+                // AppKit asks for the tracking areas again in its own time,
+                // which a resize of no move of the pointer can leave for
+                // long.
+                track_moves_of(&window);
             }
         }
 
@@ -1661,6 +1665,17 @@ fn access_focused_of(window: &NSWindow, focused: bool) {
         .and_then(|view| view.downcast::<ContentView>().ok())
     {
         view.access(|access| access.focused(focused));
+    }
+}
+
+/// Makes the tracking areas of `window`'s content view anew, at their places
+/// from its top as its height now puts them.
+fn track_moves_of(window: &NSWindow) {
+    if let Some(view) = window
+        .contentView()
+        .and_then(|view| view.downcast::<ContentView>().ok())
+    {
+        view.track_moves();
     }
 }
 

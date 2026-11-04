@@ -231,6 +231,7 @@ impl<B: Backend> App<B> {
             platform.end_composition(window);
         }
         self.focus_moved(platform, window, before);
+        self.views_changed(window);
         platform.request_frame(window);
         self.wake_for_tooltips(platform);
         true
@@ -265,6 +266,7 @@ impl<B: Backend> App<B> {
         let scrolled = view.surface.scrolled(local(view, at), (x as f32, y as f32));
         let events: Vec<_> = told(view, scrolled).collect();
         self.ui_events.extend(events);
+        self.views_changed(window);
         platform.request_frame(window);
         self.wake_for_tooltips(platform);
         true
@@ -316,6 +318,7 @@ impl<B: Backend> App<B> {
                     if let Some(events) = taken {
                         let events: Vec<_> = told(view, events).collect();
                         self.ui_events.extend(events);
+                        self.views_changed(window);
                         platform.request_frame(window);
                     }
                 }
@@ -399,6 +402,7 @@ impl<B: Backend> App<B> {
         if let Some(events) = view.surface.key(node, &key, &mut Board(&mut *platform)) {
             let events: Vec<_> = told(view, events).collect();
             self.ui_events.extend(events);
+            self.views_changed(window);
             platform.request_frame(window);
         }
         true
@@ -430,6 +434,7 @@ impl<B: Backend> App<B> {
             let events: Vec<_> = told(view, events).collect();
             self.ui_events.extend(events);
         }
+        self.views_changed(window);
         platform.request_frame(window);
         true
     }
@@ -483,6 +488,7 @@ impl<B: Backend> App<B> {
                 platform.end_composition(window);
             }
             tell_pane(&self.workspace, state, before);
+            state.views_changed = true;
             platform.request_frame(window);
         }
         events.extend(focus_events(state));
@@ -582,6 +588,7 @@ impl<B: Backend> App<B> {
                 platform.end_composition(window);
             }
             platform.request_frame(window);
+            self.views_changed(window);
         }
     }
 
@@ -600,6 +607,7 @@ impl<B: Backend> App<B> {
         if let Some(node) = surface.tree.by_key(key) {
             surface.lists.select(&surface.tree, node, item);
             platform.request_frame(window);
+            self.views_changed(window);
         }
     }
 

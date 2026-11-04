@@ -61,6 +61,7 @@ impl<B: Backend> App<B> {
         };
         state.next_view += 1;
         let view = state.next_view;
+        let access = super::chrome::free_access(state.chrome.iter());
         state.panels.open(
             view,
             Options {
@@ -73,7 +74,7 @@ impl<B: Backend> App<B> {
             },
         );
         state.chrome.push(SlotView::panel(
-            view,
+            (view, access),
             (plugin, id),
             scale as f32,
             PanelPlace { options, pointer },
@@ -163,6 +164,7 @@ impl<B: Backend> App<B> {
         if tell && let ViewId::Panel(id) = &closed.view {
             self.plugins.panel_closed(&closed.plugin, id);
         }
+        self.views_changed(window);
         platform.request_frame(window);
         self.wake_for_tooltips(platform);
     }

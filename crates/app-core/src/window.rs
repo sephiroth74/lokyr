@@ -98,6 +98,9 @@ pub(crate) struct Window<B: Backend> {
     /// Where its panes' cursors showed in the tree that it gave last, in
     /// their panes' order.
     pub(crate) access_cursors: Vec<crate::app::TreeCursor>,
+    /// Whether its slots' views or panels changed since the tree that it
+    /// gave last, of a new tree, a node's state or the focus.
+    pub(crate) views_changed: bool,
     /// When its last bell acted.
     pub(crate) rang_at: Option<Instant>,
     /// When its program's last notification showed.
@@ -277,6 +280,7 @@ impl<B: Backend> Window<B> {
             access_changed: false,
             access_focus: None,
             access_cursors: Vec::new(),
+            views_changed: false,
             rang_at: None,
             notified_at: None,
             bell_marked: false,

@@ -44,6 +44,9 @@ pub(crate) struct PanelPlace {
 pub(crate) struct SlotView {
     /// Its id in its window, which the keyboard's focus knows it by.
     pub(crate) id: u32,
+    /// Its number in its window's tree of accessibility, which no other
+    /// view of the window has as it shows, its nodes' ids of it.
+    pub(crate) access: u8,
     /// The plugin.
     pub(crate) plugin: String,
     /// The view.
@@ -64,6 +67,7 @@ impl fmt::Debug for SlotView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SlotView")
             .field("id", &self.id)
+            .field("access", &self.access)
             .field("plugin", &self.plugin)
             .field("view", &self.view)
             .field("shown", &self.shown)
@@ -82,13 +86,14 @@ impl SlotView {
     /// The view of `plugin`'s panel `id`, of the id `view` in its window,
     /// at `scale` pixels a point, as it opens, before its first tree.
     pub(crate) fn panel(
-        view: u32,
+        (view, access): (u32, u8),
         (plugin, id): (String, PanelId),
         scale: f32,
         placed: PanelPlace,
     ) -> Self {
         Self {
             id: view,
+            access,
             plugin,
             view: ViewId::Panel(id),
             shown: None,
@@ -231,8 +236,10 @@ impl<B: Backend> App<B> {
                 Some(slot) => slot,
                 None => {
                     state.next_view += 1;
+                    let access = free_access(state.chrome.iter().chain(kept.iter().flatten()));
                     SlotView {
                         id: state.next_view,
+                        access,
                         plugin: plugin.clone(),
                         view: view.clone(),
                         shown: None,
@@ -249,6 +256,7 @@ impl<B: Backend> App<B> {
             if rendered != slot.shown {
                 let first = slot.shown.is_none();
                 slot.shown = rendered;
+                state.views_changed = true;
                 let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
                 match self.plugins.tree(&plugin, &view) {
                     Some(tree) => {
@@ -281,6 +289,7 @@ impl<B: Backend> App<B> {
         // The views that the window no longer shows: the focus that one had
         // goes back to where its view took it from, or to the pane.
         for gone in kept.into_iter().flatten() {
+            state.views_changed = true;
             state.composition_dropped |=
                 gone.surface.fields.composing(&gone.surface.tree).is_some();
             let (focus, chrome) = (&mut state.focus, &state.chrome);
@@ -483,6 +492,14 @@ impl<B: Backend> App<B> {
         }
         self.ui_events.extend(events);
     }
+}
+
+/// The lowest number of accessibility that no view of `views` has.
+pub(super) fn free_access<'v>(views: impl Iterator<Item = &'v SlotView>) -> u8 {
+    let taken: Vec<u8> = views.map(|view| view.access).collect();
+    (0..=u8::MAX)
+        .find(|number| !taken.contains(number))
+        .unwrap_or(u8::MAX)
 }
 
 /// The event of the plugin's that `event`, of a node of `view`, is.

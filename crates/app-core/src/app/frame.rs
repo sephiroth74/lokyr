@@ -505,7 +505,8 @@ impl<B: Backend> App<B> {
             && (output
                 || others
                 || state.access_focus != focused
-                || cursors != state.access_cursors)
+                || cursors != state.access_cursors
+                || state.views_changed)
         {
             state.access_changed = true;
             if self.access_timer.is_none() {

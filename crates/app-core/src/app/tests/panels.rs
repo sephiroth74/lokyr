@@ -483,3 +483,46 @@ fn a_dialog_that_its_plugin_closes_ends_its_field_s_composition_and_gives_the_ke
     // The plugin heard its closing once, as it asked for it.
     assert_eq!(heard.borrow().closed, ["dialog"]);
 }
+
+#[test]
+fn a_panel_is_in_the_window_s_tree_over_the_slots_and_its_field_has_the_focus() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    assert!(fake.ask_accessibility(&mut app, window));
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    let tree = fake
+        .window(window)
+        .unwrap()
+        .accessibility
+        .last()
+        .unwrap()
+        .clone();
+    let id_of = |named: &dyn Fn(&accesskit::Node) -> bool| {
+        tree.nodes
+            .iter()
+            .find(|(_, node)| named(node))
+            .map(|(id, _)| *id)
+    };
+    let (open, find) = (
+        id_of(&|node| node.label() == Some("Open")).expect("the bar's button"),
+        id_of(&|node| node.placeholder() == Some("Find")).expect("the dialog's field"),
+    );
+    // The dialog after the bar, of its field's focus.
+    let (_, root) = tree
+        .nodes
+        .iter()
+        .find(|(id, _)| *id == lokyr_ui_core::access::WINDOW)
+        .unwrap();
+    let surfaces: Vec<u8> = root
+        .children()
+        .iter()
+        .filter_map(|&id| lokyr_ui_core::access::view::surface_of(id))
+        .collect();
+    let (bar, dialog) = (
+        lokyr_ui_core::access::view::surface_of(open).unwrap(),
+        lokyr_ui_core::access::view::surface_of(find).unwrap(),
+    );
+    let place = |number| surfaces.iter().position(|&at| at == number);
+    assert!(place(bar) < place(dialog), "{surfaces:?}");
+    assert_eq!(tree.focus, find);
+}
