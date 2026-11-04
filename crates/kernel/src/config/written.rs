@@ -31,6 +31,8 @@ const EXAMPLES: &[(&str, &str, &str)] = &[
     ("font", "non-ascii-family", "\"Hiragino Sans\""),
     ("cursor", "thickness", "2"),
     ("interface", "font-family", "\"Helvetica Neue\""),
+    ("slots", "tab-bar", "\"lokyr/tabs\""),
+    ("slots", "pane-header", "\"lokyr/command-header\""),
 ];
 
 /// What a heading of the guide is about.

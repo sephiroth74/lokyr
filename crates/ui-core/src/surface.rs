@@ -471,7 +471,8 @@ mod tests {
                 (
                     "find".to_owned(),
                     UiEventKind::InputChanged {
-                        text: "にほ".to_owned()
+                        text: "にほ".to_owned(),
+                        revision: 1
                     }
                 ),
                 ("rows".to_owned(), UiEventKind::Select { item: 1 })
@@ -542,7 +543,8 @@ mod tests {
             [(
                 "find".to_owned(),
                 UiEventKind::InputChanged {
-                    text: "a".to_owned()
+                    text: "a".to_owned(),
+                    revision: 1
                 }
             )]
         );

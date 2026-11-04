@@ -1117,6 +1117,8 @@ fn a_call_is_its_own_plugin_s() {
             commands: Vec::new(),
             bindings: Vec::new(),
             catalogs: &[],
+            views: BTreeMap::new(),
+            panels: BTreeMap::new(),
         },
         Outbox::default(),
         Vec::new(),
@@ -2082,4 +2084,379 @@ fn a_workspace_request_of_what_is_not_there_fails_and_writes_nothing() {
         .unwrap();
     assert!(app.panes.0.is_empty());
     assert_eq!(app.workspace.windows().count(), 0);
+}
+
+/// What a [`Viewer`] asks at a click of `go`, of the view clicked, and the
+/// answers.
+type Answer = Rc<dyn Fn(&mut Cx<'_>, &ViewId) -> Vec<Result<(), Error>>>;
+
+/// A plugin of views: each a text of its name and the view, a button `go`,
+/// a field `find` and a list `rows`; it records its nodes' events and its
+/// panels' closing, asks at a click of `go` what its `answer` gives, and
+/// panics at its next render once `panics` holds.
+struct Viewer {
+    name: &'static str,
+    log: Rc<RefCell<Vec<String>>>,
+    answer: Answer,
+    answers: Rc<RefCell<Vec<Result<(), Error>>>>,
+    panics: Rc<std::cell::Cell<bool>>,
+}
+
+impl Plugin for Viewer {
+    fn render(&mut self, _: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        assert!(!self.panics.get(), "a render's panic");
+        let keyed = |key: &str, node: Node| Node {
+            key: Some(Key::from(key)),
+            ..node
+        };
+        Some(Node::container(vec![
+            Node::text(format!("{} {view:?}", self.name)),
+            keyed("go", Node::button("Go")),
+            keyed("find", Node::field("Find")),
+            keyed("rows", Node::list(Node::text("row"), 3, (0, Vec::new()))),
+        ]))
+    }
+
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        self.log
+            .borrow_mut()
+            .push(format!("{:?} {} {:?}", event.view, event.key.0, event.kind));
+        if event.key.0 == "go" {
+            let answers = (self.answer)(cx, &event.view);
+            self.answers.borrow_mut().extend(answers);
+        }
+        Ok(())
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        for event in events {
+            if let Event::PanelClosed(id) = event {
+                self.log.borrow_mut().push(format!("closed {}", id.0));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A plugin's manifest of `name`, which fills `slots`.
+fn filling(name: &str, slots: &[&str]) -> String {
+    let slots: Vec<String> = slots.iter().map(|slot| format!("\"{slot}\"")).collect();
+    format!(
+        "[plugin]\nname = \"{name}\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\nslots = [{}]\n",
+        slots.join(", ")
+    )
+}
+
+/// The views' plugins of the tests, each a [`Viewer`] of its own log, all
+/// of the same `answer`, and the `panics` of `lokyr/tabs`.
+#[allow(clippy::type_complexity)]
+fn viewers(
+    answer: &Answer,
+) -> (
+    Plugins,
+    Rc<RefCell<Vec<String>>>,
+    Rc<RefCell<Vec<Result<(), Error>>>>,
+    Rc<std::cell::Cell<bool>>,
+) {
+    let (log, answers) = (
+        Rc::new(RefCell::new(Vec::new())),
+        Rc::new(RefCell::new(Vec::new())),
+    );
+    let panics = Rc::new(std::cell::Cell::new(false));
+    let mut plugins = Plugins::new();
+    for (name, slots) in [
+        ("lokyr/tabs", &["tab-bar", "pane-header"][..]),
+        ("lokyr/bars", &["tab-bar", "status-bar", "window-strip"][..]),
+        ("lokyr/clock", &["status-bar"][..]),
+        ("lokyr/plain", &[][..]),
+    ] {
+        let viewer = Viewer {
+            name,
+            log: Rc::clone(&log),
+            answer: Rc::clone(answer),
+            answers: Rc::clone(&answers),
+            panics: if name == "lokyr/tabs" {
+                Rc::clone(&panics)
+            } else {
+                Rc::default()
+            },
+        };
+        plugins
+            .add_builtin(&filling(name, slots), Box::new(viewer))
+            .unwrap();
+    }
+    (plugins, log, answers, panics)
+}
+
+#[test]
+fn a_plugin_renders_each_slot_that_it_fills_and_its_trees_stay_as_it_is_disabled() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    let answer: Answer = Rc::new(|_, _| Vec::new());
+    let (mut plugins, _, _, panics) = viewers(&answer);
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // The slots of one plugin's, of the config's or the first; those of
+    // many, in the plugins' order.
+    assert_eq!(
+        plugins.providers(Slot::TabBar),
+        ["lokyr/tabs", "lokyr/bars"]
+    );
+    assert_eq!(plugins.provider(Slot::TabBar, ""), Some("lokyr/tabs"));
+    assert_eq!(
+        plugins.provider(Slot::TabBar, "lokyr/bars"),
+        Some("lokyr/bars")
+    );
+    assert_eq!(
+        plugins.provider(Slot::TabBar, "lokyr/none"),
+        Some("lokyr/tabs")
+    );
+    assert_eq!(plugins.providers(Slot::PaneHeader), ["lokyr/tabs"]);
+    assert_eq!(
+        plugins.providers(Slot::StatusBar),
+        ["lokyr/bars", "lokyr/clock"]
+    );
+    assert_eq!(plugins.providers(Slot::WindowStrip), ["lokyr/bars"]);
+    let (window, pane) = (host::WindowId(window.get()), host::PaneId(pane.get()));
+    let views = [
+        ("lokyr/tabs", ViewId::TabBar(window)),
+        ("lokyr/tabs", ViewId::PaneHeader(pane)),
+        ("lokyr/bars", ViewId::WindowStrip(window)),
+        ("lokyr/bars", ViewId::StatusBar(window)),
+        ("lokyr/clock", ViewId::StatusBar(window)),
+    ];
+    for (name, view) in &views {
+        plugins.render(name, view, &mut app.context()).unwrap();
+        let tree = plugins.tree(name, view).unwrap();
+        assert_eq!(
+            tree.children[0].kind,
+            lokyr_plugin_sdk::view::Kind::Text(format!("{name} {view:?}"))
+        );
+    }
+    assert_eq!(plugins.views().len(), views.len());
+    // A render that panics disables its plugin, whose last tree stays, and
+    // whose slot it still fills.
+    let bar = ViewId::TabBar(window);
+    panics.set(true);
+    let fault = plugins.render("lokyr/tabs", &bar, &mut app.context());
+    assert_eq!(fault.unwrap_err().code, Code::Fault);
+    assert_eq!(plugins.status("lokyr/tabs"), Some(Status::Disabled));
+    assert!(plugins.tree("lokyr/tabs", &bar).is_some());
+    plugins
+        .render("lokyr/tabs", &bar, &mut app.context())
+        .unwrap();
+    assert!(plugins.tree("lokyr/tabs", &bar).is_some());
+    assert_eq!(plugins.provider(Slot::TabBar, ""), Some("lokyr/tabs"));
+    // The views of a window that closed, and of its pane, go with it.
+    plugins.post(Event::Workspace(WorkspaceEvent::PaneClosed {
+        pane,
+        tab: host::TabId(0),
+    }));
+    plugins.post(Event::Workspace(WorkspaceEvent::WindowClosed { window }));
+    assert!(plugins.views().is_empty());
+}
+
+#[test]
+fn a_plugin_takes_its_nodes_events_and_its_requests_of_its_views_are_checked() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let pane = host::PaneId(app.workspace.active_pane(window).unwrap().get());
+    let window = host::WindowId(window.get());
+    let answer: Answer = Rc::new(move |cx, view| {
+        vec![
+            cx.set_text(view.clone(), "find", "x", 3),
+            cx.select(view.clone(), "rows", 2),
+            cx.request_render(view.clone()),
+            // Of nodes that are not a field, a list, or there.
+            cx.set_text(view.clone(), "go", "x", 3),
+            cx.select(view.clone(), "find", 0),
+            cx.set_text(view.clone(), "nowhere", "x", 0),
+            // Of views that are not the plugin's, or not rendered.
+            cx.request_render(ViewId::PaneHeader(pane)),
+            cx.set_text(ViewId::TabBar(window), "find", "x", 0),
+        ]
+    });
+    let (mut plugins, log, answers, _) = viewers(&answer);
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let view = ViewId::StatusBar(window);
+    plugins
+        .render("lokyr/bars", &view, &mut app.context())
+        .unwrap();
+    plugins.take_renders();
+    let click = UiEvent {
+        view: view.clone(),
+        key: Key::from("go"),
+        kind: lokyr_plugin_sdk::view::UiEventKind::Click,
+    };
+    plugins
+        .ui_event("lokyr/bars", &click, &mut app.context())
+        .unwrap();
+    assert_eq!(*log.borrow(), [format!("{view:?} go Click")]);
+    let codes: Vec<Option<u16>> = answers
+        .borrow()
+        .iter()
+        .map(|answer| answer.as_ref().err().map(|error| error.code.number()))
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            None,
+            None,
+            None,
+            Some(101),
+            Some(101),
+            Some(101),
+            Some(101),
+            Some(101)
+        ]
+    );
+    assert_eq!(
+        plugins.take_requests(),
+        [
+            Request::SetText {
+                plugin: "lokyr/bars".to_owned(),
+                view: view.clone(),
+                key: Key::from("find"),
+                text: "x".to_owned(),
+                revision: 3,
+            },
+            Request::Select {
+                plugin: "lokyr/bars".to_owned(),
+                view: view.clone(),
+                key: Key::from("rows"),
+                item: 2,
+            },
+        ]
+    );
+    assert_eq!(plugins.take_renders(), [("lokyr/bars".to_owned(), view)]);
+    // A plugin that is not active takes no event.
+    plugins
+        .ui_event("lokyr/none", &click, &mut app.context())
+        .unwrap();
+    assert_eq!(log.borrow().len(), 1);
+}
+
+#[test]
+fn a_plugin_opens_and_closes_a_panel_which_tells_it_as_it_closes() {
+    use lokyr_plugin_sdk::ui::{Corner, Role};
+
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let pane = host::PaneId(app.workspace.active_pane(window).unwrap().get());
+    let window = host::WindowId(window.get());
+    let options = |anchor| PanelOptions {
+        anchor,
+        role: Role::Menu,
+        close_outside: true,
+        close_escape: true,
+    };
+    let answer: Answer = Rc::new(move |cx, view| {
+        vec![
+            cx.open_panel(
+                "menu",
+                options(Anchor::Node {
+                    view: view.clone(),
+                    key: Key::from("go"),
+                }),
+            ),
+            cx.open_panel(
+                "corner",
+                options(Anchor::PaneCorner {
+                    pane,
+                    corner: Corner::TopRight,
+                }),
+            ),
+            cx.open_panel("", options(Anchor::Pointer(window))),
+            cx.open_panel("lost", options(Anchor::Cursor(host::PaneId(999)))),
+            cx.open_panel(
+                "nowhere",
+                options(Anchor::Node {
+                    view: view.clone(),
+                    key: Key::from("nowhere"),
+                }),
+            ),
+        ]
+    });
+    let (mut plugins, log, answers, _) = viewers(&answer);
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let view = ViewId::StatusBar(window);
+    plugins
+        .render("lokyr/bars", &view, &mut app.context())
+        .unwrap();
+    let click = UiEvent {
+        view: view.clone(),
+        key: Key::from("go"),
+        kind: lokyr_plugin_sdk::view::UiEventKind::Click,
+    };
+    plugins
+        .ui_event("lokyr/bars", &click, &mut app.context())
+        .unwrap();
+    let codes: Vec<Option<u16>> = answers
+        .borrow()
+        .iter()
+        .map(|answer| answer.as_ref().err().map(|error| error.code.number()))
+        .collect();
+    assert_eq!(codes, [None, None, Some(105), Some(101), Some(101)]);
+    let menu = PanelId::from("menu");
+    let requests = plugins.take_requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0],
+        Request::OpenPanel {
+            plugin: "lokyr/bars".to_owned(),
+            id: menu.clone(),
+            window: WindowId::of(window.0),
+            options: options(Anchor::Node {
+                view: view.clone(),
+                key: Key::from("go"),
+            }),
+        }
+    );
+    // Its render as it opens.
+    let panel = ViewId::Panel(menu.clone());
+    assert_eq!(
+        plugins.take_renders(),
+        [
+            ("lokyr/bars".to_owned(), panel.clone()),
+            (
+                "lokyr/bars".to_owned(),
+                ViewId::Panel(PanelId::from("corner"))
+            )
+        ]
+    );
+    plugins
+        .render("lokyr/bars", &panel, &mut app.context())
+        .unwrap();
+    assert!(plugins.tree("lokyr/bars", &panel).is_some());
+    // Closed as the app tells, which its plugin takes at the next delivery.
+    plugins.panel_closed("lokyr/bars", &menu);
+    assert!(plugins.tree("lokyr/bars", &panel).is_none());
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(log.borrow().last().unwrap(), "closed menu");
+    // A panel that is not open does not close, and the window's closing
+    // closes those that it has.
+    let mut closes = Vec::new();
+    plugins
+        .add(
+            "closer",
+            scripted(
+                |cx| cx.register_command(command("closer.close")),
+                |cx, _, _| {
+                    let error = cx.close_panel("menu").unwrap_err();
+                    assert_eq!(error.code, Code::NotFound);
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("closer.close", Args::new(), &mut app.context())
+        .unwrap();
+    closes.extend(plugins.take_requests());
+    assert!(closes.is_empty());
+    plugins.post(Event::Workspace(WorkspaceEvent::WindowClosed { window }));
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(log.borrow().last().unwrap(), "closed corner");
+    assert!(plugins.views().is_empty());
 }

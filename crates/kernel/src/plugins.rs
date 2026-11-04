@@ -26,6 +26,9 @@ pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::message::{Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+pub use lokyr_plugin_sdk::ui;
+use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
+use lokyr_plugin_sdk::view::{Key, Kind, Node};
 use lokyr_session::Reader;
 use lokyr_text_core::Size;
 use lokyr_vt_core::page::{self, Rgb, Style};
@@ -63,6 +66,51 @@ pub enum Request {
         pane: PaneId,
         /// What to paste.
         text: String,
+    },
+    /// Set the text of a field of a plugin's view, over no keys typed
+    /// since `revision`.
+    SetText {
+        /// The plugin.
+        plugin: String,
+        /// The view.
+        view: ViewId,
+        /// The field's key.
+        key: Key,
+        /// The text.
+        text: String,
+        /// The revision of the field's text that it answers.
+        revision: u64,
+    },
+    /// Move the selection of a list of a plugin's view to an item.
+    Select {
+        /// The plugin.
+        plugin: String,
+        /// The view.
+        view: ViewId,
+        /// The list's key.
+        key: Key,
+        /// The item's index.
+        item: usize,
+    },
+    /// Open a panel of a plugin's in `window`, whose tree the plugin's
+    /// render gives.
+    OpenPanel {
+        /// The plugin.
+        plugin: String,
+        /// Its id.
+        id: PanelId,
+        /// The window.
+        window: WindowId,
+        /// Its anchor, its role and what closes it.
+        options: PanelOptions,
+    },
+    /// Close a panel of a plugin's, which [`Plugins::panel_closed`] then
+    /// tells.
+    ClosePanel {
+        /// The plugin.
+        plugin: String,
+        /// Its id.
+        id: PanelId,
     },
 }
 
@@ -143,6 +191,24 @@ struct State {
     bindings: Vec<Binding>,
     /// Its catalogs, of its commands' titles.
     catalogs: &'static [(&'static str, &'static str)],
+    /// The last tree of each of its views that it rendered, `None` for a
+    /// view that shows nothing, which stays as it is disabled.
+    views: BTreeMap<ViewId, Option<Node>>,
+    /// Its open panels, each in its window.
+    panels: BTreeMap<PanelId, WindowId>,
+}
+
+impl State {
+    /// Whether its manifest declares that it fills `slot`.
+    fn fills(&self, slot: Slot) -> bool {
+        self.manifest.as_ref().is_some_and(|manifest| {
+            manifest
+                .contributes
+                .slots
+                .iter()
+                .any(|name| name == slot.name())
+        })
+    }
 }
 
 /// The plugins, in the order of their activation, and what their calls
@@ -172,6 +238,9 @@ struct Outbox {
     /// Whether a call wrote to the kernel's state since the last look, as
     /// what the windows show may have changed.
     written: bool,
+    /// The views whose renders the plugins asked for, or whose panels
+    /// they opened, by their plugins, in their order.
+    renders: Vec<(String, ViewId)>,
 }
 
 /// A read of a pane's rows, on a thread of the host's.
@@ -200,6 +269,8 @@ enum Write {
         side: Side,
         new: PaneId,
     },
+    /// A render of one of the call's plugin's views.
+    Render(ViewId),
     /// A decoration, of the id that the host gave it.
     Decorate {
         id: u64,
@@ -335,6 +406,8 @@ impl Plugins {
                 commands: Vec::new(),
                 bindings: Vec::new(),
                 catalogs,
+                views: BTreeMap::new(),
+                panels: BTreeMap::new(),
             },
         });
         Ok(())
@@ -504,7 +577,172 @@ impl Plugins {
 
     /// Posts `event`, of the workspace's, for the next delivery.
     pub fn post(&mut self, event: Event) {
+        // The views of a window or a pane that closed go with it, and the
+        // panels of a window tell their plugins that they closed.
+        match &event {
+            Event::Workspace(WorkspaceEvent::WindowClosed { window }) => {
+                let closed = WindowId::of(window.0);
+                for entry in &mut self.entries {
+                    let state = &mut entry.state;
+                    let gone: Vec<PanelId> = state
+                        .panels
+                        .iter()
+                        .filter(|(_, shown)| **shown == closed)
+                        .map(|(id, _)| id.clone())
+                        .collect();
+                    for id in gone {
+                        state.panels.remove(&id);
+                        state.views.remove(&ViewId::Panel(id.clone()));
+                        self.out
+                            .events
+                            .push((Some(state.name.clone()), Event::PanelClosed(id)));
+                    }
+                    state.views.retain(|view, _| match view {
+                        ViewId::TabBar(shown)
+                        | ViewId::WindowStrip(shown)
+                        | ViewId::StatusBar(shown) => shown != window,
+                        ViewId::PaneHeader(_) | ViewId::Panel(_) => true,
+                    });
+                }
+            }
+            Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
+                for entry in &mut self.entries {
+                    entry.state.views.remove(&ViewId::PaneHeader(*pane));
+                }
+            }
+            _ => {}
+        }
         self.out.events.push((None, event));
+    }
+
+    /// The plugins that fill `slot`, as their manifests declare, in their
+    /// order: the active ones, and those disabled since, whose last trees
+    /// stay.
+    pub fn providers(&self, slot: Slot) -> Vec<&str> {
+        self.entries
+            .iter()
+            .map(|entry| &entry.state)
+            .filter(|state| state.status != Status::Inactive && state.fills(slot))
+            .map(|state| state.name.as_str())
+            .collect()
+    }
+
+    /// The plugin whose view fills `slot`, one of one plugin's: `chosen`,
+    /// as the config names it, if it fills it, or the first that does.
+    pub fn provider(&self, slot: Slot, chosen: &str) -> Option<&str> {
+        let providers = self.providers(slot);
+        providers
+            .iter()
+            .find(|&&name| name == chosen)
+            .or_else(|| providers.first())
+            .copied()
+    }
+
+    /// Asks the plugin `name` for the tree of `view`, one of its views, and
+    /// keeps it: a disabled plugin is not asked, and keeps its last; a
+    /// fault when it panicked, which disables it, its last tree staying.
+    pub fn render(
+        &mut self,
+        name: &str,
+        view: &ViewId,
+        context: &mut Context<'_>,
+    ) -> Result<(), Error> {
+        let Some(at) = self
+            .entries
+            .iter()
+            .position(|entry| entry.state.name == name)
+        else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("there is no plugin `{name}`"),
+            ));
+        };
+        if self.entries[at].state.status != Status::Active {
+            return Ok(());
+        }
+        let tree = call(
+            &mut self.entries[at],
+            context,
+            &mut self.out,
+            &mut self.bindings_changed,
+            |plugin, cx| Ok(plugin.render(cx, view)),
+        )?;
+        self.entries[at].state.views.insert(view.clone(), tree);
+        Ok(())
+    }
+
+    /// The last tree of `view` that the plugin `name` rendered, if it gave
+    /// one.
+    pub fn tree(&self, name: &str, view: &ViewId) -> Option<&Node> {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == name)
+            .and_then(|entry| entry.state.views.get(view))
+            .and_then(Option::as_ref)
+    }
+
+    /// Every view that a plugin rendered, by its plugin, as a change of the
+    /// theme renders them again.
+    pub fn views(&self) -> Vec<(String, ViewId)> {
+        self.entries
+            .iter()
+            .flat_map(|entry| {
+                entry
+                    .state
+                    .views
+                    .keys()
+                    .map(|view| (entry.state.name.clone(), view.clone()))
+            })
+            .collect()
+    }
+
+    /// Takes the views whose renders the plugins' calls asked for, and those
+    /// of the panels that they opened, by their plugins, in their order.
+    pub fn take_renders(&mut self) -> Vec<(String, ViewId)> {
+        std::mem::take(&mut self.out.renders)
+    }
+
+    /// Gives the plugin `name` `event`, of a node of one of its views, if
+    /// it is active.
+    pub fn ui_event(
+        &mut self,
+        name: &str,
+        event: &UiEvent,
+        context: &mut Context<'_>,
+    ) -> Result<(), Error> {
+        let Some(at) = self
+            .entries
+            .iter()
+            .position(|entry| entry.state.name == name && entry.state.status == Status::Active)
+        else {
+            return Ok(());
+        };
+        call(
+            &mut self.entries[at],
+            context,
+            &mut self.out,
+            &mut self.bindings_changed,
+            |plugin, cx| plugin.on_ui_event(cx, event),
+        )
+    }
+
+    /// Tells the plugin `name` that its panel `id` closed, which its next
+    /// delivery gives it, and forgets the panel.
+    pub fn panel_closed(&mut self, name: &str, id: &PanelId) {
+        let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.state.name == name)
+        else {
+            return;
+        };
+        if entry.state.panels.remove(id).is_none() {
+            return;
+        }
+        entry.state.views.remove(&ViewId::Panel(id.clone()));
+        self.out
+            .events
+            .push((Some(name.to_owned()), Event::PanelClosed(id.clone())));
     }
 
     /// Takes the reads of rows that ended, as events to their plugins.
@@ -626,7 +864,7 @@ fn call<T>(
     );
     match outcome {
         Ok(result) => {
-            apply(writes, context, out);
+            apply(writes, context, out, &entry.state.name);
             result
         }
         Err(fault) => {
@@ -694,8 +932,10 @@ fn within<T>(
 /// writes to a pane that closed since do nothing; a paste that asks the
 /// user first becomes a request of the app's; an event emitted waits for
 /// the next delivery.
-fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
-    out.written |= !writes.is_empty();
+fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, plugin: &str) {
+    out.written |= writes
+        .iter()
+        .any(|write| !matches!(write, Write::Render(_)));
     let requests = &mut out.requests;
     for write in writes {
         let pane = |pane: host::PaneId| context.workspace.pane(PaneId::of(pane.0));
@@ -740,6 +980,16 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
                 if let Some(near) = context.workspace.pane(split) {
                     let new = context.panes.spawn(new, Some(near));
                     context.workspace.split(split, direction, new, side);
+                }
+                continue;
+            }
+            Write::Render(view) => {
+                if !out
+                    .renders
+                    .iter()
+                    .any(|(by, asked)| by == plugin && *asked == view)
+                {
+                    out.renders.push((plugin.to_owned(), view));
                 }
                 continue;
             }
@@ -867,6 +1117,24 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
             _ => {}
         }
     }
+}
+
+/// The most levels of a tree that a look for a key goes down, as the host
+/// refuses a deeper tree.
+const DEEPEST: usize = 64;
+
+/// The node of `key` in `node`'s tree, `depth` levels down already, if it
+/// has one within [`DEEPEST`] levels.
+fn keyed<'a>(node: &'a Node, key: &Key, depth: usize) -> Option<&'a Node> {
+    if node.key.as_ref() == Some(key) {
+        return Some(node);
+    }
+    if depth >= DEEPEST {
+        return None;
+    }
+    node.children
+        .iter()
+        .find_map(|child| keyed(child, key, depth + 1))
 }
 
 /// The workspace's direction of a split of the SDK's.
@@ -1124,6 +1392,72 @@ impl Host<'_, '_> {
             .workspace
             .tab(TabId::of(tab.0))
             .ok_or_else(|| Error::new(Code::NotFound, format!("there is no tab {}", tab.0)))
+    }
+
+    /// The window that `view` shows in, if the view is one of the plugin's:
+    /// a slot's that its manifest declares, of a window or a pane that is
+    /// there, or one of its open panels; `not-found` otherwise.
+    fn view_window(&self, view: &ViewId) -> Result<WindowId, Error> {
+        let not_found = || Error::new(Code::NotFound, format!("the plugin has no view {view:?}"));
+        if let Some(slot) = view.slot()
+            && !self.state.fills(slot)
+        {
+            return Err(not_found());
+        }
+        let workspace = &self.context.workspace;
+        let window = match view {
+            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+                Some(WindowId::of(window.0)).filter(|&window| workspace.window(window).is_some())
+            }
+            ViewId::PaneHeader(pane) => workspace
+                .tab_of(PaneId::of(pane.0))
+                .and_then(|tab| workspace.tab(tab))
+                .map(crate::workspace::Tab::window),
+            ViewId::Panel(id) => self.state.panels.get(id).copied(),
+        };
+        window.ok_or_else(not_found)
+    }
+
+    /// The node of `key` in the last tree of `view`, one of the plugin's;
+    /// `not-found` without one.
+    fn node(&self, view: &ViewId, key: &Key) -> Result<&Node, Error> {
+        self.view_window(view)?;
+        self.state
+            .views
+            .get(view)
+            .and_then(Option::as_ref)
+            .and_then(|tree| keyed(tree, key, 0))
+            .ok_or_else(|| {
+                Error::new(
+                    Code::NotFound,
+                    format!("the view {view:?} has no node `{}`", key.0),
+                )
+            })
+    }
+
+    /// The window that a panel at `anchor` shows in: its pane's, its
+    /// window, or its node's view's, whose node is there.
+    fn anchor_window(&self, anchor: &Anchor) -> Result<WindowId, Error> {
+        let pane_window = |pane: host::PaneId| {
+            let workspace = &self.context.workspace;
+            workspace
+                .tab_of(PaneId::of(pane.0))
+                .and_then(|tab| workspace.tab(tab))
+                .map(crate::workspace::Tab::window)
+                .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
+        };
+        match anchor {
+            Anchor::Cell { pane, .. } | Anchor::Cursor(pane) | Anchor::PaneCorner { pane, .. } => {
+                pane_window(*pane)
+            }
+            Anchor::Pointer(window) | Anchor::WindowCorner { window, .. } => {
+                Ok(self.window(*window)?.id())
+            }
+            Anchor::Node { view, key } => {
+                self.node(view, key)?;
+                self.view_window(view)
+            }
+        }
     }
 
     /// What a read of a window's tabs tells of `tab`.
@@ -1405,6 +1739,11 @@ impl Host<'_, '_> {
                     ));
                 }
             }
+            Asked::RequestRender(view) => {
+                self.view_window(view)?;
+                self.writes.push(Write::Render(view.clone()));
+                return Ok(Response::Done);
+            }
             Asked::Emit { name, schema, .. } => {
                 let own = name
                     .strip_prefix(self.state.namespace.as_str())
@@ -1474,6 +1813,74 @@ impl Host<'_, '_> {
                 Request::CloseWindow(id)
             }
             Asked::Quit => Request::Quit,
+            Asked::SetText {
+                view,
+                key,
+                text,
+                revision,
+            } => {
+                if !matches!(self.node(&view, &key)?.kind, Kind::Field(_)) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("`{}` is not a field", key.0),
+                    ));
+                }
+                Request::SetText {
+                    plugin: self.state.name.clone(),
+                    view,
+                    key,
+                    text,
+                    revision,
+                }
+            }
+            Asked::Select { view, key, item } => {
+                if !matches!(self.node(&view, &key)?.kind, Kind::List(_)) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("`{}` is not a list", key.0),
+                    ));
+                }
+                Request::Select {
+                    plugin: self.state.name.clone(),
+                    view,
+                    key,
+                    item,
+                }
+            }
+            Asked::OpenPanel { id, options } => {
+                if id.0.is_empty() {
+                    return Err(Error::new(Code::InvalidName, "a panel's id is not empty"));
+                }
+                let window = self.anchor_window(&options.anchor)?;
+                self.state.panels.insert(id.clone(), window);
+                let view = ViewId::Panel(id.clone());
+                if !self
+                    .out
+                    .renders
+                    .iter()
+                    .any(|(by, asked)| *by == self.state.name && *asked == view)
+                {
+                    self.out.renders.push((self.state.name.clone(), view));
+                }
+                Request::OpenPanel {
+                    plugin: self.state.name.clone(),
+                    id,
+                    window,
+                    options,
+                }
+            }
+            Asked::ClosePanel(id) => {
+                if !self.state.panels.contains_key(&id) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has no panel `{}` open", id.0),
+                    ));
+                }
+                Request::ClosePanel {
+                    plugin: self.state.name.clone(),
+                    id,
+                }
+            }
             other => {
                 return Err(Error::new(
                     Code::Fault,

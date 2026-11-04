@@ -96,6 +96,9 @@ pub struct FieldState {
     /// The input method's composition at the caret, and the part of it
     /// that it selects, in bytes of it, or its cursor where empty.
     composition: Option<(String, Range<usize>)>,
+    /// The text's revision, one more at each of its user's edits, which
+    /// `input-changed` tells.
+    revision: u64,
 }
 
 /// What a field shows: its text, with the input method's composition at
@@ -288,11 +291,12 @@ impl Fields {
 
     /// Sets the text of the field of `key`, as its plugin asks, cut to the
     /// field's longest: the caret at its end, without a selection, nothing
-    /// to undo, and no event.
+    /// to undo, and no event; its revision stays.
     pub fn set_text(&mut self, key: &NodeKey, text: &str) {
         let state = self.states.entry(key.clone()).or_default();
         *state = FieldState {
             text: cut(&single_line(text), LONGEST).to_owned(),
+            revision: state.revision,
             ..FieldState::default()
         };
         state.caret = state.text.len();
@@ -384,7 +388,7 @@ impl Fields {
                 selection
             };
             let changed = state.edit(range, "", Joining::Deleting);
-            return Some(changed_events(node, key, state, changed));
+            return Some(changed_events(node, key, &mut *state, changed));
         }
         let enter = matches!(event.key, Key::Enter | Key::Keypad(Keypad::Enter));
         if enter && !command && !control {
@@ -438,7 +442,7 @@ impl Fields {
                 Key::Char('z') => state.undo(),
                 _ => return None,
             };
-            return Some(changed_events(node, key, state, changed));
+            return Some(changed_events(node, key, &mut *state, changed));
         }
         // Text that a key of a character types, Option's characters too:
         // a named key's, as the private use characters that macOS gives
@@ -461,7 +465,7 @@ impl Fields {
         let state = self.states.entry(key.clone()).or_default();
         let selection = state.selection();
         let changed = state.edit(selection, &typed, Joining::Typing);
-        Some(changed_events(node, key, state, changed))
+        Some(changed_events(node, key, &mut *state, changed))
     }
 
     /// The input method composes `text` in the field `node` of `tree`, of
@@ -493,7 +497,7 @@ impl Fields {
         let place = |at: usize| text.floor_char_boundary(at);
         let within = place(selected.start)..place(selected.end);
         state.composition = Some((text.to_owned(), within));
-        Some(changed_events(node, key, state, changed))
+        Some(changed_events(node, key, &mut *state, changed))
     }
 
     /// The input method commits `text` into the field `node` of `tree`,
@@ -700,21 +704,23 @@ impl Fields {
 }
 
 /// The events of an edit of `state`, the field `node` of `key`'s: its
-/// text's change, if it changed.
+/// text's change, of its next revision, if it changed.
 fn changed_events(
     node: NodeId,
     key: &NodeKey,
-    state: &FieldState,
+    state: &mut FieldState,
     changed: bool,
 ) -> Vec<NodeEvent> {
     if !changed {
         return Vec::new();
     }
+    state.revision += 1;
     vec![NodeEvent {
         node,
         key: key.clone(),
         kind: UiEventKind::InputChanged {
             text: state.text.clone(),
+            revision: state.revision,
         },
     }]
 }
@@ -1021,7 +1027,7 @@ mod tests {
                 events
                     .into_iter()
                     .map(|event| match event.kind {
-                        UiEventKind::InputChanged { text } => format!("input {text}"),
+                        UiEventKind::InputChanged { text, .. } => format!("input {text}"),
                         UiEventKind::Submit { text } => format!("submit {text}"),
                         other => format!("{other:?}"),
                     })
@@ -1184,6 +1190,43 @@ mod tests {
         field.press(Key::Left, mods(true, false, true, false), "");
         field.kind("4");
         assert_eq!(field.shown(), "one two 4|");
+    }
+
+    #[test]
+    fn each_edit_tells_the_next_revision_which_a_plugin_s_text_keeps() {
+        let mut field = Typing::new();
+        let revision = |field: &mut Typing, key: Key, text: &str| {
+            let event = KeyEvent {
+                key,
+                action: KeyAction::Press,
+                mods: NONE,
+                text,
+                unmodified: text,
+                base_layout: None,
+            };
+            let events = field
+                .fields
+                .key(&field.tree, field.node, &event, &mut field.board)
+                .unwrap();
+            match events.as_slice() {
+                [
+                    NodeEvent {
+                        kind: UiEventKind::InputChanged { revision, .. },
+                        ..
+                    },
+                ] => Some(*revision),
+                _ => None,
+            }
+        };
+        assert_eq!(revision(&mut field, Key::Char('a'), "a"), Some(1));
+        assert_eq!(revision(&mut field, Key::Char('b'), "b"), Some(2));
+        // A key that changes nothing tells nothing, and takes none.
+        assert_eq!(revision(&mut field, Key::Left, ""), None);
+        assert_eq!(revision(&mut field, Key::Backspace, ""), Some(3));
+        // The plugin's text keeps the revision, which the next edit passes.
+        field.fields.set_text(&NodeKey::from("find"), "xyz");
+        assert_eq!(field.state().revision, 3);
+        assert_eq!(revision(&mut field, Key::Char('w'), "w"), Some(4));
     }
 
     #[test]
@@ -1388,7 +1431,7 @@ mod tests {
         let events = fields.keep_composition(tree, node).unwrap();
         assert!(matches!(
             &events[..],
-            [NodeEvent { kind: UiEventKind::InputChanged { text }, .. }] if text == "abかな"
+            [NodeEvent { kind: UiEventKind::InputChanged { text, .. }, .. }] if text == "abかな"
         ));
         assert_eq!(composed(fields), "abかな|");
         assert_eq!(fields.composing(tree), None);

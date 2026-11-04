@@ -405,7 +405,7 @@ impl Gallery {
                 self.last = format!("`{key}` set to {value}");
                 self.texts.push((key.to_owned(), value));
             }
-            UiEventKind::InputChanged { text } => self.typed.0 = format!("`{key}`: {text}"),
+            UiEventKind::InputChanged { text, .. } => self.typed.0 = format!("`{key}`: {text}"),
             UiEventKind::Submit { text } => self.typed.1 = format!("`{key}`: {text}"),
         }
     }

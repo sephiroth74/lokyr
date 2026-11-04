@@ -51,6 +51,8 @@ use crate::host::{
     StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
+use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
+use crate::view::{Key, Node};
 
 /// A plugin: its activation, which registers its commands and binds its
 /// keys, and the calls of its commands, which the host checked against
@@ -100,6 +102,22 @@ pub trait Plugin {
     fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
         let _ = (cx, name, args);
         true
+    }
+
+    /// The tree of `view`, a slot of a window's or a pane's that its
+    /// manifest declares, or one of its panels: the host asks for it as a
+    /// window or a pane shows the slot, as the plugin asks, as a panel
+    /// opens and as the theme changes, and keeps it until the next. `None`
+    /// shows nothing, and takes no room. By default, nothing.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let _ = (cx, view);
+        None
+    }
+
+    /// Takes `event`, of a node of a key of one of its views.
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let _ = (cx, event);
+        Ok(())
     }
 }
 
@@ -535,6 +553,57 @@ impl<'a> Cx<'a> {
     /// this call returns.
     pub fn zoom(&mut self, tab: TabId, pane: Option<PaneId>) -> Result<(), Error> {
         self.done(Request::Zoom { tab, pane })
+    }
+
+    /// Asks for a render of `view`, one of the plugin's, as this call
+    /// returns.
+    pub fn request_render(&mut self, view: ViewId) -> Result<(), Error> {
+        self.done(Request::RequestRender(view))
+    }
+
+    /// Sets the text of the field `key` of `view`, as this call returns,
+    /// over no keys typed since its `revision`.
+    pub fn set_text(
+        &mut self,
+        view: ViewId,
+        key: impl Into<Key>,
+        text: &str,
+        revision: u64,
+    ) -> Result<(), Error> {
+        self.done(Request::SetText {
+            view,
+            key: key.into(),
+            text: text.to_owned(),
+            revision,
+        })
+    }
+
+    /// Moves the selection of the list `key` of `view` to `item`, as this
+    /// call returns.
+    pub fn select(&mut self, view: ViewId, key: impl Into<Key>, item: usize) -> Result<(), Error> {
+        self.done(Request::Select {
+            view,
+            key: key.into(),
+            item,
+        })
+    }
+
+    /// Opens the panel `id`, as this call returns, which the host then
+    /// renders.
+    pub fn open_panel(
+        &mut self,
+        id: impl Into<PanelId>,
+        options: PanelOptions,
+    ) -> Result<(), Error> {
+        self.done(Request::OpenPanel {
+            id: id.into(),
+            options,
+        })
+    }
+
+    /// Closes the panel `id`, as this call returns.
+    pub fn close_panel(&mut self, id: impl Into<PanelId>) -> Result<(), Error> {
+        self.done(Request::ClosePanel(id.into()))
     }
 }
 

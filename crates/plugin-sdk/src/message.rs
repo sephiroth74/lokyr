@@ -29,6 +29,8 @@ use crate::host::{
     Binding, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId, Scroll, Side,
     StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
+use crate::ui::{PanelId, PanelOptions, ViewId};
+use crate::view::Key;
 
 /// A request, with the plugin that asks it, by its name, as it crosses to
 /// the host.
@@ -284,6 +286,45 @@ pub enum Request {
         /// The pane.
         pane: Option<PaneId>,
     },
+    /// Asks the host for a render of one of the plugin's views, once the
+    /// call returns.
+    RequestRender(ViewId),
+    /// Sets the text of a field of one of the plugin's views, by its key,
+    /// cut to the field's 10 000 characters, its caret at its end, and no
+    /// `input-changed`: of the revision of the `input-changed` that the
+    /// text answers, which the host sets over no keys typed since, or the
+    /// field's last revision that the plugin knows.
+    SetText {
+        /// The view.
+        view: ViewId,
+        /// The field's key.
+        key: Key,
+        /// The text.
+        text: String,
+        /// The revision of the field's text that it answers.
+        revision: u64,
+    },
+    /// Moves the selection of a list of one of the plugin's views, by its
+    /// key, to an item, which the list scrolls to.
+    Select {
+        /// The view.
+        view: ViewId,
+        /// The list's key.
+        key: Key,
+        /// The item's index.
+        item: usize,
+    },
+    /// Opens a panel of the plugin's, of an id that none of its open panels
+    /// has, as the call returns, and asks for its render: over its window,
+    /// at its anchor.
+    OpenPanel {
+        /// Its id.
+        id: PanelId,
+        /// Its anchor, its role and what closes it.
+        options: PanelOptions,
+    },
+    /// Closes a panel of the plugin's, as the call returns.
+    ClosePanel(PanelId),
 }
 
 /// What a request is to the host.
@@ -350,7 +391,12 @@ impl Request {
             | Self::ResizePane { .. }
             | Self::SetRatio { .. }
             | Self::Equalize(_)
-            | Self::Zoom { .. } => None,
+            | Self::Zoom { .. }
+            | Self::RequestRender(_)
+            | Self::SetText { .. }
+            | Self::Select { .. }
+            | Self::OpenPanel { .. }
+            | Self::ClosePanel(_) => None,
         }
     }
 
@@ -395,13 +441,18 @@ impl Request {
             | Self::ResizePane { .. }
             | Self::SetRatio { .. }
             | Self::Equalize(_)
-            | Self::Zoom { .. } => Effect::Write,
+            | Self::Zoom { .. }
+            | Self::RequestRender(_) => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
             | Self::SetFontSize(_)
             | Self::OpenWindow
             | Self::CloseWindow(_)
-            | Self::Quit => Effect::App,
+            | Self::Quit
+            | Self::SetText { .. }
+            | Self::Select { .. }
+            | Self::OpenPanel { .. }
+            | Self::ClosePanel(_) => Effect::App,
             Self::RegisterCommand(_) | Self::Bind(_) | Self::Subscribe(_) => Effect::Declaration,
         }
     }
@@ -499,6 +550,10 @@ pub enum Event {
         /// Whether the read went to its end.
         complete: bool,
     },
+    /// A panel of the plugin's closed, as a click outside it, Escape, the
+    /// app or the plugin closed it, or a menu shown as the platform's own
+    /// closed with a choice or without one, to it alone.
+    PanelClosed(PanelId),
     /// An event of a plugin's own.
     Custom {
         /// Its name, `namespace.event`, of the plugin's namespace.
@@ -517,6 +572,7 @@ impl Event {
             Self::Workspace(event) => event.name(),
             Self::Pointer { .. } => POINTER,
             Self::Lines { .. } => "lines",
+            Self::PanelClosed(_) => "panel-closed",
             Self::Custom { name, .. } => name,
         }
     }

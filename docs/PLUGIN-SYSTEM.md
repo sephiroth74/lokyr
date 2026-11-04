@@ -61,7 +61,7 @@ Native and Luau plugins follow the same rules, so they behave the same way ([ADR
 - **No threads of their own, no blocking I/O**: time is provided by the host, through timers and `tick` events that are sent only on request.
 - **Filtered, batched events**: a plugin subscribes to the events that it names, `cx.subscribe`, the workspace's, as `tab-created`, and plugins' own, `namespace.event`; the kernel gathers the workspace's changes and the events that plugins emit, and delivers them to `on_event` in their order, each plugin those that it subscribed to, as a batch, once a turn of the main thread, which a frame, a key, a click or a wake is.
 - **Rendering**:
-  - `render(slot)` is called only when the plugin asks for an update (`request_render`) or the theme changes. The result is cached.
+  - `render(view)`, of a view of the plugin's, a slot of a window or a pane that its manifest declares, or one of its panels, is called as a window or a pane shows the slot, as a panel opens, as the plugin asks for an update (`request_render`) and as the theme changes. The result is cached, and stays as the plugin is disabled; a view of a window or a pane that closed goes with it.
   - Native plugins run on the main thread, unless their manifest asks for a thread of their own, `thread = "worker"`, as the user chose on 1 November 2026: each such plugin then has a thread of the host's, which makes all its calls, its renders too, with the same messages as a Luau plugin's, and the host takes their results on the main thread as they are ready, never waiting for them; a call of the main thread's plugins that takes long is logged as it returns, and stopped by nothing, as the plugins are ours. The main thread stays for the plugins that must answer at once, as the tab bar's. Luau plugins run on the plugin executor, with a deadline per call.
   - If a Luau plugin misses its deadline, the last valid view tree stays on screen.
 
@@ -122,7 +122,7 @@ end
 
 function Search.on_command(cx: Cx, name: string, args: Args)
     if name == "search-plus.open" then
-        cx.ui.request_render("pane-overlay")
+        cx.ui.open_panel("find", { anchor = { pane_corner = { pane = cx.focused_pane(), corner = "top-right" } }, role = "dialog", close_escape = true })
     end
 end
 
@@ -130,8 +130,8 @@ function Search.on_event(cx: Cx, events: { Event })
     -- results, pane closed, …
 end
 
-function Search.render(cx: Cx, slot: string): View
-    -- the find bar
+function Search.render(cx: Cx, view: ViewId): View?
+    -- the find bar, of the panel "find"
 end
 
 return Search
@@ -332,16 +332,41 @@ type Event =
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
     -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
+    -- A panel of the plugin's closed, as a click outside it, Escape, the app or the plugin closed it, to it alone.
+    | { kind: "panel-closed", id: string }
     | { kind: "custom", name: string, schema: string, value: any }
 
+-- A view of a plugin's: a window's slot, a pane's header, or one of its panels, by the id that it gives it.
+type ViewId =
+    { tab_bar: WindowId } | { window_strip: WindowId } | { status_bar: WindowId }
+    | { pane_header: PaneId } | { panel: string }
+
+-- Where a panel goes, and the window that it shows in.
+type Anchor =
+    { cell: { pane: PaneId, column: number, row: number } } -- below it
+    | { cursor: PaneId } -- below it
+    | { pointer: WindowId } -- where it is as the panel opens
+    | { node: { view: ViewId, key: string } } -- below a node of a view of the plugin's
+    | { pane_corner: { pane: PaneId, corner: Corner } }
+    | { window_corner: { window: WindowId, corner: Corner } } -- of its room below the tab bar
+type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right"
+
+type PanelOptions = {
+    anchor: Anchor,
+    role: ("tooltip" | "menu" | "dialog")?, -- a dialog by default; a menu of menu items alone shows as the platform's own
+    close_outside: boolean?, -- a click outside it closes it
+    close_escape: boolean?, -- Escape closes it, while it has the keyboard's focus
+}
+
 type UiEvent = {
-    slot: string,
+    view: ViewId,
     key: string,
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "set-value" | "toggle"
         | "select" | "activate" | "list-range",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
+    revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     item: number?, -- a list's item, selected or activated
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points
@@ -396,9 +421,15 @@ type Cx = {
         zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
     },
     ui: {
-        request_render: (slot: string) -> (),
-        -- Sets the text of a field of the slot's view, by its key, cut to the field's 10 000 characters: its caret at its end, and no "input-changed".
-        set_text: (slot: string, key: string, text: string) -> (boolean, Error?),
+        request_render: (view: ViewId) -> (boolean, Error?),
+        -- Sets the text of a field of the view, by its key, cut to the field's 10 000 characters: its caret at its end, and no
+        -- "input-changed"; of the revision of the "input-changed" that it answers, so that it is not set over the keys typed since.
+        set_text: (view: ViewId, key: string, text: string, revision: number) -> (boolean, Error?),
+        -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to.
+        select: (view: ViewId, key: string, item: number) -> (boolean, Error?),
+        -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
+        open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
+        close_panel: (id: string) -> (boolean, Error?),
     },
     terminal: {
         -- Requires `terminal-read`; returns a `denied` error without it. Reads 100 000 rows at most, from the row numbered
@@ -446,7 +477,7 @@ type Plugin = {
     -- Whether a command would do something with `args`, as a menu asks before it dims its item; what
     -- the call asks of the app is dropped. Without it, every command would.
     applies: ((cx: Cx, name: string, args: Args) -> boolean)?,
-    render: ((cx: Cx, slot: string) -> View)?,
+    render: ((cx: Cx, view: ViewId) -> View?)?,
     on_ui_event: ((cx: Cx, event: UiEvent) -> ())?,
 }
 ```
@@ -637,4 +668,4 @@ keymap-linux    = { path = "../plugins/keymap-linux", target = "linux" }    # fr
 - **Minimal distribution**: `dist/minimal.toml` contains only `core-actions` and a keymap, Alacritty-style. It proves the terminal works without any of the "visible" features.
 - **At runtime**:
   - `[plugins] disabled = ["tabs"]` turns off a first-party plugin.
-  - For single-provider slots (`tab-bar`), the config picks the provider, so a third-party plugin can replace our tab bar.
+  - For single-provider slots (`tab-bar`, `pane-header`), the config's [`[slots]`](CONFIGURATION.md#slots) picks the provider, the first that fills it by default, so a third-party plugin can replace our tab bar.

@@ -66,7 +66,7 @@
 //! Each section documents its keys: `[font]` is [`FontConfig`], `[text]`
 //! [`TextConfig`], `[cursor]` [`CursorConfig`], `[window]` [`WindowConfig`],
 //! `[quick-terminal]` [`QuickTerminalConfig`], `[interface]`
-//! [`InterfaceConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
+//! [`InterfaceConfig`], `[slots]` [`SlotsConfig`], `[terminal]` [`TerminalConfig`], `[scrollback]` [`ScrollbackConfig`],
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
 //! [`BellConfig`], `[app]`
@@ -123,6 +123,8 @@ pub struct Config {
     pub quick_terminal: QuickTerminalConfig,
     /// The `[interface]` section.
     pub interface: InterfaceConfig,
+    /// The `[slots]` section.
+    pub slots: SlotsConfig,
     /// The `[terminal]` section.
     pub terminal: TerminalConfig,
     /// The `[scrollback]` section.
@@ -590,6 +592,18 @@ impl Default for BellConfig {
             mark_title: true,
         }
     }
+}
+
+/// The `[slots]` section: the plugin whose view fills each slot of one
+/// plugin's, by its name, as `lokyr/tabs`; without one, or of a plugin that
+/// does not fill it, the first of those that fill it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct SlotsConfig {
+    /// The tab bar's.
+    pub tab_bar: Option<String>,
+    /// The panes' headers'.
+    pub pane_header: Option<String>,
 }
 
 /// The `[updates]` section: the app's own updates, where it can update
@@ -1464,7 +1478,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 15] {
+fn sections() -> [(&'static str, &'static [&'static str]); 16] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -1472,6 +1486,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 15] {
         ("window", keys::<WindowConfig>()),
         ("quick-terminal", keys::<QuickTerminalConfig>()),
         ("interface", keys::<InterfaceConfig>()),
+        ("slots", keys::<SlotsConfig>()),
         ("terminal", keys::<TerminalConfig>()),
         ("scrollback", keys::<ScrollbackConfig>()),
         ("keyboard", keys::<KeyboardConfig>()),
@@ -1929,6 +1944,13 @@ mod tests {
         assert_eq!(Config::default().interface.font_size, Size::DEFAULT);
         let message = error("[interface]\nfont-size = 300\n").1;
         assert!(message.contains("from 4 to 200, not 300"), "{message}");
+        // The slots' plugins, by their names, or none for the first.
+        let slots = parse("[slots]\ntab-bar = \"lokyr/tabs\"\n").unwrap().slots;
+        assert_eq!(slots.tab_bar.as_deref(), Some("lokyr/tabs"));
+        assert_eq!(slots.pane_header, None);
+        assert_eq!(Config::default().slots, SlotsConfig::default());
+        let message = error("[slots]\ntab-bars = \"lokyr/tabs\"\n").1;
+        assert!(message.contains("tab-bar"), "{message}");
         let terminal = &config.terminal;
         assert_eq!(terminal.term.as_str(), "xterm-lokyr");
         assert_eq!(
@@ -2456,6 +2478,7 @@ mod tests {
                 "window",
                 "quick-terminal",
                 "interface",
+                "slots",
                 "terminal",
                 "scrollback",
                 "keyboard",

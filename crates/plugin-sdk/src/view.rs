@@ -582,6 +582,11 @@ pub enum UiEventKind {
     InputChanged {
         /// Its text now.
         text: String,
+        /// The text's revision, one more at each of its user's edits,
+        /// which a request that sets the field's text of this one gives
+        /// back, so that the host sets it over no keys typed since.
+        #[serde(default)]
+        revision: u64,
     },
     /// Return pressed in a field.
     Submit {
@@ -1092,6 +1097,7 @@ mod tests {
             },
             UiEventKind::InputChanged {
                 text: "ma".to_owned(),
+                revision: 2,
             },
             UiEventKind::Submit {
                 text: "main".to_owned(),
@@ -1109,7 +1115,7 @@ mod tests {
             json,
             concat!(
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
-                r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma"},"#,
+                r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,
                 r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
                 r#"{"kind":"list-range","first":10,"count":105}]"#

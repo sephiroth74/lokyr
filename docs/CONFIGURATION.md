@@ -105,6 +105,10 @@ spaces = "remain"                    # move | remain
 font-family = "Helvetica Neue"       # the system's interface font when absent
 font-size = 14                       # points, from 4 to 200
 
+[slots]
+tab-bar = "lokyr/tabs"               # the plugin whose tab bar shows; the first that has one when absent
+pane-header = "lokyr/command-header" # the plugin whose panes' headers show; likewise
+
 [terminal]
 term = "xterm-lokyr"                 # the TERM that programs see
 unicode-widths = "8"                 # current | 8: the width tables
@@ -771,6 +775,30 @@ The size of the interface's text, in points.
 | from `4` to `200`, whole or not | `13` |
 
 The text is measured at its size of points, as the system's font draws each size of its own, and the display's scale enlarges it. It does not apply yet, as `font-family`.
+
+## `[slots]`
+
+The plugins whose views fill the parts of the window that one plugin's view fills: the tab bar, and the panes' headers. The other parts, as the status bar, show the views of every plugin that fills them, in the plugins' order.
+
+### `tab-bar`
+
+<sub>Platforms: macOS</sub>
+
+The plugin whose tab bar the windows show, by its name, as `"lokyr/tabs"`.
+
+- **Default**: none, which takes the first plugin that has a tab bar.
+- A plugin that is not installed, or that has no tab bar, gives the default one.
+- It does not apply yet, as no plugin has a tab bar yet.
+
+### `pane-header`
+
+<sub>Platforms: macOS</sub>
+
+The plugin whose headers the panes show across their tops, by its name, as `"lokyr/command-header"`.
+
+- **Default**: none, which takes the first plugin that has the panes' headers.
+- A plugin that is not installed, or that has no headers, gives the default one.
+- It does not apply yet, as no plugin has the panes' headers yet.
 
 ## `[terminal]`
 

@@ -1957,6 +1957,22 @@ impl<B: Backend> App<B> {
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
+                // The windows show no plugin's views yet: a panel closes as
+                // it opens, as its plugin then hears, and a field's text and
+                // a list's selection have no surface to go to.
+                Request::OpenPanel { plugin, id, .. } | Request::ClosePanel { plugin, id } => {
+                    self.plugins.panel_closed(&plugin, &id);
+                }
+                Request::SetText { .. } | Request::Select { .. } => {}
+            }
+        }
+        // The views whose renders the calls asked for, and their panels'
+        // first, are kept for the windows.
+        for (plugin, view) in self.plugins.take_renders() {
+            if let Err(error) = self.with_plugins(platform, |plugins, context| {
+                plugins.render(&plugin, &view, context)
+            }) {
+                eprintln!("lokyr: {error}");
             }
         }
         // What the windows show changed only through the calls' writes; a
