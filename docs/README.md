@@ -50,7 +50,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | Powerful plugin system | Native first-party plugins and sandboxed Luau third-party plugins share one API; the commands that a plugin runs are declared in its manifest, and checked against its capabilities, but those that the user runs through a plugin with `user-commands`, as the palette; the calls are messages, and the plugins' UI is data that the host draws | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md), [ADR 0019](adr/0019-commands-errors-and-permissions.md), [ADR 0024](adr/0024-user-commands.md), [ADR 0028](adr/0028-plugin-calls-as-messages.md) | F3–F4 |
 | Terminal built from its own plugins | Micro-kernel; the distribution is generated from `dist/default.toml` | [PLUGIN-SYSTEM](PLUGIN-SYSTEM.md#distribution) | F3 |
 | Sub-projects per OS and engine | `platform-*`, `render-*` and `font-*` crates behind thin traits; macOS backends first, Linux after 1.0 | [ARCHITECTURE](ARCHITECTURE.md#workspace-layout), [ADR 0011](adr/0011-macos-only-1-0.md) | F2 / F7 |
-| Central package manager and online registry | Sleip, plus a registry that starts static and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md) | F4 / F7 |
+| Central package manager and online registry | Sleip, plus a registry that starts static, a repository of the index on GitHub with publishing by pull request, its index and site on GitHub Pages at `pkg.lokyr.dev`, signed by keys that a root key in Sleip vouches for, and later becomes a service | [PACKAGE-MANAGER](PACKAGE-MANAGER.md), [ADR 0031](adr/0031-registry-v0.md) | F4 / F7 |
 | Plugin fetching separate from the app | The `lokyr` binary contains no networking code of its own, enforced in CI; Sparkle's updater is its one network client ([ADR 0026](adr/0026-app-updates.md)); the plugins' network goes through the app, which checks it, to Sleip's helper | [PACKAGE-MANAGER](PACKAGE-MANAGER.md#role) | F0+ |
 | Integration with AI agents, the common ones included | The programs' notifications; an agent's presence from its process, and its state from its title and its sequences, on its tab; `lokyr +notify` and the agents' hooks with F3b's IPC | [UI-AND-FEATURES](UI-AND-FEATURES.md#agents), [ADR 0017](adr/0017-mcp-and-agents.md) | F2–F3b |
 | MCP: agents drive the terminal | `lokyr +mcp`, over stdio through the IPC socket; an agent's scope is its own pane and the panes it opened | [SECURITY](SECURITY.md#mcp), [ADR 0017](adr/0017-mcp-and-agents.md) | F3b |
@@ -68,7 +68,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0005](adr/0005-native-renderers.md) | Native renderers (Metal, OpenGL), one surface per window | Accepted; OpenGL in F7, per 0011; the cursor's layer, per 0021; two drawables, per 0022; blinking text's layer, per 0023 |
 | [0006](adr/0006-text-pipeline.md) | Text pipeline: font backends, procedural sprites, UCD width tables | Accepted; shaping superseded by 0011; a font of symbols before the system's fallback, per 0025 |
 | [0007](adr/0007-own-vt-core.md) | Our own VT core: table-driven parser, paged grid | Accepted |
-| [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012; the app's updates through Sparkle, its one network client, per 0026 |
+| [0008](adr/0008-separate-package-manager.md) | Sleip as a separate program; no networking code in the app | Accepted; plugin builds became checks, per 0012; the app's updates through Sparkle, its one network client, per 0026; registry v0 detailed by 0031 |
 | [0009](adr/0009-toml-config.md) | TOML config with schemas, all-or-nothing reload and migrations | Accepted |
 | [0010](adr/0010-mit-license.md) | MIT license | Accepted; to be reconfirmed before the first public release, 1.0.0, per 0027 |
 | [0011](adr/0011-macos-only-1-0.md) | Version 1.0 targets macOS only; Linux after 1.0; CoreText shaping on macOS | Accepted; Intel question settled by 0013 |
@@ -91,6 +91,7 @@ The phases (F0–F7) are described in the [ROADMAP](ROADMAP.md).
 | [0028](adr/0028-plugin-calls-as-messages.md) | The plugins' calls as messages, with every plugin's changes queued, and their UI as data, whose widgets keep their state in the host | Accepted; amends 0003 |
 | [0029](adr/0029-update-feed-and-releases.md) | The updates' feed at `lokyr.dev`, builds' numbers that grow with each release, Sparkle in the app, and the distribution as F3's second block | Accepted; amends 0026 and 0027 |
 | [0030](adr/0030-release-notes-in-english.md) | The release notes in English alone, and the feed of Sparkle's `generate_appcast` | Accepted; amends 0026 |
+| [0031](adr/0031-registry-v0.md) | Registry v0: a repository of the index, publishing by pull request, the archives in its releases, the index and the site on GitHub Pages, and a root key in Sleip that vouches for the index's keys | Accepted; details 0008 |
 
 ## Glossary
 

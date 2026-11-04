@@ -164,53 +164,64 @@ Archive rules:
 
 1. Take an exclusive lock on the store (`flock`), so two Sleip processes never collide.
 2. Resolve, then download any missing archives into a temporary directory.
-3. Verify the SHA-256 checksum (from the index) and the ed25519 signature.
+3. Verify the SHA-256 checksum, from the index, whose signature Sleip checked as it read it.
 4. Extract with the archive checks, then atomically rename into `store/<sha256>/`. The store is **content-addressed**: an installed package never changes.
 5. Write the new `plugins.lock` to a temporary file, `fsync` it, and rename it atomically.
 6. The app, which watches the directory, sees the change and computes the diff. It re-checks the hash of each plugin it loads, asks the user to confirm new capabilities, then compiles and activates. No restart is needed.
 
 ## Index (sparse protocol)
 
-Like the crates.io sparse index: one file per package, which plain static hosting can serve.
+Like the crates.io sparse index: one file per package, which plain static hosting can serve ([ADR 0031](adr/0031-registry-v0.md)).
 
 `GET /config.json`:
 
 ```json
 {
-  "dl": "https://cdn.example.com/{owner}/{name}/{version}.tar.zst",
-  "api": "https://pkg.lokyr.dev/api/v1",
-  "keys": ["ed25519:…"]
+  "dl": "https://github.com/sephiroth74/sleip-registry/releases/download/{owner}.{name}.{version}/{name}-{version}.tar.zst",
+  "api": "https://pkg.lokyr.dev/api/v1"
 }
 ```
 
-`GET /index/{owner}/{name}` returns NDJSON, one line per version. Lines are only ever appended; the only field that changes is `yanked`.
+`GET /keys.json` lists the index keys, which sign the index, signed by the registry's root key, whose public part Sleip holds in its binary:
 
 ```json
-{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"luau","api":"^0.1","deps":[{"name":"lokyr/themes","req":"^0.3"}],"caps":["terminal-read","clipboard-write"],"cksum":"sha256:9f2c…","sig":"ed25519:…","yanked":false}
+{"v":1,"keys":["ed25519:…"],"generated":"2026-11-04T10:00:00Z","sig":"ed25519:…"}
 ```
 
-HTTP caching uses `ETag`/`If-None-Match`. Sleip keeps a local copy of the index for `--offline`.
+`GET /index/{owner}/{name}` returns NDJSON, one line per version, then a last line, the file's signature, of the lines before it and of its time, by one of the index keys. The lines of the versions are only ever appended; the only field that changes is `yanked`.
+
+```json
+{"v":1,"name":"sephiroth74/search-plus","vers":"0.1.2","kind":"luau","api":"^0.1","deps":[{"name":"lokyr/themes","req":"^0.3"}],"caps":["terminal-read","clipboard-write"],"uses":["pane.copy","tabs.*"],"cksum":"sha256:9f2c…","yanked":false}
+{"generated":"2026-11-04T10:00:00Z","key":"ed25519:…","sig":"ed25519:…"}
+```
+
+Sleip refuses a file signed by a key that `keys.json` lacks, or older than the one that it holds. HTTP caching uses `ETag`/`If-None-Match`. Sleip keeps a local copy of the index for `--offline`.
 
 ## Signatures
 
-- **Phase 1 (F4)**:
-  - Each publisher registers an ed25519 key.
-  - The registry signs every version with its own key (listed in `config.json`) and stores the publisher's signature alongside.
-  - Sleip checks the registry signature, and the publisher's signature when present.
+- **Phase 1 (F4)**, as [ADR 0031](adr/0031-registry-v0.md) decided:
+  - The registry's root key, offline, the maintainer's, whose public part Sleip holds in its binary, signs `keys.json`, the list of the index keys; a new root comes with a new Sleip.
+  - An index key, which the registry's CI holds in a GitHub environment of `main` alone, signs each index file whole, after each merge; a stolen index key is taken off `keys.json`, which the Sleips already installed follow.
+  - Each publisher registers an ed25519 key, and the registry stores the publisher's signature alongside its version.
+  - Sleip checks the index's signature, which covers each version's checksum, and the publisher's signature when present.
 - **Phase 2 (F7)**: trusted publishing via OIDC (GitHub Actions) and Sigstore signatures, as PyPI and crates.io do.
 
 ## Registry
 
 ### v0: static (end of F4)
 
-- **Repo**: a GitHub repository holds the index and the publishing requests (`submissions/<owner>/<name>.toml`, with the repo URL and a tag).
-- **Publishing = opening a PR.** CI then:
+As [ADR 0031](adr/0031-registry-v0.md) decided, on 4 November 2026:
+- **Repo**: `sephiroth74/sleip-registry` holds a file of each plugin, `plugins/<owner>/<name>.toml`, of its versions, each with its repository's URL, its tag and the tag's commit.
+- **Publishing = opening a PR**, which `sleip publish` can open. CI then:
+  - checks that the PR's author is the plugin's owner, the GitHub user or a member of the organization of its name, and that the tag names its commit;
   - packages the plugin **from the tagged sources** in a clean container;
-  - checks it as `sleip check` does, runs its tests, and validates the manifest, sizes and capabilities;
-  - signs the archive and uploads it to static hosting (object storage + CDN, or GitHub Pages/Releases);
-  - appends the index line.
-- **Merging the PR** publishes the version.
-- **Benefits**: there's no server to run, and every artifact can be traced to a commit. This is the model of Zed's extensions repository.
+  - checks it as `sleip check` does, runs its tests, and validates the manifest, the capabilities, `[uses] commands`, the names and the sizes.
+- **Merging the PR** publishes the version: the CI of `main` uploads the archive to a release of the registry's repository, generates the index, signs it, and deploys it with the site.
+  - A new plugin is merged by the maintainer, after a review.
+  - A version of a plugin already published merges by itself if it asks for nothing new: no capability, no host, path or variable of one, and no command in `[uses] commands`; one that asks for more is reviewed.
+- **Hosting**: the index and the site on GitHub Pages, `pkg.lokyr.dev` a CNAME of it; the archives in the releases, where a version published stays as it was, whatever its author does to their repository.
+- **The site**: static, generated from the index; each plugin's page, with its README, versions, API, capabilities and commands, and a search in the browser, as Pagefind's.
+- **Benefits**: there's no server to run, and every artifact can be traced to a commit. This is the model of Zed's extensions repository, and of Homebrew's.
 
 ### v1: service (F7)
 

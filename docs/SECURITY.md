@@ -45,6 +45,7 @@ Out of scope: a process running as the same user with full privileges. It could 
 ## Packages and the registry
 
 - **Integrity**: Sleip verifies ed25519 signatures and SHA-256 checksums. The app re-checks the hash when it loads a plugin.
+- **The registry's keys**, as [ADR 0031](adr/0031-registry-v0.md) decided: Sleip holds the public part of the registry's root key, offline, which signs the list of the index keys; it refuses an index file that a key of the list did not sign, or older than the one it holds, so that neither the index's host taken over nor an index key stolen makes it install what the registry did not publish.
 - **Archives**: regular files only, no `..` or absolute paths, size limits and a compression-ratio limit.
 - **Store and lockfile**: the store is content-addressed, and the lockfile is written atomically.
 - **Names and versions**: `owner/name` namespaces with `lokyr/*` reserved, yanked versions, and security advisories (F7).
