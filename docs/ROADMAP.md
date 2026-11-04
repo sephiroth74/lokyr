@@ -136,6 +136,7 @@ Each phase is broken into tasks of one day or less in [tasks/](tasks/README.md).
   - API 0.1;
   - `plugin-host-luau`, with one VM per plugin, capabilities, the memory limit and the watchdog;
   - the Luau front end and its type definitions, generated from the Rust types;
+  - the conversion of Luau's tables to the view's `Node`, which bounds its depth itself, as `Node`'s drop, clone and comparison recurse before the tree's check, and takes a node's `role` and `label`, as the reviews of F3's `ui-core` asked;
   - the conformance suite, and the hostile plugins in CI.
 - **Sleip**:
   - `new`, `check`, `test`, `dev`;
