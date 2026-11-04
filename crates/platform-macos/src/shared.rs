@@ -291,13 +291,17 @@ impl Shared {
             return;
         }
         loop {
-            let Some((menu, view, location)) = self.backend.borrow_mut().open_context_menu() else {
+            let Some((menu, view, location, window)) =
+                self.backend.borrow_mut().open_context_menu()
+            else {
                 break;
             };
             self.dispatching.set(false);
             menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(&view));
             self.dispatching.set(true);
             self.backend.borrow_mut().context_menu_closed();
+            // Its closing, after its choice, which came as it was made.
+            self.enqueue(Pending::Window(window, WindowEvent::ContextMenuClosed));
         }
         self.menu_open.set(false);
     }

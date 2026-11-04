@@ -2,10 +2,12 @@
 //! its ids in the workspace, its focus, the input under way, and what its
 //! last frame showed.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use lokyr_kernel::keymap::Resolver;
+use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
 use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, ContentRect, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape,
@@ -14,13 +16,19 @@ use lokyr_platform_core::{
 use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
 use lokyr_ui_core::focus::{Focus, Target};
+use lokyr_ui_core::layout::Frame;
 use lokyr_ui_core::pane::Preedit;
+use lokyr_ui_core::panel::Panels;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use crate::app::chrome::SlotView;
 use crate::drawing::Backend;
 use crate::mouse::{Mouse, Spot};
 use crate::notice;
+
+/// The events of a native menu's items' choices, by their commands, each
+/// its node's key and its press's event.
+pub(crate) type Choices = BTreeMap<String, (NodeKey, UiEventKind)>;
 
 /// A layer of a window, over its grid, which the window server blinks.
 #[derive(Debug)]
@@ -186,6 +194,17 @@ pub(crate) struct Window<B: Backend> {
     /// Whether a render took away a field's composition, or set its text,
     /// which the platform's input method is to forget.
     pub(crate) composition_dropped: bool,
+    /// Its plugins' panels that it draws, by their views' ids, from the
+    /// lowest, where each goes and what closes it.
+    pub(crate) panels: Panels<u32>,
+    /// The menu's panel that the platform shows as its own menu, by its
+    /// view's id, and its items' events by their commands; the one that
+    /// waits to show.
+    pub(crate) native: Option<(u32, Choices)>,
+    pub(crate) native_due: Option<u32>,
+    /// The window's room below its titlebar and its tab bar, in pixels, as
+    /// its last layout placed it, whose corners panels anchor in.
+    pub(crate) overlay: Frame,
 }
 
 /// Where a pane of a window lies, as a frame laid it out.
@@ -296,6 +315,10 @@ impl<B: Backend> Window<B> {
             move_areas: Vec::new(),
             titlebar_areas: Vec::new(),
             composition_dropped: false,
+            panels: Panels::new(),
+            native: None,
+            native_due: None,
+            overlay: Frame::default(),
         }
     }
 

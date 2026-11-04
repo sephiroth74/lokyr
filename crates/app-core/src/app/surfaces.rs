@@ -145,10 +145,24 @@ impl<B: Backend> App<B> {
         let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
             return false;
         };
+        let at = pixels(position, scale);
+        // A press closes the panels that a click outside them closes, which
+        // a menu's closing takes.
+        if pressed
+            && let Some(state) = self.windows.get_mut(&window)
+            && state.captured.is_none()
+        {
+            let outside = state.panels.pressed(at);
+            for panel in outside.closed {
+                self.close_panel(platform, window, panel, true);
+            }
+            if outside.taken {
+                return true;
+            }
+        }
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
-        let at = pixels(position, scale);
         // A release goes where its press went; a press under way over the
         // panes, a selection's or a program's, keeps them the pointer.
         let panes_hold =
@@ -285,7 +299,14 @@ impl<B: Backend> App<B> {
                 let (focus, chrome) = (&mut state.focus, &state.chrome);
                 focus.key(|id| tree_of(chrome, id), &event)
             };
+            let escape = event.key == vt::Key::Escape && event.action == KeyAction::Press;
             match routed {
+                // Escape over no node closes the topmost menu that asks so,
+                // as a menu takes it wherever the focus is.
+                Routed::Pane if escape => match state.panels.escaped_menu() {
+                    Some(menu) => self.close_panel(platform, window, menu, true),
+                    None => pane.push(key.clone()),
+                },
                 Routed::Pane => pane.push(key.clone()),
                 Routed::Node { panel, node } => {
                     let Some(view) = view_mut(&mut state.chrome, panel) else {
@@ -319,6 +340,20 @@ impl<B: Backend> App<B> {
                     }
                     self.ui_events.extend(events);
                     self.focus_moved(platform, window, before);
+                    // Escape in a panel that asks so closes it, its focus
+                    // gone back to where it took it from.
+                    let panel = match before {
+                        Target::Node { panel, .. } if escape => Some(panel),
+                        _ => None,
+                    };
+                    if let Some(panel) = panel
+                        && self
+                            .windows
+                            .get_mut(&window)
+                            .is_some_and(|state| state.panels.escaped(panel))
+                    {
+                        self.close_panel(platform, window, panel, true);
+                    }
                 }
             }
         }
@@ -488,7 +523,7 @@ impl<B: Backend> App<B> {
 
     /// Keeps the tooltips' timer at the soonest time that a tooltip of the
     /// windows' slots' views waits for, or none.
-    fn wake_for_tooltips(&mut self, platform: &mut dyn Platform) {
+    pub(super) fn wake_for_tooltips(&mut self, platform: &mut dyn Platform) {
         let deadline = self
             .windows
             .values()
@@ -618,6 +653,7 @@ pub(super) fn pointer_areas(chrome: &[SlotView], scale: f64) -> Vec<PointerArea>
     chrome
         .iter()
         .rev()
+        .filter(|view| !view.is_tooltip())
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
             pointer::areas(&view.surface.tree, &view.surface.layout)
@@ -702,12 +738,14 @@ fn pixels(position: Point, scale: f64) -> (f32, f32) {
     ((position.x * scale) as f32, (position.y * scale) as f32)
 }
 
-/// The id of the slot's view of `chrome` under `at`, in pixels of the
-/// content, the topmost, as they draw.
+/// The id of the slot's view or the panel of `chrome` under `at`, in
+/// pixels of the content, the topmost, as they draw, but the tooltips,
+/// which the pointer goes through.
 fn under(chrome: &[SlotView], (x, y): (f32, f32)) -> Option<u32> {
     chrome
         .iter()
         .rev()
+        .filter(|view| !view.is_tooltip())
         .find(|view| {
             view.frame.is_some_and(|frame| {
                 x >= frame.x

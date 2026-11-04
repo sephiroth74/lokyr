@@ -3,12 +3,15 @@
 //! under the pointer, which a click activates, and a button of a new tab,
 //! of a tooltip; an indeterminate progress in the strip; in the status bar,
 //! the tabs' count, a field, and the text that it holds, as its keys type
-//! it; and each pane's id in its header. Each change of the workspace
-//! renders its views again.
+//! it, and two buttons: one of a find panel above it, of a field, which
+//! Escape and a click outside close, and one of a menu of two items, which
+//! the platform shows as its own, whose choice the status bar tells; and
+//! each pane's id in its header. Each change of the workspace renders its
+//! views again.
 
 use lokyr_kernel::commands::Error;
 use lokyr_kernel::plugins::host::{TabId, WindowId};
-use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
+use lokyr_kernel::plugins::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{
     Align, Edges, Length, Node, PointerShape, ProgressShape, ProgressState, Style, Token,
     UiEventKind,
@@ -95,8 +98,30 @@ impl Plugin for SampleSlots {
                     cx.new_tab(*window, None)?;
                 }
             }
-            UiEventKind::InputChanged { text, .. } if key == "note" => {
+            UiEventKind::InputChanged { text, .. } if key == "note" || key == "query" => {
                 self.typed.clone_from(text);
+            }
+            UiEventKind::Click if key == "find" || key == "menu" => {
+                let role = if key == "find" {
+                    Role::Dialog
+                } else {
+                    Role::Menu
+                };
+                cx.open_panel(
+                    key,
+                    PanelOptions {
+                        anchor: Anchor::Node {
+                            view: event.view.clone(),
+                            key: key.into(),
+                        },
+                        role,
+                        close_outside: true,
+                        close_escape: true,
+                    },
+                )?;
+            }
+            UiEventKind::Click if key == "one" || key == "two" => {
+                self.typed = format!("chose {key}");
             }
             _ => return Ok(()),
         }
@@ -129,6 +154,8 @@ impl Plugin for SampleSlots {
                         text(format!("sample-slots: {count} tab(s)"), "text.secondary"),
                         note,
                         text(format!("typed: {}", self.typed), "text.secondary"),
+                        Node::button("Find").key("find").tooltip("A find panel"),
+                        Node::button("Menu").key("menu").tooltip("A native menu"),
                     ],
                     "tab.bar.bg",
                 ))
@@ -137,7 +164,28 @@ impl Plugin for SampleSlots {
                 vec![text(format!("pane {}", pane.0), "text.secondary")],
                 "tab.inactive.bg",
             )),
-            ViewId::Panel(_) => None,
+            ViewId::Panel(PanelId(id)) if id == "menu" => Some(Node::container(vec![
+                Node::button("One").key("one"),
+                Node::button("Two").key("two"),
+            ])),
+            ViewId::Panel(_) => {
+                let mut query = Node::field("Find").key("query");
+                query.layout.width = Length::Points(200.0);
+                query.style.pointer = Some(PointerShape::Text);
+                let mut panel = Node::container(vec![
+                    query,
+                    text("Escape closes".to_owned(), "text.secondary"),
+                ]);
+                panel.layout.gap = 8.0;
+                panel.layout.padding = Edges::all(8.0);
+                panel.layout.align = Align::Center;
+                panel.style = Style {
+                    background: Some(Token::from("tab.bar.bg")),
+                    radius: 6.0,
+                    ..Style::default()
+                };
+                Some(panel)
+            }
         }
     }
 }

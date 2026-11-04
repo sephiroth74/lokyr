@@ -20,8 +20,8 @@ const STATUS: f32 = 22.0;
 /// A plugin of every slot: each view a box of its slot's height, of its
 /// view's name, or none for the slots of `empty`; it panics at its renders
 /// once `panics` holds, `bars.again` asks for a render of each view, and
-/// `bars.panel` emits `bars.open`, at whose delivery it opens a panel, whose
-/// closings it counts in `closed`.
+/// `bars.panel` emits `bars.open`, at whose delivery it opens a panel and
+/// closes it, whose closings it counts in `closed`.
 struct Bars {
     empty: Rc<RefCell<Vec<Slot>>>,
     panics: Rc<Cell<bool>>,
@@ -73,6 +73,7 @@ impl plugins::Plugin for Bars {
                             close_escape: true,
                         },
                     )?;
+                    cx.close_panel("menu")?;
                 }
                 _ => {}
             }
@@ -248,9 +249,8 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
     // its window draws it.
     fake.send_app(&mut app, AppEvent::Command("bars.again".to_owned()));
     assert!(fake.window(window).unwrap().frame_requested);
-    // A panel that a delivery's call opens, and that closes as it opens, as
-    // the windows show none yet: its plugin hears so in a turn of its own,
-    // which no event of the platform's need bring.
+    // A panel that a delivery's call opens and closes: its plugin hears so
+    // in a turn of its own, which no event of the platform's need bring.
     fake.send_app(&mut app, AppEvent::Command("bars.panel".to_owned()));
     assert_eq!(closed.get(), 0);
     assert!(app.deliver_timer.is_some());

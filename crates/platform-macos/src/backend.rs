@@ -185,7 +185,7 @@ impl Backend {
     /// when its window closed meanwhile.
     pub(crate) fn open_context_menu(
         &mut self,
-    ) -> Option<(Retained<NSMenu>, Retained<NSView>, NSPoint)> {
+    ) -> Option<(Retained<NSMenu>, Retained<NSView>, NSPoint, WindowId)> {
         let waiting = self.context_menu.as_mut().filter(|waiting| !waiting.open)?;
         let Some(window) = self.windows.get(&waiting.window) else {
             self.context_menu = None;
@@ -198,7 +198,7 @@ impl Backend {
             waiting.position.x,
             view.bounds().size.height - waiting.position.y,
         );
-        Some((waiting.menu.clone(), view, location))
+        Some((waiting.menu.clone(), view, location, waiting.window))
     }
 
     /// Forgets the context menu that was open, which closed; one that the

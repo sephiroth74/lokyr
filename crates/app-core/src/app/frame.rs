@@ -197,7 +197,6 @@ impl<B: Backend> App<B> {
         // Each pane's header at its room's top, and its grid below it.
         let mut rooms = rooms;
         self.lay_out_headers(window, &mut rooms);
-        self.settle_views(window);
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
         let views: Vec<PaneView> = rooms
             .into_iter()
@@ -215,6 +214,9 @@ impl<B: Backend> App<B> {
         if let Some(state) = self.windows.get_mut(&window) {
             state.views.clone_from(&views);
         }
+        // The panels over them all, at their anchors.
+        self.lay_out_panels(window, size);
+        self.settle_views(window);
         views
     }
 
@@ -419,8 +421,11 @@ impl<B: Backend> App<B> {
         // The slots that show a view first ask their plugins for it, whose
         // calls' requests the turn's end takes.
         self.rendered_slots |= self.render_slots(platform, window);
-        // Each pane of the active tab in its room, around the slots' views.
+        // Each pane of the active tab in its room, around the slots' views,
+        // under the panels; a menu's panel of menu items alone, the
+        // platform's own.
         let views = self.lay_out_panes(window, size);
+        self.show_native(platform, window, size);
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
         let pointer_moves = self.command_held && self.plugins.subscribes(plugins::POINTER);
@@ -884,7 +889,13 @@ impl<B: Backend> App<B> {
             state.titlebar_areas = own;
         }
         // The slots' indeterminate progresses, which the window server moves.
-        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
+        let sweeps = chrome::sweeps(
+            &state.chrome,
+            &state.panels,
+            tokens,
+            (now, state.sweeps.1),
+            size.scale,
+        );
         if sweeps != state.sweeps.0 {
             platform.set_sweeps(window, &sweeps);
             state.sweeps.0 = sweeps;

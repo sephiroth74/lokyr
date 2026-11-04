@@ -24,6 +24,7 @@ mod frame;
 mod input;
 mod menus;
 mod notices;
+mod panels;
 mod panes;
 mod surfaces;
 

@@ -32,6 +32,10 @@ pub enum WindowEvent {
     CloseRequested,
     /// An item of the window's context menu was chosen: its command.
     ContextCommand(String),
+    /// The window's context menu closed, after its item's
+    /// [`WindowEvent::ContextCommand`] where one was chosen, or without a
+    /// choice.
+    ContextMenuClosed,
     /// Files or text were dropped on the window's content.
     Dropped(Dropped),
     /// The window is ready for the frame that the app asked for, with

@@ -8,7 +8,7 @@ use std::fmt;
 use std::time::Instant;
 
 use lokyr_kernel::plugins::host;
-use lokyr_kernel::plugins::ui::{Slot, UiEvent, ViewId};
+use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize};
 use lokyr_render_core::{Item, Rect};
@@ -17,6 +17,7 @@ use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
 use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Frame;
+use lokyr_ui_core::panel::{self, Panels};
 use lokyr_ui_core::pointer::NodeEvent;
 use lokyr_ui_core::progress::{self, SweepArea};
 use lokyr_ui_core::surface::Surface;
@@ -26,9 +27,20 @@ use lokyr_ui_core::tree::NodeId;
 use super::App;
 use crate::Backend;
 
-/// A view of a plugin's that a window shows in one of its slots: its
-/// surface, the number of the render that the surface holds, and where it
-/// shows, once laid out.
+/// What a panel keeps of its opening: its plugin's options, and where the
+/// pointer was as it opened, in pixels, which an anchor at the pointer
+/// takes.
+#[derive(Clone, Debug)]
+pub(crate) struct PanelPlace {
+    /// Its anchor, its role and what closes it.
+    pub(crate) options: PanelOptions,
+    /// The pointer's place as it opened.
+    pub(crate) pointer: (f32, f32),
+}
+
+/// A view of a plugin's that a window shows in one of its slots, or as one
+/// of its panels: its surface, the number of the render that the surface
+/// holds, and where it shows, once laid out.
 pub(crate) struct SlotView {
     /// Its id in its window, which the keyboard's focus knows it by.
     pub(crate) id: u32,
@@ -41,8 +53,11 @@ pub(crate) struct SlotView {
     /// The view's tree as the window shows it.
     pub(crate) surface: Surface,
     /// Where it shows, in pixels from the content's corner; `None` for a
-    /// view that shows nothing.
+    /// view that shows nothing, or a panel that the platform shows as its
+    /// own menu.
     pub(crate) frame: Option<Frame>,
+    /// A panel's opening; `None` for a slot's view.
+    pub(crate) placed: Option<PanelPlace>,
 }
 
 impl fmt::Debug for SlotView {
@@ -53,6 +68,7 @@ impl fmt::Debug for SlotView {
             .field("view", &self.view)
             .field("shown", &self.shown)
             .field("frame", &self.frame)
+            .field("placed", &self.placed)
             .finish_non_exhaustive()
     }
 }
@@ -61,6 +77,33 @@ impl SlotView {
     /// Whether it has a tree to show.
     fn shows(&self) -> bool {
         self.surface.tree.root().is_some()
+    }
+
+    /// The view of `plugin`'s panel `id`, of the id `view` in its window,
+    /// at `scale` pixels a point, as it opens, before its first tree.
+    pub(crate) fn panel(
+        view: u32,
+        (plugin, id): (String, PanelId),
+        scale: f32,
+        placed: PanelPlace,
+    ) -> Self {
+        Self {
+            id: view,
+            plugin,
+            view: ViewId::Panel(id),
+            shown: None,
+            surface: Surface::new(scale),
+            frame: None,
+            placed: Some(placed),
+        }
+    }
+
+    /// Whether it is a panel's view of the role of a tooltip, which the
+    /// pointer goes through.
+    pub(crate) fn is_tooltip(&self) -> bool {
+        self.placed
+            .as_ref()
+            .is_some_and(|placed| placed.options.role == Role::Tooltip)
     }
 }
 
@@ -108,6 +151,19 @@ impl<B: Backend> App<B> {
         }
         if let Some(plugin) = one(Slot::TabBar, &slots.tab_bar) {
             views.push((plugin, ViewId::TabBar(shown)));
+        }
+        // The panels over them, from the lowest, a native menu's last.
+        let panel = |id: u32| state.chrome.iter().find(|view| view.id == id);
+        let placed = state.panels.order().filter_map(panel);
+        let native = state
+            .native
+            .as_ref()
+            .map(|(id, _)| *id)
+            .or(state.native_due)
+            .and_then(panel)
+            .filter(|view| !state.panels.is_open(view.id));
+        for view in placed.chain(native) {
+            views.push((view.plugin.clone(), view.view.clone()));
         }
         views
     }
@@ -182,6 +238,7 @@ impl<B: Backend> App<B> {
                         shown: None,
                         surface: Surface::new(scale),
                         frame: None,
+                        placed: None,
                     }
                 }
             };
@@ -190,6 +247,7 @@ impl<B: Backend> App<B> {
             }
             let rendered = self.plugins.rendered(&plugin, &view);
             if rendered != slot.shown {
+                let first = slot.shown.is_none();
                 slot.shown = rendered;
                 let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
                 match self.plugins.tree(&plugin, &view) {
@@ -205,6 +263,18 @@ impl<B: Backend> App<B> {
                 state.focus.updated(slot.id, &slot.surface.tree);
                 state.composition_dropped |=
                     composing && slot.surface.fields.composing(&slot.surface.tree).is_none();
+                // A panel's first tree: a menu of menu items alone shows as
+                // the platform's own, and draws nothing; one that takes the
+                // keyboard takes the focus.
+                if first && let Some(placed) = &slot.placed {
+                    let role = placed.options.role;
+                    if role == Role::Menu && panel::native_menu(&slot.surface.tree).is_some() {
+                        state.panels.close(slot.id);
+                        state.native_due = Some(slot.id);
+                    } else if role != Role::Tooltip {
+                        state.focus.first(slot.id, &slot.surface.tree);
+                    }
+                }
             }
             state.chrome.push(slot);
         }
@@ -286,6 +356,7 @@ impl<B: Backend> App<B> {
             buttons: (size.buttons * size.scale) as f32,
         };
         let regions = chrome::regions(&shape, PLACE, heights);
+        state.overlay = regions.window_overlay;
         for slot in [Slot::TabBar, Slot::WindowStrip, Slot::StatusBar] {
             let region = match slot {
                 Slot::TabBar => regions.tab_bar,
@@ -449,11 +520,13 @@ pub(super) fn paint<F: FontBackend>(
         .collect()
 }
 
-/// The indeterminate progresses of the slots' views of `chrome`, which the
-/// window server moves, of `tokens`, at `now`, on a display of `scale`, of
-/// their sweeps' `start`.
+/// The indeterminate progresses of the slots' views and the panels of
+/// `chrome`, which the window server moves, of `tokens`, at `now`, on a
+/// display of `scale`, of their sweeps' `start`, but those that a panel
+/// of `panels` over them covers.
 pub(super) fn sweeps(
     chrome: &[SlotView],
+    panels: &Panels<u32>,
     tokens: &Tokens,
     (now, start): (Instant, Instant),
     scale: f64,
@@ -475,9 +548,16 @@ pub(super) fn sweeps(
         .iter()
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
+            let below = view.placed.is_some().then_some(view.id);
+            let moved = move |rect: Rect| Rect {
+                x: rect.x + frame.x as i32,
+                y: rect.y + frame.y as i32,
+                ..rect
+            };
             view.surface
                 .sweeps(tokens, now)
                 .into_iter()
+                .filter(move |area| !panels.covers(moved(area.visible), below))
                 .map(move |area: SweepArea| {
                     let at = (frame.x, frame.y);
                     let (origin, size) = place(area.rect, at);

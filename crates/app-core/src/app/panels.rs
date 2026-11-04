@@ -1,0 +1,448 @@
+//! The plugins' floating panels in a window: each a view of its plugin's,
+//! a surface over the window's content and its slots' views, as `ui-core`'s
+//! panels place it, of its tree's size, at its anchor as the window's
+//! layout puts it, within the window; a click outside it and Escape close it
+//! where its plugin asks so, and its keyboard's focus goes back to where it
+//! took it from. A menu's panel of menu items alone shows as the platform's
+//! own menu, whose choice and closing its plugin hears.
+
+use std::collections::BTreeMap;
+
+use lokyr_kernel::plugins::host;
+use lokyr_kernel::plugins::ui::{
+    Anchor as PanelAnchor, Corner as PanelCorner, PanelId, PanelOptions, Role as PanelRole,
+    UiEvent, ViewId,
+};
+use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
+use lokyr_kernel::workspace::{self, PaneId, Workspace};
+use lokyr_platform_core::{ContextMenu, Menu, MenuItem, Platform, Point, WindowId, WindowSize};
+use lokyr_ui_core::layout::Frame;
+use lokyr_ui_core::panel::{self, Anchor, Corner, Dismiss, MenuEntry, Options, Role};
+
+use super::App;
+use super::chrome::{PanelPlace, SlotView, ui_event};
+use super::input::shown_top;
+use super::surfaces;
+use crate::drawing::Backend;
+use crate::window::Window;
+
+/// The room between a panel in a corner and its rectangle's edges, in
+/// points.
+const MARGIN: f32 = 12.0;
+
+impl<B: Backend> App<B> {
+    /// Opens `plugin`'s panel `id` over the platform's window that shows
+    /// `shown`, of `options`, over the panels open before it, its anchor
+    /// taken anew at each layout, the pointer's place as it opens kept;
+    /// the plugins' host renders it. A window that shows none closes it at
+    /// once, as its plugin hears.
+    pub(super) fn open_panel(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, id): (String, PanelId),
+        shown: workspace::WindowId,
+        options: PanelOptions,
+    ) {
+        let found = self
+            .windows
+            .iter()
+            .find(|(_, state)| state.window == shown)
+            .map(|(&window, _)| window);
+        let Some(window) = found else {
+            self.plugins.panel_closed(&plugin, &id);
+            return;
+        };
+        let scale = platform.window_size(window).map_or(1.0, |size| size.scale);
+        let pointer = platform.pointer_position(window).map_or((0.0, 0.0), |at| {
+            ((at.x * scale) as f32, (at.y * scale) as f32)
+        });
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        state.next_view += 1;
+        let view = state.next_view;
+        state.panels.open(
+            view,
+            Options {
+                anchor: Anchor::At(pointer),
+                role: role_of(options.role),
+                dismiss: Dismiss {
+                    outside: options.close_outside,
+                    escape: options.close_escape,
+                },
+            },
+        );
+        state.chrome.push(SlotView::panel(
+            view,
+            (plugin, id),
+            scale as f32,
+            PanelPlace { options, pointer },
+        ));
+        platform.request_frame(window);
+    }
+
+    /// `plugin`'s panel `id` closed as its plugin asked, which the plugins'
+    /// host forgot and told already: its window lets it go.
+    pub(super) fn panel_gone(&mut self, platform: &mut dyn Platform, plugin: &str, id: &PanelId) {
+        let view = ViewId::Panel(id.clone());
+        let found = self.windows.iter().find_map(|(&window, state)| {
+            state
+                .chrome
+                .iter()
+                .find(|shown| shown.plugin == plugin && shown.view == view)
+                .map(|shown| (window, shown.id))
+        });
+        if let Some((window, view)) = found {
+            self.close_panel(platform, window, view, false);
+        }
+    }
+
+    /// Closes `window`'s panel of the view `view`: a composition of its
+    /// field ends as it stands, which the input method forgets; the
+    /// keyboard's focus that it had goes back to where it took it from, as
+    /// its program hears; and its plugin hears that it closed, where `tell`,
+    /// as a click outside it, Escape or the platform's menu closed it.
+    pub(super) fn close_panel(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        view: u32,
+        tell: bool,
+    ) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(at) = state.chrome.iter().position(|shown| shown.id == view) else {
+            return;
+        };
+        let before = state.focus.target();
+        let mut events = Vec::new();
+        let closing = &mut state.chrome[at];
+        if let Some(node) = closing.surface.fields.composing(&closing.surface.tree) {
+            let kept = closing
+                .surface
+                .fields
+                .keep_composition(&closing.surface.tree, node)
+                .unwrap_or_default();
+            events.extend(kept.into_iter().map(|event| {
+                (
+                    closing.plugin.clone(),
+                    ui_event(closing.view.clone(), event),
+                )
+            }));
+            platform.end_composition(window);
+        }
+        let closed = state.chrome.remove(at);
+        state.panels.close(view);
+        if state.native.as_ref().is_some_and(|(id, _)| *id == view) {
+            state.native = None;
+        }
+        if state.native_due == Some(view) {
+            state.native_due = None;
+        }
+        {
+            let (focus, chrome) = (&mut state.focus, &state.chrome);
+            focus.closed(view, |id| {
+                chrome
+                    .iter()
+                    .find(|shown| shown.id == id)
+                    .map(|shown| &shown.surface.tree)
+            });
+        }
+        if state.captured == Some(view) {
+            state.captured = None;
+        }
+        if state.over == Some(view) {
+            state.over = None;
+        }
+        if state.focus.target() != before {
+            surfaces::tell_pane(&self.workspace, state, before);
+        }
+        events.extend(surfaces::focus_events(state));
+        self.ui_events.extend(events);
+        if tell && let ViewId::Panel(id) = &closed.view {
+            self.plugins.panel_closed(&closed.plugin, id);
+        }
+        platform.request_frame(window);
+        self.wake_for_tooltips(platform);
+    }
+
+    /// Lays `window`'s panels out in a window of `size`, from the lowest:
+    /// each of its tree's own size, of the window's width at most, at its
+    /// anchor as the window's layout now has it, within the window. The
+    /// events of the lists' rows that ask for their items go to their
+    /// plugins as the turn ends.
+    pub(super) fn lay_out_panels(&mut self, window: WindowId, size: WindowSize) {
+        let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
+        else {
+            return;
+        };
+        let room = (size.pixels.width as f32, size.pixels.height as f32);
+        let scale = size.scale as f32;
+        let font = &mut drawing.font;
+        let mut events = Vec::new();
+        let ids: Vec<u32> = state.panels.order().collect();
+        for id in ids {
+            let Some(at) = state.chrome.iter().position(|shown| shown.id == id) else {
+                continue;
+            };
+            let Some(placed) = state.chrome[at].placed.clone() else {
+                continue;
+            };
+            let anchor = anchor_of(&self.workspace, state, &placed, scale);
+            let view = &mut state.chrome[at];
+            let mut laid = view.surface.lay_out((None, None), font);
+            let mut natural = view.surface.size().unwrap_or_default();
+            if natural.0 > room.0 {
+                laid.extend(view.surface.lay_out((Some(room.0), None), font));
+                natural = view.surface.size().unwrap_or_default();
+            }
+            state.panels.anchor(id, anchor);
+            view.frame = state.panels.place(id, natural, room);
+            if let Some(frame) = view.frame
+                && (frame.width, frame.height) != natural
+            {
+                laid.extend(
+                    view.surface
+                        .lay_out((Some(frame.width), Some(frame.height)), font),
+                );
+            }
+            events.extend(
+                laid.into_iter()
+                    .map(|event| (view.plugin.clone(), ui_event(view.view.clone(), event))),
+            );
+        }
+        self.ui_events.extend(events);
+    }
+
+    /// Shows `window`'s menu's panel that waits as the platform's own menu,
+    /// at its anchor, its items' choices kept by their commands.
+    pub(super) fn show_native(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        size: WindowSize,
+    ) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(id) = state.native_due.take() else {
+            return;
+        };
+        let Some(view) = state.chrome.iter().find(|shown| shown.id == id) else {
+            return;
+        };
+        let (Some(entries), Some(placed)) =
+            (panel::native_menu(&view.surface.tree), view.placed.as_ref())
+        else {
+            return;
+        };
+        let scale = size.scale as f32;
+        let (x, y) = point(&anchor_of(&self.workspace, state, placed, scale));
+        let mut menu = ContextMenu::default();
+        let mut choices = BTreeMap::new();
+        menu.items = menu_items(&entries, &mut menu, &mut choices);
+        let position = Point {
+            x: f64::from(x / scale),
+            y: f64::from(y / scale),
+        };
+        platform.show_context_menu(window, position, &menu);
+        state.native = Some((id, choices));
+    }
+
+    /// The platform's menu of a menu's panel of `window` gave `command`:
+    /// its item's node's event to the panel's plugin, as its press would
+    /// tell. Whether it was the menu's.
+    pub(super) fn native_chosen(&mut self, window: WindowId, command: &str) -> bool {
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        let Some((id, choices)) = &state.native else {
+            return false;
+        };
+        let (Some((key, kind)), Some(view)) = (
+            choices.get(command),
+            state.chrome.iter().find(|shown| shown.id == *id),
+        ) else {
+            return false;
+        };
+        let event = UiEvent {
+            view: view.view.clone(),
+            key: key.clone(),
+            kind: kind.clone(),
+        };
+        self.ui_events.push((view.plugin.clone(), event));
+        true
+    }
+
+    /// The platform's menu of `window` closed: a menu's panel that it
+    /// showed closes, as its plugin hears, after its choice where one was
+    /// made.
+    pub(super) fn native_closed(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let shown = self
+            .windows
+            .get_mut(&window)
+            .and_then(|state| state.native.take());
+        if let Some((view, _)) = shown {
+            self.close_panel(platform, window, view, true);
+        }
+    }
+}
+
+/// The anchor of a panel of `placed` in `state`'s window, in pixels, as its
+/// last layout placed the panes and the views, of `scale` pixels a point:
+/// below a cell of a pane, its cursor's, or a node of a view; at the
+/// pointer's place as it opened; in a corner of a pane, or of the window's
+/// room below its tab bar. An anchor gone, as of a pane that closed, is the
+/// pointer's.
+fn anchor_of<B: Backend>(
+    workspace: &Workspace,
+    state: &Window<B>,
+    placed: &PanelPlace,
+    scale: f32,
+) -> Anchor {
+    let pointer = Anchor::At(placed.pointer);
+    let pane_view = |pane: host::PaneId| {
+        state
+            .views
+            .iter()
+            .find(|view| view.pane == PaneId::of(pane.0))
+    };
+    let cell = |view: &crate::window::PaneView, column: u16, row: i64| {
+        let (width, height) = (
+            f32::from(view.grid.cell_width),
+            f32::from(view.grid.cell_height),
+        );
+        Frame {
+            x: view.rect.x as f32 + f32::from(column) * width,
+            y: view.rect.y as f32 + row as f32 * height,
+            width,
+            height,
+        }
+    };
+    let margin = MARGIN * scale;
+    match &placed.options.anchor {
+        PanelAnchor::Cell { pane, column, row } => pane_view(*pane)
+            .and_then(|view| {
+                let top = shown_top(workspace.pane(view.pane)?);
+                Some(Anchor::Below(cell(view, *column, row - top)))
+            })
+            .unwrap_or(pointer),
+        PanelAnchor::Cursor(pane) => pane_view(*pane)
+            .and_then(|view| {
+                let at = workspace.pane(view.pane)?.snapshot().cursor().position;
+                Some(Anchor::Below(cell(view, at.x, i64::from(at.y))))
+            })
+            .unwrap_or(pointer),
+        PanelAnchor::Pointer(_) => pointer,
+        PanelAnchor::Node { view, key } => state
+            .chrome
+            .iter()
+            .find(|shown| &shown.view == view)
+            .and_then(|shown| {
+                let frame = shown.frame?;
+                let node = shown.surface.tree.by_key(key)?;
+                let at = shown.surface.layout.frame(&shown.surface.tree, node)?;
+                Some(Anchor::Below(Frame {
+                    x: at.x + frame.x,
+                    y: at.y + frame.y,
+                    ..at
+                }))
+            })
+            .unwrap_or(pointer),
+        PanelAnchor::PaneCorner { pane, corner } => pane_view(*pane).map_or(pointer, |view| {
+            let rect = view.rect;
+            let frame = Frame {
+                x: rect.x as f32,
+                y: rect.y as f32,
+                width: rect.width as f32,
+                height: rect.height as f32,
+            };
+            Anchor::Corner(frame, corner_of(*corner), margin)
+        }),
+        PanelAnchor::WindowCorner { corner, .. } => {
+            Anchor::Corner(state.overlay, corner_of(*corner), margin)
+        }
+    }
+}
+
+/// The point of `anchor`, in pixels, where a menu that the platform places
+/// opens: below its rectangle, at its point, or at its corner within the
+/// margin.
+fn point(anchor: &Anchor) -> (f32, f32) {
+    match *anchor {
+        Anchor::At(at) => at,
+        Anchor::Below(rect) => (rect.x, rect.y + rect.height),
+        Anchor::Corner(rect, corner, margin) => {
+            let (left, right) = (rect.x + margin, rect.x + rect.width - margin);
+            let (top, bottom) = (rect.y + margin, rect.y + rect.height - margin);
+            match corner {
+                Corner::TopLeft => (left, top),
+                Corner::TopRight => (right, top),
+                Corner::BottomLeft => (left, bottom),
+                Corner::BottomRight => (right, bottom),
+            }
+        }
+    }
+}
+
+/// The platform's items of a native menu's `entries`, each of its node's
+/// key as its command, the dimmed ones' and the ticked ones' in `menu`, and
+/// the events of their choices in `choices`.
+fn menu_items(
+    entries: &[MenuEntry],
+    menu: &mut ContextMenu,
+    choices: &mut BTreeMap<String, (NodeKey, UiEventKind)>,
+) -> Vec<MenuItem> {
+    entries
+        .iter()
+        .map(|entry| match entry {
+            MenuEntry::Item {
+                key,
+                title,
+                ticked,
+                event,
+            } => {
+                match event {
+                    Some(event) => {
+                        choices.insert(key.0.clone(), (key.clone(), event.clone()));
+                    }
+                    None => menu.dimmed.push(key.0.clone()),
+                }
+                if *ticked {
+                    menu.ticked.push(key.0.clone());
+                }
+                MenuItem::Command {
+                    title: title.clone(),
+                    command: key.0.clone(),
+                    shortcut: None,
+                }
+            }
+            MenuEntry::Separator => MenuItem::Separator,
+            MenuEntry::Submenu { title, entries } => MenuItem::Submenu(Menu {
+                title: title.clone(),
+                items: menu_items(entries, menu, choices),
+                role: None,
+            }),
+        })
+        .collect()
+}
+
+/// `ui-core`'s role of a panel's `role`.
+fn role_of(role: PanelRole) -> Role {
+    match role {
+        PanelRole::Tooltip => Role::Tooltip,
+        PanelRole::Menu => Role::Menu,
+        PanelRole::Dialog => Role::Dialog,
+    }
+}
+
+/// `ui-core`'s corner of a panel's `corner`.
+fn corner_of(corner: PanelCorner) -> Corner {
+    match corner {
+        PanelCorner::TopLeft => Corner::TopLeft,
+        PanelCorner::TopRight => Corner::TopRight,
+        PanelCorner::BottomLeft => Corner::BottomLeft,
+        PanelCorner::BottomRight => Corner::BottomRight,
+    }
+}

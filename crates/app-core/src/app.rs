@@ -57,6 +57,7 @@ mod frame;
 mod input;
 mod menus;
 mod notices;
+mod panels;
 mod spawn;
 mod surfaces;
 #[cfg(test)]
@@ -2030,13 +2031,15 @@ impl<B: Backend> App<B> {
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
-                // The windows show no plugin's panels yet: a panel closes as
-                // it opens, as its plugin then hears; one that its plugin
+                // A plugin's panel over its window; one that its plugin
                 // closed, the plugins' host forgot already.
-                Request::OpenPanel { plugin, id, .. } => {
-                    self.plugins.panel_closed(&plugin, &id);
-                }
-                Request::ClosePanel { .. } => {}
+                Request::OpenPanel {
+                    plugin,
+                    id,
+                    window,
+                    options,
+                } => self.open_panel(platform, (plugin, id), window, options),
+                Request::ClosePanel { plugin, id } => self.panel_gone(platform, &plugin, &id),
                 // A field's text and a list's selection in a slot's view.
                 Request::SetText {
                     plugin,
@@ -2924,9 +2927,14 @@ impl<B: Backend> App<B> {
                 self.accessibility_action(platform, window, &request);
             }
             WindowEvent::Dropped(dropped) => self.dropped(platform, window, dropped),
+            // A choice of a native menu of a plugin's panel, or of the
+            // window's own.
             WindowEvent::ContextCommand(command) => {
-                self.context_command(platform, window, &command);
+                if !self.native_chosen(window, &command) {
+                    self.context_command(platform, window, &command);
+                }
             }
+            WindowEvent::ContextMenuClosed => self.native_closed(platform, window),
             // A window that does not show lets its drawables go, and draws
             // again as it shows.
             WindowEvent::Occluded(occluded) => {
