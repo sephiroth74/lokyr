@@ -25,7 +25,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
-use crate::host::{Binding, DecorationLook, Line, LineText, PaneId, Scroll, StyleRun, WindowId};
+use crate::host::{
+    Binding, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId, Scroll, Side,
+    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+};
 
 /// A request, with the plugin that asks it, by its name, as it crosses to
 /// the host.
@@ -183,6 +186,104 @@ pub enum Request {
     CloseWindow(WindowId),
     /// Quits the app.
     Quit,
+    /// The windows, each with its tabs and the one that it shows.
+    Windows,
+    /// A window's tabs, in their order.
+    Tabs(WindowId),
+    /// A tab's layout.
+    Layout(TabId),
+    /// Opens a tab in a window, at `index` of its tabs, or at their end
+    /// without one or past them, of a pane whose program starts as a new
+    /// pane's does, beside the window's focused pane: the host answers
+    /// with the tab's id and the pane's, and opens them as the call
+    /// returns. The window shows the tab that it showed.
+    NewTab {
+        /// The window.
+        window: WindowId,
+        /// The tab's place among the window's tabs, from the first.
+        index: Option<usize>,
+    },
+    /// Splits a pane's part along `direction`, with a new pane on `side`,
+    /// whose program starts as a new pane's does, beside the pane: the host
+    /// answers with the new pane's id, and splits as the call returns. The
+    /// tab's keyboard stays where it was, and its zoom ends.
+    Split {
+        /// The pane.
+        pane: PaneId,
+        /// How the two parts lie.
+        direction: Direction,
+        /// The new pane's part.
+        side: Side,
+    },
+    /// Closes a tab, with its panes, whose programs are hung up; its window
+    /// shows the tab after it, or before it, and closes with its last tab.
+    CloseTab(TabId),
+    /// Closes a pane, whose program is hung up: its room goes to its
+    /// sibling, and its tab closes with its last pane.
+    ClosePane(PaneId),
+    /// Has a tab's window show it.
+    ActivateTab(TabId),
+    /// Gives a pane its tab's keyboard.
+    FocusPane(PaneId),
+    /// Moves a tab to `index` of a window's tabs, its own or another's, or
+    /// to their end past them.
+    MoveTab {
+        /// The tab.
+        tab: TabId,
+        /// The window.
+        window: WindowId,
+        /// Its place among the window's tabs, from the first.
+        index: usize,
+    },
+    /// Moves a tab out of its window into a window of its own.
+    TabToNewWindow(TabId),
+    /// Moves a pane out of its tab into a tab of its own, at `index` of a
+    /// window's tabs, or at their end past them; a pane alone in its tab
+    /// moves with it.
+    PaneToNewTab {
+        /// The pane.
+        pane: PaneId,
+        /// The window.
+        window: WindowId,
+        /// The tab's place among the window's tabs, from the first.
+        index: usize,
+    },
+    /// Moves a pane out of its tab into a window of its own; a pane alone
+    /// in its tab moves with it.
+    PaneToNewWindow(PaneId),
+    /// Moves an edge of a pane by `by`, a share of the room of the split
+    /// whose divider the edge is, from -1 to 1: a positive one toward the
+    /// right or the bottom.
+    ResizePane {
+        /// The pane.
+        pane: PaneId,
+        /// The edge, whose split's divider moves.
+        edge: Edge,
+        /// How far.
+        by: f64,
+    },
+    /// Gives a split of a tab's layout, by the parts that lead to it from
+    /// the layout's top, the share of its first part, from 0 to 1, or,
+    /// with `None`, its panes' share.
+    SetRatio {
+        /// The tab.
+        tab: TabId,
+        /// The parts from the top to the split, none for the top's.
+        path: Vec<Side>,
+        /// The first part's share.
+        ratio: Option<f64>,
+    },
+    /// Shares each split of a tab's layout by its panes again, the ratios
+    /// that the drags gave dropped.
+    Equalize(TabId),
+    /// Has a pane of a tab take its whole room, or, with `None`, ends the
+    /// tab's zoom.
+    Zoom {
+        /// The tab.
+        tab: TabId,
+        /// The pane.
+        pane: Option<PaneId>,
+    },
 }
 
 /// What a request is to the host.
@@ -232,7 +333,24 @@ impl Request {
             | Self::SetFontSize(_)
             | Self::OpenWindow
             | Self::CloseWindow(_)
-            | Self::Quit => None,
+            | Self::Quit
+            | Self::Windows
+            | Self::Tabs(_)
+            | Self::Layout(_)
+            | Self::NewTab { .. }
+            | Self::Split { .. }
+            | Self::CloseTab(_)
+            | Self::ClosePane(_)
+            | Self::ActivateTab(_)
+            | Self::FocusPane(_)
+            | Self::MoveTab { .. }
+            | Self::TabToNewWindow(_)
+            | Self::PaneToNewTab { .. }
+            | Self::PaneToNewWindow(_)
+            | Self::ResizePane { .. }
+            | Self::SetRatio { .. }
+            | Self::Equalize(_)
+            | Self::Zoom { .. } => None,
         }
     }
 
@@ -250,7 +368,10 @@ impl Request {
             | Self::ReadLines { .. }
             | Self::Styles { .. }
             | Self::Opens(_)
-            | Self::FontSize => Effect::Read,
+            | Self::FontSize
+            | Self::Windows
+            | Self::Tabs(_)
+            | Self::Layout(_) => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -260,7 +381,21 @@ impl Request {
             | Self::Scroll { .. }
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
-            | Self::Emit { .. } => Effect::Write,
+            | Self::Emit { .. }
+            | Self::NewTab { .. }
+            | Self::Split { .. }
+            | Self::CloseTab(_)
+            | Self::ClosePane(_)
+            | Self::ActivateTab(_)
+            | Self::FocusPane(_)
+            | Self::MoveTab { .. }
+            | Self::TabToNewWindow(_)
+            | Self::PaneToNewTab { .. }
+            | Self::PaneToNewWindow(_)
+            | Self::ResizePane { .. }
+            | Self::SetRatio { .. }
+            | Self::Equalize(_)
+            | Self::Zoom { .. } => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
             | Self::SetFontSize(_)
@@ -297,6 +432,19 @@ pub enum Response {
     Styles(Option<Vec<StyleRun>>),
     /// A decoration's id.
     Decoration(u64),
+    /// The windows.
+    Windows(Vec<WindowInfo>),
+    /// A window's tabs.
+    Tabs(Vec<TabInfo>),
+    /// A tab's layout.
+    Layout(Layout),
+    /// A tab that opens as the call returns, and its pane.
+    Tab {
+        /// The tab.
+        tab: TabId,
+        /// Its pane.
+        pane: PaneId,
+    },
     /// The request failed, and did nothing.
     Failed(Error),
 }

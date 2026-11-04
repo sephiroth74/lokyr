@@ -36,7 +36,9 @@ use crate::config::ConfirmPaste;
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::Texts;
 use crate::paste::{self, Paste};
-use crate::workspace::{Pane, PaneId, WindowId, Workspace};
+use crate::workspace::{
+    Direction, Edge, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
+};
 
 /// What a plugin asks of the app, which the app does once the plugin's
 /// call returns.
@@ -73,12 +75,24 @@ pub trait Clipboard {
     fn set_text(&mut self, text: &str);
 }
 
+/// What starts the programs of the panes that plugins open, the app's own
+/// way, as it starts a window's pane.
+pub trait Panes {
+    /// A pane of the id `id`, which nothing of the process took, beside
+    /// `near`, the pane that it splits or the focused one of the window
+    /// that it opens in, if there is one: its program, its directory and
+    /// its size as a new pane's beside it.
+    fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane;
+}
+
 /// What the host reaches of the app during a plugin's call.
 pub struct Context<'a> {
     /// The commands.
     pub registry: &'a mut Registry,
     /// The windows, the tabs and the panes.
     pub workspace: &'a mut Workspace,
+    /// What starts the panes that plugins open.
+    pub panes: &'a mut dyn Panes,
     /// The clipboard.
     pub clipboard: &'a mut dyn Clipboard,
     /// The window that has the focus.
@@ -172,6 +186,20 @@ struct Read {
 enum Write {
     /// One that the plugin asked, as it asked it.
     Asked(Asked),
+    /// A tab in `window`, of the ids that the host gave it and its pane.
+    NewTab {
+        window: WindowId,
+        index: Option<usize>,
+        tab: TabId,
+        pane: PaneId,
+    },
+    /// A split of `pane`, of the id that the host gave the new pane.
+    Split {
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+        new: PaneId,
+    },
     /// A decoration, of the id that the host gave it.
     Decorate {
         id: u64,
@@ -685,6 +713,36 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
                 }
                 continue;
             }
+            // A tab or a split of a window or a pane that an earlier write
+            // of the call closed starts no program.
+            Write::NewTab {
+                window,
+                index,
+                tab,
+                pane,
+            } => {
+                if context.workspace.window(window).is_some() {
+                    let near = context.workspace.active_pane(window);
+                    let near = near.and_then(|near| context.workspace.pane(near));
+                    let new = context.panes.spawn(pane, near);
+                    context
+                        .workspace
+                        .open_tab_as(window, new, index.unwrap_or(usize::MAX), tab);
+                }
+                continue;
+            }
+            Write::Split {
+                pane: split,
+                direction,
+                side,
+                new,
+            } => {
+                if let Some(near) = context.workspace.pane(split) {
+                    let new = context.panes.spawn(new, Some(near));
+                    context.workspace.split(split, direction, new, side);
+                }
+                continue;
+            }
         };
         match write {
             Asked::SetClipboardText(text) => context.clipboard.set_text(&text),
@@ -746,9 +804,115 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox) {
                     value,
                 },
             )),
+            // The workspace's operations do nothing to what an earlier write
+            // of the call closed, and record what they change.
+            Asked::CloseTab(tab) => {
+                context.workspace.close_tab(TabId::of(tab.0));
+            }
+            Asked::ClosePane(pane) => {
+                context.workspace.close_pane(PaneId::of(pane.0));
+            }
+            Asked::ActivateTab(tab) => {
+                context.workspace.activate_tab(TabId::of(tab.0));
+            }
+            Asked::FocusPane(pane) => {
+                context.workspace.focus_pane(PaneId::of(pane.0));
+            }
+            Asked::MoveTab { tab, window, index } => {
+                context
+                    .workspace
+                    .move_tab(TabId::of(tab.0), WindowId::of(window.0), index);
+            }
+            Asked::TabToNewWindow(tab) => {
+                context.workspace.tab_to_new_window(TabId::of(tab.0));
+            }
+            Asked::PaneToNewTab {
+                pane,
+                window,
+                index,
+            } => {
+                context.workspace.pane_to_new_tab(
+                    PaneId::of(pane.0),
+                    WindowId::of(window.0),
+                    index,
+                );
+            }
+            Asked::PaneToNewWindow(pane) => {
+                context.workspace.pane_to_new_window(PaneId::of(pane.0));
+            }
+            Asked::ResizePane {
+                pane,
+                edge: moved,
+                by,
+            } => {
+                context
+                    .workspace
+                    .resize_pane(PaneId::of(pane.0), edge(moved), by);
+            }
+            Asked::SetRatio { tab, path, ratio } => {
+                let path: Vec<Side> = path.into_iter().map(side).collect();
+                context
+                    .workspace
+                    .set_ratio(TabId::of(tab.0), &path, ratio.map(Ratio::new));
+            }
+            Asked::Equalize(tab) => {
+                context.workspace.equalize(TabId::of(tab.0));
+            }
+            Asked::Zoom { tab, pane } => {
+                context
+                    .workspace
+                    .zoom(TabId::of(tab.0), pane.map(|pane| PaneId::of(pane.0)));
+            }
             // The host queues writes alone.
             _ => {}
         }
+    }
+}
+
+/// The workspace's direction of a split of the SDK's.
+fn direction(direction: host::Direction) -> Direction {
+    match direction {
+        host::Direction::Horizontal => Direction::Horizontal,
+        host::Direction::Vertical => Direction::Vertical,
+    }
+}
+
+/// The workspace's part of a split of the SDK's.
+fn side(side: host::Side) -> Side {
+    match side {
+        host::Side::First => Side::First,
+        host::Side::Second => Side::Second,
+    }
+}
+
+/// The workspace's edge of a pane of the SDK's.
+fn edge(edge: host::Edge) -> Edge {
+    match edge {
+        host::Edge::Left => Edge::Left,
+        host::Edge::Right => Edge::Right,
+        host::Edge::Top => Edge::Top,
+        host::Edge::Bottom => Edge::Bottom,
+    }
+}
+
+/// The SDK's layout of a tab's `layout`.
+fn layout(layout: &Layout) -> host::Layout {
+    match layout {
+        Layout::Leaf(pane) => host::Layout::Pane((*pane).into()),
+        Layout::Split {
+            direction,
+            ratio,
+            first,
+            second,
+        } => host::Layout::Split {
+            direction: match direction {
+                Direction::Horizontal => host::Direction::Horizontal,
+                Direction::Vertical => host::Direction::Vertical,
+            },
+            ratio: ratio.map(Ratio::get),
+            first: Box::new(self::layout(first)),
+            second: Box::new(self::layout(second)),
+        },
     }
 }
 
@@ -946,6 +1110,40 @@ impl Host<'_, '_> {
             .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
     }
 
+    /// The window of `window`'s handle; `not-found` once it closed.
+    fn window(&self, window: host::WindowId) -> Result<&crate::workspace::Window, Error> {
+        self.context
+            .workspace
+            .window(WindowId::of(window.0))
+            .ok_or_else(|| Error::new(Code::NotFound, format!("there is no window {}", window.0)))
+    }
+
+    /// The tab of `tab`'s handle; `not-found` once it closed.
+    fn tab(&self, tab: host::TabId) -> Result<&crate::workspace::Tab, Error> {
+        self.context
+            .workspace
+            .tab(TabId::of(tab.0))
+            .ok_or_else(|| Error::new(Code::NotFound, format!("there is no tab {}", tab.0)))
+    }
+
+    /// What a read of a window's tabs tells of `tab`.
+    fn tab_info(&self, tab: &crate::workspace::Tab) -> host::TabInfo {
+        let active = self
+            .context
+            .workspace
+            .window(tab.window())
+            .is_some_and(|window| window.active_tab() == tab.id());
+        host::TabInfo {
+            id: tab.id().into(),
+            window: tab.window().into(),
+            title: tab.title().to_owned(),
+            active,
+            panes: tab.layout().panes().into_iter().map(Into::into).collect(),
+            focused: tab.active_pane().into(),
+            zoomed: tab.zoomed().map(Into::into),
+        }
+    }
+
     /// Whether the plugin may make `request`: it has the capability that
     /// the request needs, if it needs one.
     fn allows(&self, request: &Asked) -> Result<(), Error> {
@@ -1055,6 +1253,27 @@ impl Host<'_, '_> {
             }
             Asked::Opens(target) => Response::Boolean(opens(&target)),
             Asked::FontSize => Response::FontSize(self.context.font_size),
+            Asked::Windows => Response::Windows(
+                self.context
+                    .workspace
+                    .windows()
+                    .map(|window| host::WindowInfo {
+                        id: window.id().into(),
+                        tabs: window.tabs().iter().copied().map(Into::into).collect(),
+                        active: window.active_tab().into(),
+                    })
+                    .collect(),
+            ),
+            Asked::Tabs(window) => {
+                let tabs = self.window(window)?.tabs().to_vec();
+                Response::Tabs(
+                    tabs.into_iter()
+                        .filter_map(|tab| self.context.workspace.tab(tab))
+                        .map(|tab| self.tab_info(tab))
+                        .collect(),
+                )
+            }
+            Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             other => {
                 return Err(Error::new(Code::Fault, format!("{other:?} is not a read")));
             }
@@ -1108,6 +1327,81 @@ impl Host<'_, '_> {
                     return Err(Error::new(
                         Code::NotFound,
                         format!("the plugin has no decoration {id} of the pane {}", pane.0),
+                    ));
+                }
+            }
+            Asked::NewTab { window, index } => {
+                self.window(*window)?;
+                let (tab, pane) = (TabId::new(), PaneId::new());
+                self.writes.push(Write::NewTab {
+                    window: WindowId::of(window.0),
+                    index: *index,
+                    tab,
+                    pane,
+                });
+                return Ok(Response::Tab {
+                    tab: tab.into(),
+                    pane: pane.into(),
+                });
+            }
+            Asked::Split {
+                pane,
+                direction: lying,
+                side: new_side,
+            } => {
+                self.pane(*pane)?;
+                let new = PaneId::new();
+                self.writes.push(Write::Split {
+                    pane: PaneId::of(pane.0),
+                    direction: direction(*lying),
+                    side: side(*new_side),
+                    new,
+                });
+                return Ok(Response::Pane(Some(new.into())));
+            }
+            Asked::CloseTab(tab)
+            | Asked::ActivateTab(tab)
+            | Asked::TabToNewWindow(tab)
+            | Asked::Equalize(tab) => {
+                self.tab(*tab)?;
+            }
+            Asked::ClosePane(pane) | Asked::FocusPane(pane) | Asked::PaneToNewWindow(pane) => {
+                self.pane(*pane)?;
+            }
+            Asked::MoveTab { tab, window, .. } => {
+                self.tab(*tab)?;
+                self.window(*window)?;
+            }
+            Asked::PaneToNewTab { pane, window, .. } => {
+                self.pane(*pane)?;
+                self.window(*window)?;
+            }
+            Asked::ResizePane { pane, by, .. } => {
+                self.pane(*pane)?;
+                if !(-1.0..=1.0).contains(by) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("a resize of {by} is not a share from -1 to 1"),
+                    ));
+                }
+            }
+            Asked::SetRatio { tab, ratio, .. } => {
+                self.tab(*tab)?;
+                if ratio.is_some_and(|ratio| !(0.0..=1.0).contains(&ratio)) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a split's ratio is a share from 0 to 1",
+                    ));
+                }
+            }
+            Asked::Zoom { tab, pane } => {
+                let panes = self.tab(*tab)?.layout().panes();
+                if let Some(pane) = pane
+                    && !panes.contains(&PaneId::of(pane.0))
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the tab {} has no pane {}", tab.0, pane.0),
                     ));
                 }
             }

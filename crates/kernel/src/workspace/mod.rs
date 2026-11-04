@@ -50,8 +50,11 @@ macro_rules! id {
         pub struct $name(u64);
 
         impl $name {
-            /// A new id, which nothing of the process had.
-            fn new() -> Self {
+            /// A new id, which nothing of the process had: a new pane's, or
+            /// the one that a plugin's tab or pane takes as its call
+            /// returns, which the host gives it as it asks.
+            #[allow(clippy::new_without_default)]
+            pub fn new() -> Self {
                 Self(next_id())
             }
 
@@ -79,7 +82,15 @@ id!(
 impl WindowId {
     /// The id of the number `id`, as a plugin's handle gives it, which may
     /// be no window's.
-    pub(crate) fn of(id: u64) -> Self {
+    pub fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl TabId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no tab's.
+    pub fn of(id: u64) -> Self {
         Self(id)
     }
 }
@@ -477,12 +488,24 @@ impl Workspace {
     /// past them, whose layout is `pane`, and returns its id; the window
     /// shows the tab that it showed.
     pub fn open_tab(&mut self, window: WindowId, pane: Pane, index: usize) -> Option<TabId> {
+        self.open_tab_as(window, pane, index, TabId::new())
+    }
+
+    /// Opens a tab of the id `tab`, which nothing of the process took, as
+    /// [`Workspace::open_tab`] opens one.
+    pub(crate) fn open_tab_as(
+        &mut self,
+        window: WindowId,
+        pane: Pane,
+        index: usize,
+        tab: TabId,
+    ) -> Option<TabId> {
         if !self.windows.contains_key(&window) {
             return None;
         }
         let id = pane.id();
         self.panes.insert(id, pane);
-        let tab = self.insert_tab(window, id, index);
+        let tab = self.insert_tab_as(window, id, index, tab);
         self.created(tab, &[id]);
         Some(tab)
     }
@@ -490,7 +513,12 @@ impl Workspace {
     /// Makes a tab of `pane`, which the workspace holds, in `window`, which
     /// exists, at `index` of its tabs, and returns its id.
     fn insert_tab(&mut self, window: WindowId, pane: PaneId, index: usize) -> TabId {
-        let tab = self.new_tab(pane);
+        self.insert_tab_as(window, pane, index, TabId::new())
+    }
+
+    /// Makes a tab of the id `tab` as [`Workspace::insert_tab`] makes one.
+    fn insert_tab_as(&mut self, window: WindowId, pane: PaneId, index: usize, tab: TabId) -> TabId {
+        let tab = self.new_tab_as(pane, tab);
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
@@ -504,7 +532,11 @@ impl Workspace {
     /// Makes a tab whose layout is `pane`, which the workspace holds, and
     /// returns its id; its window is to be set, as it goes into one.
     fn new_tab(&mut self, pane: PaneId) -> TabId {
-        let tab = TabId::new();
+        self.new_tab_as(pane, TabId::new())
+    }
+
+    /// Makes a tab of the id `tab` as [`Workspace::new_tab`] makes one.
+    fn new_tab_as(&mut self, pane: PaneId, tab: TabId) -> TabId {
         self.tab_of.insert(pane, tab);
         self.tabs.insert(
             tab,

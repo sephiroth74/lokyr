@@ -227,9 +227,36 @@ impl Pane {
         texts: &Texts,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Self {
+        let id = PaneId::new();
+        Self::spawn_as(
+            id,
+            program,
+            environment,
+            settings,
+            grid,
+            colors,
+            texts,
+            wake,
+        )
+    }
+
+    /// A pane of the id `id`, which nothing of the process took, as the
+    /// host gives a plugin's new pane as it asks, as [`Pane::spawn`] makes
+    /// one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_as(
+        id: PaneId,
+        program: &Program,
+        environment: &Environment,
+        settings: &Settings,
+        grid: Grid,
+        colors: &Colors,
+        texts: &Texts,
+        wake: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
         let pty = pty_options(program, environment, &settings.term, grid);
         let mut pane = Self {
-            id: PaneId::new(),
+            id,
             session: None,
             snapshot: Snapshot::default(),
             grid,

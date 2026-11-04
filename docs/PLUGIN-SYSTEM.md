@@ -192,7 +192,11 @@ type Args = { [string]: string | number | boolean }
 -- Plugins should prefer theme tokens (e.g. "tab.active.bg") to literals.
 type Color = string | { r: number, g: number, b: number, a: number? }
 
-type Direction = "left" | "right" | "up" | "down"
+-- How a split lays its two parts out, the first left or above; a part of
+-- a split; an edge of a pane, which a resize moves.
+type Direction = "horizontal" | "vertical"
+type Side = "first" | "second"
+type Edge = "left" | "right" | "top" | "bottom"
 
 -- An error's code, whose hundreds tell its category: 1xx usage, 2xx
 -- failure, 3xx security, 4xx fault (ADR 0019).
@@ -202,13 +206,27 @@ type Error = {
     message: string,
 }
 
+type WindowInfo = {
+    id: WindowId,
+    tabs: { TabId }, -- in their order
+    active: TabId, -- the tab that it shows
+}
+
 type TabInfo = {
     id: TabId,
     window: WindowId,
     title: string,
-    active: boolean,
-    panes: { PaneId },
+    active: boolean, -- whether its window shows it
+    panes: { PaneId }, -- in its layout's order
+    focused: PaneId, -- the pane that has its keyboard
+    zoomed: PaneId?,
 }
+
+-- A tab's layout: a pane, or a split of two layouts, whose ratio is the
+-- first part's share, from 0 to 1, or none to share it by their panes.
+type Layout =
+    { pane: PaneId }
+    | { direction: Direction, ratio: number?, first: Layout, second: Layout }
 
 type Style = {
     direction: ("row" | "column")?,
@@ -347,18 +365,35 @@ type Cx = {
         -- plugin's panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
         bind: (keys: string, command: string, when: string?) -> (boolean, Error?),
     },
+    -- The workspace's changes come as the call returns, as every write's: a new tab's and a split's ids
+    -- come at once, and what a move made, as a new window, comes as the workspace's events.
     workspace: {
-        tabs: (window: WindowId) -> { TabInfo },
-        new_tab: (window: WindowId) -> (TabId?, Error?),
+        windows: () -> { WindowInfo },
+        tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
+        -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at
+        -- `index` of its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed.
+        new_tab: (window: WindowId, index: number?) -> (TabId?, PaneId?, Error?),
         close_tab: (tab: TabId) -> (boolean, Error?),
+        activate_tab: (tab: TabId) -> (boolean, Error?),
         move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
+        tab_to_new_window: (tab: TabId) -> (boolean, Error?),
+        pane_to_new_tab: (pane: PaneId, window: WindowId, index: number) -> (boolean, Error?),
+        pane_to_new_window: (pane: PaneId) -> (boolean, Error?),
+        close_pane: (pane: PaneId) -> (boolean, Error?),
+        focus_pane: (pane: PaneId) -> (boolean, Error?),
+        -- With the tabs' renames.
         set_tab_title: (tab: TabId, title: string?) -> (boolean, Error?),
     },
     layout: {
-        split: (pane: PaneId, dir: Direction, ratio: number) -> (PaneId?, Error?),
-        resize: (pane: PaneId, dir: Direction, cells: number) -> (boolean, Error?),
-        focus: (pane: PaneId) -> (boolean, Error?),
-        toggle_zoom: (pane: PaneId) -> (boolean, Error?),
+        get: (tab: TabId) -> (Layout?, Error?),
+        -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
+        split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
+        -- Moves an edge by `by`, a share from -1 to 1 of the room of the split whose divider it is.
+        resize: (pane: PaneId, edge: Edge, by: number) -> (boolean, Error?),
+        -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.
+        set_ratio: (tab: TabId, path: { Side }, ratio: number?) -> (boolean, Error?),
+        equalize: (tab: TabId) -> (boolean, Error?),
+        zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
     },
     ui: {
         request_render: (slot: string) -> (),

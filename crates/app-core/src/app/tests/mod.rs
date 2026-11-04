@@ -2878,3 +2878,114 @@ fn a_plugin_takes_the_workspace_s_changes_as_each_turn_ends() {
     fake.send(&mut app, first, WindowEvent::Frame);
     assert_eq!(log.borrow().len(), 3);
 }
+
+/// The ids that [`Arranger`]'s commands got: the tab and its pane, and the
+/// split's pane.
+type Arranged = std::rc::Rc<
+    std::cell::RefCell<
+        Option<(
+            plugins::host::TabId,
+            plugins::host::PaneId,
+            plugins::host::PaneId,
+        )>,
+    >,
+>;
+
+/// A plugin that opens a tab and a split, moves the split's pane out to a
+/// window of its own and closes it, a command each, and records the names
+/// of the workspace's events, a batch a line.
+struct Arranger(Arranged, std::rc::Rc<std::cell::RefCell<Vec<String>>>);
+
+impl plugins::Plugin for Arranger {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["ws.open", "ws.out", "ws.close"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::Windows,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        cx.subscribe(&plugins::WorkspaceEvent::NAMES)
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        use plugins::host::{Direction, Side};
+
+        match name {
+            "ws.open" => {
+                let window = cx.focused_window().unwrap();
+                let pane = cx.focused_pane().unwrap();
+                let (tab, tab_pane) = cx.new_tab(window, None)?;
+                let split = cx.split(pane, Direction::Horizontal, Side::Second)?;
+                *self.0.borrow_mut() = Some((tab, tab_pane, split));
+                Ok(())
+            }
+            "ws.out" => cx.pane_to_new_window(self.0.borrow().unwrap().2),
+            _ => cx.close_pane(self.0.borrow().unwrap().2),
+        }
+    }
+
+    fn on_event(
+        &mut self,
+        _: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        let names: Vec<&str> = events.iter().map(plugins::Event::name).collect();
+        self.1.borrow_mut().push(names.join(" "));
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_opens_a_tab_and_a_split_moves_the_pane_out_and_closes_it() {
+    let (ids, log) = (Arranged::default(), std::rc::Rc::default());
+    let mut fake = Fake::default();
+    let arranger = Arranger(std::rc::Rc::clone(&ids), std::rc::Rc::clone(&log));
+    let mut app = app(Config::default(), shell("read line")).with_plugin("ws", Box::new(arranger));
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    let shown = app.windows[&first].window;
+    log.borrow_mut().clear();
+    // A tab and a split, of the ids that the call got, whose programs
+    // started as a window's.
+    fake.send_app(&mut app, AppEvent::Command("ws.open".to_owned()));
+    let (tab, tab_pane, split) = ids.borrow().unwrap();
+    let (tab_pane, split) = (PaneId::of(tab_pane.0), PaneId::of(split.0));
+    let tab = app.workspace.tab(workspace::TabId::of(tab.0)).unwrap();
+    assert_eq!(tab.window(), shown);
+    assert_eq!(tab.layout().panes(), [tab_pane]);
+    assert_eq!(app.workspace.panes_of(shown).len(), 3);
+    assert!(app.pane_wakes.contains_key(&tab_pane) && app.pane_wakes.contains_key(&split));
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(
+        *log.borrow(),
+        ["tab-created pane-created pane-created layout-changed"]
+    );
+    // Out to a window of its own, which the platform shows.
+    fake.send_app(&mut app, AppEvent::Command("ws.out".to_owned()));
+    assert_eq!(fake.windows().count(), 2);
+    let out = fake.windows().find(|&window| window != first).unwrap();
+    assert_eq!(
+        app.windows[&out].window,
+        app.workspace
+            .tab(app.workspace.tab_of(split).unwrap())
+            .unwrap()
+            .window()
+    );
+    assert_eq!(app.workspace.panes_of(app.windows[&out].window), [split]);
+    assert_eq!(
+        log.borrow()[1],
+        "layout-changed window-opened tab-created pane-moved"
+    );
+    // Closed, its window with it, and the app forgets it.
+    fake.send_app(&mut app, AppEvent::Command("ws.close".to_owned()));
+    assert_eq!(fake.windows().collect::<Vec<_>>(), [first]);
+    assert!(app.workspace.pane(split).is_none());
+    assert!(!app.pane_wakes.contains_key(&split));
+    assert_eq!(log.borrow()[2], "pane-closed tab-closed window-closed");
+    assert!(!fake.has_quit());
+}

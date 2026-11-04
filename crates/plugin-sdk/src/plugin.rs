@@ -46,7 +46,10 @@
 //! ```
 
 use crate::command::{Args, Code, Command, Error};
-use crate::host::{Binding, DecorationLook, Host, LineText, PaneId, Scroll, StyleRun, WindowId};
+use crate::host::{
+    Binding, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId, Scroll, Side,
+    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+};
 use crate::message::{Call, Data, Event, Request, Response};
 
 /// A plugin: its activation, which registers its commands and binds its
@@ -398,6 +401,140 @@ impl<'a> Cx<'a> {
     /// Quits the app, once this call returns.
     pub fn quit(&mut self) -> Result<(), Error> {
         self.done(Request::Quit)
+    }
+
+    /// The windows, each with its tabs and the one that it shows.
+    pub fn windows(&mut self) -> Result<Vec<WindowInfo>, Error> {
+        match self.request(Request::Windows) {
+            Response::Windows(windows) => Ok(windows),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The tabs of `window`, in their order.
+    pub fn tabs(&mut self, window: WindowId) -> Result<Vec<TabInfo>, Error> {
+        match self.request(Request::Tabs(window)) {
+            Response::Tabs(tabs) => Ok(tabs),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The layout of `tab`.
+    pub fn layout(&mut self, tab: TabId) -> Result<Layout, Error> {
+        match self.request(Request::Layout(tab)) {
+            Response::Layout(layout) => Ok(layout),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Opens a tab in `window`, at `index` of its tabs, or at their end,
+    /// of a new pane, as this call returns: the tab's id and the pane's.
+    pub fn new_tab(
+        &mut self,
+        window: WindowId,
+        index: Option<usize>,
+    ) -> Result<(TabId, PaneId), Error> {
+        match self.request(Request::NewTab { window, index }) {
+            Response::Tab { tab, pane } => Ok((tab, pane)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Splits `pane`'s part along `direction`, with a new pane on `side`,
+    /// as this call returns: the new pane's id.
+    pub fn split(
+        &mut self,
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+    ) -> Result<PaneId, Error> {
+        match self.request(Request::Split {
+            pane,
+            direction,
+            side,
+        }) {
+            Response::Pane(Some(pane)) => Ok(pane),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Closes `tab`, with its panes, as this call returns.
+    pub fn close_tab(&mut self, tab: TabId) -> Result<(), Error> {
+        self.done(Request::CloseTab(tab))
+    }
+
+    /// Closes `pane`, as this call returns.
+    pub fn close_pane(&mut self, pane: PaneId) -> Result<(), Error> {
+        self.done(Request::ClosePane(pane))
+    }
+
+    /// Has `tab`'s window show it, as this call returns.
+    pub fn activate_tab(&mut self, tab: TabId) -> Result<(), Error> {
+        self.done(Request::ActivateTab(tab))
+    }
+
+    /// Gives `pane` its tab's keyboard, as this call returns.
+    pub fn focus_pane(&mut self, pane: PaneId) -> Result<(), Error> {
+        self.done(Request::FocusPane(pane))
+    }
+
+    /// Moves `tab` to `index` of `window`'s tabs, as this call returns.
+    pub fn move_tab(&mut self, tab: TabId, window: WindowId, index: usize) -> Result<(), Error> {
+        self.done(Request::MoveTab { tab, window, index })
+    }
+
+    /// Moves `tab` into a window of its own, as this call returns.
+    pub fn tab_to_new_window(&mut self, tab: TabId) -> Result<(), Error> {
+        self.done(Request::TabToNewWindow(tab))
+    }
+
+    /// Moves `pane` into a tab of its own, at `index` of `window`'s tabs,
+    /// as this call returns.
+    pub fn pane_to_new_tab(
+        &mut self,
+        pane: PaneId,
+        window: WindowId,
+        index: usize,
+    ) -> Result<(), Error> {
+        self.done(Request::PaneToNewTab {
+            pane,
+            window,
+            index,
+        })
+    }
+
+    /// Moves `pane` into a window of its own, as this call returns.
+    pub fn pane_to_new_window(&mut self, pane: PaneId) -> Result<(), Error> {
+        self.done(Request::PaneToNewWindow(pane))
+    }
+
+    /// Moves `edge` of `pane` by `by`, a share of the room of the split
+    /// whose divider it is, as this call returns.
+    pub fn resize_pane(&mut self, pane: PaneId, edge: Edge, by: f64) -> Result<(), Error> {
+        self.done(Request::ResizePane { pane, edge, by })
+    }
+
+    /// Gives the split at `path` of `tab`'s layout the first part's share
+    /// `ratio`, or its panes' with `None`, as this call returns.
+    pub fn set_ratio(
+        &mut self,
+        tab: TabId,
+        path: Vec<Side>,
+        ratio: Option<f64>,
+    ) -> Result<(), Error> {
+        self.done(Request::SetRatio { tab, path, ratio })
+    }
+
+    /// Shares each split of `tab`'s layout by its panes again, as this call
+    /// returns.
+    pub fn equalize(&mut self, tab: TabId) -> Result<(), Error> {
+        self.done(Request::Equalize(tab))
+    }
+
+    /// Has `pane` take `tab`'s whole room, or ends its zoom with `None`, as
+    /// this call returns.
+    pub fn zoom(&mut self, tab: TabId, pane: Option<PaneId>) -> Result<(), Error> {
+        self.done(Request::Zoom { tab, pane })
     }
 }
 

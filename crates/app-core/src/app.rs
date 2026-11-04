@@ -16,7 +16,7 @@ use lokyr_kernel::config::{
 use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 use lokyr_kernel::keymap::{self, Binding, Context, Invocation, Keymap, When};
 use lokyr_kernel::l10n::{self, Texts};
-use lokyr_kernel::plugins::{self, Plugins, Request};
+use lokyr_kernel::plugins::{self, Plugins, Request, WorkspaceEvent, host};
 use lokyr_kernel::state;
 #[cfg(test)]
 use lokyr_kernel::workspace::RESIZE_PACE;
@@ -34,7 +34,7 @@ use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
 use lokyr_text_core::FontConfig;
 use lokyr_ui_core::theme::Theme;
-use lokyr_vt_core::page::{Budget, Scrollback};
+use lokyr_vt_core::page::Budget;
 use lokyr_vt_core::terminal::{self as vt, ClipboardRequest, Scroll};
 
 use crate::drawing::{self, Backend, Drawing};
@@ -55,6 +55,7 @@ mod frame;
 mod input;
 mod menus;
 mod notices;
+mod spawn;
 #[cfg(test)]
 mod tests;
 
@@ -1347,12 +1348,6 @@ impl<B: Backend> App<B> {
         (program, page): (&Program, Option<String>),
         environment: &Environment,
     ) {
-        let surfaces = Surfaces {
-            window: self.surface(platform, window),
-            text: self.layer_surface(platform, window, Layer::BlinkingText),
-            cursor: self.layer_surface(platform, window, Layer::Cursor),
-        };
-        let focused = platform.focused_window() == Some(window);
         let size = platform
             .window_size(window)
             .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
@@ -1363,10 +1358,62 @@ impl<B: Backend> App<B> {
         };
         let pane = self.spawn_pane(platform, program, environment, grid, &colors);
         let shown = self.workspace.open_window(pane);
+        self.attach(platform, window, shown, page);
+    }
+
+    /// Has the platform's new `window` show `shown`, a window of the
+    /// workspace, of the man page of the title `page` when it shows one;
+    /// and draws it.
+    fn attach(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        shown: workspace::WindowId,
+        page: Option<String>,
+    ) {
+        let surfaces = Surfaces {
+            window: self.surface(platform, window),
+            text: self.layer_surface(platform, window, Layer::BlinkingText),
+            cursor: self.layer_surface(platform, window, Layer::Cursor),
+        };
+        let focused = platform.focused_window() == Some(window);
+        let size = platform
+            .window_size(window)
+            .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
         let mut state = Window::new(surfaces, shown, focused, Instant::now());
         state.page = page;
         self.windows.insert(window, state);
         self.draw(platform, window, size);
+    }
+
+    /// Shows `shown`, a window of the workspace that a plugin's move made,
+    /// as a tab's or a pane's out to a window of its own, in a window of
+    /// the platform's, of its focused pane's cells; a window that does not
+    /// open closes `shown`, with its panes, as the log tells.
+    fn show_window(&mut self, platform: &mut dyn Platform, shown: workspace::WindowId) {
+        let Some(grid) = self.workspace.focused(shown).map(Pane::grid) else {
+            return;
+        };
+        let cells = (u32::from(grid.columns), u32::from(grid.rows));
+        let attributes = WindowAttributes {
+            title: TITLE.to_owned(),
+            size: self.size_of(platform.screen_scale(), cells),
+            remember: false,
+            restore: false,
+            restore_size: false,
+        };
+        match platform.create_window(&attributes) {
+            Ok(window) => {
+                self.attach(platform, window, shown, None);
+                self.show_title(platform, window);
+            }
+            Err(error) => {
+                eprintln!("lokyr: {error}");
+                let panes = self.workspace.panes_of(shown);
+                self.forget_panes(&panes);
+                self.workspace.close_window(shown);
+            }
+        }
     }
 
     /// A pane that runs `program` in `environment`, of `grid` and `colors`,
@@ -1380,25 +1427,18 @@ impl<B: Backend> App<B> {
         grid: Grid,
         colors: &lokyr_vt_core::terminal::Colors,
     ) -> Pane {
-        let waker = platform.waker();
-        let wake = Arc::new(PaneWake::default());
-        let woken = Arc::clone(&wake);
-        let pane = Pane::spawn(
+        let settings = self.settings();
+        spawn::Start {
             program,
             environment,
-            &self.settings(),
-            grid,
+            settings: &settings,
             colors,
-            &self.texts,
-            move || {
-                woken.wake();
-                waker.wake();
-            },
-        );
-        self.pane_wakes.insert(pane.id(), wake);
-        pane.set_scroll_on_output(self.config.scrollback.scroll_on_output);
-        pane.set_clipboard_reads(self.config.clipboard.read == ClipboardRead::Ask);
-        pane
+            texts: &self.texts,
+            config: &self.config,
+            waker: platform.waker(),
+            wakes: &mut self.pane_wakes,
+        }
+        .pane(PaneId::new(), grid)
     }
 
     /// Shows the quick terminal, at the place that the config gives, and
@@ -1858,10 +1898,24 @@ impl<B: Backend> App<B> {
         } else {
             self.config.clipboard.confirm_paste
         };
+        // The plugins' new panes start as a window's, beside the pane that
+        // they split or the window's focused one.
+        let dark = platform.appearance() == Appearance::Dark;
+        let mut panes = spawn::Spawner {
+            program: &self.program,
+            environment: &self.environment,
+            budget: &self.budget,
+            colors: &self.theme.variant(dark).colors,
+            texts: &self.texts,
+            config: &self.config,
+            waker: platform.waker(),
+            wakes: &mut self.pane_wakes,
+        };
         let mut clipboard = PlatformClipboard(platform);
         let mut context = plugins::Context {
             registry: &mut self.commands,
             workspace: &mut self.workspace,
+            panes: &mut panes,
             clipboard: &mut clipboard,
             focused,
             font_size,
@@ -1951,7 +2005,8 @@ impl<B: Backend> App<B> {
     /// Ends a turn of the main thread: the workspace's events, whose
     /// changes the plugins take, then the plugins' events delivered, a
     /// batch to each plugin of those that it subscribed to, whose calls'
-    /// requests the app then takes. A turn without events costs nothing.
+    /// requests the app then takes, and whose writes' changes of the
+    /// workspace the windows follow. A turn without events costs nothing.
     fn end_turn(&mut self, platform: &mut dyn Platform) {
         self.events(platform);
         if !self.plugins.has_events() {
@@ -1961,6 +2016,9 @@ impl<B: Backend> App<B> {
             eprintln!("lokyr: {error}");
         }
         self.after_plugins(platform, 0);
+        // What the delivery's writes changed of the workspace shows now,
+        // and waits for the next delivery.
+        self.events(platform);
     }
 
     /// Takes the workspace's events, whose changes the plugins take. A
@@ -1994,9 +2052,70 @@ impl<B: Backend> App<B> {
                     pane,
                     event: vt::Event::Notification { title, body },
                 } => self.notify(platform, pane, &title, &body),
-                Event::Changed(change) => self.plugins.post(plugins::Event::Workspace(change)),
+                Event::Changed(change) => {
+                    self.follow(platform, &change);
+                    self.plugins.post(plugins::Event::Workspace(change));
+                }
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
+        }
+    }
+
+    /// Follows `change`, of the workspace, as a plugin's write made it,
+    /// which the app's own operations have followed already: a window
+    /// that opened without one of the platform's shows in one, and one
+    /// that closed with one closes it; a pane that closed is forgotten; and
+    /// the windows whose tabs, panes or layouts changed take their active
+    /// tab's title. They draw again as the plugins' writes ask, and the
+    /// app's own operations ask for their own frames.
+    fn follow(&mut self, platform: &mut dyn Platform, change: &WorkspaceEvent) {
+        let showing = |app: &Self, shown: workspace::WindowId| {
+            app.windows
+                .iter()
+                .find(|(_, state)| state.window == shown)
+                .map(|(&window, _)| window)
+        };
+        let of_tab = |app: &Self, tab: host::TabId| {
+            app.workspace
+                .tab(workspace::TabId::of(tab.0))
+                .and_then(|tab| showing(app, tab.window()))
+        };
+        let changed = match *change {
+            WorkspaceEvent::WindowOpened { window } => {
+                let shown = workspace::WindowId::of(window.0);
+                if showing(self, shown).is_none() {
+                    self.show_window(platform, shown);
+                }
+                return;
+            }
+            WorkspaceEvent::WindowClosed { window } => {
+                if let Some(window) = showing(self, workspace::WindowId::of(window.0)) {
+                    self.close(platform, window);
+                }
+                return;
+            }
+            WorkspaceEvent::PaneClosed { pane, tab } => {
+                self.forget_panes(&[PaneId::of(pane.0)]);
+                vec![of_tab(self, tab)]
+            }
+            WorkspaceEvent::TabCreated { window, .. }
+            | WorkspaceEvent::TabClosed { window, .. }
+            | WorkspaceEvent::TabActivated { window, .. } => {
+                vec![showing(self, workspace::WindowId::of(window.0))]
+            }
+            WorkspaceEvent::TabMoved { from, window, .. } => vec![
+                showing(self, workspace::WindowId::of(from.0)),
+                showing(self, workspace::WindowId::of(window.0)),
+            ],
+            WorkspaceEvent::PaneCreated { tab, .. }
+            | WorkspaceEvent::PaneFocused { tab, .. }
+            | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
+            WorkspaceEvent::PaneMoved { from, tab, .. } => {
+                vec![of_tab(self, from), of_tab(self, tab)]
+            }
+        };
+        for window in changed.into_iter().flatten() {
+            self.show_title(platform, window);
         }
     }
 
@@ -2007,23 +2126,7 @@ impl<B: Backend> App<B> {
     /// gives way to `xterm-256color`, as the log tells, rather than leave
     /// the programs a terminal that they cannot know.
     fn settings(&self) -> Settings {
-        let terminal = &self.config.terminal;
-        let mut term = terminal.term.as_str();
-        if matches!(term, "xterm-lokyr" | "lokyr") && self.environment.terminfo.is_none() {
-            eprintln!(
-                "lokyr: `{term}` has no terminfo entry here, outside the bundle: the window takes `{FALLBACK_TERM}`; `cargo xtask terminfo` compiles the entry for `cargo run`"
-            );
-            term = FALLBACK_TERM;
-        }
-        Settings {
-            term: term.to_owned(),
-            widths: terminal.widths(),
-            normalization: terminal.normalization.form(),
-            scrollback: Scrollback {
-                limit: self.config.scrollback.limit.bytes(),
-                budget: Some(Arc::clone(&self.budget)),
-            },
-        }
+        spawn::settings(&self.config, &self.environment, &self.budget)
     }
 
     /// The platform's window that shows `pane`, in one of its tabs.

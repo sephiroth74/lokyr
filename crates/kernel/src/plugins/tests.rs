@@ -107,11 +107,41 @@ impl Clipboard for Board {
     }
 }
 
+/// The panes of the tests' plugins: a shell that waits, and each pane
+/// asked, by its id, with the pane that it was beside.
+#[derive(Default)]
+struct Spawner(Vec<(PaneId, Option<PaneId>)>);
+
+impl Panes for Spawner {
+    fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane {
+        self.0.push((id, near.map(Pane::id)));
+        Pane::spawn_as(
+            id,
+            &Program::command("/bin/sh", ["-c", "sleep 30"]),
+            &Environment::default(),
+            &Settings::default(),
+            near.map_or(GRID, Pane::grid),
+            &Colors::default(),
+            &Texts::new("en", &crate::l10n::KERNEL),
+            || {},
+        )
+    }
+}
+
+/// The grid of the tests' windows.
+const GRID: Grid = Grid {
+    columns: 80,
+    rows: 24,
+    cell_width: 8,
+    cell_height: 16,
+};
+
 /// What the host of the tests reaches.
 #[derive(Default)]
 struct App {
     registry: Registry,
     workspace: Workspace,
+    panes: Spawner,
     clipboard: Board,
     focused: Option<WindowId>,
 }
@@ -121,6 +151,7 @@ impl App {
         Context {
             registry: &mut self.registry,
             workspace: &mut self.workspace,
+            panes: &mut self.panes,
             clipboard: &mut self.clipboard,
             focused: self.focused,
             font_size: 13.0,
@@ -131,17 +162,11 @@ impl App {
 
 /// A window whose pane runs `script` with `sh`, with the focus.
 fn window(app: &mut App, script: &str) -> WindowId {
-    let grid = Grid {
-        columns: 80,
-        rows: 24,
-        cell_width: 8,
-        cell_height: 16,
-    };
     let pane = Pane::spawn(
         &Program::command("/bin/sh", ["-c", script]),
         &Environment::default(),
         &Settings::default(),
-        grid,
+        GRID,
         &Colors::default(),
         &Texts::new("en", &crate::l10n::KERNEL),
         || {},
@@ -1743,4 +1768,318 @@ fn a_plugin_reads_a_row_s_styles_and_decorates_only_what_the_pane_holds() {
             "Failed Failed"
         ]
     );
+}
+
+/// The workspace's changes that wait, as their names and ids, in order.
+fn changes(app: &mut App) -> Vec<WorkspaceEvent> {
+    app.workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            crate::workspace::Event::Changed(change) => Some(change),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
+    use lokyr_plugin_sdk::host::{Direction as Lie, Layout as Laid, Side as Part};
+
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let first = app.workspace.active_pane(window).unwrap();
+    let first_tab = app.workspace.tab_of(first).unwrap();
+    changes(&mut app);
+    let mut plugins = Plugins::new();
+    let got = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&got);
+    plugins
+        .add(
+            "ws",
+            scripted(
+                |cx| cx.register_command(command("ws.open")),
+                move |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let pane = cx.focused_pane().unwrap();
+                    let (tab, tab_pane) = cx.new_tab(window, None)?;
+                    let split = cx.split(pane, Lie::Horizontal, Part::Second)?;
+                    // A read in the call reads the state before its writes,
+                    // and the new pane is not there to split yet.
+                    let tabs = cx.tabs(window)?.len();
+                    let early = cx.split(tab_pane, Lie::Vertical, Part::Second);
+                    *seen.borrow_mut() = Some((tab, tab_pane, split, tabs, early));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("ws.open", Args::new(), &mut app.context())
+        .unwrap();
+    let (tab, tab_pane, split, tabs, early) = got.borrow_mut().take().unwrap();
+    assert_eq!(tabs, 1);
+    assert_eq!(early.unwrap_err().code, Code::NotFound);
+    // The ids that the call got are the tab's and the panes'.
+    let opened = app.workspace.tab(TabId::of(tab.0)).unwrap();
+    assert_eq!(opened.window(), window);
+    assert_eq!(opened.layout().panes(), [PaneId::of(tab_pane.0)]);
+    assert_eq!(
+        app.workspace.window(window).unwrap().active_tab(),
+        first_tab
+    );
+    assert_eq!(
+        app.workspace.tab(first_tab).unwrap().layout().panes(),
+        [first, PaneId::of(split.0)]
+    );
+    // Each pane beside the window's focused one, its programs started as
+    // the call returned.
+    assert_eq!(
+        app.panes.0,
+        [
+            (PaneId::of(tab_pane.0), Some(first)),
+            (PaneId::of(split.0), Some(first))
+        ]
+    );
+    assert_eq!(
+        changes(&mut app),
+        [
+            WorkspaceEvent::TabCreated {
+                tab,
+                window: window.into(),
+                index: 1
+            },
+            WorkspaceEvent::PaneCreated {
+                pane: tab_pane,
+                tab
+            },
+            WorkspaceEvent::PaneCreated {
+                pane: split,
+                tab: first_tab.into()
+            },
+            WorkspaceEvent::LayoutChanged {
+                tab: first_tab.into()
+            },
+        ]
+    );
+    // The reads of the windows, their tabs and a tab's layout.
+    let reads = Rc::new(RefCell::new(None));
+    let read = Rc::clone(&reads);
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let windows = cx.windows()?;
+                    let tabs = cx.tabs(windows[0].id)?;
+                    let layout = cx.layout(tabs[0].id)?;
+                    *read.borrow_mut() = Some((windows, tabs, layout));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("reader.read", Args::new(), &mut app.context())
+        .unwrap();
+    let (windows, tabs, layout) = reads.borrow_mut().take().unwrap();
+    assert_eq!(
+        windows,
+        [host::WindowInfo {
+            id: window.into(),
+            tabs: vec![first_tab.into(), tab],
+            active: first_tab.into(),
+        }]
+    );
+    assert_eq!(
+        tabs,
+        [
+            host::TabInfo {
+                id: first_tab.into(),
+                window: window.into(),
+                title: String::new(),
+                active: true,
+                panes: vec![first.into(), split],
+                focused: first.into(),
+                zoomed: None,
+            },
+            host::TabInfo {
+                id: tab,
+                window: window.into(),
+                title: String::new(),
+                active: false,
+                panes: vec![tab_pane],
+                focused: tab_pane,
+                zoomed: None,
+            },
+        ]
+    );
+    assert_eq!(
+        layout,
+        Laid::Split {
+            direction: Lie::Horizontal,
+            ratio: None,
+            first: Box::new(Laid::Pane(first.into())),
+            second: Box::new(Laid::Pane(split)),
+        }
+    );
+}
+
+#[test]
+fn a_plugin_moves_and_closes_panes_and_tabs_and_their_events_tell_it() {
+    use lokyr_plugin_sdk::host::{Direction as Lie, Side as Part};
+
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let first = app.workspace.active_pane(window).unwrap();
+    let mut plugins = Plugins::new();
+    let split = Rc::new(RefCell::new(None));
+    let kept = Rc::clone(&split);
+    plugins
+        .add(
+            "ws",
+            scripted(
+                |cx| {
+                    cx.register_command(command("ws.split"))?;
+                    cx.register_command(command("ws.out"))?;
+                    cx.register_command(command("ws.close"))
+                },
+                move |cx, name, _| {
+                    match name {
+                        "ws.split" => {
+                            let pane = cx.focused_pane().unwrap();
+                            *kept.borrow_mut() =
+                                Some(cx.split(pane, Lie::Vertical, Part::First)?);
+                        }
+                        "ws.out" => cx.pane_to_new_window(kept.borrow().unwrap())?,
+                        _ => cx.close_pane(kept.borrow().unwrap())?,
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("ws.split", Args::new(), &mut app.context())
+        .unwrap();
+    let split = split.borrow().unwrap();
+    let tab = app.workspace.tab_of(first).unwrap();
+    changes(&mut app);
+    // Out to a window of its own, in a tab of its own.
+    plugins
+        .run("ws.out", Args::new(), &mut app.context())
+        .unwrap();
+    let moved = app.workspace.tab_of(PaneId::of(split.0)).unwrap();
+    let out = app.workspace.tab(moved).unwrap().window();
+    assert_ne!(out, window);
+    assert_eq!(app.workspace.windows().count(), 2);
+    assert_eq!(
+        changes(&mut app),
+        [
+            WorkspaceEvent::LayoutChanged { tab: tab.into() },
+            WorkspaceEvent::WindowOpened { window: out.into() },
+            WorkspaceEvent::TabCreated {
+                tab: moved.into(),
+                window: out.into(),
+                index: 0
+            },
+            WorkspaceEvent::PaneMoved {
+                pane: split,
+                from: tab.into(),
+                tab: moved.into()
+            },
+        ]
+    );
+    // Closed: its tab, then its window, close with it.
+    plugins
+        .run("ws.close", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(app.workspace.pane(PaneId::of(split.0)).is_none());
+    assert_eq!(app.workspace.windows().count(), 1);
+    assert_eq!(
+        changes(&mut app),
+        [
+            WorkspaceEvent::PaneClosed {
+                pane: split,
+                tab: moved.into()
+            },
+            WorkspaceEvent::TabClosed {
+                tab: moved.into(),
+                window: out.into()
+            },
+            WorkspaceEvent::WindowClosed { window: out.into() },
+        ]
+    );
+}
+
+#[test]
+fn a_workspace_request_of_what_is_not_there_fails_and_writes_nothing() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let first = app.workspace.active_pane(window).unwrap();
+    let tab = app.workspace.tab_of(first).unwrap();
+    let mut plugins = Plugins::new();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    let (window_id, tab_id, pane_id) = (window.get(), tab.get(), first.get());
+    plugins
+        .add(
+            "ws",
+            scripted(
+                |cx| {
+                    cx.register_command(command("ws.wrong"))?;
+                    cx.register_command(command("ws.late"))
+                },
+                move |cx, name, _| {
+                    let (window, tab, pane) = (
+                        host::WindowId(window_id),
+                        host::TabId(tab_id),
+                        host::PaneId(pane_id),
+                    );
+                    let none = (host::WindowId(999), host::TabId(999), host::PaneId(999));
+                    if name == "ws.late" {
+                        // A tab of a window that an earlier write of the
+                        // call closes starts no program.
+                        cx.close_tab(tab)?;
+                        cx.new_tab(window, None)?;
+                        return Ok(());
+                    }
+                    let results = [
+                        cx.new_tab(none.0, None).map(|_| ()),
+                        cx.tabs(none.0).map(|_| ()),
+                        cx.layout(none.1).map(|_| ()),
+                        cx.close_tab(none.1),
+                        cx.focus_pane(none.2),
+                        cx.move_tab(tab, none.0, 0),
+                        cx.zoom(tab, Some(none.2)),
+                        cx.resize_pane(pane, host::Edge::Right, 2.0),
+                        cx.set_ratio(tab, Vec::new(), Some(1.5)),
+                    ];
+                    seen.borrow_mut()
+                        .extend(results.map(|result| result.unwrap_err().code.number()));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    changes(&mut app);
+    plugins
+        .run("ws.wrong", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *codes.borrow(),
+        [101, 101, 101, 101, 101, 101, 101, 201, 201]
+    );
+    assert!(changes(&mut app).is_empty());
+    assert!(app.panes.0.is_empty());
+    plugins
+        .run("ws.late", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(app.panes.0.is_empty());
+    assert_eq!(app.workspace.windows().count(), 0);
 }

@@ -24,6 +24,93 @@ pub struct TabId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PaneId(pub u64);
 
+/// A window, as a read of the windows gives it: its tabs, in their order,
+/// and the one that it shows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowInfo {
+    /// The window.
+    pub id: WindowId,
+    /// Its tabs, from the first.
+    pub tabs: Vec<TabId>,
+    /// The tab that it shows.
+    pub active: TabId,
+}
+
+/// A tab, as a read of a window's tabs gives it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabInfo {
+    /// The tab.
+    pub id: TabId,
+    /// Its window.
+    pub window: WindowId,
+    /// Its title, as its active pane's program gives it; empty for none.
+    pub title: String,
+    /// Whether its window shows it.
+    pub active: bool,
+    /// Its panes, in its layout's order: a split's first part before its
+    /// second.
+    pub panes: Vec<PaneId>,
+    /// The pane that has its keyboard.
+    pub focused: PaneId,
+    /// The pane that takes its whole room, if one does.
+    pub zoomed: Option<PaneId>,
+}
+
+/// How a split lays its two parts out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Direction {
+    /// Side by side: the first part on the left, the second on the right.
+    Horizontal,
+    /// One over the other: the first part above, the second below.
+    Vertical,
+}
+
+/// A part of a split.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Side {
+    /// The first: the left one, or the top one.
+    First,
+    /// The second: the right one, or the bottom one.
+    Second,
+}
+
+/// An edge of a pane, which a resize moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Edge {
+    /// Its left edge.
+    Left,
+    /// Its right edge.
+    Right,
+    /// Its top edge.
+    Top,
+    /// Its bottom edge.
+    Bottom,
+}
+
+/// A tab's layout: a pane, or a split of two layouts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Layout {
+    /// A pane, which takes the whole of its part.
+    Pane(PaneId),
+    /// Two parts that share the room.
+    Split {
+        /// How the parts lie.
+        direction: Direction,
+        /// The share of the first part, from 0 to 1, as a divider's drag
+        /// gave it; `None` shares the room by the parts' panes along the
+        /// direction.
+        ratio: Option<f64>,
+        /// The left or top part.
+        first: Box<Layout>,
+        /// The right or bottom part.
+        second: Box<Layout>,
+    },
+}
+
 /// A binding of keys to a command, as a plugin asks for it. The user's
 /// bindings, in the config, come after the plugins', and win over them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
