@@ -3,7 +3,8 @@
 //! does over the title, and a single click tells the content nothing. A
 //! titlebar of tabs is taller, of no title, its buttons' room told; a press
 //! over its parts that are the content's comes to the content, as the
-//! pointer's moves over it do; the title's titlebar again is as before.
+//! pointer's moves over it do, and the first click there of a window that
+//! is not key too; the title's titlebar again is as before.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -45,6 +46,9 @@ mod probe {
         tabs: Option<WindowSize>,
         /// Whether the title showed with the tabs' titlebar.
         title_shown: bool,
+        /// Whether the content takes a first click over a tab's part of the
+        /// bar, over the rest of it, and below it.
+        first_mouse: Vec<bool>,
     }
 
     struct Probe {
@@ -59,12 +63,17 @@ mod probe {
         send(view, NSEventType::LeftMouseDown, (x, y), clicks);
     }
 
-    /// Sends the content view `view` an event of the mouse of `kind` at `x`
-    /// points from its left and `y` from its bottom.
-    fn send(view: &NSView, kind: NSEventType, (x, y): (f64, f64), clicks: isize) {
+    /// An event of the mouse of `kind` at `x` points from the content view
+    /// `view`'s left and `y` from its bottom.
+    fn mouse_event(
+        view: &NSView,
+        kind: NSEventType,
+        (x, y): (f64, f64),
+        clicks: isize,
+    ) -> Retained<NSEvent> {
         let window = view.window().expect("the view's window");
         let location = view.convertPoint_toView(NSPoint::new(x, y), None);
-        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+        NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
             kind,
             location,
             NSEventModifierFlags::empty(),
@@ -75,7 +84,13 @@ mod probe {
             clicks,
             1.0,
         )
-        .expect("an event");
+        .expect("an event")
+    }
+
+    /// Sends the content view `view` an event of the mouse of `kind` at `x`
+    /// points from its left and `y` from its bottom.
+    fn send(view: &NSView, kind: NSEventType, (x, y): (f64, f64), clicks: isize) {
+        let event = mouse_event(view, kind, (x, y), clicks);
         if kind == NSEventType::MouseMoved {
             // SAFETY: the view's action of a move, of this signature.
             let () = unsafe { msg_send![view, mouseMoved: &*event] };
@@ -143,6 +158,13 @@ mod probe {
                             },
                         }],
                     );
+                    for at in [(250.0, top), (120.0, top), (120.0, 50.0)] {
+                        let down = mouse_event(&content, NSEventType::LeftMouseDown, at, 1);
+                        // SAFETY: the view's answer, of this signature.
+                        let takes: bool =
+                            unsafe { msg_send![&*content, acceptsFirstMouse: &*down] };
+                        seen.first_mouse.push(takes);
+                    }
                     press(&content, (250.0, top), 1);
                     platform.track_mouse_moves(id, true);
                     send(&content, NSEventType::MouseMoved, (120.0, top), 0);
@@ -182,6 +204,7 @@ mod probe {
         // The press over the tab's part of the bar alone, and the move.
         assert_eq!((seen.buttons, seen.moves), (1, 1), "{seen:?}");
         assert!(!seen.title_shown, "{seen:?}");
+        assert_eq!(seen.first_mouse, [true, false, false], "{seen:?}");
         let tabs = seen.tabs.as_ref().expect("the tabs' titlebar's size");
         let titled = seen.sizes.last().expect("the title's titlebar's size");
         // A compact toolbar's titlebar, taller than the title's alone, its

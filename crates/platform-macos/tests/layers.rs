@@ -1,7 +1,9 @@
 //! The layers of a window, of the text that blinks and of the cursor: views
 //! over the content's, the cursor's over the text's, where the app places
 //! them, whose opacity the window server animates as the blink says, faded
-//! or switched, and which clicks go through.
+//! or switched, and which clicks go through; and the sweeps of its
+//! progresses, under them, which keep their distance from the top as the
+//! window resizes.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -13,8 +15,8 @@ mod probe {
     use std::time::{Duration, Instant};
 
     use lokyr_platform_core::{
-        AppEvent, Blink, Easing, Handler, Layer, LayerPlace, Platform, Point, Size,
-        WindowAttributes, WindowEvent, WindowId,
+        AppEvent, Blink, Easing, Handler, Layer, LayerPlace, Platform, Point, Size, Sweep,
+        SweepShape, WindowAttributes, WindowEvent, WindowId,
     };
     use objc2::MainThreadMarker;
     use objc2::rc::Retained;
@@ -45,6 +47,9 @@ mod probe {
         /// The cursor's distance from the content's top, and its frame's
         /// size, before and after the window grows, and shrinks.
         resized: Vec<(f64, NSSize)>,
+        /// A sweep's distance from the content's top, and its frame's size,
+        /// as the cursor's.
+        swept: Vec<(f64, NSSize)>,
         /// The content view's height, in points.
         height: f64,
     }
@@ -189,11 +194,46 @@ mod probe {
                 (top, frame.size)
             };
             seen.resized.push(from_top(&content, &cursor));
+            // A bar's sweep 40 points from the top, which no call places
+            // again as the window resizes.
+            let bar = (
+                Point { x: 10.0, y: 40.0 },
+                Size {
+                    width: 100.0,
+                    height: 4.0,
+                },
+            );
+            platform.set_sweeps(
+                window,
+                &[Sweep {
+                    origin: bar.0,
+                    size: bar.1,
+                    within: bar,
+                    radius: 2.0,
+                    shape: SweepShape::Bar { width: 25.0 },
+                    color: [0.0, 0.5, 1.0, 1.0],
+                    period: Duration::from_secs(1),
+                    start: Instant::now(),
+                }],
+            );
+            let sweep_from_top = |content: &NSView| {
+                let sweeps = content.subviews().objectAtIndex(0);
+                let layer = sweeps.layer().expect("the sweeps' layer");
+                // SAFETY: the layer's sublayers, its sweeps'.
+                let within = unsafe { layer.sublayers() }
+                    .expect("a sweep's layer")
+                    .objectAtIndex(0)
+                    .frame();
+                let top = content.bounds().size.height - within.origin.y - within.size.height;
+                (top, within.size)
+            };
+            seen.swept.push(sweep_from_top(&content));
             let ns_window = content.window().expect("the window");
             for height in [420.0, 200.0] {
                 ns_window.setContentSize(NSSize::new(400.0, height));
                 let (content, _, cursor) = views();
                 seen.resized.push(from_top(&content, &cursor));
+                seen.swept.push(sweep_from_top(&content));
             }
             platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
@@ -261,6 +301,7 @@ mod probe {
         assert!(seen.through, "{seen:?}");
         let placed = (50.0, NSSize::new(8.0, 16.0));
         assert_eq!(seen.resized, [placed; 3], "{seen:?}");
+        assert_eq!(seen.swept, [(40.0, NSSize::new(100.0, 4.0)); 3], "{seen:?}");
         // The text's rows, switched, then hidden; the cursor's as it was.
         let (frame, hidden, ref animation) = seen.text[0];
         assert_eq!(

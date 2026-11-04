@@ -114,6 +114,15 @@ impl App {
         let window = platform
             .create_window(&attributes)
             .map_err(|error| error.to_string())?;
+        let scale = platform
+            .window_size(window)
+            .ok_or("the window has no size")?
+            .scale;
+        let mut view = View::new(Gallery::new(self.dark), scale as f32);
+        // The titlebar of the tab bar's place before the first frame, whose
+        // content's size it changes.
+        self.titlebar = titlebar_of(view.gallery.tab_bar_place());
+        platform.set_titlebar(window, self.titlebar);
         let size = platform
             .window_size(window)
             .ok_or("the window has no size")?;
@@ -128,7 +137,6 @@ impl App {
         } else {
             Appearance::Light
         }));
-        let mut view = View::new(Gallery::new(self.dark), size.scale as f32);
         // A menu's panel of menu items shows as the system's own menu.
         view.native_menus = true;
         set_titlebar(&mut view, size);
@@ -300,10 +308,7 @@ impl App {
         }
         // The titlebar of the tab bar's place, whose height comes back as
         // the window's size, and the tab bar's parts of it.
-        let titlebar = match view.gallery.tab_bar_place() {
-            TabBarPlace::Titlebar => Titlebar::Tabs,
-            TabBarPlace::BelowTitlebar => Titlebar::Titled,
-        };
+        let titlebar = titlebar_of(view.gallery.tab_bar_place());
         if titlebar != self.titlebar {
             platform.set_titlebar(*window, titlebar);
             self.titlebar = titlebar;
@@ -471,6 +476,15 @@ impl App {
             Ime::Commit(text) => view.ime(&text, 0..0, true),
         }
         self.request_frame(platform);
+    }
+}
+
+/// The window's titlebar of the tab bar's place: of tabs where it is in
+/// the titlebar.
+fn titlebar_of(place: TabBarPlace) -> Titlebar {
+    match place {
+        TabBarPlace::Titlebar => Titlebar::Tabs,
+        TabBarPlace::BelowTitlebar => Titlebar::Titled,
     }
 }
 
@@ -791,6 +805,15 @@ fn write_png(path: &Path, (width, height): (u32, u32), pixels: &[u8]) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tab_bar_s_place_chooses_the_window_s_titlebar() {
+        assert_eq!(titlebar_of(TabBarPlace::Titlebar), Titlebar::Tabs);
+        assert_eq!(titlebar_of(TabBarPlace::BelowTitlebar), Titlebar::Titled);
+        // The gallery's first, before its first frame.
+        let gallery = Gallery::new(false);
+        assert_eq!(titlebar_of(gallery.tab_bar_place()), Titlebar::Tabs);
+    }
 
     #[test]
     fn a_key_tells_its_place_on_a_latin_layout() {

@@ -663,6 +663,15 @@ define_class!(
             self.post_key(event);
         }
 
+        // SAFETY: AppKit's signature. The first click on a part of the
+        // titlebar that is the content's, as a tab's, acts in a window that
+        // was not key too, as the system's toolbars do; elsewhere it makes
+        // the window key alone.
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, event: Option<&NSEvent>) -> bool {
+            event.is_some_and(|event| self.is_over_bar(event) && self.is_over_titlebar_area(event))
+        }
+
         // SAFETY: AppKit's signature, for each of the mouse's buttons. A
         // press over the titlebar is the window's, which it drags, or which
         // a double click zooms: the content learns of nothing, until every

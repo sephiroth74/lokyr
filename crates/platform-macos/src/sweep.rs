@@ -16,7 +16,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSResponder, NSView, NSWorkspace};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColor, CGMutablePath};
-use objc2_foundation::{NSNumber, NSObject, NSPoint, NSString};
+use objc2_foundation::{NSNumber, NSObject, NSPoint, NSSize, NSString};
 use objc2_quartz_core::{
     CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CAShapeLayer, CATransaction,
     kCALineCapButt,
@@ -52,6 +52,15 @@ define_class!(
         fn hit_test(&self, _point: NSPoint) -> Option<Retained<NSView>> {
             None
         }
+
+        // SAFETY: AppKit's signature, which a resize of the content's view
+        // calls through the view's autoresizing.
+        #[unsafe(method(setFrameSize:))]
+        fn set_frame_size(&self, size: NSSize) {
+            // SAFETY: `NSView`'s own, of this signature.
+            let () = unsafe { msg_send![super(self), setFrameSize: size] };
+            self.place();
+        }
     }
 );
 
@@ -71,6 +80,30 @@ impl SweepsView {
         );
         over.addSubview(&view);
         view
+    }
+
+    /// Places the sweeps that it shows again at their distance from the
+    /// view's top, as a resize changed its height, which a layer's origin
+    /// counts from its bottom: their animations go on as they were.
+    fn place(&self) {
+        let height = self.bounds().size.height;
+        let mut shown = self.ivars().shown.borrow_mut();
+        if shown.1 == height {
+            return;
+        }
+        shown.1 = height;
+        // SAFETY: the view's layer's sublayers, its sweeps', in their order.
+        let Some(layers) = self.layer().and_then(|layer| unsafe { layer.sublayers() }) else {
+            return;
+        };
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        for (at, sweep) in shown.0.iter().enumerate().take(layers.count()) {
+            layers
+                .objectAtIndex(at)
+                .setFrame(within_frame(sweep, height));
+        }
+        CATransaction::commit();
     }
 
     /// Shows `sweeps`, in place of those that it showed, unless they are the
@@ -101,20 +134,30 @@ impl SweepsView {
     }
 }
 
+/// The frame of `origin` and `size`, from the top left corner of a frame
+/// at `from`, as a layer's of a superlayer there, whose origin is its
+/// bottom left corner.
+fn up(origin: Point, size: Size, from: (f64, f64)) -> CGRect {
+    CGRect::new(
+        CGPoint::new(origin.x - from.0, from.1 - origin.y - size.height),
+        CGSize::new(size.width, size.height),
+    )
+}
+
+/// The frame of the layer of the part of the window where `sweep` shows, in
+/// a view `height` points high.
+fn within_frame(sweep: &Sweep, height: f64) -> CGRect {
+    let (origin, size) = sweep.within;
+    up(origin, size, (0.0, height))
+}
+
 /// The layer of `sweep`, over a view `height` points high, whose time is
 /// `now`: the part of the window where its progress shows, which clips its
 /// bar or its ring, which clips what moves.
 fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retained<CALayer> {
-    // A layer's origin is its superlayer's bottom left corner.
-    let up = |origin: Point, size: Size, from: (f64, f64)| {
-        CGRect::new(
-            CGPoint::new(origin.x - from.0, from.1 - origin.y - size.height),
-            CGSize::new(size.width, size.height),
-        )
-    };
     let (within_origin, within_size) = sweep.within;
     let within = CALayer::new();
-    within.setFrame(up(within_origin, within_size, (0.0, height)));
+    within.setFrame(within_frame(sweep, height));
     within.setMasksToBounds(true);
     let track = CALayer::new();
     track.setFrame(up(
