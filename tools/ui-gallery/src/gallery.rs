@@ -92,8 +92,10 @@ pub struct Gallery {
     tabs: usize,
     chosen: usize,
     in_titlebar: bool,
-    /// The tab chosen of the view of tabs.
+    /// The tab chosen of the view of tabs, and how its tabs share its
+    /// width.
     page: usize,
+    distribution: view::Distribution,
 }
 
 /// The gallery's menu, at the pointer.
@@ -156,6 +158,7 @@ impl Gallery {
             chosen: 0,
             in_titlebar: true,
             page: 0,
+            distribution: view::Distribution::Fit,
         }
     }
 
@@ -356,6 +359,13 @@ impl Gallery {
                 self.pressed = format!("click on `{key}`");
             }
             UiEventKind::Select { item } if key == "views" => self.page = item,
+            UiEventKind::Toggle { .. } if DISTRIBUTIONS.iter().any(|(named, ..)| *named == key) => {
+                if let Some(&(_, _, distribution)) =
+                    DISTRIBUTIONS.iter().find(|(named, ..)| *named == key)
+                {
+                    self.distribution = distribution;
+                }
+            }
             UiEventKind::ListRange { first, count } => self.window = (first, first + count),
             UiEventKind::Select { item } => self.listed = format!("selected item {item}"),
             UiEventKind::Activate { item } => self.listed = format!("activated item {item}"),
@@ -1149,10 +1159,34 @@ impl Gallery {
                 ],
             ),
         };
+        let mut tabs = Node::tabs(tabs, self.page, page.key("views.page")).key("views");
+        if let Kind::Tabs(view) = &mut tabs.kind {
+            view.distribution = self.distribution;
+        }
+        // How its tabs share its width, one at a time.
+        let distributions = Node::container(
+            DISTRIBUTIONS
+                .iter()
+                .map(|&(key, label, distribution)| {
+                    Node::new(Kind::Toggle(view::Toggle {
+                        label: label.to_owned(),
+                        on: distribution == self.distribution,
+                        ..view::Toggle::default()
+                    }))
+                    .key(key)
+                })
+                .collect(),
+        )
+        .layout(Layout {
+            gap: 6.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
         column(
             8.0,
             vec![
-                Node::tabs(tabs, self.page, page.key("views.page")).key("views"),
+                distributions,
+                tabs,
                 secondary(
                     "A click, or the arrows with the focus, choose a tab; Advanced is disabled",
                 ),
@@ -1496,6 +1530,23 @@ fn half(content: Node) -> Node {
     content.layout(layout)
 }
 
+/// The distributions of the view of tabs, by their toggles' keys and
+/// labels.
+const DISTRIBUTIONS: [(&str, &str, view::Distribution); 4] = [
+    ("views.fit", "Fit", view::Distribution::Fit),
+    ("views.fill", "Fill", view::Distribution::Fill),
+    (
+        "views.fill-equally",
+        "Fill Equally",
+        view::Distribution::FillEqually,
+    ),
+    (
+        "views.fill-proportionally",
+        "Fill Proportionally",
+        view::Distribution::FillProportionally,
+    ),
+];
+
 /// A section: its title, over a panel of `body`.
 fn section(title: &str, body: Node) -> Node {
     let panel = Node::container(vec![body])
@@ -1693,6 +1744,10 @@ mod tests {
             "less",
             "more",
             "spin",
+            "views.fit",
+            "views.fill",
+            "views.fill-equally",
+            "views.fill-proportionally",
             "views",
         ];
         let openers = [

@@ -253,6 +253,7 @@ type Node = {
     row_height: number?, -- for list nodes, of rows of one height, a point at least; without it, each row takes its own, a point at least
     tabs: { { label: string, icon: string?, disabled: boolean? } }?, -- for tabs nodes, in their order: a control of them over the box of its page, its child
     chosen: number?, -- for tabs nodes, the tab chosen, whose page is its child; a click or the arrows choose another, as "select" tells
+    distribution: ("fit" | "fill" | "fill-equally" | "fill-proportionally")?, -- for tabs nodes, as macOS's segmented controls: each tab of its content's width, the control in the middle, by default; or the control of the view's width, each tab of its content's and an equal share of the room left, of equal widths, or of its content's share
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
     tooltip: string?, -- shown as the pointer rests over the node, by its key

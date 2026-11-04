@@ -15,7 +15,9 @@
 
 use std::collections::HashMap;
 
-use lokyr_plugin_sdk::view::{self, Align, Direction, Justify, Kind, Length, ProgressShape};
+use lokyr_plugin_sdk::view::{
+    self, Align, Direction, Distribution, Justify, Kind, Length, ProgressShape,
+};
 use taffy::Overflow;
 use taffy::prelude::{
     AlignItems, AvailableSpace, Dimension, FlexDirection, JustifyContent, LengthPercentage,
@@ -214,7 +216,11 @@ impl Layout {
                 .map(|tab| (tab.label.clone(), tab.icon.clone()))
                 .collect(),
         );
+        let style = control_style(self.scale, view.distribution);
         if let Some(&control) = self.controls.get(&id) {
+            if self.taffy.style(control).is_ok_and(|kept| *kept != style) {
+                let _ = self.taffy.set_style(control, style);
+            }
             let kept = self
                 .taffy
                 .get_node_context(control)
@@ -236,10 +242,7 @@ impl Layout {
             measured: None,
             parts: Vec::new(),
         };
-        match self
-            .taffy
-            .new_leaf_with_context(control_style(self.scale), leaf)
-        {
+        match self.taffy.new_leaf_with_context(style, leaf) {
             Ok(control) => {
                 self.controls.insert(id, control);
                 true
@@ -263,9 +266,14 @@ impl Layout {
 
     /// The frames of the segments of the control of the view of tabs `id`
     /// of `tree`, side by side, of the last layout, as [`Layout::frame`]
-    /// gives frames: none before its first layout.
+    /// gives frames, of its distribution: each of its content's width, or
+    /// of the control's, the view's, shared; none before its first layout.
     pub fn segments(&self, tree: &Tree, id: NodeId) -> Vec<Frame> {
-        let (Some(control), Some(&node)) = (self.control(tree, id), self.controls.get(&id)) else {
+        let (Some(Kind::Tabs(view)), Some(control), Some(&node)) = (
+            tree.kind(id),
+            self.control(tree, id),
+            self.controls.get(&id),
+        ) else {
             return Vec::new();
         };
         let Some(parts) = self
@@ -275,11 +283,12 @@ impl Layout {
         else {
             return Vec::new();
         };
+        let natural: Vec<f32> = parts.iter().map(|points| points * self.scale).collect();
+        let widths = tabs::widths(&natural, control.width, view.distribution);
         let mut x = control.x;
-        parts
-            .iter()
-            .map(|&points| {
-                let width = points * self.scale;
+        widths
+            .into_iter()
+            .map(|width| {
                 let segment = Frame {
                     x,
                     width,
@@ -325,8 +334,12 @@ impl Layout {
                     .set_style(node, style_in(tree, id, style(kind, layout, scale)));
             }
         }
-        for &control in self.controls.values() {
-            let _ = self.taffy.set_style(control, control_style(scale));
+        for (&id, &control) in &self.controls {
+            if let Some(Kind::Tabs(view)) = tree.kind(id) {
+                let _ = self
+                    .taffy
+                    .set_style(control, control_style(scale, view.distribution));
+            }
         }
     }
 
@@ -569,11 +582,15 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
     (size, Vec::new())
 }
 
-/// The style of a view of tabs' control, at `scale`: in the middle of its
-/// view's top, of its content's size, the page below it.
-fn control_style(scale: f32) -> Style {
+/// The style of a view of tabs' control, at `scale`, of `distribution`: in
+/// the middle of its view's top, of its content's width, or of the view's
+/// where its tabs fill it; the page below it.
+fn control_style(scale: f32, distribution: Distribution) -> Style {
     Style {
-        align_self: Some(AlignItems::CENTER),
+        align_self: Some(match distribution {
+            Distribution::Fit => AlignItems::CENTER,
+            _ => AlignItems::STRETCH,
+        }),
         flex_shrink: 0.0,
         margin: Rect {
             left: LengthPercentageAuto::length(0.0),

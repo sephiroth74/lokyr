@@ -120,6 +120,26 @@ pub struct Tabs {
     pub tabs: Vec<Tab>,
     /// The tab chosen, by its index, whose page is its child.
     pub chosen: usize,
+    /// How its tabs share its control's width.
+    pub distribution: Distribution,
+}
+
+/// How a view of tabs' tabs share its control's width, as macOS's
+/// segmented controls' distributions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Distribution {
+    /// Each of its content's width, the control in the middle of the view.
+    #[default]
+    Fit,
+    /// The control of the view's width, each tab of its content's width
+    /// and of an equal share of the room left.
+    Fill,
+    /// The control of the view's width, the tabs of equal widths.
+    FillEqually,
+    /// The control of the view's width, each tab of its share of it as
+    /// its content's of theirs.
+    FillProportionally,
 }
 
 /// A tab of a view of tabs.
@@ -752,7 +772,11 @@ impl Node {
     pub fn tabs(tabs: Vec<Tab>, chosen: usize, page: Node) -> Self {
         Self {
             children: vec![page],
-            ..Self::new(Kind::Tabs(Tabs { tabs, chosen }))
+            ..Self::new(Kind::Tabs(Tabs {
+                tabs,
+                chosen,
+                distribution: Distribution::Fit,
+            }))
         }
     }
 
@@ -1002,7 +1026,11 @@ mod tests {
                 ..Tab::new("Off")
             }],
             chosen: 0,
+            distribution: Distribution::Fit,
         });
+        let filled: Tabs =
+            serde_json::from_str(r#"{"tabs":[],"distribution":"fill-proportionally"}"#).unwrap();
+        assert_eq!(filled.distribution, Distribution::FillProportionally);
         assert!(!all_disabled.takes_focus());
         let events = [
             UiEventKind::DoubleClick,

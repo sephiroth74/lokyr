@@ -1574,6 +1574,29 @@ mod tests {
             ),
         );
         assert!(text(&view, "The appearance's page"));
+        // Its tabs of equal widths, as its toggle asks.
+        let at = middle(&mut view, "views.fill-equally");
+        click(&mut view, at);
+        let tree = &view.main.tree;
+        let node = tree.by_key(&"views".into()).unwrap();
+        assert!(matches!(
+            tree.kind(node),
+            Some(lokyr_plugin_sdk::view::Kind::Tabs(tabs))
+                if tabs.distribution == lokyr_plugin_sdk::view::Distribution::FillEqually
+        ));
+        let widths: Vec<f32> = view
+            .main
+            .layout
+            .segments(tree, node)
+            .iter()
+            .map(|segment| segment.width)
+            .collect();
+        assert!(
+            widths
+                .windows(2)
+                .all(|pair| (pair[0] - pair[1]).abs() < 0.01),
+            "{widths:?}"
+        );
     }
 
     #[test]
