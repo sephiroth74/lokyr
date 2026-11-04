@@ -1,7 +1,7 @@
-//! The views of tabs, as a settings panel's: a control of their tabs, each
-//! a segment of a label, an icon before it or both, sized as a button's,
-//! side by side, over the box of their page, the tab chosen's, as macOS's
-//! tab views draw them. A click on a tab, or Left and Right while the view
+//! The views of tabs, as a settings panel's: a box, and inside it at its
+//! top a control of their tabs, each a segment of a label, an icon before
+//! it or both, sized as a button's, side by side, over their page, the tab
+//! chosen's, as macOS 27's tab views draw them. A click on a tab, or Left and Right while the view
 //! has the keyboard's focus, chooses one, past those that are disabled,
 //! which its plugin learns of by `select`: the tab chosen is its plugin's,
 //! in its render, which gives its page too.
@@ -16,6 +16,9 @@ use crate::tree::{NodeId, Tree};
 /// The room inside a view's box about its page, in points: on its sides,
 /// below it, and between the control and it.
 pub const INSET: f32 = 12.0;
+
+/// The room inside a view's box above its control, in points.
+pub const TOP: f32 = 8.0;
 
 /// The radius of the corners of a view's box, in points.
 pub const RADIUS: f32 = 6.0;
@@ -158,11 +161,11 @@ mod tests {
     fn the_control_s_segments_go_side_by_side_in_the_middle_over_the_page() {
         // Of a button's sizes: `General` 42 and 16 of padding, `Look` of
         // its icon too, 60 and 22 high, `Advanced` 64, `Keys` 40; in the
-        // middle of the 276 points inside the box's room.
+        // middle of the 276 points inside the box's room, 8 below its top.
         let (tree, layout, node) = laid(0, 1.0);
         let frame = |x, width| Frame {
             x,
-            y: 0.0,
+            y: 8.0,
             width,
             height: 22.0,
         };
@@ -180,10 +183,10 @@ mod tests {
         let page = layout
             .frame(&tree, tree.by_key(&"page".into()).unwrap())
             .unwrap();
-        assert_eq!((page.x, page.y), (12.0, 34.0));
+        assert_eq!((page.x, page.y), (12.0, 42.0));
         assert_eq!(
             layout.frame(&tree, node).unwrap().height,
-            34.0 + 14.0 + 12.0
+            42.0 + 14.0 + 12.0
         );
         // At a scale of 2, in pixels.
         let (tree, layout, node) = laid(0, 2.0);
@@ -205,7 +208,7 @@ mod tests {
         let page = layout
             .frame(&tree, tree.by_key(&"page".into()).unwrap())
             .unwrap();
-        assert_eq!(page.y, 34.0);
+        assert_eq!(page.y, 42.0);
         // Of another font, measured anew.
         struct Wide;
         impl Measure for Wide {
@@ -232,8 +235,10 @@ mod tests {
         // On the edge between two tabs, the one after it: the chosen one.
         assert_eq!(click((97.0, 10.0)), None);
         assert_eq!(click((96.5, 10.0)), Some(UiEventKind::Select { item: 0 }));
-        // Past the control, nothing.
+        // Past the control, nothing: beside it, above it in the box, below
+        // it.
         assert_eq!(click((20.0, 10.0)), None);
+        assert_eq!(click((50.0, 4.0)), None);
         assert_eq!(click((50.0, 30.0)), None);
         // Through the pointer, a click's release over the tab.
         let mut pointer = Pointer::default();

@@ -373,11 +373,10 @@ impl<B: FontBackend> Painter<'_, B> {
         }
     }
 
-    /// The view of tabs `id`, of `view`, at `frame`: the box of its page,
-    /// from the middle of its control down, and its control over it, of its
-    /// tabs side by side, a line between two of them that are not chosen,
-    /// the chosen one tinted, a disabled one dimmed, the others' texts in
-    /// `color`.
+    /// The view of tabs `id`, of `view`, at `frame`: its box, and its
+    /// control inside it at its top, of its tabs side by side, a line
+    /// between two of them that are not chosen, the chosen one tinted, a
+    /// disabled one dimmed, the others' texts in `color`.
     fn tabs(&mut self, id: NodeId, view: &view::Tabs, frame: Frame, color: Color) {
         let scale = self.layout.scale();
         let origin = self.origin;
@@ -395,53 +394,14 @@ impl<B: FontBackend> Painter<'_, B> {
             .into_iter()
             .map(moved)
             .collect();
-        let middle = (control.y + control.height / 2.0).round();
-        let boxed = Frame {
-            y: middle,
-            height: (frame.y + frame.height - middle).max(0.0),
-            ..frame
-        };
-        // The box but under the control, as macOS's: its line stops at the
-        // control's sides, which a track that is not opaque would show
-        // through; drawn of three clips, left of the control, right of it
-        // and below it.
+        // The box, of the whole view, its control inside it at its top.
         if let Some(fill) = self.tokens.get("tabs.box.bg") {
-            let shape = Shape {
+            self.push_shape(Shape {
                 radius: tabs::RADIUS * scale,
                 border: scale.round().max(1.0),
                 border_color: self.tokens.get("tabs.box.border").unwrap_or(Color::CLEAR),
-                ..Shape::filled(rect(boxed), fill)
-            };
-            let (outer, under) = (rect(boxed), rect(control));
-            let (left, right) = (under.x, under.x.saturating_add_unsigned(under.width));
-            let below = under.y.saturating_add_unsigned(under.height);
-            let (outer_right, outer_bottom) = (
-                outer.x.saturating_add_unsigned(outer.width),
-                outer.y.saturating_add_unsigned(outer.height),
-            );
-            let span = |from: i32, to: i32| to.saturating_sub(from).max(0).unsigned_abs();
-            let parts = [
-                Rect {
-                    width: span(outer.x, left),
-                    ..outer
-                },
-                Rect {
-                    x: right,
-                    width: span(right, outer_right),
-                    ..outer
-                },
-                Rect {
-                    x: left,
-                    y: below,
-                    width: span(left, right),
-                    height: span(below, outer_bottom),
-                },
-            ];
-            for part in parts.into_iter().filter(|part| !is_empty(*part)) {
-                self.items.push(Item::PushClip(part));
-                self.push_shape(shape);
-                self.items.push(Item::PopClip);
-            }
+                ..Shape::filled(rect(frame), fill)
+            });
         }
         let radius = widget::RADIUS * scale;
         if let Some(track) = self.tokens.get("tabs.bg") {
@@ -1404,7 +1364,7 @@ mod tests {
     }
 
     #[test]
-    fn a_view_of_tabs_paints_its_box_its_control_and_its_chosen_tab() {
+    fn a_view_of_tabs_paints_its_box_its_control_inside_and_its_chosen_tab() {
         use lokyr_plugin_sdk::view::Tab;
         let tabs = vec![
             Tab::new("One"),
@@ -1448,51 +1408,18 @@ mod tests {
         let control = layout.control(&tree, node).unwrap();
         let segments = layout.segments(&tree, node);
         let frame = layout.frame(&tree, node).unwrap();
-        // The box from the control's middle down, the control's track, the
+        // The box of the whole view, the control's track inside it, the
         // first tab tinted, a line between the second and the third alone.
-        let middle = (control.y + control.height / 2.0).round() as i32;
         assert_eq!(shapes[0].fill, token("tabs.box.bg"));
         assert_eq!(shapes[0].border_color, token("tabs.box.border"));
+        assert_eq!(shapes[0].rect, rect(frame));
+        assert!(control.y > frame.y);
         assert_eq!(
-            (shapes[0].rect.y, shapes[0].rect.width),
-            (middle, frame.width as u32)
-        );
-        // The box of three clips, left of the control, right of it and
-        // below it, so that its line does not cross the tabs.
-        assert_eq!(shapes[..3], [shapes[0]; 3]);
-        let clips: Vec<Rect> = items
-            .windows(2)
-            .filter_map(|pair| match pair {
-                [Item::PushClip(clip), Item::Shapes(shapes)]
-                    if shapes[0].fill == token("tabs.box.bg") =>
-                {
-                    Some(*clip)
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(clips.len(), 3);
-        let under = rect(control);
-        assert!(
-            clips
-                .iter()
-                .all(|clip| is_empty(intersection(*clip, under))),
-            "{clips:?}"
-        );
-        // And all of the box but the control's part of it.
-        let outer = shapes[0].rect;
-        let overlap = intersection(outer, under);
-        let covered: u32 = clips.iter().map(|clip| clip.width * clip.height).sum();
-        assert_eq!(
-            covered,
-            outer.width * outer.height - overlap.width * overlap.height
-        );
-        assert_eq!(
-            (shapes[3].fill, shapes[3].rect),
+            (shapes[1].fill, shapes[1].rect),
             (token("tabs.bg"), rect(control))
         );
         assert_eq!(
-            (shapes[4].fill, shapes[4].rect),
+            (shapes[2].fill, shapes[2].rect),
             (token("tabs.chosen.bg"), rect(segments[0]))
         );
         let lines: Vec<i32> = shapes

@@ -612,9 +612,9 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
     };
     // A view of tabs: a column of its control and its page, inside its
     // box's room.
-    let (tabbed, inset) = match kind {
-        Kind::Tabs(_) => (true, tabs::INSET),
-        _ => (false, 0.0),
+    let (tabbed, inset, top) = match kind {
+        Kind::Tabs(_) => (true, tabs::INSET, tabs::TOP),
+        _ => (false, 0.0, 0.0),
     };
     Style {
         flex_direction: match layout.direction {
@@ -629,7 +629,7 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
         padding: Rect {
             left: pixels(layout.padding.left + inset),
             right: pixels(layout.padding.right + inset),
-            top: pixels(layout.padding.top),
+            top: pixels(layout.padding.top + top),
             bottom: pixels(layout.padding.bottom + inset),
         },
         align_items: match layout.align {
