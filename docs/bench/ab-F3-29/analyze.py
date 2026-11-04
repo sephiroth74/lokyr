@@ -13,13 +13,13 @@ for r in (1, 2):
         if not d: continue
         s = d["summary"]; m = s["from_start_ms"]["median"]
         print(f"round {r} {v}: {m:.1f} ms, p90 {s['from_start_ms']['p90']:.1f}, spread {s['spread']*100:.1f}%; floor {fm:.1f}; gap {m-fm:.1f}")
-print("## Latency (ms)")
-for r in (1, 2):
+print("## Latency (ms), and its histogram in refreshes")
+for r in (1, 2, 3, 4, 5, 6, 7, 8):
     for v in ("v030", "v040"):
         d = load(f"latency-{v}-{r}.json")
         if not d: continue
         l = d["latency_ms"]; f = d["frames"]
-        print(f"round {r} {v}: p50 {l['p50']:.2f} p90 {l['p90']:.2f} p99 {l['p99']:.2f} max {l['max']:.2f}; frames p50 {f['p50']:.2f} p99 {f['p99']:.2f}; refresh {d['refresh_ms']}")
+        print(f"round {r} {v}: p50 {l['p50']:.2f} p90 {l['p90']:.2f} p99 {l['p99']:.2f} max {l['max']:.2f}; frames p50 {f['p50']:.2f} p99 {f['p99']:.2f}; refresh {d['refresh_ms']}; {d['histogram']}")
 print("## Idle (per s) and memory (MB)")
 for r in (1, 2):
     for v in ("v030", "v040"):
