@@ -202,8 +202,8 @@ Sleip refuses a file signed by a key that `keys.json` lacks, or older than the o
 - **Phase 1 (F4)**, as [ADR 0031](adr/0031-registry-v0.md) decided:
   - The registry's root key, offline, the maintainer's, whose public part Sleip holds in its binary, signs `keys.json`, the list of the index keys; a new root comes with a new Sleip.
   - An index key, which the registry's CI holds in a GitHub environment of `main` alone, signs each index file whole, after each merge; a stolen index key is taken off `keys.json`, which the Sleips already installed follow.
-  - Each publisher registers an ed25519 key, and the registry stores the publisher's signature alongside its version.
-  - Sleip checks the index's signature, which covers each version's checksum, and the publisher's signature when present.
+  - Sleip checks the index's signature, which covers each version's checksum.
+  - A publisher is its GitHub account, which its pull request carries, as the user chose on 4 November 2026: the registry's CI builds each archive from its tag, so that no publisher could sign it, and a publisher's own signature comes with trusted publishing, in phase 2.
 - **Phase 2 (F7)**: trusted publishing via OIDC (GitHub Actions) and Sigstore signatures, as PyPI and crates.io do.
 
 ## Registry
