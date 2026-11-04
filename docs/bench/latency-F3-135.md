@@ -27,3 +27,27 @@ An accessibility client asked for the window's tree as it opened, as the apps of
 ## Left to do
 
 The same session in F3-29's regime, a p50 near 19 ms: started once a short run of 0.3.0 gives a p50 under 21 ms, with nothing else drawing on the display; and, if 0.4.0's tail is longer there, bundles of 0.4.0 that differ by its other parts on the way of a key to its frame, beside the trees, as the windows' surfaces and layers.
+
+# The second session, in the faster regime
+
+Measured on 2026-11-04, between 21:13 and 21:17, of the script and the analysis in [latency-F3-135/second](latency-F3-135/second/), `run.sh` and `analyze.py`, with their reports: whether 0.4.0's longer tail shows in the regime of [F3-29](ab-F3-29.md)'s rounds, a p50 near 19 ms, where the first session ran a refresh slower.
+
+## Method
+
+- **Three bundles**: `o`, the app of 0.3.0's DMG; `a`, 0.4.0, the first session's; `h`, the head of the work since 0.4.0, 0acf7fd, built as a release of the plain features, `0.4.0-20261104`, the slots and their input, the live resize's pace, and the review's fixes after F3-138 in it.
+- **The regime first**: a short run of `o`, 50 keys, until its p50 is under 21 ms, ten tries at most; it was at the first, 19.1 ms.
+- **Six rounds** of F3-29's config, 200 keys a run, whose orders put each bundle first, second and third twice.
+
+## Results
+
+| Bundle | p50, mean of 6 | p99, mean of 6 | Its range | Samples in the third refresh or later | In the fourth or later |
+|---|---|---|---|---|---|
+| `o`, 0.3.0 | 19.7 ms | 41.5 ms | 37.1 to 43.0 ms | 36 of 1194 | 2 |
+| `a`, 0.4.0 | 20.0 ms | 42.6 ms | 38.2 to 52.8 ms | 48 of 1194 | 4 |
+| `h`, the head | 19.8 ms | 46.0 ms | 42.0 to 50.9 ms | 45 of 1194 | 6 |
+
+The p99's difference from 0.3.0's, round by round: `a` −3.7, +4.8, −1.7, −1.6, +10.2, −1.2 ms; `h` +0.1, +13.8, +5.3, +0.2, +5.6, +2.5 ms. By the place in the round, of every bundle, the p99's mean is 44.9, 43.3 and 41.9 ms, first to third, the p50's 19.8 ms each.
+
+- **The regime was F3-29's**: the medians of the three are 19.7 to 20.0 ms, as F3-29's 18.9 to 20.0.
+- **0.4.0's tail is 0.3.0's within the rounds' spread**, its orders balanced: its p99 higher in two rounds of six, lower in four, its mean 1.1 ms higher, of twelve samples more in the third refresh of 1194. F3-29's difference, 0.4.0's p99 higher in seven rounds of eight, came of its orders, 0.4.0 second in five of them, as the second of a pair was the slower there.
+- **The head's tail is longer**: its p99 higher than 0.3.0's in every round, though by 0.2 ms or less in two, its mean 4.6 ms higher, of nine samples more in the third refresh or later and four more in the fourth; its medians 0.3.0's. Within the budget still, it is the work since 0.4.0, on a key's way to its frame, that lengthens it, which bundles that differ by one part of it tell next.
