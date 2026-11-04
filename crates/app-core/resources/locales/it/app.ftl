@@ -4,6 +4,7 @@ command-window-new = Nuova finestra
 command-window-close = Chiudi finestra
 command-window-set-title = Imposta titolo…
 command-window-toggle-quick-terminal = Terminale rapido
+command-app-about = Informazioni su Lokyr
 command-app-quit = Esci da Lokyr
 command-app-check-for-updates = Controlla aggiornamenti…
 command-app-settings = Impostazioni…
@@ -23,6 +24,13 @@ command-appearance-light = Aspetto chiaro
 command-appearance-dark = Aspetto scuro
 command-pane-look-up = Cerca info
 command-pane-man-page = Apri pagina man
+
+# The credits of the About panel, under the version and the copyright: the
+# license, and the links to the source code and to the licenses' notices of
+# the software that Lokyr includes.
+about-license = Distribuito con licenza MIT.
+about-repository = Codice sorgente su GitHub
+about-licenses = Licenze del software incluso
 
 menu-shell = Shell
 menu-edit = Composizione

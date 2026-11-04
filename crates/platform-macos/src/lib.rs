@@ -8,6 +8,7 @@
 
 #![cfg(target_os = "macos")]
 
+mod about;
 mod access;
 mod alert;
 mod app;

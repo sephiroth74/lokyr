@@ -90,9 +90,10 @@ fn menu_items(fake: &Fake, index: usize) -> Vec<String> {
 fn settings_opens_the_config_in_the_text_editor_made_first() {
     let (mut fake, mut app, path) = with_file("settings", "");
     std::fs::remove_file(&path).unwrap();
-    // The application's menu has it first after the updates, of its key.
+    // The application's menu has it first after About and the updates, of
+    // its key.
     assert_eq!(
-        menu_items(&fake, 0)[2..5],
+        menu_items(&fake, 0)[3..6],
         ["Settings… cmd+,", "Secure Keyboard Entry", "-"]
     );
     assert_eq!(menu_items(&fake, 0).last().unwrap(), "Quit Lokyr cmd+q");
@@ -518,6 +519,49 @@ fn the_updates_start_with_the_config_s_checks_and_the_menu_checks_now() {
     change(&mut fake, &mut app);
     assert_eq!(fake.update_checks(), Some(true));
     let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn about_opens_the_panel_of_the_license_the_repository_and_the_notices() {
+    let (mut fake, mut app) = started();
+    fake.send_app(&mut app, AppEvent::Command(ABOUT.to_owned()));
+    let [about] = fake.abouts() else {
+        panic!("one panel: {:?}", fake.abouts());
+    };
+    let lines: Vec<(&str, Option<TargetKind>)> = about
+        .credits
+        .iter()
+        .map(|line| {
+            (
+                line.text.as_str(),
+                line.link.as_ref().map(|target| target.kind),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("Released under the MIT License.", None),
+            ("Source code on GitHub", Some(TargetKind::Url)),
+        ]
+    );
+    assert_eq!(about.credits[1].link.as_ref().unwrap().location, REPOSITORY);
+    // In a bundle, the notices of the licenses of what it includes, the
+    // directory of its resources, which a click opens.
+    let directory = std::env::temp_dir().join(format!("lokyr-about-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("licenses")).unwrap();
+    app.environment.resources = Some(directory.clone());
+    fake.send_app(&mut app, AppEvent::Command(ABOUT.to_owned()));
+    let licenses = &fake.abouts()[1].credits[2];
+    assert_eq!(licenses.text, "Licenses of the included software");
+    let target = licenses.link.as_ref().unwrap();
+    assert_eq!(target.kind, TargetKind::Directory);
+    assert_eq!(
+        std::path::Path::new(&target.location),
+        directory.join("licenses").canonicalize().unwrap()
+    );
+    let _ = std::fs::remove_dir_all(directory);
 }
 
 #[test]

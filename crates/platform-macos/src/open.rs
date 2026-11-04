@@ -156,7 +156,7 @@ fn runs_documents(bundle: &NSBundle) -> bool {
 }
 
 /// The URL that opens `target`: its own, or its path's.
-fn url_of(target: &Target) -> Result<Retained<NSURL>, Error> {
+pub(crate) fn url_of(target: &Target) -> Result<Retained<NSURL>, Error> {
     if target.kind != TargetKind::Url {
         return file_url(Path::new(&target.location))
             .ok_or_else(|| Error::Open(target.location.clone(), "it has no path".to_owned()));

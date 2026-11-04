@@ -27,8 +27,8 @@ use lokyr_kernel::workspace::{
 };
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
-    Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler, Platform, Size,
-    TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler,
+    Platform, Size, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
@@ -66,6 +66,10 @@ const QUIT: &str = "app.quit";
 /// The command that opens the config file in the text editor, made first
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
+
+/// The command that opens the About panel: the app's version and build,
+/// its copyright and its credits.
+const ABOUT: &str = "app.about";
 
 /// The command that checks for a newer version of the app, where it can
 /// update itself.
@@ -1078,6 +1082,35 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Opens the About panel, the platform's own of the app's version, build
+    /// and copyright, with its credits: the license, the repository, and,
+    /// in a bundle, the notices of the licenses of what it includes.
+    fn show_about(&mut self, platform: &mut dyn Platform) {
+        let mut credits = vec![
+            AboutLine {
+                text: self.texts.text("about-license"),
+                link: None,
+            },
+            AboutLine {
+                text: self.texts.text("about-repository"),
+                link: platform.resolve_target(REPOSITORY).ok(),
+            },
+        ];
+        let licenses = self
+            .environment
+            .resources
+            .as_ref()
+            .map(|resources| resources.join("licenses"))
+            .filter(|licenses| licenses.is_dir());
+        if let Some(licenses) = licenses {
+            credits.push(AboutLine {
+                text: self.texts.text("about-licenses"),
+                link: platform.resolve_target(&licenses.to_string_lossy()).ok(),
+            });
+        }
+        platform.show_about(&AboutPanel { credits });
+    }
+
     /// Opens a new issue of the repository in the browser, which tells
     /// the app's version and the system's, and asks what happened.
     fn report_issue(&mut self, platform: &mut dyn Platform) {
@@ -1719,6 +1752,10 @@ impl<B: Backend> App<B> {
                 }
                 SETTINGS => {
                     self.open_settings(platform);
+                    Ok(())
+                }
+                ABOUT => {
+                    self.show_about(platform);
                     Ok(())
                 }
                 CHECK_UPDATES => {
@@ -2762,6 +2799,7 @@ fn texts(chosen: &str, preferred: &[String]) -> Texts {
 fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
     let mut registry = Registry::new();
     let commands = [
+        (ABOUT, "app-about", Category::App),
         (CHECK_UPDATES, "app-check-for-updates", Category::App),
         (REPORT_ISSUE, "app-report-issue", Category::App),
         (SETTINGS, "app-settings", Category::App),

@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
-    Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey, Layer,
-    LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace, Size,
-    Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
+    Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace,
+    Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -715,6 +715,10 @@ impl Platform for Backend {
 
     fn check_for_updates(&mut self) {
         self.updates.check();
+    }
+
+    fn show_about(&mut self, about: &AboutPanel) {
+        crate::about::show(self.mtm, about);
     }
 
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]) {

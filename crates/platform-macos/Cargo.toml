@@ -48,6 +48,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSMenuItem",
     "NSDragging",
     "NSPanel",
+    "NSParagraphStyle",
     "NSPasteboard",
     "NSResponder",
     "NSScreen",

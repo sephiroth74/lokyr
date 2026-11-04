@@ -49,6 +49,11 @@ const MINIMUM_SYSTEM: &str = "26.0";
 /// workspace root.
 const ICONS: &str = "crates/app/resources/icons";
 
+/// The license, relative to the workspace root, whose line of the copyright
+/// the bundle's `NSHumanReadableCopyright` takes, which the About panel
+/// shows.
+const LICENSE: &str = "LICENSE";
+
 /// The variant that the bundle shows as its own.
 const DEFAULT_ICON: &str = "lokyr-jormungandr";
 
@@ -172,9 +177,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         "{} tells `{version}`, where this build gives `{built}`: a binary of another build",
         binary.display()
     );
+    let license = root.join(LICENSE);
+    let license =
+        fs::read_to_string(&license).with_context(|| format!("reading {}", license.display()))?;
     fs::write(
         app.join("Contents/Info.plist"),
-        info_plist(&version, moment, &catalogs)?,
+        info_plist(&version, moment, &copyright(&license)?, &catalogs)?,
     )
     .context("writing the Info.plist")?;
     let identity = identity()?;
@@ -357,11 +365,24 @@ fn bundle_versions(version: &str, moment: u64) -> Result<(&str, String)> {
     Ok((short, number))
 }
 
-/// The `Info.plist` of the app at `version`, built at `moment`, with the
-/// usage strings of the source's catalog and the languages of `catalogs`.
+/// The copyright of the license's text, `license`: its line
+/// `Copyright (c) …`, of the sign in place of `(c)`.
+fn copyright(license: &str) -> Result<String> {
+    let line = license
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("Copyright (c) "))
+        .context("the license has no line `Copyright (c) …`")?;
+    Ok(line.replacen("(c)", "©", 1))
+}
+
+/// The `Info.plist` of the app at `version`, built at `moment`, of
+/// `copyright`, with the usage strings of the source's catalog and the
+/// languages of `catalogs`.
 fn info_plist(
     version: &str,
     moment: u64,
+    copyright: &str,
     catalogs: &BTreeMap<String, Vec<(String, String)>>,
 ) -> Result<String> {
     let (short, number) = bundle_versions(version, moment)?;
@@ -376,6 +397,7 @@ fn info_plist(
         ("CFBundleShortVersionString", short.to_owned()),
         ("CFBundleVersion", number),
         ("LSMinimumSystemVersion", MINIMUM_SYSTEM.to_owned()),
+        ("NSHumanReadableCopyright", copyright.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
     ];
     keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
@@ -654,8 +676,26 @@ mod tests {
     }
 
     #[test]
+    fn the_copyright_is_the_license_s_line_of_the_sign() {
+        let license =
+            "MIT License\n\nCopyright (c) 2026 Ada Lovelace\n\nPermission is hereby granted";
+        assert_eq!(copyright(license).unwrap(), "Copyright © 2026 Ada Lovelace");
+        assert!(copyright("MIT License\n").is_err());
+        // The workspace's own.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let own = fs::read_to_string(root.join(LICENSE)).unwrap();
+        assert!(copyright(&own).unwrap().starts_with("Copyright © 2026 "));
+    }
+
+    #[test]
     fn the_info_plist_has_the_keys_of_the_bundle() {
-        let plist = info_plist("1.2.3-20261101", MOMENT, &catalogs()).unwrap();
+        let plist = info_plist(
+            "1.2.3-20261101",
+            MOMENT,
+            "Copyright © 2026 Ada",
+            &catalogs(),
+        )
+        .unwrap();
         for (key, value) in [
             ("CFBundleIdentifier", IDENTIFIER),
             ("CFBundleExecutable", "lokyr"),
@@ -663,6 +703,7 @@ mod tests {
             ("CFBundleVersion", "202611011530"),
             ("LSMinimumSystemVersion", "26.0"),
             ("CFBundleIconFile", "AppIcon"),
+            ("NSHumanReadableCopyright", "Copyright © 2026 Ada"),
             (
                 "NSMicrophoneUsageDescription",
                 "A program started in the terminal wants to use the microphone.",
@@ -744,7 +785,13 @@ mod tests {
         let path = std::env::temp_dir().join(format!("lokyr-info-{}.plist", std::process::id()));
         fs::write(
             &path,
-            info_plist("1.2.3-20261101", MOMENT, &catalogs()).unwrap(),
+            info_plist(
+                "1.2.3-20261101",
+                MOMENT,
+                "Copyright © 2026 Ada",
+                &catalogs(),
+            )
+            .unwrap(),
         )
         .unwrap();
         let lint = Command::new("plutil")

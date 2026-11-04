@@ -36,8 +36,8 @@ pub use input::{
     ScrollDelta, ScrollPhase,
 };
 pub use menu::{
-    Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem, MenuRole, Shortcut,
-    ShortcutKey, StandardAction,
+    AboutLine, AboutPanel, Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem,
+    MenuRole, Shortcut, ShortcutKey, StandardAction,
 };
 pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen, ScreenRect};
 pub use raw_window_handle::WindowHandle;
@@ -546,6 +546,11 @@ pub trait Platform {
     /// updater has loaded, for a check asked before. Nothing where the
     /// application cannot update itself.
     fn check_for_updates(&mut self);
+
+    /// Opens the application's About panel, or brings it to the front: the
+    /// platform's own, of the application's name, icon, version, build and
+    /// copyright, with `about`'s credits.
+    fn show_about(&mut self, about: &AboutPanel);
 
     /// Shows the image of the file at `icon` as the application's icon
     /// while it runs, where the system shows running applications, as the

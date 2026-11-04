@@ -34,6 +34,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
     assert_eq!(
         menu_items(&fake, 0),
         [
+            "About Lokyr",
             "Check for Updates…",
             "-",
             "Settings… cmd+,",
@@ -186,6 +187,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
     assert_eq!(
         registered,
         [
+            ("app.about", "About Lokyr", Category::App),
             ("app.appearance-dark", "Dark Appearance", Category::View),
             ("app.appearance-light", "Light Appearance", Category::View),
             (
@@ -257,8 +259,13 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
         ]
     );
     assert_eq!(
-        menu_items(&fake, 0)[..3],
-        ["Controlla aggiornamenti…", "-", "Impostazioni… cmd+,"]
+        menu_items(&fake, 0)[..4],
+        [
+            "Informazioni su Lokyr",
+            "Controlla aggiornamenti…",
+            "-",
+            "Impostazioni… cmd+,"
+        ]
     );
     // The plugins' commands too, from their own catalogs.
     assert_eq!(

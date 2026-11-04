@@ -141,6 +141,24 @@ pub struct Alert {
     pub input: Option<String>,
 }
 
+/// What the application's About panel shows beside what the platform takes
+/// of the application itself: its name, icon, version, build and copyright.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AboutPanel {
+    /// The credits under the version, a line each, in their order.
+    pub credits: Vec<AboutLine>,
+}
+
+/// A line of the credits of an [`AboutPanel`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AboutLine {
+    /// What it says.
+    pub text: String,
+    /// What a click on it opens, as [`Platform::resolve_target`](crate::Platform::resolve_target)
+    /// gives it; `None` for a line of text alone.
+    pub link: Option<crate::Target>,
+}
+
 /// How serious an alert is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AlertStyle {

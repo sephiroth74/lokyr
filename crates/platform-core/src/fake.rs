@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
-    Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
-    Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape, QuickPlace,
-    ScreenRect, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage, Waker, WindowAttributes,
-    WindowEvent, WindowHandle, WindowId, WindowSize,
+    AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
+    GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape,
+    QuickPlace, ScreenRect, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -198,6 +198,7 @@ pub struct Fake {
     update_checks: Option<bool>,
     /// The checks for updates that the app asked.
     updates_checked: usize,
+    abouts: Vec<AboutPanel>,
     usage: Option<Usage>,
     /// When the fake was made, as the process's start.
     started: SystemTime,
@@ -257,6 +258,7 @@ impl Fake {
             can_update: false,
             update_checks: None,
             updates_checked: 0,
+            abouts: Vec::new(),
             usage: None,
             started: SystemTime::now(),
             posted_keys: Vec::new(),
@@ -581,6 +583,11 @@ impl Fake {
     /// How many checks for updates the app asked.
     pub fn updates_checked(&self) -> usize {
         self.updates_checked
+    }
+
+    /// The About panels that the app opened, in their order.
+    pub fn abouts(&self) -> &[AboutPanel] {
+        &self.abouts
     }
 
     /// Has the text editor open nothing, for `why`, until it is `None`.
@@ -1022,6 +1029,10 @@ impl Platform for Fake {
         if self.can_update {
             self.updates_checked += 1;
         }
+    }
+
+    fn show_about(&mut self, about: &AboutPanel) {
+        self.abouts.push(about.clone());
     }
 
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape) {
