@@ -91,7 +91,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 - **Double-click on the bar**: follows the system preference (`AppleActionOnDoubleClick`), on the bar's room that its tabs leave; on a tab, it is the tab's.
 - **Fullscreen**: as the user chose on 3 November 2026, after iTerm2's, which shows its tab bar in full screen unless asked not to: the bar stays at the screen's top, of its view's height, without the window's buttons; the menu bar and the system's titlebar slide down over it as the pointer reaches the top, the empty toolbar hiding with them (`autoHideToolbar`), and take no room of the content's, as the window draws its chrome in its one drawable. `tabs` can hide the bar in full screen, shown a moment as the tab changes, as iTerm2 can.
 - **Resizing**: the content follows the window's edge through a live resize, drawn with Core Animation's transaction; the grid's size, as `100 × 33`, shows at the window's centre while a resize changes it, and goes a second after the last change, or after the drag ends.
-- **Dragging tabs between windows**: our own implementation, using a drag session and a ghost window.
+- **Dragging tabs between windows**: our own implementation, using a drag session and an image of the tab that follows the pointer.
 - **The quick terminal**: a borderless, non-activating `NSPanel` that a global key, Carbon's `RegisterEventHotKey`, which asks for no Accessibility permission, slides in from an edge of a screen over every app, on every Space or on its own and over the apps in full screen, and out again, as `NSAnimationContext` moves its frame; it takes the keys as it shows, and gives the focus back to the app that had it as it hides. Its pane runs while it is hidden, which keeps its last frame, so that it shows at once. The app holds its policy until the `quick-terminal` plugin takes it in F3.
 
 **Linux** (F7)
@@ -127,8 +127,12 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 
 ### Interaction
 
-- Click to select, middle-click to close, drag to reorder (animated).
-- Dragging a tab out of the bar turns it into a new window. Dropping it on another window's bar moves it there.
+- Click to select, middle-click to close, drag to reorder (animated); Escape during a drag puts the tab back.
+- A tab dragged out of the bar follows the pointer as an image of itself over a thumbnail of its panes; the window shows the tab next to it, as if it had closed, once the tab that it showed leaves the bar. Where it is dropped decides, as the user chose on 4 November 2026, after iTerm2's:
+  - on a window's bar, its own or another's, it goes there, at the place under the pointer;
+  - on a window's panes, its own or another's, it becomes a split of the pane under the pointer, in its half nearest the pointer, left, right, top or bottom, which lights up as the pointer passes; a tab of splits goes in whole, its layout in that half;
+  - outside every window of Lokyr, it becomes a new window, of its window's size, the tab under the point where it was dropped.
+- With a single tab, the bar hides, by default: the window shows its title, and the tab moves by Move Tab to New Window, in the Window menu and the palette, which no key takes by default.
 - Double-click to rename.
 - Context menu: rename, color, close others, move to a new window.
 - When there are too many tabs, each shrinks to a minimum width, and then the bar scrolls.
@@ -148,7 +152,7 @@ The `tabs` plugin. Each window's tab list lives in the kernel. The plugin handle
 [plugins.tabs]
 position = "top"          # top | bottom | left
 style = "compact"         # regular | compact | minimal
-hide-when-single = false
+hide-when-single = true
 show-index = true
 close-button = "hover"    # always | hover | never
 min-width = 120
