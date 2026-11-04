@@ -355,7 +355,7 @@ type Cx = {
     },
     ui: {
         request_render: (slot: string) -> (),
-        -- Sets the text of a field of the slot's view, by its key: its caret at its end, and no "input-changed".
+        -- Sets the text of a field of the slot's view, by its key, cut to the field's 10 000 characters: its caret at its end, and no "input-changed".
         set_text: (slot: string, key: string, text: string) -> (boolean, Error?),
     },
     terminal: {

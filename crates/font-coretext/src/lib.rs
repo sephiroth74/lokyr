@@ -24,7 +24,7 @@ use objc2_core_foundation::{
 use objc2_core_text::{
     CTFont, CTFontCollection, CTFontCollectionCopyOptions, CTFontDescriptor,
     CTFontManagerCreateFontDescriptorFromData, CTFontOrientation, CTFontSymbolicTraits,
-    CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, kCTFontAttributeName,
+    CTFontTableOptions, CTFontUIFontType, CTLine, CTRun, CTRunStatus, kCTFontAttributeName,
     kCTFontFamilyNameAttribute, kCTFontFeatureSettingsAttribute, kCTFontOpenTypeFeatureTag,
     kCTFontOpenTypeFeatureValue, kCTFontOpticalSizeAttribute, kCTFontStyleNameKey,
     kCTFontWeightTrait, kCTFontWidthTrait,
@@ -842,6 +842,8 @@ fn shape(
         });
         let index = u32::try_from(fonts.len()).unwrap_or(u32::MAX);
         fonts.push(if ours { None } else { run_font });
+        // SAFETY: a run that CoreText made.
+        let right_to_left = unsafe { run.status() }.contains(CTRunStatus::RightToLeft);
         for at in 0..count {
             let unit = usize::try_from(indices[at]).unwrap_or(0);
             glyphs.push(ShapedGlyph {
@@ -851,6 +853,7 @@ fn shape(
                 // The positions are from the line's origin.
                 x: positions[at].x as f32,
                 y: positions[at].y as f32,
+                right_to_left,
             });
         }
     }

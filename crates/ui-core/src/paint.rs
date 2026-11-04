@@ -613,17 +613,13 @@ impl<B: FontBackend> Painter<'_, B> {
         self.items
             .push(Item::PushClip(inside_border(rect(frame), style, scale)));
         let places = self.font.interface_carets(text);
-        let x = |byte: usize| {
-            let points = places
-                .iter()
-                .find(|(at, _)| *at >= byte)
-                .map_or(0.0, |&(_, x)| x);
-            (start + points * scale).round()
-        };
-        let span = |left: f32, right: f32, (y, height): (f32, f32)| Rect {
-            x: left as i32,
+        let x = |byte: usize| (start + field::place(&places, byte) * scale).round();
+        // Between two places, either first, as a run from right to left
+        // gives its start at its right.
+        let span = |from: f32, to: f32, (y, height): (f32, f32)| Rect {
+            x: from.min(to) as i32,
             y: y as i32,
-            width: (right - left).max(0.0) as u32,
+            width: (from - to).abs() as u32,
             height: height as u32,
         };
         let on_line = (top, line.round());
@@ -1007,13 +1003,19 @@ mod tests {
             _: Features,
             glyphs: &mut Vec<ShapedGlyph>,
         ) {
+            // A text of Hebrew alone from right to left, its first
+            // character at its right, as a run of it is shaped.
+            let backward = text.chars().all(|c| ('\u{590}'..='\u{5FF}').contains(&c));
+            let count = text.chars().count();
             for (index, (at, character)) in text.char_indices().enumerate() {
+                let place = if backward { count - 1 - index } else { index };
                 glyphs.push(ShapedGlyph {
                     face,
                     glyph: GlyphId(u16::try_from(u32::from(character)).unwrap_or(0)),
                     cluster: at as u32,
-                    x: index as f32 * size * 0.6,
+                    x: place as f32 * size * 0.6,
                     y: 0.0,
+                    right_to_left: backward,
                 });
             }
         }
@@ -1594,6 +1596,90 @@ mod tests {
         };
         assert_eq!(text[0].x, 12 - 172);
         assert_eq!(caret[0].rect, line(308, 310));
+    }
+
+    #[test]
+    fn a_field_of_hebrew_paints_its_caret_and_its_selection_from_its_right() {
+        struct Nothing;
+        impl Clipboard for Nothing {
+            fn read(&mut self) -> Option<String> {
+                None
+            }
+            fn write(&mut self, _: &str) {}
+        }
+        // As the field's test: 7.8 points a character, the text from 12
+        // pixels in, its line 26 high, 8 down.
+        let scale = 2.0;
+        let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+        let mut tree = Tree::new();
+        let root = Node::container(vec![Node::field("Find").key("find")]);
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(scale);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0 * scale), None, &mut font);
+        let field = tree.children(tree.root().unwrap())[0];
+        let tokens = &Theme::builtin().dark.tokens;
+        let mut fields = Fields::new();
+        fields.set_text(&view::Key::from("find"), "אבג");
+        let mut painted = |fields: &Fields| {
+            paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: Some(field),
+                    fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &Lists::new(),
+                    motion: None,
+                },
+            )
+        };
+        let line = |left: i32, right: i32| Rect {
+            x: left,
+            y: 8,
+            width: (right - left) as u32,
+            height: 26,
+        };
+        // The caret at the end, the text's left.
+        let items = painted(&fields);
+        let [_, _, Item::Glyphs(_), Item::Shapes(caret), Item::PopClip, _] = &items[..] else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(caret[0].rect, line(12, 14));
+        // The last two characters selected, from the first's right edge,
+        // 15.6 points in, to the text's left.
+        let shift_left = KeyEvent {
+            key: Key::Left,
+            action: KeyAction::Press,
+            mods: Mods {
+                shift: true,
+                ..Mods::NONE
+            },
+            text: "",
+            unmodified: "",
+            base_layout: None,
+        };
+        for _ in 0..2 {
+            fields.key(&tree, field, &shift_left, &mut Nothing);
+        }
+        let items = painted(&fields);
+        let [
+            _,
+            _,
+            Item::Shapes(selection),
+            Item::Glyphs(_),
+            Item::PopClip,
+            _,
+        ] = &items[..]
+        else {
+            panic!("{items:#?}");
+        };
+        assert_eq!(selection[0].rect, line(12, 43));
     }
 
     #[test]

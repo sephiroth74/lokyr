@@ -24,6 +24,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::rc::Rc;
 
 use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
@@ -43,12 +44,26 @@ pub const WIDTH: f32 = 160.0;
 /// The edits that a field can undo, at most.
 const UNDOS: usize = 100;
 
+/// The characters that a field's text holds at most: a paste, a commit or
+/// a plugin's text past them is cut at the cluster before, and typing past
+/// them types nothing, as each frame of a focused field draws its whole
+/// text and an undo keeps it.
+pub const LONGEST: usize = 10_000;
+
 /// Where the caret goes in a line of the interface's text.
 pub trait Carets {
     /// The places between the grapheme clusters of `text`, each cluster's
     /// first byte and the caret's place before it, in points from the
-    /// text's start, then the text's end and its width.
-    fn carets(&mut self, text: &str) -> Vec<(usize, f32)>;
+    /// text's start, then the text's end and the caret's place after its
+    /// last cluster.
+    fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]>;
+}
+
+/// The caret's place at `byte`, in `places` as [`Carets::carets`] gives
+/// them: the place of the first cluster from it, or 0 of none.
+pub fn place(places: &[(usize, f32)], byte: usize) -> f32 {
+    let from = places.partition_point(|&(at, _)| at < byte);
+    places.get(from).map_or(0.0, |&(_, x)| x)
 }
 
 /// The clipboard, as a field cuts, copies and pastes.
@@ -72,9 +87,10 @@ pub struct FieldState {
     scroll: f32,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
-    /// Whether the last edit typed text, which typing more joins, as one
-    /// undo takes back a word typed.
-    typing: bool,
+    /// What the last edit did, which another of its kind joins, as one undo
+    /// takes back a word typed, or the characters that a held Backspace
+    /// deleted.
+    joining: Joining,
     /// The input method's composition at the caret, and the part of it
     /// that it selects, in bytes of it, or its cursor where empty.
     composition: Option<(String, Range<usize>)>,
@@ -94,6 +110,17 @@ pub struct Showing<'a> {
     pub selection: Range<usize>,
     /// The composition, and the part of it that the input method selects.
     pub composition: Option<(Range<usize>, Range<usize>)>,
+}
+
+/// The kinds of edits that join those before them of their kind, until
+/// the caret moves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Joining {
+    /// None: the next edit is undone apart.
+    #[default]
+    Nothing,
+    Typing,
+    Deleting,
 }
 
 /// What an undo brings back.
@@ -171,14 +198,19 @@ impl FieldState {
         self.anchor = snapshot.anchor;
     }
 
-    /// Replaces `range` with `with`, the caret after it: whether the text
-    /// changed. Typing joins the edit before, if it typed too, which a move
+    /// Replaces `range` with `with`, cut to the room that the text has
+    /// left, the caret after it: whether the text changed. An edit of a
+    /// kind joins the one before, if it was of that kind too, which a move
     /// of the caret or a selection ends.
-    fn edit(&mut self, range: Range<usize>, with: &str, typing: bool) -> bool {
+    fn edit(&mut self, range: Range<usize>, with: &str, kind: Joining) -> bool {
+        let room = LONGEST.saturating_sub(
+            self.text[..range.start].chars().count() + self.text[range.end..].chars().count(),
+        );
+        let with = cut(with, room);
         if range.is_empty() && with.is_empty() {
             return false;
         }
-        if !(typing && self.typing) {
+        if kind == Joining::Nothing || kind != self.joining {
             self.undo.push(self.snapshot());
             if self.undo.len() > UNDOS {
                 self.undo.remove(0);
@@ -188,7 +220,7 @@ impl FieldState {
         self.text.replace_range(range.clone(), with);
         self.caret = range.start + with.len();
         self.anchor = self.caret;
-        self.typing = typing;
+        self.joining = kind;
         true
     }
 
@@ -198,7 +230,7 @@ impl FieldState {
         if !extend {
             self.anchor = to;
         }
-        self.typing = false;
+        self.joining = Joining::Nothing;
     }
 
     fn undo(&mut self) -> bool {
@@ -207,7 +239,7 @@ impl FieldState {
         };
         self.redo.push(self.snapshot());
         self.restore(before);
-        self.typing = false;
+        self.joining = Joining::Nothing;
         true
     }
 
@@ -217,7 +249,7 @@ impl FieldState {
         };
         self.undo.push(self.snapshot());
         self.restore(after);
-        self.typing = false;
+        self.joining = Joining::Nothing;
         true
     }
 }
@@ -252,12 +284,13 @@ impl Fields {
         self.states.get(key)
     }
 
-    /// Sets the text of the field of `key`, as its plugin asks: the caret
-    /// at its end, without a selection, nothing to undo, and no event.
+    /// Sets the text of the field of `key`, as its plugin asks, cut to the
+    /// field's longest: the caret at its end, without a selection, nothing
+    /// to undo, and no event.
     pub fn set_text(&mut self, key: &NodeKey, text: &str) {
         let state = self.states.entry(key.clone()).or_default();
         *state = FieldState {
-            text: single_line(text),
+            text: cut(&single_line(text), LONGEST).to_owned(),
             ..FieldState::default()
         };
         state.caret = state.text.len();
@@ -348,7 +381,7 @@ impl Fields {
             } else {
                 selection
             };
-            let changed = state.edit(range, "", false);
+            let changed = state.edit(range, "", Joining::Deleting);
             return Some(changed_events(node, key, state, changed));
         }
         let enter = matches!(event.key, Key::Enter | Key::Keypad(Keypad::Enter));
@@ -366,7 +399,7 @@ impl Fields {
                 Key::Char('a') => {
                     state.anchor = 0;
                     state.caret = state.text.len();
-                    state.typing = false;
+                    state.joining = Joining::Nothing;
                     false
                 }
                 Key::Char('c') => {
@@ -381,12 +414,12 @@ impl Fields {
                     if !selection.is_empty() {
                         clipboard.write(&state.text[selection.clone()]);
                     }
-                    state.edit(selection, "", false)
+                    state.edit(selection, "", Joining::Nothing)
                 }
                 Key::Char('v') => match clipboard.read() {
                     Some(pasted) => {
                         let selection = state.selection();
-                        state.edit(selection, &single_line(&pasted), false)
+                        state.edit(selection, &single_line(&pasted), Joining::Nothing)
                     }
                     None => false,
                 },
@@ -416,7 +449,7 @@ impl Fields {
         }
         let state = self.states.entry(key.clone()).or_default();
         let selection = state.selection();
-        let changed = state.edit(selection, &typed, true);
+        let changed = state.edit(selection, &typed, Joining::Typing);
         Some(changed_events(node, key, state, changed))
     }
 
@@ -442,7 +475,7 @@ impl Fields {
         let mut changed = false;
         if state.composition.is_none() {
             let selection = state.selection();
-            changed = state.edit(selection, "", false);
+            changed = state.edit(selection, "", Joining::Nothing);
         }
         // A place past the text is its end, and one within a character
         // that character's start.
@@ -512,18 +545,15 @@ impl Fields {
         };
         let places = carets.carets(text);
         let x = |byte: usize| {
-            let points = places
-                .iter()
-                .find(|(at, _)| *at >= byte)
-                .map_or(0.0, |&(_, x)| x);
             let scroll = state.map_or(0.0, FieldState::scroll);
-            frame.x + (PADDING.1 + points - scroll) * scale
+            frame.x + (PADDING.1 + place(&places, byte) - scroll) * scale
         };
-        let (left, right) = (x(span.start), x(span.end));
+        // Either end first, as a run from right to left starts at its right.
+        let (from, to) = (x(span.start), x(span.end));
         Some(Frame {
-            x: left,
+            x: from.min(to),
             y: frame.y + PADDING.0 * scale,
-            width: (right - left).max(1.0),
+            width: (from - to).abs().max(1.0),
             height: (frame.height - 2.0 * PADDING.0 * scale).max(0.0),
         })
     }
@@ -553,12 +583,12 @@ impl Fields {
                 let word = word_at(&state.text, to);
                 state.anchor = word.start;
                 state.caret = word.end;
-                state.typing = false;
+                state.joining = Joining::Nothing;
             }
             _ => {
                 state.anchor = 0;
                 state.caret = state.text.len();
-                state.typing = false;
+                state.joining = Joining::Nothing;
             }
         }
         self.pressed = Some(key.clone());
@@ -606,7 +636,7 @@ impl Fields {
         let state = self.states.entry(key.clone()).or_default();
         state.anchor = 0;
         state.caret = state.text.len();
-        state.typing = false;
+        state.joining = Joining::Nothing;
     }
 
     /// Scrolls the field `focused` of `tree` across so that its caret shows
@@ -643,13 +673,9 @@ impl Fields {
                     .map_or(state.caret, |(composition, _)| composition.end)
             });
             let places = carets.carets(&showing.text);
-            let x = |byte: usize| {
-                places
-                    .iter()
-                    .find(|(at, _)| *at >= byte)
-                    .map_or(0.0, |&(_, x)| x)
-            };
-            let (caret, width) = (x(at), x(showing.text.len()));
+            // The text's room, of its places' leftmost and rightmost.
+            let width = places.iter().fold(0.0_f32, |width, &(_, x)| width.max(x));
+            let caret = place(&places, at);
             let mut scroll = state.scroll;
             if caret - scroll > room {
                 scroll = caret - room;
@@ -704,9 +730,9 @@ fn caret_at(
     let points = (x - frame.x) / scale - PADDING.1 + state.scroll;
     carets
         .carets(&state.text)
-        .into_iter()
+        .iter()
         .min_by(|(_, a), (_, b)| (a - points).abs().total_cmp(&(b - points).abs()))
-        .map(|(byte, _)| byte)
+        .map(|&(byte, _)| byte)
 }
 
 /// `text` on one line: its line breaks and tabs as spaces, its other
@@ -719,6 +745,17 @@ fn single_line(text: &str) -> String {
             c => Some(c),
         })
         .collect()
+}
+
+/// `text` cut to `chars` characters at most, at the start of the cluster
+/// that would pass them.
+fn cut(text: &str, chars: usize) -> &str {
+    let Some((past, _)) = text.char_indices().nth(chars) else {
+        return text;
+    };
+    let starts = boundaries(text);
+    let keep = starts.partition_point(|&start| start <= past) - 1;
+    &text[..starts[keep]]
 }
 
 /// Where each grapheme cluster of `text` starts, and its end: the places
@@ -738,21 +775,7 @@ pub fn boundaries(text: &str) -> Vec<usize> {
 /// it: its run of letters and digits; else the cluster at `at`.
 fn word_at(text: &str, at: usize) -> Range<usize> {
     let places = boundaries(text);
-    let after = |at: usize| {
-        places
-            .iter()
-            .find(|&&place| place > at)
-            .copied()
-            .unwrap_or(text.len())
-    };
-    let before = |at: usize| {
-        places
-            .iter()
-            .rev()
-            .find(|&&place| place < at)
-            .copied()
-            .unwrap_or(0)
-    };
+    let (before, after) = (|at| before(&places, at), |at| after(&places, at));
     let word = |at: usize| text[at..].chars().next().is_some_and(char::is_alphanumeric);
     let inside = if at < text.len() && word(at) {
         Some(at)
@@ -774,24 +797,27 @@ fn word_at(text: &str, at: usize) -> Range<usize> {
     start..end
 }
 
+/// The last of `places`, as [`boundaries`] gives them, before `at`, or 0.
+fn before(places: &[usize], at: usize) -> usize {
+    let from = places.partition_point(|&place| place < at);
+    from.checked_sub(1).map_or(0, |last| places[last])
+}
+
+/// The first of `places`, as [`boundaries`] gives them, past `at`, or the
+/// text's end, their last.
+fn after(places: &[usize], at: usize) -> usize {
+    let past = places.partition_point(|&place| place <= at);
+    places
+        .get(past)
+        .or(places.last())
+        .copied()
+        .unwrap_or_default()
+}
+
 /// Where the caret at `from` in `text` goes `toward`.
 fn step(text: &str, from: usize, toward: Toward) -> usize {
     let places = boundaries(text);
-    let before = |at: usize| {
-        places
-            .iter()
-            .rev()
-            .find(|&&place| place < at)
-            .copied()
-            .unwrap_or(0)
-    };
-    let after = |at: usize| {
-        places
-            .iter()
-            .find(|&&place| place > at)
-            .copied()
-            .unwrap_or(text.len())
-    };
+    let (before, after) = (|at| before(&places, at), |at| after(&places, at));
     let word = |at: usize| text[at..].chars().next().is_some_and(char::is_alphanumeric);
     match toward {
         Toward::Back => before(from),
@@ -834,7 +860,7 @@ mod tests {
     struct Fixed;
 
     impl Carets for Fixed {
-        fn carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+        fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
             let places = boundaries(text);
             let mut x = 0.0;
             let mut carets = Vec::new();
@@ -847,7 +873,7 @@ mod tests {
                 };
             }
             carets.push((text.len(), x));
-            carets
+            carets.into()
         }
     }
 
@@ -858,6 +884,22 @@ mod tests {
 
         fn icon(&mut self, _: &str) -> (f32, f32) {
             (16.0, 16.0)
+        }
+    }
+
+    /// A font of the tests' from right to left: each cluster 10 points,
+    /// the first at the right.
+    struct Backward;
+    impl Carets for Backward {
+        fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
+            let places = boundaries(text);
+            let width = 10.0 * (places.len() - 1) as f32;
+            let at = |index: usize| width - 10.0 * index as f32;
+            places
+                .iter()
+                .enumerate()
+                .map(|(index, &byte)| (byte, at(index)))
+                .collect()
         }
     }
 
@@ -1365,6 +1407,21 @@ mod tests {
     }
 
     #[test]
+    fn the_input_method_s_rectangle_of_a_run_from_right_to_left() {
+        let mut field = Typing::new();
+        let (tree, layout, node) = field_tree(1.0);
+        field.tree = tree;
+        field.node = node;
+        field.fields.compose(&field.tree, node, "にほ", 6..6);
+        let frame = layout.frame(&field.tree, node).unwrap();
+        let area = field
+            .fields
+            .text_area(&field.tree, &layout, node, &mut Backward)
+            .unwrap();
+        assert_eq!((area.x - frame.x, area.width), (6.0, 20.0));
+    }
+
+    #[test]
     fn the_pointer_places_the_caret_and_selects() {
         let (tree, layout, node) = field_tree(2.0);
         let frame = layout.frame(&tree, node).unwrap();
@@ -1487,5 +1544,134 @@ mod tests {
         field.tree.update(&Node::container(vec![])).unwrap();
         field.fields.updated(&field.tree);
         assert!(field.fields.state(&key).is_none());
+    }
+
+    #[test]
+    fn deletions_in_a_row_undo_at_once_and_keep_one_copy() {
+        let mut field = Typing::new();
+        let command = mods(false, false, false, true);
+        let long = "word ".repeat(1_000);
+        field.fields.set_text(&NodeKey::from("find"), &long);
+        for _ in 0..150 {
+            field.press(Key::Backspace, NONE, "").unwrap();
+        }
+        field.press(Key::Delete, NONE, "").unwrap();
+        assert_eq!(field.state().text.len(), long.len() - 150);
+        assert_eq!(field.state().undo.len(), 1);
+        // Typing after them is undone apart, and so are deletions after a
+        // move of the caret.
+        field.kind("ab");
+        field.press(Key::Left, NONE, "");
+        field.press(Key::Backspace, NONE, "");
+        field.press(Key::Backspace, NONE, "");
+        assert_eq!(field.state().undo.len(), 3);
+        let undone = |field: &mut Typing| field.press(Key::Char('z'), command, "").unwrap();
+        let typed = format!("{}ab", &long[..long.len() - 150]);
+        assert_eq!(undone(&mut field), vec![format!("input {typed}")]);
+        assert_eq!(
+            undone(&mut field),
+            vec![format!("input {}", &long[..long.len() - 150])]
+        );
+        assert_eq!(undone(&mut field), vec![format!("input {long}")]);
+    }
+
+    #[test]
+    fn a_text_holds_its_longest_cut_at_a_cluster() {
+        let mut field = Typing::new();
+        let command = mods(false, false, false, true);
+        let paste = |field: &mut Typing, text: String| {
+            field.board = Board(Some(text));
+            field.press(Key::Char('v'), command, "v").unwrap()
+        };
+        // A paste past the room cut before the cluster that would pass it,
+        // the family of five characters.
+        let most = "a".repeat(LONGEST - 2);
+        let events = paste(&mut field, format!("{most}{FAMILY}tail"));
+        assert_eq!(events, vec![format!("input {most}")]);
+        // Typing within the room left, and past it nothing.
+        field.kind("bc");
+        assert_eq!(field.state().text.chars().count(), LONGEST);
+        assert_eq!(field.press(Key::Char('d'), NONE, "d"), Some(vec![]));
+        assert_eq!(
+            field.fields.commit(&field.tree, field.node, "日本"),
+            Some(vec![])
+        );
+        assert_eq!(field.state().text.chars().count(), LONGEST);
+        // A selection's room given back as a paste replaces it.
+        field.press(Key::Left, mods(true, false, false, false), "");
+        let events = paste(&mut field, "xyz".to_owned());
+        let text = format!("{most}bxyz");
+        assert_eq!(events, vec![format!("input {}", &text[..text.len() - 2])]);
+        // A plugin's text cut too.
+        let key = NodeKey::from("find");
+        field.fields.set_text(&key, &ACUTE.repeat(LONGEST));
+        let state = field.fields.state(&key).unwrap();
+        assert_eq!(state.text, ACUTE.repeat(LONGEST / 2));
+    }
+
+    #[test]
+    fn pastes_in_a_row_undo_one_at_a_time() {
+        let mut field = Typing::new();
+        let command = mods(false, false, false, true);
+        field.board = Board(Some("ab".to_owned()));
+        field.press(Key::Char('v'), command, "v");
+        field.press(Key::Char('v'), command, "v");
+        assert_eq!(
+            field.press(Key::Char('z'), command, ""),
+            Some(vec!["input ab".to_owned()])
+        );
+    }
+
+    #[test]
+    fn a_text_from_right_to_left_scrolls_to_its_start_at_its_right() {
+        let (tree, layout, node) = field_tree(1.0);
+        let frame = layout.frame(&tree, node).unwrap();
+        let room = frame.width - 2.0 * PADDING.1;
+        let key = NodeKey::from("find");
+        let mut fields = Fields::new();
+        fields.set_text(&key, &"א".repeat(30));
+        // Its end at its left, unscrolled; its start, past the room, at
+        // the right of its 300 points.
+        fields.follow(&tree, &layout, Some(node), &mut Backward);
+        assert_eq!(fields.state(&key).unwrap().scroll(), 0.0);
+        let home = KeyEvent {
+            key: Key::Home,
+            action: KeyAction::Press,
+            mods: NONE,
+            text: "",
+            unmodified: "",
+            base_layout: None,
+        };
+        fields.key(&tree, node, &home, &mut Board::default());
+        fields.follow(&tree, &layout, Some(node), &mut Backward);
+        assert_eq!(fields.state(&key).unwrap().scroll(), 300.0 - room);
+    }
+
+    /// The least of five times of `run`.
+    fn least(mut run: impl FnMut()) -> std::time::Duration {
+        (0..5)
+            .map(|_| {
+                let start = std::time::Instant::now();
+                run();
+                start.elapsed()
+            })
+            .min()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_steps_and_the_words_of_a_long_text_cost_about_its_length() {
+        // A word of a field's longest, and one of a tenth of it: a cost of
+        // the square of the length would take a hundred times as long.
+        let cost = |length: usize| {
+            let word = "a".repeat(length);
+            least(|| {
+                assert_eq!(step(&word, 0, Toward::WordForward), length);
+                assert_eq!(step(&word, length, Toward::WordBack), 0);
+                assert_eq!(word_at(&word, length / 2), 0..length);
+            })
+        };
+        let (short, long) = (cost(LONGEST / 10), cost(LONGEST));
+        assert!(long < short * 40, "{short:?} {long:?}");
     }
 }

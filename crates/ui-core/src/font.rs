@@ -40,6 +40,10 @@ const SHAPED_RUNS: usize = 4096;
 /// run each, do not grow it without end.
 const SHAPED_GLYPHS: usize = 1 << 17;
 
+/// The texts whose caret's places the interface keeps, as a window's
+/// fields and their compositions ask for them each frame.
+const CARET_TEXTS: usize = 8;
+
 /// The slots of the glyphs that a frame drew, a power of two.
 const DRAWN_SLOTS: usize = 512;
 
@@ -200,6 +204,10 @@ pub struct Font<B> {
     /// The size in pixels at which the symbols' font's advance is an icon's
     /// ink, by its square's side's bits, once asked for.
     icon_pixels: FastMap<u32, f32>,
+    /// The places of the caret in the last texts of the interface asked
+    /// for, the newest first, of their face and size, so that a field's
+    /// frames find them once.
+    carets: Vec<KnownCarets>,
     /// The region of each glyph drawn, with its key, for the tests.
     #[cfg(test)]
     drawn: Vec<(AtlasRegion, GlyphKey)>,
@@ -466,6 +474,7 @@ impl<B: FontBackend> Font<B> {
             interface: None,
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
+            carets: Vec::new(),
             #[cfg(test)]
             drawn: Vec::new(),
             resolved,
@@ -1158,29 +1167,40 @@ impl<B: FontBackend> Font<B> {
     /// The places between the grapheme clusters of `text` in the
     /// interface's face, in points from its start, as
     /// [`Font::interface_text`] draws it: each cluster's first byte and the
-    /// caret's place before it, the place of the shaping's first glyph of
-    /// that cluster or after it, then the text's end and its width.
-    pub fn interface_carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+    /// caret's place before it, then the text's end and the caret's place
+    /// after its last cluster, as [`carets_of`] finds them; found once for
+    /// the last texts asked for.
+    pub fn interface_carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
         let (size, face) = {
             let interface = self.interface();
             (interface.size(), interface.face())
         };
+        let known = self.carets.iter().position(|known| {
+            (known.face, known.size) == (face, size.to_bits()) && known.text == text
+        });
+        if let Some(at) = known {
+            let known = self.carets.remove(at);
+            let places = Rc::clone(&known.places);
+            self.carets.insert(0, known);
+            return places;
+        }
         let features = Features { ligatures: true };
         let width = self.backend.width(face, size, text, features);
         let shaped = self
             .shaped
             .shape(&mut self.backend, face, size, features, text);
-        field::boundaries(text)
-            .into_iter()
-            .map(|byte| {
-                let x = shaped
-                    .iter()
-                    .find(|glyph| glyph.cluster as usize >= byte)
-                    .filter(|_| byte < text.len())
-                    .map_or(width, |glyph| glyph.x);
-                (byte, x)
-            })
-            .collect()
+        let places: Rc<[(usize, f32)]> = carets_of(text, &shaped, width).into();
+        self.carets.truncate(CARET_TEXTS - 1);
+        self.carets.insert(
+            0,
+            KnownCarets {
+                face,
+                size: size.to_bits(),
+                text: text.to_owned(),
+                places: Rc::clone(&places),
+            },
+        );
+        places
     }
 
     /// The glyph of the icon `name`, in the middle of the square of `side`
@@ -1552,9 +1572,106 @@ impl<B: FontBackend> Measure for Font<B> {
 }
 
 impl<B: FontBackend> Carets for Font<B> {
-    fn carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+    fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
         self.interface_carets(text)
     }
+}
+
+/// The places of the caret in a text of the interface, which a field's
+/// frames ask for again.
+#[derive(Debug)]
+struct KnownCarets {
+    face: FaceId,
+    /// The size's bits.
+    size: u32,
+    text: String,
+    places: Rc<[(usize, f32)]>,
+}
+
+/// The places of the caret in `text`, which `glyphs` draw, `width` wide, in
+/// their unit from its start: each grapheme cluster's first byte and its
+/// leading edge, the left of a cluster of a run from left to right and the
+/// right of one from right to left, then the text's end and its last
+/// cluster's trailing edge, so that typing at the end of Hebrew goes on at
+/// its left. A cluster's edges are its glyphs' leftmost place and the next
+/// cluster's leftmost place past it, or the text's end; the clusters that a
+/// glyph draws together, as a ligature, share its width in equal parts, in
+/// its run's direction. One pass over the clusters and the glyphs, and a
+/// sort of the edges.
+pub fn carets_of(text: &str, glyphs: &[ShapedGlyph], width: f32) -> Vec<(usize, f32)> {
+    let starts = field::boundaries(text);
+    let clusters = starts.len() - 1;
+    // Each cluster's leftmost glyph, and its run's direction.
+    let mut left = vec![f32::INFINITY; clusters];
+    let mut backward = vec![false; clusters];
+    for glyph in glyphs {
+        let byte = glyph.cluster as usize;
+        let Some(at) = starts
+            .partition_point(|&start| start <= byte)
+            .checked_sub(1)
+        else {
+            continue;
+        };
+        if at < clusters && glyph.x.is_finite() {
+            left[at] = left[at].min(glyph.x);
+            backward[at] |= glyph.right_to_left;
+        }
+    }
+    let mut edges: Vec<f32> = left.iter().copied().filter(|x| x.is_finite()).collect();
+    edges.sort_by(f32::total_cmp);
+    let right = |x: f32| {
+        let past = edges.partition_point(|&edge| edge <= x);
+        edges.get(past).copied().unwrap_or(width).max(x)
+    };
+    // Each cluster's span, left and right, and whether its run goes from
+    // right to left: of its own glyphs, or its share of the glyphs of the
+    // cluster before, which drew it with theirs; before the first of
+    // glyphs, at that one's leading edge.
+    let mut spans = vec![(0.0, 0.0, false); clusters];
+    let first = left.iter().position(|x| x.is_finite());
+    let mut at = 0;
+    while at < clusters {
+        let mut end = at + 1;
+        while end < clusters && !left[end].is_finite() {
+            end += 1;
+        }
+        let Some(own) = (left[at].is_finite()).then_some(at).or(first) else {
+            // No glyph at all: every place at the start.
+            break;
+        };
+        let (from, to, back) = (left[own], right(left[own]), backward[own]);
+        if own != at {
+            // The clusters before the first of glyphs.
+            let edge = if back { to } else { from };
+            for span in &mut spans[at..end.min(own)] {
+                *span = (edge, edge, back);
+            }
+            at = own;
+            continue;
+        }
+        let share = (to - from) / (end - at) as f32;
+        for (part, span) in spans[at..end].iter_mut().enumerate() {
+            let near = part as f32 * share;
+            *span = if back {
+                (to - near - share, to - near, true)
+            } else {
+                (from + near, from + near + share, false)
+            };
+        }
+        at = end;
+    }
+    let mut places: Vec<(usize, f32)> = starts[..clusters]
+        .iter()
+        .zip(&spans)
+        .map(|(&start, &(from, to, back))| (start, if back { to } else { from }))
+        .collect();
+    let end = match spans.last() {
+        Some(&(from, _, true)) => from,
+        Some(&(_, to, false)) if first.is_some() => to,
+        _ => width,
+    };
+    places.push((text.len(), end));
+    places
 }
 
 #[cfg(test)]
@@ -1759,6 +1876,7 @@ mod tests {
                 cluster: cluster as u32,
                 x,
                 y: 0.0,
+                right_to_left: false,
             };
             let code = |character: char| u16::try_from(u32::from(character)).unwrap_or(0);
             if face == EMOJI && text.contains('\u{200D}') {
@@ -2834,6 +2952,150 @@ mod tests {
         assert_ne!(small.region, large.region);
         assert_eq!(font.texture_sizes(), (1024, 1024));
     }
+
+    /// The glyphs of `text` at `places`, each a glyph of the cluster at
+    /// that byte, of a run from right to left where `backward`.
+    fn glyphs_at(places: &[(usize, f32)], backward: bool) -> Vec<ShapedGlyph> {
+        places
+            .iter()
+            .map(|&(cluster, x)| ShapedGlyph {
+                face: FaceId(0),
+                glyph: GlyphId(1),
+                cluster: cluster as u32,
+                x,
+                y: 0.0,
+                right_to_left: backward,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_caret_s_places_are_each_cluster_s_leading_edge() {
+        // From left to right, the end at the last cluster's right.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 10.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("abc", &glyphs, 30.0),
+            [(0, 0.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        // From right to left, as CoreText gives a run of Hebrew, in its
+        // order on the line: each cluster's right, the end at the last
+        // cluster's left.
+        let glyphs = glyphs_at(&[(4, 0.0), (2, 10.0), (0, 20.0)], true);
+        assert_eq!(
+            carets_of("אבג", &glyphs, 30.0),
+            [(0, 30.0), (2, 20.0), (4, 10.0), (6, 0.0)]
+        );
+        // Hebrew after Latin text: typing at the end goes on at the Hebrew's
+        // left, after the space.
+        let mut glyphs = glyphs_at(&[(0, 0.0), (1, 10.0), (2, 20.0)], false);
+        glyphs.extend(glyphs_at(&[(5, 30.0), (3, 40.0)], true));
+        assert_eq!(
+            carets_of("ab אב", &glyphs, 50.0),
+            [
+                (0, 0.0),
+                (1, 10.0),
+                (2, 20.0),
+                (3, 50.0),
+                (5, 40.0),
+                (7, 30.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_ligature_s_clusters_share_it_and_a_mark_is_its_letter_s() {
+        // One glyph of two clusters, each half of it, in its direction.
+        let glyphs = glyphs_at(&[(0, 0.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("fix", &glyphs, 30.0),
+            [(0, 0.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        let glyphs = glyphs_at(&[(0, 0.0)], true);
+        assert_eq!(
+            carets_of("לא", &glyphs, 20.0),
+            [(0, 20.0), (2, 10.0), (4, 0.0)]
+        );
+        // A mark drawn over its letter, its glyph within the letter's.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 2.0), (3, 10.0)], false);
+        assert_eq!(
+            carets_of("e\u{301}x", &glyphs, 20.0),
+            [(0, 0.0), (3, 10.0), (4, 20.0)]
+        );
+        // No glyph, every place at the start and the end at the width.
+        assert_eq!(carets_of("ab", &[], 5.0), [(0, 0.0), (1, 0.0), (2, 5.0)]);
+        // A cluster before the first of glyphs, at that one's leading edge.
+        let glyphs = glyphs_at(&[(1, 10.0), (2, 20.0)], false);
+        assert_eq!(
+            carets_of("abc", &glyphs, 30.0),
+            [(0, 10.0), (1, 10.0), (2, 20.0), (3, 30.0)]
+        );
+        let glyphs = glyphs_at(&[(2, 0.0)], true);
+        assert_eq!(
+            carets_of("אב", &glyphs, 10.0),
+            [(0, 10.0), (2, 10.0), (4, 0.0)]
+        );
+        // A glyph past the text's width, of no width, not one that ends
+        // before it starts.
+        let glyphs = glyphs_at(&[(0, 0.0), (1, 25.0)], false);
+        assert_eq!(
+            carets_of("ab", &glyphs, 20.0),
+            [(0, 0.0), (1, 25.0), (2, 25.0)]
+        );
+        assert_eq!(carets_of("", &[], 0.0), [(0, 0.0)]);
+    }
+
+    #[test]
+    fn the_caret_s_places_of_a_long_text_cost_about_its_length() {
+        // A cost of the square of the length would take a hundred times
+        // as long of ten times the text.
+        let cost = |length: usize| {
+            let text = "ab ".repeat(length / 3);
+            let places: Vec<(usize, f32)> = (0..text.len()).map(|at| (at, at as f32)).collect();
+            let glyphs = glyphs_at(&places, false);
+            (0..5)
+                .map(|_| {
+                    let start = Instant::now();
+                    let carets = carets_of(&text, &glyphs, text.len() as f32);
+                    assert_eq!(carets.len(), text.len() + 1);
+                    start.elapsed()
+                })
+                .min()
+                .unwrap()
+        };
+        let (short, long) = (cost(10_000), cost(100_000));
+        assert!(long < short * 40, "{short:?} {long:?}");
+    }
+
+    #[test]
+    fn a_text_s_places_are_found_once() {
+        let mut font = Font::new(Squares::default(), FontConfig::default(), 1.0).unwrap();
+        let first = font.interface_carets("find");
+        let shapings = font.shaped.shapings;
+        let again = font.interface_carets("find");
+        assert!(Rc::ptr_eq(&first, &again));
+        assert_eq!(font.shaped.shapings, shapings);
+        // Of another size, found anew.
+        let larger = InterfaceConfig {
+            font_size: lokyr_text_core::Size::try_from(20.0).unwrap(),
+            ..InterfaceConfig::default()
+        };
+        font.set_interface(&larger).unwrap();
+        assert_ne!(*font.interface_carets("find"), *first);
+        font.set_interface(&InterfaceConfig::default()).unwrap();
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        // The last texts asked for kept, a text asked for again the newest,
+        // the oldest past them found anew.
+        for text in 1..CARET_TEXTS {
+            font.interface_carets(&text.to_string());
+        }
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        font.interface_carets("0");
+        assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
+        for text in 0..CARET_TEXTS {
+            font.interface_carets(&format!("new {text}"));
+        }
+        assert!(!Rc::ptr_eq(&first, &font.interface_carets("find")));
+    }
 }
 
 /// The presentations as macOS's fonts give them: SF Mono, the default, and
@@ -2854,6 +3116,29 @@ mod system {
             dark: false,
         };
         font.glyph(&shown).map(|glyph| glyph.region.texture)
+    }
+
+    #[test]
+    fn the_caret_s_places_in_hebrew_go_from_its_right() {
+        let mut font = Font::new(CoreText::new(), FontConfig::default(), 2.0).unwrap();
+        // Each cluster left of the one before, the end at the line's left.
+        let places = font.interface_carets("שלום");
+        assert_eq!(places.len(), 5);
+        assert!(
+            places.windows(2).all(|pair| pair[1].1 < pair[0].1),
+            "{places:?}"
+        );
+        assert!(places[4].1.abs() < 0.5, "{places:?}");
+        // After Latin text, the Hebrew's start at the line's right, and its
+        // end after the space, where typing goes on.
+        let mixed = font.interface_carets("ab שלום");
+        let (space, hebrew, end) = (mixed[2].1, &mixed[3..7], mixed[7].1);
+        assert!(
+            hebrew.windows(2).all(|pair| pair[1].1 < pair[0].1),
+            "{mixed:?}"
+        );
+        assert!(space < end && end < hebrew[3].1, "{mixed:?}");
+        assert!(mixed.iter().all(|&(_, x)| x <= hebrew[0].1), "{mixed:?}");
     }
 
     #[test]

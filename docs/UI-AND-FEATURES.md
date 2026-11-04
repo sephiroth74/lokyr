@@ -20,7 +20,9 @@ This document covers our UI engine and the features the MVP cannot ship without:
   - its caret moves by whole grapheme clusters, so that it never stands inside an emoji of several code points or a letter and its marks, and by words, runs of letters and digits;
   - macOS's keys of a text field: the arrows, with Option by words and with Command to the line's ends, Shift extending the selection; Backspace and Delete, with Option by words and with Command to the line's ends; Control-A, E, B, F, H, D and K; Command-A, C, X, V, Z and Shift-Command-Z; the keys that it leaves, as Command-W, go to the bindings;
   - the pointer: a press places the caret, Shift extends the selection to it, a double click selects a word, a triple click the whole text, and a drag selects, which its plugin learns nothing of; Tab, as it gives it the focus, selects its whole text;
-  - a paste takes the clipboard's lines on one line; the field keeps its own undo, of 100 edits, typing undone at once until the caret moves;
+  - a paste takes the clipboard's lines on one line; the field keeps its own undo, of 100 edits, typing and deleting each undone at once until the caret moves;
+  - its text holds 10 000 characters at most: a paste or a plugin's text past them is cut before the grapheme cluster that would pass them, and typing past them types nothing;
+  - its caret's places are each cluster's leading edge, the right of one of Hebrew or Arabic, so that the caret and the selection follow a run from right to left;
   - it scrolls across to its caret while it has the focus, and shows its text's start without it;
   - an input method's composition shows at its caret, in place of the selection, underlined as macOS marks it, the part that the input method selects of a line twice as thick; a click keeps it as it stands, which the input method then forgets; the input method's rectangle is the whole composition's, or the caret's without one, by which it places its candidates and the palette of emoji;
   - its plugin learns of its text through `input-changed`, at each change, and `submit`, as Return goes to it, and sets it through a request, which tells no `input-changed`;

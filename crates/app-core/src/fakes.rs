@@ -146,6 +146,7 @@ impl FontBackend for Fonts {
                 cluster: u32::try_from(at).unwrap_or(u32::MAX),
                 x,
                 y: 0.0,
+                right_to_left: false,
             });
             x += size * 0.6;
         }

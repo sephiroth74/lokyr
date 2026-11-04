@@ -1027,6 +1027,8 @@ fn point(anchor: &Anchor) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use lokyr_ui_core::theme::Theme;
     use lokyr_vt_core::input::Mods;
 
@@ -1048,14 +1050,14 @@ mod tests {
     }
 
     impl Carets for Fixed {
-        fn carets(&mut self, text: &str) -> Vec<(usize, f32)> {
+        fn carets(&mut self, text: &str) -> Rc<[(usize, f32)]> {
             let mut carets: Vec<(usize, f32)> = text
                 .char_indices()
                 .enumerate()
                 .map(|(index, (at, _))| (at, index as f32 * 7.0))
                 .collect();
             carets.push((text.len(), text.chars().count() as f32 * 7.0));
-            carets
+            carets.into()
         }
     }
 

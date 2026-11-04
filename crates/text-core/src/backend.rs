@@ -89,6 +89,9 @@ pub struct ShapedGlyph {
     pub x: f32,
     /// Where the glyph is from the baseline, upwards, in pixels.
     pub y: f32,
+    /// Whether the glyph's run goes from right to left, as Hebrew's and
+    /// Arabic's do, its clusters' bytes falling as `x` rises.
+    pub right_to_left: bool,
 }
 
 /// What a face that a family lacks is drawn from: another of its faces,
