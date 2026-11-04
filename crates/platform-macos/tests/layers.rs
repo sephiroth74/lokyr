@@ -61,9 +61,10 @@ mod probe {
             .expect("the window");
         let content = window.contentView().expect("the content view");
         let subviews = content.subviews();
-        assert_eq!(subviews.count(), 2, "the layers' views");
-        let text = subviews.objectAtIndex(0);
-        let cursor = subviews.objectAtIndex(1);
+        // The sweeps' view first, under the layers'.
+        assert_eq!(subviews.count(), 3, "the layers' views");
+        let text = subviews.objectAtIndex(1);
+        let cursor = subviews.objectAtIndex(2);
         (content, text, cursor)
     }
 

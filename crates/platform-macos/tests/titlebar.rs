@@ -37,9 +37,12 @@ mod probe {
         /// The buttons that the content learned of, and the moves.
         buttons: usize,
         moves: usize,
-        /// The sizes that came, of the title's titlebar, of the tabs', and
-        /// of the title's again.
+        /// The sizes that came, of the zoom's frames, of the tabs'
+        /// titlebar, and of the title's again.
         sizes: Vec<WindowSize>,
+        /// The last size before the second step, the tabs' titlebar's, as
+        /// the zoom's frames came before it.
+        tabs: Option<WindowSize>,
         /// Whether the title showed with the tabs' titlebar.
         title_shown: bool,
     }
@@ -123,11 +126,11 @@ mod probe {
                     press(&content, (120.0, top), 2);
                     seen.zoomed = window.isZoomed();
                     seen.minimized = window.isMiniaturized();
-                    seen.sizes.clear();
                     platform.set_titlebar(id, Titlebar::Tabs);
                     common::wake_after(platform.waker(), 300);
                 }
                 2 => {
+                    seen.tabs = seen.sizes.last().copied();
                     seen.title_shown = window.titleVisibility() == NSWindowTitleVisibility::Visible;
                     // A tab's part of the bar, 200 to 300 points across.
                     platform.set_titlebar_areas(
@@ -179,7 +182,7 @@ mod probe {
         // The press over the tab's part of the bar alone, and the move.
         assert_eq!((seen.buttons, seen.moves), (1, 1), "{seen:?}");
         assert!(!seen.title_shown, "{seen:?}");
-        let tabs = seen.sizes.first().expect("the tabs' titlebar's size");
+        let tabs = seen.tabs.as_ref().expect("the tabs' titlebar's size");
         let titled = seen.sizes.last().expect("the title's titlebar's size");
         // A compact toolbar's titlebar, taller than the title's alone, its
         // buttons past a margin.
