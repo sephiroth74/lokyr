@@ -483,17 +483,19 @@ fn a_live_resize_draws_once_a_refresh() {
     // step, wait for the next, as a second frame within it would wait a
     // second for a drawable.
     app.windows.get_mut(&window).unwrap().drawn_at = Some(Instant::now());
-    let before = app.pane(window).grid();
+    // The grid that a frame lays out, which a draw changes.
+    let laid_out = |app: &App| app.windows[&window].views[0].grid;
+    let before = laid_out(&app);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(fake.window(window).unwrap().frame_requested);
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
-    assert_eq!(app.pane(window).grid(), before);
+    assert_eq!(laid_out(&app), before);
     assert!(fake.window(window).unwrap().frame_requested);
     // A refresh later, it draws at once, and so does the display's frame.
     let earlier = Instant::now() - Duration::from_millis(50);
     app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
-    assert_ne!(app.pane(window).grid(), before);
+    assert_ne!(laid_out(&app), before);
     app.windows.get_mut(&window).unwrap().drawn_at = Some(earlier);
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(!fake.window(window).unwrap().frame_requested);
@@ -510,16 +512,22 @@ fn a_live_resize_tells_the_program_its_grid_as_it_ends() {
     let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::Frame);
     let told = app.pane(window).told();
-    // A step reflows the terminal, and the program, which would redraw at
-    // each, waits.
+    // A step leaves the terminal as it was, and the program, which would
+    // redraw at each, its prompt cleared, learns of nothing.
     fake.send(&mut app, window, WindowEvent::LiveResize(true));
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
-    let grid = app.pane(window).grid();
-    assert_ne!(grid, told);
-    assert_eq!(app.pane(window).told(), told);
-    // Its end tells it at once.
+    let laid_out = app.windows[&window].views[0].grid;
+    assert_ne!(laid_out, told);
+    assert_eq!(
+        (app.pane(window).grid(), app.pane(window).told()),
+        (told, told)
+    );
+    // Its end gives both the grid at once.
     fake.send(&mut app, window, WindowEvent::LiveResize(false));
-    assert_eq!(app.pane(window).told(), grid);
+    assert_eq!(
+        (app.pane(window).grid(), app.pane(window).told()),
+        (laid_out, laid_out)
+    );
 }
 
 #[test]
