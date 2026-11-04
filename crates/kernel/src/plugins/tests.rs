@@ -1808,10 +1808,13 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                     let (tab, tab_pane) = cx.new_tab(window, None)?;
                     let split = cx.split(pane, Lie::Horizontal, Part::Second)?;
                     // A read in the call reads the state before its writes,
-                    // and the new pane is not there to split yet.
+                    // and a later write of the call takes the ids that the
+                    // earlier ones gave, which a pane of none fails.
                     let tabs = cx.tabs(window)?.len();
                     let early = cx.split(tab_pane, Lie::Vertical, Part::Second);
-                    *seen.borrow_mut() = Some((tab, tab_pane, split, tabs, early));
+                    let none = cx.focus_pane(lokyr_plugin_sdk::host::PaneId(9999));
+                    cx.equalize(tab)?;
+                    *seen.borrow_mut() = Some((tab, tab_pane, split, tabs, (early, none)));
                     Ok(())
                 },
             ),
@@ -1821,13 +1824,18 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
     plugins
         .run("ws.open", Args::new(), &mut app.context())
         .unwrap();
-    let (tab, tab_pane, split, tabs, early) = got.borrow_mut().take().unwrap();
+    let (tab, tab_pane, split, tabs, (early, none)) = got.borrow_mut().take().unwrap();
     assert_eq!(tabs, 1);
-    assert_eq!(early.unwrap_err().code, Code::NotFound);
-    // The ids that the call got are the tab's and the panes'.
+    let early = early.unwrap();
+    assert_eq!(none.unwrap_err().code, Code::NotFound);
+    // The ids that the call got are the tab's and the panes', which its
+    // later writes split and equalized.
     let opened = app.workspace.tab(TabId::of(tab.0)).unwrap();
     assert_eq!(opened.window(), window);
-    assert_eq!(opened.layout().panes(), [PaneId::of(tab_pane.0)]);
+    assert_eq!(
+        opened.layout().panes(),
+        [PaneId::of(tab_pane.0), PaneId::of(early.0)]
+    );
     assert_eq!(
         app.workspace.window(window).unwrap().active_tab(),
         first_tab
@@ -1836,13 +1844,14 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
         app.workspace.tab(first_tab).unwrap().layout().panes(),
         [first, PaneId::of(split.0)]
     );
-    // Each pane beside the window's focused one, its programs started as
-    // the call returned.
+    // Each pane beside the window's focused one, or the one that it
+    // splits, its programs started as the call returned.
     assert_eq!(
         app.panes.0,
         [
             (PaneId::of(tab_pane.0), Some(first)),
-            (PaneId::of(split.0), Some(first))
+            (PaneId::of(split.0), Some(first)),
+            (PaneId::of(early.0), Some(PaneId::of(tab_pane.0)))
         ]
     );
     assert_eq!(
@@ -1864,6 +1873,8 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             WorkspaceEvent::LayoutChanged {
                 tab: first_tab.into()
             },
+            WorkspaceEvent::PaneCreated { pane: early, tab },
+            WorkspaceEvent::LayoutChanged { tab },
         ]
     );
     // The reads of the windows, their tabs and a tab's layout.
@@ -1914,7 +1925,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 window: window.into(),
                 title: String::new(),
                 active: false,
-                panes: vec![tab_pane],
+                panes: vec![tab_pane, early],
                 focused: tab_pane,
                 zoomed: None,
             },

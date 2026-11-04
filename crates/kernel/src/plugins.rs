@@ -1449,6 +1449,46 @@ impl Host<'_, '_> {
             .ok_or_else(|| Error::new(Code::NotFound, format!("there is no tab {}", tab.0)))
     }
 
+    /// The pane of the tab `tab` that the call's writes so far open, whose
+    /// ids their request gave, if they open it.
+    fn opened_tab(&self, tab: host::TabId) -> Option<PaneId> {
+        self.writes.iter().find_map(|write| match write {
+            Write::NewTab {
+                tab: opened, pane, ..
+            } if opened.get() == tab.0 => Some(*pane),
+            _ => None,
+        })
+    }
+
+    /// Whether the call's writes so far open the pane `pane`, of a new tab
+    /// or of a split.
+    fn opens_pane(&self, pane: host::PaneId) -> bool {
+        self.writes.iter().any(|write| match write {
+            Write::NewTab { pane: opened, .. } | Write::Split { new: opened, .. } => {
+                opened.get() == pane.0
+            }
+            _ => false,
+        })
+    }
+
+    /// Whether the tab `tab` is there, or the call's writes so far open it,
+    /// which a later write of the call then finds; `not-found` otherwise.
+    fn known_tab(&self, tab: host::TabId) -> Result<(), Error> {
+        if self.opened_tab(tab).is_some() {
+            return Ok(());
+        }
+        self.tab(tab).map(|_| ())
+    }
+
+    /// Whether the pane `pane` is there, or the call's writes so far open
+    /// it; `not-found` otherwise.
+    fn known_pane(&self, pane: host::PaneId) -> Result<(), Error> {
+        if self.opens_pane(pane) {
+            return Ok(());
+        }
+        self.pane(pane).map(|_| ())
+    }
+
     /// The window that `view` shows in, if the view is one of the plugin's:
     /// a slot's that its manifest declares, of a window or a pane that is
     /// there, or one of its open panels; `not-found` otherwise.
@@ -1738,7 +1778,7 @@ impl Host<'_, '_> {
                 direction: lying,
                 side: new_side,
             } => {
-                self.pane(*pane)?;
+                self.known_pane(*pane)?;
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),
@@ -1752,21 +1792,21 @@ impl Host<'_, '_> {
             | Asked::ActivateTab(tab)
             | Asked::TabToNewWindow(tab)
             | Asked::Equalize(tab) => {
-                self.tab(*tab)?;
+                self.known_tab(*tab)?;
             }
             Asked::ClosePane(pane) | Asked::FocusPane(pane) | Asked::PaneToNewWindow(pane) => {
-                self.pane(*pane)?;
+                self.known_pane(*pane)?;
             }
             Asked::MoveTab { tab, window, .. } => {
-                self.tab(*tab)?;
+                self.known_tab(*tab)?;
                 self.window(*window)?;
             }
             Asked::PaneToNewTab { pane, window, .. } => {
-                self.pane(*pane)?;
+                self.known_pane(*pane)?;
                 self.window(*window)?;
             }
             Asked::ResizePane { pane, by, .. } => {
-                self.pane(*pane)?;
+                self.known_pane(*pane)?;
                 if !(-1.0..=1.0).contains(by) {
                     return Err(Error::new(
                         Code::Failed,
@@ -1775,7 +1815,7 @@ impl Host<'_, '_> {
                 }
             }
             Asked::SetRatio { tab, ratio, .. } => {
-                self.tab(*tab)?;
+                self.known_tab(*tab)?;
                 if ratio.is_some_and(|ratio| !(0.0..=1.0).contains(&ratio)) {
                     return Err(Error::new(
                         Code::Failed,
@@ -1784,7 +1824,10 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Zoom { tab, pane } => {
-                let panes = self.tab(*tab)?.layout().panes();
+                let panes = match self.opened_tab(*tab) {
+                    Some(opened) => vec![opened],
+                    None => self.tab(*tab)?.layout().panes(),
+                };
                 if let Some(pane) = pane
                     && !panes.contains(&PaneId::of(pane.0))
                 {

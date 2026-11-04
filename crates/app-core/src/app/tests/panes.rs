@@ -211,3 +211,108 @@ fn an_accessibility_client_s_focus_of_a_pane_gives_it_the_keyboard() {
         fake.window(window).unwrap().accessibility.iter().any(runs)
     });
 }
+
+/// A plugin whose commands open a tab and activate it, go back to the
+/// first, split the pane that has the keyboard and focus the new one, and
+/// give the keyboard back to the first pane, as `tabs` and `splits` will,
+/// each of one call.
+struct Mover;
+
+impl plugins::Plugin for Mover {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for name in ["mover.tab", "mover.back", "mover.split", "mover.first"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::Windows,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        use plugins::host::{Direction, Side};
+
+        let window = cx.focused_window().unwrap();
+        let tabs = cx.tabs(window)?;
+        match name {
+            "mover.tab" => {
+                let (tab, _) = cx.new_tab(window, None)?;
+                cx.activate_tab(tab)
+            }
+            "mover.back" => cx.activate_tab(tabs[0].id),
+            "mover.split" => {
+                let pane = cx.focused_pane().unwrap();
+                let new = cx.split(pane, Direction::Horizontal, Side::Second)?;
+                cx.focus_pane(new)
+            }
+            _ => {
+                let first = tabs.iter().find(|tab| tab.active).unwrap().panes[0];
+                cx.focus_pane(first)
+            }
+        }
+    }
+}
+
+#[test]
+fn a_plugin_s_moves_of_the_keyboard_do_what_the_app_s_own_do() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), idle()).with_plugin("mover", Box::new(Mover));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    let spot = crate::mouse::Spot {
+        row: 0,
+        col: 0,
+        boundary: 0,
+    };
+    for (command, moved) in [
+        ("mover.tab", true),
+        ("mover.back", true),
+        ("mover.split", true),
+        ("mover.first", true),
+        ("mover.first", false),
+    ] {
+        // The pane that had the keyboard ran vim, composed and selected.
+        let state = app.windows.get_mut(&window).unwrap();
+        let before = state.keyboard;
+        state.place.1 = "vim".to_owned();
+        state.preedit = Some(lokyr_ui_core::pane::Preedit {
+            text: "に".to_owned(),
+            cursor: 0,
+        });
+        state.selecting = Some(crate::window::Selecting {
+            anchor: spot,
+            last: spot,
+            shape: lokyr_vt_core::terminal::SelectionShape::Cells,
+            unit: lokyr_vt_core::terminal::SelectionUnit::Cell,
+            held: true,
+            beyond: 0,
+        });
+        let ended = fake.window(window).unwrap().compositions_ended;
+        fake.send_app(&mut app, AppEvent::Command(command.to_owned()));
+        let state = &app.windows[&window];
+        assert_eq!(state.keyboard != before, moved, "{command}");
+        assert_eq!(
+            state.keyboard,
+            app.workspace.focused(state.window).map(Pane::id)
+        );
+        // The new pane's place, its composition and its selection ended,
+        // the input method forgetting it.
+        assert_eq!(state.place.1 != "vim", moved, "{command}");
+        assert_eq!(state.preedit.is_none(), moved, "{command}");
+        assert_eq!(state.selecting.is_none(), moved, "{command}");
+        // The title takes the new pane's program.
+        let title = &fake.window(window).unwrap().title;
+        assert!(!moved || !title.contains("vim"), "{command}: {title}");
+        assert_eq!(
+            fake.window(window).unwrap().compositions_ended,
+            ended + usize::from(moved),
+            "{command}"
+        );
+    }
+}

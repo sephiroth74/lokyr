@@ -166,6 +166,8 @@ pub(crate) struct Window<B: Backend> {
     /// The keyboard's focus, on its pane or on a node of a slot's view, by
     /// the view's id.
     pub(crate) focus: Focus<u32>,
+    /// The pane that had its keyboard, as the app looked last.
+    pub(crate) keyboard: Option<PaneId>,
     /// The id that its next slot's view takes.
     pub(crate) next_view: u32,
     /// The slot's view that the pointer's button went down over, which
@@ -283,6 +285,7 @@ impl<B: Backend> Window<B> {
             panes_top: 0,
             sweeps: (Vec::new(), now),
             focus: Focus::new(),
+            keyboard: None,
             next_view: 0,
             captured: None,
             over: None,

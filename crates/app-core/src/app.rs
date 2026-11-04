@@ -1428,6 +1428,7 @@ impl<B: Backend> App<B> {
             .unwrap_or_else(|| WindowSize::new(WINDOW_SIZE, 1.0));
         let mut state = Window::new(surfaces, shown, focused, Instant::now());
         state.page = page;
+        state.keyboard = self.workspace.focused(shown).map(Pane::id);
         self.windows.insert(window, state);
         self.draw(platform, window, size);
     }
@@ -1696,9 +1697,8 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Gives `pane`, one of `window`'s, the window's keyboard: the title
-    /// takes its program's, its cursor starts blinking, on, and the window
-    /// draws again. A composition under way, of the pane that had it, ends.
+    /// Gives `pane`, one of `window`'s, the window's keyboard, as
+    /// [`App::keyboard_moved`] tells, and the title takes its program's.
     pub(super) fn focus_pane(
         &mut self,
         platform: &mut dyn Platform,
@@ -1708,12 +1708,31 @@ impl<B: Backend> App<B> {
         if self.window_of(pane) != Some(window) || !self.workspace.focus_pane(pane) {
             return;
         }
-        if let Some(state) = self.windows.get_mut(&window) {
-            state.preedit = None;
-            state.blink.restart(Instant::now());
-        }
-        self.look_at_place(window);
+        self.keyboard_moved(platform, window);
         self.show_title(platform, window);
+    }
+
+    /// The pane that has `window`'s keyboard, if it is another than the one
+    /// that had it, as the app or a plugin moved it: a composition under
+    /// way ends, which the input method forgets, so that its commit goes to
+    /// no other pane, and so does a selection being made; the cursor starts
+    /// blinking, on; the window looks at its new place, its program and its
+    /// directory, and draws again.
+    fn keyboard_moved(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let now = self.workspace.focused(state.window).map(Pane::id);
+        if now == state.keyboard {
+            return;
+        }
+        state.keyboard = now;
+        if state.preedit.take().is_some() {
+            platform.end_composition(window);
+        }
+        state.selecting = None;
+        state.blink.restart(Instant::now());
+        self.look_at_place(window);
         platform.request_frame(window);
     }
 
@@ -1736,10 +1755,7 @@ impl<B: Backend> App<B> {
         }
         self.forget_panes(&[pane]);
         self.workspace.close_pane(pane);
-        if let Some(state) = self.windows.get_mut(&window) {
-            state.selecting = None;
-        }
-        self.look_at_place(window);
+        self.keyboard_moved(platform, window);
         self.show_title(platform, window);
         platform.request_frame(window);
     }
@@ -2228,7 +2244,9 @@ impl<B: Backend> App<B> {
                 vec![of_tab(self, from), of_tab(self, tab)]
             }
         };
+        // A plugin's moves do what the app's own do.
         for window in changed.into_iter().flatten() {
+            self.keyboard_moved(platform, window);
             self.show_title(platform, window);
         }
     }
