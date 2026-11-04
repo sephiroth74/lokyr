@@ -442,11 +442,10 @@ impl<B: Backend> App<B> {
         };
         let at = |pixels: i32| u32::try_from(pixels).unwrap_or(0);
         let (left, top) = (at(rect.x), at(rect.y));
-        // Each pane's program learns its grid, as a live resize pauses or
-        // ends, and the others' output shows in this frame too.
+        // Each pane's terminal takes its grid with its program's signal, at
+        // the resizes' pace, and the others' output shows in this frame too.
         let mut due = None;
         let mut others = false;
-        let live = state.live_resize;
         // Where the panes' cursors show, for the tree of a client that
         // asked for one.
         let asked = platform.accessibility_asked(window);
@@ -455,11 +454,7 @@ impl<B: Backend> App<B> {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;
             };
-            let told = if live {
-                pane.resize_live(view.grid, now)
-            } else {
-                pane.resize(view.grid, now)
-            };
+            let told = pane.resize(view.grid, now);
             // A frame shows its screen as the wait for its program's drawing
             // at a new size ends.
             let told = match (told, pane.answer_due()) {

@@ -528,10 +528,11 @@ fn a_live_resize_gives_its_grids_with_their_signals_at_the_pace() {
     let second = laid_out(&app);
     assert_ne!(second, first);
     assert_eq!(shown(&app), (first, first));
-    // Its end gives the terminal the last at once, and the program within
-    // the pace.
+    // Its end gives the terminal the last with the program's signal,
+    // within the pace, the terminal as it was until then, so that its
+    // prompt clears as the program learns of it.
     fake.send(&mut app, window, WindowEvent::LiveResize(false));
-    assert_eq!(app.pane(window).grid(), second);
+    assert_eq!(shown(&app), (first, first));
     fake.fire_timers(&mut app, Instant::now() + RESIZE_PACE);
     assert_eq!(shown(&app), (second, second));
 }

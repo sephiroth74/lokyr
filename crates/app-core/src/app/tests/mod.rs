@@ -1877,10 +1877,8 @@ fn a_resize_storm_tells_the_program_its_size_at_its_pace() {
     let elapsed = start.elapsed();
     let last = grids[49];
     assert_eq!((last.columns, last.rows), (149, 37));
-    // The terminal takes each step at once, and the program the first,
-    // then one every 50 ms at most.
-    let pane = app.pane(window);
-    assert_eq!(pane.snapshot().cols(), last.columns);
+    // The program learns of the first at once, then of one a pace at most,
+    // the terminal taking each with its signal.
     assert_eq!(told[0], grids[0]);
     told.dedup();
     let paced = elapsed.as_millis() / RESIZE_PACE.as_millis() + 1;
@@ -1902,6 +1900,7 @@ fn a_resize_storm_tells_the_program_its_size_at_its_pace() {
     }
     assert_eq!(app.resize_timer, None);
     assert_eq!(app.pane(window).told(), last);
+    assert_eq!(app.pane(window).grid(), last);
     // The program saw few sizes, and the last one.
     run_until(&mut fake, &mut app, |_, app| {
         screen(app, window).iter().any(|line| line == "37 149")
