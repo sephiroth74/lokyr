@@ -1,29 +1,40 @@
-//! The standard error in the log, in a process of its own, as the
-//! standard error and the hook are the process's: lines past a pipe's
-//! buffer go without a panic, a panic's report reaches the file, an
-//! abort's last line reaches the file that started again, and a file that
-//! does not open leaves the standard error as it was.
+//! The standard error in the log, each test's log in a process of its own,
+//! as the standard error and the panic's hook are the process's, which
+//! would take the failures' messages of the tests' own process: lines past
+//! a pipe's buffer go without a panic, a panic's report reaches the file,
+//! an abort's last line reaches the file that started again, and a file
+//! that does not open leaves the standard error as it was.
 
 use std::io::Write as _;
 use std::time::Duration;
 
-/// Reads the log until `done` holds of it, for ten seconds at most.
-fn read_until(log: &std::path::Path, done: impl Fn(&str) -> bool) -> String {
+/// Waits until `done` holds, for ten seconds at most.
+fn wait_until(what: &str, done: impl Fn() -> bool) {
     for _ in 0..1000 {
-        let text = std::fs::read_to_string(log).unwrap_or_default();
-        if done(&text) {
-            return text;
+        if done() {
+            return;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("the log never held it");
+    panic!("{what} never came");
 }
 
+/// Reads the log until `done` holds of it, for ten seconds at most.
+fn read_until(log: &std::path::Path, done: impl Fn(&str) -> bool) -> String {
+    let read = || std::fs::read_to_string(log).unwrap_or_default();
+    wait_until("the log's text", || done(&read()));
+    read()
+}
+
+/// The child's side of the test below: with `LOKYR_LOG_LINES`, starts the
+/// log there, writes more than a pipe's buffer to the standard error, then
+/// panics on a thread of its own; without, nothing.
 #[test]
-fn the_standard_error_s_lines_and_a_panic_s_report_reach_the_log() {
-    let directory = std::env::temp_dir().join(format!("lokyr-stderr-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    let log = directory.join("Logs/lokyr.log");
+fn child_writes_past_a_pipe_and_panics() {
+    let Some(log) = std::env::var_os("LOKYR_LOG_LINES") else {
+        return;
+    };
+    let log = std::path::PathBuf::from(log);
     let to_log = lokyr_app_core::log::start_with(&log, "9.9.9-test", true).unwrap();
     assert!(to_log);
     // More than a pipe's buffer, which its thread drains, through the
@@ -43,7 +54,28 @@ fn the_standard_error_s_lines_and_a_panic_s_report_reach_the_log() {
         .spawn(|| panic!("a test's panic"))
         .unwrap();
     assert!(worker.join().is_err());
-    let text = read_until(&log, |text| text.contains("a test's panic"));
+    read_until(&log, |text| text.contains("a test's panic"));
+}
+
+#[test]
+fn the_standard_error_s_lines_and_a_panic_s_report_reach_the_log() {
+    let directory = std::env::temp_dir().join(format!("lokyr-stderr-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    let log = directory.join("Logs/lokyr.log");
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "child_writes_past_a_pipe_and_panics",
+            "--test-threads=1",
+        ])
+        .env("LOKYR_LOG_LINES", &log)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    let text = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(status.success(), "{status}: {text}");
+    assert!(text.contains("the 4999th"));
     assert!(text.contains(" lokyr 9.9.9-test: the thread 'worker' panicked at "));
     // Once: the hook writes it, and the terminal's hook does not.
     assert_eq!(text.matches("a test's panic").count(), 1, "{text}");
@@ -125,7 +157,7 @@ fn the_last_line_before_the_end_reaches_the_log() {
 
 /// The child's side of the test below: with `LOKYR_LOG_ROTATED`, starts the
 /// log there, writes past its size, so that it starts again, holds its
-/// drain once it did, and aborts after a last line, which the abort's
+/// drain once it wrote all, and aborts after a last line, which the abort's
 /// handler alone writes; without, nothing.
 #[test]
 fn child_rotates_the_log_and_aborts() {
@@ -149,13 +181,18 @@ fn child_rotates_the_log_and_aborts() {
     for _ in 0..1100 {
         writeln!(stderr, "{line}").unwrap();
     }
+    // The pipe empty once the new file holds the line after the others, as
+    // a slow drain keeps a pipe's buffer of them, which a hold would keep.
+    writeln!(stderr, "the line after the rotation's").unwrap();
     let kept = log.with_extension("1.log");
-    read_until(&log, |_| kept.exists());
-    // Held once the drain wrote a line after the hold, so that the last
-    // line waits in the pipe.
+    read_until(&log, |text| {
+        kept.exists() && text.contains("the line after the rotation's")
+    });
+    // The drain holds at its next turn, which a line ends if it waits in a
+    // read; once it holds, the last line waits in the pipe.
     lokyr_app_core::log::hold_drain();
     writeln!(stderr, "a line after the hold").unwrap();
-    read_until(&log, |text| text.contains("a line after the hold"));
+    wait_until("the drain's hold", lokyr_app_core::log::drain_holds);
     writeln!(stderr, "the last line before the abort").unwrap();
     std::process::abort();
 }

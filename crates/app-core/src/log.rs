@@ -196,12 +196,25 @@ pub fn hold_drain() {
     HELD.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Whether the drain holds, past its last read, as [`hold_drain`] asked.
+static HOLDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the drain holds, as [`hold_drain`] asked: it reads no more, and
+/// what the standard error writes from now stays in the pipe until the
+/// process ends, as a test of that end has it. A drain that waits in a read
+/// holds once the read returns and its bytes are written.
+#[doc(hidden)]
+pub fn drain_holds() -> bool {
+    HOLDING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Writes what `pipe` gives into `log`, until the pipe ends, which it does
 /// not while the process runs.
 fn drain(mut pipe: impl Read, log: &mut Log) {
     let mut buffer = [0_u8; 8192];
     loop {
         while HELD.load(std::sync::atomic::Ordering::SeqCst) {
+            HOLDING.store(true, std::sync::atomic::Ordering::SeqCst);
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         match pipe.read(&mut buffer) {
