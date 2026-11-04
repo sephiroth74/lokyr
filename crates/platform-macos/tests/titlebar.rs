@@ -4,7 +4,10 @@
 //! titlebar of tabs is taller, of no title, its buttons' room told; a press
 //! over its parts that are the content's comes to the content, as the
 //! pointer's moves over it do, and the first click there of a window that
-//! is not key too; the title's titlebar again is as before.
+//! is not key too; the title's titlebar again is as before. The parts of the
+//! content where the moves come are tracking areas at their places from
+//! the view's top, as its height changes too, and the pointer's leaving
+//! them comes.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -23,7 +26,7 @@ mod probe {
     use objc2_app_kit::{
         NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSView, NSWindowTitleVisibility,
     };
-    use objc2_foundation::{NSPoint, NSString, NSUserDefaults};
+    use objc2_foundation::{NSPoint, NSSize, NSString, NSUserDefaults};
 
     use crate::common;
 
@@ -49,6 +52,29 @@ mod probe {
         /// Whether the content takes a first click over a tab's part of the
         /// bar, over the rest of it, and below it.
         first_mouse: Vec<bool>,
+        /// The view's tracking areas, of their rectangles in its own
+        /// coordinates, and its height, before and after a resize; and the
+        /// pointer's leavings.
+        tracked: Vec<(f64, Vec<[f64; 4]>)>,
+        exits: usize,
+    }
+
+    /// The rectangles of `view`'s tracking areas, and its height.
+    fn tracked(view: &NSView) -> (f64, Vec<[f64; 4]>) {
+        let areas = view.trackingAreas();
+        let rects = (0..areas.count())
+            .map(|index| areas.objectAtIndex(index))
+            .map(|area| {
+                let rect = area.rect();
+                [
+                    rect.origin.x,
+                    rect.origin.y,
+                    rect.size.width,
+                    rect.size.height,
+                ]
+            })
+            .collect();
+        (view.bounds().size.height, rects)
     }
 
     struct Probe {
@@ -169,7 +195,29 @@ mod probe {
                     platform.track_mouse_moves(id, true);
                     send(&content, NSEventType::MouseMoved, (120.0, top), 0);
                     platform.set_titlebar(id, Titlebar::Titled);
+                    // The moves over a part of the content, 200 to 300 points
+                    // across at its top, and the pointer's leaving it.
+                    platform.set_move_areas(
+                        id,
+                        &[ContentRect {
+                            origin: Point { x: 200.0, y: 0.0 },
+                            size: Size {
+                                width: 100.0,
+                                height: 20.0,
+                            },
+                        }],
+                    );
+                    seen.tracked.push(tracked(&content));
+                    let event = mouse_event(&content, NSEventType::MouseMoved, (250.0, top), 0);
+                    // SAFETY: the view's action of the pointer's leaving, of
+                    // this signature, which reads nothing of its event.
+                    let () = unsafe { msg_send![&*content, mouseExited: &*event] };
+                    window.setContentSize(NSSize::new(400.0, 360.0));
                     common::wake_after(platform.waker(), 300);
+                }
+                3 => {
+                    seen.tracked.push(tracked(&content));
+                    platform.quit();
                 }
                 _ => platform.quit(),
             }
@@ -180,6 +228,7 @@ mod probe {
             match event {
                 WindowEvent::MouseButton { .. } => seen.buttons += 1,
                 WindowEvent::MouseMoved { .. } => seen.moves += 1,
+                WindowEvent::MouseExited => seen.exits += 1,
                 WindowEvent::Resized(size) => seen.sizes.push(size),
                 _ => {}
             }
@@ -212,6 +261,14 @@ mod probe {
         assert!(tabs.bar > titled.bar && tabs.bar >= 36.0, "{seen:?}");
         assert!((50.0..=140.0).contains(&tabs.buttons), "{seen:?}");
         assert!(titled.bar >= 24.0 && titled.buttons > 0.0, "{seen:?}");
+        // The tracking area 20 points below the view's top, before and after
+        // the resize, and the pointer's leaving it.
+        assert_eq!(seen.tracked.len(), 2, "{seen:?}");
+        for (height, rects) in &seen.tracked {
+            assert_eq!(rects, &[[200.0, height - 20.0, 100.0, 20.0]], "{seen:?}");
+        }
+        assert_ne!(seen.tracked[1].0, seen.tracked[0].0, "{seen:?}");
+        assert_eq!(seen.exits, 1, "{seen:?}");
         println!("titlebar: ok");
     }
 }

@@ -63,6 +63,10 @@ pub enum WindowEvent {
         /// The modifiers held.
         mods: Modifiers,
     },
+    /// The pointer left the parts of the content where its moves come,
+    /// which [`Platform::set_move_areas`](crate::Platform::set_move_areas)
+    /// gave, as it went out of the window or over the rest of it.
+    MouseExited,
     /// A wheel or a trackpad scrolled.
     Scroll {
         /// How far.

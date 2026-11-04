@@ -303,6 +303,21 @@ impl Fields {
         state.anchor = state.caret;
     }
 
+    /// Sets the text of the field of `key` to `text`, its plugin's answer
+    /// to the field's revision `revision`, as [`Fields::set_text`] does:
+    /// not over the keys typed since, of a later revision, nor where the
+    /// field holds that text already, whose caret, selection and undo stay.
+    /// Whether it set it.
+    pub fn answer(&mut self, key: &NodeKey, text: &str, revision: u64) -> bool {
+        if let Some(state) = self.states.get(key)
+            && (state.revision > revision || state.text == cut(&single_line(text), LONGEST))
+        {
+            return false;
+        }
+        self.set_text(key, text);
+        true
+    }
+
     /// Forgets the fields whose keys `tree` no longer has as fields.
     pub fn updated(&mut self, tree: &Tree) {
         self.states.retain(|key, _| {
@@ -1227,6 +1242,32 @@ mod tests {
         field.fields.set_text(&NodeKey::from("find"), "xyz");
         assert_eq!(field.state().revision, 3);
         assert_eq!(revision(&mut field, Key::Char('w'), "w"), Some(4));
+    }
+
+    #[test]
+    fn a_plugin_s_answer_goes_over_no_keys_typed_since_nor_over_its_own_text() {
+        let mut field = Typing::new();
+        let key = NodeKey::from("find");
+        field.kind("ab");
+        // The answer to the field's revision.
+        assert!(field.fields.answer(&key, "abc", 2));
+        assert_eq!(field.shown(), "abc|");
+        // A key typed since: the answer to the revision before is too old.
+        field.kind("d");
+        assert!(!field.fields.answer(&key, "xyz", 2));
+        assert_eq!(field.shown(), "abcd|");
+        // The text that the field holds changes nothing: its caret stays,
+        // and its undo.
+        field.press(Key::Left, NONE, "");
+        assert!(!field.fields.answer(&key, "abcd", 3));
+        assert_eq!(field.shown(), "abc|d");
+        let command = mods(false, false, false, true);
+        assert_eq!(
+            field.press(Key::Char('z'), command, ""),
+            Some(vec!["input abc".to_owned()])
+        );
+        // A field of no state yet takes it.
+        assert!(field.fields.answer(&NodeKey::from("other"), "new", 0));
     }
 
     #[test]

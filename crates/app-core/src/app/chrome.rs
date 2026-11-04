@@ -20,6 +20,7 @@ use lokyr_ui_core::pointer::NodeEvent;
 use lokyr_ui_core::progress::{self, SweepArea};
 use lokyr_ui_core::surface::Surface;
 use lokyr_ui_core::theme::Tokens;
+use lokyr_ui_core::tree::NodeId;
 
 use super::App;
 use crate::Backend;
@@ -28,6 +29,8 @@ use crate::Backend;
 /// surface, the number of the render that the surface holds, and where it
 /// shows, once laid out.
 pub(crate) struct SlotView {
+    /// Its id in its window, which the keyboard's focus knows it by.
+    pub(crate) id: u32,
     /// The plugin.
     pub(crate) plugin: String,
     /// The view.
@@ -44,6 +47,7 @@ pub(crate) struct SlotView {
 impl fmt::Debug for SlotView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SlotView")
+            .field("id", &self.id)
             .field("plugin", &self.plugin)
             .field("view", &self.view)
             .field("shown", &self.shown)
@@ -133,7 +137,9 @@ impl<B: Backend> App<B> {
     /// that their plugins rendered since they took one: a view that shows
     /// nothing has an empty surface, a tree that the host refuses leaves
     /// the last, as the log tells, and the views that the window no longer
-    /// shows go.
+    /// shows go. The keyboard's focus follows its node's key, or leaves a
+    /// node gone, or a view gone, to where it came from, and a field's
+    /// composition that a render took away ends.
     pub(super) fn take_trees(&mut self, window: WindowId, scale: f32) {
         let views = self.slot_views(window);
         let Some(state) = self.windows.get_mut(&window) else {
@@ -149,19 +155,27 @@ impl<B: Backend> App<B> {
                         .is_some_and(|slot| slot.plugin == plugin && slot.view == view)
                 })
                 .and_then(Option::take);
-            let mut slot = found.unwrap_or_else(|| SlotView {
-                plugin: plugin.clone(),
-                view: view.clone(),
-                shown: None,
-                surface: Surface::new(scale),
-                frame: None,
-            });
+            let mut slot = match found {
+                Some(slot) => slot,
+                None => {
+                    state.next_view += 1;
+                    SlotView {
+                        id: state.next_view,
+                        plugin: plugin.clone(),
+                        view: view.clone(),
+                        shown: None,
+                        surface: Surface::new(scale),
+                        frame: None,
+                    }
+                }
+            };
             if (slot.surface.layout.scale() - scale).abs() > f32::EPSILON {
                 slot.surface.layout.set_scale(&slot.surface.tree, scale);
             }
             let rendered = self.plugins.rendered(&plugin, &view);
             if rendered != slot.shown {
                 slot.shown = rendered;
+                let composing = slot.surface.fields.composing(&slot.surface.tree).is_some();
                 match self.plugins.tree(&plugin, &view) {
                     Some(tree) => {
                         if let Err(error) = slot.surface.update(tree) {
@@ -172,9 +186,33 @@ impl<B: Backend> App<B> {
                     }
                     None => slot.surface = Surface::new(scale),
                 }
+                state.focus.updated(slot.id, &slot.surface.tree);
+                state.composition_dropped |=
+                    composing && slot.surface.fields.composing(&slot.surface.tree).is_none();
             }
             state.chrome.push(slot);
         }
+        // The views that the window no longer shows: the focus that one had
+        // goes back to where its view took it from, or to the pane.
+        for gone in kept.into_iter().flatten() {
+            state.composition_dropped |=
+                gone.surface.fields.composing(&gone.surface.tree).is_some();
+            let (focus, chrome) = (&mut state.focus, &state.chrome);
+            focus.closed(gone.id, |id| {
+                chrome
+                    .iter()
+                    .find(|view| view.id == id)
+                    .map(|view| &view.surface.tree)
+            });
+            if state.captured == Some(gone.id) {
+                state.captured = None;
+            }
+            if state.over == Some(gone.id) {
+                state.over = None;
+            }
+        }
+        let told = super::surfaces::focus_events(state);
+        self.ui_events.extend(told);
     }
 
     /// Lays out `window`'s slots' views in a window of `size`, as `ui-core`'s
@@ -324,7 +362,7 @@ impl<B: Backend> App<B> {
 }
 
 /// The event of the plugin's that `event`, of a node of `view`, is.
-fn ui_event(view: ViewId, event: NodeEvent) -> UiEvent {
+pub(super) fn ui_event(view: ViewId, event: NodeEvent) -> UiEvent {
     UiEvent {
         view,
         key: event.key,
@@ -334,20 +372,26 @@ fn ui_event(view: ViewId, event: NodeEvent) -> UiEvent {
 
 /// The items of the slots' views of `chrome`, each at its frame, over the
 /// panes, of `tokens`, in a window of `room` pixels, of the dark appearance
-/// or the light one, of their transitions at `now`.
+/// or the light one, of the focus's ring round `focused`, a node of a view
+/// by its id, of their transitions at `now`.
 pub(super) fn paint<F: FontBackend>(
     chrome: &[SlotView],
     font: &mut Font<F>,
     tokens: &Tokens,
     room: (f32, f32),
-    (dark, now): (bool, Instant),
+    (dark, focused, now): (bool, Option<(u32, NodeId)>, Instant),
 ) -> Vec<Item> {
     chrome
         .iter()
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
-            view.surface
-                .paint(font, tokens, ((frame.x, frame.y), room), (dark, None, now))
+            let focused = focused.and_then(|(id, node)| (id == view.id).then_some(node));
+            view.surface.paint(
+                font,
+                tokens,
+                ((frame.x, frame.y), room),
+                (dark, focused, now),
+            )
         })
         .collect()
 }

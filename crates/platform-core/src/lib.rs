@@ -483,6 +483,14 @@ pub trait Platform {
     /// wake the app. Moves with a button held always come.
     fn track_mouse_moves(&mut self, window: WindowId, track: bool);
 
+    /// Gives `window` the parts of its content, in points from its top
+    /// left corner, where the pointer's moves with no button held come as
+    /// [`WindowEvent::MouseMoved`] whether the window tracks them all or
+    /// not, and its leaving them as [`WindowEvent::MouseExited`], as the
+    /// chrome's views take the hover; the moves over the rest wake the app
+    /// no more than before. None until the app gives them.
+    fn set_move_areas(&mut self, window: WindowId, areas: &[ContentRect]);
+
     /// Gives the pointer over `window`'s content `shape`; the arrow until
     /// the app asks for another.
     fn set_pointer_shape(&mut self, window: WindowId, shape: PointerShape);

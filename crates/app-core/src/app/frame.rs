@@ -20,6 +20,7 @@ use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
 };
 use lokyr_text_core::{CellMetrics, FontBackend};
+use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::pane::{CursorLook, TextLook};
 use lokyr_ui_core::text::TextConfig;
@@ -31,6 +32,7 @@ use lokyr_vt_core::terminal::MouseTracking;
 use super::access;
 use super::chrome;
 use super::menus::menu_context;
+use super::surfaces;
 use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
 use crate::output_bench::Phases;
@@ -303,9 +305,12 @@ impl<B: Backend> App<B> {
         let state = self.windows.get_mut(&window)?;
         let program = self.workspace.focused(state.window)?.snapshot().cursor();
         let config = self.config.cursor;
-        let shape = cursor::shape(&program, &config, state.focused);
+        // The cursor of a pane whose window has the keyboard, but on a node
+        // of a slot's view, shows as unfocused.
+        let focused = state.focused && state.pane_has_focus();
+        let shape = cursor::shape(&program, &config, focused);
         let blinking =
-            cursor::blinks(&program, &config, state.focused) && state.blink.blinks(now, &config);
+            cursor::blinks(&program, &config, focused) && state.blink.blinks(now, &config);
         // A cursor that stopped blinking stays on, and takes no timer.
         state.blinking = blinking;
         if !blinking {
@@ -528,9 +533,29 @@ impl<B: Backend> App<B> {
             platform.set_pointer_shape(window, pointer);
             state.pointer = pointer;
         }
+        // A render took a field's composition away, or set its text: the
+        // input method forgets it.
+        if std::mem::take(&mut state.composition_dropped) {
+            platform.end_composition(window);
+        }
         // The input method's candidates go at the cursor's cell, or at the
-        // composition's start, which can be left of it, near the right edge.
+        // composition's start, which can be left of it, near the right edge;
+        // at the field with the keyboard's focus, if a slot's view has it.
         let snapshot = pane.snapshot();
+        let field_area = match state.focus.target() {
+            Target::Node { panel, node } => state
+                .chrome
+                .iter()
+                .find(|view| view.id == panel)
+                .and_then(|view| {
+                    let frame = view.frame?;
+                    let area = view
+                        .surface
+                        .text_area(node, &mut self.drawing.as_mut()?.font)?;
+                    Some((area.x + frame.x, area.y + frame.y, area.width, area.height))
+                }),
+            Target::Pane => None,
+        };
         let at = snapshot.cursor().position;
         let (column, row) = state
             .preedit
@@ -538,11 +563,27 @@ impl<B: Backend> App<B> {
             .and_then(|preedit| cells::composition_start(snapshot, preedit, snapshot.cols()))
             .map_or((at.x, at.y), |(row, column)| (column, row));
         let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
+        let (x, y, width, height) = field_area.map_or(
+            (
+                f64::from(left) + f64::from(column) * width,
+                f64::from(top) + f64::from(row) * height,
+                width,
+                height,
+            ),
+            |(x, y, width, height)| {
+                (
+                    f64::from(x),
+                    f64::from(y),
+                    f64::from(width),
+                    f64::from(height),
+                )
+            },
+        );
         platform.set_text_area(
             window,
             Point {
-                x: (f64::from(left) + f64::from(column) * width) / size.scale,
-                y: (f64::from(top) + f64::from(row) * height) / size.scale,
+                x: x / size.scale,
+                y: y / size.scale,
             },
             Size {
                 width: width / size.scale,
@@ -720,12 +761,16 @@ impl<B: Backend> App<B> {
             view.surface.animate(now, reduced);
         }
         let room = (size.pixels.width as f32, size.pixels.height as f32);
+        let focused_node = match state.focus.target() {
+            Target::Node { panel, node } => Some((panel, node)),
+            Target::Pane => None,
+        };
         items.extend(chrome::paint(
             &state.chrome,
             font,
             tokens,
             room,
-            (dark, now),
+            (dark, focused_node, now),
         ));
         // The notice, across the panes' top, under the titlebar and the tab
         // bar.
@@ -769,6 +814,9 @@ impl<B: Backend> App<B> {
                 ]
             })
             .collect();
+        // The slots' views, under the notice and over the panes, the
+        // topmost first.
+        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
         // The hand over the decorations that ask for it, as a link's that
         // Command underlines, of every pane, under the bar.
         for (pane, (left, top)) in &pointed {
@@ -805,6 +853,24 @@ impl<B: Backend> App<B> {
         if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
             platform.set_titlebar(window, titlebar);
             state.titlebar = titlebar;
+        }
+        // The pointer's moves over the slots' views come to the app, for
+        // their hover and their tooltips, and wake it over them alone; the
+        // parts of a titlebar of tabs that are the bar's own take its
+        // presses.
+        let moving = surfaces::move_areas(&state.chrome, size.scale);
+        if moving != state.move_areas {
+            platform.set_move_areas(window, &moving);
+            state.move_areas = moving;
+        }
+        let own = if state.titlebar == Titlebar::Tabs {
+            surfaces::titlebar_areas(&state.chrome, size.scale)
+        } else {
+            Vec::new()
+        };
+        if own != state.titlebar_areas {
+            platform.set_titlebar_areas(window, &own);
+            state.titlebar_areas = own;
         }
         // The slots' indeterminate progresses, which the window server moves.
         let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);

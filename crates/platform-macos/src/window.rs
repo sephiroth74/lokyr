@@ -20,10 +20,10 @@ use objc2_app_kit::{
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSCursor, NSDragOperation,
     NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType, NSPasteboard,
     NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey,
-    NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSView,
-    NSViewLayerContentsPlacement, NSWindow, NSWindowButton, NSWindowDelegate,
-    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
-    NSWindowToolbarStyle,
+    NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSViewLayerContentsPlacement, NSWindow, NSWindowButton,
+    NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
+    NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -455,6 +455,16 @@ impl Window {
 
     /// The parts of the titlebar that are the content's, in place of those
     /// before.
+    /// Gives the parts of the content where the pointer's moves come, and
+    /// its leaving them.
+    pub(crate) fn set_move_areas(&self, areas: &[ContentRect]) {
+        if self.view.ivars().move_areas.borrow().0 == areas {
+            return;
+        }
+        self.view.ivars().move_areas.borrow_mut().0 = areas.to_vec();
+        self.view.track_moves();
+    }
+
     pub(crate) fn set_titlebar_areas(&self, areas: &[ContentRect]) {
         *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
     }
@@ -613,6 +623,11 @@ pub(crate) struct ContentViewIvars {
     /// content's, in points from the view's top left corner.
     titlebar: Cell<Titlebar>,
     titlebar_areas: RefCell<Vec<ContentRect>>,
+    /// The parts of the content where the pointer's moves come, in points
+    /// from the view's top left corner, and their tracking areas, made
+    /// anew as the view's size changes, as its own coordinates go up from
+    /// its bottom edge.
+    move_areas: RefCell<(Vec<ContentRect>, Vec<Retained<NSTrackingArea>>)>,
     /// The view's accessibility, of the window's tree, once the view is.
     access: RefCell<Option<Access>>,
 }
@@ -753,6 +768,30 @@ define_class!(
             if !self.is_over_bar(event) || self.ivars().titlebar.get() == Titlebar::Tabs {
                 self.post_moved(event);
             }
+        }
+
+        // SAFETY: AppKit's signature, of the pointer that goes into one of
+        // the areas where its moves come: a move there.
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, event: &NSEvent) {
+            self.post_moved(event);
+        }
+
+        // SAFETY: AppKit's signature, of the pointer that leaves one of the
+        // areas where its moves come.
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, _event: &NSEvent) {
+            self.post(WindowEvent::MouseExited);
+        }
+
+        // SAFETY: AppKit's signature, as the view's geometry changes: the
+        // areas where the pointer's moves come, made anew of their places
+        // from the view's top.
+        #[unsafe(method(updateTrackingAreas))]
+        fn update_tracking_areas(&self) {
+            self.track_moves();
+            // SAFETY: `NSView`'s method, of this signature.
+            let _: () = unsafe { msg_send![super(self), updateTrackingAreas] };
         }
 
         // SAFETY: AppKit's signature, for each button held.
@@ -974,6 +1013,7 @@ impl ContentView {
             over_bar: Cell::new(false),
             titlebar: Cell::new(Titlebar::Titled),
             titlebar_areas: RefCell::new(Vec::new()),
+            move_areas: RefCell::new((Vec::new(), Vec::new())),
             access: RefCell::new(None),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
@@ -1147,6 +1187,47 @@ impl ContentView {
         if !self.ivars().over_bar.get() {
             self.post_moved(event);
         }
+    }
+
+    /// Makes the view's tracking areas anew, one of each part of the
+    /// content where the pointer's moves come, at its place from the view's
+    /// bottom edge as its height now puts it, while the app is active.
+    fn track_moves(&self) {
+        let mut areas = self.ivars().move_areas.borrow_mut();
+        for area in areas.1.drain(..) {
+            self.removeTrackingArea(&area);
+        }
+        let height = self.bounds().size.height;
+        let options = NSTrackingAreaOptions::MouseMoved
+            | NSTrackingAreaOptions::MouseEnteredAndExited
+            | NSTrackingAreaOptions::ActiveInActiveApp;
+        let made: Vec<Retained<NSTrackingArea>> = areas
+            .0
+            .iter()
+            .map(|rect| {
+                let frame = NSRect::new(
+                    NSPoint::new(rect.origin.x, height - rect.origin.y - rect.size.height),
+                    NSSize::new(rect.size.width, rect.size.height),
+                );
+                // SAFETY: `NSTrackingArea`'s initializer, of a rectangle in
+                // the view's coordinates and the view as its owner, which it
+                // keeps no strong reference to; the view removes it before it
+                // goes.
+                unsafe {
+                    NSTrackingArea::initWithRect_options_owner_userInfo(
+                        self.mtm().alloc::<NSTrackingArea>(),
+                        frame,
+                        options,
+                        Some(self),
+                        None,
+                    )
+                }
+            })
+            .collect();
+        for area in &made {
+            self.addTrackingArea(area);
+        }
+        areas.1 = made;
     }
 
     fn post_moved(&self, event: &NSEvent) {

@@ -57,6 +57,7 @@ mod input;
 mod menus;
 mod notices;
 mod spawn;
+mod surfaces;
 #[cfg(test)]
 mod tests;
 
@@ -384,6 +385,9 @@ pub struct App<B: Backend> {
     /// The timer of the end of the first label of a grid's size that ends,
     /// and its time.
     label_timer: Option<(TimerId, Instant)>,
+    /// The timer of the soonest tooltip of a slot's view that waits to
+    /// show, and its time.
+    tooltip_timer: Option<(TimerId, Instant)>,
     /// The timer of the next look for the status of a program whose output
     /// ended.
     exit_timer: Option<TimerId>,
@@ -596,6 +600,7 @@ impl<B: Backend> App<B> {
             windows: BTreeMap::new(),
             blink_timer: None,
             label_timer: None,
+            tooltip_timer: None,
             exit_timer: None,
             bench_deadline: None,
             told_timer: None,
@@ -1808,6 +1813,11 @@ impl<B: Backend> App<B> {
     /// once the registry took them: in the plugin that registered it, or
     /// in the app; an error goes to the log.
     fn run(&mut self, platform: &mut dyn Platform, name: &str, args: Args) {
+        // Copy, paste and select all, of the Edit menu or of their keys, are
+        // the field's that has the keyboard's focus.
+        if self.field_command(platform, name) {
+            return;
+        }
         self.run_deep(platform, name, args, 0);
     }
 
@@ -1999,13 +2009,25 @@ impl<B: Backend> App<B> {
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
                 Request::Open(target) => self.open_target(platform, target),
-                // The windows show no plugin's views yet: a panel closes as
-                // it opens, as its plugin then hears, and a field's text and
-                // a list's selection have no surface to go to.
+                // The windows show no plugin's panels yet: a panel closes as
+                // it opens, as its plugin then hears.
                 Request::OpenPanel { plugin, id, .. } | Request::ClosePanel { plugin, id } => {
                     self.plugins.panel_closed(&plugin, &id);
                 }
-                Request::SetText { .. } | Request::Select { .. } => {}
+                // A field's text and a list's selection in a slot's view.
+                Request::SetText {
+                    plugin,
+                    view,
+                    key,
+                    text,
+                    revision,
+                } => self.set_field_text(platform, (&plugin, &view, &key), &text, revision),
+                Request::Select {
+                    plugin,
+                    view,
+                    key,
+                    item,
+                } => self.select_item(platform, (&plugin, &view, &key), item),
             }
         }
         // The views whose renders the calls asked for, and their panels'
@@ -2669,6 +2691,10 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.access_timer == Some(timer) => {
                 self.accessibility_due(platform);
             }
+            // A tooltip of a slot's view shows.
+            AppEvent::Timer(timer) if self.tooltip_timer.is_some_and(|(due, _)| due == timer) => {
+                self.tooltips_due(platform);
+            }
             AppEvent::Timer(timer) if self.exit_timer == Some(timer) => {
                 self.exit_timer = None;
                 self.exits(platform);
@@ -2801,10 +2827,14 @@ impl<B: Backend> App<B> {
                 if !focused {
                     self.command_held = false;
                     self.tell_pointer(platform, window, None, lokyr_platform_core::Modifiers::NONE);
+                    self.surface_cancel(platform, window);
                 }
                 if let Some(state) = self.windows.get_mut(&window) {
-                    // A program that asked learns of it.
-                    if let Some(pane) = self.workspace.focused(state.window) {
+                    // A program that asked learns of it, while its pane has
+                    // the window's keyboard rather than a slot's view.
+                    if let Some(pane) = self.workspace.focused(state.window)
+                        && state.pane_has_focus()
+                    {
                         pane.focus(focused);
                     }
                     state.focused = focused;
@@ -2843,6 +2873,7 @@ impl<B: Backend> App<B> {
             WindowEvent::MouseMoved { position, mods } => {
                 self.mouse_moved(platform, window, position, mods);
             }
+            WindowEvent::MouseExited => self.surface_exited(platform, window),
             WindowEvent::Scroll {
                 delta,
                 phase,

@@ -1,6 +1,8 @@
 //! The input of the windows: their keys, the input method's composition,
 //! the mouse's buttons, moves and wheel, the selection that it makes, and
-//! what is dropped on them, each routed to its window's pane.
+//! what is dropped on them, each routed to its window's pane, or to its
+//! slots' views, which take the pointer over them and the keys while one of
+//! their nodes has the keyboard's focus.
 
 use std::time::Instant;
 
@@ -52,6 +54,11 @@ impl<B: Backend> App<B> {
         // The key's own prompt, which no output told, as after a
         // silent `stty -echo`, is secure from the next key.
         self.settle_secure_input(platform);
+        let pressed = key.state != KeyState::Released;
+        // A key hides the slots' tooltips.
+        if pressed {
+            self.dismiss_tooltips(platform, window);
+        }
         let options = keys::options(self.config.keyboard.option_as_meta);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -59,16 +66,16 @@ impl<B: Backend> App<B> {
         let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
-        let pressed = key.state != KeyState::Released;
+        let pane_keys = state.pane_has_focus();
         // A man page's keys scroll it, and close nothing.
-        if pane.is_kept() && state.page.is_some() {
+        if pane_keys && pane.is_kept() && state.page.is_some() {
             if pressed && let Some(scroll) = page_scroll(key) {
                 pane.scroll(scroll);
                 platform.request_frame(window);
             }
             return;
         }
-        if pane.is_kept() {
+        if pane_keys && pane.is_kept() {
             if pressed && closes(key) {
                 let id = pane.id();
                 self.close_pane(platform, window, id);
@@ -85,6 +92,11 @@ impl<B: Backend> App<B> {
             }
             Taken::Held => {}
             Taken::Program(keys) => {
+                // A node of a slot's view that has the focus takes them.
+                let keys = self.surface_keys(platform, window, keys);
+                if keys.is_empty() {
+                    return;
+                }
                 let Some(pane) = self
                     .windows
                     .get(&window)
@@ -103,6 +115,10 @@ impl<B: Backend> App<B> {
     /// back to the screen, and the cursor's blinking on, as typing
     /// does.
     pub(super) fn ime(&mut self, platform: &mut dyn Platform, window: WindowId, ime: Ime) {
+        // A field of a slot's view that has the focus takes it.
+        if self.surface_ime(platform, window, &ime) {
+            return;
+        }
         let options = keys::options(self.config.keyboard.option_as_meta);
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -211,7 +227,13 @@ impl<B: Backend> App<B> {
             keys.push(key.clone());
             return Taken::Program(keys);
         };
-        let context = context(self.workspace.focused(state.window));
+        // A node of a slot's view that has the focus leaves out the pane's
+        // contexts.
+        let context = if state.pane_has_focus() {
+            context(self.workspace.focused(state.window))
+        } else {
+            keymap::Context::new(Vec::<&str>::new())
+        };
         match state.resolver.press(&self.keymap, pressed, &context) {
             Resolved::Run(invocation) => {
                 state.held_back.clear();
@@ -308,6 +330,7 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
+        let platform_button = button;
         let Some(button) = mouse::button(button) else {
             return;
         };
@@ -322,6 +345,16 @@ impl<B: Backend> App<B> {
                 return;
             }
             _ => {}
+        }
+        // A slot's view under the press takes it, and keeps the pointer
+        // until the button goes up.
+        if self.surface_button(
+            platform,
+            window,
+            (platform_button, pressed, clicks),
+            (position, mods),
+        ) {
+            return;
         }
         // A press gives the pane under it the keyboard, then acts there.
         if pressed
@@ -635,12 +668,23 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
-        self.tell_pointer(platform, window, Some(position), mods);
         let dragging = self
             .windows
             .get(&window)
             .and_then(|state| state.selecting)
             .is_some_and(|selecting| selecting.held);
+        let held = self
+            .windows
+            .get(&window)
+            .is_some_and(|state| state.mouse.held().is_some());
+        // A slot's view under the pointer takes its move, unless a press
+        // over the panes holds it; the plugins that follow the pointer learn
+        // that it left the panes.
+        if !dragging && !held && self.surface_moved(platform, window, position) {
+            self.tell_pointer(platform, window, None, mods);
+            return;
+        }
+        self.tell_pointer(platform, window, Some(position), mods);
         if dragging {
             self.select_drag(platform, window, position);
             return;
@@ -739,6 +783,10 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
+        // A slot's view under the pointer takes it.
+        if self.surface_scrolled(platform, window, delta, position) {
+            return;
+        }
         let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
             return;
         };

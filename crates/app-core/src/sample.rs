@@ -1,13 +1,17 @@
 //! A plugin of a view in every slot, for a build of tests, as `--features
-//! sample-slots` builds it: the window's tabs in the tab bar, an
-//! indeterminate progress in the strip, the tabs' count in the status bar,
-//! and each pane's id in its header. Each change of the workspace renders
-//! its views again.
+//! sample-slots` builds it: the window's tabs in the tab bar, each lighter
+//! under the pointer, which a click activates, and a button of a new tab,
+//! of a tooltip; an indeterminate progress in the strip; in the status bar,
+//! the tabs' count, a field, and the text that it holds, as its keys type
+//! it; and each pane's id in its header. Each change of the workspace
+//! renders its views again.
 
 use lokyr_kernel::commands::Error;
-use lokyr_kernel::plugins::ui::ViewId;
+use lokyr_kernel::plugins::host::{TabId, WindowId};
+use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{
-    Align, Edges, Length, Node, ProgressShape, ProgressState, Style, Token,
+    Align, Edges, Length, Node, PointerShape, ProgressShape, ProgressState, Style, Token,
+    UiEventKind,
 };
 use lokyr_kernel::plugins::{Cx, Event, Plugin, WorkspaceEvent};
 
@@ -17,10 +21,13 @@ pub(crate) const MANIFEST: &str = concat!(
     "[contributes]\nslots = [\"tab-bar\", \"window-strip\", \"status-bar\", \"pane-header\"]\n",
 );
 
-/// The plugin, and the views that it rendered, which it renders again.
+/// The plugin, the views that it rendered, which it renders again, the tab
+/// under the pointer, and the text of the status bar's field.
 #[derive(Default)]
 pub(crate) struct SampleSlots {
     views: Vec<ViewId>,
+    hovered: Option<String>,
+    typed: String,
 }
 
 /// A bar of `children`, of a token's background, its texts in the middle
@@ -45,16 +52,55 @@ fn text(text: String, color: &str) -> Node {
     node
 }
 
+/// The key of the tab `tab`'s node.
+fn tab_key(tab: TabId) -> String {
+    format!("tab-{}", tab.0)
+}
+
+impl SampleSlots {
+    /// Renders its views again, but those of windows and panes that closed.
+    fn render_again(&self, cx: &mut Cx<'_>) {
+        for view in &self.views {
+            let _ = cx.request_render(view.clone());
+        }
+    }
+}
+
 impl Plugin for SampleSlots {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         cx.subscribe(&WorkspaceEvent::NAMES)
     }
 
     fn on_event(&mut self, cx: &mut Cx<'_>, _: &[Event]) -> Result<(), Error> {
-        for view in &self.views {
-            // A view of a window or a pane that closed is no longer one.
-            let _ = cx.request_render(view.clone());
+        self.render_again(cx);
+        Ok(())
+    }
+
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let key = event.key.0.as_str();
+        match &event.kind {
+            UiEventKind::HoverEnter if key.starts_with("tab-") => {
+                self.hovered = Some(key.to_owned());
+            }
+            UiEventKind::HoverLeave if self.hovered.as_deref() == Some(key) => {
+                self.hovered = None;
+            }
+            UiEventKind::Click if key.starts_with("tab-") => {
+                if let Some(tab) = key.strip_prefix("tab-").and_then(|id| id.parse().ok()) {
+                    cx.activate_tab(TabId(tab))?;
+                }
+            }
+            UiEventKind::Click if key == "new" => {
+                if let ViewId::TabBar(window) = &event.view {
+                    cx.new_tab(*window, None)?;
+                }
+            }
+            UiEventKind::InputChanged { text, .. } if key == "note" => {
+                self.typed.clone_from(text);
+            }
+            _ => return Ok(()),
         }
+        self.render_again(cx);
         Ok(())
     }
 
@@ -63,27 +109,7 @@ impl Plugin for SampleSlots {
             self.views.push(view.clone());
         }
         match view {
-            ViewId::TabBar(window) => {
-                let tabs = cx.tabs(*window).ok()?;
-                let shown = tabs
-                    .iter()
-                    .enumerate()
-                    .map(|(index, tab)| {
-                        let title = if tab.title.is_empty() {
-                            format!("Tab {}", index + 1)
-                        } else {
-                            tab.title.clone()
-                        };
-                        let color = if tab.active {
-                            "tab.active.fg"
-                        } else {
-                            "tab.inactive.fg"
-                        };
-                        text(title, color)
-                    })
-                    .collect();
-                Some(bar(shown, "tab.bar.bg"))
-            }
+            ViewId::TabBar(window) => Some(self.tab_bar(cx, *window)),
             ViewId::WindowStrip(_) => {
                 let mut progress =
                     Node::progress(ProgressShape::Bar, ProgressState::Indeterminate, 0.0);
@@ -95,11 +121,15 @@ impl Plugin for SampleSlots {
             }
             ViewId::StatusBar(window) => {
                 let count = cx.tabs(*window).map_or(0, |tabs| tabs.len());
+                let mut note = Node::field("Type here").key("note");
+                note.layout.width = Length::Points(160.0);
+                note.style.pointer = Some(PointerShape::Text);
                 Some(bar(
-                    vec![text(
-                        format!("sample-slots: {count} tab(s)"),
-                        "text.secondary",
-                    )],
+                    vec![
+                        text(format!("sample-slots: {count} tab(s)"), "text.secondary"),
+                        note,
+                        text(format!("typed: {}", self.typed), "text.secondary"),
+                    ],
                     "tab.bar.bg",
                 ))
             }
@@ -109,5 +139,49 @@ impl Plugin for SampleSlots {
             )),
             ViewId::Panel(_) => None,
         }
+    }
+}
+
+impl SampleSlots {
+    /// The tab bar of `window`: its tabs, each of a key, lighter under the
+    /// pointer, the active one's text brighter, and the button of a new
+    /// tab.
+    fn tab_bar(&self, cx: &mut Cx<'_>, window: WindowId) -> Node {
+        let tabs = cx.tabs(window).unwrap_or_default();
+        let mut shown: Vec<Node> = tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let title = if tab.title.is_empty() {
+                    format!("Tab {}", index + 1)
+                } else {
+                    tab.title.clone()
+                };
+                let color = if tab.active {
+                    "tab.active.fg"
+                } else {
+                    "tab.inactive.fg"
+                };
+                let key = tab_key(tab.id);
+                let background = if self.hovered.as_deref() == Some(key.as_str()) {
+                    "tab.hover.bg"
+                } else if tab.active {
+                    "tab.active.bg"
+                } else {
+                    "tab.inactive.bg"
+                };
+                let mut node = Node::container(vec![text(title, color)]).key(key.as_str());
+                node.layout.padding = Edges::all(4.0);
+                node.style = Style {
+                    background: Some(Token::from(background)),
+                    radius: 4.0,
+                    pointer: Some(PointerShape::PointingHand),
+                    ..Style::default()
+                };
+                node
+            })
+            .collect();
+        shown.push(Node::button("+").key("new").tooltip("New Tab"));
+        bar(shown, "tab.bar.bg")
     }
 }

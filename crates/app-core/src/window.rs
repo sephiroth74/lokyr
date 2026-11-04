@@ -8,10 +8,12 @@ use std::time::Instant;
 use lokyr_kernel::keymap::Resolver;
 use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
-    Appearance, Backdrop, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape, Sweep, Titlebar,
+    Appearance, Backdrop, ContentRect, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape,
+    Sweep, Titlebar,
 };
 use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
+use lokyr_ui_core::focus::{Focus, Target};
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
@@ -161,6 +163,24 @@ pub(crate) struct Window<B: Backend> {
     /// The indeterminate progresses of its slots' views that the platform
     /// moves, and the moment from which their sweeps run.
     pub(crate) sweeps: (Vec<Sweep>, Instant),
+    /// The keyboard's focus, on its pane or on a node of a slot's view, by
+    /// the view's id.
+    pub(crate) focus: Focus<u32>,
+    /// The id that its next slot's view takes.
+    pub(crate) next_view: u32,
+    /// The slot's view that the pointer's button went down over, which
+    /// takes its moves and its release until it goes up, and the one that
+    /// the pointer is over.
+    pub(crate) captured: Option<u32>,
+    pub(crate) over: Option<u32>,
+    /// The parts of its content where the pointer's moves come, its slots'
+    /// views, and of its titlebar that are the tab bar's own, in points, as
+    /// the app gave them last.
+    pub(crate) move_areas: Vec<ContentRect>,
+    pub(crate) titlebar_areas: Vec<ContentRect>,
+    /// Whether a render took away a field's composition, or set its text,
+    /// which the platform's input method is to forget.
+    pub(crate) composition_dropped: bool,
 }
 
 /// Where a pane of a window lies, as a frame laid it out.
@@ -262,7 +282,20 @@ impl<B: Backend> Window<B> {
             titlebar: Titlebar::default(),
             panes_top: 0,
             sweeps: (Vec::new(), now),
+            focus: Focus::new(),
+            next_view: 0,
+            captured: None,
+            over: None,
+            move_areas: Vec::new(),
+            titlebar_areas: Vec::new(),
+            composition_dropped: false,
         }
+    }
+
+    /// Whether its pane has the keyboard's focus, rather than a node of a
+    /// slot's view.
+    pub(crate) fn pane_has_focus(&self) -> bool {
+        self.focus.target() == Target::Pane
     }
 
     /// Takes the press of the key at `code` for the keymap, so that its

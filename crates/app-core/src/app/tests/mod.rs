@@ -25,6 +25,7 @@ mod input;
 mod menus;
 mod notices;
 mod panes;
+mod surfaces;
 
 /// The app of the tests, which draws with the tests' drawing, if at all.
 type App = super::App<fakes::Gpu>;

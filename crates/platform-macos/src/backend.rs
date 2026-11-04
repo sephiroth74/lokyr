@@ -733,6 +733,12 @@ impl Platform for Backend {
         }
     }
 
+    fn set_move_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_move_areas(areas);
+        }
+    }
+
     fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
         if let Some(window) = self.windows.get(&window) {
             window.set_titlebar_areas(areas);

@@ -95,6 +95,9 @@ pub struct FakeWindow {
     pub titlebar: Titlebar,
     /// The parts of its titlebar that the app gave as its content's.
     pub titlebar_areas: Vec<ContentRect>,
+    /// The parts of the content where the pointer's moves come, as the app
+    /// gave them last.
+    pub move_areas: Vec<ContentRect>,
     /// Whether an accessibility client asked for its tree, as a test says.
     pub accessibility_asked: bool,
     /// The updates of its accessibility tree that the app gave, once a
@@ -441,6 +444,14 @@ impl Fake {
         self.windows.get(&window)
     }
 
+    /// Moves the pointer to `at` over `window` with no event, as the
+    /// system's pointer goes where the app takes no moves.
+    pub fn set_pointer(&mut self, window: WindowId, at: Point) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.pointer_at = at;
+        }
+    }
+
     /// An accessibility client asks for the tree of `window`, as a
     /// platform tells it: from then on, the updates of its tree come; and
     /// whether `handler` was told.
@@ -712,6 +723,7 @@ impl Platform for Fake {
                 quick: None,
                 titlebar: Titlebar::default(),
                 titlebar_areas: Vec::new(),
+                move_areas: Vec::new(),
                 accessibility_asked: false,
                 accessibility: Vec::new(),
             },
@@ -747,6 +759,7 @@ impl Platform for Fake {
                 quick: Some(None),
                 titlebar: Titlebar::default(),
                 titlebar_areas: Vec::new(),
+                move_areas: Vec::new(),
                 accessibility_asked: false,
                 accessibility: Vec::new(),
             },
@@ -983,6 +996,12 @@ impl Platform for Fake {
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.titlebar = titlebar;
+        }
+    }
+
+    fn set_move_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.move_areas = areas.to_vec();
         }
     }
 
