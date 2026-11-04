@@ -19,6 +19,8 @@ default = ["luau-plugins"]
 luau-plugins = ["dep:lokyr-plugin-host-luau"]
 # Three drawables a window, rather than two, to measure against them.
 three-drawables = ["lokyr-render-metal/three-drawables"]
+# A plugin of a view in every slot of the windows, for a build of tests.
+sample-slots = ["lokyr-app-core/sample-slots"]
 
 [dependencies]
 lokyr-app-core.workspace = true

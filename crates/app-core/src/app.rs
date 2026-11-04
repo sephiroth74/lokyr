@@ -15,7 +15,7 @@ use lokyr_kernel::config::{
 };
 use lokyr_kernel::diagnostics::{About, Diagnostic, Diagnostics};
 use lokyr_kernel::keymap::{self, Binding, Context, Invocation, Keymap, When};
-use lokyr_kernel::l10n::{self, Texts};
+use lokyr_kernel::l10n::{self, Arg, Texts};
 use lokyr_kernel::plugins::{self, Plugins, Request, WorkspaceEvent, host};
 use lokyr_kernel::state;
 #[cfg(test)]
@@ -51,6 +51,7 @@ use crate::window::{Surfaces, Window};
 
 mod access;
 mod asks;
+pub(crate) mod chrome;
 mod frame;
 mod input;
 mod menus;
@@ -395,6 +396,12 @@ pub struct App<B: Backend> {
     /// What each pane's session wakes the main thread for, which tells the
     /// panes that changed.
     pane_wakes: BTreeMap<PaneId, Arc<PaneWake>>,
+    /// The events of the slots' views' nodes that their layouts made, as a
+    /// list's rows ask for their items, for their plugins as the turn ends.
+    ui_events: Vec<(String, plugins::ui::UiEvent)>,
+    /// Whether a frame asked plugins for their slots' views, whose calls'
+    /// requests the turn's end takes.
+    rendered_slots: bool,
     /// The timer of the next size that a program learns, at its pace, and
     /// its time.
     resize_timer: Option<(TimerId, Instant)>,
@@ -537,7 +544,11 @@ impl<B: Backend> App<B> {
     /// An application that draws its windows with `drawing`, or nothing
     /// without it, with `config`, which it reads again from `path`, its
     /// file, when that changes.
-    pub fn new(drawing: Option<Drawing<B>>, config: Config, path: Option<PathBuf>) -> Self {
+    pub fn new(mut drawing: Option<Drawing<B>>, config: Config, path: Option<PathBuf>) -> Self {
+        // The interface's font, of the plugins' views.
+        if let Some(drawing) = &mut drawing {
+            drawing.set_interface(&config.interface);
+        }
         let mut plugins = Plugins::new();
         // Their manifests read, as the build checked them.
         let builtins: [(&str, Box<dyn plugins::Plugin>); 2] = [
@@ -550,6 +561,12 @@ impl<B: Backend> App<B> {
                 Box::new(lokyr_links::Links::default()),
             ),
         ];
+        // A view in every slot, for a build of tests.
+        #[cfg(feature = "sample-slots")]
+        let builtins = builtins.into_iter().chain([(
+            crate::sample::MANIFEST,
+            Box::new(crate::sample::SampleSlots::default()) as Box<dyn plugins::Plugin>,
+        )]);
         for (manifest, plugin) in builtins {
             if let Err(error) = plugins.add_builtin(manifest, plugin) {
                 eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
@@ -583,6 +600,8 @@ impl<B: Backend> App<B> {
             bench_deadline: None,
             told_timer: None,
             pane_wakes: BTreeMap::new(),
+            ui_events: Vec::new(),
+            rendered_slots: false,
             resize_timer: None,
             flash_timer: None,
             access_timer: None,
@@ -866,6 +885,16 @@ impl<B: Backend> App<B> {
         platform.quit();
     }
 
+    /// The app, with `plugin` of `manifest`, as a built-in one, after the
+    /// others.
+    #[cfg(test)]
+    fn with_builtin(mut self, manifest: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
+        if let Err(error) = self.plugins.add_builtin(manifest, plugin) {
+            eprintln!("lokyr: {error}");
+        }
+        self
+    }
+
     /// The app, with `plugin`, by its `name`, after the built-in ones.
     #[cfg(test)]
     fn with_plugin(mut self, name: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
@@ -1015,6 +1044,14 @@ impl<B: Backend> App<B> {
         self.resolve(platform, &About::Config);
         if font_changed {
             self.tell_font(platform);
+        }
+        if config.interface != self.config.interface
+            && let Some(drawing) = &mut self.drawing
+        {
+            drawing.set_interface(&config.interface);
+            for &window in self.windows.keys() {
+                platform.request_frame(window);
+            }
         }
         let icon_changed = config.app.icon != self.config.app.icon;
         let language_changed = config.app.language != self.config.app.language;
@@ -1779,10 +1816,19 @@ impl<B: Backend> App<B> {
         let ran = match self.commands.check(name, args) {
             Err(error) => Err(error),
             Ok(args) if self.plugins.owns(name) => {
+                let owner = self.plugins.owner_of(name).map(str::to_owned);
                 let ran = self.with_plugins(platform, |plugins, context| {
                     plugins.run(name, args, context)
                 });
                 self.after_plugins(platform, depth);
+                // A fault that stopped its plugin shows as the plugins that
+                // stopped do, once.
+                let stopped = owner.is_some_and(|owner| {
+                    self.plugins.status(&owner) == Some(plugins::Status::Disabled)
+                });
+                if stopped {
+                    return;
+                }
                 ran
             }
             Ok(_) => match name {
@@ -1868,13 +1914,9 @@ impl<B: Backend> App<B> {
     /// Activates the plugins, which register their commands and bind their
     /// keys; one that fails is disabled, as the log tells.
     fn activate_plugins(&mut self, platform: &mut dyn Platform) {
-        let errors = self.with_plugins(platform, Plugins::activate);
-        for error in errors {
-            self.report(
-                platform,
-                Diagnostic::new(error.code, error.message, About::Other),
-            );
-        }
+        // A plugin whose activation failed is disabled, which the notice of
+        // the plugins that stopped tells.
+        let _failed = self.with_plugins(platform, Plugins::activate);
         self.after_plugins(platform, 0);
     }
 
@@ -1975,6 +2017,15 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: {error}");
             }
         }
+        // A plugin that stopped, whose views show as they were and take no
+        // event, tells it in a notice.
+        for (plugin, fault) in self.plugins.take_disabled() {
+            let text = self.texts.text_with(
+                "plugin-stopped",
+                &[("name", Arg::Text(&plugin)), ("fault", Arg::Text(&fault))],
+            );
+            self.report(platform, Diagnostic::new(Code::Fault, text, About::Other));
+        }
         // What the windows show changed only through the calls' writes; a
         // turn whose plugins wrote nothing, as the start's, whose events
         // they only take, draws no frame more.
@@ -2025,15 +2076,28 @@ impl<B: Backend> App<B> {
     /// workspace the windows follow. A turn without events costs nothing.
     fn end_turn(&mut self, platform: &mut dyn Platform) {
         self.events(platform);
-        if !self.plugins.has_events() {
+        let ui_events = std::mem::take(&mut self.ui_events);
+        let delivers = self.plugins.has_events();
+        let rendered = std::mem::take(&mut self.rendered_slots);
+        if ui_events.is_empty() && !delivers && !rendered {
             return;
         }
-        for error in self.with_plugins(platform, Plugins::deliver) {
-            eprintln!("lokyr: {error}");
+        for (plugin, event) in &ui_events {
+            let given = self.with_plugins(platform, |plugins, context| {
+                plugins.ui_event(plugin, event, context)
+            });
+            if let Err(error) = given {
+                eprintln!("lokyr: {error}");
+            }
+        }
+        if delivers {
+            for error in self.with_plugins(platform, Plugins::deliver) {
+                eprintln!("lokyr: {error}");
+            }
         }
         self.after_plugins(platform, 0);
-        // What the delivery's writes changed of the workspace shows now,
-        // and waits for the next delivery.
+        // What the calls' writes changed of the workspace shows now, and
+        // waits for the next delivery.
         self.events(platform);
     }
 
@@ -2391,6 +2455,16 @@ impl<B: Backend> App<B> {
             if let Some(pane) = self.workspace.focused(state.window) {
                 pane.set_colors(&colors);
             }
+        }
+        // The plugins' views render again, of the theme's other variant.
+        for (plugin, view) in self.plugins.views() {
+            let result = self.with_plugins(platform, |plugins, context| {
+                plugins.render(&plugin, &view, context)
+            });
+            if let Err(error) = result {
+                eprintln!("lokyr: {error}");
+            }
+            self.rendered_slots = true;
         }
         let windows: Vec<WindowId> = self.windows.keys().copied().collect();
         for window in windows {

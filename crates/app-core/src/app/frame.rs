@@ -14,7 +14,7 @@ use lokyr_kernel::plugins;
 use lokyr_kernel::workspace::{Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
-    PointerArea, PointerShape, Size, WindowId, WindowSize,
+    PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
 };
 use lokyr_render_core::{
     CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
@@ -29,6 +29,7 @@ use lokyr_ui_core::{cursor, pane as cells};
 use lokyr_vt_core::terminal::MouseTracking;
 
 use super::access;
+use super::chrome;
 use super::menus::menu_context;
 use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
@@ -158,7 +159,18 @@ impl<B: Backend> App<B> {
     /// frame, its hits and its input method; the zoomed pane alone while
     /// one is.
     pub(super) fn lay_out_panes(&mut self, window: WindowId, size: WindowSize) -> Vec<PaneView> {
-        let content = self.content(size);
+        // The slots' views take their regions, and the panes the rest.
+        self.take_trees(window, size.scale as f32);
+        let content = match self.lay_out_chrome(window, size) {
+            Some(regions) => {
+                let panes = chrome::rect_of(regions.panes);
+                if let Some(state) = self.windows.get_mut(&window) {
+                    state.panes_top = u32::try_from(panes.y).unwrap_or(0);
+                }
+                self.padded(panes, size.scale)
+            }
+            None => self.content(size),
+        };
         let (width, height) = self.cell_pixels(size.scale);
         let Some(state) = self.windows.get(&window) else {
             return Vec::new();
@@ -180,6 +192,9 @@ impl<B: Backend> App<B> {
             }
             None => Vec::new(),
         };
+        // Each pane's header at its room's top, and its grid below it.
+        let mut rooms = rooms;
+        self.lay_out_headers(window, &mut rooms);
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
         let views: Vec<PaneView> = rooms
             .into_iter()
@@ -219,6 +234,19 @@ impl<B: Backend> App<B> {
                     (at(view.rect.x), at(view.rect.y))
                 },
             )
+    }
+
+    /// `room`, in pixels, within the padding between the grid and the
+    /// window's edges, on a display of `scale`.
+    fn padded(&self, room: Rect, scale: f64) -> Rect {
+        let (x, y) = self.padding(scale);
+        let inset = |pixels: u32| i32::try_from(pixels).unwrap_or(i32::MAX);
+        Rect {
+            x: room.x.saturating_add(inset(x)),
+            y: room.y.saturating_add(inset(y)),
+            width: room.width.saturating_sub(2 * x),
+            height: room.height.saturating_sub(2 * y),
+        }
     }
 
     /// The room between the grid and the window's edges, in pixels on a
@@ -382,7 +410,10 @@ impl<B: Backend> App<B> {
         let started =
             (self.performance.is_some() || self.output_bench.is_some()).then(Instant::now);
         let now = Instant::now();
-        // Each pane of the active tab in its room.
+        // The slots that show a view first ask their plugins for it, whose
+        // calls' requests the turn's end takes.
+        self.rendered_slots |= self.render_slots(platform, window);
+        // Each pane of the active tab in its room, around the slots' views.
         let views = self.lay_out_panes(window, size);
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
@@ -557,6 +588,8 @@ impl<B: Backend> App<B> {
         };
         let config = self.config.cursor;
         let selection_colors = self.variant(platform, window).selection;
+        let dark = platform.appearance() == Appearance::Dark;
+        let reduced = platform.reduce_motion();
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -670,7 +703,21 @@ impl<B: Backend> App<B> {
             .collect();
         items.push(Item::Cells(batch));
         items.extend(other_batches.into_iter().map(Item::Cells));
-        // The notice, across the content's top, under the titlebar.
+        // The slots' views over the panes, of the theme's tokens.
+        let tokens = &self.theme.variant(dark).tokens;
+        for view in &mut state.chrome {
+            view.surface.animate(now, reduced);
+        }
+        let room = (size.pixels.width as f32, size.pixels.height as f32);
+        items.extend(chrome::paint(
+            &state.chrome,
+            font,
+            tokens,
+            room,
+            (dark, now),
+        ));
+        // The notice, across the panes' top, under the titlebar and the tab
+        // bar.
         state.notice = self.diagnostics.shown().map(|shown| {
             let label = match (&shown.about, shown.category()) {
                 (About::Config, _) => "notice-config",
@@ -682,7 +729,7 @@ impl<B: Backend> App<B> {
             };
             let label = self.texts.text(label);
             let fault = shown.category() == ErrorCategory::Fault;
-            let area = (size.pixels.width, size.bar_pixels());
+            let area = (size.pixels.width, state.panes_top.max(size.bar_pixels()));
             let glyph = |text: &cells::CellText<'_>| weighed(font, text);
             let (rects, drawn) = notice::bar((&label, &shown.text, fault), &cell, area, glyph);
             items.extend(drawn);
@@ -736,6 +783,27 @@ impl<B: Backend> App<B> {
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
+        }
+        // The titlebar of a tab bar while one shows, the system's otherwise;
+        // a quick window has none.
+        let titlebar = if chrome::has_tab_bar(&state.chrome) {
+            Titlebar::Tabs
+        } else {
+            Titlebar::Titled
+        };
+        if titlebar != state.titlebar && self.quick.is_none_or(|(quick, _)| quick != window) {
+            platform.set_titlebar(window, titlebar);
+            state.titlebar = titlebar;
+        }
+        // The slots' indeterminate progresses, which the window server moves.
+        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
+        if sweeps != state.sweeps.0 {
+            platform.set_sweeps(window, &sweeps);
+            state.sweeps.0 = sweeps;
+        }
+        // A frame at each refresh while a slot's transition runs.
+        if chrome::animating(&state.chrome, now) {
+            platform.request_frame(window);
         }
         // The grid's size, at the content's centre, while the window
         // resizes.

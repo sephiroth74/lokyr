@@ -43,7 +43,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | `popup` | Many | Custom menus and tooltips | The whole window |
 | `sidebar` | Many (F5+) | Side panels | |
 
-A slot of no view takes no room. `ui-core`'s `chrome` gives the regions of a window's size, its titlebar's height and its buttons' room, the tab bar's place and the heights of the views, as the slots' trees take them laid out across the window; each slot's view is a surface of its own, drawn over the panes in the window's one drawable and taking the pointer before them.
+A slot of no view takes no room, and a slot of many shares its width equally among its plugins' views, in their order. `ui-core`'s `chrome` gives the regions of a window's size, its titlebar's height and its buttons' room, the tab bar's place and the heights of the views, as the slots' trees take them laid out across the window; each slot's view is a surface of its own, drawn over the panes in the window's one drawable and taking the pointer before them.
 
 The dividers between panes are no slot's: the host draws them from the layout tree, in the theme's tokens, and gives their drags to `splits`, which decides what they do.
 

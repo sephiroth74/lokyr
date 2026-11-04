@@ -9,6 +9,10 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+# A plugin of a view in every slot of the windows, for a build of tests.
+sample-slots = []
+
 [dependencies]
 accesskit.workspace = true
 lokyr-core-actions.workspace = true

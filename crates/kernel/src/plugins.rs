@@ -26,9 +26,9 @@ pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::message::{Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
-pub use lokyr_plugin_sdk::ui;
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
+pub use lokyr_plugin_sdk::{ui, view};
 use lokyr_session::Reader;
 use lokyr_text_core::Size;
 use lokyr_vt_core::page::{self, Rgb, Style};
@@ -192,10 +192,13 @@ struct State {
     /// Its catalogs, of its commands' titles.
     catalogs: &'static [(&'static str, &'static str)],
     /// The last tree of each of its views that it rendered, `None` for a
-    /// view that shows nothing, which stays as it is disabled.
-    views: BTreeMap<ViewId, Option<Node>>,
+    /// view that shows nothing, which stays as it is disabled, with the
+    /// render's number, which no other render took.
+    views: BTreeMap<ViewId, (u64, Option<Node>)>,
     /// Its open panels, each in its window.
     panels: BTreeMap<PanelId, WindowId>,
+    /// What disabled it, if something did: its error's message.
+    fault: Option<String>,
 }
 
 impl State {
@@ -220,6 +223,8 @@ pub struct Plugins {
     out: Outbox,
     /// Whether the plugins' bindings changed since the last look.
     bindings_changed: bool,
+    /// The plugins disabled that [`Plugins::take_disabled`] told.
+    told_disabled: std::collections::BTreeSet<String>,
 }
 
 /// What plugins' calls send out, once they return: their requests of the
@@ -408,6 +413,7 @@ impl Plugins {
                 catalogs,
                 views: BTreeMap::new(),
                 panels: BTreeMap::new(),
+                fault: None,
             },
         });
         Ok(())
@@ -437,13 +443,12 @@ impl Plugins {
                         context.registry,
                         &mut self.bindings_changed,
                     );
-                    errors.push(Error::new(
-                        error.code,
-                        format!(
-                            "the plugin `{}` did not start, and is disabled: {}",
-                            entry.state.name, error.message
-                        ),
-                    ));
+                    let message = format!(
+                        "the plugin `{}` did not start, and is disabled: {}",
+                        entry.state.name, error.message
+                    );
+                    entry.state.fault = Some(message.clone());
+                    errors.push(Error::new(error.code, message));
                 } else {
                     errors.push(error);
                 }
@@ -667,8 +672,44 @@ impl Plugins {
             &mut self.bindings_changed,
             |plugin, cx| Ok(plugin.render(cx, view)),
         )?;
-        self.entries[at].state.views.insert(view.clone(), tree);
+        self.entries[at]
+            .state
+            .views
+            .insert(view.clone(), (new_id(), tree));
         Ok(())
+    }
+
+    /// The number of the last render of `view` by the plugin `name`, which
+    /// no other render took, if it rendered it: what tells a host whose
+    /// surface shows an older one to take the tree again.
+    pub fn rendered(&self, name: &str, view: &ViewId) -> Option<u64> {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == name)
+            .and_then(|entry| entry.state.views.get(view))
+            .map(|(number, _)| *number)
+    }
+
+    /// The plugins that a fault disabled, or whose activation failed, since
+    /// the last look, in their order, each with its error's message, as the
+    /// app tells the user that they stopped.
+    pub fn take_disabled(&mut self) -> Vec<(String, String)> {
+        let told = &mut self.told_disabled;
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Disabled)
+            .filter(|entry| told.insert(entry.state.name.clone()))
+            .map(|entry| {
+                let fault = entry.state.fault.clone().unwrap_or_default();
+                (entry.state.name.clone(), fault)
+            })
+            .collect()
+    }
+
+    /// The plugin that runs `command`, if an active one registered it.
+    pub fn owner_of(&self, command: &str) -> Option<&str> {
+        self.owner(command)
+            .map(|at| self.entries[at].state.name.as_str())
     }
 
     /// The last tree of `view` that the plugin `name` rendered, if it gave
@@ -678,7 +719,7 @@ impl Plugins {
             .iter()
             .find(|entry| entry.state.name == name)
             .and_then(|entry| entry.state.views.get(view))
-            .and_then(Option::as_ref)
+            .and_then(|(_, tree)| tree.as_ref())
     }
 
     /// Every view that a plugin rendered, by its plugin, as a change of the
@@ -917,14 +958,13 @@ fn within<T>(
     }));
     outcome.map_err(|payload| {
         disable(state, context.registry, bindings_changed);
-        Err(Error::new(
-            Code::Fault,
-            format!(
-                "the plugin `{}` panicked{}; it is disabled",
-                state.name,
-                message(payload.as_ref())
-            ),
-        ))
+        let fault = format!(
+            "the plugin `{}` panicked{}; it is disabled",
+            state.name,
+            message(payload.as_ref())
+        );
+        state.fault = Some(fault.clone());
+        Err(Error::new(Code::Fault, fault))
     })
 }
 
@@ -1425,7 +1465,7 @@ impl Host<'_, '_> {
         self.state
             .views
             .get(view)
-            .and_then(Option::as_ref)
+            .and_then(|(_, tree)| tree.as_ref())
             .and_then(|tree| keyed(tree, key, 0))
             .ok_or_else(|| {
                 Error::new(

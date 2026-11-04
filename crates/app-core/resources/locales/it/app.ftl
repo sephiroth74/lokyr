@@ -25,6 +25,9 @@ command-appearance-dark = Aspetto scuro
 command-pane-look-up = Cerca info
 command-pane-man-page = Apri pagina man
 
+# The notice of a plugin that a fault stopped, by its name.
+plugin-stopped = Il plugin { $name } si è fermato, e le sue viste restano com'erano, senza rispondere ai clic: { $fault }
+
 # The credits of the About panel, under the version and the copyright: the
 # license, and the links to the source code and to the licenses' notices of
 # the software that Lokyr includes.

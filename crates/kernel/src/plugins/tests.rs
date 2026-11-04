@@ -1119,6 +1119,7 @@ fn a_call_is_its_own_plugin_s() {
             catalogs: &[],
             views: BTreeMap::new(),
             panels: BTreeMap::new(),
+            fault: None,
         },
         Outbox::default(),
         Vec::new(),
@@ -2234,13 +2235,27 @@ fn a_plugin_renders_each_slot_that_it_fills_and_its_trees_stay_as_it_is_disabled
         );
     }
     assert_eq!(plugins.views().len(), views.len());
-    // A render that panics disables its plugin, whose last tree stays, and
-    // whose slot it still fills.
+    // Each render of a number of its own, which a host compares with its
+    // surface's.
     let bar = ViewId::TabBar(window);
+    let first = plugins.rendered("lokyr/tabs", &bar).unwrap();
+    plugins
+        .render("lokyr/tabs", &bar, &mut app.context())
+        .unwrap();
+    assert_ne!(plugins.rendered("lokyr/tabs", &bar), Some(first));
+    assert_eq!(plugins.rendered("lokyr/plain", &bar), None);
+    assert!(plugins.take_disabled().is_empty());
+    // A render that panics disables its plugin, whose last tree stays, and
+    // whose slot it still fills; the app hears it once.
     panics.set(true);
     let fault = plugins.render("lokyr/tabs", &bar, &mut app.context());
     assert_eq!(fault.unwrap_err().code, Code::Fault);
     assert_eq!(plugins.status("lokyr/tabs"), Some(Status::Disabled));
+    let disabled = plugins.take_disabled();
+    assert_eq!(disabled.len(), 1);
+    assert_eq!(disabled[0].0, "lokyr/tabs");
+    assert!(disabled[0].1.contains("panicked"), "{}", disabled[0].1);
+    assert!(plugins.take_disabled().is_empty());
     assert!(plugins.tree("lokyr/tabs", &bar).is_some());
     plugins
         .render("lokyr/tabs", &bar, &mut app.context())

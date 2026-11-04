@@ -8,13 +8,14 @@ use std::time::Instant;
 use lokyr_kernel::keymap::Resolver;
 use lokyr_kernel::workspace::{self, Grid, PaneId};
 use lokyr_platform_core::{
-    Appearance, Backdrop, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape,
+    Appearance, Backdrop, KeyCode, KeyEvent, LayerPlace, PointerArea, PointerShape, Sweep, Titlebar,
 };
 use lokyr_render_core::{CellBatch, Color, Item, Rect, Surface as _};
 use lokyr_ui_core::cursor::Blink;
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
+use crate::app::chrome::SlotView;
 use crate::drawing::Backend;
 use crate::mouse::{Mouse, Spot};
 use crate::notice;
@@ -148,6 +149,18 @@ pub(crate) struct Window<B: Backend> {
     /// pixels and its scale, the drawing's fonts, the background and the
     /// items, which a frame of the same presents again for nothing.
     pub(crate) shown: Option<Shown>,
+    /// The views of its slots, each a surface of its own, in the order that
+    /// they draw.
+    pub(crate) chrome: Vec<SlotView>,
+    /// Its titlebar, as the app gave it: one of a tab bar while a tab
+    /// bar's view shows.
+    pub(crate) titlebar: Titlebar,
+    /// The top of the room that its panes share, in pixels, below its
+    /// titlebar and its tab bar, as its last layout placed it.
+    pub(crate) panes_top: u32,
+    /// The indeterminate progresses of its slots' views that the platform
+    /// moves, and the moment from which their sweeps run.
+    pub(crate) sweeps: (Vec<Sweep>, Instant),
 }
 
 /// Where a pane of a window lies, as a frame laid it out.
@@ -245,6 +258,10 @@ impl<B: Backend> Window<B> {
             own_appearance: None,
             occluded: false,
             shown: None,
+            chrome: Vec::new(),
+            titlebar: Titlebar::default(),
+            panes_top: 0,
+            sweeps: (Vec::new(), now),
         }
     }
 

@@ -762,7 +762,7 @@ The family of the interface's text, by its name, as Font Book shows it on macOS,
 - **Default**: the system's interface font, as macOS's menus and windows show it, SF Pro.
 - The case does not matter: `"helvetica neue"` is Helvetica Neue.
 - A family that is not installed gives the default one.
-- It does not apply yet, as Lokyr's interface has no text of its own yet: the tab bar and the panels will take it.
+- It applies to the views of the plugins in the window's tab bar, strip, status bar and panes' headers; Lokyr's own plugins show none yet, and the tabs bring the first.
 
 ### `font-size`
 
@@ -774,7 +774,7 @@ The size of the interface's text, in points.
 |---|---|
 | from `4` to `200`, whole or not | `13` |
 
-The text is measured at its size of points, as the system's font draws each size of its own, and the display's scale enlarges it. It does not apply yet, as `font-family`.
+The text is measured at its size of points, as the system's font draws each size of its own, and the display's scale enlarges it. It applies as `font-family` does.
 
 ## `[slots]`
 
@@ -788,7 +788,7 @@ The plugin whose tab bar the windows show, by its name, as `"lokyr/tabs"`.
 
 - **Default**: none, which takes the first plugin that has a tab bar.
 - A plugin that is not installed, or that has no tab bar, gives the default one.
-- It does not apply yet, as no plugin has a tab bar yet.
+- No plugin of Lokyr's has a tab bar yet: the tabs bring it.
 
 ### `pane-header`
 
@@ -798,7 +798,7 @@ The plugin whose headers the panes show across their tops, by its name, as `"lok
 
 - **Default**: none, which takes the first plugin that has the panes' headers.
 - A plugin that is not installed, or that has no headers, gives the default one.
-- It does not apply yet, as no plugin has the panes' headers yet.
+- No plugin of Lokyr's has the panes' headers yet.
 
 ## `[terminal]`
 

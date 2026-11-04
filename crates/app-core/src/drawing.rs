@@ -7,6 +7,7 @@ use lokyr_platform_core::WindowHandle;
 use lokyr_render_core::{Renderer, Surface};
 use lokyr_text_core::{FontBackend, FontConfig};
 use lokyr_ui_core::font::Font;
+use lokyr_ui_core::interface::InterfaceConfig;
 
 /// The platform's drawing: its GPU, which makes the renderers and the
 /// surfaces, and its fonts.
@@ -53,6 +54,8 @@ pub struct Drawing<B: Backend> {
     /// Whether a thread readies the system's fallback of fonts, as one does
     /// once the first frame is drawn.
     pub(crate) warmed_up: bool,
+    /// The interface's font, which each font of the text takes.
+    interface: InterfaceConfig,
 }
 
 impl<B: Backend> Drawing<B> {
@@ -69,7 +72,31 @@ impl<B: Backend> Drawing<B> {
             font,
             fonts: 1,
             warmed_up: false,
+            interface: InterfaceConfig::default(),
         })
+    }
+
+    /// Gives the interface's text the face of `config`, now and with each
+    /// font of the text after; a family that is not installed gives the
+    /// default one, as the log tells.
+    pub(crate) fn set_interface(&mut self, config: &InterfaceConfig) {
+        self.interface = config.clone();
+        self.apply_interface();
+    }
+
+    /// Gives the font the interface's face, or the default one, as the log
+    /// tells, where it fails.
+    fn apply_interface(&mut self) {
+        if let Err(error) = self.font.set_interface(&self.interface) {
+            eprintln!("lokyr: the interface's font is the default one, {error}");
+            let default = InterfaceConfig {
+                font_family: None,
+                ..self.interface.clone()
+            };
+            if let Err(error) = self.font.set_interface(&default) {
+                eprintln!("lokyr: {error}");
+            }
+        }
     }
 
     /// Takes the font that `config` gives, with an atlas of its own, and a
@@ -82,6 +109,7 @@ impl<B: Backend> Drawing<B> {
         self.font = font;
         self.renderer = renderer;
         self.fonts += 1;
+        self.apply_interface();
         Ok(())
     }
 

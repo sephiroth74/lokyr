@@ -22,6 +22,8 @@ mod notice;
 mod output_bench;
 mod performance;
 mod quick;
+#[cfg(feature = "sample-slots")]
+mod sample;
 mod size_label;
 mod watch;
 mod window;
