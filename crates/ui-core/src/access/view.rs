@@ -3,8 +3,10 @@
 //! place in pixels from the window's content, and the actions that a
 //! client may ask of it; and those actions, back to the surface's nodes.
 //!
-//! A node's role is its kind's, a container's, a text's or an icon's its
-//! node's own where it gives one, and a panel's root a group, or a tooltip;
+//! A node's role is its kind's, a container's, a scroll area's, a text's or
+//! an icon's its node's own where it gives one, and a panel's root a group,
+//! or a tooltip; a container and a scroll area are otherwise their parent's
+//! children, as a client goes through them;
 //! its label its node's own, or its text, or a button's or a toggle's
 //! label, or its tooltip, which tells it otherwise. A spacer, a separator
 //! and an icon of no label are left out, as decorations. A list's rows
@@ -216,7 +218,9 @@ impl WindowTree {
             (Kind::Container, None) => Role::GenericContainer,
             (Kind::Text(_), None) => Role::Label,
             (Kind::Icon(_), None) => Role::Image,
-            (Kind::Scroll, None) => Role::ScrollView,
+            // macOS's adapter gives a scroll view no role, which VoiceOver
+            // does not enter: its children are its parent's.
+            (Kind::Scroll, None) => Role::GenericContainer,
             (Kind::Field(_), _) => Role::TextInput,
             (Kind::Button(_) | Kind::Toggle(_), _) => Role::Button,
             (Kind::List(_), _) => Role::ListBox,
@@ -608,6 +612,25 @@ mod tests {
         assert_eq!((bell.role(), bell.label()), (Role::Image, Some("Bell")));
         assert_eq!(keyed(&update, &surface, "j").role(), Role::Image);
         assert_eq!(keyed(&update, &surface, "b").role(), Role::Button);
+        // A scroll area of no role of its own, a container's, which a client
+        // goes through; of one, its own.
+        let surface = surface_of_scrolls();
+        let update = tree_of(&surface, None);
+        assert_eq!(
+            keyed(&update, &surface, "page").role(),
+            Role::GenericContainer
+        );
+        assert_eq!(keyed(&update, &surface, "group").role(), Role::Group);
+    }
+
+    /// A surface of a scroll area, and of another that is a group.
+    fn surface_of_scrolls() -> Surface {
+        surface(&column(vec![
+            ViewNode::scroll(vec![ViewNode::text("a")]).key("page"),
+            ViewNode::scroll(vec![ViewNode::text("b")])
+                .key("group")
+                .role(ViewRole::Group),
+        ]))
     }
 
     /// A surface of a list of 1 000 items, 100 points high, of rows of 20,
