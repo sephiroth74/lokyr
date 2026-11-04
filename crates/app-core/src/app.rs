@@ -2754,6 +2754,21 @@ impl<B: Backend> App<B> {
             // transaction, which moves the window's edge; its label of the
             // grid's size stays a moment after it ends.
             WindowEvent::LiveResize(resizing) => {
+                // Its end tells the programs their grids at once, which they
+                // learnt of only as it paused.
+                if !resizing {
+                    let shown = self.windows.get(&window).map(|state| state.window);
+                    let now = Instant::now();
+                    let panes = shown.map(|shown| self.workspace.panes_of(shown));
+                    let due = panes
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|pane| self.workspace.pane_mut(pane)?.end_live_resize(now))
+                        .min();
+                    if let Some(due) = due {
+                        self.pace_at(platform, due);
+                    }
+                }
                 if let Some(state) = self.windows.get_mut(&window) {
                     state.live_resize = resizing;
                     if let Some(surface) = &state.surface {

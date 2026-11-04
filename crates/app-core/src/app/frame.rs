@@ -436,15 +436,20 @@ impl<B: Backend> App<B> {
         };
         let at = |pixels: i32| u32::try_from(pixels).unwrap_or(0);
         let (left, top) = (at(rect.x), at(rect.y));
-        // Each pane's program learns its grid, and the others' output shows
-        // in this frame too.
+        // Each pane's program learns its grid, as a live resize pauses or
+        // ends, and the others' output shows in this frame too.
         let mut due = None;
         let mut others = false;
+        let live = state.live_resize;
         for view in &views {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;
             };
-            let told = pane.resize(view.grid, now);
+            let told = if live {
+                pane.resize_live(view.grid, now)
+            } else {
+                pane.resize(view.grid, now)
+            };
             due = match (due, told) {
                 (Some(due), Some(told)) => Some(std::cmp::min(due, told)),
                 (due, told) => due.or(told),

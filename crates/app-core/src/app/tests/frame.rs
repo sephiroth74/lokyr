@@ -505,6 +505,24 @@ fn a_live_resize_draws_once_a_refresh() {
 }
 
 #[test]
+fn a_live_resize_tells_the_program_its_grid_as_it_ends() {
+    let (mut fake, mut app) = started();
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let told = app.pane(window).told();
+    // A step reflows the terminal, and the program, which would redraw at
+    // each, waits.
+    fake.send(&mut app, window, WindowEvent::LiveResize(true));
+    fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+    let grid = app.pane(window).grid();
+    assert_ne!(grid, told);
+    assert_eq!(app.pane(window).told(), told);
+    // Its end tells it at once.
+    fake.send(&mut app, window, WindowEvent::LiveResize(false));
+    assert_eq!(app.pane(window).told(), grid);
+}
+
+#[test]
 fn a_synchronized_update_shows_whole() {
     let mut fake = Fake::default();
     let script = "printf 'before\\r\\n'; sleep 0.3; printf '\\033[?2026hhalf'; sleep 0.5; \

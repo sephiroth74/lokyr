@@ -21,8 +21,9 @@ use objc2_app_kit::{
     NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType, NSPasteboard,
     NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey,
     NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSView,
-    NSWindow, NSWindowButton, NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask,
-    NSWindowTabbingMode, NSWindowTitleVisibility, NSWindowToolbarStyle,
+    NSViewLayerContentsPlacement, NSWindow, NSWindowButton, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
+    NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -978,6 +979,11 @@ impl ContentView {
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
+        // A frame of another size than the view's, as a step of a live
+        // resize's until the frame of its size comes, stays at the top left
+        // corner, as the grid's cells are, rather than stretched to the
+        // view's edges.
+        view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
         // SAFETY: the view, alive for the call, of which the adapter keeps a
         // weak reference.
         let access = unsafe {
