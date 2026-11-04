@@ -14,6 +14,7 @@ use lokyr_platform_core::{Platform, Point, Size, Sweep, SweepShape, WindowId, Wi
 use lokyr_render_core::{Item, Rect};
 use lokyr_text_core::FontBackend;
 use lokyr_ui_core::chrome::{self, Heights, Regions, TabBarPlace};
+use lokyr_ui_core::focus::Target;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Frame;
 use lokyr_ui_core::pointer::NodeEvent;
@@ -378,6 +379,38 @@ impl<B: Backend> App<B> {
                 .into_iter()
                 .map(|(plugin, view, event)| (plugin, ui_event(view, event))),
         );
+    }
+}
+
+impl<B: Backend> App<B> {
+    /// `window`'s slots' views took their places: the hover follows the
+    /// nodes that the layout moved under a pointer that stayed, as a tab
+    /// that slides under it as the one before it closes, whose events go to
+    /// their plugins as the turn ends; the field with the keyboard's focus
+    /// scrolls across to its caret, the others to their starts.
+    pub(super) fn settle_views(&mut self, window: WindowId) {
+        let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
+        else {
+            return;
+        };
+        let focused = match state.focus.target() {
+            Target::Node { panel, node } => Some((panel, node)),
+            Target::Pane => None,
+        };
+        let mut events = Vec::new();
+        for view in &mut state.chrome {
+            if view.frame.is_some() {
+                let moved = view.surface.laid_out();
+                events.extend(
+                    moved
+                        .into_iter()
+                        .map(|event| (view.plugin.clone(), ui_event(view.view.clone(), event))),
+                );
+            }
+            let node = focused.and_then(|(id, node)| (id == view.id).then_some(node));
+            view.surface.follow(node, &mut drawing.font);
+        }
+        self.ui_events.extend(events);
     }
 }
 

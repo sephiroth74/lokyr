@@ -197,6 +197,7 @@ impl<B: Backend> App<B> {
         // Each pane's header at its room's top, and its grid below it.
         let mut rooms = rooms;
         self.lay_out_headers(window, &mut rooms);
+        self.settle_views(window);
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
         let views: Vec<PaneView> = rooms
             .into_iter()

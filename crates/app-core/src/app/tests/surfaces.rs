@@ -24,14 +24,16 @@ struct Heard {
     /// The text and the revision that `widgets.set` sets in the field
     /// `name`.
     text: (String, u64),
-    /// Whether the tab bar shows nothing.
+    /// Whether the tab bar shows nothing, and whether its button goes.
     hidden: bool,
+    no_go: bool,
 }
 
 /// A plugin of a tab bar of a button `go`, of a tooltip and the pointing
 /// hand, and of two fields, `name` and `other`, and of a status bar of a
 /// list `rows`, a box `area` and a field `note`; `widgets.set` sets the text of `name`,
-/// `widgets.select` the list's fourth item, `widgets.hide` hides the bar.
+/// `widgets.select` the list's fourth item, `widgets.hide` hides the bar,
+/// `widgets.close` takes its button away.
 struct Widgets {
     heard: Rc<RefCell<Heard>>,
     views: Vec<ViewId>,
@@ -52,7 +54,12 @@ fn sized(node: Node, width: f32, height: f32) -> Node {
 
 impl plugins::Plugin for Widgets {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        for name in ["widgets.set", "widgets.select", "widgets.hide"] {
+        for name in [
+            "widgets.set",
+            "widgets.select",
+            "widgets.hide",
+            "widgets.close",
+        ] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -82,6 +89,10 @@ impl plugins::Plugin for Widgets {
                 cx.set_text(bar.unwrap(), "name", &text, revision)
             }
             "widgets.select" => cx.select(status.unwrap(), "rows", 3),
+            "widgets.close" => {
+                self.heard.borrow_mut().no_go = true;
+                cx.request_render(bar.unwrap())
+            }
             _ => {
                 self.heard.borrow_mut().hidden = true;
                 cx.request_render(bar.unwrap())
@@ -115,16 +126,19 @@ impl plugins::Plugin for Widgets {
                     .key("go")
                     .tooltip("Go there");
                 go.style.pointer = Some(Shape::PointingHand);
-                Some(row(vec![
-                    go,
-                    sized(Node::field("Name"), 80.0, 20.0)
-                        .key("name")
-                        .style(Style {
-                            pointer: Some(Shape::Text),
-                            ..Style::default()
-                        }),
-                    sized(Node::field("Other"), 80.0, 20.0).key("other"),
-                ]))
+                let go = (!self.heard.borrow().no_go).then_some(go);
+                Some(row(go
+                    .into_iter()
+                    .chain([
+                        sized(Node::field("Name"), 80.0, 20.0)
+                            .key("name")
+                            .style(Style {
+                                pointer: Some(Shape::Text),
+                                ..Style::default()
+                            }),
+                        sized(Node::field("Other"), 80.0, 20.0).key("other"),
+                    ])
+                    .collect()))
             }
             ViewId::StatusBar(_) => {
                 let mut rows = Node::list(
@@ -581,4 +595,48 @@ fn a_paste_with_a_node_of_no_field_focused_goes_nowhere() {
     type_key(&mut fake, &mut app, window, KeyCode::KeyZ, "z");
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "z"));
     assert!(!shows(&app, window, "pasted"), "{:?}", screen(&app, window));
+}
+
+#[test]
+fn a_field_s_text_past_its_width_scrolls_to_its_caret() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    let name = middle(&fake, &app, window, "name");
+    click_at(&mut fake, &mut app, window, name);
+    for _ in 0..40 {
+        type_key(&mut fake, &mut app, window, KeyCode::KeyA, "a");
+    }
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let state = surface_of(&app, window, "name")
+        .fields
+        .state(&"name".into())
+        .unwrap();
+    assert_eq!(state.text().len(), 40);
+    assert!(state.scroll() > 0.0, "{}", state.scroll());
+}
+
+#[test]
+fn the_hover_follows_a_node_that_slides_under_a_pointer_that_stays() {
+    let (mut fake, mut app, window, heard) = widgets(reader(""));
+    let go = middle(&fake, &app, window, "go");
+    fake.send(&mut app, window, moved(go, Modifiers::NONE));
+    heard.borrow_mut().events.clear();
+    // The button goes, as a tab closes under the pointer: the field after
+    // it slides under the pointer, which stays.
+    app.run(&mut fake, "widgets.close", Args::new());
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let events = std::mem::take(&mut heard.borrow_mut().events);
+    assert!(
+        events
+            .iter()
+            .any(|event| event.key.0 == "name" && event.kind == UiEventKind::HoverEnter),
+        "{events:?}"
+    );
+    let surface = surface_of(&app, window, "name");
+    let hovered: Vec<String> = surface
+        .pointer
+        .hovered()
+        .filter_map(|node| surface.tree.key(node).map(|key| key.0.clone()))
+        .collect();
+    assert!(hovered.contains(&"name".to_owned()), "{hovered:?}");
 }
