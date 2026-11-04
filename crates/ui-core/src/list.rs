@@ -68,6 +68,9 @@ pub struct ListState {
     given: Option<(Range<usize>, usize)>,
     /// The list's height and width, in points, of its last layout.
     view: (f32, f32),
+    /// The pixels a point of its last layout, of which its rows are laid
+    /// out.
+    scale: f32,
 }
 
 /// A row that shows: its item's texts, and the tree of the template that
@@ -284,14 +287,19 @@ impl Lists {
             };
             let state = self.states.entry(key.clone()).or_default();
             let view = (frame.height / scale, frame.width / scale);
-            // A new template, or a new width, builds and measures anew.
-            if state.template.as_ref() != Some(&*list.row) || state.view.1 != view.1 {
+            // A new template, a new width or a new scale, as the window
+            // moved to another display, builds and measures anew.
+            if state.template.as_ref() != Some(&*list.row)
+                || state.view.1 != view.1
+                || state.scale != scale
+            {
                 state.rows.clear();
                 state.heights.clear();
                 state.estimate = None;
                 state.template = Some((*list.row).clone());
             }
             state.view = view;
+            state.scale = scale;
             if state.estimate.is_none() {
                 let empty = build(&list.row, &[], frame.width, (scale, &mut *measure));
                 state.estimate = Some(height(&empty));
@@ -942,6 +950,39 @@ mod tests {
         // A plugin that renders the same items again is asked no more.
         tree.update(&list(1000, 0..60, Some(20.0))).unwrap();
         assert_eq!(told(lists.lay_out(&tree, &layout, &mut Fixed)), []);
+    }
+
+    #[test]
+    fn a_list_moved_to_another_display_lays_out_its_rows_at_its_scale() {
+        let (tree, mut layout, _) = laid(&list(100, 0..100, Some(20.0)), 1.0);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        let width = |lists: &Lists| {
+            let row = state(lists).row(0).unwrap();
+            let root = row.tree().root().unwrap();
+            (
+                row.layout().scale(),
+                row.layout().frame(row.tree(), root).unwrap().width,
+            )
+        };
+        assert_eq!(width(&lists), (1.0, 200.0));
+        // At a scale of 2, its width in points the same: its rows of 400
+        // pixels.
+        layout.set_scale(&tree, 2.0);
+        layout.compute(&tree, Some(400.0), None, &mut Fixed);
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        assert_eq!(width(&lists), (2.0, 400.0));
+        // At the same scale, the rows of their own heights keep the
+        // measures of those that showed, built once.
+        let (tree, layout, node) = laid(&list(100, 0..100, None), 1.0);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        lists.scroll(&tree, node, 300.0);
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        lists.scroll(&tree, node, -300.0);
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        let shown = state(&lists).visible(of(&tree, node)).len();
+        assert!(state(&lists).heights.len() > shown);
     }
 
     #[test]

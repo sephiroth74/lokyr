@@ -189,12 +189,21 @@ impl Layout {
     }
 
     /// Lays out `tree` again at `scale` pixels a point, every node's style
-    /// of the new scale.
+    /// of the new scale, as its parent has it, and each scroll area as far
+    /// scrolled in points as before.
     pub fn set_scale(&mut self, tree: &Tree, scale: f32) {
+        if self.scale > 0.0 {
+            let ratio = scale / self.scale;
+            for scrolled in self.scrolled.values_mut() {
+                *scrolled *= ratio;
+            }
+        }
         self.scale = scale;
         for (&id, &node) in &self.nodes {
             if let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) {
-                let _ = self.taffy.set_style(node, style(kind, layout, scale));
+                let _ = self
+                    .taffy
+                    .set_style(node, style_in(tree, id, style(kind, layout, scale)));
             }
         }
     }
@@ -675,6 +684,20 @@ mod tests {
         let node = tree.children(tree.root().unwrap())[0];
         let first = layout.frame(&tree, tree.children(node)[0]).unwrap();
         assert_eq!(first.height, 20.0);
+        // Moved to a display of a scale of 1, as far scrolled in points,
+        // its boxes of their heights.
+        assert!(layout.scroll_by(&tree, node, 30.0));
+        layout.set_scale(&tree, 1.0);
+        layout.compute(&tree, Some(100.0), None, &mut font);
+        assert_eq!(layout.scrolled(node), 15.0);
+        assert_eq!(layout.scroll_room(&tree, node), 40.0);
+        let first = layout.frame(&tree, tree.children(node)[0]).unwrap();
+        assert_eq!(first.height, 10.0);
+        // And back.
+        layout.set_scale(&tree, 2.0);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        assert_eq!(layout.scrolled(node), 30.0);
+        assert_eq!(layout.scroll_room(&tree, node), 80.0);
     }
 
     #[test]
