@@ -231,7 +231,7 @@ type Style = {
 type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
-        | "progress" | "spacer",
+        | "progress" | "spacer" | "tabs",
     text: string?, -- for text and icon nodes; a button's and a toggle's label
     icon: string?, -- a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
@@ -251,6 +251,8 @@ type Node = {
     items: { ListItem }?, -- for list nodes, flat: a window of them, from `first`, as the host asks for them
     row: Node?, -- for list nodes: the template of a row, of containers, texts, icons, spacers and separators
     row_height: number?, -- for list nodes, of rows of one height, a point at least; without it, each row takes its own, a point at least
+    tabs: { { label: string, icon: string?, disabled: boolean? } }?, -- for tabs nodes, in their order: a control of them over the box of its page, its child
+    chosen: number?, -- for tabs nodes, the tab chosen, whose page is its child; a click or the arrows choose another, as "select" tells
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
     tooltip: string?, -- shown as the pointer rests over the node, by its key

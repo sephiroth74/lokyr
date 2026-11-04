@@ -10,7 +10,8 @@
 //! which the next layout lays out again, `taffy` keeping the others'
 //! layouts; and each text and icon keeps its measure until it changes.
 //! It keeps how far each scroll area is scrolled, which moves its
-//! children's frames without a layout.
+//! children's frames without a layout; and the control of each view of
+//! tabs, a leaf of `taffy`'s before its page, of its tabs' segments.
 
 use std::collections::HashMap;
 
@@ -22,7 +23,7 @@ use taffy::prelude::{
 };
 
 use crate::tree::{Changes, NodeId, Tree};
-use crate::{field, progress, widget};
+use crate::{field, progress, tabs, widget};
 
 /// What sizes the leaves of the view tree that take their content's size.
 pub trait Measure {
@@ -81,6 +82,9 @@ pub struct Frame {
 struct Leaf {
     content: Content,
     measured: Option<(f32, f32)>,
+    /// The widths of its parts, in points, once measured: a control's
+    /// segments'.
+    parts: Vec<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,9 +92,14 @@ enum Content {
     Text(String),
     Icon(String),
     Field,
-    Button { label: String, icon: String },
+    Button {
+        label: String,
+        icon: String,
+    },
     Separator,
     Progress(ProgressShape),
+    /// A view of tabs' control, of each tab's label and icon.
+    Segments(Vec<(String, String)>),
 }
 
 /// The layout of a view tree.
@@ -100,6 +109,8 @@ pub struct Layout {
     scale: f32,
     /// How far each scroll area is scrolled down, in pixels.
     scrolled: HashMap<NodeId, f32>,
+    /// The control of each view of tabs.
+    controls: HashMap<NodeId, taffy::NodeId>,
 }
 
 impl Layout {
@@ -110,6 +121,7 @@ impl Layout {
             nodes: HashMap::new(),
             scale,
             scrolled: HashMap::new(),
+            controls: HashMap::new(),
         }
     }
 
@@ -121,8 +133,12 @@ impl Layout {
             if let Some(node) = self.nodes.remove(id) {
                 let _ = self.taffy.remove(node);
             }
+            if let Some(control) = self.controls.remove(id) {
+                let _ = self.taffy.remove(control);
+            }
             self.scrolled.remove(id);
         }
+        let mut controls = Vec::new();
         for &id in &changes.added {
             let (Some(kind), Some(layout)) = (tree.kind(id), tree.layout(id)) else {
                 continue;
@@ -135,6 +151,7 @@ impl Layout {
             if let Ok(node) = made {
                 self.nodes.insert(id, node);
             }
+            self.keep_control(tree, id);
         }
         for &id in &changes.changed {
             let (Some(&node), Some(kind), Some(layout)) =
@@ -149,6 +166,9 @@ impl Layout {
             let kept = self.taffy.get_node_context(node).map(|kept| &kept.content);
             if kept != leaf.as_ref().map(|leaf| &leaf.content) {
                 let _ = self.taffy.set_node_context(node, leaf);
+            }
+            if self.keep_control(tree, id) {
+                controls.push(id);
             }
         }
         // The children of a scroll area that changed take its direction.
@@ -167,15 +187,114 @@ impl Layout {
                     .set_style(node, style_in(tree, child, style(kind, layout, self.scale)));
             }
         }
-        for &id in changes.added.iter().chain(&changes.rearranged) {
+        for &id in changes
+            .added
+            .iter()
+            .chain(&changes.rearranged)
+            .chain(&controls)
+        {
             self.set_children(tree, id);
         }
+    }
+
+    /// Keeps the control of `id` of `tree`, a view of tabs, of its tabs'
+    /// labels and icons, measured anew as they change; or takes it away, of
+    /// another node. Whether it came or went, which changes the node's
+    /// children in `taffy`'s tree.
+    fn keep_control(&mut self, tree: &Tree, id: NodeId) -> bool {
+        let Some(Kind::Tabs(view)) = tree.kind(id) else {
+            return self
+                .controls
+                .remove(&id)
+                .is_some_and(|control| self.taffy.remove(control).is_ok());
+        };
+        let content = Content::Segments(
+            view.tabs
+                .iter()
+                .map(|tab| (tab.label.clone(), tab.icon.clone()))
+                .collect(),
+        );
+        if let Some(&control) = self.controls.get(&id) {
+            let kept = self
+                .taffy
+                .get_node_context(control)
+                .map(|kept| &kept.content);
+            if kept != Some(&content) {
+                let _ = self.taffy.set_node_context(
+                    control,
+                    Some(Leaf {
+                        content,
+                        measured: None,
+                        parts: Vec::new(),
+                    }),
+                );
+            }
+            return false;
+        }
+        let leaf = Leaf {
+            content,
+            measured: None,
+            parts: Vec::new(),
+        };
+        match self
+            .taffy
+            .new_leaf_with_context(control_style(self.scale), leaf)
+        {
+            Ok(control) => {
+                self.controls.insert(id, control);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// The frame of the control of the view of tabs `id` of `tree`, of the
+    /// last layout, as [`Layout::frame`] gives frames.
+    pub fn control(&self, tree: &Tree, id: NodeId) -> Option<Frame> {
+        let view = self.frame(tree, id)?;
+        let laid = self.taffy.layout(*self.controls.get(&id)?).ok()?;
+        Some(Frame {
+            x: view.x + laid.location.x,
+            y: view.y + laid.location.y,
+            width: laid.size.width,
+            height: laid.size.height,
+        })
+    }
+
+    /// The frames of the segments of the control of the view of tabs `id`
+    /// of `tree`, side by side, of the last layout, as [`Layout::frame`]
+    /// gives frames: none before its first layout.
+    pub fn segments(&self, tree: &Tree, id: NodeId) -> Vec<Frame> {
+        let (Some(control), Some(&node)) = (self.control(tree, id), self.controls.get(&id)) else {
+            return Vec::new();
+        };
+        let Some(parts) = self
+            .taffy
+            .get_node_context(node)
+            .map(|leaf| leaf.parts.as_slice())
+        else {
+            return Vec::new();
+        };
+        let mut x = control.x;
+        parts
+            .iter()
+            .map(|&points| {
+                let width = points * self.scale;
+                let segment = Frame {
+                    x,
+                    width,
+                    ..control
+                };
+                x += width;
+                segment
+            })
+            .collect()
     }
 
     /// Measures every text and icon again at the next layout, as when the
     /// font that a [`Measure`] measures of changed.
     pub fn measure_again(&mut self) {
-        for &node in self.nodes.values() {
+        for &node in self.nodes.values().chain(self.controls.values()) {
             if let Some(leaf) = self.taffy.get_node_context_mut(node) {
                 leaf.measured = None;
                 let _ = self.taffy.mark_dirty(node);
@@ -205,6 +324,9 @@ impl Layout {
                     .taffy
                     .set_style(node, style_in(tree, id, style(kind, layout, scale)));
             }
+        }
+        for &control in self.controls.values() {
+            let _ = self.taffy.set_style(control, control_style(scale));
         }
     }
 
@@ -256,14 +378,12 @@ impl Layout {
                     |_, _| 0.0,
                     |known, _| {
                         let (width, height) = context.map_or((0.0, 0.0), |leaf| {
-                            *leaf.measured.get_or_insert_with(|| match &leaf.content {
-                                Content::Text(text) => measure.text(text),
-                                Content::Icon(name) => measure.icon(name),
-                                Content::Field => measure.field(),
-                                Content::Button { label, icon } => measure.button(label, icon),
-                                Content::Separator => measure.separator(),
-                                Content::Progress(shape) => progress::natural(*shape),
-                            })
+                            if leaf.measured.is_none() {
+                                let (size, parts) = measured(&leaf.content, measure);
+                                leaf.measured = Some(size);
+                                leaf.parts = parts;
+                            }
+                            leaf.measured.unwrap_or_default()
                         });
                         Size {
                             width: known.width.unwrap_or(width * scale),
@@ -377,10 +497,17 @@ impl Layout {
         let Some(&node) = self.nodes.get(&id) else {
             return;
         };
-        let children: Vec<taffy::NodeId> = tree
-            .children(id)
-            .iter()
-            .filter_map(|child| self.nodes.get(child).copied())
+        // A view of tabs' control first, over its page.
+        let children: Vec<taffy::NodeId> = self
+            .controls
+            .get(&id)
+            .copied()
+            .into_iter()
+            .chain(
+                tree.children(id)
+                    .iter()
+                    .filter_map(|child| self.nodes.get(child).copied()),
+            )
             .collect();
         let _ = self.taffy.set_children(node, &children);
     }
@@ -402,12 +529,60 @@ fn leaf(kind: &Kind) -> Option<Leaf> {
         },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
-        Kind::Container | Kind::Spacer | Kind::List(_) | Kind::Scroll => return None,
+        Kind::Container | Kind::Spacer | Kind::List(_) | Kind::Scroll | Kind::Tabs(_) => {
+            return None;
+        }
     };
     Some(Leaf {
         content,
         measured: None,
+        parts: Vec::new(),
     })
+}
+
+/// The size of `content`, in points, as `measure` measures it, and the
+/// widths of its parts: a control's, its segments' side by side, each as a
+/// button's of its tab's label and icon.
+fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f32>) {
+    let size = match content {
+        Content::Text(text) => measure.text(text),
+        Content::Icon(name) => measure.icon(name),
+        Content::Field => measure.field(),
+        Content::Button { label, icon } => measure.button(label, icon),
+        Content::Separator => measure.separator(),
+        Content::Progress(shape) => progress::natural(*shape),
+        Content::Segments(tabs) => {
+            let sizes: Vec<(f32, f32)> = tabs
+                .iter()
+                .map(|(label, icon)| measure.button(label, icon))
+                .collect();
+            let width = sizes.iter().map(|size| size.0).sum();
+            let height = sizes
+                .iter()
+                .fold(0.0_f32, |height, size| height.max(size.1));
+            return (
+                (width, height),
+                sizes.into_iter().map(|size| size.0).collect(),
+            );
+        }
+    };
+    (size, Vec::new())
+}
+
+/// The style of a view of tabs' control, at `scale`: in the middle of its
+/// view's top, of its content's size, the page below it.
+fn control_style(scale: f32) -> Style {
+    Style {
+        align_self: Some(AlignItems::CENTER),
+        flex_shrink: 0.0,
+        margin: Rect {
+            left: LengthPercentageAuto::length(0.0),
+            right: LengthPercentageAuto::length(0.0),
+            top: LengthPercentageAuto::length(0.0),
+            bottom: LengthPercentageAuto::length(tabs::INSET * scale),
+        },
+        ..Style::default()
+    }
 }
 
 /// `style`, of `id` of `tree`, as its parent has it: a child of a column
@@ -435,8 +610,15 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
         Length::Points(points) => Dimension::length(points * scale),
         Length::Fraction(fraction) => Dimension::percent(fraction),
     };
+    // A view of tabs: a column of its control and its page, inside its
+    // box's room.
+    let (tabbed, inset) = match kind {
+        Kind::Tabs(_) => (true, tabs::INSET),
+        _ => (false, 0.0),
+    };
     Style {
         flex_direction: match layout.direction {
+            _ if tabbed => FlexDirection::Column,
             Direction::Row => FlexDirection::Row,
             Direction::Column => FlexDirection::Column,
         },
@@ -445,10 +627,10 @@ fn style(kind: &Kind, layout: &view::Layout, scale: f32) -> Style {
             height: pixels(layout.gap),
         },
         padding: Rect {
-            left: pixels(layout.padding.left),
-            right: pixels(layout.padding.right),
+            left: pixels(layout.padding.left + inset),
+            right: pixels(layout.padding.right + inset),
             top: pixels(layout.padding.top),
-            bottom: pixels(layout.padding.bottom),
+            bottom: pixels(layout.padding.bottom + inset),
         },
         align_items: match layout.align {
             Align::Start => AlignItems::FLEX_START,

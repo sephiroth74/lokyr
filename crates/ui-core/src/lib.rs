@@ -32,6 +32,7 @@ pub mod panel;
 pub mod pointer;
 pub mod progress;
 pub mod surface;
+pub mod tabs;
 pub mod text;
 pub mod theme;
 pub mod tooltip;

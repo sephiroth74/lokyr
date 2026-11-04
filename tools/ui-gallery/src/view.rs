@@ -1535,6 +1535,48 @@ mod tests {
     }
 
     #[test]
+    fn a_click_on_a_tab_of_the_view_of_tabs_shows_its_page() {
+        let mut view = view();
+        // Into view, then the second tab's middle.
+        middle(&mut view, "views");
+        let tree = &view.main.tree;
+        let node = tree.by_key(&"views".into()).unwrap();
+        let segment = view.main.layout.segments(tree, node)[1];
+        let page = view.page();
+        let at = (
+            page.x + segment.x + segment.width / 2.0,
+            page.y + segment.y + segment.height / 2.0,
+        );
+        click(&mut view, at);
+        let text = |view: &View, text: &str| {
+            let tree = &view.main.tree;
+            let page = tree.by_key(&"views.page".into()).unwrap();
+            let mut found = false;
+            let mut stack = vec![page];
+            while let Some(id) = stack.pop() {
+                found |=
+                    tree.kind(id) == Some(&lokyr_plugin_sdk::view::Kind::Text(text.to_owned()));
+                stack.extend(tree.children(id));
+            }
+            found
+        };
+        assert!(text(&view, "The appearance's page"));
+        // The disabled one's, nothing.
+        let tree = &view.main.tree;
+        let node = tree.by_key(&"views".into()).unwrap();
+        let disabled = view.main.layout.segments(tree, node)[3];
+        let page = view.page();
+        click(
+            &mut view,
+            (
+                page.x + disabled.x + disabled.width / 2.0,
+                page.y + disabled.y + disabled.height / 2.0,
+            ),
+        );
+        assert!(text(&view, "The appearance's page"));
+    }
+
+    #[test]
     fn a_transition_runs_to_its_end_and_no_frame_is_asked_for_after_it() {
         use std::time::Duration;
         let mut view = view();

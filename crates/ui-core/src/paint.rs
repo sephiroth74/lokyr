@@ -19,7 +19,7 @@ use crate::layout::{Frame, Layout, Measure};
 use crate::list::Lists;
 use crate::theme::Tokens;
 use crate::tree::{NodeId, Tree};
-use crate::widget;
+use crate::{tabs, widget};
 
 /// The width of the ring of the keyboard's focus, outside its node's box,
 /// in points.
@@ -301,7 +301,25 @@ impl<B: FontBackend> Painter<'_, B> {
             _ => style,
         };
         if self.focused == Some(id) {
-            self.ring = self.ring(frame, style).map(|ring| (ring, self.clip));
+            // A view of tabs' ring goes round its control, of a button's
+            // corners.
+            let control = match kind {
+                Kind::Tabs(_) => self.layout.control(tree, id).map(|control| Frame {
+                    x: control.x + self.origin.0,
+                    y: control.y + self.origin.1,
+                    ..control
+                }),
+                _ => None,
+            };
+            let rounded = Style {
+                radius: widget::RADIUS,
+                ..style.clone()
+            };
+            self.ring = match control {
+                Some(control) => self.ring(control, &rounded),
+                None => self.ring(frame, style),
+            }
+            .map(|ring| (ring, self.clip));
         }
         if let Some(shape) = self.shape(frame, style) {
             self.push_shape(shape);
@@ -326,6 +344,7 @@ impl<B: FontBackend> Painter<'_, B> {
             }
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(progress, frame, given),
+            Kind::Tabs(view) => self.tabs(id, view, frame, color),
             Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -351,6 +370,84 @@ impl<B: FontBackend> Painter<'_, B> {
         if clips {
             self.items.push(Item::PopClip);
             self.clip = outer;
+        }
+    }
+
+    /// The view of tabs `id`, of `view`, at `frame`: the box of its page,
+    /// from the middle of its control down, and its control over it, of its
+    /// tabs side by side, a line between two of them that are not chosen,
+    /// the chosen one tinted, a disabled one dimmed, the others' texts in
+    /// `color`.
+    fn tabs(&mut self, id: NodeId, view: &view::Tabs, frame: Frame, color: Color) {
+        let scale = self.layout.scale();
+        let origin = self.origin;
+        let moved = |part: Frame| Frame {
+            x: part.x + origin.0,
+            y: part.y + origin.1,
+            ..part
+        };
+        let Some(control) = self.layout.control(self.tree, id).map(moved) else {
+            return;
+        };
+        let segments: Vec<Frame> = self
+            .layout
+            .segments(self.tree, id)
+            .into_iter()
+            .map(moved)
+            .collect();
+        let middle = (control.y + control.height / 2.0).round();
+        let boxed = Frame {
+            y: middle,
+            height: (frame.y + frame.height - middle).max(0.0),
+            ..frame
+        };
+        if let Some(fill) = self.tokens.get("tabs.box.bg") {
+            self.push_shape(Shape {
+                radius: tabs::RADIUS * scale,
+                border: scale.round().max(1.0),
+                border_color: self.tokens.get("tabs.box.border").unwrap_or(Color::CLEAR),
+                ..Shape::filled(rect(boxed), fill)
+            });
+        }
+        let radius = widget::RADIUS * scale;
+        if let Some(track) = self.tokens.get("tabs.bg") {
+            self.push_shape(Shape {
+                radius,
+                ..Shape::filled(rect(control), track)
+            });
+        }
+        let line = self.tokens.get("separator");
+        let thin = scale.round().max(1.0);
+        for (at, (tab, segment)) in view.tabs.iter().zip(&segments).enumerate() {
+            let chosen = at == view.chosen;
+            if chosen && let Some(tint) = self.tokens.get("tabs.chosen.bg") {
+                self.push_shape(Shape {
+                    radius,
+                    ..Shape::filled(rect(*segment), tint)
+                });
+            }
+            if at > 0
+                && !chosen
+                && at - 1 != view.chosen
+                && let Some(line) = line
+            {
+                let height = (segment.height / 2.0).round();
+                let between = Frame {
+                    x: segment.x.round(),
+                    y: (segment.y + (segment.height - height) / 2.0).round(),
+                    width: thin,
+                    height,
+                };
+                self.push_shape(Shape::filled(rect(between), line));
+            }
+            let text = if tab.disabled {
+                self.tokens.get("text.disabled").unwrap_or(color)
+            } else if chosen {
+                self.tokens.get("tabs.chosen.fg").unwrap_or(color)
+            } else {
+                color
+            };
+            self.widget((&tab.label, &tab.icon), *segment, text);
         }
     }
 
@@ -1270,6 +1367,105 @@ mod tests {
                 height: 11
             }
         );
+    }
+
+    #[test]
+    fn a_view_of_tabs_paints_its_box_its_control_and_its_chosen_tab() {
+        use lokyr_plugin_sdk::view::Tab;
+        let tabs = vec![
+            Tab::new("One"),
+            Tab::new("Two"),
+            Tab::new("Three"),
+            Tab {
+                disabled: true,
+                ..Tab::new("Four")
+            },
+        ];
+        let view = Node::container(vec![Node::tabs(tabs, 0, Node::text("page")).key("view")])
+            .layout(view::Layout {
+                direction: view::Direction::Column,
+                ..view::Layout::default()
+            });
+        let scale = 2.0;
+        let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&view).unwrap();
+        let mut layout = Layout::new(scale);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(600.0), None, &mut font);
+        let node = tree.by_key(&"view".into()).unwrap();
+        let tokens = &Theme::builtin().dark.tokens;
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            shown(true, Some(node)),
+        );
+        let shapes: Vec<Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let control = layout.control(&tree, node).unwrap();
+        let segments = layout.segments(&tree, node);
+        let frame = layout.frame(&tree, node).unwrap();
+        // The box from the control's middle down, the control's track, the
+        // first tab tinted, a line between the second and the third alone.
+        let middle = (control.y + control.height / 2.0).round() as i32;
+        assert_eq!(shapes[0].fill, token("tabs.box.bg"));
+        assert_eq!(shapes[0].border_color, token("tabs.box.border"));
+        assert_eq!(
+            (shapes[0].rect.y, shapes[0].rect.width),
+            (middle, frame.width as u32)
+        );
+        assert_eq!(
+            (shapes[1].fill, shapes[1].rect),
+            (token("tabs.bg"), rect(control))
+        );
+        assert_eq!(
+            (shapes[2].fill, shapes[2].rect),
+            (token("tabs.chosen.bg"), rect(segments[0]))
+        );
+        let lines: Vec<i32> = shapes
+            .iter()
+            .filter(|shape| shape.fill == token("separator"))
+            .map(|shape| shape.rect.x)
+            .collect();
+        assert_eq!(
+            lines,
+            [segments[2].x.round() as i32, segments[3].x.round() as i32]
+        );
+        // The chosen tab's text of its token, the disabled one's dimmed.
+        let glyphs: Vec<PlacedGlyph> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(glyphs) => Some(glyphs.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let of = |segment: Frame| {
+            glyphs
+                .iter()
+                .find(|glyph| {
+                    (glyph.x as f32) >= segment.x && (glyph.x as f32) < segment.x + segment.width
+                })
+                .unwrap()
+                .color
+        };
+        assert_eq!(of(segments[0]), token("tabs.chosen.fg"));
+        assert_eq!(of(segments[1]), token("text"));
+        assert_eq!(of(segments[3]), token("text.disabled"));
+        // Its focus's ring round its control, of a button's corners.
+        let ring = shapes.last().unwrap();
+        assert_eq!(ring.border_color, token("focus.ring"));
+        assert!(ring.rect.x < control.x as i32 && ring.rect.width > control.width as u32);
+        assert!(ring.rect.height < frame.height as u32);
     }
 
     #[test]

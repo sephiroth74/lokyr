@@ -402,6 +402,12 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
             return Err(Invalid::Number("row-height"));
         }
     }
+    if let Kind::Tabs(tabs) = &node.kind
+        && !tabs.tabs.is_empty()
+        && tabs.chosen >= tabs.tabs.len()
+    {
+        return Err(Invalid::Number("chosen"));
+    }
     if let Kind::Progress(progress) = &node.kind {
         let positive = |value: f32| value.is_finite() && value > 0.0;
         let checks = [

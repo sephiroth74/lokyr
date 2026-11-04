@@ -92,6 +92,8 @@ pub struct Gallery {
     tabs: usize,
     chosen: usize,
     in_titlebar: bool,
+    /// The tab chosen of the view of tabs.
+    page: usize,
 }
 
 /// The gallery's menu, at the pointer.
@@ -153,6 +155,7 @@ impl Gallery {
             tabs: 3,
             chosen: 0,
             in_titlebar: true,
+            page: 0,
         }
     }
 
@@ -352,6 +355,7 @@ impl Gallery {
             UiEventKind::Click if BUTTONS.contains(&key) => {
                 self.pressed = format!("click on `{key}`");
             }
+            UiEventKind::Select { item } if key == "views" => self.page = item,
             UiEventKind::ListRange { first, count } => self.window = (first, first + count),
             UiEventKind::Select { item } => self.listed = format!("selected item {item}"),
             UiEventKind::Activate { item } => self.listed = format!("activated item {item}"),
@@ -696,6 +700,7 @@ impl Gallery {
                 section("Drags and scrolls", self.drags()),
                 section("Buttons, toggles and separators", self.buttons()),
                 section("Progress", self.progress()),
+                section("A view of tabs", self.views()),
             ],
         );
         let right = column(
@@ -1103,6 +1108,54 @@ impl Gallery {
                 nodes,
                 secondary(&focus),
                 secondary(&format!("events: {}", self.focus_events)),
+            ],
+        )
+    }
+
+    /// A settings panel's view of tabs, the last disabled, of a page each,
+    /// which a click or the arrows, while it has the focus, choose.
+    fn views(&self) -> Node {
+        let tab = |label: &str, icon: &str, disabled: bool| view::Tab {
+            label: label.to_owned(),
+            icon: icon.to_owned(),
+            disabled,
+        };
+        let tabs = vec![
+            tab("General", "settings", false),
+            tab("Appearance", "sparkle", false),
+            tab("Profiles", "terminal", false),
+            tab("Advanced", "", true),
+        ];
+        let page = match self.page {
+            0 => column(
+                6.0,
+                vec![
+                    Node::text("New windows open at the folder of the last one"),
+                    secondary("The general page"),
+                ],
+            ),
+            1 => column(
+                6.0,
+                vec![
+                    Node::text("The theme follows the system's appearance"),
+                    secondary("The appearance's page"),
+                ],
+            ),
+            _ => column(
+                6.0,
+                vec![
+                    Node::text("Default: zsh, of the login's folder"),
+                    secondary("The profiles' page"),
+                ],
+            ),
+        };
+        column(
+            8.0,
+            vec![
+                Node::tabs(tabs, self.page, page.key("views.page")).key("views"),
+                secondary(
+                    "A click, or the arrows with the focus, choose a tab; Advanced is disabled",
+                ),
             ],
         )
     }
@@ -1625,8 +1678,9 @@ mod tests {
             "narrow",
             "rows",
         ];
-        // Without the system's keyboard navigation, the buttons and the
-        // toggles are left out, the disabled ones always.
+        // Without the system's keyboard navigation, the buttons, the
+        // toggles and the view of tabs are left out, the disabled ones
+        // always.
         assert_eq!(order(false), rest);
         let controls = [
             "replace",
@@ -1639,6 +1693,7 @@ mod tests {
             "less",
             "more",
             "spin",
+            "views",
         ];
         let openers = [
             "open-menu",

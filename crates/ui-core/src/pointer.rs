@@ -19,7 +19,7 @@ use lokyr_render_core::Rect;
 use crate::layout::{Frame, Layout};
 use crate::paint::{bottom, inside_border, intersection, is_empty, rect, right};
 use crate::tree::{NodeId, Tree};
-use crate::widget;
+use crate::{tabs, widget};
 
 /// A button of the pointer, as the view tree's events tell them apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -370,11 +370,16 @@ impl Pointer {
         else {
             return events;
         };
-        // A button clicks, and a toggle switches, at each click of a row.
+        // A button clicks, and a toggle switches, at each click of a row;
+        // a view of tabs chooses the tab under the release.
         if button == Button::Primary
             && matches!(tree.kind(node), Some(Kind::Button(_) | Kind::Toggle(_)))
         {
             events.extend(widget::pressed(tree, node));
+            return events;
+        }
+        if button == Button::Primary && matches!(tree.kind(node), Some(Kind::Tabs(_))) {
+            events.extend(tabs::clicked(tree, layout, node, at));
             return events;
         }
         let kinds = match button {

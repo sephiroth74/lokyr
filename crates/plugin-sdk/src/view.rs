@@ -54,7 +54,8 @@ pub struct Node {
     /// a key alone, as the host follows the pointer by it.
     #[serde(default)]
     pub tooltip: Option<String>,
-    /// Its children, a container's alone.
+    /// Its children, a container's, a scroll area's, and a view of tabs',
+    /// its page, alone.
     #[serde(default)]
     pub children: Vec<Node>,
 }
@@ -103,6 +104,45 @@ pub enum Kind {
     /// An indeterminate one moves without the app's frames, as the window
     /// server moves it.
     Progress(Progress),
+    /// A view of several pages, as a settings panel's, of a tab each: a
+    /// control of its tabs' labels over the box of its page, its child, the
+    /// tab chosen's, as macOS's tab views draw them; a click on a tab, or
+    /// an arrow while it has the focus, chooses one, which its plugin
+    /// learns of by `select`, and gives in its next render with its page.
+    Tabs(Tabs),
+}
+
+/// A view of tabs' own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Tabs {
+    /// Its tabs, in their order.
+    pub tabs: Vec<Tab>,
+    /// The tab chosen, by its index, whose page is its child.
+    pub chosen: usize,
+}
+
+/// A tab of a view of tabs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Tab {
+    /// Its label.
+    pub label: String,
+    /// Its icon of the host's, by its name, if it has one, before its
+    /// label.
+    pub icon: String,
+    /// Whether it is dimmed, and no click or key chooses it.
+    pub disabled: bool,
+}
+
+impl Tab {
+    /// A tab of `label`.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            ..Self::default()
+        }
+    }
 }
 
 /// A progress's own properties.
@@ -248,30 +288,35 @@ impl Kind {
             | Self::Spacer
             | Self::Separator
             | Self::Progress(_) => false,
-            Self::Field(_) | Self::Button(_) | Self::Toggle(_) | Self::List(_) | Self::Scroll => {
-                true
-            }
+            Self::Field(_)
+            | Self::Button(_)
+            | Self::Toggle(_)
+            | Self::List(_)
+            | Self::Scroll
+            | Self::Tabs(_) => true,
         }
     }
 
     /// Whether a node of the kind takes the keyboard's focus of its own, as
-    /// a field, a list, a button and a toggle do, unless they are disabled,
-    /// whatever its node says.
+    /// a field, a list, a button, a toggle and a view of tabs do, unless
+    /// they are disabled, a view of tabs of every tab, whatever its node
+    /// says.
     pub fn takes_focus(&self) -> bool {
         match self {
             Self::Field(_) | Self::List(_) => true,
             Self::Button(button) => !button.disabled,
             Self::Toggle(toggle) => !toggle.disabled,
+            Self::Tabs(tabs) => tabs.tabs.iter().any(|tab| !tab.disabled),
             _ => false,
         }
     }
 
-    /// Whether a node of the kind is a control, as macOS has them, a button
-    /// or a toggle: a click gives it no focus, which stays where it was,
-    /// and Tab reaches it only as the system's keyboard navigation reaches
-    /// every control.
+    /// Whether a node of the kind is a control, as macOS has them, a button,
+    /// a toggle or a view of tabs: a click gives it no focus, which stays
+    /// where it was, and Tab reaches it only as the system's keyboard
+    /// navigation reaches every control.
     pub fn is_control(&self) -> bool {
-        matches!(self, Self::Button(_) | Self::Toggle(_))
+        matches!(self, Self::Button(_) | Self::Toggle(_) | Self::Tabs(_))
     }
 
     /// Whether a node of the kind is a widget that is disabled, which takes
@@ -286,7 +331,7 @@ impl Kind {
 
     /// Whether a node of the kind has children.
     pub fn has_children(&self) -> bool {
-        matches!(self, Self::Container | Self::Scroll)
+        matches!(self, Self::Container | Self::Scroll | Self::Tabs(_))
     }
 }
 
@@ -497,7 +542,9 @@ pub enum UiEventKind {
         /// Whether it is to be on.
         on: bool,
     },
-    /// A list's selection moved to an item, by a click or the keys.
+    /// A list's selection moved to an item, by a click or the keys; or a
+    /// view of tabs' tab chosen, by a click or the arrows, which its next
+    /// render gives.
     Select {
         /// The item's index.
         item: usize,
@@ -698,6 +745,15 @@ impl Node {
             on,
             ..Toggle::default()
         }))
+    }
+
+    /// A view of `tabs`, of the tab `chosen`, whose page is `page`; its key,
+    /// which it needs, follows.
+    pub fn tabs(tabs: Vec<Tab>, chosen: usize, page: Node) -> Self {
+        Self {
+            children: vec![page],
+            ..Self::new(Kind::Tabs(Tabs { tabs, chosen }))
+        }
     }
 
     /// A line across its container.
@@ -917,6 +973,37 @@ mod tests {
                 0.3
             )
         );
+        // A view of tabs, of its page.
+        let tabs: Node = serde_json::from_str(concat!(
+            r#"{"key":"settings","kind":{"tabs":{"tabs":[{"label":"General"},"#,
+            r#"{"label":"Keys","icon":"terminal","disabled":true}],"chosen":0}},"#,
+            r#""children":[{"key":null,"kind":{"text":"page"}}]}"#
+        ))
+        .unwrap();
+        let expected = Node::tabs(
+            vec![
+                Tab::new("General"),
+                Tab {
+                    icon: "terminal".to_owned(),
+                    disabled: true,
+                    ..Tab::new("Keys")
+                },
+            ],
+            0,
+            Node::text("page"),
+        )
+        .key("settings");
+        assert_eq!(tabs, expected);
+        assert!(tabs.kind.holds_state() && tabs.kind.is_control() && tabs.kind.has_children());
+        assert!(tabs.kind.takes_focus());
+        let all_disabled = Kind::Tabs(Tabs {
+            tabs: vec![Tab {
+                disabled: true,
+                ..Tab::new("Off")
+            }],
+            chosen: 0,
+        });
+        assert!(!all_disabled.takes_focus());
         let events = [
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
