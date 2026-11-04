@@ -51,3 +51,34 @@ The p99's difference from 0.3.0's, round by round: `a` −3.7, +4.8, −1.7, −
 - **The regime was F3-29's**: the medians of the three are 19.7 to 20.0 ms, as F3-29's 18.9 to 20.0.
 - **0.4.0's tail is 0.3.0's within the rounds' spread**, its orders balanced: its p99 higher in two rounds of six, lower in four, its mean 1.1 ms higher, of twelve samples more in the third refresh of 1194. F3-29's difference, 0.4.0's p99 higher in seven rounds of eight, came of its orders, 0.4.0 second in five of them, as the second of a pair was the slower there.
 - **The head's tail is longer**: its p99 higher than 0.3.0's in every round, though by 0.2 ms or less in two, its mean 4.6 ms higher, of nine samples more in the third refresh or later and four more in the fourth; its medians 0.3.0's. Within the budget still, it is the work since 0.4.0, on a key's way to its frame, that lengthens it, which bundles that differ by one part of it tell next.
+
+# The third session, of the parts of the work since 0.4.0
+
+Measured on 2026-11-04, between 21:51 and 21:59, of the scripts and the analysis in [latency-F3-135/third](latency-F3-135/third/), `build.sh`, `run.sh` and `analyze.py`, with their reports: which part of the work since 0.4.0 lengthens the head's tail that the second session found.
+
+## Method
+
+- **A probe first**, of the head, `second/probe.patch`, 200 keys: each turn of the main thread, of its kind and its time, the slots' layout in each frame, and the timers by their names. A key's turn took 17 µs at the median, a frame's 384 µs, as two frames a key; the slots' layout 5 µs a frame; the plugins' turn of their events never started; the accessibility trees 47, of 0.6 ms each, as 0.4.0's; the titles' look 48, of 29 µs. Nothing on the main thread costs more than before.
+- **Six bundles**: `o`, 0.3.0; `a`, 0.4.0; `m2`, 8661a20, the slots in the windows; `m3`, 7ae3d41, the live resize's pace and the view's contents placement at its top left corner; `h`, the head, the second session's; `t`, the head but for that placement, as a frame's drawn at another size than the view's would have stretched; each a release of its commit, built in a worktree.
+- **The faster regime first**, at the first try, 20.4 ms; then six rounds of a Williams design, each bundle once in each place of a round and after each other once.
+
+## Results
+
+| Bundle | p50, mean of 6 | p99, mean of 6 | Its range | Samples in the third refresh or later | In the fourth or later |
+|---|---|---|---|---|---|
+| `o`, 0.3.0 | 20.3 ms | 45.0 ms | 39.4 to 52.2 ms | 45 of 1194 | 4 |
+| `a`, 0.4.0 | 20.2 ms | 48.4 ms | 41.4 to 57.1 ms | 54 of 1194 | 10 |
+| `m2`, the slots | 20.1 ms | 45.8 ms | 41.8 to 53.1 ms | 45 of 1194 | 6 |
+| `m3`, the resize's pace and the placement | 20.3 ms | 46.1 ms | 40.2 to 53.7 ms | 61 of 1194 | 6 |
+| `h`, the head | 20.5 ms | 45.1 ms | 37.1 to 58.4 ms | 60 of 1194 | 8 |
+| `t`, the head but for the placement | 20.1 ms | 44.1 ms | 35.4 to 55.8 ms | 53 of 1193 | 6 |
+
+By the place in the round, of every bundle, the p99's mean is 41.9, 44.2, 47.3, 45.8, 44.6 and 50.7 ms, first to sixth; the p50's 19.9 to 20.5 ms. Round by round, the p99's differences from 0.3.0's run from −12.9 to +14.3 ms.
+
+- **The head's tail is 0.3.0's** here, 45.1 against 45.0 ms, and so is every part's, within the rounds' spread: the slots, the resize's pace, the placement, which `t` without it leaves as it is.
+- **The place in a round moves the p99 more than any bundle**, by 9 ms from the first to the last, as F3-29 found the second of a pair the slower: the measure's own noise, whatever its cause on the system, larger than the differences sought. A design whose bundle runs later more often finds it slower: F3-29's 0.4.0, second in five rounds of eight; the second session's head, of a design of three in which it differed from 0.3.0 by 0.2 ms or less in two rounds of six.
+- **Over the second and third sessions**, twelve rounds, the share of samples in the third refresh or later is 3.4 % of 0.3.0's, 4.3 % of 0.4.0's and 4.4 % of the head's, a difference under two of its standard deviations, and no part of the work since 0.4.0 carries it.
+
+## The outcome
+
+No part of 0.4.0, nor of the work since, lengthens the latency's tail by a measure larger than the method's noise; the differences that F3-29 and the second session found came of the bundles' places in their rounds. The A/B measures from now, as F3-40's budgets, take balanced designs, each bundle in each place as often, and tell the places' means beside the bundles'.
