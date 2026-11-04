@@ -147,7 +147,7 @@ impl<P> Default for Panels<P> {
     }
 }
 
-/// What a press outside the panels did: the panels that it closed, and
+/// What a press outside some panels did: the panels that it closed, and
 /// whether it goes no further, as a menu's closing takes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Outside<P> {
@@ -241,25 +241,31 @@ impl<P: Copy + Eq> Panels<P> {
             .map(|(id, ..)| *id)
     }
 
-    /// The primary button went down at `at`, under no panel: the panels
-    /// that a click outside them closes close, and a menu's closing takes
-    /// the press.
-    pub fn pressed_outside(&mut self, at: (f32, f32)) -> Outside<P> {
+    /// The primary button went down at `at`, in pixels of the window: the
+    /// panels that a click outside them closes close, of those above the
+    /// panel under it, or all of them under none, as a press on the find
+    /// bar closes a menu over it, and a press on a panel the panels that it
+    /// opened; a menu's closing takes the press.
+    pub fn pressed(&mut self, at: (f32, f32)) -> Outside<P> {
+        let above = self
+            .under(at)
+            .and_then(|under| self.stack.iter().position(|(id, ..)| *id == under))
+            .map_or(0, |under| under + 1);
         let mut outside = Outside {
             closed: Vec::new(),
             taken: false,
         };
-        if self.under(at).is_some() {
-            return outside;
-        }
-        for (id, options, _) in self.stack.iter().rev() {
+        for (id, options, _) in self.stack[above..].iter().rev() {
             if options.dismiss.outside {
                 outside.closed.push(*id);
                 outside.taken |= options.role == Role::Menu;
             }
         }
-        self.stack
-            .retain(|(_, options, _)| !options.dismiss.outside);
+        let mut place = 0;
+        self.stack.retain(|(_, options, _)| {
+            place += 1;
+            place <= above || !options.dismiss.outside
+        });
         outside
     }
 
@@ -504,7 +510,7 @@ mod tests {
         panels.place(2, SIZE, WINDOW);
         // Inside one, nothing closes.
         assert_eq!(
-            panels.pressed_outside((10.0, 10.0)),
+            panels.pressed((10.0, 10.0)),
             Outside {
                 closed: vec![],
                 taken: false
@@ -512,7 +518,7 @@ mod tests {
         );
         // Outside: the menu, which takes the press; the dialog stays.
         assert_eq!(
-            panels.pressed_outside((500.0, 500.0)),
+            panels.pressed((500.0, 500.0)),
             Outside {
                 closed: vec![2],
                 taken: true
@@ -522,12 +528,40 @@ mod tests {
         // A dialog that a click outside closes lets the press go on.
         panels.open(3, options(Role::Dialog, true, false));
         assert_eq!(
-            panels.pressed_outside((500.0, 500.0)),
+            panels.pressed((500.0, 500.0)),
             Outside {
                 closed: vec![3],
                 taken: false
             }
         );
+        // A press on a panel closes those above it that a click outside
+        // closes, not those below it: a menu over the find bar, of a press
+        // on the bar; the menu, of no other panel's press, under it.
+        let away = |role, outside, escape| Options {
+            anchor: Anchor::At((300.0, 300.0)),
+            ..options(role, outside, escape)
+        };
+        panels.open(8, away(Role::Menu, true, true));
+        panels.place(8, SIZE, WINDOW);
+        assert_eq!(
+            panels.pressed((10.0, 10.0)),
+            Outside {
+                closed: vec![8],
+                taken: true
+            }
+        );
+        panels.open(9, away(Role::Dialog, true, false));
+        panels.place(9, SIZE, WINDOW);
+        panels.open(10, options(Role::Dialog, false, false));
+        panels.place(10, SIZE, WINDOW);
+        assert_eq!(
+            panels.pressed((10.0, 10.0)),
+            Outside {
+                closed: vec![],
+                taken: false
+            }
+        );
+        assert!(panels.is_open(9));
         // Escape over no panel closes the topmost menu alone, of those that
         // ask so.
         panels.open(5, options(Role::Menu, false, true));

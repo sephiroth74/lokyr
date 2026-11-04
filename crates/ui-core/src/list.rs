@@ -33,6 +33,11 @@ pub const AHEAD: usize = 50;
 /// template's.
 const ESTIMATE: f32 = 20.0;
 
+/// A row's least height, in points, of its list's or of its measure: so
+/// many rows fill a list at most, as rows of no height would never fill
+/// it, and each layout and scroll would walk every row.
+pub const SHORTEST_ROW: f32 = 1.0;
+
 /// The lists of a tree, by their keys.
 #[derive(Debug, Default)]
 pub struct Lists {
@@ -58,6 +63,9 @@ pub struct ListState {
     template: Option<Node>,
     /// The items asked of the plugin last, which its render gives.
     asked: Option<Range<usize>>,
+    /// The items that the plugin's last render gave, and its count, whose
+    /// change asks again for those about the rows that show.
+    given: Option<(Range<usize>, usize)>,
     /// The list's height and width, in points, of its last layout.
     view: (f32, f32),
 }
@@ -105,12 +113,14 @@ impl ListState {
     /// The height of the row `index` of `list`, in points: its own, its
     /// measure, or an estimate.
     fn height(&self, list: &view::List, index: usize) -> f32 {
-        list.row_height.unwrap_or_else(|| {
-            self.heights
-                .get(&index)
-                .copied()
-                .unwrap_or_else(|| self.estimate.unwrap_or(ESTIMATE))
-        })
+        list.row_height
+            .unwrap_or_else(|| {
+                self.heights
+                    .get(&index)
+                    .copied()
+                    .unwrap_or_else(|| self.estimate.unwrap_or(ESTIMATE))
+            })
+            .max(SHORTEST_ROW)
     }
 
     /// The height of the row `index` of `list`, in points: its own, its
@@ -292,9 +302,17 @@ impl Lists {
                 state.selected = list.count.checked_sub(1);
             }
             state.keep_within(list);
+            // A render of other items, or of another count, as its plugin's
+            // data changed, asks again for those about the rows that show.
+            let given = (list.first..list.first + list.items.len(), list.count);
+            if state.given.as_ref() != Some(&given) {
+                state.asked = None;
+                state.given = Some(given);
+            }
             // The rows that show, built of their items' texts, measured;
             // the anchor's row keeps its place as the rows above and below
-            // turn from estimates into heights.
+            // turn from estimates into heights; a row whose item the render
+            // did not give, blank.
             let mut shown = HashSet::new();
             let (mut index, mut top) = (state.anchor, -state.offset);
             while index < list.count && top < state.view.0 {
@@ -315,6 +333,8 @@ impl Lists {
                         }
                         state.rows.insert(index, row);
                     }
+                } else {
+                    state.rows.remove(&index);
                 }
                 top += state.height(list, index);
                 index += 1;
@@ -448,11 +468,13 @@ impl Lists {
         };
         let state = self.states.entry(key.clone()).or_default();
         let y = (at.1 - frame.y) / layout.scale();
+        // Below the last row, nothing.
         let Some((index, _)) = state
             .visible(list)
             .into_iter()
             .take_while(|&(_, top)| top <= y)
             .last()
+            .filter(|&(index, top)| y < top + state.height(list, index))
         else {
             return Vec::new();
         };
@@ -833,16 +855,93 @@ mod tests {
         // At the third row's top, 30 points down, the third.
         let top = (frame.x + 20.0, frame.y + 60.0);
         assert_eq!(click(top, 1), [UiEventKind::Select { item: 2 }]);
-        // Past the last row, nothing.
+        // Of two rows, the second's bottom 40 points down; past it, nothing
+        // selected or activated.
         let (tree, layout, node) = laid(&list(2, 0..2, Some(20.0)), 1.0);
         let frame = layout.frame(&tree, node).unwrap();
         let mut lists = Lists::new();
         lists.lay_out(&tree, &layout, &mut Fixed);
-        assert_eq!(
-            told(lists.press((&tree, &layout), node, ((frame.x, frame.y + 30.0), 1))),
-            [UiEventKind::Select { item: 1 }]
-        );
+        let mut click =
+            |y, clicks| told(lists.press((&tree, &layout), node, ((frame.x, frame.y + y), clicks)));
+        assert_eq!(click(40.0, 1), []);
+        assert_eq!(click(39.0, 1), [UiEventKind::Select { item: 1 }]);
+        assert_eq!(click(40.0, 2), []);
+        assert_eq!(click(90.0, 2), []);
         assert_eq!(state(&lists).visible(of(&tree, node)).len(), 2);
+    }
+
+    #[test]
+    fn rows_of_no_height_fill_the_list_as_rows_of_a_point() {
+        // A template of nothing, of a trillion rows: those of a point that
+        // fill 100 points, and the items about them, whatever the count.
+        let template = Node::list(Node::container(vec![]), 1_000_000_000_000, (0, Vec::new()))
+            .key("rows")
+            .layout(view::Layout {
+                height: Length::Points(100.0),
+                ..view::Layout::default()
+            });
+        let root = Node::container(vec![template]).layout(view::Layout {
+            direction: Direction::Column,
+            ..view::Layout::default()
+        });
+        let (tree, layout, node) = laid(&root, 1.0);
+        let mut lists = Lists::new();
+        assert_eq!(
+            told(lists.lay_out(&tree, &layout, &mut Fixed)),
+            [UiEventKind::ListRange {
+                first: 0,
+                count: 150
+            }]
+        );
+        let rows = of(&tree, node);
+        assert_eq!(state(&lists).visible(rows).len(), 100);
+        // A scroll of a thousand points, a row a point.
+        lists.scroll(&tree, node, 1000.0);
+        assert_eq!(state(&lists).anchor(), (1000, 0.0));
+        // A row's height of under a point is refused.
+        let mut small = root.clone();
+        if let Kind::List(list) = &mut small.children[0].kind {
+            list.row_height = Some(0.5);
+        }
+        assert!(Tree::new().update(&small).is_err());
+        if let Kind::List(list) = &mut small.children[0].kind {
+            list.row_height = Some(1.0);
+        }
+        assert!(Tree::new().update(&small).is_ok());
+    }
+
+    #[test]
+    fn items_that_change_under_a_list_scrolled_blank_their_rows_and_ask_again() {
+        // Scrolled to the row 500 of 1 000, the items about it given.
+        let (mut tree, layout, node) = laid(&list(1000, 0..60, Some(20.0)), 1.0);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        lists.scroll(&tree, node, 10_000.0);
+        assert_eq!(
+            told(lists.lay_out(&tree, &layout, &mut Fixed)),
+            [UiEventKind::ListRange {
+                first: 450,
+                count: 105
+            }]
+        );
+        tree.update(&list(1000, 450..555, Some(20.0))).unwrap();
+        lists.lay_out(&tree, &layout, &mut Fixed);
+        assert!(state(&lists).row(500).is_some());
+        // Its plugin's data changed, a render of the items from the start:
+        // the rows blank, and the items about them asked again, once.
+        tree.update(&list(1000, 0..60, Some(20.0))).unwrap();
+        assert_eq!(
+            told(lists.lay_out(&tree, &layout, &mut Fixed)),
+            [UiEventKind::ListRange {
+                first: 450,
+                count: 105
+            }]
+        );
+        assert!(state(&lists).row(500).is_none());
+        assert_eq!(told(lists.lay_out(&tree, &layout, &mut Fixed)), []);
+        // A plugin that renders the same items again is asked no more.
+        tree.update(&list(1000, 0..60, Some(20.0))).unwrap();
+        assert_eq!(told(lists.lay_out(&tree, &layout, &mut Fixed)), []);
     }
 
     #[test]

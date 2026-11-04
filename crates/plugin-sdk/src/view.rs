@@ -185,8 +185,9 @@ pub struct List {
     /// The items from `first`, as many as the host asked for, or more.
     #[serde(default)]
     pub items: Vec<ListItem>,
-    /// The height of every row, in points; without it, each row takes its
-    /// own, which the host measures as it shows.
+    /// The height of every row, in points, a point at least; without it,
+    /// each row takes its own, which the host measures as it shows, a point
+    /// at least.
     #[serde(default)]
     pub row_height: Option<f32>,
 }

@@ -341,11 +341,15 @@ impl View {
         }
     }
 
-    /// Closes `panel`, whose focus goes back to the pane.
+    /// Closes `panel`, whose focus goes back to where it took it from.
     fn close(&mut self, panel: u8) {
         if self.panels.close(panel) || self.surfaces.contains_key(&panel) {
             self.surfaces.remove(&panel);
-            self.focus.closed(panel);
+            let (main, surfaces) = (&self.main, &self.surfaces);
+            self.focus.closed(panel, |of| match of {
+                MAIN => Some(&main.tree),
+                _ => surfaces.get(&of).map(|(surface, _)| &surface.tree),
+            });
             if self.captured == Some(panel) {
                 self.captured = None;
             }
@@ -649,8 +653,8 @@ impl View {
                 kept = true;
             }
         }
-        if self.captured.is_none() && self.panels.under(at).is_none() {
-            let outside = self.panels.pressed_outside(at);
+        if self.captured.is_none() {
+            let outside = self.panels.pressed(at);
             for panel in &outside.closed {
                 self.close(*panel);
                 self.gallery.closed(*panel);
@@ -1476,6 +1480,57 @@ mod tests {
             (frame.x + place.x + 4.0, frame.y + place.y + 4.0),
         );
         assert!(!view.panels.is_open(MENU));
+    }
+
+    #[test]
+    fn a_press_on_a_panel_closes_those_over_it_and_a_menu_gives_the_focus_back() {
+        let mut view = view();
+        view.focus.set_every_control(true);
+        let open = |view: &mut View, key: &str| {
+            let at = middle(view, key);
+            click(view, at);
+        };
+        // The find bar, then the panel below its button over it: a press
+        // in the bar's field closes the panel, which a click outside
+        // closes, and the field takes the press.
+        open(&mut view, "open-find");
+        open(&mut view, "open-below");
+        assert!(view.panels.is_open(BELOW));
+        let bar = view.panels.frame(FIND).unwrap();
+        let surface = view.surface(FIND).unwrap();
+        let field = surface.tree.by_key(&"find-bar.field".into()).unwrap();
+        let place = surface.layout.frame(&surface.tree, field).unwrap();
+        click(&mut view, (bar.x + place.x + 8.0, bar.y + place.y + 8.0));
+        assert!(!view.panels.is_open(BELOW) && view.panels.is_open(FIND));
+        assert_eq!(
+            focused_key(&view),
+            Some((FIND, "find-bar.field".to_owned()))
+        );
+        // A menu opened with the focus in the field, which its button
+        // leaves there, gives it back to the field as Escape closes it.
+        open(&mut view, "open-menu");
+        assert_eq!(focused_key(&view), Some((MENU, "menu.copy".to_owned())));
+        view.key(&press(Key::Escape, ""), &mut Board, true);
+        assert!(!view.panels.is_open(MENU));
+        assert_eq!(
+            focused_key(&view),
+            Some((FIND, "find-bar.field".to_owned()))
+        );
+        // And as an item chosen closes it.
+        open(&mut view, "open-menu");
+        let frame = view.panels.frame(MENU).unwrap();
+        let menu = view.surface(MENU).unwrap();
+        let split = menu.tree.by_key(&"menu.split".into()).unwrap();
+        let place = menu.layout.frame(&menu.tree, split).unwrap();
+        click(
+            &mut view,
+            (frame.x + place.x + 4.0, frame.y + place.y + 4.0),
+        );
+        assert!(!view.panels.is_open(MENU));
+        assert_eq!(
+            focused_key(&view),
+            Some((FIND, "find-bar.field".to_owned()))
+        );
     }
 
     #[test]

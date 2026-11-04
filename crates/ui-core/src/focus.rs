@@ -2,9 +2,12 @@
 //! or a node of a panel's view tree that takes it. Of the keys that the
 //! keymap leaves, Tab and Shift-Tab move it among the panel's nodes that
 //! take it, in the tree's order, from the last round to the first, and
-//! Escape gives it back to the pane; every other key goes to the element
+//! Escape gives it back to where its panel took it from, a node of a panel
+//! below or the pane; every other key goes to the element
 //! that has it alone, and a key's release where its press went; after a
-//! click on a node that takes no focus, Tab goes on from there. A click on
+//! click on a node that takes no focus, Tab goes on from there. A panel
+//! that closes with the focus gives it back there too, as a menu of the
+//! find bar gives it back to the bar. A click on
 //! a control, a button or a toggle, leaves the focus where it was, as
 //! macOS's controls do, and Tab reaches the controls only as the system's
 //! keyboard navigation reaches every control. Its moves
@@ -74,6 +77,9 @@ pub struct Focus<P> {
     /// Whether Tab reaches every control, as the system's keyboard
     /// navigation has it.
     every_control: bool,
+    /// Where each panel took the focus from, a node of another panel by
+    /// its key, or the pane, where it goes back as the panel closes.
+    came_from: Vec<(P, Option<(P, NodeKey)>)>,
 }
 
 impl<P> Default for Focus<P> {
@@ -86,6 +92,7 @@ impl<P> Default for Focus<P> {
             key: None,
             told: None,
             every_control: false,
+            came_from: Vec::new(),
         }
     }
 }
@@ -105,8 +112,27 @@ impl<P: Copy + Eq> Focus<P> {
     }
 
     /// Gives the focus to `node` of `panel`, whose tree is `tree`, if it
-    /// takes it: whether it does.
+    /// takes it: whether it does. From another panel, or the pane, the
+    /// panel keeps where it took it from.
     pub fn focus(&mut self, panel: P, tree: &Tree, node: NodeId) -> bool {
+        let from = self.focused.zip(self.key.clone());
+        if !self.take(panel, tree, node) {
+            return false;
+        }
+        if from
+            .as_ref()
+            .is_none_or(|((focused, _), _)| *focused != panel)
+        {
+            self.came_from.retain(|(of, _)| *of != panel);
+            self.came_from
+                .push((panel, from.map(|((focused, _), key)| (focused, key))));
+        }
+        true
+    }
+
+    /// Gives the focus to `node` of `panel`, whose tree is `tree`, if it
+    /// takes it: whether it does.
+    fn take(&mut self, panel: P, tree: &Tree, node: NodeId) -> bool {
         let Some(place) = order(tree).iter().position(|&id| id == node) else {
             return false;
         };
@@ -166,13 +192,46 @@ impl<P: Copy + Eq> Focus<P> {
         self.anchor = None;
     }
 
-    /// `panel` closed: the focus goes back to the pane if it had it.
-    pub fn closed(&mut self, panel: P) {
+    /// `panel` closed, the other panels' trees of `tree`: if it had the
+    /// focus, the focus goes back to where it took it from, a node of
+    /// another panel, by its key, or the pane, where that node is gone; the
+    /// panels that took it from `panel` would give it back there too. The
+    /// repeats and the releases of the keys whose presses went to it go
+    /// nowhere, as Return held as it chose a menu's item.
+    pub fn closed<'t>(&mut self, panel: P, tree: impl Fn(P) -> Option<&'t Tree>) {
+        let from = self
+            .came_from
+            .iter()
+            .position(|(of, _)| *of == panel)
+            .and_then(|at| self.came_from.remove(at).1);
+        for (_, came) in &mut self.came_from {
+            if came.as_ref().is_some_and(|(of, _)| *of == panel) {
+                came.clone_from(&from);
+            }
+        }
+        for (_, routed) in &mut self.held {
+            if matches!(routed, Routed::Node { panel: went, .. } if *went == panel) {
+                *routed = Routed::Focus;
+            }
+        }
         if self.focused.is_some_and(|(focused, _)| focused == panel) {
-            self.pane();
+            self.back(from, &tree);
         }
         if self.anchor.is_some_and(|(anchored, _)| anchored == panel) {
             self.anchor = None;
+        }
+    }
+
+    /// Gives the focus back to `from`, a node of a panel by its key, which
+    /// `tree` gives the panels' trees of, or to the pane where that node is
+    /// gone or takes it no more, or of none.
+    fn back<'t>(&mut self, from: Option<(P, NodeKey)>, tree: &impl Fn(P) -> Option<&'t Tree>) {
+        let back = from.and_then(|(of, key)| {
+            let tree = tree(of)?;
+            Some((of, tree, tree.by_key(&key)?))
+        });
+        if !back.is_some_and(|(of, tree, node)| self.take(of, tree, node)) {
+            self.pane();
         }
     }
 
@@ -254,12 +313,13 @@ impl<P: Copy + Eq> Focus<P> {
 
     /// Where `key`, which the keymap left, goes: the pane, or the node with
     /// the focus, or the focus, which Tab, Shift-Tab and Escape over a node
-    /// move; a repeat and a release where its press went, as the release of
-    /// a key that moved the focus goes nowhere, even to a node gone since,
-    /// and Tab's repeat moves the focus again. `tree` gives a panel's tree.
+    /// move, Escape back to where its panel took it from; a repeat and a
+    /// release where its press went, as the release of a key that moved the
+    /// focus goes nowhere, even to a node gone since, and Tab's repeat moves
+    /// the focus again. `tree` gives the panels' trees.
     pub fn key<'t>(
         &mut self,
-        tree: impl FnOnce(P) -> Option<&'t Tree>,
+        tree: impl Fn(P) -> Option<&'t Tree>,
         key: &KeyEvent<'_>,
     ) -> Routed<P> {
         if key.action == KeyAction::Release {
@@ -293,13 +353,13 @@ impl<P: Copy + Eq> Focus<P> {
     /// Where the press or the repeat `key` goes, the focus moved by it.
     fn route<'t>(
         &mut self,
-        tree: impl FnOnce(P) -> Option<&'t Tree>,
+        trees: impl Fn(P) -> Option<&'t Tree>,
         key: &KeyEvent<'_>,
     ) -> Routed<P> {
         let Some((panel, node)) = self.focused else {
             return Routed::Pane;
         };
-        let Some(tree) = tree(panel) else {
+        let Some(tree) = trees(panel) else {
             self.pane();
             return Routed::Pane;
         };
@@ -316,7 +376,12 @@ impl<P: Copy + Eq> Focus<P> {
                 Routed::Focus
             }
             Key::Escape if plain && !mods.shift => {
-                self.pane();
+                let from = self
+                    .came_from
+                    .iter()
+                    .find(|(of, _)| *of == panel)
+                    .and_then(|(_, from)| from.clone());
+                self.back(from, &trees);
                 Routed::Focus
             }
             _ => Routed::Node { panel, node },
@@ -739,9 +804,87 @@ mod tests {
         // closing leaving it.
         let tree = tree_of(&find_bar());
         focus.first(SEARCH, &tree);
-        focus.closed(OTHER);
+        focus.closed(OTHER, |_| None);
         assert_eq!(focused(&focus, &tree), "field");
-        focus.closed(SEARCH);
+        focus.closed(SEARCH, |_| None);
+        assert_eq!(focus.target(), Target::Pane);
+    }
+
+    #[test]
+    fn a_panel_that_closes_gives_the_focus_back_where_it_took_it_from() {
+        const MENU: u8 = 3;
+        let bar = tree_of(&find_bar());
+        let menu = tree_of(&Node::container(vec![
+            Node::text("Regex").key("regex").focusable(),
+            Node::text("Whole Words").key("words").focusable(),
+        ]));
+        let trees = |of: u8| match of {
+            SEARCH => Some(&bar),
+            MENU => Some(&menu),
+            _ => None,
+        };
+        // A menu opened from the find bar's toggle, its focus moved within
+        // it, closed: the toggle has it again.
+        let mut focus = Focus::new();
+        focus.first(SEARCH, &bar);
+        focus.key(|_| Some(&bar), &press(Key::Tab, Mods::NONE));
+        assert_eq!(focused(&focus, &bar), "case");
+        focus.first(MENU, &menu);
+        focus.key(|_| Some(&menu), &press(Key::Tab, Mods::NONE));
+        assert_eq!(focused(&focus, &menu), "words");
+        // Return, held as it chose an item, which closes the menu: its
+        // repeats and its release go nowhere.
+        assert_eq!(
+            focus.key(|_| Some(&menu), &press(Key::Enter, Mods::NONE)),
+            Routed::Node {
+                panel: MENU,
+                node: menu.by_key(&"words".into()).unwrap()
+            }
+        );
+        focus.closed(MENU, trees);
+        assert_eq!(
+            focus.target(),
+            Target::Node {
+                panel: SEARCH,
+                node: bar.by_key(&"case".into()).unwrap()
+            }
+        );
+        let mut repeat = press(Key::Enter, Mods::NONE);
+        repeat.action = KeyAction::Repeat;
+        assert_eq!(focus.key(trees, &repeat), Routed::Focus);
+        assert_eq!(focus.key(trees, &release(Key::Enter)), Routed::Focus);
+        // The bar's own closing gives it back to the pane, where it took it.
+        focus.closed(SEARCH, trees);
+        assert_eq!(focus.target(), Target::Pane);
+        // A menu of the bar that closes after the bar gives it to where the
+        // bar took it from; one whose node is gone, to the pane.
+        focus.first(SEARCH, &bar);
+        focus.first(MENU, &menu);
+        focus.closed(SEARCH, |_| None);
+        focus.closed(MENU, trees);
+        assert_eq!(focus.target(), Target::Pane);
+        focus.first(SEARCH, &bar);
+        focus.first(MENU, &menu);
+        let gone = tree_of(&Node::container(vec![]));
+        focus.closed(MENU, |of| (of == SEARCH).then_some(&gone));
+        assert_eq!(focus.target(), Target::Pane);
+        // A press on the menu's own node keeps where it took the focus from.
+        focus.first(SEARCH, &bar);
+        focus.first(MENU, &menu);
+        let words = menu.by_key(&"words".into()).unwrap();
+        assert!(focus.pressed(MENU, &menu, &[menu.root().unwrap(), words]));
+        focus.closed(MENU, trees);
+        assert_eq!(focused(&focus, &bar), "field");
+        // Escape in a menu that stays open gives it back where the menu
+        // took it from, the bar's field; Escape there, to the pane.
+        focus.first(SEARCH, &bar);
+        focus.first(MENU, &menu);
+        assert_eq!(
+            focus.key(trees, &press(Key::Escape, Mods::NONE)),
+            Routed::Focus
+        );
+        assert_eq!(focused(&focus, &bar), "field");
+        focus.key(trees, &press(Key::Escape, Mods::NONE));
         assert_eq!(focus.target(), Target::Pane);
     }
 

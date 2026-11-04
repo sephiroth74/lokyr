@@ -388,7 +388,7 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
         }
         if list
             .row_height
-            .is_some_and(|height| !(height.is_finite() && height > 0.0))
+            .is_some_and(|height| !(height.is_finite() && height >= crate::list::SHORTEST_ROW))
         {
             return Err(Invalid::Number("row-height"));
         }

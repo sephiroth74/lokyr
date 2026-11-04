@@ -250,7 +250,7 @@ type Node = {
     first: number?, -- for list nodes, the index of the first of `items`
     items: { ListItem }?, -- for list nodes, flat: a window of them, from `first`, as the host asks for them
     row: Node?, -- for list nodes: the template of a row, of containers, texts, icons, spacers and separators
-    row_height: number?, -- for list nodes, of rows of one height; without it, each row takes its own
+    row_height: number?, -- for list nodes, of rows of one height, a point at least; without it, each row takes its own, a point at least
     style: Style?,
     focusable: boolean?, -- takes the keyboard's focus, by its key
     tooltip: string?, -- shown as the pointer rests over the node, by its key
