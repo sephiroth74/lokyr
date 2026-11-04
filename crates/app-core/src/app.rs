@@ -2199,6 +2199,25 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Whether `window`, in a live resize, drew a frame within this refresh
+    /// of its display. Its frames then show with Core Animation's
+    /// transaction, which lets their drawables go once it is committed: a
+    /// second frame within the refresh, of a step of the resize or of the
+    /// display, whose frames come within the transaction's commit, would
+    /// wait for a drawable that the commit, which waits for it in turn,
+    /// lets go, until the drawables' wait gives up a second later, the
+    /// window held, its content stretched. The frame waits for the next
+    /// refresh instead.
+    fn drew_within(&self, platform: &dyn Platform, window: WindowId) -> bool {
+        let refresh = platform.refresh_interval(window).unwrap_or_default();
+        self.windows.get(&window).is_some_and(|state| {
+            state.live_resize
+                && state
+                    .drawn_at
+                    .is_some_and(|drawn| drawn.elapsed() < refresh)
+        })
+    }
+
     /// What a new window's terminal takes of the config: its `TERM`, its
     /// widths and normal form, and its scrollback's limit, within the
     /// budget that the windows share. The terminal's own `TERM`, without
@@ -2722,18 +2741,10 @@ impl<B: Backend> App<B> {
     ) {
         match event {
             // A step of a live resize draws at once, so that the content
-            // follows the edge, but once a refresh: a second draw within
-            // one would wait a refresh for a drawable, which the display's
-            // next frame draws instead.
+            // follows the edge, but once a refresh, as the display's frames
+            // do: see `drew_within`.
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
-                let refresh = platform.refresh_interval(window).unwrap_or_default();
-                let drew_within = self.windows.get(&window).is_some_and(|state| {
-                    state.live_resize
-                        && state
-                            .drawn_at
-                            .is_some_and(|drawn| drawn.elapsed() < refresh)
-                });
-                if drew_within {
+                if self.drew_within(platform, window) {
                     platform.request_frame(window);
                 } else {
                     self.draw(platform, window, size);
@@ -2757,7 +2768,9 @@ impl<B: Backend> App<B> {
                 }
             }
             WindowEvent::Frame => {
-                if let Some(size) = platform.window_size(window) {
+                if self.drew_within(platform, window) {
+                    platform.request_frame(window);
+                } else if let Some(size) = platform.window_size(window) {
                     self.draw(platform, window, size);
                 }
             }
