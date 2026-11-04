@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{Key as NodeKey, Kind};
+use lokyr_kernel::workspace::Workspace;
 use lokyr_platform_core::{
     ContentRect, Ime, KeyEvent, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape,
     ScrollDelta, Size, WindowId,
@@ -297,6 +298,9 @@ impl<B: Backend> App<B> {
                         platform.request_frame(window);
                     }
                 }
+                // The release of a key that moved the focus, as Tab's after a
+                // key typed before it went up, does nothing.
+                Routed::Focus if event.action == KeyAction::Release => {}
                 Routed::Focus => {
                     // A key that moves the focus takes the pointer back, as
                     // of a drag.
@@ -322,9 +326,10 @@ impl<B: Backend> App<B> {
     }
 
     /// The command `name`, which the Edit menu or its keys run, copy, paste
-    /// or select all: the field with the keyboard's focus in the front
-    /// window takes it as its own, as its key under Command. Whether one
-    /// took it, which the command then does not run.
+    /// or select all: a node with the keyboard's focus in the front window
+    /// takes it, so that no paste goes to a pane whose keyboard a node has,
+    /// a field as its key under Command, any other doing nothing. Whether
+    /// one took it, which the command then does not run.
     pub(super) fn field_command(&mut self, platform: &mut dyn Platform, name: &str) -> bool {
         let Some(&(_, letter)) = FIELD_COMMANDS.iter().find(|(command, _)| *command == name) else {
             return false;
@@ -342,7 +347,7 @@ impl<B: Backend> App<B> {
             return false;
         };
         if !matches!(view.surface.tree.kind(node), Some(Kind::Field(_))) {
-            return false;
+            return true;
         }
         let text = letter.to_string();
         let key = vt::KeyEvent {
@@ -442,14 +447,7 @@ impl<B: Backend> App<B> {
             if ended {
                 platform.end_composition(window);
             }
-            let to_pane = now == Target::Pane;
-            if state.focused
-                && (before == Target::Pane) != to_pane
-                && let Some(pane) = self.workspace.focused(state.window)
-            {
-                pane.focus(to_pane);
-            }
-            state.blink.restart(Instant::now());
+            tell_pane(&self.workspace, state, before);
             platform.request_frame(window);
         }
         events.extend(focus_events(state));
@@ -580,6 +578,24 @@ impl<B: Backend> App<B> {
                 .map(|shown| (window, shown))
         })
     }
+}
+
+/// `state`'s focus moved from `before`: the program of its pane learns
+/// whether the pane has it, if it asked, while the window has the
+/// keyboard, and the cursor starts blinking, on.
+pub(super) fn tell_pane<B: Backend>(
+    workspace: &Workspace,
+    state: &mut Window<B>,
+    before: Target<u32>,
+) {
+    let to_pane = state.focus.target() == Target::Pane;
+    if state.focused
+        && (before == Target::Pane) != to_pane
+        && let Some(pane) = workspace.focused(state.window)
+    {
+        pane.focus(to_pane);
+    }
+    state.blink.restart(Instant::now());
 }
 
 /// The focus's and the blur's events of the moves of `state`'s focus

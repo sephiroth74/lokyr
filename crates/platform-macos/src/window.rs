@@ -453,8 +453,6 @@ impl Window {
             .post(WindowEvent::Resized(size_of(&self.ns_window)));
     }
 
-    /// The parts of the titlebar that are the content's, in place of those
-    /// before.
     /// Gives the parts of the content where the pointer's moves come, and
     /// its leaving them.
     pub(crate) fn set_move_areas(&self, areas: &[ContentRect]) {
@@ -465,6 +463,8 @@ impl Window {
         self.view.track_moves();
     }
 
+    /// The parts of the titlebar that are the content's, in place of those
+    /// before.
     pub(crate) fn set_titlebar_areas(&self, areas: &[ContentRect]) {
         *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
     }
@@ -1653,8 +1653,6 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
     pieces
 }
 
-/// Tells the input method of `window`'s content view that the text's place
-/// on the screen changed, as [`ContentView::invalidate_text_area`] does.
 /// Tells the accessibility of `window`'s content view that the window took
 /// the keyboard's focus, or lost it.
 fn access_focused_of(window: &NSWindow, focused: bool) {
@@ -1666,6 +1664,8 @@ fn access_focused_of(window: &NSWindow, focused: bool) {
     }
 }
 
+/// Tells the input method of `window`'s content view that the text's place
+/// on the screen changed, as [`ContentView::invalidate_text_area`] does.
 fn invalidate_text_area_of(window: &NSWindow) {
     if let Some(view) = window
         .contentView()

@@ -77,8 +77,11 @@ pub struct Focus<P> {
     /// Whether Tab reaches every control, as the system's keyboard
     /// navigation has it.
     every_control: bool,
-    /// Where each panel took the focus from, a node of another panel by
-    /// its key, or the pane, where it goes back as the panel closes.
+    /// Where each panel took the focus from first since the pane last had
+    /// it, a node of another panel by its key, or the pane, where it goes
+    /// back as the panel closes or Escape takes it: kept as the panel takes
+    /// it again from another, so that two panels never give it back to
+    /// each other for good.
     came_from: Vec<(P, Option<(P, NodeKey)>)>,
 }
 
@@ -113,17 +116,17 @@ impl<P: Copy + Eq> Focus<P> {
 
     /// Gives the focus to `node` of `panel`, whose tree is `tree`, if it
     /// takes it: whether it does. From another panel, or the pane, the
-    /// panel keeps where it took it from.
+    /// panel keeps where it took it from, unless it took it from elsewhere
+    /// first since the pane had it.
     pub fn focus(&mut self, panel: P, tree: &Tree, node: NodeId) -> bool {
         let from = self.focused.zip(self.key.clone());
         if !self.take(panel, tree, node) {
             return false;
         }
-        if from
+        let elsewhere = from
             .as_ref()
-            .is_none_or(|((focused, _), _)| *focused != panel)
-        {
-            self.came_from.retain(|(of, _)| *of != panel);
+            .is_none_or(|((focused, _), _)| *focused != panel);
+        if elsewhere && !self.came_from.iter().any(|(of, _)| *of == panel) {
             self.came_from
                 .push((panel, from.map(|((focused, _), key)| (focused, key))));
         }
@@ -185,11 +188,13 @@ impl<P: Copy + Eq> Focus<P> {
         tabs_to(tree, id, self.every_control)
     }
 
-    /// Gives the focus back to the pane.
+    /// Gives the focus back to the pane, from which the panels then take it
+    /// anew.
     pub fn pane(&mut self) {
         self.focused = None;
         self.key = None;
         self.anchor = None;
+        self.came_from.clear();
     }
 
     /// `panel` closed, the other panels' trees of `tree`: if it had the
@@ -884,6 +889,41 @@ mod tests {
             Routed::Focus
         );
         assert_eq!(focused(&focus, &bar), "field");
+        focus.key(trees, &press(Key::Escape, Mods::NONE));
+        assert_eq!(focus.target(), Target::Pane);
+    }
+
+    #[test]
+    fn escape_from_two_panels_that_took_the_focus_from_each_other_reaches_the_pane() {
+        // Two bars that stay, as two slots' views: a press on one, on the
+        // other, and on the first again.
+        let (first, second) = (tree_of(&find_bar()), tree_of(&find_bar()));
+        let trees = |of: u8| match of {
+            SEARCH => Some(&first),
+            OTHER => Some(&second),
+            _ => None,
+        };
+        let field = |tree: &Tree| vec![tree.root().unwrap(), tree.by_key(&"field".into()).unwrap()];
+        let mut focus = Focus::new();
+        focus.pressed(SEARCH, &first, &field(&first));
+        focus.pressed(OTHER, &second, &field(&second));
+        focus.pressed(SEARCH, &first, &field(&first));
+        // Escape takes it back to where the first took it from first.
+        focus.key(trees, &press(Key::Escape, Mods::NONE));
+        assert_eq!(focus.target(), Target::Pane);
+        // Escape from the second goes to the first, then to the pane.
+        focus.pressed(SEARCH, &first, &field(&first));
+        focus.pressed(OTHER, &second, &field(&second));
+        focus.key(trees, &press(Key::Escape, Mods::NONE));
+        assert!(matches!(focus.target(), Target::Node { panel: SEARCH, .. }));
+        focus.key(trees, &press(Key::Escape, Mods::NONE));
+        assert_eq!(focus.target(), Target::Pane);
+        // From the pane, a panel takes it anew: the second, pressed after
+        // the pane had it, goes back to the pane.
+        focus.pressed(SEARCH, &first, &field(&first));
+        focus.pressed(OTHER, &second, &field(&second));
+        focus.pane();
+        focus.pressed(OTHER, &second, &field(&second));
         focus.key(trees, &press(Key::Escape, Mods::NONE));
         assert_eq!(focus.target(), Target::Pane);
     }

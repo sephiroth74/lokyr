@@ -30,7 +30,7 @@ struct Heard {
 
 /// A plugin of a tab bar of a button `go`, of a tooltip and the pointing
 /// hand, and of two fields, `name` and `other`, and of a status bar of a
-/// list `rows` and a box `area`; `widgets.set` sets the text of `name`,
+/// list `rows`, a box `area` and a field `note`; `widgets.set` sets the text of `name`,
 /// `widgets.select` the list's fourth item, `widgets.hide` hides the bar.
 struct Widgets {
     heard: Rc<RefCell<Heard>>,
@@ -145,6 +145,7 @@ impl plugins::Plugin for Widgets {
                 let mut row = row(vec![
                     sized(rows, 60.0, 20.0).key("rows"),
                     sized(Node::container(Vec::new()), 60.0, 20.0).key("area"),
+                    sized(Node::field("Note"), 60.0, 20.0).key("note"),
                 ]);
                 row.layout.direction = Direction::Row;
                 Some(row)
@@ -506,4 +507,78 @@ fn a_plugin_s_text_goes_over_no_keys_typed_since_and_its_selection_shows() {
         .state(&"rows".into())
         .and_then(lokyr_ui_core::list::ListState::selected);
     assert_eq!(rows, Some(3));
+}
+
+#[test]
+fn escape_from_fields_of_two_views_that_took_the_focus_from_each_other_reaches_the_pane() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    let (name, note) = (
+        middle(&fake, &app, window, "name"),
+        middle(&fake, &app, window, "note"),
+    );
+    click_at(&mut fake, &mut app, window, name);
+    click_at(&mut fake, &mut app, window, note);
+    click_at(&mut fake, &mut app, window, name);
+    type_key(&mut fake, &mut app, window, KeyCode::Escape, "\u{1b}");
+    assert!(app.windows[&window].pane_has_focus());
+}
+
+#[test]
+fn tab_s_release_after_a_key_typed_before_it_went_up_keeps_the_key() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    let name = middle(&fake, &app, window, "name");
+    click_at(&mut fake, &mut app, window, name);
+    // Tab down, `a` down before Tab goes up, then `b`.
+    let none = Modifiers::NONE;
+    for (code, text, pressed) in [
+        (KeyCode::Tab, "\t", true),
+        (KeyCode::KeyA, "a", true),
+        (KeyCode::Tab, "\t", false),
+        (KeyCode::KeyA, "a", false),
+    ] {
+        fake.send(&mut app, window, key_event(code, text, none, pressed));
+    }
+    type_key(&mut fake, &mut app, window, KeyCode::KeyB, "b");
+    let other = surface_of(&app, window, "other")
+        .fields
+        .state(&"other".into())
+        .map(|state| state.text().to_owned());
+    assert_eq!(other.as_deref(), Some("ab"));
+}
+
+#[test]
+fn the_pane_s_program_learns_of_the_focus_that_a_render_gives_back() {
+    // A program of the focus's reports.
+    let (mut fake, mut app, window, _) = widgets(reader("\\033[?1004h"));
+    let name = middle(&fake, &app, window, "name");
+    click_at(&mut fake, &mut app, window, name);
+    // The bar hides, its field with it: the focus back to the pane, which
+    // the program hears before the key.
+    app.run(&mut fake, "widgets.hide", Args::new());
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].pane_has_focus()
+    });
+    type_key(&mut fake, &mut app, window, KeyCode::KeyZ, "z");
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "z"));
+    assert!(
+        shows(&app, window, "^[[O^[[Iz"),
+        "{:?}",
+        screen(&app, window)
+    );
+}
+
+#[test]
+fn a_paste_with_a_node_of_no_field_focused_goes_nowhere() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    fake.set_clipboard_text("pasted");
+    // The list takes the focus: the Edit menu's paste is its, and does
+    // nothing.
+    let rows = middle(&fake, &app, window, "rows");
+    click_at(&mut fake, &mut app, window, rows);
+    assert!(!app.windows[&window].pane_has_focus());
+    app.run(&mut fake, "pane.paste", Args::new());
+    type_key(&mut fake, &mut app, window, KeyCode::Escape, "\u{1b}");
+    type_key(&mut fake, &mut app, window, KeyCode::KeyZ, "z");
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "z"));
+    assert!(!shows(&app, window, "pasted"), "{:?}", screen(&app, window));
 }

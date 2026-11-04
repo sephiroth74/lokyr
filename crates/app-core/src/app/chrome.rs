@@ -159,6 +159,7 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        let before = state.focus.target();
         let kept = std::mem::take(&mut state.chrome);
         let mut kept: Vec<Option<SlotView>> = kept.into_iter().map(Some).collect();
         for (plugin, view) in views {
@@ -224,6 +225,11 @@ impl<B: Backend> App<B> {
             if state.over == Some(gone.id) {
                 state.over = None;
             }
+        }
+        // A move of the focus that a render made, as back to the pane of a
+        // field gone, the pane's program learns of.
+        if state.focus.target() != before {
+            super::surfaces::tell_pane(&self.workspace, state, before);
         }
         let told = super::surfaces::focus_events(state);
         self.ui_events.extend(told);
