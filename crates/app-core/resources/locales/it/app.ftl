@@ -93,3 +93,6 @@ notice-global-keys = Un tasto globale non funziona:
 notice-term = Il tipo di terminale è sconosciuto:
 notice-failed = Un comando non è riuscito:
 notice-fault = Un plugin si è fermato:
+
+# What an accessibility client, as VoiceOver, calls a pane.
+access-pane = Terminale

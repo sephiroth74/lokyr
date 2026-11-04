@@ -28,6 +28,7 @@ use lokyr_ui_core::theme::Variant;
 use lokyr_ui_core::{cursor, pane as cells};
 use lokyr_vt_core::terminal::MouseTracking;
 
+use super::access;
 use super::menus::menu_context;
 use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
@@ -407,6 +408,7 @@ impl<B: Backend> App<B> {
         // Each pane's program learns its grid, and the others' output shows
         // in this frame too.
         let mut due = None;
+        let mut others = false;
         for view in &views {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;
@@ -417,7 +419,7 @@ impl<B: Backend> App<B> {
                 (due, told) => due.or(told),
             };
             if view.pane != active {
-                pane.update();
+                others |= pane.update();
             }
         }
         let Some(pane) = self.workspace.pane_mut(active) else {
@@ -436,6 +438,16 @@ impl<B: Backend> App<B> {
         let copied = started.map(|_| Instant::now());
         if output {
             state.blink.restart(now);
+        }
+        // The panes' screens, or the keyboard's pane, changed: the window's
+        // accessibility tree goes within its rate, once a client asked.
+        if (output || others || state.access_focus != focused)
+            && platform.accessibility_asked(window)
+        {
+            state.access_changed = true;
+            if self.access_timer.is_none() {
+                self.access_timer = Some(platform.start_timer(now + access::RATE));
+            }
         }
         // The press that this frame shows, which the latency's bench
         // measures as the frame shows.

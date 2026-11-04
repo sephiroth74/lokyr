@@ -114,3 +114,6 @@ notice-global-keys = A global key does not work:
 notice-term = The terminal type is unknown:
 notice-failed = A command failed:
 notice-fault = A plugin stopped:
+
+# What an accessibility client, as VoiceOver, calls a pane.
+access-pane = Terminal

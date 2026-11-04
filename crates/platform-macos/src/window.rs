@@ -32,6 +32,7 @@ use objc2_foundation::{
 
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
+use crate::access::Access;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
@@ -457,6 +458,16 @@ impl Window {
         *self.view.ivars().titlebar_areas.borrow_mut() = areas.to_vec();
     }
 
+    /// Whether an accessibility client asked for the window's tree.
+    pub(crate) fn accessibility_asked(&self) -> bool {
+        self.view.access(Access::asked).unwrap_or(false)
+    }
+
+    /// Gives the window's accessibility tree `update`, once a client asked.
+    pub(crate) fn update_accessibility(&self, update: accesskit::TreeUpdate) {
+        self.view.access(|access| access.update(update));
+    }
+
     /// Gives the areas of `areas` their own pointers, over the rest's.
     pub(crate) fn set_pointer_areas(&self, areas: &[PointerArea]) {
         if *self.view.ivars().areas.borrow() != areas {
@@ -601,6 +612,8 @@ pub(crate) struct ContentViewIvars {
     /// content's, in points from the view's top left corner.
     titlebar: Cell<Titlebar>,
     titlebar_areas: RefCell<Vec<ContentRect>>,
+    /// The view's accessibility, of the window's tree, once the view is.
+    access: RefCell<Option<Access>>,
 }
 
 define_class!(
@@ -670,6 +683,25 @@ define_class!(
         #[unsafe(method(acceptsFirstMouse:))]
         fn accepts_first_mouse(&self, event: Option<&NSEvent>) -> bool {
             event.is_some_and(|event| self.is_over_bar(event) && self.is_over_titlebar_area(event))
+        }
+
+        // SAFETY: AppKit's signatures, of `NSAccessibility`: the view's
+        // children, its element of the keyboard's focus and its element at
+        // a point, which AccessKit's adapter gives of the window's tree,
+        // autoreleased; none while the adapter answers another call.
+        #[unsafe(method(accessibilityChildren))]
+        fn accessibility_children(&self) -> *mut AnyObject {
+            self.with_access(Access::children)
+        }
+
+        #[unsafe(method(accessibilityFocusedUIElement))]
+        fn accessibility_focused_ui_element(&self) -> *mut AnyObject {
+            self.with_access(Access::focus)
+        }
+
+        #[unsafe(method(accessibilityHitTest:))]
+        fn accessibility_hit_test(&self, point: NSPoint) -> *mut AnyObject {
+            self.with_access(|access| access.hit_test((point.x, point.y)))
         }
 
         // SAFETY: AppKit's signature, for each of the mouse's buttons. A
@@ -941,10 +973,21 @@ impl ContentView {
             over_bar: Cell::new(false),
             titlebar: Cell::new(Titlebar::Titled),
             titlebar_areas: RefCell::new(Vec::new()),
+            access: RefCell::new(None),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
+        // SAFETY: the view, alive for the call, of which the adapter keeps a
+        // weak reference.
+        let access = unsafe {
+            Access::new(
+                Retained::as_ptr(&view).cast_mut().cast(),
+                view.ivars().shared.clone(),
+                id,
+            )
+        };
+        *view.ivars().access.borrow_mut() = Some(access);
         // Files and text, which a drop pastes.
         // SAFETY: AppKit's constants of the pasteboard's types.
         let types = unsafe { [NSPasteboardTypeFileURL, NSPasteboardTypeString] };
@@ -957,6 +1000,22 @@ impl ContentView {
         if let Some(shared) = ivars.shared.upgrade() {
             shared.post(Pending::Window(ivars.id, event));
         }
+    }
+
+    /// The answer of `ask` of the view's accessibility, a raw pointer of the
+    /// adapter's, or none.
+    fn with_access(&self, ask: impl FnOnce(&Access) -> Option<*mut c_void>) -> *mut AnyObject {
+        self.ivars()
+            .access
+            .borrow()
+            .as_ref()
+            .and_then(ask)
+            .map_or(std::ptr::null_mut(), <*mut c_void>::cast)
+    }
+
+    /// Runs `with` of the view's accessibility, once the view has one.
+    pub(crate) fn access<T>(&self, with: impl FnOnce(&Access) -> T) -> Option<T> {
+        self.ivars().access.borrow().as_ref().map(with)
     }
 
     fn post_key(&self, event: &NSEvent) {
@@ -1302,12 +1361,18 @@ define_class!(
         }
 
         #[unsafe(method(windowDidBecomeKey:))]
-        fn window_did_become_key(&self, _notification: &NSNotification) {
+        fn window_did_become_key(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                access_focused_of(&window, true);
+            }
             self.post(WindowEvent::Focused(true));
         }
 
         #[unsafe(method(windowDidResignKey:))]
-        fn window_did_resign_key(&self, _notification: &NSNotification) {
+        fn window_did_resign_key(&self, notification: &NSNotification) {
+            if let Some(window) = window_of(notification) {
+                access_focused_of(&window, false);
+            }
             self.post(WindowEvent::Focused(false));
         }
 
@@ -1503,6 +1568,17 @@ fn without(rect: NSRect, holes: &[NSRect]) -> Vec<NSRect> {
 
 /// Tells the input method of `window`'s content view that the text's place
 /// on the screen changed, as [`ContentView::invalidate_text_area`] does.
+/// Tells the accessibility of `window`'s content view that the window took
+/// the keyboard's focus, or lost it.
+fn access_focused_of(window: &NSWindow, focused: bool) {
+    if let Some(view) = window
+        .contentView()
+        .and_then(|view| view.downcast::<ContentView>().ok())
+    {
+        view.access(|access| access.focused(focused));
+    }
+}
+
 fn invalidate_text_area_of(window: &NSWindow) {
     if let Some(view) = window
         .contentView()

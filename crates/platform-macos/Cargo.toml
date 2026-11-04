@@ -14,6 +14,8 @@ lokyr-platform-core.workspace = true
 raw-window-handle.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+accesskit.workspace = true
+accesskit_macos.workspace = true
 block2.workspace = true
 libc.workspace = true
 objc2.workspace = true
@@ -59,7 +61,7 @@ objc2-app-kit = { workspace = true, features = [
     "NSWindow",
     "NSWorkspace",
 ] }
-objc2-core-foundation = { workspace = true, features = ["std", "CFRunLoop"] }
+objc2-core-foundation = { workspace = true, features = ["std", "block2", "CFRunLoop"] }
 objc2-quartz-core = { workspace = true, features = [
     "std",
     "objc2-core-foundation",
@@ -114,6 +116,7 @@ objc2-user-notifications = { workspace = true, features = [
 lokyr-platform-core = { workspace = true, features = ["conformance"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
+accesskit.workspace = true
 objc2-app-kit = { workspace = true, features = ["NSPasteboardItem", "NSTextView"] }
 objc2-foundation = { workspace = true, features = ["NSOperation", "NSUserDefaults"] }
 
@@ -213,6 +216,10 @@ harness = false
 
 [[test]]
 name = "titlebar"
+harness = false
+
+[[test]]
+name = "accessibility"
 harness = false
 
 [[test]]

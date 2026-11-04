@@ -64,8 +64,10 @@ This document covers our UI engine and the features the MVP cannot ship without:
 - The Edit menu ends with the system's palette of emoji and symbols, ⌃⌘Space on macOS, whose character comes as an input method's commit: to the pane's program, or into the field that has the focus.
 
 **Accessibility**
+- Nothing is built until an accessibility client, as VoiceOver, asks for a window's elements or its focus, so that a window that no client reads costs nothing; AccessKit's adapter then answers of the window's tree, on macOS of Lokyr's own view, not a subclass. Some apps that hold the Accessibility permission ask for the focus as a window becomes key, without reading on: the tree then follows the screen too, which costs a fraction of a millisecond at each change, and nothing at rest.
 - AccessKit receives a tree built from the view tree, with a role and a label on every node.
-- Panes expose their visible text and cursor to VoiceOver and AT-SPI.
+- Panes expose their visible text and cursor to VoiceOver and AT-SPI: each pane of the window's tab is a terminal, a text area on macOS, labelled "Terminal", whose text is its visible rows, each ended by a newline unless the program's text wraps on to the next, its trailing blanks dropped but up to the cursor; the cursor is the text's selection, collapsed at its cell; each character keeps its cell's place, so that a client shows where it reads. A client's focus of a pane gives it the keyboard.
+- The tree follows the panes' screens and the keyboard's moves to another pane at most five times a second, of the nodes that the screens' changes touch.
 
 **Themes**: plugins use tokens (`tab.active.bg`, `search.match`, …) rather than fixed colors, so a theme restyles all the chrome. A token that a theme lacks takes the color of its name without its last part, `tab.active` for `tab.active.bg`, then `tab`, so that a theme of a few colors still covers them all; the built-in theme gives every token of the chrome, in its light and dark variants. `transparent` is no color in every theme, as the tokens that fall back to it are: a progress's track of it shows nothing.
 

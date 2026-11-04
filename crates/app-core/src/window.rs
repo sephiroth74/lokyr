@@ -80,6 +80,10 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) blinking: bool,
     /// Until when it flashes for its bell.
     pub(crate) flash_until: Option<Instant>,
+    /// Whether its panes changed since its accessibility tree went last,
+    /// and the keyboard's pane of that tree.
+    pub(crate) access_changed: bool,
+    pub(crate) access_focus: Option<PaneId>,
     /// When its last bell acted.
     pub(crate) rang_at: Option<Instant>,
     /// When its program's last notification showed.
@@ -213,6 +217,8 @@ impl<B: Backend> Window<B> {
             blink: Blink::new(now),
             blinking: false,
             flash_until: None,
+            access_changed: false,
+            access_focus: None,
             rang_at: None,
             notified_at: None,
             bell_marked: false,

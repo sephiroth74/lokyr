@@ -17,6 +17,7 @@ use super::menus::{main_menu, man_page, man_program, shortened};
 use super::*;
 use crate::{fakes, notice};
 
+mod access;
 mod asks;
 mod frame;
 mod input;

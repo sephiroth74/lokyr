@@ -17,6 +17,7 @@ fake = []
 conformance = []
 
 [dependencies]
+accesskit.workspace = true
 raw-window-handle.workspace = true
 thiserror.workspace = true
 

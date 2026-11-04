@@ -735,6 +735,18 @@ impl Platform for Backend {
         }
     }
 
+    fn accessibility_asked(&self, window: WindowId) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(Window::accessibility_asked)
+    }
+
+    fn update_accessibility(&mut self, window: WindowId, update: accesskit::TreeUpdate) {
+        if let Some(window) = self.windows.get(&window) {
+            window.update_accessibility(update);
+        }
+    }
+
     fn request_attention(&mut self) {
         let app = NSApplication::sharedApplication(self.mtm);
         // AppKit asks for this only while the application is not active.

@@ -10,6 +10,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+accesskit.workspace = true
 lokyr-core-actions.workspace = true
 lokyr-kernel.workspace = true
 lokyr-links.workspace = true

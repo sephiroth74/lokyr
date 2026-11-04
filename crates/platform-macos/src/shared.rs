@@ -21,6 +21,7 @@ use objc2_app_kit::NSModalResponse;
 
 use crate::alert;
 use crate::backend::Backend;
+use crate::wake;
 
 /// What makes the application's handler, as it starts.
 pub(crate) type MakeHandler = Box<dyn FnOnce() -> Box<dyn Handler>>;
@@ -70,6 +71,10 @@ pub(crate) struct Shared {
     /// Whether the system asked the application to quit and waits for its
     /// answer, as AppKit's `NSTerminateLater` has it.
     terminating: Cell<bool>,
+    /// The events of windows that wait for the run loop's next turn, as an
+    /// accessibility client's asks, which come within AppKit's calls that
+    /// the app's answers would come back into.
+    later: RefCell<Vec<(WindowId, WindowEvent)>>,
 }
 
 impl Shared {
@@ -85,7 +90,27 @@ impl Shared {
             terminating: Cell::new(false),
             modal_aborted: Cell::new(false),
             menu_open: Cell::new(false),
+            later: RefCell::new(Vec::new()),
         })
+    }
+
+    /// Hands the window `id` `event` on the run loop's next turn, as the
+    /// call in progress, of AppKit's, may hold what the app's answer would
+    /// take.
+    pub(crate) fn post_later(&self, id: WindowId, event: WindowEvent) {
+        let first = {
+            let mut later = self.later.borrow_mut();
+            later.push((id, event));
+            later.len() == 1
+        };
+        if first {
+            wake::post_later();
+        }
+    }
+
+    /// The events of windows that waited for this turn, in their order.
+    pub(crate) fn take_later(&self) -> Vec<(WindowId, WindowEvent)> {
+        std::mem::take(&mut *self.later.borrow_mut())
     }
 
     /// Queues `pending`, and hands it on now unless a dispatch is in

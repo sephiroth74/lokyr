@@ -146,3 +146,68 @@ fn the_wheel_scrolls_the_pane_under_it_which_keeps_the_keyboard_where_it_was() {
     assert_eq!(offset(&app, a), 0);
     assert_eq!(app.focused(window), Some(a));
 }
+
+#[test]
+fn an_accessibility_client_s_focus_of_a_pane_gives_it_the_keyboard() {
+    let (mut fake, mut app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
+    click_in(&mut fake, &mut app, window, b);
+    assert_eq!(app.focused(window), Some(b));
+    fake.ask_accessibility(&mut app, window);
+    let node = |pane: PaneId| lokyr_ui_core::access::pane_id(u32::try_from(pane.get()).unwrap());
+    let request = accesskit::ActionRequest {
+        action: accesskit::Action::Focus,
+        target_tree: accesskit::TreeId::ROOT,
+        target_node: node(a),
+        data: None,
+    };
+    fake.send(&mut app, window, WindowEvent::AccessibilityAction(request));
+    assert_eq!(app.focused(window), Some(a));
+    // The tree of the two, each a terminal, the keyboard's the first's.
+    let trees = &fake.window(window).unwrap().accessibility;
+    let first = &trees[0];
+    let terminals: Vec<_> = first
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.role() == accesskit::Role::Terminal)
+        .map(|(id, _)| *id)
+        .collect();
+    assert_eq!(terminals.len(), 2);
+    assert!(terminals.contains(&node(a)) && terminals.contains(&node(b)));
+    assert_eq!(first.focus, node(b));
+    // Each of its place, side by side, its characters a cell wide.
+    let of = |id| &first.nodes.iter().find(|(at, _)| *at == id).unwrap().1;
+    let (left, right) = (of(node(a)), of(node(b)));
+    assert_eq!(left.label(), Some("Terminal"));
+    let (left_bounds, right_bounds) = (left.bounds().unwrap(), right.bounds().unwrap());
+    assert!(
+        left_bounds.x1 <= right_bounds.x0 || left_bounds.y1 <= right_bounds.y0,
+        "{left_bounds:?} {right_bounds:?}"
+    );
+    assert!(left_bounds.x0 < left_bounds.x1 && right_bounds.x0 < right_bounds.x1);
+    let widths = of(right.children()[0]).character_widths().unwrap().to_vec();
+    let cell = f64::from(widths[0]);
+    assert!(cell > 1.0, "{widths:?}");
+    assert_eq!(
+        right_bounds.x1 - right_bounds.x0,
+        cell * f64::from(app.workspace.pane(b).unwrap().snapshot().cols())
+    );
+    // The keyboard's move to the first goes in the next tree.
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.window(window)
+            .unwrap()
+            .accessibility
+            .last()
+            .is_some_and(|tree| tree.focus == node(a))
+    });
+    // The output of the pane without the keyboard goes too.
+    let runs = |tree: &accesskit::TreeUpdate| {
+        tree.nodes
+            .iter()
+            .filter_map(|(_, node)| node.value())
+            .any(|value| value.starts_with("b:later"))
+    };
+    app.workspace.pane(b).unwrap().send_text("later\r");
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.window(window).unwrap().accessibility.iter().any(runs)
+    });
+}

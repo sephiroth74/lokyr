@@ -514,6 +514,16 @@ pub trait Platform {
     /// as the system's settings say. None until the app gives them.
     fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]);
 
+    /// Whether an accessibility client asked for the tree of `window`,
+    /// which [`WindowEvent::AccessibilityAsked`] told: its changes go to
+    /// [`Platform::update_accessibility`] from then on.
+    fn accessibility_asked(&self, window: WindowId) -> bool;
+
+    /// Gives the accessibility tree of `window` `update`: whole the first
+    /// time after [`WindowEvent::AccessibilityAsked`], its nodes changed
+    /// after; nothing before a client asked.
+    fn update_accessibility(&mut self, window: WindowId, update: accesskit::TreeUpdate);
+
     /// Which Option keys act as Meta, the left one and the right one: their
     /// keys come as they are, never through the input method, so that a
     /// dead key that Option makes does not compose.

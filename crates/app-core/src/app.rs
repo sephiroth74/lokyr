@@ -49,6 +49,7 @@ use crate::size_label;
 use crate::watch::Watcher;
 use crate::window::{Surfaces, Window};
 
+mod access;
 mod asks;
 mod frame;
 mod input;
@@ -394,6 +395,8 @@ pub struct App<B: Backend> {
     resize_timer: Option<(TimerId, Instant)>,
     /// The timer of the end of the windows' flashes.
     flash_timer: Option<TimerId>,
+    /// The timer of the windows' accessibility trees, while one waits.
+    access_timer: Option<TimerId>,
     /// The timer of the next step of the views that scroll under a
     /// selection dragged past their grid.
     scroll_timer: Option<TimerId>,
@@ -577,6 +580,7 @@ impl<B: Backend> App<B> {
             pane_wakes: BTreeMap::new(),
             resize_timer: None,
             flash_timer: None,
+            access_timer: None,
             scroll_timer: None,
             command_held: false,
             pointer_told: None,
@@ -2410,6 +2414,9 @@ impl<B: Backend> App<B> {
                     }
                 }
             }
+            AppEvent::Timer(timer) if self.access_timer == Some(timer) => {
+                self.accessibility_due(platform);
+            }
             AppEvent::Timer(timer) if self.exit_timer == Some(timer) => {
                 self.exit_timer = None;
                 self.exits(platform);
@@ -2583,6 +2590,12 @@ impl<B: Backend> App<B> {
                 ..
             } => self.scroll(platform, window, (delta, phase), position, mods),
             WindowEvent::CloseRequested => self.ask_close(platform, window),
+            // An accessibility client asked for the window's tree, or for
+            // an action on one of its nodes.
+            WindowEvent::AccessibilityAsked => self.give_accessibility(platform, window),
+            WindowEvent::AccessibilityAction(request) => {
+                self.accessibility_action(platform, window, &request);
+            }
             WindowEvent::Dropped(dropped) => self.dropped(platform, window, dropped),
             WindowEvent::ContextCommand(command) => {
                 self.context_command(platform, window, &command);

@@ -95,6 +95,11 @@ pub struct FakeWindow {
     pub titlebar: Titlebar,
     /// The parts of its titlebar that the app gave as its content's.
     pub titlebar_areas: Vec<ContentRect>,
+    /// Whether an accessibility client asked for its tree, as a test says.
+    pub accessibility_asked: bool,
+    /// The updates of its accessibility tree that the app gave, once a
+    /// client asked, in their order.
+    pub accessibility: Vec<accesskit::TreeUpdate>,
 }
 
 /// An alert that is open, until a test answers it.
@@ -434,6 +439,17 @@ impl Fake {
         self.windows.get(&window)
     }
 
+    /// An accessibility client asks for the tree of `window`, as a
+    /// platform tells it: from then on, the updates of its tree come; and
+    /// whether `handler` was told.
+    pub fn ask_accessibility(&mut self, handler: &mut dyn Handler, window: WindowId) -> bool {
+        match self.windows.get_mut(&window) {
+            Some(state) => state.accessibility_asked = true,
+            None => return false,
+        }
+        self.send(handler, window, WindowEvent::AccessibilityAsked)
+    }
+
     /// The windows that are open, from the first opened.
     pub fn windows(&self) -> impl Iterator<Item = WindowId> + '_ {
         self.windows.keys().copied()
@@ -689,6 +705,8 @@ impl Platform for Fake {
                 quick: None,
                 titlebar: Titlebar::default(),
                 titlebar_areas: Vec::new(),
+                accessibility_asked: false,
+                accessibility: Vec::new(),
             },
         );
         Ok(id)
@@ -722,6 +740,8 @@ impl Platform for Fake {
                 quick: Some(None),
                 titlebar: Titlebar::default(),
                 titlebar_areas: Vec::new(),
+                accessibility_asked: false,
+                accessibility: Vec::new(),
             },
         );
         Ok(id)
@@ -962,6 +982,20 @@ impl Platform for Fake {
     fn set_titlebar_areas(&mut self, window: WindowId, areas: &[ContentRect]) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.titlebar_areas = areas.to_vec();
+        }
+    }
+
+    fn accessibility_asked(&self, window: WindowId) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(|state| state.accessibility_asked)
+    }
+
+    fn update_accessibility(&mut self, window: WindowId, update: accesskit::TreeUpdate) {
+        if let Some(state) = self.windows.get_mut(&window)
+            && state.accessibility_asked
+        {
+            state.accessibility.push(update);
         }
     }
 

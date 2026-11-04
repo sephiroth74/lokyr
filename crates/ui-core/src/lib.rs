@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod access;
 pub mod action;
 pub mod animation;
 pub mod chrome;

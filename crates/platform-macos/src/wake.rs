@@ -7,6 +7,7 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
+use block2::RcBlock;
 use lokyr_platform_core::{AppEvent, Error, Waker};
 use objc2_core_foundation::{
     CFRetained, CFRunLoop, CFRunLoopSource, CFRunLoopSourceContext, kCFRunLoopCommonModes,
@@ -17,6 +18,28 @@ use crate::shared::{Pending, Shared};
 thread_local! {
     /// The application that the source wakes, on the main thread.
     static TARGET: RefCell<Weak<Shared>> = const { RefCell::new(Weak::new()) };
+}
+
+/// Hands the application the events of windows that wait, on the main
+/// run loop's next turn, in every common mode, without a wake.
+pub(crate) fn post_later() {
+    let Some(run_loop) = CFRunLoop::main() else {
+        return;
+    };
+    let post = RcBlock::new(|| {
+        if let Some(shared) = TARGET.with(|target| target.borrow().upgrade()) {
+            for (window, event) in shared.take_later() {
+                shared.post(Pending::Window(window, event));
+            }
+        }
+    });
+    // SAFETY: the mode is Core Foundation's constant, and the block takes
+    // nothing and returns nothing, as the run loop calls it; the run loop
+    // copies it.
+    unsafe {
+        run_loop.perform_block(kCFRunLoopCommonModes.map(|mode| &**mode), Some(&post));
+    }
+    run_loop.wake_up();
 }
 
 /// The source and the run loop that it is on.

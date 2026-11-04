@@ -18,6 +18,13 @@ pub enum WindowEvent {
     ScaleChanged(WindowSize),
     /// The window took the keyboard's focus, or lost it.
     Focused(bool),
+    /// An accessibility client, as VoiceOver, asked for the window's tree:
+    /// the app gives it whole, with `Platform::update_accessibility`, then
+    /// its changes; until then, the app builds none.
+    AccessibilityAsked,
+    /// An accessibility client asked for `ActionRequest`'s action on one of
+    /// the tree's nodes, as VoiceOver's press or focus.
+    AccessibilityAction(accesskit::ActionRequest),
     /// The window became hidden, minimized or covered, or visible again.
     Occluded(bool),
     /// The user asked to close the window, which stays open until the app
