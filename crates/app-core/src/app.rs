@@ -50,6 +50,7 @@ use crate::watch::Watcher;
 use crate::window::{Surfaces, Window};
 
 mod access;
+pub(crate) use access::TreeCursor;
 mod asks;
 pub(crate) mod chrome;
 mod frame;

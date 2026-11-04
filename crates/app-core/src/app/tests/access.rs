@@ -124,3 +124,35 @@ fn of_two_windows_only_the_one_whose_screen_changed_takes_its_tree_again() {
     fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
     assert_eq!(fake.window(other).unwrap().accessibility.len(), others);
 }
+
+/// The character index of the tree's selection, the cursor's, of the last
+/// tree given to `window`, if it has one.
+fn caret(fake: &Fake, window: WindowId) -> Option<usize> {
+    let tree = fake.window(window)?.accessibility.last()?;
+    tree.nodes
+        .iter()
+        .find_map(|(_, node)| node.text_selection())
+        .map(|selection| selection.focus.character_index)
+}
+
+#[test]
+fn a_move_of_the_cursor_alone_gives_the_tree_again() {
+    // The cursor at the prompt's end, then three cells back, as a shell's
+    // Left moves it, of no row's change.
+    let (mut fake, mut app, window) = started_running(shell(
+        "stty -echo; printf 'ready abcdef'; read line; printf '\\033[3D'; read more",
+    ));
+    show_until(&mut fake, &mut app, window, "ready abcdef");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(window).snapshot().cursor().position.x == 12
+    });
+    assert!(fake.ask_accessibility(&mut app, window));
+    assert_eq!(caret(&fake, window), Some(12));
+    app.pane(window).text("x\r");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(window).snapshot().cursor().position.x == 9
+    });
+    // Its tree, as the rate's timer fires.
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(1));
+    assert_eq!(caret(&fake, window), Some(9));
+}

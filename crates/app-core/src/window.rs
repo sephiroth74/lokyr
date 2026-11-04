@@ -87,6 +87,9 @@ pub(crate) struct Window<B: Backend> {
     /// and the keyboard's pane of that tree.
     pub(crate) access_changed: bool,
     pub(crate) access_focus: Option<PaneId>,
+    /// Where its panes' cursors showed in the tree that it gave last, in
+    /// their panes' order.
+    pub(crate) access_cursors: Vec<crate::app::TreeCursor>,
     /// When its last bell acted.
     pub(crate) rang_at: Option<Instant>,
     /// When its program's last notification showed.
@@ -254,6 +257,7 @@ impl<B: Backend> Window<B> {
             flash_until: None,
             access_changed: false,
             access_focus: None,
+            access_cursors: Vec::new(),
             rang_at: None,
             notified_at: None,
             bell_marked: false,

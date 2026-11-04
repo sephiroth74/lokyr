@@ -1,14 +1,16 @@
 //! The windows' accessibility: each window's tree, of its panes' screens
 //! and cursors, which goes to the platform once an accessibility client,
 //! as VoiceOver, asked for it, whole, then again as the panes' screens
-//! change or the keyboard moves to another pane, at most once a [`RATE`];
+//! change, their cursors move, as a shell's Left at its prompt moves one
+//! without a row's change, or the keyboard moves to another pane, at most
+//! once a [`RATE`];
 //! nothing before a client asks, so that a window that no client reads
 //! costs nothing. A client's focus of a pane gives it the keyboard.
 
 use std::time::Duration;
 
 use accesskit::{Action, ActionRequest};
-use lokyr_kernel::workspace::PaneId;
+use lokyr_kernel::workspace::{Pane, PaneId};
 use lokyr_platform_core::{Platform, WindowId};
 use lokyr_ui_core::access::{self, PaneAccess};
 
@@ -35,6 +37,11 @@ impl<B: Backend> App<B> {
         let focused = self.workspace.active_pane(state.window);
         state.access_changed = false;
         state.access_focus = focused;
+        state.access_cursors = views
+            .iter()
+            .filter_map(|view| self.workspace.pane(view.pane).map(tree_cursor))
+            .collect();
+        state.access_cursors.sort_unstable();
         let panes: Vec<PaneAccess<'_>> = views
             .iter()
             .filter_map(|view| {
@@ -83,6 +90,18 @@ impl<B: Backend> App<B> {
             self.focus_pane(platform, window, PaneId::of(u64::from(pane)));
         }
     }
+}
+
+/// Where a pane's cursor shows in its window's tree: the pane, its cell's
+/// column and row, and the scroll of its view, which moves it.
+pub(crate) type TreeCursor = (PaneId, u16, u16, usize);
+
+/// Where `pane`'s cursor shows in its window's tree, as its last snapshot
+/// has it.
+pub(super) fn tree_cursor(pane: &Pane) -> TreeCursor {
+    let snapshot = pane.snapshot();
+    let at = snapshot.cursor().position;
+    (pane.id(), at.x, at.y, snapshot.offset())
 }
 
 /// The number of `pane` in its window's tree.

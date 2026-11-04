@@ -446,6 +446,10 @@ impl<B: Backend> App<B> {
         let mut due = None;
         let mut others = false;
         let live = state.live_resize;
+        // Where the panes' cursors show, for the tree of a client that
+        // asked for one.
+        let asked = platform.accessibility_asked(window);
+        let mut cursors = Vec::new();
         for view in &views {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;
@@ -467,6 +471,9 @@ impl<B: Backend> App<B> {
             };
             if view.pane != active {
                 others |= pane.update();
+                if asked {
+                    cursors.push(access::tree_cursor(pane));
+                }
             }
         }
         let Some(pane) = self.workspace.pane_mut(active) else {
@@ -486,10 +493,18 @@ impl<B: Backend> App<B> {
         if output {
             state.blink.restart(now);
         }
-        // The panes' screens, or the keyboard's pane, changed: the window's
-        // accessibility tree goes within its rate, once a client asked.
-        if (output || others || state.access_focus != focused)
-            && platform.accessibility_asked(window)
+        // The panes' screens or cursors, or the keyboard's pane, changed:
+        // the window's accessibility tree goes within its rate, once a
+        // client asked.
+        if asked {
+            cursors.push(access::tree_cursor(pane));
+            cursors.sort_unstable();
+        }
+        if asked
+            && (output
+                || others
+                || state.access_focus != focused
+                || cursors != state.access_cursors)
         {
             state.access_changed = true;
             if self.access_timer.is_none() {
