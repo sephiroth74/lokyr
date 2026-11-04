@@ -981,6 +981,7 @@ dependencies = [
 name = "lokyr-ui-gallery"
 version = "0.3.0"
 dependencies = [
+ "accesskit",
  "lokyr-font-coretext",
  "lokyr-platform-core",
  "lokyr-platform-macos",
