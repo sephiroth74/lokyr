@@ -160,9 +160,30 @@ impl Log {
             self.file = None;
             let _ = fs::rename(&self.path, kept(&self.path));
             *self = Self::open(&self.path);
+            follow(self.file.as_ref());
         }
     }
 }
+
+/// Has the abort's handler write to `file`, the log's file once it started
+/// again, in place of the one kept aside, which its descriptor still named:
+/// the file's descriptor copied onto the handler's, whose number stays.
+#[cfg(unix)]
+#[allow(unsafe_code)]
+fn follow(file: Option<&File>) {
+    use std::os::fd::AsRawFd;
+    let abort = FILE.load(std::sync::atomic::Ordering::SeqCst);
+    if let Some(file) = file
+        && abort >= 0
+    {
+        // SAFETY: two open descriptors: `dup2` puts the file's in the
+        // handler's place at once, which closes the one before.
+        unsafe { libc::dup2(file.as_raw_fd(), abort) };
+    }
+}
+
+#[cfg(not(unix))]
+fn follow(_: Option<&File>) {}
 
 /// Whether the drain holds what the pipe gives until the process ends, as
 /// a test of the end's way to the log has it.
@@ -217,14 +238,20 @@ const FINISH: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Has the standard error go to the log at `path`, through a pipe that a
 /// thread drains, started before the pipe takes the standard error, so that
-/// its failure leaves the standard error as it was; its reading end closes
-/// in the programs that the app starts. As the process exits, the standard
+/// its failure, or the file's, leaves the standard error as it was; its
+/// reading end closes in the programs that the app starts. As the process exits, the standard
 /// error takes the file itself and the drain writes what the pipe holds;
 /// as it aborts, a handler of the signal copies it.
 #[cfg(unix)]
 #[allow(unsafe_code)]
 fn drain_stderr(path: &Path) -> std::io::Result<()> {
     use std::os::fd::{FromRawFd, IntoRawFd};
+    // A file that does not open, as of a directory that another user owns,
+    // leaves the standard error as it was, where a pipe would drop all.
+    let mut log = Log::open(path);
+    if log.file.is_none() {
+        return Err(std::io::Error::other("the log's file does not open"));
+    }
     let mut ends = [0; 2];
     // SAFETY: `pipe` fills the two descriptors of the array's two.
     if unsafe { libc::pipe(ends.as_mut_ptr()) } != 0 {
@@ -237,7 +264,6 @@ fn drain_stderr(path: &Path) -> std::io::Result<()> {
         libc::fcntl(reading, libc::F_SETFD, libc::FD_CLOEXEC);
         File::from_raw_fd(reading)
     };
-    let mut log = Log::open(path);
     let thread = std::thread::Builder::new()
         .name("lokyr-log".to_owned())
         .spawn(move || drain(pipe, &mut log));
