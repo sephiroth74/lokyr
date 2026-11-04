@@ -1,10 +1,10 @@
-//! The views of tabs, as a settings panel's: a box, and inside it at its
-//! top a control of their tabs, each a segment of a label, an icon before
-//! it or both, sized as a button's, side by side, over their page, the tab
-//! chosen's, as macOS 27's tab views draw them. A click on a tab, or Left and Right while the view
-//! has the keyboard's focus, chooses one, past those that are disabled,
-//! which its plugin learns of by `select`: the tab chosen is its plugin's,
-//! in its render, which gives its page too.
+//! The views of tabs, as a settings panel's: a box, and inside it at its top
+//! a control of their tabs, each a segment of a label, an icon before it or
+//! both, sized as a button's, side by side, over their page, the tab
+//! chosen's, as macOS 27's tab views draw them. A click on a tab, or Left
+//! and Right while the view has the keyboard's focus, chooses one, past
+//! those that are disabled, which its plugin learns of by `select`: the tab
+//! chosen is its plugin's, in its render, which gives its page too.
 
 use lokyr_plugin_sdk::view::{Distribution, Kind, Tabs, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent};
