@@ -514,10 +514,17 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     };
     let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
     let tokens = &app.theme.variant(dark).tokens;
-    let (inactive, hovered) = (
+    let (inactive, veil) = (
         tokens.get("tab.inactive.bg").unwrap(),
         tokens.get("tab.hover.bg").unwrap(),
     );
+    // The hover's veil over the box's own background, opaque.
+    let hovered = lokyr_render_core::Color {
+        red: veil.red * veil.alpha + inactive.red * (1.0 - veil.alpha),
+        green: veil.green * veil.alpha + inactive.green * (1.0 - veil.alpha),
+        blue: veil.blue * veil.alpha + inactive.blue * (1.0 - veil.alpha),
+        alpha: 1.0,
+    };
     let fills = |app: &App| -> Vec<lokyr_render_core::Color> {
         app.windows[&window]
             .shown
@@ -542,7 +549,19 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     // Over the box, the frames fade its background in, of no render.
     fake.send(&mut app, window, moved(inside, Modifiers::NONE));
     assert!(fake.window(window).unwrap().frame_requested);
-    let near = |fills: &[lokyr_render_core::Color]| fills == [hovered];
+    let near = |fills: &[lokyr_render_core::Color]| {
+        let [fill] = fills else {
+            return false;
+        };
+        [
+            (fill.red, hovered.red),
+            (fill.green, hovered.green),
+            (fill.blue, hovered.blue),
+            (fill.alpha, hovered.alpha),
+        ]
+        .iter()
+        .all(|(a, b)| (a - b).abs() < 1e-4)
+    };
     run_until(&mut fake, &mut app, |_, app| near(&fills(app)));
     assert_eq!(renders.get(), rendered);
 }

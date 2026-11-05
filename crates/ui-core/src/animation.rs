@@ -32,6 +32,10 @@ pub struct Animations {
     hoverable: HashMap<Key, Option<Transition>>,
     /// Their hovers, as the pointer goes over them and away.
     hovers: HashMap<Key, Hovering>,
+    /// The nodes of a key whose press shows, each of its transition.
+    pressable: HashMap<Key, Option<Transition>>,
+    /// Their presses, as the primary button goes down over them and up.
+    presses: HashMap<Key, Hovering>,
     /// Whether the system reduces motion, as the last layout found it.
     reduced: bool,
 }
@@ -44,6 +48,8 @@ impl Default for Animations {
             scale: 1.0,
             hoverable: HashMap::new(),
             hovers: HashMap::new(),
+            pressable: HashMap::new(),
+            presses: HashMap::new(),
             reduced: false,
         }
     }
@@ -144,11 +150,14 @@ impl Animations {
         self.reduced = reduced;
         if rendered {
             self.hoverable.clear();
+            self.pressable.clear();
             if let Some(root) = tree.root() {
                 hoverable(tree, root, None, &mut self.hoverable);
+                pressable(tree, root, &mut self.pressable);
             }
-            let hoverable = &self.hoverable;
+            let (hoverable, pressable) = (&self.hoverable, &self.pressable);
             self.hovers.retain(|key, _| hoverable.contains_key(key));
+            self.presses.retain(|key, _| pressable.contains_key(key));
         }
         let scale = layout.scale();
         self.scale = scale;
@@ -217,6 +226,7 @@ impl Animations {
         }) || self
             .hovers
             .values()
+            .chain(self.presses.values())
             .any(|hovering| hovering.fading.is_some_and(|run| !run.ended(now)))
     }
 
@@ -226,27 +236,34 @@ impl Animations {
     /// system reduces motion.
     pub fn hovered<'a>(&mut self, hovered: impl IntoIterator<Item = &'a Key>, now: Instant) {
         let over: Vec<&Key> = hovered.into_iter().collect();
-        for (key, transition) in &self.hoverable {
-            let on = over.contains(&key);
-            let hovering = self.hovers.entry(key.clone()).or_insert(Hovering {
-                on: false,
-                fading: None,
-            });
-            if hovering.on == on {
-                continue;
-            }
-            let from = hovering.amount(now);
-            hovering.on = on;
-            hovering.fading =
-                transition.filter(|_| !self.reduced).map(|transition| Run {
-                    value: from,
-                    start: now,
-                    duration: Duration::from_micros(
-                        (transition.duration.max(0.0) * 1e6).round() as u64
-                    ),
-                    easing: transition.easing,
-                });
-        }
+        follow(
+            &self.hoverable,
+            &mut self.hovers,
+            &over,
+            (now, self.reduced),
+        );
+    }
+
+    /// The primary button is down over the node of `pressing`'s key, the
+    /// pointer still over it, if it is, at `now`: the press of each node
+    /// that shows one fades in or out, as [`Animations::hovered`] has a
+    /// hover do.
+    pub fn pressed(&mut self, pressing: Option<&Key>, now: Instant) {
+        let over: Vec<&Key> = pressing.into_iter().collect();
+        follow(
+            &self.pressable,
+            &mut self.presses,
+            &over,
+            (now, self.reduced),
+        );
+    }
+
+    /// How far the press of the node of `key` shows at `now`, from 0, none,
+    /// to 1, all of it.
+    pub fn press(&self, key: &Key, now: Instant) -> f32 {
+        self.presses
+            .get(key)
+            .map_or(0.0, |pressing| pressing.amount(now))
     }
 
     /// How far the hover of the node of `key` shows at `now`, from 0, none,
@@ -295,6 +312,49 @@ impl Animated {
             }
             _ => self.opacity,
         }
+    }
+}
+
+/// Turns on the states of `states` of the keys of `on`, of those that
+/// `shown` holds, each of its transition, and off the others, at `now`,
+/// each fading from where it showed, at once without a transition or
+/// where the system reduces motion, `reduced`.
+fn follow(
+    shown: &HashMap<Key, Option<Transition>>,
+    states: &mut HashMap<Key, Hovering>,
+    on: &[&Key],
+    (now, reduced): (Instant, bool),
+) {
+    for (key, transition) in shown {
+        let holds = on.contains(&key);
+        let state = states.entry(key.clone()).or_insert(Hovering {
+            on: false,
+            fading: None,
+        });
+        if state.on == holds {
+            continue;
+        }
+        let from = state.amount(now);
+        state.on = holds;
+        state.fading = transition.filter(|_| !reduced).map(|transition| Run {
+            value: from,
+            start: now,
+            duration: Duration::from_micros((transition.duration.max(0.0) * 1e6).round() as u64),
+            easing: transition.easing,
+        });
+    }
+}
+
+/// Takes into `found` the nodes of `id`'s subtree of a key and a press of
+/// their own, each of its transition.
+fn pressable(tree: &Tree, id: NodeId, found: &mut HashMap<Key, Option<Transition>>) {
+    if let (Some(key), Some(style)) = (tree.key(id), tree.style(id))
+        && style.pressed.is_some()
+    {
+        found.insert(key.clone(), style.transition);
+    }
+    for &child in tree.children(id) {
+        pressable(tree, child, found);
     }
 }
 

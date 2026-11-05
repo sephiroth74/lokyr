@@ -231,6 +231,10 @@ impl Gallery {
                         color: Some(Token::from(color)),
                         radius: 6.0,
                         hover,
+                        pressed: Some(Hover {
+                            background: Some(Token::from("button.pressed.bg")),
+                            ..Hover::default()
+                        }),
                         transition: Some(Transition {
                             duration: 0.15,
                             easing: Easing::EaseOut,
@@ -1006,6 +1010,10 @@ impl Gallery {
                 opacity: Some(1.0),
                 ..Hover::default()
             }),
+            pressed: Some(Hover {
+                background: Some(Token::from("button.pressed.bg")),
+                ..Hover::default()
+            }),
             transition: Some(Transition {
                 duration: 0.15,
                 easing: Easing::EaseOut,
@@ -1037,6 +1045,10 @@ impl Gallery {
             hover: Some(Hover {
                 background: Some(Token::from("tab.hover.bg")),
                 color: Some(Token::from("tab.active.fg")),
+                ..Hover::default()
+            }),
+            pressed: Some(Hover {
+                background: Some(Token::from("button.pressed.bg")),
                 ..Hover::default()
             }),
             transition: Some(Transition {

@@ -94,12 +94,13 @@ impl Surface {
     }
 
     /// Its last layout, at `now`: its nodes of transitions that it moved
-    /// slide, and those whose opacity changed fade, unless the system
-    /// reduces motion, `reduced`.
+    /// slide, those whose opacity changed fade, and those whose hover or
+    /// press changed, unless the system reduces motion, `reduced`.
     pub fn animate(&mut self, now: Instant, reduced: bool) {
         self.animations
             .laid_out(&self.tree, &self.layout, now, reduced);
         self.animations.hovered(self.pointer.hovered_keys(), now);
+        self.animations.pressed(self.pointer.pressing_key(), now);
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
@@ -134,6 +135,7 @@ impl Surface {
         }
         let events = self.pointer.moved(&self.tree, &self.layout, at);
         self.animations.hovered(self.pointer.hovered_keys(), now);
+        self.animations.pressed(self.pointer.pressing_key(), now);
         let deadline = self
             .tooltip
             .hover(&self.tree, self.pointer.hovered(), at, now);
@@ -574,6 +576,58 @@ mod tests {
         assert!(surface.text_area(find, &mut Fixed).is_some());
         assert!(surface.text_area(go, &mut Fixed).is_none());
         assert_eq!(surface.size().map(|(width, _)| width), Some(200.0));
+    }
+
+    #[test]
+    fn a_press_shows_while_the_button_is_down_and_the_pointer_over_its_node() {
+        use std::time::Duration;
+
+        use lokyr_plugin_sdk::view::{Hover, Style};
+
+        let pressable = Node::container(vec![
+            Node::container(vec![Node::text("tab")])
+                .key("tab")
+                .style(Style {
+                    pressed: Some(Hover {
+                        background: Some(view::Token::from("button.pressed.bg")),
+                        ..Hover::default()
+                    }),
+                    ..Style::default()
+                })
+                .layout(view::Layout {
+                    width: Length::Points(100.0),
+                    ..view::Layout::default()
+                }),
+        ]);
+        let mut surface = Surface::new(1.0);
+        surface.update(&pressable).unwrap();
+        surface.lay_out((Some(200.0), None), &mut Fixed);
+        let start = Instant::now();
+        surface.animate(start, false);
+        let tab: view::Key = "tab".into();
+        let press = |surface: &Surface| {
+            surface
+                .animations
+                .press(&tab, start + Duration::from_secs(1))
+        };
+        let over = middle(&surface, "tab");
+        surface.moved(over, &mut Fixed, start);
+        surface.pressed(over, (Button::Primary, 1, false), &mut Fixed);
+        surface.animate(start, false);
+        assert_eq!(press(&surface), 1.0);
+        // The pointer off its node, the button down: no press; back, again.
+        surface.moved((150.0, over.1), &mut Fixed, start);
+        assert_eq!(press(&surface), 0.0);
+        surface.moved(over, &mut Fixed, start);
+        assert_eq!(press(&surface), 1.0);
+        // Up, none.
+        surface.released(over, (Button::Primary, 1));
+        surface.animate(start, false);
+        assert_eq!(press(&surface), 0.0);
+        // Nor of another button.
+        surface.pressed(over, (Button::Secondary, 1, false), &mut Fixed);
+        surface.animate(start, false);
+        assert_eq!(press(&surface), 0.0);
     }
 
     #[test]

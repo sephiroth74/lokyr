@@ -504,6 +504,12 @@ impl Pointer {
         (self.pressed[Button::Primary.index()].as_ref() == Some(&key)).then_some(node)
     }
 
+    /// The key of [`Pointer::pressing`]'s node.
+    pub fn pressing_key(&self) -> Option<&Key> {
+        let (_, key) = self.hovered.last()?;
+        (self.pressed[Button::Primary.index()].as_ref() == Some(key)).then_some(key)
+    }
+
     /// The innermost node of a key that the pointer is over.
     fn target(&self) -> Option<(NodeId, Key)> {
         self.hovered.last().cloned()

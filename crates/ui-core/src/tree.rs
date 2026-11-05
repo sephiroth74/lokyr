@@ -474,11 +474,13 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
             return Err(Invalid::Number(name));
         }
     }
-    // A node's own hover goes by its key, as the hover's events do.
+    // A node's own hover and press go by its key, as the pointer's events
+    // do.
     if (node.kind.holds_state()
         || node.focusable
         || node.tooltip.is_some()
-        || node.style.hover.is_some())
+        || node.style.hover.is_some()
+        || node.style.pressed.is_some())
         && node.key.is_none()
     {
         return Err(Invalid::NoKey);
@@ -573,7 +575,7 @@ fn numbers(node: &Node) -> Result<(), Invalid> {
         ),
         (
             "hover",
-            [&style.hover, &style.parent_hover]
+            [&style.hover, &style.parent_hover, &style.pressed]
                 .into_iter()
                 .flatten()
                 .all(|hover| {

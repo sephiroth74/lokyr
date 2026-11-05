@@ -256,11 +256,14 @@ type Style = {
     pointer: ("arrow" | "text" | "pointing-hand")?, -- its children's too, unless they give their own
     opacity: number?, -- from 0 to 1, of its children too
     transition: { duration: number?, easing: ("linear" | "ease-in" | "ease-out" | "ease-in-out")? }?, -- its moves and fades, over seconds, and its hover's
-    -- What a node of a key takes while the pointer is over it, and what a node takes while the pointer is over its
-    -- nearest node of a key around it, as a tab's close button under its tab: the host applies them as the pointer
-    -- moves, with no render, fading them as the transition says, at once where the system reduces motion.
+    -- What a node of a key takes while the pointer is over it, what a node takes while the pointer is over its
+    -- nearest node of a key around it, as a tab's close button under its tab, and what a node of a key takes while
+    -- the primary button that went down over it is down, the pointer still over it: the host applies them as the
+    -- pointer moves, with no render, their colors over the node's own, each over the ones before, fading them as
+    -- the transition says, at once where the system reduces motion.
     hover: Hover?,
     parent_hover: Hover?,
+    pressed: Hover?,
 }
 
 type Hover = { background: Color?, color: Color?, border: { color: Color, width: number }?, opacity: number? }

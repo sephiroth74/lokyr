@@ -285,7 +285,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 .as_ref()
                 .and_then(|token| self.tokens.get(&token.0))
             {
-                color = mixed(color, hovered, *amount);
+                color = mixed(color, over(hovered, color), *amount);
             }
         }
         // A field, a button, a toggle and a separator of no box of their
@@ -698,8 +698,8 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     }
 
     /// The hovers of `id` that show, each with how far: its own, as far as
-    /// the pointer's hover of it, and its parent's, as far as the hover of
-    /// the nearest node of a key around it.
+    /// the pointer's hover of it, its parent's, as far as the hover of the
+    /// nearest node of a key around it, and its press, over them.
     fn hovers(&self, id: NodeId) -> Vec<(&'a Hover, f32)> {
         let (Some(style), Some((animations, now))) = (self.tree.style(id), self.motion) else {
             return Vec::new();
@@ -709,15 +709,22 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Some((hover, amount))
         });
         let parent = style.parent_hover.as_ref().map(|hover| (hover, self.group));
+        // A press over its hover.
+        let pressed = style.pressed.as_ref().and_then(|pressed| {
+            let amount = animations.press(self.tree.key(id)?, now);
+            Some((pressed, amount))
+        });
         own.into_iter()
             .chain(parent)
+            .chain(pressed)
             .filter(|(_, amount)| *amount > 0.0)
             .collect()
     }
 
     /// The box of `style` at `frame`, as [`Painter::shape`] gives it, of
-    /// the background and the border of `hovers` as far as they show: from
-    /// a clear one where the style has none.
+    /// the background and the border of `hovers` over its own, each over
+    /// the ones before, as far as they show: from a clear one where the
+    /// style has none.
     fn hovered_shape(
         &self,
         frame: Frame,
@@ -751,13 +758,15 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 shadow: None,
                 arc: None,
             });
+            // Over the box's own colors, as its theme's veils are.
             if let Some(fill) = fill {
-                shown.fill = mixed(shown.fill, fill, amount);
+                shown.fill = mixed(shown.fill, over(fill, shown.fill), amount);
             }
             if let Some((color, width)) = border {
                 let width = (width * scale).round().max(0.0);
                 shown.border += (width - shown.border) * amount;
-                shown.border_color = mixed(shown.border_color, color, amount);
+                shown.border_color =
+                    mixed(shown.border_color, over(color, shown.border_color), amount);
             }
         }
         shape
@@ -1103,6 +1112,22 @@ pub(crate) fn rect(frame: Frame) -> Rect {
         y: frame.y.round() as i32,
         width: frame.width.round().max(0.0) as u32,
         height: frame.height.round().max(0.0) as u32,
+    }
+}
+
+/// `top` drawn over `bottom`, as one color: `top` itself where it is
+/// opaque.
+fn over(top: Color, bottom: Color) -> Color {
+    let alpha = top.alpha + bottom.alpha * (1.0 - top.alpha);
+    if alpha <= 0.0 {
+        return Color::CLEAR;
+    }
+    let channel = |a: f32, b: f32| (a * top.alpha + b * bottom.alpha * (1.0 - top.alpha)) / alpha;
+    Color {
+        red: channel(top.red, bottom.red),
+        green: channel(top.green, bottom.green),
+        blue: channel(top.blue, bottom.blue),
+        alpha,
     }
 }
 
@@ -2800,6 +2825,102 @@ mod tests {
     }
 
     #[test]
+    fn a_press_fades_in_over_its_hover_and_out_as_the_button_goes_up() {
+        use std::time::{Duration, Instant};
+
+        use lokyr_plugin_sdk::view::{Easing, Hover, Key, Transition};
+
+        use crate::animation::Animations;
+        let root = Node::container(vec![
+            Node::container(vec![Node::text("tab")])
+                .key("tab")
+                .style(view::Style {
+                    background: Some(Token::from("tab.inactive.bg")),
+                    hover: Some(Hover {
+                        background: Some(Token::from("tab.hover.bg")),
+                        ..Hover::default()
+                    }),
+                    pressed: Some(Hover {
+                        background: Some(Token::from("button.pressed.bg")),
+                        ..Hover::default()
+                    }),
+                    transition: Some(Transition {
+                        duration: 0.2,
+                        easing: Easing::Linear,
+                    }),
+                    ..view::Style::default()
+                }),
+        ]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let changes = tree.update(&root).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let start = Instant::now();
+        animations.laid_out(&tree, &layout, start, false);
+        let tab: Key = "tab".into();
+        let fill = |font: &mut Font<Blocks>, animations: &Animations, ms: u64| {
+            let fields = Fields::new();
+            let items = paint(
+                &tree,
+                &layout,
+                font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: None,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &Lists::new(),
+                    motion: Some((animations, start + Duration::from_millis(ms))),
+                },
+            );
+            items
+                .into_iter()
+                .find_map(|item| match item {
+                    Item::Shapes(shapes) => shapes.first().copied(),
+                    _ => None,
+                })
+                .unwrap()
+                .fill
+        };
+        let close_to = |a: Color, b: Color| {
+            [
+                (a.red, b.red),
+                (a.green, b.green),
+                (a.blue, b.blue),
+                (a.alpha, b.alpha),
+            ]
+            .iter()
+            .all(|(x, y)| (x - y).abs() < 1e-3)
+        };
+        let inactive = token("tab.inactive.bg");
+        let hovered = over(token("tab.hover.bg"), inactive);
+        let pressed = over(token("button.pressed.bg"), hovered);
+        // Hovered, then pressed once the hover showed.
+        animations.hovered([&tab], start);
+        assert!(close_to(fill(&mut font, &animations, 200), hovered));
+        animations.pressed(Some(&tab), start + Duration::from_millis(200));
+        assert!(close_to(
+            fill(&mut font, &animations, 300),
+            mixed(hovered, pressed, 0.5)
+        ));
+        assert!(close_to(fill(&mut font, &animations, 400), pressed));
+        // Up, halfway back to the hover, then the hover alone.
+        animations.pressed(None, start + Duration::from_millis(400));
+        assert!(close_to(
+            fill(&mut font, &animations, 500),
+            mixed(hovered, pressed, 0.5)
+        ));
+        assert!(close_to(fill(&mut font, &animations, 600), hovered));
+        assert!(!animations.running(start + Duration::from_millis(600)));
+    }
+
+    #[test]
     fn a_mix_shows_between_its_ends_over_any_background() {
         // An opaque dark gray and a white of a tenth, over a dark
         // background, as a tab and its hover: each step of the mix, drawn
@@ -2928,7 +3049,11 @@ mod tests {
                 && (a.blue - b.blue).abs() < 1e-3
                 && (a.alpha - b.alpha).abs() < 1e-3
         };
-        let (inactive, hovered) = (token("tab.inactive.bg"), token("tab.hover.bg"));
+        // The hover's veil over the tab's own background; the accent over
+        // the text's color, opaque.
+        let (inactive, veil) = (token("tab.inactive.bg"), token("tab.hover.bg"));
+        let hovered = over(veil, inactive);
+        assert!(hovered.alpha >= 1.0 - 1e-6 && veil.alpha < 1.0);
         let (text, accent) = (token("text"), token("accent"));
         // Halfway in: the background and the text's color half the hover's,
         // the close button half opaque.

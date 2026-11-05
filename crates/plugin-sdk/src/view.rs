@@ -471,16 +471,22 @@ pub struct Style {
     /// What a node of a key takes while the pointer is over it, its
     /// children's boxes too, as the hover's events have it, which the host
     /// applies as the pointer moves, with no render, fading it as its
-    /// `transition` says; `None` for nothing.
+    /// `transition` says, its colors drawn over the style's own, as the
+    /// theme's veils are; `None` for nothing.
     pub hover: Option<Hover>,
     /// What it takes while the pointer is over its nearest node of a key
     /// around it, as a tab's close button shows under the pointer over its
     /// tab, fading as that node's transition says; `None` for nothing.
     pub parent_hover: Option<Hover>,
+    /// What a node of a key takes while the primary button that went down
+    /// over it is down and the pointer is still over it, as a button's
+    /// press shows, over its hover, which the host applies with no render,
+    /// fading it as its `transition` says; `None` for nothing.
+    pub pressed: Option<Hover>,
 }
 
-/// What a node takes under the pointer, in place of its style's: a part
-/// left `None` stays the style's.
+/// What a node takes under the pointer, hovered or pressed, in place of
+/// its style's: a part left `None` stays the style's.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct Hover {
@@ -982,6 +988,10 @@ mod tests {
                     color: Token::from("accent"),
                     width: 2.0,
                 }),
+                ..Hover::default()
+            }),
+            pressed: Some(Hover {
+                color: Some(Token::from("tab.active.fg")),
                 ..Hover::default()
             }),
         });
