@@ -17,6 +17,27 @@ pub struct Size {
     pub height: f64,
 }
 
+/// A window's frame, in points, from the top left of the main display, as
+/// the window server lists it, and as the mouse's events are placed.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// The frames of the windows that the process `pid` has on screen at the
+/// normal level, the largest first.
+pub fn frames(pid: libc::pid_t) -> Vec<Frame> {
+    let mut frames: Vec<Frame> = normal_windows(pid)
+        .iter()
+        .filter_map(|window| frame(window))
+        .collect();
+    frames.sort_by(|a, b| (b.width * b.height).total_cmp(&(a.width * a.height)));
+    frames
+}
+
 /// Whether the process `pid` has a window on screen at the normal level: the
 /// level of document windows, below menus, panels and the menu bar.
 pub fn has_window(pid: libc::pid_t) -> bool {
@@ -56,6 +77,25 @@ fn normal_windows(pid: libc::pid_t) -> Vec<CFRetained<Description>> {
 /// The integer at `key` in a window's description.
 fn integer(window: &Description, key: &CFString) -> Option<i32> {
     window.get(key)?.downcast::<CFNumber>().ok()?.as_i32()
+}
+
+/// The frame of a window's bounds, a dictionary with `X`, `Y`, `Width`
+/// and `Height`.
+fn frame(window: &Description) -> Option<Frame> {
+    // SAFETY: reading a constant that CoreGraphics defines.
+    #[allow(unsafe_code)]
+    let key = unsafe { kCGWindowBounds };
+    let bounds = window.get(key)?.downcast::<CFDictionary>().ok()?;
+    // SAFETY: the bounds are a dictionary of numbers keyed by strings.
+    #[allow(unsafe_code)]
+    let bounds = unsafe { bounds.cast_unchecked::<CFString, CFNumber>() };
+    let dimension = |name: &'static str| bounds.get(&CFString::from_static_str(name))?.as_f64();
+    Some(Frame {
+        x: dimension("X")?,
+        y: dimension("Y")?,
+        width: dimension("Width")?,
+        height: dimension("Height")?,
+    })
 }
 
 /// The size in a window's bounds, a dictionary with `Width` and `Height`.

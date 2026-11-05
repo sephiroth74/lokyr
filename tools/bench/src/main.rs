@@ -17,6 +17,8 @@ mod idle;
 #[cfg(target_os = "macos")]
 mod memory;
 #[cfg(target_os = "macos")]
+mod motion;
+#[cfg(target_os = "macos")]
 mod process;
 #[cfg(target_os = "macos")]
 mod sampling;
@@ -42,6 +44,8 @@ fn main() -> ExitCode {
         Some("startup") => startup::run(args),
         #[cfg(target_os = "macos")]
         Some("energy") => energy::run(args),
+        #[cfg(target_os = "macos")]
+        Some("motion") => motion::run(args),
         Some(probe) => {
             eprintln!("error: unknown probe `{probe}`\n");
             print_help();
@@ -58,6 +62,10 @@ fn print_help() {
     println!(
         "Usage: lokyr-bench <probe> [options]\n\n\
          Probes (macOS):\n  \
+         motion --pid <pid> --kind drag|resize [--seconds <s>] [--rate <hz>] [--amplitude <points>]\n      \
+         drag a process's window by its titlebar, or resize it by its corner,\n      \
+         along the same path each run, with the mouse's synthetic events, for\n      \
+         10 s at 120 Hz by default; takes the Accessibility permission; prints JSON\n  \
          memory --pid <pid> [--interval <ms>] [--duration <s>]\n      \
          sample the memory footprint of a process, with and without its GPU\n      \
          memory; prints JSON, sizes in bytes\n  \
