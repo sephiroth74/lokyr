@@ -480,9 +480,9 @@ fn a_live_resize_draws_once_a_refresh() {
     let (mut fake, mut app) = started();
     let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::LiveResize(true));
-    // A frame drawn within this refresh: the display's frame, and the
-    // step, wait for the next, as a second frame within it would wait a
-    // second for a drawable.
+    // A frame drawn within this refresh: the display's frame, and a step
+    // within half of it, wait for the next, as a second frame within the
+    // transaction's commit would wait a second for a drawable.
     app.windows.get_mut(&window).unwrap().drawn_at = Some(Instant::now());
     // The grid that a frame lays out, which a draw changes.
     let laid_out = |app: &App| app.windows[&window].views[0].grid;
@@ -490,6 +490,17 @@ fn a_live_resize_draws_once_a_refresh() {
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(fake.window(window).unwrap().frame_requested);
     fake.send(&mut app, window, WindowEvent::Resized(points(400.0, 300.0)));
+    assert_eq!(laid_out(&app), before);
+    assert!(fake.window(window).unwrap().frame_requested);
+    // Past half the refresh, a step draws at once, in its own transaction,
+    // where the display's frame waits for the next refresh.
+    let half = Instant::now() - Duration::from_millis(12);
+    app.windows.get_mut(&window).unwrap().drawn_at = Some(half);
+    fake.send(&mut app, window, WindowEvent::Resized(points(420.0, 310.0)));
+    assert_ne!(laid_out(&app), before);
+    let before = laid_out(&app);
+    app.windows.get_mut(&window).unwrap().drawn_at = Some(half);
+    fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(laid_out(&app), before);
     assert!(fake.window(window).unwrap().frame_requested);
     // A refresh later, it draws at once, and so does the display's frame.

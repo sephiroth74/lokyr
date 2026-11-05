@@ -155,6 +155,11 @@ const APPEARANCES: [(&str, AppearanceMode, &str); 3] = [
 /// characters of each.
 const PREVIEW: (usize, usize) = (3, 60);
 
+/// The share of a refresh within which a step of a live resize that drew
+/// does not draw again: steps a refresh apart draw each, and steps of a
+/// display of twice the events' rate every other one.
+const STEP_SHARE: f64 = 0.5;
+
 /// How deep the commands that plugins run from their commands go, past
 /// which the next does not run, as a plugin that runs its own command
 /// would go on forever.
@@ -2350,22 +2355,27 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Whether `window`, in a live resize, drew a frame within this refresh
-    /// of its display. Its frames then show with Core Animation's
-    /// transaction, which lets their drawables go once it is committed: a
-    /// second frame within the refresh, of a step of the resize or of the
-    /// display, whose frames come within the transaction's commit, would
-    /// wait for a drawable that the commit, which waits for it in turn,
-    /// lets go, until the drawables' wait gives up a second later, the
-    /// window held, its content stretched. The frame waits for the next
-    /// refresh instead.
-    fn drew_within(&self, platform: &dyn Platform, window: WindowId) -> bool {
+    /// Whether `window`, in a live resize, drew a frame within `share` of
+    /// this refresh of its display. Its frames then show with Core
+    /// Animation's transaction, which lets their drawables go once it is
+    /// committed: the display's frame, which comes within the commit of a
+    /// step's transaction, would wait for a drawable that the commit, which
+    /// waits for it in turn, lets go, until the drawables' wait gives up a
+    /// second later, the window held, its content stretched; it waits for
+    /// the next refresh instead, past a frame within the whole of it. A
+    /// step draws in its own transaction, past a frame within
+    /// [`STEP_SHARE`] of the refresh: a step that waited for a frame within
+    /// the whole of it, as the steps come a refresh apart, waited for the
+    /// display's next frame nearly every time, which showed in a
+    /// transaction of its own, so that the resize drew at half the
+    /// display's rate.
+    fn drew_within(&self, platform: &dyn Platform, window: WindowId, share: f64) -> bool {
         let refresh = platform.refresh_interval(window).unwrap_or_default();
         self.windows.get(&window).is_some_and(|state| {
             state.live_resize
                 && state
                     .drawn_at
-                    .is_some_and(|drawn| drawn.elapsed() < refresh)
+                    .is_some_and(|drawn| drawn.elapsed() < refresh.mul_f64(share))
         })
     }
 
@@ -2906,7 +2916,7 @@ impl<B: Backend> App<B> {
             // follows the edge, but once a refresh, as the display's frames
             // do: see `drew_within`.
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
-                if self.drew_within(platform, window) {
+                if self.drew_within(platform, window, STEP_SHARE) {
                     platform.request_frame(window);
                 } else {
                     self.draw(platform, window, size);
@@ -2945,7 +2955,7 @@ impl<B: Backend> App<B> {
                 }
             }
             WindowEvent::Frame => {
-                if self.drew_within(platform, window) {
+                if self.drew_within(platform, window, 1.0) {
                     platform.request_frame(window);
                 } else if let Some(size) = platform.window_size(window) {
                     self.draw(platform, window, size);
