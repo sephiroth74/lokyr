@@ -622,9 +622,110 @@ pub enum Data {
     Map(BTreeMap<String, Data>),
 }
 
+impl Data {
+    /// The most levels that a value nests, of its lists and its maps, which
+    /// the host takes: a deeper one it refuses, as it walks the values that
+    /// it takes recursively, on the main thread.
+    pub const DEEPEST: usize = 64;
+
+    /// Whether the value nests [`Data::DEEPEST`] levels at most, which it
+    /// tells without recursion, of a value of any depth.
+    pub fn nests_within_deepest(&self) -> bool {
+        let mut left = vec![(self, 0)];
+        while let Some((value, depth)) = left.pop() {
+            let inner: Box<dyn Iterator<Item = &Data>> = match value {
+                Self::List(items) => Box::new(items.iter()),
+                Self::Map(map) => Box::new(map.values()),
+                _ => continue,
+            };
+            if depth == Self::DEEPEST {
+                return false;
+            }
+            left.extend(inner.map(|item| (item, depth + 1)));
+        }
+        true
+    }
+}
+
+/// Drops `data` a level at a time, without recursion, as a value too deep
+/// for a recursive drop.
+pub fn dismantle(data: Data) {
+    let mut left = vec![data];
+    while let Some(value) = left.pop() {
+        match value {
+            Data::List(items) => left.extend(items),
+            Data::Map(map) => left.extend(map.into_values()),
+            _ => {}
+        }
+    }
+}
+
+impl Request {
+    /// Takes the data that the request carries away, a state's or an
+    /// event's value, `Nil` in its place.
+    fn take_data(&mut self) -> Option<Data> {
+        match self {
+            Self::SetState(value) | Self::Emit { value, .. } => {
+                Some(std::mem::replace(value, Data::Nil))
+            }
+            _ => None,
+        }
+    }
+
+    /// The data that the request carries, a state's or an event's value.
+    fn data(&self) -> Option<&Data> {
+        match self {
+            Self::SetState(value) | Self::Emit { value, .. } => Some(value),
+            _ => None,
+        }
+    }
+}
+
+/// `request`, if the data that it carries nests [`Data::DEEPEST`] levels at
+/// most, as the host takes it; `failed` otherwise, its data dropped
+/// without recursion, where it is checked, on the plugin's own thread.
+pub fn within_depth(mut request: Request) -> Result<Request, crate::command::Error> {
+    if request.data().is_none_or(Data::nests_within_deepest) {
+        return Ok(request);
+    }
+    if let Some(data) = request.take_data() {
+        dismantle(data);
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!("a plugin's value nests {} levels at most", Data::DEEPEST),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A value of lists nested `depth` levels deep, made without recursion.
+    fn nested(depth: usize) -> Data {
+        let mut value = Data::Nil;
+        for _ in 0..depth {
+            value = Data::List(vec![value]);
+        }
+        value
+    }
+
+    #[test]
+    fn a_value_nests_within_its_depth_and_one_too_deep_drops_without_recursion() {
+        assert!(nested(Data::DEEPEST).nests_within_deepest());
+        assert!(!nested(Data::DEEPEST + 1).nests_within_deepest());
+        let mut map = Data::Nil;
+        for _ in 0..=Data::DEEPEST {
+            map = Data::Map([("x".to_owned(), map)].into());
+        }
+        assert!(!map.nests_within_deepest());
+        // Far deeper than a recursive walk or drop takes, refused, and
+        // dropped a level at a time.
+        let deep = Request::SetState(nested(1_000_000));
+        assert_eq!(within_depth(deep).unwrap_err().code, Code::Failed);
+        let kept = Request::SetState(nested(3));
+        assert_eq!(within_depth(kept.clone()), Ok(kept));
+    }
     use crate::command::{Category, Code, Value};
 
     #[test]

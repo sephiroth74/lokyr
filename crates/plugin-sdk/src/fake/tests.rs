@@ -803,3 +803,24 @@ fn the_config_s_change_reaches_an_active_plugin_alone() {
     host.deliver(&mut probe).unwrap();
     assert_eq!(probe.heard, [["config-changed"]]);
 }
+
+#[test]
+fn a_value_nested_too_deep_is_refused_as_the_app_s_host_refuses_it() {
+    let mut host = FakeHost::new("acme/probe");
+    let nested = |depth: usize| {
+        let mut value = Data::Nil;
+        for _ in 0..depth {
+            value = Data::List(vec![value]);
+        }
+        value
+    };
+    let mut probe = Probe::new(move |cx, _| {
+        cx.set_state(nested(Data::DEEPEST))?;
+        assert_eq!(
+            cx.set_state(nested(1_000_000)).unwrap_err().code,
+            Code::Failed
+        );
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}

@@ -739,3 +739,32 @@ fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_en
         [Request::Run { depth: 0, .. }]
     ));
 }
+
+#[test]
+fn a_worker_s_value_nested_too_deep_is_refused_on_its_thread() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let (told, heard) = mpsc::channel();
+    let plugin = Threaded {
+        on_command: Box::new(move |cx, _| {
+            let deep = super::super::tests::nested(1_000_000);
+            told.send(
+                cx.emit("busy.value", "busy.value/1", deep)
+                    .map_err(|error| error.code),
+            )
+            .unwrap();
+            Ok(())
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert_eq!(
+        heard.recv_timeout(Duration::from_secs(10)).unwrap(),
+        Err(Code::Failed)
+    );
+    assert_eq!(plugins.status("acme/busy"), Some(Status::Active));
+}

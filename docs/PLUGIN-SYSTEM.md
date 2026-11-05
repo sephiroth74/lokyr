@@ -171,7 +171,7 @@ return Search
   - Bulk data uses buffers. For example, a highlighter returns its spans in one `buffer`, which the host reads in one copy: reading 100000 spans from tables costs 6–7 ms, against about 1.5 ms through Lua's C API ([F0-22](tasks/F0-foundations.md#f0-22--spike-lua-plugin-runtimes)).
 - **Handles to host objects**: windows, tabs and panes are opaque integer ids, as in the Rust front end.
 - **Rows** are numbers, which output, the view's scrolling and the scrollback's limit leave a row, until it leaves the scrollback; a resize numbers the rows anew. A command of a cell, as a click's, takes the number of the row clicked, as the drawn frame showed it ([ARCHITECTURE.md](ARCHITECTURE.md#kernel-data-model)).
-- **Plugin-defined events**: `custom` events carry a name, of the plugin's namespace, as `search.progress`, a schema id, as `search.progress/1`, and a plain value, the SDK's `message::Data`: text, numbers, true or false, and lists and maps of them, as a Luau table is. `cx.emit` emits one, which comes after the call returns.
+- **Plugin-defined events**: `custom` events carry a name, of the plugin's namespace, as `search.progress`, a schema id, as `search.progress/1`, and a plain value, the SDK's `message::Data`: text, numbers, true or false, and lists and maps of them, as a Luau table is. `cx.emit` emits one, which comes after the call returns. A value, an event's or a state's, nests `Data::DEEPEST` levels at most, 64, as the host walks the values that it takes recursively on the main thread: a deeper one is refused, `failed`, checked without recursion and dropped a level at a time, a worker's on its own thread; the Luau front end's conversion of tables keeps the same limit.
 
 ### Versioning
 

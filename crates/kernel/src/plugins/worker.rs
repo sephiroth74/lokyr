@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use lokyr_plugin_sdk::host;
-use lokyr_plugin_sdk::message::{Call, Event, Response};
+use lokyr_plugin_sdk::message::{Call, Event, Response, within_depth};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
 use lokyr_plugin_sdk::view::Node;
@@ -306,6 +306,12 @@ struct Proxy<'p> {
 impl host::Host for Proxy<'_> {
     fn handle(&mut self, call: Call) -> Response {
         let gone = || Response::Failed(Error::new(Code::Unavailable, "the app's host stopped"));
+        // A value too deep for the main thread's walks is refused here, on
+        // the plugin's own thread, which drops it.
+        let call = match within_depth(call.request) {
+            Ok(request) => Call { request, ..call },
+            Err(error) => return Response::Failed(error),
+        };
         if self.to_main.send(FromWorker::Request(call)).is_err() {
             return gone();
         }

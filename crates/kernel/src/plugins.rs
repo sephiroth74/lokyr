@@ -32,7 +32,7 @@ use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
-use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
+use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};
 pub use lokyr_plugin_sdk::message::{Data, Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
@@ -3006,14 +3006,16 @@ impl Host<'_, '_> {
 
 impl host::Host for Host<'_, '_> {
     fn handle(&mut self, call: Call) -> Response {
-        let request = call.request;
         let answered = if call.caller == self.state.name {
-            self.allows(&request).and_then(|()| match request.effect() {
-                Effect::Read => self.read(request),
-                Effect::Write => self.queue(request),
-                Effect::App => self.ask_app(request),
-                Effect::Declaration => self.declare(request),
-            })
+            let request = call.request;
+            within_depth(request)
+                .and_then(|request| self.allows(&request).map(|()| request))
+                .and_then(|request| match request.effect() {
+                    Effect::Read => self.read(request),
+                    Effect::Write => self.queue(request),
+                    Effect::App => self.ask_app(request),
+                    Effect::Declaration => self.declare(request),
+                })
         } else {
             Err(Error::new(
                 Code::Fault,

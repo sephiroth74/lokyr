@@ -1797,6 +1797,62 @@ fn changes(app: &mut App) -> Vec<WorkspaceEvent> {
         .collect()
 }
 
+/// A value of lists nested `depth` levels deep, made without recursion.
+pub(super) fn nested(depth: usize) -> lokyr_plugin_sdk::message::Data {
+    use lokyr_plugin_sdk::message::Data;
+    let mut value = Data::Nil;
+    for _ in 0..depth {
+        value = Data::List(vec![value]);
+    }
+    value
+}
+
+#[test]
+fn a_plugin_s_value_nested_too_deep_is_refused_and_the_app_goes_on() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let mut app = App::default();
+    let state = std::env::temp_dir().join(format!("lokyr-deep-state-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&state);
+    let mut plugins = Plugins::new();
+    let codes = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&codes);
+    plugins
+        .add(
+            "deep",
+            scripted(
+                |cx| cx.register_command(command("deep.go")),
+                move |cx, _, _| {
+                    let push = |result: Result<(), Error>| {
+                        seen.borrow_mut().push(result.err().map(|error| error.code));
+                    };
+                    push(cx.set_state(nested(Data::DEEPEST)));
+                    push(cx.set_state(nested(Data::DEEPEST + 1)));
+                    // Far too deep for a recursive walk or drop.
+                    push(cx.set_state(nested(1_000_000)));
+                    push(cx.emit("deep.value", "deep.value/1", nested(1_000_000)));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    plugins.set_state_directory(Some(state.clone()));
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("deep.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert_eq!(
+        *codes.borrow(),
+        [
+            None,
+            Some(Code::Failed),
+            Some(Code::Failed),
+            Some(Code::Failed)
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&state);
+}
+
 #[test]
 fn a_call_writes_to_the_panes_that_its_earlier_writes_open() {
     use lokyr_plugin_sdk::host::{Scroll as Scrolled, Side as Part};

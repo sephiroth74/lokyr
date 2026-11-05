@@ -1835,7 +1835,10 @@ impl host::Host for Calling<'_> {
                 ),
             ));
         }
-        let request = call.request;
+        let request = match crate::message::within_depth(call.request) {
+            Ok(request) => request,
+            Err(error) => return Response::Failed(error),
+        };
         if let (Some(needed), Some(granted)) = (request.capability(), &self.host.granted)
             && !granted.contains(&needed)
         {
