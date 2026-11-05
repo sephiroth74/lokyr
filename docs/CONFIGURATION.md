@@ -1241,7 +1241,7 @@ For the keys of a shell's line editing, as macOS's text fields have them:
 - `delete` is the key that deletes forward, fn-⌫ on a laptop's keyboard.
 - zsh's Control-U deletes the whole line, where bash's and fish's delete to its start; `bindkey '^U' backward-kill-line` in `~/.zshrc` makes zsh's delete to the start.
 
-The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's apps and of iTerm2's:
+The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's apps:
 
 - Your bindings come after them, and win; `false` takes a default away.
 - `[plugins.keymap-macos] enabled = false` takes them all away, so that your `[keys]` bind every key from nothing: the menus keep the system's own keys alone, ⌘H to hide Lokyr, ⌥⌘H to hide the others, ⌘M to minimize the window, and ⌃⌘Space for the emoji and symbols.

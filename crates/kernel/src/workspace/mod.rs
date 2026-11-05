@@ -423,6 +423,17 @@ impl Workspace {
             let Some(happened) = pane.happened(now) else {
                 continue;
             };
+            // The pane keeps its program's title and color, for when it
+            // takes its tab's keyboard.
+            if let Some(title) = &happened.title {
+                pane.title.clone_from(title);
+            }
+            if let Some(color) = happened.events.iter().rev().find_map(|event| match event {
+                terminal::Event::TabColor(color) => Some(*color),
+                _ => None,
+            }) {
+                pane.tab_color = color;
+            }
             // The tab that takes the pane's title and color, as its active
             // pane.
             let mut tab = self
@@ -535,7 +546,8 @@ impl Workspace {
         self.new_tab_as(pane, TabId::new())
     }
 
-    /// Makes a tab of the id `tab` as [`Workspace::new_tab`] makes one.
+    /// Makes a tab of the id `tab` as [`Workspace::new_tab`] makes one, of
+    /// its pane's title and color.
     fn new_tab_as(&mut self, pane: PaneId, tab: TabId) -> TabId {
         self.tab_of.insert(pane, tab);
         self.tabs.insert(
@@ -550,7 +562,20 @@ impl Workspace {
                 zoomed: None,
             },
         );
+        self.take_active_look(tab);
         tab
+    }
+
+    /// Gives `tab` the title and the color that the program of its active
+    /// pane set, as that pane takes the tab's keyboard.
+    fn take_active_look(&mut self, tab: TabId) {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        if let Some(pane) = self.panes.get(&shown.active) {
+            shown.title.clone_from(&pane.title);
+            shown.color = pane.tab_color;
+        }
     }
 
     /// Opens a window whose one tab, which it shows, is `tab`, and returns
@@ -752,6 +777,9 @@ impl Workspace {
         if tab.zoomed == Some(pane) {
             tab.zoomed = None;
         }
+        if refocused {
+            self.take_active_look(tab_id);
+        }
         self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         if refocused {
             self.changed(WorkspaceEvent::PaneFocused {
@@ -798,6 +826,7 @@ impl Workspace {
         };
         if tab.active != pane {
             tab.active = pane;
+            self.take_active_look(tab_id);
             self.changed(WorkspaceEvent::PaneFocused {
                 pane: pane.into(),
                 tab: tab_id.into(),

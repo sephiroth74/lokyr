@@ -1801,7 +1801,9 @@ impl<B: Backend> App<B> {
     }
 
     /// The pane that has `window`'s keyboard, if it is another than the one
-    /// that had it, as the app or a plugin moved it: a composition under
+    /// that had it, as the app or a plugin moved it: while the window has
+    /// the focus, and the pane rather than a slot's view, the programs that
+    /// asked learn of it, the one that it leaves first; a composition under
     /// way ends, which the input method forgets, so that its commit goes to
     /// no other pane, and so does a selection being made; the cursor starts
     /// blinking, on; the window looks at its new place, its program and its
@@ -1813,6 +1815,14 @@ impl<B: Backend> App<B> {
         let now = self.workspace.focused(state.window).map(Pane::id);
         if now == state.keyboard {
             return;
+        }
+        if state.focused && state.pane_has_focus() {
+            // A pane that closed tells nothing.
+            for (id, focused) in [(state.keyboard, false), (now, true)] {
+                if let Some(pane) = id.and_then(|id| self.workspace.pane(id)) {
+                    pane.focus(focused);
+                }
+            }
         }
         state.keyboard = now;
         if state.preedit.take().is_some() {
@@ -2655,12 +2665,14 @@ impl<B: Backend> App<B> {
     }
 
     /// The app's appearance is `appearance`: the panes take its theme's
-    /// variant, and the windows draw again.
+    /// variant, every pane of every tab, and the windows draw again.
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
         let colors = self.colors(appearance);
         for state in self.windows.values().filter(|state| state.page.is_none()) {
-            if let Some(pane) = self.workspace.focused(state.window) {
-                pane.set_colors(&colors);
+            for id in self.workspace.panes_of(state.window) {
+                if let Some(pane) = self.workspace.pane(id) {
+                    pane.set_colors(&colors);
+                }
             }
         }
         // The plugins' views render again, of the theme's other variant.

@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use lokyr_pty::{Exit, Program, Size};
 use lokyr_session::{Options, Reader, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
-use lokyr_vt_core::page::Scrollback;
 use lokyr_vt_core::page::Style;
+use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
     self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, Scroll, Selected,
@@ -187,6 +187,11 @@ pub struct Pane {
     selection_touched: AtomicBool,
     /// Whether the workspace told that the program's output ended.
     ended_told: bool,
+    /// The title that its program set last, which its tab takes while it
+    /// has the tab's keyboard.
+    pub(super) title: String,
+    /// The tab's color that its program set last, if it set one.
+    pub(super) tab_color: Option<Rgb>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -291,6 +296,8 @@ impl Pane {
             ended_told: false,
             told_at: None,
             selection_touched: AtomicBool::new(false),
+            title: String::new(),
+            tab_color: None,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by

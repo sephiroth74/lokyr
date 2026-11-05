@@ -531,6 +531,44 @@ fn the_sessions_events_come_in_as_they_are_collected() {
 }
 
 #[test]
+fn a_tab_takes_the_title_and_the_color_of_the_pane_that_takes_its_keyboard() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(
+        "printf '\\033]2;first\\007\\033]6;1;bg;red;brightness;255\\007'; sleep 5",
+    ));
+    let first = workspace.active_pane(window).unwrap();
+    let second = workspace
+        .split(
+            first,
+            Direction::Horizontal,
+            pane("printf '\\033]2;second\\007'; sleep 5"),
+            Side::Second,
+        )
+        .unwrap();
+    let titled = |events: &[Event], id| events.contains(&Event::TitleChanged(id));
+    collect_until(&mut workspace, |events| {
+        titled(events, first) && titled(events, second)
+    });
+    let tab = workspace.window(window).unwrap().active_tab();
+    let look = |workspace: &Workspace| {
+        let tab = workspace.tab(tab).unwrap();
+        (tab.title().to_owned(), tab.color())
+    };
+    let red = Some(Rgb::new(255, 0, 0));
+    // The second's title, set while the first had the keyboard, is kept.
+    assert_eq!(look(&workspace), ("first".to_owned(), red));
+    assert!(workspace.focus_pane(second));
+    assert_eq!(look(&workspace), ("second".to_owned(), None));
+    assert!(workspace.focus_pane(first));
+    assert_eq!(look(&workspace), ("first".to_owned(), red));
+    // A pane out to a tab of its own takes its title there; the tab that
+    // it leaves, its other pane's.
+    let moved = workspace.pane_to_new_tab(first, window, 1).unwrap();
+    assert_eq!(workspace.tab(moved).unwrap().title(), "first");
+    assert_eq!(look(&workspace), ("second".to_owned(), None));
+}
+
+#[test]
 fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
     let program = Program::command("/bin/sh", ["-c", "exit 3"]);
     let texts = Texts::new("it", &crate::l10n::KERNEL);

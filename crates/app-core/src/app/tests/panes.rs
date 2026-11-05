@@ -316,3 +316,76 @@ fn a_plugin_s_moves_of_the_keyboard_do_what_the_app_s_own_do() {
         );
     }
 }
+
+/// A program that asks for the focus's reports, sets its title and its
+/// tab's color, red for `a` and blue for the others, tells it is ready
+/// after its `name`, and shows what it reads.
+fn reporting(name: &str) -> Program {
+    let color = if name == "a" { "red" } else { "blue" };
+    shell(&format!(
+        "stty raw -echo; printf '\\033[?1004h\\033]2;title-{name}\\007\\033]6;1;bg;{color};brightness;255\\007'; echo ready-{name}; cat -v"
+    ))
+}
+
+#[test]
+fn the_keyboard_s_move_tells_the_programs_and_takes_the_pane_s_title_and_color() {
+    let (mut fake, mut app, window, a, b) = two_panes(reporting("a"), &reporting("b"));
+    let title = |fake: &Fake| fake.window(window).unwrap().title.clone();
+    let tab = |app: &App| {
+        let shown = app.windows[&window].window;
+        let tab = app.workspace.window(shown).unwrap().active_tab();
+        let tab = app.workspace.tab(tab).unwrap();
+        (tab.title().to_owned(), tab.color())
+    };
+    let red = Some(lokyr_vt_core::page::Rgb::new(255, 0, 0));
+    let blue = Some(lokyr_vt_core::page::Rgb::new(0, 0, 255));
+    run_until(&mut fake, &mut app, |fake, app| {
+        title(fake).starts_with("title-a") && tab(app).1 == red
+    });
+    // To the second: the first learns that it lost the focus, and then
+    // the second that it took it; the tab takes the second's title and
+    // color, which its program set while the first had the keyboard.
+    click_in(&mut fake, &mut app, window, b);
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains("^[[O") && screen_of(app, b).contains("^[[I")
+    });
+    assert_eq!(tab(&app), ("title-b".to_owned(), blue));
+    assert!(title(&fake).starts_with("title-b"), "{}", title(&fake));
+    // And back: the first's title and color, kept.
+    click_in(&mut fake, &mut app, window, a);
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains("^[[O^[[I") && screen_of(app, b).contains("^[[I^[[O")
+    });
+    assert_eq!(tab(&app), ("title-a".to_owned(), red));
+    assert!(title(&fake).starts_with("title-a"), "{}", title(&fake));
+    // Without the window's focus, a move tells nothing.
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    app.focus_pane(&mut fake, window, b);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains("^[[O^[[I^[[O") && screen_of(app, b).contains("^[[I^[[O^[[I")
+    });
+    let reports = |pane| screen_of(&app, pane).matches("^[[").count();
+    assert_eq!((reports(a), reports(b)), (3, 3));
+    assert_eq!(tab(&app), ("title-b".to_owned(), blue));
+    // A pane that closes tells nothing, and the other takes its title.
+    app.close_pane(&mut fake, window, b);
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains("^[[O^[[I^[[O^[[I")
+    });
+    assert_eq!(tab(&app), ("title-a".to_owned(), red));
+}
+
+#[test]
+fn a_change_of_the_appearance_gives_every_pane_its_colors() {
+    let (mut fake, mut app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
+    fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+    let dark = app.colors(Appearance::Dark);
+    assert_ne!(dark, app.colors(Appearance::Light));
+    run_until(&mut fake, &mut app, |_, app| {
+        [a, b]
+            .iter()
+            .all(|&pane| app.workspace.pane(pane).unwrap().snapshot().colors() == &dark)
+    });
+    let _ = window;
+}
