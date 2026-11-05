@@ -217,6 +217,8 @@ type WindowInfo = {
     id: WindowId,
     tabs: { TabId }, -- in their order
     active: TabId, -- the tab that it shows
+    number: number?, -- from 1, the lowest that no other open window had as it opened; none for the quick terminal's
+    keys: string?, -- the keys that bring it forward, as the platform writes them, as "⌥⌘1"
 }
 
 type TabInfo = {

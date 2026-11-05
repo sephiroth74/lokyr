@@ -443,11 +443,21 @@ fn a_menu_shows_a_command_s_first_key_that_no_later_binding_takes() {
     let keymap = Keymap::new(vec![Binding {
         invocation: Invocation {
             command: "pane.send-text".to_owned(),
-            args,
+            args: args.clone(),
         },
         ..binding("cmd+e", "pane.send-text", None)
     }]);
     assert_eq!(keymap.shortcut("pane.send-text"), None);
+    // But the keys of its arguments.
+    assert_eq!(
+        keymap
+            .shortcut_with("pane.send-text", &args)
+            .map(|combo| combo.to_string())
+            .as_deref(),
+        Some("cmd+e")
+    );
+    args.insert("text".to_owned(), Value::String("y".to_owned()));
+    assert_eq!(keymap.shortcut_with("pane.send-text", &args), None);
 }
 
 #[test]

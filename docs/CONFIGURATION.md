@@ -91,6 +91,7 @@ padding-y = 4
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 title-size = false                   # true | false: the grid's size in the title
+title-shortcut = false               # true | false: ⌥⌘1 at the titlebar's right
 opaque-titlebar = true               # true | false: the titlebar opaque over a translucent window
 
 [quick-terminal]
@@ -652,6 +653,20 @@ Whether the window's title ends with the size of its grid, in columns and rows, 
 
 - The title before it is the one that you give with Shell › Set Title…, `cmd+shift+i`; otherwise the program's, when it gives one, as vim and the shells' prompts can, or a man page's, as `man ls`, or the folder of the program in the foreground; then that program, as `lokyr — vim`, which Lokyr looks at as the program writes, and once more a moment after, so that a program that you run shows though your prompt set the title.
 - As you resize the window, the size follows.
+- It applies at once, as you save the file.
+
+### `title-shortcut`
+
+<sub>Platforms: macOS</sub>
+
+Whether the titlebar shows, at its right, the keys that bring the window forward, as `⌥⌘1`.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Each window takes, as it opens, the lowest number that no other open window has, from 1; `alt+cmd+1` to `alt+cmd+9` bring the windows of the first nine forward, as [`[keys]`](#keys) says. The quick terminal has none.
+- The keys are those that your `[keys]` bind to `window.goto` of the window's number, as the menus write them; a window whose number no binding has shows none.
 - It applies at once, as you save the file.
 
 ### `opaque-titlebar`
@@ -1253,6 +1268,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+n` | `window.new` | Opens a window |
 | `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
+| `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other open window has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
 | `cmd+v` | `pane.paste` | Pastes the clipboard's text, asking you first when [`confirm-paste`](#confirm-paste) says so |

@@ -111,6 +111,51 @@ pub struct Shortcut {
     pub control: bool,
 }
 
+impl Shortcut {
+    /// The shortcut as the Mac's menus write it: Control, Option, Shift and
+    /// Command, `⌃⌥⇧⌘`, then the key, a letter in its capital, as `⌥⌘1` and
+    /// `⇧⌘K`, and a named key in its symbol, as `⌘↑`.
+    pub fn mac_text(&self) -> String {
+        let mut text: String = [
+            (self.control, '⌃'),
+            (self.alt, '⌥'),
+            (self.shift, '⇧'),
+            (self.command, '⌘'),
+        ]
+        .into_iter()
+        .filter_map(|(held, symbol)| held.then_some(symbol))
+        .collect();
+        let named = |code: KeyCode| -> String {
+            let symbol = match code {
+                KeyCode::Enter => "↩",
+                KeyCode::Tab => "⇥",
+                KeyCode::Backspace => "⌫",
+                KeyCode::Delete => "⌦",
+                KeyCode::Escape => "⎋",
+                KeyCode::Space => "Space",
+                KeyCode::Insert => "Help",
+                KeyCode::Home => "↖",
+                KeyCode::End => "↘",
+                KeyCode::PageUp => "⇞",
+                KeyCode::PageDown => "⇟",
+                KeyCode::ArrowUp => "↑",
+                KeyCode::ArrowDown => "↓",
+                KeyCode::ArrowLeft => "←",
+                KeyCode::ArrowRight => "→",
+                KeyCode::F(number) => return format!("F{number}"),
+                other => return format!("{other:?}"),
+            };
+            symbol.to_owned()
+        };
+        match self.key {
+            ShortcutKey::Char(' ') => text.push_str("Space"),
+            ShortcutKey::Char(key) => text.extend(key.to_uppercase()),
+            ShortcutKey::Code(code) => text.push_str(&named(code)),
+        }
+        text
+    }
+}
+
 /// The key of a [`Shortcut`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShortcutKey {

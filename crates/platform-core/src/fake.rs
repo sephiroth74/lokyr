@@ -11,8 +11,8 @@ use std::time::{Duration, Instant, SystemTime};
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Backdrop, ContentRect, ContextMenu, Error,
     GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea, PointerShape,
-    QuickPlace, ScreenRect, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage, Waker,
-    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
+    QuickPlace, ScreenRect, Shortcut, Size, Sweep, Target, TargetKind, TimerId, Titlebar, Usage,
+    Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -45,6 +45,8 @@ const QUICK_SIZE: Size = Size {
 pub struct FakeWindow {
     /// Its title.
     pub title: String,
+    /// The text at its titlebar's right, as the keys that bring it forward.
+    pub title_accessory: Option<String>,
     /// Where the pointer is over its content, as the events sent to it
     /// last told.
     pub pointer_at: Point,
@@ -702,6 +704,7 @@ impl Platform for Fake {
             id,
             FakeWindow {
                 title: attributes.title.clone(),
+                title_accessory: None,
                 size: WindowSize::new(
                     Size {
                         width: attributes.size.width,
@@ -745,6 +748,7 @@ impl Platform for Fake {
             id,
             FakeWindow {
                 title: title.to_owned(),
+                title_accessory: None,
                 size: WindowSize::new(QUICK_SIZE, self.scale),
                 occluded: true,
                 frame_requested: false,
@@ -833,6 +837,16 @@ impl Platform for Fake {
         if let Some(state) = self.windows.get_mut(&window) {
             title.clone_into(&mut state.title);
         }
+    }
+
+    fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.title_accessory = text.map(str::to_owned);
+        }
+    }
+
+    fn shortcut_text(&self, shortcut: Shortcut) -> String {
+        shortcut.mac_text()
     }
 
     fn set_window_remember(&mut self, window: WindowId, remember: bool) {

@@ -25,7 +25,7 @@ pub struct TabId(pub u64);
 pub struct PaneId(pub u64);
 
 /// A window, as a read of the windows gives it: its tabs, in their order,
-/// and the one that it shows.
+/// the one that it shows, and its number with the keys that select it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowInfo {
     /// The window.
@@ -34,6 +34,14 @@ pub struct WindowInfo {
     pub tabs: Vec<TabId>,
     /// The tab that it shows.
     pub active: TabId,
+    /// Its number, from 1, the lowest that no other open window had as it
+    /// opened; `None` for a window of none, as the quick terminal's.
+    #[serde(default)]
+    pub number: Option<u32>,
+    /// The keys that bring it forward, as the platform writes them, as
+    /// `⌥⌘1`; `None` while no binding has them.
+    #[serde(default)]
+    pub keys: Option<String>,
 }
 
 /// A tab, as a read of a window's tabs gives it.

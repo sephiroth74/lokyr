@@ -34,6 +34,7 @@ use objc2_foundation::{
 use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::access::Access;
+use crate::accessory::TitleAccessory;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
@@ -66,6 +67,8 @@ pub(crate) struct Window {
     /// What its events go to, and its number.
     shared: Weak<Shared>,
     id: WindowId,
+    /// The text at its titlebar's right, while it shows one.
+    accessory: RefCell<Option<TitleAccessory>>,
 }
 
 impl Window {
@@ -196,6 +199,7 @@ impl Window {
             quick,
             shared,
             id,
+            accessory: RefCell::new(None),
         }
     }
 
@@ -451,6 +455,30 @@ impl Window {
         self.ns_window.invalidateCursorRectsForView(&self.view);
         self.view
             .post(WindowEvent::Resized(size_of(&self.ns_window)));
+    }
+
+    /// Shows `text` at the titlebar's right, or nothing with `None`; a
+    /// quick window has no titlebar.
+    pub(crate) fn set_title_accessory(&self, text: Option<&str>) {
+        if self.quick.is_some() {
+            return;
+        }
+        let mut accessory = self.accessory.borrow_mut();
+        match (text, accessory.as_ref()) {
+            (Some(text), Some(shown)) => shown.set_text(text),
+            (Some(text), None) => {
+                *accessory = Some(TitleAccessory::add(
+                    &self.ns_window,
+                    text,
+                    self.ns_window.mtm(),
+                ));
+            }
+            (None, Some(shown)) => {
+                shown.remove();
+                *accessory = None;
+            }
+            (None, None) => {}
+        }
     }
 
     /// Gives the parts of the content where the pointer's moves come, and

@@ -2,13 +2,13 @@
 //! they draw, its main menu, and its config, which it reads again when the
 //! file changes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Registry};
+use lokyr_kernel::commands::{Args, Category, Code, Command, Error, Kind, Param, Registry, Value};
 use lokyr_kernel::config::{
     self, AppConfig, AppearanceMode, ClipboardRead, CloseOnExit, Config, ConfirmPaste,
     NewDirectory, OpenFile, OpenUrl, StartDirectory, Term,
@@ -106,6 +106,9 @@ const CLOSE_WINDOW: &str = "window.close";
 
 /// The command that asks for a title of the user's for the focused window.
 const SET_TITLE: &str = "window.set-title";
+
+/// Brings forward the window whose number is its `index`, from 1.
+const GOTO_WINDOW: &str = "window.goto";
 
 /// The command that shows the quick terminal, or hides it.
 const TOGGLE_QUICK: &str = "window.toggle-quick-terminal";
@@ -1508,8 +1511,96 @@ impl<B: Backend> App<B> {
         let mut state = Window::new(surfaces, shown, focused, Instant::now());
         state.page = page;
         state.keyboard = self.workspace.focused(shown).map(Pane::id);
+        // The lowest number that no other open window has; the quick
+        // terminal's has none.
+        let quick = self.quick.is_some_and(|(quick, _)| quick == window);
+        let number = (!quick).then(|| self.free_number());
+        self.workspace.number_window(shown, number, None);
         self.windows.insert(window, state);
+        self.window_keys(platform);
         self.draw(platform, window, size);
+    }
+
+    /// The lowest number, from 1, that no open window has.
+    fn free_number(&self) -> u32 {
+        let taken: BTreeSet<u32> = self
+            .windows
+            .values()
+            .filter_map(|state| self.workspace.window(state.window)?.number())
+            .collect();
+        (1..).find(|number| !taken.contains(number)).unwrap_or(1)
+    }
+
+    /// Gives each numbered window the keys that bring it forward, as the
+    /// keymap binds `window.goto` of its number and the platform writes
+    /// them, which the plugins read and its titlebar shows.
+    fn window_keys(&mut self, platform: &mut dyn Platform) {
+        let mut changed = Vec::new();
+        for (&window, state) in &self.windows {
+            let Some(number) = self
+                .workspace
+                .window(state.window)
+                .and_then(workspace::Window::number)
+            else {
+                continue;
+            };
+            let args = Args::from([("index".to_owned(), Value::Integer(i64::from(number)))]);
+            let keys = self
+                .keymap
+                .shortcut_with(GOTO_WINDOW, &args)
+                .and_then(menus::shortcut)
+                .map(|shortcut| platform.shortcut_text(shortcut));
+            let told = self
+                .workspace
+                .window(state.window)
+                .and_then(workspace::Window::keys);
+            if told != keys.as_deref() {
+                self.workspace
+                    .number_window(state.window, Some(number), keys);
+                changed.push(window);
+            }
+        }
+        for window in changed {
+            self.show_window_keys(platform, window);
+        }
+    }
+
+    /// Shows the keys that bring `window` forward at the right of its
+    /// titlebar of its title, unless the config hides them; a titlebar of
+    /// tabs leaves them to the bar's plugin. It takes no frame.
+    pub(super) fn show_window_keys(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let keys = self
+            .workspace
+            .window(state.window)
+            .and_then(workspace::Window::keys)
+            .filter(|_| {
+                self.config.window.title_shortcut
+                    && state.titlebar == lokyr_platform_core::Titlebar::Titled
+            });
+        if keys != state.accessory.as_deref() {
+            platform.set_title_accessory(window, keys);
+            state.accessory = keys.map(str::to_owned);
+        }
+    }
+
+    /// Brings forward the window whose number is `args`' `index`, if one
+    /// is open.
+    fn goto_window(&mut self, platform: &mut dyn Platform, args: &Args) {
+        let Some(&Value::Integer(index)) = args.get("index") else {
+            return;
+        };
+        let found = self.windows.iter().find(|(_, state)| {
+            self.workspace
+                .window(state.window)
+                .and_then(workspace::Window::number)
+                .is_some_and(|number| i64::from(number) == index)
+        });
+        if let Some((&window, _)) = found {
+            platform.focus_window(window);
+        }
     }
 
     /// Shows `shown`, a window of the workspace that a plugin's move made,
@@ -1591,11 +1682,12 @@ impl<B: Backend> App<B> {
                 };
                 match platform.create_quick_window(TITLE) {
                     Ok(window) => {
-                        // Shown first, so that its pane starts of its size.
+                        // Shown first, so that its pane starts of its size,
+                        // and known as the quick one before it draws.
                         platform.show_quick_window(window, Some(&place));
+                        self.quick = Some((window, true));
                         let program = self.program.clone();
                         self.run_in(platform, window, (&program, None), &environment);
-                        self.quick = Some((window, true));
                     }
                     Err(error) => eprintln!("lokyr: {error}"),
                 }
@@ -1962,7 +2054,7 @@ impl<B: Backend> App<B> {
                 }
                 ran
             }
-            Ok(_) => match name {
+            Ok(args) => match name {
                 QUIT => {
                     self.ask_quit(platform, false);
                     Ok(())
@@ -2012,6 +2104,10 @@ impl<B: Backend> App<B> {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window()) {
                         self.ask_title(platform, window);
                     }
+                    Ok(())
+                }
+                GOTO_WINDOW => {
+                    self.goto_window(platform, &args);
                     Ok(())
                 }
                 LOOK_UP => {
@@ -3245,6 +3341,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
         (SET_TITLE, "window-set-title", Category::Windows),
+        (GOTO_WINDOW, "window-goto", Category::Windows),
         (
             TOGGLE_QUICK,
             "window-toggle-quick-terminal",
@@ -3261,12 +3358,22 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             .map(|(name, _, title)| (name, title, Category::View)),
     );
     for (name, title, category) in commands {
+        // Bringing a window forward takes its number.
+        let params = if name == GOTO_WINDOW {
+            vec![Param {
+                name: "index".to_owned(),
+                kind: Kind::Integer,
+                default: None,
+            }]
+        } else {
+            Vec::new()
+        };
         let command = Command {
             name: name.to_owned(),
             title: texts.text(&format!("command-{title}")),
             category,
             capabilities: Vec::new(),
-            params: Vec::new(),
+            params,
             when: CONTEXT_ONLY.contains(&name).then(|| "selection".to_owned()),
         };
         if let Err(error) = registry.register(command) {

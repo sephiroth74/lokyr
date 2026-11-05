@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 use lokyr_platform_core::{
     AboutPanel, Alert, AlertId, Appearance, Backdrop, ContentRect, ContextMenu, Error, GlobalKey,
     Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea, PointerShape, QuickPlace,
-    Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
+    Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
     WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
@@ -751,6 +751,16 @@ impl Platform for Backend {
         if let Some(window) = self.windows.get(&window) {
             window.set_pointer_areas(areas);
         }
+    }
+
+    fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>) {
+        if let Some(window) = self.windows.get(&window) {
+            window.set_title_accessory(text);
+        }
+    }
+
+    fn shortcut_text(&self, shortcut: Shortcut) -> String {
+        shortcut.mac_text()
     }
 
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {

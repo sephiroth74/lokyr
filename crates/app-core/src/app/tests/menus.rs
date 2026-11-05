@@ -208,7 +208,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 24);
+    assert_eq!(app.keymap.bindings().len(), 33);
 }
 
 #[test]
@@ -265,6 +265,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("pane.look-up", "Look Up", Category::Edit),
             ("pane.man-page", "Open man Page", Category::Windows),
             ("window.close", "Close Window", Category::Windows),
+            ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
             ("window.set-title", "Set Title…", Category::Windows),
             (

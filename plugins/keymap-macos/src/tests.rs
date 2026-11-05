@@ -15,8 +15,8 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
     let mut host = FakeHost::new(NAME);
     host.activate(&mut KeymapMacos).unwrap();
     assert!(host.commands().is_empty());
-    let bound: Vec<(&str, &str)> = host
-        .bindings()
+    let (plain, windows) = host.bindings().split_at(BINDINGS.len());
+    let bound: Vec<(&str, &str)> = plain
         .iter()
         .map(|binding| {
             assert_eq!((binding.args.len(), &binding.when), (0, &None));
@@ -24,7 +24,37 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
         })
         .collect();
     assert_eq!(bound, BINDINGS);
+    // Then the windows', each of its number.
+    let numbered: Vec<(&str, &str, Option<&Value>)> = windows
+        .iter()
+        .map(|binding| {
+            (
+                binding.keys.as_str(),
+                binding.command.as_str(),
+                binding.args.get("index"),
+            )
+        })
+        .collect();
+    let expected: Vec<(&str, &str, Option<&Value>)> = WINDOWS
+        .iter()
+        .zip(&INDICES)
+        .map(|(keys, index)| (*keys, "window.goto", Some(index)))
+        .collect();
+    assert_eq!(numbered, expected);
 }
+
+/// The windows' numbers, from 1 to 9.
+const INDICES: [Value; 9] = [
+    Value::Integer(1),
+    Value::Integer(2),
+    Value::Integer(3),
+    Value::Integer(4),
+    Value::Integer(5),
+    Value::Integer(6),
+    Value::Integer(7),
+    Value::Integer(8),
+    Value::Integer(9),
+];
 
 #[test]
 fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
@@ -62,6 +92,11 @@ fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
     let mut bound: Vec<(String, String)> = BINDINGS
         .iter()
         .map(|&(keys, command)| (keys.to_owned(), command.to_owned()))
+        .chain(
+            WINDOWS
+                .iter()
+                .map(|keys| ((*keys).to_owned(), "window.goto".to_owned())),
+        )
         .collect();
     told.sort();
     bound.sort();

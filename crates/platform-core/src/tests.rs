@@ -643,3 +643,49 @@ fn the_global_keys_that_another_app_takes_are_refused() {
     assert_eq!(fake.set_global_keys(&[]), Vec::<usize>::new());
     assert!(fake.global_keys().is_empty());
 }
+
+#[test]
+fn a_shortcut_is_written_as_the_mac_s_menus_write_it() {
+    let shortcut = |key, command, shift, alt, control| Shortcut {
+        key,
+        command,
+        shift,
+        alt,
+        control,
+    };
+    let cases = [
+        (
+            shortcut(ShortcutKey::Char('1'), true, false, true, false),
+            "⌥⌘1",
+        ),
+        (
+            shortcut(ShortcutKey::Char('k'), true, true, false, false),
+            "⇧⌘K",
+        ),
+        (
+            shortcut(ShortcutKey::Char(' '), true, false, false, true),
+            "⌃⌘Space",
+        ),
+        (
+            shortcut(
+                ShortcutKey::Code(KeyCode::ArrowUp),
+                true,
+                false,
+                false,
+                false,
+            ),
+            "⌘↑",
+        ),
+        (
+            shortcut(ShortcutKey::Code(KeyCode::F(5)), false, false, false, false),
+            "F5",
+        ),
+        (
+            shortcut(ShortcutKey::Code(KeyCode::PageDown), true, true, true, true),
+            "⌃⌥⇧⌘⇟",
+        ),
+    ];
+    for (shortcut, text) in cases {
+        assert_eq!(shortcut.mac_text(), text);
+    }
+}

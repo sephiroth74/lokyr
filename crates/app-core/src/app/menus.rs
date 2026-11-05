@@ -320,10 +320,13 @@ impl<B: Backend> App<B> {
     }
 
     /// Gives the platform the main menu of the commands and their keys,
-    /// in place of the one before; the items that it dimmed are enabled
-    /// again, until the next frame of the focused pane settles them.
+    /// in place of the one before, and the windows theirs; the items that
+    /// it dimmed are enabled again, until the next frame of the focused
+    /// pane settles them.
     pub(super) fn set_menu(&mut self, platform: &mut dyn Platform) {
         platform.set_main_menu(&main_menu(&self.commands, &self.keymap, &self.texts));
+        // The windows' keys follow the keymap's too.
+        self.window_keys(platform);
         for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
             if !enabled {
                 platform.set_command_enabled(&command, true);
@@ -629,7 +632,7 @@ fn menu_contexts(commands: &Registry) -> Vec<(String, When)> {
 
 /// The keys of `combo` as a menu's item shows them: a key that types a
 /// character, or a named one, with its modifiers.
-fn shortcut(combo: keymap::Combo) -> Option<Shortcut> {
+pub(super) fn shortcut(combo: keymap::Combo) -> Option<Shortcut> {
     use keymap::{Named, Press};
     let key = match combo.press {
         Press::Char(character) => ShortcutKey::Char(character),

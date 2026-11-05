@@ -10,6 +10,7 @@
 
 mod about;
 mod access;
+mod accessory;
 mod alert;
 mod app;
 mod appearance;

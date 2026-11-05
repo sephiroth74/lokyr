@@ -186,6 +186,9 @@ pub(crate) struct Window<B: Backend> {
     /// Its titlebar, as the app gave it: one of a tab bar while a tab
     /// bar's view shows.
     pub(crate) titlebar: Titlebar,
+    /// The keys that bring it forward, as its titlebar shows them at its
+    /// right, if it does.
+    pub(crate) accessory: Option<String>,
     /// The top of the room that its panes share, in pixels, below its
     /// titlebar and its tab bar, as its last layout placed it.
     pub(crate) panes_top: u32,
@@ -326,6 +329,7 @@ impl<B: Backend> Window<B> {
             shown: None,
             chrome: Vec::new(),
             titlebar: Titlebar::default(),
+            accessory: None,
             panes_top: 0,
             sweeps: (Vec::new(), now),
             focus: Focus::new(),

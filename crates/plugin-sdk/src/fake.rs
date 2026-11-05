@@ -183,6 +183,9 @@ pub struct FakeHost {
     panes: BTreeMap<PaneId, FakePane>,
     windows: BTreeMap<WindowId, FakeWindow>,
     tabs: BTreeMap<TabId, FakeTab>,
+    /// The windows' numbers and the keys that select them, as the test
+    /// gave them.
+    numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -224,6 +227,7 @@ impl FakeHost {
             panes: BTreeMap::new(),
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
+            numbers: BTreeMap::new(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -284,6 +288,19 @@ impl FakeHost {
     /// the pane after the tab's others, side by side.
     pub fn pane(&mut self, id: PaneId) -> &mut FakePane {
         self.panes.entry(id).or_default()
+    }
+
+    /// Gives `window` its `number` and the `keys` that select it, as the
+    /// platform writes them, which a read of the windows tells.
+    pub fn number_window(
+        &mut self,
+        window: WindowId,
+        number: Option<u32>,
+        keys: Option<&str>,
+    ) -> &mut Self {
+        self.numbers
+            .insert(window, (number, keys.map(str::to_owned)));
+        self
     }
 
     /// Gives `pane` the focus, its window's, its tab's in that window and
@@ -1186,10 +1203,15 @@ impl FakeHost {
     fn windows(&self) -> Vec<WindowInfo> {
         self.windows
             .iter()
-            .map(|(&id, window)| WindowInfo {
-                id,
-                tabs: window.tabs.clone(),
-                active: window.active,
+            .map(|(&id, window)| {
+                let (number, keys) = self.numbers.get(&id).cloned().unwrap_or_default();
+                WindowInfo {
+                    id,
+                    tabs: window.tabs.clone(),
+                    active: window.active,
+                    number,
+                    keys,
+                }
             })
             .collect()
     }

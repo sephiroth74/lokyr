@@ -2004,6 +2004,11 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
         )
         .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
+    // The window's number and keys, as the app gives them.
+    assert!(
+        app.workspace
+            .number_window(window, Some(1), Some("⌥⌘1".to_owned()))
+    );
     plugins
         .run("reader.read", Args::new(), &mut app.context())
         .unwrap();
@@ -2014,6 +2019,8 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
             id: window.into(),
             tabs: vec![first_tab.into(), tab],
             active: first_tab.into(),
+            number: Some(1),
+            keys: Some("⌥⌘1".to_owned()),
         }]
     );
     assert_eq!(

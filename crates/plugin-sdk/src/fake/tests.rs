@@ -209,6 +209,7 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
         host.pane(PaneId(pane)).tab = TabId(tab);
     }
     host.focus(Some(PaneId(2)));
+    host.number_window(WindowId(1), Some(1), Some("⌥⌘1"));
     let mut probe = Probe::new(|cx, _| {
         assert_eq!(cx.focused_window(), Some(WindowId(1)));
         let windows = cx.windows()?;
@@ -218,6 +219,8 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
                 id: WindowId(1),
                 tabs: vec![TabId(1), TabId(2)],
                 active: TabId(1),
+                number: Some(1),
+                keys: Some("⌥⌘1".to_owned()),
             }]
         );
         let tabs = cx.tabs(WindowId(1))?;
@@ -296,6 +299,8 @@ fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and
                 id: WindowId(1),
                 tabs: vec![TabId(1), tab],
                 active: tab,
+                number: None,
+                keys: None,
             }]
         );
         // The window shows the new tab, whose keyboard the split has.

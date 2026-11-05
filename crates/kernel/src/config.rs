@@ -24,6 +24,7 @@
 //! background-opacity = 1    # from 0 to 1
 //! background-blur = 0       # points
 //! title-size = true         # the grid's size in the title
+//! title-shortcut = true     # ⌥⌘1 at the titlebar's right
 //! opaque-titlebar = false   # the titlebar opaque over a translucent window
 //!
 //! [terminal]
@@ -918,6 +919,9 @@ pub struct WindowConfig {
     pub background_blur: Blur,
     /// Whether the title ends with the grid's size, as `100×33`.
     pub title_size: bool,
+    /// Whether the titlebar shows the keys that bring the window forward,
+    /// as `⌥⌘1`, at its right.
+    pub title_shortcut: bool,
     /// Whether the titlebar stays opaque over a translucent window, in the
     /// default background's color.
     pub opaque_titlebar: bool,
@@ -937,6 +941,7 @@ impl Default for WindowConfig {
             background_opacity: Opacity::default(),
             background_blur: Blur::default(),
             title_size: true,
+            title_shortcut: true,
             opaque_titlebar: false,
         }
     }
@@ -1923,6 +1928,7 @@ mod tests {
             background-opacity = 0.85
             background-blur = 20
             title-size = false
+            title-shortcut = false
             opaque-titlebar = true
 
             [interface]
@@ -2029,13 +2035,14 @@ mod tests {
         assert_eq!(config.window.background_opacity.value(), 0.85);
         assert_eq!(config.window.background_blur.points(), 20.0);
         assert!(!config.window.title_size && config.window.opaque_titlebar);
+        assert!(!config.window.title_shortcut);
         assert_eq!(
             (config.window.columns.count(), config.window.rows.count()),
             (80, 24)
         );
         assert!(!config.window.remember_frame);
         let window = Config::default().window;
-        assert!(window.title_size && !window.opaque_titlebar);
+        assert!(window.title_size && window.title_shortcut && !window.opaque_titlebar);
         assert_eq!((window.columns.count(), window.rows.count()), (100, 30));
         assert!(window.remember_frame);
         for (text, wanted) in [
@@ -2638,6 +2645,7 @@ mod tests {
                 "background-opacity",
                 "background-blur",
                 "title-size",
+                "title-shortcut",
                 "opaque-titlebar"
             ]
         );

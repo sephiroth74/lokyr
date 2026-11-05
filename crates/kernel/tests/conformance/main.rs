@@ -223,6 +223,7 @@ impl Symbols {
                         id: self.window(window.id),
                         tabs: window.tabs.into_iter().map(|id| self.tab(id)).collect(),
                         active: self.tab(window.active),
+                        ..window
                     })
                     .collect(),
             ),

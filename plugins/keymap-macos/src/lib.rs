@@ -9,7 +9,7 @@
 
 #![forbid(unsafe_code)]
 
-use lokyr_plugin_sdk::command::{Args, Error};
+use lokyr_plugin_sdk::command::{Args, Error, Value};
 use lokyr_plugin_sdk::host::Binding;
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
@@ -52,6 +52,23 @@ pub const BINDINGS: [(&str, &str); 24] = [
     ("cmd+click", "links.open"),
 ];
 
+/// The command that brings forward the window of a number, its `index`.
+const GOTO_WINDOW: &str = "window.goto";
+
+/// The keys of the windows of the numbers from 1 to 9, after the bindings,
+/// each its window's.
+pub const WINDOWS: [&str; 9] = [
+    "alt+cmd+1",
+    "alt+cmd+2",
+    "alt+cmd+3",
+    "alt+cmd+4",
+    "alt+cmd+5",
+    "alt+cmd+6",
+    "alt+cmd+7",
+    "alt+cmd+8",
+    "alt+cmd+9",
+];
+
 /// The plugin of macOS's default shortcuts.
 #[derive(Debug, Default)]
 pub struct KeymapMacos;
@@ -63,6 +80,14 @@ impl Plugin for KeymapMacos {
                 keys: keys.to_owned(),
                 command: command.to_owned(),
                 args: Args::new(),
+                when: None,
+            })?;
+        }
+        for (index, keys) in (1..).zip(WINDOWS) {
+            cx.bind(Binding {
+                keys: keys.to_owned(),
+                command: GOTO_WINDOW.to_owned(),
+                args: Args::from([("index".to_owned(), Value::Integer(index))]),
                 when: None,
             })?;
         }

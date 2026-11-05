@@ -436,6 +436,7 @@ impl<B: Backend> App<B> {
         // platform's own.
         let views = self.lay_out_panes(window, size);
         self.show_native(platform, window, size);
+        self.show_window_keys(platform, window);
         // The pointer's moves while Command is held, for the plugins that
         // follow it, as `links` does.
         let pointer_moves = self.command_held && self.plugins.subscribes(plugins::POINTER);

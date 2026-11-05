@@ -352,6 +352,15 @@ pub trait Platform {
     /// Sets the title of a window.
     fn set_title(&mut self, window: WindowId, title: &str);
 
+    /// Shows `text` at the right of `window`'s titlebar, as the keys that
+    /// bring it forward, in the secondary label's color, while its titlebar
+    /// is the system's, of its title; nothing with `None`.
+    fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>);
+
+    /// `shortcut` as the platform writes it, as its menus show it: on the
+    /// Mac, `⌥⌘1`.
+    fn shortcut_text(&self, shortcut: Shortcut) -> String;
+
     /// The size of a window's content.
     fn window_size(&self, window: WindowId) -> Option<WindowSize>;
 

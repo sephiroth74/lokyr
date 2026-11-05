@@ -121,12 +121,15 @@ impl PaneId {
     }
 }
 
-/// A window: its tabs, in their order, and the one that it shows.
+/// A window: its tabs, in their order, the one that it shows, and the
+/// number and the keys that the app gave it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Window {
     id: WindowId,
     tabs: Vec<TabId>,
     active: TabId,
+    number: Option<u32>,
+    keys: Option<String>,
 }
 
 impl Window {
@@ -143,6 +146,17 @@ impl Window {
     /// The tab that it shows.
     pub fn active_tab(&self) -> TabId {
         self.active
+    }
+
+    /// Its number, from 1, if the app gave it one.
+    pub fn number(&self) -> Option<u32> {
+        self.number
+    }
+
+    /// The keys that bring it forward, as the platform writes them, if a
+    /// binding has them.
+    pub fn keys(&self) -> Option<&str> {
+        self.keys.as_deref()
     }
 }
 
@@ -591,6 +605,8 @@ impl Workspace {
                 id: window,
                 tabs: vec![tab],
                 active: tab,
+                number: None,
+                keys: None,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {
@@ -651,6 +667,23 @@ impl Workspace {
                 window: window.into(),
             }),
         }
+    }
+
+    /// Gives `window` its `number` and the `keys` that bring it forward,
+    /// as the platform writes them, which the plugins read; whether it is
+    /// open.
+    pub fn number_window(
+        &mut self,
+        window: WindowId,
+        number: Option<u32>,
+        keys: Option<String>,
+    ) -> bool {
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        shown.number = number;
+        shown.keys = keys;
+        true
     }
 
     /// Shows `tab` in its window; whether it is open.

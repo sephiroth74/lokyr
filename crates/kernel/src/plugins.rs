@@ -2604,6 +2604,8 @@ impl Host<'_, '_> {
                         id: window.id().into(),
                         tabs: window.tabs().iter().copied().map(Into::into).collect(),
                         active: window.active_tab().into(),
+                        number: window.number(),
+                        keys: window.keys().map(str::to_owned),
                     })
                     .collect(),
             ),
