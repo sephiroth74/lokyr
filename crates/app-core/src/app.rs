@@ -923,10 +923,38 @@ impl<B: Backend> App<B> {
     /// others.
     #[cfg(test)]
     fn with_builtin(mut self, manifest: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
+        let before = self.tab_bar_providers();
         if let Err(error) = self.plugins.add_builtin(manifest, plugin) {
             eprintln!("lokyr: {error}");
         }
+        self.take_tab_bar(&before);
         self
+    }
+
+    /// The plugins' names.
+    #[cfg(test)]
+    fn tab_bar_providers(&self) -> Vec<String> {
+        self.plugins.names().map(str::to_owned).collect()
+    }
+
+    /// A test's plugin of a tab bar, added since `before`, of the plugins'
+    /// names, shows it, as the config would choose it, unless the config
+    /// chooses another.
+    #[cfg(test)]
+    fn take_tab_bar(&mut self, before: &[String]) {
+        let added = self.plugins.names().find(|name| {
+            !before.iter().any(|known| known == name)
+                && self.plugins.manifest(name).is_some_and(|manifest| {
+                    manifest
+                        .contributes
+                        .slots
+                        .iter()
+                        .any(|slot| slot == "tab-bar")
+                })
+        });
+        if self.config.slots.tab_bar.is_none() {
+            self.config.slots.tab_bar = added.map(str::to_owned);
+        }
     }
 
     /// The app, with the plugin of `registration`, as a built-in one of a
@@ -947,9 +975,11 @@ impl<B: Backend> App<B> {
         manifest: &str,
         plugin: Box<dyn plugins::Plugin + Send>,
     ) -> Self {
+        let before = self.tab_bar_providers();
         if let Err(error) = self.plugins.add_builtin_send(manifest, plugin) {
             eprintln!("lokyr: {error}");
         }
+        self.take_tab_bar(&before);
         self
     }
 

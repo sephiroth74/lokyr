@@ -1098,6 +1098,11 @@ impl Plugins {
             .filter(|state| state.status == Status::Active)
     }
 
+    /// The names of the plugins, in the order of their activation.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().map(|entry| entry.state.name.as_str())
+    }
+
     /// The manifest of the plugin `name`, if it was added with one.
     pub fn manifest(&self, name: &str) -> Option<&Manifest> {
         self.entries

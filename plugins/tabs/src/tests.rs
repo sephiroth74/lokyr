@@ -273,3 +273,155 @@ fn a_tab_moves_out_to_a_window_of_its_own_but_a_window_s_last() {
     let (mut host, mut plugin) = self::host(&[1], 1);
     assert_eq!(run(&mut host, &mut plugin, DETACH, Args::new()), []);
 }
+
+/// A click on the node of `key` of `window`'s bar.
+fn click(key: &str) -> UiEvent {
+    UiEvent {
+        view: ViewId::TabBar(WINDOW),
+        key: key.into(),
+        kind: UiEventKind::Click,
+    }
+}
+
+#[test]
+fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
+    let (mut host, mut plugin) = host(&[1, 1], 1);
+    host.set_keys("tabs.goto", number("index", 1), Some("⌘1"));
+    let view = ViewId::TabBar(WINDOW);
+    let node = host.render(&mut plugin, &view).expect("a bar of two tabs");
+    let mut texts = Vec::new();
+    let mut walk = vec![&node];
+    while let Some(node) = walk.pop() {
+        if let lokyr_plugin_sdk::view::Kind::Text(text) = &node.kind {
+            texts.push(text.clone());
+        }
+        walk.extend(node.children.iter().rev());
+    }
+    assert_eq!(texts, ["Tab 1", "⌘1", "Tab 2"]);
+    let clicked = |host: &mut FakeHost, plugin: &mut Tabs, key: &str| {
+        host.take_done();
+        host.ui_event(plugin, &click(key)).unwrap();
+        host.take_done()
+    };
+    assert_eq!(
+        clicked(&mut host, &mut plugin, "tab-2"),
+        [Request::ActivateTab(TabId(2))]
+    );
+    assert_eq!(
+        clicked(&mut host, &mut plugin, "close-1"),
+        [Request::CloseTab {
+            tab: TabId(1),
+            ask: true
+        }]
+    );
+    let opened = clicked(&mut host, &mut plugin, bar::NEW_KEY);
+    assert!(
+        matches!(
+            opened[..],
+            [
+                Request::NewTab {
+                    window: WINDOW,
+                    index: None
+                },
+                Request::ActivateTab(_)
+            ]
+        ),
+        "{opened:?}"
+    );
+    // A window of one tab shows no bar, by default.
+    let (mut single, mut plugin) = self::host(&[1], 1);
+    assert!(single.render(&mut plugin, &view).is_none());
+}
+
+#[test]
+fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
+    use lokyr_plugin_sdk::host::BarPlace;
+
+    let placed = |done: Vec<Request>| {
+        done.into_iter().find_map(|request| match request {
+            Request::SetTabBarPlace(place) => Some(place),
+            _ => None,
+        })
+    };
+    let mut host = FakeHost::new(NAME);
+    host.pane(PaneId(1)).tab = TabId(1);
+    host.focus(Some(PaneId(1)));
+    let mut plugin = Tabs::default();
+    host.activate(&mut plugin).unwrap();
+    assert_eq!(placed(host.take_done()), Some(BarPlace::Titlebar));
+    // On the left, as the config changes, of its width.
+    let config = Data::Map(BTreeMap::from([
+        ("position".to_owned(), Data::Text("left".to_owned())),
+        ("column-width".to_owned(), Data::Integer(240)),
+    ]));
+    host.set_config(config.clone());
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        placed(host.take_done()),
+        Some(BarPlace::Left { width: 240.0 })
+    );
+    // The user's drag's width, which the state keeps for the next start.
+    host.post(Event::TabBarResized { width: 300.0 });
+    host.deliver(&mut plugin).unwrap();
+    let Data::Map(state) = host.state().clone() else {
+        panic!("a state of the width");
+    };
+    assert_eq!(state.get("column-width"), Some(&Data::Number(300.0)));
+    let mut next = FakeHost::new(NAME);
+    next.pane(PaneId(1)).tab = TabId(1);
+    next.set_config(config);
+    next.set_state(Data::Map(state));
+    let mut again = Tabs::default();
+    next.activate(&mut again).unwrap();
+    assert_eq!(
+        placed(next.take_done()),
+        Some(BarPlace::Left { width: 300.0 })
+    );
+}
+
+#[test]
+fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
+    let guide = include_str!("../../../docs/CONFIGURATION.md");
+    let schema = include_str!("../tabs.schema.json");
+    // The schema's keys, of its properties' first level.
+    let keys: Vec<&str> = schema
+        .lines()
+        .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
+        .map(|(key, _)| key)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "position",
+            "style",
+            "hide-when-single",
+            "show-index",
+            "close-button",
+            "column-width"
+        ]
+    );
+    let example = guide
+        .split_once("\n[plugins.tabs]\n")
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(example, _)| example)
+        .expect("the complete example's section");
+    let section = guide
+        .split_once("\n## `[plugins.tabs]`\n")
+        .map(|(_, rest)| {
+            rest.split_once("\n## ")
+                .map_or(rest, |(section, _)| section)
+        })
+        .expect("the guide's section");
+    for key in keys {
+        assert!(
+            example
+                .lines()
+                .any(|line| line.starts_with(&format!("{key} = "))),
+            "`{key}` in the example"
+        );
+        assert!(
+            section.contains(&format!("\n### `{key}`\n")),
+            "`{key}` in the section"
+        );
+    }
+}

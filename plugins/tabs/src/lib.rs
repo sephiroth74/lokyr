@@ -4,17 +4,26 @@
 //! or its pane while it has splits, asking first while a program other
 //! than a shell runs there, select the next, the previous or one by its
 //! number, move it, rename it, give it a color, and move it out to a
-//! window of its own; the system's keymap binds their keys. Like every
+//! window of its own; the system's keymap binds their keys. Its tab bar
+//! shows each window's tabs, as its section of the config, `[plugins.tabs]`,
+//! lays them out, a click selecting a tab or closing it. Like every
 //! built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
+mod bar;
+
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{Color, TabId, TabInfo, WindowId};
-use lokyr_plugin_sdk::message::Event;
+use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
+use lokyr_plugin_sdk::view::{Node, UiEventKind};
+
+use crate::bar::Settings;
 
 lokyr_plugin_sdk::export_plugin!(Tabs);
 
@@ -85,15 +94,35 @@ fn commands() -> [Spec; 9] {
     ]
 }
 
-/// The plugin of the tabs, and the tabs whose titles it asked the user
-/// for, by their questions.
+/// The most tabs whose keys a tab bar shows, from the first.
+const NUMBERED: usize = 9;
+
+/// The plugin of the tabs: the tabs whose titles it asked the user for, by
+/// their questions; its bar's config, the width that the user's drag left
+/// its column, and the views that it rendered, each of its last tree, which
+/// it renders again as their trees change.
 #[derive(Debug, Default)]
 pub struct Tabs {
     renaming: BTreeMap<u64, TabId>,
+    settings: Settings,
+    width: Option<f32>,
+    views: Vec<(ViewId, Option<Node>)>,
 }
 
 impl Plugin for Tabs {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        // The column's width of the user's last drag, as its state keeps it.
+        if let Ok(Data::Map(state)) = cx.state() {
+            self.width = match state.get("column-width") {
+                Some(Data::Number(width)) => Some(*width as f32),
+                Some(Data::Integer(width)) => Some(*width as f32),
+                _ => None,
+            };
+        }
+        self.configure(cx)?;
+        let mut names: Vec<&str> = WorkspaceEvent::NAMES.to_vec();
+        names.push(KEYS_CHANGED);
+        cx.subscribe(&names)?;
         for (name, title, param) in commands() {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -116,6 +145,45 @@ impl Plugin for Tabs {
 
     fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
         &CATALOGS
+    }
+
+    fn config_schema(&self) -> Option<&'static str> {
+        Some(include_str!("../tabs.schema.json"))
+    }
+
+    /// A window's tab bar, of its tabs, each of the keys that select it.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let node = self.tree(cx, view);
+        match self.views.iter_mut().find(|(known, _)| known == view) {
+            Some((_, last)) => last.clone_from(&node),
+            None => self.views.push((view.clone(), node.clone())),
+        }
+        node
+    }
+
+    /// A click on a tab selects it; on its close button, closes it, asking
+    /// first while a program other than a shell runs there; on the button
+    /// of a new tab, opens one.
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        let ViewId::TabBar(window) = &event.view else {
+            return Ok(());
+        };
+        if event.kind != UiEventKind::Click {
+            return Ok(());
+        }
+        let key = event.key.0.as_str();
+        let id = |prefix: &str| key.strip_prefix(prefix)?.parse::<u64>().ok();
+        if key == bar::NEW_KEY {
+            let (tab, _) = cx.new_tab(*window, None)?;
+            return cx.activate_tab(tab);
+        }
+        if let Some(id) = id("close-") {
+            return cx.close_tab(TabId(id), true);
+        }
+        if let Some(id) = id("tab-") {
+            return cx.activate_tab(TabId(id));
+        }
+        Ok(())
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
@@ -179,22 +247,85 @@ impl Plugin for Tabs {
     /// an empty one gives it its program's back, and none leaves it as it
     /// was.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let mut again = false;
         for event in events {
-            let Event::Answered { id, text } = event else {
-                continue;
-            };
-            let (Some(tab), Some(text)) = (self.renaming.remove(id), text) else {
-                continue;
-            };
-            let title = text.trim();
-            // A tab that closed meanwhile takes nothing.
-            let _ = cx.set_tab_title(tab, (!title.is_empty()).then_some(title));
+            match event {
+                Event::Answered { id, text } => {
+                    let (Some(tab), Some(text)) = (self.renaming.remove(id), text) else {
+                        continue;
+                    };
+                    let title = text.trim();
+                    // A tab that closed meanwhile takes nothing.
+                    let _ = cx.set_tab_title(tab, (!title.is_empty()).then_some(title));
+                }
+                Event::ConfigChanged => {
+                    self.configure(cx)?;
+                    again = true;
+                }
+                // The user's drag of the column's edge, which the state
+                // keeps for the next start.
+                Event::TabBarResized { width } => {
+                    self.width = Some(*width);
+                    let state = Data::Map(BTreeMap::from([(
+                        "column-width".to_owned(),
+                        Data::Number(f64::from(*width)),
+                    )]));
+                    // Without a state directory, the width stays for this run.
+                    let _ = cx.set_state(state);
+                }
+                Event::Workspace(_) | Event::KeysChanged => again = true,
+                _ => {}
+            }
+        }
+        if again {
+            self.render_again(cx);
         }
         Ok(())
     }
 }
 
 impl Tabs {
+    /// Takes its section of the config, and puts its bar at its place: a
+    /// column's width that the config changes takes the place of the
+    /// user's drag's.
+    fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let settings = Settings::of(&cx.config()?);
+        if settings.column_width != self.settings.column_width && !self.views.is_empty() {
+            self.width = None;
+        }
+        self.settings = settings;
+        cx.set_tab_bar_place(self.settings.place(self.width))
+    }
+
+    /// The tree of `view`, a window's tab bar: its tabs, each of the keys
+    /// that select it; none of another view, or of a window that closed.
+    fn tree(&self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let ViewId::TabBar(window) = view else {
+            return None;
+        };
+        let tabs = cx.tabs(*window).ok()?;
+        let keys: Vec<Option<String>> = (1..=NUMBERED)
+            .take(tabs.len())
+            .map(|index| {
+                let args = Args::from([("index".to_owned(), Value::Integer(index as i64))]);
+                cx.keys_of(GOTO, args).ok().flatten()
+            })
+            .collect();
+        bar::bar(&tabs, &keys, &self.settings)
+    }
+
+    /// Renders again its views whose trees changed, so that the host draws
+    /// no frame of the same; those of windows that closed go.
+    fn render_again(&mut self, cx: &mut Cx<'_>) {
+        let views = std::mem::take(&mut self.views);
+        for (view, last) in views {
+            if self.tree(cx, &view) != last && cx.request_render(view.clone()).is_err() {
+                continue;
+            }
+            self.views.push((view, last));
+        }
+    }
+
     /// Moves the tab at `at` of `window`'s `tabs` by `delta`, as far as
     /// their ends.
     fn move_by(

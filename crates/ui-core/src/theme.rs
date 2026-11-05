@@ -44,6 +44,10 @@ impl Tokens {
     /// none of them has one. [`TRANSPARENT`] is clear in every theme, as
     /// the tokens that fall back to it are.
     pub fn get(&self, token: &str) -> Option<Color> {
+        // A color of its own, as a tab's that its program set.
+        if let Some(hex) = token.strip_prefix('#') {
+            return hex_color(hex);
+        }
         let mut name = token;
         loop {
             if name == TRANSPARENT {
@@ -247,9 +251,27 @@ fn variant(
             tokens
                 .iter()
                 .map(|&(name, value, alpha)| (name.to_owned(), color(rgb(value)).with_alpha(alpha)))
+                // The terminal's own, as a bar of its colors takes them.
+                .chain([
+                    ("terminal.bg".to_owned(), color(rgb(background))),
+                    ("terminal.fg".to_owned(), color(rgb(foreground))),
+                ])
                 .collect(),
         ),
     }
+}
+
+/// The color of `hex`, `rrggbb` or `rrggbbaa`, if it writes one.
+fn hex_color(hex: &str) -> Option<Color> {
+    if !matches!(hex.len(), 6 | 8) || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |at: usize| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok();
+    let color = Color::from_rgb8(byte(0)?, byte(2)?, byte(4)?);
+    Some(match hex.len() {
+        8 => color.with_alpha(f32::from(byte(6)?) / 255.0),
+        _ => color,
+    })
 }
 
 fn rgb(color: u32) -> Rgb {
@@ -282,6 +304,24 @@ mod tests {
     fn contrast(a: Rgb, b: Rgb) -> f64 {
         let (a, b) = (luminance(a), luminance(b));
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    #[test]
+    fn a_token_of_hex_digits_is_its_color_and_the_terminal_s_are_tokens() {
+        let tokens = &Theme::builtin().dark.tokens;
+        assert_eq!(tokens.get("#ff8800"), Some(Color::from_rgb8(255, 136, 0)));
+        let translucent = tokens.get("#ff880080").unwrap();
+        assert!((translucent.alpha - 128.0 / 255.0).abs() < 1e-6);
+        for wrong in ["#ff88", "#gg8800", "#ff88000"] {
+            assert_eq!(tokens.get(wrong), None, "{wrong}");
+        }
+        let colors = &Theme::builtin().dark.colors;
+        let background = colors.background;
+        assert_eq!(
+            tokens.get("terminal.bg"),
+            Some(Color::from_rgb8(background.r, background.g, background.b))
+        );
+        assert!(tokens.get("terminal.fg").is_some());
     }
 
     #[test]

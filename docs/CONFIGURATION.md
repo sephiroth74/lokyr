@@ -160,10 +160,18 @@ performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bot
 "global:ctrl+`" = "window.toggle-quick-terminal"   # from every app: the quick terminal
 
 # A plugin's own keys, in a section of its namespace, as its schema has them;
-# no built-in plugin has keys yet; `enabled` turns any plugin off:
+# `enabled` turns any plugin off:
 # [plugins.<namespace>]
 # enabled = false                    # true | false: the plugin runs
 # key = "value"
+
+[plugins.tabs]
+position = "top"                     # top | bottom | left | right: where the tab bar goes
+style = "compact"                    # regular | compact | minimal: the bar's look
+hide-when-single = true              # true | false: no bar for a single tab
+show-index = true                    # true | false: ⌘1 to ⌘9 on the first nine tabs
+close-button = "hover"               # always | hover | never: a tab's close button
+column-width = 200                   # points, 60 to 600: the bar's column on the left or the right
 ```
 
 ## `config_version`
@@ -1298,7 +1306,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 
 <sub>Platforms: macOS</sub>
 
-A plugin's own keys, in a section of its namespace: the plugin's name after its owner, as `[plugins.tabs]` of `lokyr/tabs`. Each plugin tells its keys; no built-in plugin has keys yet, so that a section applies once one has.
+A plugin's own keys, in a section of its namespace: the plugin's name after its owner, as `[plugins.tabs]` of `lokyr/tabs`. Each plugin tells its keys, as the tab bar's do in [`[plugins.tabs]`](#pluginstabs).
 
 ```toml
 [plugins.tabs]
@@ -1334,3 +1342,88 @@ Default: `true`.
 - `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
 - `[plugins.keymap-macos] enabled = false` takes away the default shortcuts, as [`[keys]`](#keys) says, the menus keeping the system's own keys alone.
 - A value other than `true` or `false` shows in the bar, and the plugin stays as it is.
+
+## `[plugins.tabs]`
+
+<sub>Platforms: macOS</sub>
+
+The tab bar of the built-in plugin `lokyr/tabs`: each window's tabs, each of its title, its color, the keys that select it and its close button, and a button of a new tab. A click on a tab shows it, on its close button closes it, asking you first while a program other than a shell runs there. A tab's title is the one that you give it with Shell › Rename Tab…, or its program's, or its folder and the program in its foreground, as `src — vim`.
+
+### `position`
+
+<sub>Platforms: macOS</sub>
+
+Where the bar goes.
+
+| Values | Default |
+|---|---|
+| `"top"`, `"bottom"`, `"left"`, `"right"` | `"top"` |
+
+- At the top, as [`style`](#style-1) puts it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below the titlebar to the window's bottom, its tabs one below another, as wide as [`column-width`](#column-width) says, or as you drag its edge.
+- It applies at once, as you save the file.
+
+### `style`
+
+<sub>Platforms: macOS</sub>
+
+The bar's look.
+
+| Values | Default |
+|---|---|
+| `"regular"`, `"compact"`, `"minimal"` | `"compact"` |
+
+- `"regular"` puts the bar below a titlebar of the window's title; `"compact"` puts the tabs in the titlebar, past the window's buttons, of the theme's colors; `"minimal"` too, of the terminal's colors. Elsewhere than at the top, `"compact"` and `"minimal"` give the tabs their look alone.
+- A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion.
+- It applies at once, as you save the file.
+
+### `hide-when-single`
+
+<sub>Platforms: macOS</sub>
+
+Whether the bar hides while the window has a single tab.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Hidden, the bar takes no room, and the window shows its title.
+- It applies at once, as you save the file.
+
+### `show-index`
+
+<sub>Platforms: macOS</sub>
+
+Whether each of the first nine tabs shows the keys that select it, as `⌘1`.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The keys are those that your [`[keys]`](#keys) bind to `tabs.goto` of the tab's number, `cmd+1` to `cmd+9` by default; a tab of no binding shows none.
+- It applies at once, as you save the file, and as your `[keys]` change.
+
+### `close-button`
+
+<sub>Platforms: macOS</sub>
+
+When a tab shows its close button.
+
+| Values | Default |
+|---|---|
+| `"always"`, `"hover"`, `"never"` | `"hover"` |
+
+- `"hover"` shows it while the pointer is over its tab, fading in and out.
+- It applies at once, as you save the file.
+
+### `column-width`
+
+<sub>Platforms: macOS</sub>
+
+The width of the bar's column, on the left or the right, in points.
+
+| Values | Default |
+|---|---|
+| from `60` to `600` | `200` |
+
+- A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place.
+- It applies at once, as you save the file.

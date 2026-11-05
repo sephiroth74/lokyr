@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/tabs",
+  "type": "object",
+  "properties": {
+    "position": {
+      "description": "Where the tab bar goes: at the window's top, bottom, left or right.",
+      "enum": ["top", "bottom", "left", "right"],
+      "default": "top"
+    },
+    "style": {
+      "description": "The bar's look: regular, below a titlebar of the window's title; compact and minimal, in the titlebar at the top, minimal of the terminal's colors.",
+      "enum": ["regular", "compact", "minimal"],
+      "default": "compact"
+    },
+    "hide-when-single": {
+      "description": "Whether the bar hides while the window has one tab.",
+      "type": "boolean",
+      "default": true
+    },
+    "show-index": {
+      "description": "Whether each of the first nine tabs shows the keys that select it.",
+      "type": "boolean",
+      "default": true
+    },
+    "close-button": {
+      "description": "When a tab shows its close button: always, under the pointer, or never.",
+      "enum": ["always", "hover", "never"],
+      "default": "hover"
+    },
+    "column-width": {
+      "description": "The width of the bar's column on the left or the right, in points.",
+      "type": "number",
+      "minimum": 60,
+      "maximum": 600,
+      "default": 200
+    }
+  }
+}

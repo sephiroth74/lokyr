@@ -3,4 +3,8 @@
 name = "lokyr/tabs"
 kind = "builtin"
 license = "MIT"
-description = "The tabs: new, close, select, move, rename, color and out to a window of their own"
+description = "The tab bar and the tabs' commands: new, close, select, move, rename, color and out to a window of their own"
+
+[contributes]
+slots = ["tab-bar"]
+config-schema = "tabs.schema.json"
