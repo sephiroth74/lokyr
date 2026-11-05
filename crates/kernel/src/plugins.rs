@@ -2627,7 +2627,7 @@ impl Host<'_, '_> {
     }
 
     /// Checks `request`, a write, and queues it: one to a pane that is not
-    /// there fails now.
+    /// there, nor opened by the call's writes so far, fails now.
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
         match &request {
             Asked::SelectAll(pane)
@@ -2636,7 +2636,7 @@ impl Host<'_, '_> {
             | Asked::Paste { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
-                self.pane(*pane)?;
+                self.known_pane(*pane)?;
             }
             Asked::Decorate {
                 pane,

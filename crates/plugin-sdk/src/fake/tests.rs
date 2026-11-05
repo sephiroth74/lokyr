@@ -242,8 +242,286 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
     let done = host.take_done();
     assert!(matches!(done[0], Request::NewTab { .. }));
     assert_eq!(done[1], Request::ClosePane(PaneId(3)));
+    // The new tab is the window's, the closed pane's tab gone with it.
     let mut probe = Probe::new(|cx, _| {
+        let tabs: Vec<TabId> = cx.tabs(WindowId(1))?.iter().map(|tab| tab.id).collect();
+        assert_eq!(tabs, [TabId(1), TabId(FIRST_ID)]);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+/// The names of the events that `probe` heard, of every batch.
+fn heard(probe: &Probe) -> Vec<String> {
+    probe.heard.iter().flatten().cloned().collect()
+}
+
+#[test]
+fn a_call_s_new_tab_and_split_enter_the_workspace_its_later_writes_find_them_and_their_events_are_owed()
+ {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, _| {
+        cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
+        let (tab, pane) = cx.new_tab(WindowId(1), None)?;
+        let split = cx.split(pane, Direction::Vertical, Side::Second)?;
+        cx.send_text(split, "make\n")?;
+        cx.focus_pane(split)?;
+        cx.activate_tab(tab)?;
+        cx.zoom(tab, Some(pane))?;
+        // A read of the call reads the workspace before its writes.
         assert_eq!(cx.tabs(WindowId(1))?.len(), 1);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let (tab, pane, split) = (TabId(FIRST_ID), PaneId(FIRST_ID + 1), PaneId(FIRST_ID + 2));
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        heard(&probe),
+        [
+            "tab-created",
+            "pane-created",
+            "pane-created",
+            "layout-changed",
+            "pane-focused",
+            "tab-activated",
+            "layout-changed",
+        ]
+    );
+    let mut probe = Probe::new(move |cx, _| {
+        assert_eq!(
+            cx.windows()?,
+            [WindowInfo {
+                id: WindowId(1),
+                tabs: vec![TabId(1), tab],
+                active: tab,
+            }]
+        );
+        // The window shows the new tab, whose keyboard the split has.
+        assert_eq!(cx.focused_pane(), Some(split));
+        let tabs = cx.tabs(WindowId(1))?;
+        assert_eq!(tabs[1].panes, [pane, split]);
+        assert_eq!((tabs[1].focused, tabs[1].zoomed), (split, Some(pane)));
+        assert_eq!(
+            cx.layout(tab)?,
+            Layout::Split {
+                direction: Direction::Vertical,
+                ratio: None,
+                first: Box::new(Layout::Pane(pane)),
+                second: Box::new(Layout::Pane(split)),
+            }
+        );
+        cx.set_ratio(tab, Vec::new(), Some(0.99))
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let mut probe = Probe::new(move |cx, _| {
+        let Layout::Split { ratio, .. } = cx.layout(tab)? else {
+            panic!("a split");
+        };
+        // Within 5 % of its parts' edges, as the app keeps it.
+        assert_eq!(ratio, Some(0.95));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn closes_and_moves_change_the_workspace_as_the_app_s_and_the_focus_follows() {
+    let mut host = FakeHost::new("acme/probe");
+    for (pane, tab) in [(1, 1), (2, 2), (3, 2)] {
+        host.pane(PaneId(pane)).tab = TabId(tab);
+    }
+    host.focus(Some(PaneId(3)));
+    let mut probe = Probe::new(|cx, _| {
+        cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
+        assert_eq!(cx.focused_pane(), Some(PaneId(3)));
+        cx.close_pane(PaneId(3))?;
+        cx.move_tab(TabId(2), WindowId(1), 0)
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        heard(&probe),
+        ["pane-closed", "layout-changed", "pane-focused", "tab-moved"]
+    );
+    // The tab's keyboard went to the pane that took the room.
+    let mut probe = Probe::new(|cx, _| {
+        cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
+        assert_eq!(cx.focused_pane(), Some(PaneId(2)));
+        assert_eq!(cx.windows()?[0].tabs, [TabId(2), TabId(1)]);
+        cx.close_tab(TabId(2))
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        heard(&probe),
+        ["pane-closed", "tab-closed", "tab-activated"]
+    );
+    // A tab alone in its window stays; the window closes with its last
+    // pane, and the focus with it.
+    let mut probe = Probe::new(|cx, _| {
+        cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
+        assert_eq!(cx.focused_pane(), Some(PaneId(1)));
+        cx.tab_to_new_window(TabId(1))?;
+        cx.close_pane(PaneId(1))
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        heard(&probe),
+        ["pane-closed", "tab-closed", "window-closed"]
+    );
+    let mut probe = Probe::new(|cx, _| {
+        assert_eq!(cx.focused_pane(), None);
+        assert!(cx.windows()?.is_empty());
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_pane_moves_out_to_a_tab_and_to_a_window_of_its_own() {
+    let mut host = FakeHost::new("acme/probe");
+    for pane in [1, 2, 3] {
+        host.pane(PaneId(pane));
+    }
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, _| {
+        cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
+        cx.pane_to_new_tab(PaneId(2), WindowId(1), 5)?;
+        cx.pane_to_new_window(PaneId(3))
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        heard(&probe),
+        [
+            "layout-changed",
+            "tab-created",
+            "pane-moved",
+            "layout-changed",
+            "window-opened",
+            "tab-created",
+            "pane-moved",
+        ]
+    );
+    let mut probe = Probe::new(|cx, _| {
+        let windows = cx.windows()?;
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].tabs, [TabId(1), TabId(FIRST_ID)]);
+        assert_eq!(cx.tabs(WindowId(1))?[1].panes, [PaneId(2)]);
+        assert_eq!(cx.tabs(windows[1].id)?[0].panes, [PaneId(3)]);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn the_writes_apply_before_the_app_s_requests() {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, _| {
+        cx.run_command("pane.clear", Args::new())?;
+        cx.send_text(PaneId(1), "ls\n")
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        host.take_done(),
+        [
+            Request::SendText {
+                pane: PaneId(1),
+                text: "ls\n".to_owned(),
+            },
+            Request::RunCommand {
+                name: "pane.clear".to_owned(),
+                args: Args::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_read_of_rows_gives_every_row_held_from_the_first_a_blank_one_empty() {
+    let mut host = FakeHost::new("acme/probe");
+    let pane = host.pane(PaneId(1));
+    pane.held = -2..4;
+    pane.rows.insert(0, ("first".to_owned(), true));
+    pane.rows.insert(3, ("last".to_owned(), false));
+    let mut probe = Probe::new(|cx, _| {
+        cx.read_lines(PaneId(1), -10, 3)?;
+        cx.read_lines(PaneId(1), 2, 100).map(|_| ())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let owed = std::mem::take(&mut host.owed);
+    let reads: Vec<Vec<(i64, String, bool)>> = owed
+        .iter()
+        .map(|event| match event {
+            Event::Lines { lines, .. } => lines
+                .iter()
+                .map(|line| (line.row, line.text.clone(), line.wrapped))
+                .collect(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        reads,
+        [
+            vec![
+                (-2, String::new(), false),
+                (-1, String::new(), false),
+                (0, "first".to_owned(), true),
+            ],
+            vec![(2, String::new(), false), (3, "last".to_owned(), false)],
+        ]
+    );
+}
+
+/// A plugin whose look decorates, opens a panel, reads rows and opens a
+/// tab, as a menu's question should not.
+struct Looker;
+
+impl Plugin for Looker {
+    fn activate(&mut self, _: &mut Cx<'_>) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        let look = DecorationLook {
+            underline: None,
+            underline_color: None,
+            background: None,
+            pointing: true,
+        };
+        cx.decorate(PaneId(1), (0, 0), (2, 0), look).is_ok()
+            && cx
+                .open_panel(
+                    "menu",
+                    PanelOptions {
+                        anchor: Anchor::Pointer(WindowId(1)),
+                        role: Role::Menu,
+                        close_outside: true,
+                        close_escape: true,
+                    },
+                )
+                .is_ok()
+            && cx.read_lines(PaneId(1), 0, 1).is_ok()
+            && cx.new_tab(WindowId(1), None).is_ok()
+    }
+}
+
+#[test]
+fn a_look_leaves_the_host_as_it_was() {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    assert!(host.applies(&mut Looker, "looker.go", &Args::new()));
+    assert!(host.decorations().is_empty());
+    assert!(host.panels().is_empty());
+    assert!(host.owed.is_empty());
+    assert!(host.take_done().is_empty());
+    let mut probe = Probe::new(|cx, _| {
+        assert_eq!(cx.windows()?[0].tabs, [TabId(1)]);
+        // The ids that the look took are given again.
+        assert_eq!(cx.new_tab(WindowId(1), None)?.0, TabId(FIRST_ID));
         Ok(())
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();

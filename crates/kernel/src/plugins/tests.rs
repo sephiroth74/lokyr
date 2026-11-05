@@ -1798,6 +1798,46 @@ fn changes(app: &mut App) -> Vec<WorkspaceEvent> {
 }
 
 #[test]
+fn a_call_writes_to_the_panes_that_its_earlier_writes_open() {
+    use lokyr_plugin_sdk::host::{Scroll as Scrolled, Side as Part};
+
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let mut plugins = Plugins::new();
+    let got = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&got);
+    plugins
+        .add(
+            "ws",
+            scripted(
+                |cx| cx.register_command(command("ws.open")),
+                move |cx, _, _| {
+                    let window = cx.focused_window().unwrap();
+                    let (_, pane) = cx.new_tab(window, None)?;
+                    let split = cx.split(pane, host::Direction::Vertical, Part::Second)?;
+                    cx.send_text(pane, "sent to the new tab")?;
+                    cx.scroll(pane, Scrolled::Top)?;
+                    cx.select_all(split)?;
+                    cx.clear(split)?;
+                    cx.clear_scrollback(split)?;
+                    cx.paste(split, "pasted in the split")?;
+                    *seen.borrow_mut() = Some((pane, split));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("ws.open", Args::new(), &mut app.context())
+        .unwrap();
+    let (pane, split) = got.borrow_mut().take().unwrap();
+    // The terminal's echo shows what the writes sent.
+    text_once(&app, PaneId::of(pane.0), "sent to the new tab");
+    text_once(&app, PaneId::of(split.0), "pasted in the split");
+}
+
+#[test]
 fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
     use lokyr_plugin_sdk::host::{Direction as Lie, Layout as Laid, Side as Part};
 
