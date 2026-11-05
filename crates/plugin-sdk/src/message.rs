@@ -259,13 +259,16 @@ pub enum Request {
     /// `window`, or on the focused window without one, in a field that
     /// holds `text` as it opens: the host answers with the question's id,
     /// and the user's answer comes as [`Event::Answered`] to the plugin
-    /// alone, the text given, or none as the user cancels.
+    /// alone, the text given, or none as the user cancels. The message and
+    /// the detail are messages of the plugin's catalogs, which the host
+    /// shows in the language shown, or the texts themselves where the
+    /// catalogs lack them.
     AskText {
         /// The window.
         window: Option<WindowId>,
-        /// What the alert asks, in a line.
+        /// What the alert asks, in a line, or its message's id.
         message: String,
-        /// What it explains under the message.
+        /// What it explains under the message, or its message's id.
         detail: String,
         /// The field's text as it opens.
         text: String,

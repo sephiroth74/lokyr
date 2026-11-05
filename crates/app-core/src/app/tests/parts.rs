@@ -128,11 +128,12 @@ fn a_plugin_s_close_of_a_running_tab_asks_first_as_a_window_s_does() {
     assert_eq!(tabs(&app, window), 1);
     assert!(app.workspace.pane(pane).is_none());
     assert_eq!(fake.windows().count(), 1);
-    // The last tab's close closes the window.
+    // The last pane's close closes the window, which asks as its own
+    // close does.
     run(&mut fake, &mut app, "parts.close-pane");
     assert_eq!(
         fake.alerts()[0].alert.message,
-        app.texts.text("close-pane-running-message")
+        app.texts.text("close-running-message")
     );
     let id = fake.alerts()[0].id;
     fake.answer_alert(&mut app, id, 0);
@@ -181,4 +182,43 @@ fn a_text_that_a_plugin_asks_for_comes_to_it_or_none() {
     app.close(&mut fake, window);
     run_until(&mut fake, &mut app, |_, _| answers.borrow().len() == 3);
     assert_eq!(answers.borrow()[2], (asked.borrow()[2], None));
+}
+
+#[test]
+fn the_tabs_keys_open_select_move_and_close_tabs() {
+    let (mut fake, mut app, window, ..) = with_parts(idle());
+    let active = |app: &App| {
+        let shown = app.workspace.window(app.windows[&window].window).unwrap();
+        let at = shown
+            .tabs()
+            .iter()
+            .position(|&tab| tab == shown.active_tab());
+        (shown.tabs().to_vec(), at)
+    };
+    let press = |fake: &mut Fake, app: &mut App, code, text: &str, mods| {
+        fake.send(app, window, key_event(code, text, mods, true));
+    };
+    press(&mut fake, &mut app, KeyCode::KeyT, "t", CMD);
+    press(&mut fake, &mut app, KeyCode::KeyT, "t", CMD);
+    let (opened, at) = active(&app);
+    assert_eq!((opened.len(), at), (3, Some(2)));
+    // By their numbers, then round.
+    press(&mut fake, &mut app, KeyCode::Digit1, "1", CMD);
+    assert_eq!(active(&app).1, Some(0));
+    let shifted = Modifiers { shift: true, ..CMD };
+    press(&mut fake, &mut app, KeyCode::BracketLeft, "[", shifted);
+    assert_eq!(active(&app).1, Some(2));
+    press(&mut fake, &mut app, KeyCode::Tab, "\t", CTRL);
+    assert_eq!(active(&app).1, Some(0));
+    // The first moves a place right.
+    press(&mut fake, &mut app, KeyCode::ArrowRight, "", shifted);
+    let (moved, at) = active(&app);
+    assert_eq!((moved[1], at), (opened[0], Some(1)));
+    // Command-W closes the tab, of a shell at its prompt, and the window
+    // with its last.
+    press(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
+    assert_eq!(active(&app).0.len(), 2);
+    press(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
+    press(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
+    assert_eq!(fake.windows().count(), 0);
 }

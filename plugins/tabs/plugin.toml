@@ -1,0 +1,6 @@
+# The manifest of the built-in plugin of the tabs.
+[plugin]
+name = "lokyr/tabs"
+kind = "builtin"
+license = "MIT"
+description = "The tabs: new, close, select, move, rename, color and out to a window of their own"

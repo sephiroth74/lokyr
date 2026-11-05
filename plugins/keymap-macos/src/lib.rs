@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 24] = [
+pub const BINDINGS: [(&str, &str); 30] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -50,23 +50,43 @@ pub const BINDINGS: [(&str, &str); 24] = [
     ("cmd+end", "pane.scroll-bottom"),
     // The links'.
     ("cmd+click", "links.open"),
+    // The tabs': Command-W closes the tab, or its pane, once a tab bar
+    // runs, the window's close keeping Command-Shift-W.
+    ("cmd+t", "tabs.new"),
+    ("cmd+w", "tabs.close"),
+    ("cmd+shift+]", "tabs.next"),
+    ("cmd+shift+[", "tabs.prev"),
+    ("ctrl+tab", "tabs.next"),
+    ("ctrl+shift+tab", "tabs.prev"),
 ];
 
-/// The command that brings forward the window of a number, its `index`.
-const GOTO_WINDOW: &str = "window.goto";
-
-/// The keys of the windows of the numbers from 1 to 9, after the bindings,
-/// each its window's.
-pub const WINDOWS: [&str; 9] = [
-    "alt+cmd+1",
-    "alt+cmd+2",
-    "alt+cmd+3",
-    "alt+cmd+4",
-    "alt+cmd+5",
-    "alt+cmd+6",
-    "alt+cmd+7",
-    "alt+cmd+8",
-    "alt+cmd+9",
+/// The bindings of a command of an argument, a whole number, after the
+/// others: each of its keys, the command, the argument's name and its
+/// value.
+pub const ARGUED: [(&str, &str, &str, i64); 20] = [
+    // A tab a place to the left or to the right.
+    ("cmd+shift+left", "tabs.move", "delta", -1),
+    ("cmd+shift+right", "tabs.move", "delta", 1),
+    // The tabs of the numbers from 1 to 9.
+    ("cmd+1", "tabs.goto", "index", 1),
+    ("cmd+2", "tabs.goto", "index", 2),
+    ("cmd+3", "tabs.goto", "index", 3),
+    ("cmd+4", "tabs.goto", "index", 4),
+    ("cmd+5", "tabs.goto", "index", 5),
+    ("cmd+6", "tabs.goto", "index", 6),
+    ("cmd+7", "tabs.goto", "index", 7),
+    ("cmd+8", "tabs.goto", "index", 8),
+    ("cmd+9", "tabs.goto", "index", 9),
+    // The windows of the numbers from 1 to 9.
+    ("alt+cmd+1", "window.goto", "index", 1),
+    ("alt+cmd+2", "window.goto", "index", 2),
+    ("alt+cmd+3", "window.goto", "index", 3),
+    ("alt+cmd+4", "window.goto", "index", 4),
+    ("alt+cmd+5", "window.goto", "index", 5),
+    ("alt+cmd+6", "window.goto", "index", 6),
+    ("alt+cmd+7", "window.goto", "index", 7),
+    ("alt+cmd+8", "window.goto", "index", 8),
+    ("alt+cmd+9", "window.goto", "index", 9),
 ];
 
 /// The plugin of macOS's default shortcuts.
@@ -83,11 +103,11 @@ impl Plugin for KeymapMacos {
                 when: None,
             })?;
         }
-        for (index, keys) in (1..).zip(WINDOWS) {
+        for (keys, command, name, value) in ARGUED {
             cx.bind(Binding {
                 keys: keys.to_owned(),
-                command: GOTO_WINDOW.to_owned(),
-                args: Args::from([("index".to_owned(), Value::Integer(index))]),
+                command: command.to_owned(),
+                args: Args::from([(name.to_owned(), Value::Integer(value))]),
                 when: None,
             })?;
         }

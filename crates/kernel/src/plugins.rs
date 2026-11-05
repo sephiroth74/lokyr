@@ -1036,6 +1036,17 @@ impl Plugins {
         commands
     }
 
+    /// The text of `text`, a message of `plugin`'s catalogs, in
+    /// `language`'s or English's, or `text` itself where they lack it, as a
+    /// plugin's question shows it.
+    pub fn text_of(&self, plugin: &str, language: &str, text: &str) -> String {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .and_then(|entry| Texts::new(language, entry.state.catalogs).get(text))
+            .unwrap_or_else(|| text.to_owned())
+    }
+
     fn active(&self) -> impl Iterator<Item = &State> {
         self.entries
             .iter()

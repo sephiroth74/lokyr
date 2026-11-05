@@ -51,9 +51,16 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
         menu_items(&fake, 1),
         [
             "New Window cmd+n",
-            "Close Window cmd+w",
+            "Close Window shift+cmd+w",
             "Set Title… shift+cmd+i",
-            "Quick Terminal"
+            "Quick Terminal",
+            "-",
+            "New Tab cmd+t",
+            "Close Tab cmd+w",
+            "Select Next Tab shift+cmd+]",
+            "Select Previous Tab shift+cmd+[",
+            "Rename Tab…",
+            "Move Tab to New Window"
         ]
     );
     assert_eq!(
@@ -122,7 +129,14 @@ fn the_menus_follow_the_keys_of_the_config() {
             "New Window cmd+y",
             "Close Window shift+cmd+w",
             "Set Title… shift+cmd+i",
-            "Quick Terminal"
+            "Quick Terminal",
+            "-",
+            "New Tab cmd+t",
+            "Close Tab",
+            "Select Next Tab shift+cmd+]",
+            "Select Previous Tab shift+cmd+[",
+            "Rename Tab…",
+            "Move Tab to New Window"
         ]
     );
     assert_eq!(
@@ -146,20 +160,32 @@ fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
     app.run(&mut fake, "test.bind", Args::new());
     assert_eq!(menu_items(&fake, 1)[0], "New Window");
     assert!(menu_items(&fake, 3).contains(&"test.size cmd+n".to_owned()));
-    // A config that takes Command-W away, as it reloads, and then its
-    // second key.
+    // Command-W is the tab's, the window's next key its own; a config that
+    // binds Command-W to the window, as it reloads, takes it from the tab,
+    // the window's item showing its first key that no later binding takes;
+    // and then takes the window's away.
     let (mut fake, mut app, path) = with_file("menu-keys", "");
-    assert_eq!(menu_items(&fake, 1)[1], "Close Window cmd+w");
-    std::fs::write(&path, "[keys]\n\"cmd+w\" = false\n").unwrap();
+    let close = |fake: &Fake| {
+        (
+            menu_items(fake, 1)[1].clone(),
+            menu_items(fake, 1)[6].clone(),
+        )
+    };
+    let shown = |window: &str, tab: &str| (window.to_owned(), tab.to_owned());
+    assert_eq!(
+        close(&fake),
+        shown("Close Window shift+cmd+w", "Close Tab cmd+w")
+    );
+    std::fs::write(&path, "[keys]\n\"cmd+w\" = \"window.close\"\n").unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(menu_items(&fake, 1)[1], "Close Window shift+cmd+w");
+    assert_eq!(close(&fake), shown("Close Window shift+cmd+w", "Close Tab"));
     std::fs::write(
         &path,
         "[keys]\n\"cmd+w\" = false\n\"cmd+shift+w\" = false\n",
     )
     .unwrap();
     change(&mut fake, &mut app);
-    assert_eq!(menu_items(&fake, 1)[1], "Close Window");
+    assert_eq!(close(&fake), shown("Close Window", "Close Tab"));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
@@ -208,7 +234,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 33);
+    assert_eq!(app.keymap.bindings().len(), 50);
 }
 
 #[test]

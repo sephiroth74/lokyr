@@ -404,8 +404,9 @@ impl<B: Backend> App<B> {
 
     /// Closes `closing`, a tab or a pane that a plugin closes, once the
     /// user confirms it while a program other than a shell runs there,
-    /// which closing ends, as for a window; one that waits for the answer
-    /// asks nothing more.
+    /// which closing ends, as for a window, and as the window's close
+    /// asks, of the window's last; one that waits for the answer asks
+    /// nothing more.
     pub(super) fn ask_close_part(&mut self, platform: &mut dyn Platform, closing: Closing) {
         if self.part_asks.values().any(|(_, asked)| *asked == closing) {
             return;
@@ -421,6 +422,16 @@ impl<B: Backend> App<B> {
         let Some(window) = panes.first().and_then(|&pane| self.window_of(pane)) else {
             return;
         };
+        // The window's last tab or pane closes the window, which asks as
+        // the window's close does.
+        let last = self
+            .windows
+            .get(&window)
+            .is_some_and(|state| self.workspace.panes_of(state.window).len() <= panes.len());
+        if last {
+            self.ask_close(platform, window);
+            return;
+        }
         let running = panes
             .iter()
             .find_map(|&pane| self.workspace.pane(pane).and_then(Pane::running));

@@ -15,5 +15,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_core_actions::registration(),
         #[cfg(feature = "plugin-links")]
         lokyr_links::registration(),
+        #[cfg(feature = "plugin-tabs")]
+        lokyr_tabs::registration(),
     ]
 }

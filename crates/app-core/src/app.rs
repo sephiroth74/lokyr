@@ -2277,10 +2277,12 @@ impl<B: Backend> App<B> {
                     detail,
                     text,
                 } => {
+                    // Of the plugin's catalogs, in the language shown.
+                    let language = self.texts.language().to_owned();
                     let alert = Alert {
                         style: AlertStyle::Informational,
-                        message,
-                        detail,
+                        message: self.plugins.text_of(&plugin, &language, &message),
+                        detail: self.plugins.text_of(&plugin, &language, &detail),
                         buttons: vec![
                             self.texts.text("ask-text-ok"),
                             self.texts.text("ask-text-cancel"),

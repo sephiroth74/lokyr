@@ -1238,6 +1238,9 @@ Commands without keys of their own, for your bindings:
 
 - `pane.send-text` sends its `text` to the program as it is, its control characters too, as keys that typed it would, which can run commands; the view comes back to the screen. In the TOML string, `\u0017` writes Control-W, and `\u001b` Escape.
 - `window.toggle-quick-terminal` shows the quick terminal, or hides it, as [`[quick-terminal]`](#quick-terminal) says: bound to a global key, from every app. Shell › Quick Terminal runs it too.
+- `tabs.rename` gives the tab its `title`, in place of its program's; without one, as Shell › Rename Tab… runs it, it asks you for it, and an empty one gives the tab its program's back.
+- `tabs.set-color` gives the tab its `color`, as `"#ff8800"`, in place of the one that its program set; an empty one gives the program's back.
+- `tabs.detach` moves the tab out to a window of its own, as Shell › Move Tab to New Window does.
 
 For the keys of a shell's line editing, as macOS's text fields have them:
 
@@ -1266,7 +1269,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 |---|---|---|
 | `cmd+,` | `app.settings` | Opens the config file in your text editor, made first of every key commented out when there is none, as [The file](#the-file) says |
 | `cmd+n` | `window.new` | Opens a window |
-| `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
+| `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window, of all its tabs, `cmd+w` closing the tab instead while the tabs' plugin runs; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other open window has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
@@ -1284,6 +1287,12 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+home` | `pane.scroll-top` | Scrolls the view to the scrollback's first row |
 | `cmd+end` | `pane.scroll-bottom` | Scrolls the view back to the screen |
 | `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`; between quotes, a path that is there can have spaces, as `git status` and Python write one, and a URL ends at a space. A URL or a file asks you first, as [`[links]`](#links) says; a folder opens in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run. While you hold Command, the link under the pointer that would open is underlined, and the pointer over it is the pointing hand, as you move over it or press Command with the pointer still, and goes as the program changes its text, or the view scrolls it from under the pointer |
+| `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
+| `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
+| `cmd+shift+]`, `ctrl+tab` | `tabs.next` | Shows the next tab, the first after the last |
+| `cmd+shift+[`, `ctrl+shift+tab` | `tabs.prev` | Shows the previous tab, the last before the first |
+| `cmd+1`, `cmd+2`, `cmd+3`, `cmd+4`, `cmd+5`, `cmd+6`, `cmd+7`, `cmd+8`, `cmd+9` | `tabs.goto` | Shows the tab of that number, `index`, from 1 at the left; a number of no tab does nothing |
+| `cmd+shift+left`, `cmd+shift+right` | `tabs.move` | Moves the tab a place to the left or to the right, `delta` of -1 or 1, as far as the bar's ends |
 
 ## `[plugins.<namespace>]`
 

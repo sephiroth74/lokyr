@@ -99,6 +99,7 @@ lokyr-render-metal = { path = "crates/render-metal" }
 lokyr-replay = { path = "tools/replay" }
 lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
+lokyr-tabs = { path = "plugins/tabs" }
 lokyr-text-core = { path = "crates/text-core" }
 lokyr-ui-core = { path = "crates/ui-core" }
 lokyr-vt-core = { path = "crates/vt-core" }

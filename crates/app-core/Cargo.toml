@@ -13,11 +13,12 @@ publish = false
 # The distributions, each of the first-party plugins that its build holds.
 # What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
 default = ["dist-default"]
-dist-default = ["plugin-keymap-macos", "plugin-core-actions", "plugin-links"]
+dist-default = ["plugin-keymap-macos", "plugin-core-actions", "plugin-links", "plugin-tabs"]
 dist-minimal = ["plugin-keymap-macos", "plugin-core-actions"]
 plugin-keymap-macos = ["dep:lokyr-keymap-macos"]
 plugin-core-actions = ["dep:lokyr-core-actions"]
 plugin-links = ["dep:lokyr-links"]
+plugin-tabs = ["dep:lokyr-tabs"]
 # The end of what `cargo xtask gen-dist` writes.
 # A plugin of a view in every slot of the windows, for a build of tests.
 sample-slots = []
@@ -40,6 +41,7 @@ notify.workspace = true
 # What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
 lokyr-core-actions = { workspace = true, optional = true }
 lokyr-links = { workspace = true, optional = true }
+lokyr-tabs = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 lokyr-keymap-macos = { workspace = true, optional = true }

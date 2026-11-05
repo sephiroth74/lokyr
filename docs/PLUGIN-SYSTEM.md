@@ -462,7 +462,8 @@ type Cx = {
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
     close_panel: (id: string) -> (boolean, Error?),
     -- Asks the user for a text, in an alert on `window`, or on the focused one, of a field that holds `text`:
-    -- returns the question's id, and the answer comes as an "answered" event.
+    -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
+    -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.
     ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, Error?),
 
     -- The terminal. The reads require `terminal-read`, and return a `denied` error without it.
