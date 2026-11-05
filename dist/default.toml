@@ -6,5 +6,8 @@
 name = "default"
 
 [plugins]
+# The system's default shortcuts first, which the plugins' own keys after
+# them win over.
+keymap-macos = { path = "../plugins/keymap-macos", target = "macos" }
 core-actions = { path = "../plugins/core-actions" }
 links = { path = "../plugins/links" }

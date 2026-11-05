@@ -22,7 +22,7 @@ fn run(host: &mut FakeHost, name: &str) -> Result<(), Error> {
 }
 
 #[test]
-fn the_commands_register_with_their_keys() {
+fn the_commands_register_without_keys() {
     let mut host = host(None);
     host.activate(&mut CoreActions).unwrap();
     let registered: Vec<(&str, Category, Vec<String>)> = host
@@ -76,7 +76,7 @@ fn the_commands_register_with_their_keys() {
         .map(|command| (command.name.as_str(), command.when.as_deref()))
         .collect();
     assert_eq!(whens, [("pane.copy", Some("selection"))]);
-    // Sending text takes its text, and has no keys of its own.
+    // Sending text takes its text.
     let send = host.commands().last().unwrap();
     assert_eq!(send.params.len(), 1);
     assert_eq!(
@@ -87,41 +87,8 @@ fn the_commands_register_with_their_keys() {
         ),
         ("text", lokyr_plugin_sdk::command::Kind::String, &None)
     );
-    assert!(
-        host.bindings()
-            .iter()
-            .all(|binding| binding.command != "pane.send-text")
-    );
-    let bound: Vec<(&str, &str)> = host
-        .bindings()
-        .iter()
-        .map(|binding| {
-            assert_eq!((binding.args.len(), &binding.when), (0, &None));
-            (binding.keys.as_str(), binding.command.as_str())
-        })
-        .collect();
-    assert_eq!(
-        bound,
-        [
-            ("cmd+c", "pane.copy"),
-            ("cmd+v", "pane.paste"),
-            ("cmd+a", "pane.select-all"),
-            ("cmd+k", "pane.clear"),
-            ("cmd+=", "font.bigger"),
-            ("cmd+shift+=", "font.bigger"),
-            ("cmd++", "font.bigger"),
-            ("cmd+-", "font.smaller"),
-            ("cmd+0", "font.reset"),
-            ("cmd+up", "pane.scroll-line-up"),
-            ("cmd+down", "pane.scroll-line-down"),
-            ("cmd+pageup", "pane.scroll-page-up"),
-            ("shift+pageup", "pane.scroll-page-up"),
-            ("cmd+pagedown", "pane.scroll-page-down"),
-            ("shift+pagedown", "pane.scroll-page-down"),
-            ("cmd+home", "pane.scroll-top"),
-            ("cmd+end", "pane.scroll-bottom"),
-        ]
-    );
+    // The system's keymap binds their keys.
+    assert!(host.bindings().is_empty());
 }
 
 #[test]

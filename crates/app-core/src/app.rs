@@ -566,7 +566,7 @@ impl<B: Backend> App<B> {
         let mut plugins = Plugins::new();
         // The distribution's plugins, whose manifests read, as the build
         // checked them.
-        for registration in crate::dist::plugins() {
+        for registration in registrations() {
             if let Err(error) = plugins.add_registered(registration) {
                 eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
             }
@@ -588,7 +588,8 @@ impl<B: Backend> App<B> {
         ) {
             eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
         }
-        let keymap = Keymap::with_config(bindings(&plugins), &config.keys);
+        let commands = commands(&Texts::new(l10n::SOURCE, &CATALOGS), &plugins);
+        let keymap = Keymap::with_config(bindings(&plugins, &commands), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
             drawing,
@@ -602,7 +603,7 @@ impl<B: Backend> App<B> {
                 changed: Arc::new(AtomicBool::new(false)),
                 reading: None,
             }),
-            commands: commands(&Texts::new(l10n::SOURCE, &CATALOGS), &plugins),
+            commands,
             texts: Texts::new(l10n::SOURCE, &CATALOGS),
             preferred: Vec::new(),
             plugins,
@@ -1134,7 +1135,8 @@ impl<B: Backend> App<B> {
         let term_changed = config.terminal.term != self.config.terminal.term;
         self.settle_update_checks(platform, config.updates.check);
         if keys_changed {
-            self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
+            self.keymap =
+                Keymap::with_config(bindings(&self.plugins, &self.commands), &config.keys);
         }
         let plugins_changed = config.plugins != self.config.plugins;
         self.config = config;
@@ -2086,7 +2088,8 @@ impl<B: Backend> App<B> {
     fn after_plugins(&mut self, platform: &mut dyn Platform) {
         if self.plugins.take_declarations_changed() {
             self.commands = commands(&self.texts, &self.plugins);
-            self.keymap = Keymap::with_config(bindings(&self.plugins), &self.config.keys);
+            self.keymap =
+                Keymap::with_config(bindings(&self.plugins, &self.commands), &self.config.keys);
             self.set_menu(platform);
         }
         for request in self.plugins.take_requests() {
@@ -3139,34 +3142,26 @@ fn sized(font: &FontConfig, size: Option<f32>) -> FontConfig {
     }
 }
 
-/// The default bindings: the app's, then the active plugins'.
-fn bindings(plugins: &Plugins) -> Vec<Binding> {
-    let mut bindings = default_bindings();
-    bindings.extend(plugins.bindings().cloned());
-    bindings
+/// The default bindings, the active plugins', of the commands that
+/// `commands` holds: a plugin's binding of a command that no plugin
+/// registers, as one of a plugin turned off, takes no key.
+fn bindings(plugins: &Plugins, commands: &Registry) -> Vec<Binding> {
+    plugins
+        .bindings()
+        .filter(|binding| commands.get(&binding.invocation.command).is_some())
+        .cloned()
+        .collect()
 }
 
-/// The default bindings of the app's commands.
-fn default_bindings() -> Vec<Binding> {
-    [
-        ("cmd+,", SETTINGS),
-        ("cmd+n", NEW_WINDOW),
-        ("cmd+w", CLOSE_WINDOW),
-        ("cmd+shift+i", SET_TITLE),
-        ("cmd+q", QUIT),
-    ]
-    .into_iter()
-    .filter_map(|(keys, command)| {
-        Some(Binding {
-            keys: keymap::parse_keys(keys).ok()?,
-            invocation: Invocation {
-                command: command.to_owned(),
-                args: Args::new(),
-            },
-            when: None,
-        })
-    })
-    .collect()
+/// The registrations of the build's plugins, its distribution's; a test
+/// of another system than the Mac takes the Mac's default shortcuts first,
+/// as the tests press them.
+fn registrations() -> Vec<plugins::Registration> {
+    #[cfg_attr(any(not(test), target_os = "macos"), expect(unused_mut))]
+    let mut registrations = crate::dist::plugins();
+    #[cfg(all(test, not(target_os = "macos")))]
+    registrations.insert(0, lokyr_keymap_macos::registration());
+    registrations
 }
 
 /// The address of a new issue of the repository, its text telling the

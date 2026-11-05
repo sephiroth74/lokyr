@@ -1202,7 +1202,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
 - A click that a binding takes, a single one in the window that has the focus, runs its command before the selection, the menu of a Control click and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer: its column, from `0` at the left, and the number of its row, which stays that row's as output scrolls it into the scrollback and the view scrolls, as the window showed it.
 - The menus show each command's keys: of its bindings of one key, without arguments and without `when`, the first whose key no later binding takes. A menu's item takes its key before the program; a dimmed item, as Copy without a selection, takes none, and the key goes on to the bindings. A command that needs an argument, as `pane.send-text`, has no item.
-- A binding of a command that does not exist reads, and tells it in the log when you press its keys, as a plugin's commands come once the plugin starts.
+- A binding of yours of a command that does not exist reads, takes its keys, and tells it in the log when you press them, as a plugin's commands come once the plugin starts.
 
 Commands without keys of their own, for your bindings:
 
@@ -1226,13 +1226,17 @@ For the keys of a shell's line editing, as macOS's text fields have them:
 - `delete` is the key that deletes forward, fn-⌫ on a laptop's keyboard.
 - zsh's Control-U deletes the whole line, where bash's and fish's delete to its start; `bindkey '^U' backward-kill-line` in `~/.zshrc` makes zsh's delete to the start.
 
-The defaults:
+The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's apps and of iTerm2's:
+
+- Your bindings come after them, and win; `false` takes a default away.
+- `[plugins.keymap-macos] enabled = false` takes them all away, so that your `[keys]` bind every key from nothing: the menus keep the system's own keys alone, ⌘H to hide Lokyr, ⌥⌘H to hide the others, ⌘M to minimize the window, and ⌃⌘Space for the emoji and symbols.
+- A default of a command that is not there, as one of a plugin turned off, takes no key: with `[plugins.links] enabled = false`, a ⌘-click selects, as a click does.
 
 | Keys | Command | What it does |
 |---|---|---|
 | `cmd+,` | `app.settings` | Opens the config file in your text editor, made first of every key commented out when there is none, as [The file](#the-file) says |
 | `cmd+n` | `window.new` | Opens a window |
-| `cmd+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
+| `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
 | `cmd+c` | `pane.copy` | Copies the selection |
@@ -1242,9 +1246,12 @@ The defaults:
 | `cmd+=`, `cmd+shift+=`, `cmd++` | `font.bigger` | Makes the text a point larger, in every window, up to 200 |
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
-| `cmd+up`, `cmd+down` | `pane.scroll-line-up`, `pane.scroll-line-down` | Scrolls the view a line up or down |
-| `cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-up`, `pane.scroll-page-down` | Scrolls the view a page up or down |
-| `cmd+home`, `cmd+end` | `pane.scroll-top`, `pane.scroll-bottom` | Scrolls the view to the scrollback's first row, or back to the screen |
+| `cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
+| `cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
+| `cmd+pageup`, `shift+pageup` | `pane.scroll-page-up` | Scrolls the view a page up |
+| `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-down` | Scrolls the view a page down |
+| `cmd+home` | `pane.scroll-top` | Scrolls the view to the scrollback's first row |
+| `cmd+end` | `pane.scroll-bottom` | Scrolls the view back to the screen |
 | `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`; between quotes, a path that is there can have spaces, as `git status` and Python write one, and a URL ends at a space. A URL or a file asks you first, as [`[links]`](#links) says; a folder opens in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run. While you hold Command, the link under the pointer that would open is underlined, and the pointer over it is the pointing hand, as you move over it or press Command with the pointer still |
 
 ## `[plugins.<namespace>]`
@@ -1285,4 +1292,5 @@ Default: `true`.
 - It applies as you save the file: a plugin turned off stops at once, and one turned on again starts anew.
 - The plugin's other keys are not checked while it is off.
 - `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
+- `[plugins.keymap-macos] enabled = false` takes away the default shortcuts, as [`[keys]`](#keys) says, the menus keeping the system's own keys alone.
 - A value other than `true` or `false` shows in the bar, and the plugin stays as it is.

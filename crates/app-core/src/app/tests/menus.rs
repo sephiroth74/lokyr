@@ -113,13 +113,14 @@ fn the_menus_follow_the_keys_of_the_config() {
         "\"cmd+w\" = \"pane.select-all\"\n",
     );
     let (fake, _, _) = bound(keys, reader(""));
-    // A binding's key, the one that a key bound later takes away, and
-    // one that holds in a context alone, which no item shows.
+    // A binding's key, the one that a key bound later takes away, whose
+    // command's next key shows, and one that holds in a context alone,
+    // which no item shows.
     assert_eq!(
         menu_items(&fake, 1),
         [
             "New Window cmd+y",
-            "Close Window",
+            "Close Window shift+cmd+w",
             "Set Title… shift+cmd+i",
             "Quick Terminal"
         ]
@@ -145,13 +146,69 @@ fn the_menus_follow_a_plugin_s_binding_and_a_reloaded_config() {
     app.run(&mut fake, "test.bind", Args::new());
     assert_eq!(menu_items(&fake, 1)[0], "New Window");
     assert!(menu_items(&fake, 3).contains(&"test.size cmd+n".to_owned()));
-    // A config that takes Command-W away, as it reloads.
+    // A config that takes Command-W away, as it reloads, and then its
+    // second key.
     let (mut fake, mut app, path) = with_file("menu-keys", "");
     assert_eq!(menu_items(&fake, 1)[1], "Close Window cmd+w");
     std::fs::write(&path, "[keys]\n\"cmd+w\" = false\n").unwrap();
     change(&mut fake, &mut app);
+    assert_eq!(menu_items(&fake, 1)[1], "Close Window shift+cmd+w");
+    std::fs::write(
+        &path,
+        "[keys]\n\"cmd+w\" = false\n\"cmd+shift+w\" = false\n",
+    )
+    .unwrap();
+    change(&mut fake, &mut app);
     assert_eq!(menu_items(&fake, 1)[1], "Close Window");
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn without_the_system_s_keymap_the_menus_keep_their_own_keys_alone() {
+    let (mut fake, mut app, path) =
+        with_file("no-keymap", "[plugins.keymap-macos]\nenabled = false\n");
+    assert!(app.keymap.bindings().is_empty());
+    let keyed = |fake: &Fake| -> Vec<String> {
+        (0..6)
+            .flat_map(|menu| menu_items(fake, menu))
+            .filter(|item| item.contains("cmd+"))
+            .collect()
+    };
+    assert_eq!(
+        keyed(&fake),
+        [
+            "Hide Lokyr cmd+h",
+            "Hide Others alt+cmd+h",
+            "Emoji & Symbols ctrl+cmd+ ",
+            "Minimize cmd+m"
+        ]
+    );
+    // Command-N reaches the program, rather than opening a window.
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, command_key(KeyCode::KeyN, "n"));
+    assert_eq!(fake.windows().count(), 1);
+    // On again, as the config is saved.
+    std::fs::write(&path, "").unwrap();
+    change(&mut fake, &mut app);
+    let (normal, _) = started();
+    assert_eq!(keyed(&fake), keyed(&normal));
+    assert_eq!(menu_items(&fake, 1)[0], "New Window cmd+n");
+    fake.send(&mut app, window, command_key(KeyCode::KeyN, "n"));
+    assert_eq!(fake.windows().count(), 2);
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
+    let (_, app) = started();
+    let missing: Vec<&str> = app
+        .plugins
+        .bindings()
+        .map(|binding| binding.invocation.command.as_str())
+        .filter(|command| app.commands.get(command).is_none())
+        .collect();
+    assert_eq!(missing, Vec::<&str>::new());
+    assert_eq!(app.keymap.bindings().len(), 24);
 }
 
 #[test]

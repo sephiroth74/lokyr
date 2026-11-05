@@ -617,7 +617,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `search` | Find bar and search commands | F3 |
 | `themes` | Theme model, light/dark switching, picker | F3 |
 | `theme-iterm2` | `.itermcolors` importer | F3 |
-| `keymap-macos` | Default macOS shortcuts | F3 |
+| `keymap-macos` | Default macOS shortcuts, as iTerm2's: the keys of the app's commands and of the other plugins', which bind none of their own | F3 |
 | `keymap-linux` | Default Linux shortcuts | F7 |
 | `command-palette` | Command palette and theme picker | F3 |
 | `plugin-manager` | UI for Sleip (calls `sleip --json`) | F4 |
@@ -677,6 +677,8 @@ The "distribution" is the list of first-party plugins compiled into the app.
 name = "default"
 
 [plugins]
+keymap-macos    = { path = "../plugins/keymap-macos", target = "macos" }
+keymap-linux    = { path = "../plugins/keymap-linux", target = "linux" }    # from F7
 core-actions    = { path = "../plugins/core-actions" }
 links           = { path = "../plugins/links" }
 tabs            = { path = "../plugins/tabs" }
@@ -686,12 +688,11 @@ themes          = { path = "../plugins/themes" }
 theme-iterm2    = { path = "../plugins/theme-iterm2" }
 command-palette = { path = "../plugins/command-palette" }
 plugin-manager  = { path = "../plugins/plugin-manager" }   # from F4
-keymap-macos    = { path = "../plugins/keymap-macos", target = "macos" }
-keymap-linux    = { path = "../plugins/keymap-linux", target = "linux" }    # from F7
 ```
 
 - **Generation**: `cargo xtask gen-dist` reads every `dist/*.toml`, and writes, between its markers, each distribution as a feature of `lokyr-app-core` and of `lokyr-app`, `dist-<name>`, of a feature of each of its plugins, `plugin-<name>`, which takes the plugin's crate, a dependency of `lokyr-app-core` that is optional; and `crates/app-core/src/dist.rs`, the build's plugins' registrations, `export_plugin!`'s, in the files' order, `default` first. The default distribution is the crates' default; `just check-dist` checks that what it would write is written, and `just build-minimal` builds the minimal one, as CI does.
-- **Minimal distribution**: `dist/minimal.toml` contains only `core-actions`, and a keymap once a plugin holds the default keys, Alacritty-style. It proves the terminal works without any of the "visible" features: `cargo xtask bundle --no-default-features --features dist-minimal` builds its app.
+- **Minimal distribution**: `dist/minimal.toml` contains only `keymap-macos` and `core-actions`, Alacritty-style. It proves the terminal works without any of the "visible" features: `cargo xtask bundle --no-default-features --features dist-minimal` builds its app.
+- **The keys**: the system's keymap plugin, `keymap-macos` on the Mac, binds the default keys of every command, the app's and the other first-party plugins', which bind none of their own; it comes first, so that a plugin's binding after it wins, and the user's `[keys]` after all of them. A binding of a command that no plugin registers, as one of a plugin turned off, takes no key; with the keymap off, the menus keep the system's own keys alone, ⌘H, ⌥⌘H, ⌘M and ⌃⌘Space.
 - **At runtime**:
   - `[plugins.<namespace>] enabled = false` turns off a first-party plugin, at once as the config is saved, and `true` turns it on again, a new one of it ([ADR 0033](adr/0033-plugins-turned-off-in-their-sections.md)): its commands, its keys, its views, its panels and its decorations go as it stops.
   - For single-provider slots (`tab-bar`, `pane-header`), the config's [`[slots]`](CONFIGURATION.md#slots) picks the provider, the first that fills it by default, so a third-party plugin can replace our tab bar.

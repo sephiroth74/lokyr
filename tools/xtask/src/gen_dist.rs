@@ -353,6 +353,21 @@ fn replaced(old: &str, parts: &[String]) -> Result<String> {
         out.push('\n');
         out.push_str(part);
         rest = &rest[after + end..];
+        // A part that opens a table, as a system's dependencies, takes the
+        // keys after its end into it: the next table starts there.
+        let header = |line: &str| line.trim_start().starts_with('[');
+        if part.lines().any(header)
+            && let Some(key) = rest
+                .lines()
+                .skip(1)
+                .take_while(|line| !header(line))
+                .find(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+        {
+            bail!(
+                "a part opens a table, which `{}` after its end would fall into: move it before the part",
+                key.trim()
+            );
+        }
     }
     if rest.contains(BEGIN) {
         bail!("more parts than the task writes");
@@ -414,6 +429,21 @@ mod tests {
         );
         assert!(replaced(&old, &["a\n".to_owned()]).is_err());
         assert!(replaced("nothing\n", &["a\n".to_owned()]).is_err());
+        // A part that opens a table ends where the next one starts, so that
+        // no key after it falls into the table.
+        let table = "a = 1\n\n[target.'cfg(unix)'.dependencies]\nb = 1\n".to_owned();
+        let ended =
+            format!("[dependencies]\n{BEGIN}\n{END}\n# kept\n\n[build-dependencies]\nc = 1\n");
+        assert!(
+            replaced(&ended, std::slice::from_ref(&table))
+                .unwrap()
+                .contains(&format!("b = 1\n{END}\n# kept\n\n[build-dependencies]"))
+        );
+        let falling = format!("[dependencies]\n{BEGIN}\n{END}\nc = 1\n");
+        assert_eq!(
+            replaced(&falling, &[table]).unwrap_err().to_string(),
+            "a part opens a table, which `c = 1` after its end would fall into: move it before the part"
+        );
         let crate_of = |_: &str| Ok("x".to_owned());
         for text in [
             "[plugins]\n",

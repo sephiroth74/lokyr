@@ -640,6 +640,27 @@ fn a_cmd_click_opens_the_link_under_it_rather_than_selecting() {
 }
 
 #[test]
+fn a_default_of_a_command_that_is_not_there_takes_no_click() {
+    let (mut fake, mut app, window, _) = pasting(
+        "click-off",
+        "[links]\nurls = \"open\"\n[plugins.links]\nenabled = false\n",
+        shell("stty raw -echo; printf 'https://lokyr.dev/x\\r\\n'; echo ready; cat -v"),
+    );
+    // The system's keymap binds the click, of the links that are off.
+    let bound = |app: &App| {
+        app.keymap
+            .bindings()
+            .iter()
+            .any(|binding| binding.invocation.command == "links.open")
+    };
+    assert!(!bound(&app));
+    fake.send(&mut app, window, click(true, cell(2, 0), CMD, 1));
+    fake.send(&mut app, window, click(false, cell(2, 0), CMD, 1));
+    assert!(fake.opened().is_empty());
+    assert!(app.windows[&window].selecting.is_some());
+}
+
+#[test]
 fn a_click_runs_the_command_that_the_config_binds_it_to() {
     let mut config = Config::parse(
         "[keys]\n\"alt+click\" = \"window.new\"\n",

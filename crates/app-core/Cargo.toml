@@ -13,8 +13,9 @@ publish = false
 # The distributions, each of the first-party plugins that its build holds.
 # What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
 default = ["dist-default"]
-dist-default = ["plugin-core-actions", "plugin-links"]
-dist-minimal = ["plugin-core-actions"]
+dist-default = ["plugin-keymap-macos", "plugin-core-actions", "plugin-links"]
+dist-minimal = ["plugin-keymap-macos", "plugin-core-actions"]
+plugin-keymap-macos = ["dep:lokyr-keymap-macos"]
 plugin-core-actions = ["dep:lokyr-core-actions"]
 plugin-links = ["dep:lokyr-links"]
 # The end of what `cargo xtask gen-dist` writes.
@@ -39,6 +40,9 @@ notify.workspace = true
 # What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
 lokyr-core-actions = { workspace = true, optional = true }
 lokyr-links = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+lokyr-keymap-macos = { workspace = true, optional = true }
 # The end of what `cargo xtask gen-dist` writes.
 
 [build-dependencies]
@@ -46,6 +50,10 @@ lokyr-pkg-model.workspace = true
 
 [dev-dependencies]
 lokyr-platform-core = { workspace = true, features = ["fake"] }
+
+# The Mac's default shortcuts, which the tests press on every system.
+[target.'cfg(not(target_os = "macos"))'.dev-dependencies]
+lokyr-keymap-macos.workspace = true
 
 [lints]
 workspace = true

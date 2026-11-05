@@ -1,9 +1,10 @@
 # The minimal distribution: the terminal's own actions alone, copy, paste
-# and the rest, without the features that show, which proves that the
-# terminal works without them. `cargo xtask bundle --no-default-features
-# --features dist-minimal` builds it.
+# and the rest, with the system's default shortcuts, without the features
+# that show, which proves that the terminal works without them. `cargo
+# xtask bundle --no-default-features --features dist-minimal` builds it.
 [distribution]
 name = "minimal"
 
 [plugins]
+keymap-macos = { path = "../plugins/keymap-macos", target = "macos" }
 core-actions = { path = "../plugins/core-actions" }

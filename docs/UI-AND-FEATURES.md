@@ -209,7 +209,7 @@ drag gives it a ratio, between 5% and 95%, which `splits.equalize` takes away.
 | `splits.zoom-toggle` | ⌘⇧↩ |
 | `splits.equalize`, `splits.swap { direction }`, `splits.move-to-tab`, `splits.move-to-window` | palette |
 
-On Linux (F7) the shortcuts use Ctrl+Shift and are defined in `keymap-linux`.
+On macOS the shortcuts are the `keymap-macos` plugin's, which binds the keys of every plugin's commands; on Linux (F7) they use Ctrl+Shift and are defined in `keymap-linux`.
 
 **Behavior**
 - **New panes** inherit the cwd (via OSC 7, which is why basic shell integration already lands in F3) and the profile of the pane they come from.

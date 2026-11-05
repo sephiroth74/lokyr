@@ -9,6 +9,8 @@ use lokyr_kernel::plugins::Registration;
 /// distributions' files, which the app adds and activates in it.
 pub(crate) fn plugins() -> Vec<Registration> {
     vec![
+        #[cfg(all(feature = "plugin-keymap-macos", target_os = "macos"))]
+        lokyr_keymap_macos::registration(),
         #[cfg(feature = "plugin-core-actions")]
         lokyr_core_actions::registration(),
         #[cfg(feature = "plugin-links")]

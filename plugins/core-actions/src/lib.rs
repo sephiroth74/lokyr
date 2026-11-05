@@ -1,15 +1,15 @@
 //! Built-in plugin with the basic terminal actions.
 //!
-//! Copy and paste, select all, clearing the scrollback, scrolling, font size,
-//! and opening and closing windows. Like every built-in plugin, it depends
-//! only on the plugin SDK.
+//! Copy and paste, select all, clearing the scrollback, scrolling and the
+//! font's size, whose keys the system's keymap plugin binds. Like every
+//! built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{Binding, Scroll};
+use lokyr_plugin_sdk::host::Scroll;
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
 lokyr_plugin_sdk::export_plugin!(CoreActions);
@@ -56,14 +56,8 @@ static CATALOGS: [(&str, &str); 2] = [
 /// The sizes of the text, in points, that the commands go between.
 const SIZES: (f32, f32) = (4.0, 200.0);
 
-/// A command: its name, title, category, capabilities and keys.
-type Spec = (
-    &'static str,
-    &'static str,
-    Category,
-    &'static [Capability],
-    &'static [&'static str],
-);
+/// A command: its name, title, category and capabilities.
+type Spec = (&'static str, &'static str, Category, &'static [Capability]);
 
 /// The commands.
 const COMMANDS: [Spec; 13] = [
@@ -72,70 +66,24 @@ const COMMANDS: [Spec; 13] = [
         "Copy",
         Category::Clipboard,
         &[Capability::TerminalRead, Capability::ClipboardWrite],
-        &["cmd+c"],
     ),
     (
         PASTE,
         "Paste",
         Category::Clipboard,
         &[Capability::ClipboardRead, Capability::PtyWrite],
-        &["cmd+v"],
     ),
-    (SELECT_ALL, "Select All", Category::Edit, &[], &["cmd+a"]),
-    (CLEAR, "Clear", Category::Edit, &[], &["cmd+k"]),
-    // ⌘+ on a layout of its own `+` key, as the Italian, and with Shift on
-    // the US layout's `=`.
-    (
-        FONT_BIGGER,
-        "Bigger",
-        Category::View,
-        &[],
-        &["cmd+=", "cmd+shift+=", "cmd++"],
-    ),
-    (FONT_SMALLER, "Smaller", Category::View, &[], &["cmd+-"]),
-    (FONT_RESET, "Default Size", Category::View, &[], &["cmd+0"]),
-    (
-        SCROLL_LINE_UP,
-        "Scroll Up a Line",
-        Category::View,
-        &[],
-        &["cmd+up"],
-    ),
-    (
-        SCROLL_LINE_DOWN,
-        "Scroll Down a Line",
-        Category::View,
-        &[],
-        &["cmd+down"],
-    ),
-    (
-        SCROLL_PAGE_UP,
-        "Scroll Up a Page",
-        Category::View,
-        &[],
-        &["cmd+pageup", "shift+pageup"],
-    ),
-    (
-        SCROLL_PAGE_DOWN,
-        "Scroll Down a Page",
-        Category::View,
-        &[],
-        &["cmd+pagedown", "shift+pagedown"],
-    ),
-    (
-        SCROLL_TOP,
-        "Scroll to the Top",
-        Category::View,
-        &[],
-        &["cmd+home"],
-    ),
-    (
-        SCROLL_BOTTOM,
-        "Scroll to the Bottom",
-        Category::View,
-        &[],
-        &["cmd+end"],
-    ),
+    (SELECT_ALL, "Select All", Category::Edit, &[]),
+    (CLEAR, "Clear", Category::Edit, &[]),
+    (FONT_BIGGER, "Bigger", Category::View, &[]),
+    (FONT_SMALLER, "Smaller", Category::View, &[]),
+    (FONT_RESET, "Default Size", Category::View, &[]),
+    (SCROLL_LINE_UP, "Scroll Up a Line", Category::View, &[]),
+    (SCROLL_LINE_DOWN, "Scroll Down a Line", Category::View, &[]),
+    (SCROLL_PAGE_UP, "Scroll Up a Page", Category::View, &[]),
+    (SCROLL_PAGE_DOWN, "Scroll Down a Page", Category::View, &[]),
+    (SCROLL_TOP, "Scroll to the Top", Category::View, &[]),
+    (SCROLL_BOTTOM, "Scroll to the Bottom", Category::View, &[]),
 ];
 
 /// The plugin of the basic terminal actions.
@@ -144,7 +92,7 @@ pub struct CoreActions;
 
 impl Plugin for CoreActions {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        for (name, title, category, capabilities, keys) in COMMANDS {
+        for (name, title, category, capabilities) in COMMANDS {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
@@ -154,14 +102,6 @@ impl Plugin for CoreActions {
                 // Copying takes a selection.
                 when: (name == COPY).then(|| "selection".to_owned()),
             })?;
-            for keys in keys {
-                cx.bind(Binding {
-                    keys: (*keys).to_owned(),
-                    command: name.to_owned(),
-                    args: Args::new(),
-                    when: None,
-                })?;
-            }
         }
         cx.register_command(Command {
             name: SEND_TEXT.to_owned(),

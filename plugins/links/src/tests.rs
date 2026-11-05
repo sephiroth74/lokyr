@@ -132,15 +132,8 @@ fn the_command_registers_with_cmd_click() {
             ("row", Kind::Integer, None)
         ]
     );
-    assert_eq!(
-        host.bindings(),
-        [Binding {
-            keys: "cmd+click".to_owned(),
-            command: "links.open".to_owned(),
-            args: Args::new(),
-            when: None,
-        }]
-    );
+    // The system's keymap binds its click.
+    assert!(host.bindings().is_empty());
     assert_eq!(host.subscriptions(), ["pointer"]);
 }
 

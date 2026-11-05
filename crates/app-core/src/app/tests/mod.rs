@@ -438,13 +438,17 @@ fn the_app_s_catalogs_match_their_source() {
     }
     // The built-in plugins' catalogs, each language's against English's,
     // whose titles are those that the commands register.
-    let builtins: Vec<Box<dyn plugins::Plugin + Send>> = crate::dist::plugins()
+    let builtins: Vec<Box<dyn plugins::Plugin + Send>> = super::registrations()
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 2);
+    assert_eq!(builtins.len(), 3);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
+        // A plugin of no commands, as the keymap's, has no titles.
+        if catalogs.is_empty() {
+            continue;
+        }
         let source = catalogs
             .iter()
             .find(|(language, _)| *language == l10n::SOURCE)

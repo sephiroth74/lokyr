@@ -86,6 +86,7 @@ lokyr-app-core = { path = "crates/app-core", default-features = false }
 lokyr-core-actions = { path = "plugins/core-actions" }
 lokyr-font-coretext = { path = "crates/font-coretext" }
 lokyr-kernel = { path = "crates/kernel" }
+lokyr-keymap-macos = { path = "plugins/keymap-macos" }
 lokyr-links = { path = "plugins/links" }
 lokyr-pkg-model = { path = "crates/pkg-model" }
 lokyr-platform-core = { path = "crates/platform-core" }

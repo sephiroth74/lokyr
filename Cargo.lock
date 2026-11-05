@@ -759,6 +759,7 @@ dependencies = [
  "libc",
  "lokyr-core-actions",
  "lokyr-kernel",
+ "lokyr-keymap-macos",
  "lokyr-links",
  "lokyr-pkg-model",
  "lokyr-platform-core",
@@ -830,6 +831,13 @@ dependencies = [
  "serde_json",
  "toml_edit",
  "unic-langid",
+]
+
+[[package]]
+name = "lokyr-keymap-macos"
+version = "0.5.0"
+dependencies = [
+ "lokyr-plugin-sdk",
 ]
 
 [[package]]

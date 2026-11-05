@@ -1,7 +1,7 @@
 //! Built-in plugin that opens links with a click of the mouse.
 //!
-//! Its command, bound to ⌘-click, opens the OSC 8 link at the cell that the
-//! click was on; else the URL, or the path, that the cell's line holds
+//! Its command, which the system's keymap binds to ⌘-click, opens the OSC 8
+//! link at the cell that the click was on; else the URL, or the path, that the cell's line holds
 //! around it, a relative path from the working directory of the program in
 //! the pane's foreground. A file opens in its application, a directory in
 //! the file manager. Like every built-in plugin, it depends only on the
@@ -14,7 +14,7 @@ mod scan;
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{Binding, DecorationLook, PaneId, Underline};
+use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline};
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
@@ -30,9 +30,6 @@ const OPEN: &str = "links.open";
 /// takes: a URL or a path of thousands of characters, and no more of a line
 /// of many rows.
 const REACH: usize = 32;
-
-/// The keys of [`OPEN`].
-const KEYS: &str = "cmd+click";
 
 /// The plugin's catalogs, of its command's title.
 static CATALOGS: [(&str, &str); 2] = [
@@ -83,13 +80,7 @@ impl Plugin for Links {
             params: vec![param("column"), param("row")],
             when: None,
         })?;
-        cx.subscribe(&[POINTER])?;
-        cx.bind(Binding {
-            keys: KEYS.to_owned(),
-            command: OPEN.to_owned(),
-            args: Args::new(),
-            when: None,
-        })
+        cx.subscribe(&[POINTER])
     }
 
     fn catalogs(&self) -> &'static [(&'static str, &'static str)] {

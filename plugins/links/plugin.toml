@@ -12,4 +12,3 @@ process-read = true
 
 [contributes]
 commands = [{ name = "links.open", title = "Open Link" }]
-keybindings = [{ key = "cmd+click", command = "links.open" }]
