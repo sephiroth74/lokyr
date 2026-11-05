@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::{Args, Error, Registry};
 use lokyr_kernel::l10n::{KERNEL, Texts};
-use lokyr_kernel::plugins::{Clipboard, Context, Cx, Event, Panes, Plugin, Plugins};
+use lokyr_kernel::plugins::{
+    Clipboard, Closing, Context, Cx, Event, Panes, Plugin, Plugins, Request as AppRequest,
+};
 use lokyr_kernel::workspace::{Environment, Grid, Pane, PaneId, Settings, Workspace};
 use lokyr_plugin_sdk::command::Capability;
 use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -210,6 +212,7 @@ impl Symbols {
         match response {
             Response::Decoration(_) => Response::Decoration(0),
             Response::Reading(_) => Response::Reading(0),
+            Response::Asking(_) => Response::Asking(0),
             Response::Window(window) => Response::Window(window.map(|id| self.window(id))),
             Response::Pane(pane) => Response::Pane(pane.map(|id| self.pane(id))),
             Response::Tab { tab, pane } => Response::Tab {
@@ -233,6 +236,7 @@ impl Symbols {
                         id: self.tab(info.id),
                         window: self.window(info.window),
                         title: info.title,
+                        color: info.color,
                         active: info.active,
                         focused: self.pane(info.focused),
                         panes: info.panes.into_iter().map(|id| self.pane(id)).collect(),
@@ -260,6 +264,7 @@ impl Symbols {
                 lines,
                 complete,
             },
+            Event::Answered { text, .. } => Event::Answered { id: 0, text },
             Event::Workspace(change) => Event::Workspace(match change {
                 W::WindowOpened { window } => W::WindowOpened {
                     window: self.window(window),
@@ -518,6 +523,18 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
         for (name, view) in plugins.take_renders() {
             plugins.render(&name, &view, &mut kernel.context()).unwrap();
         }
+        // A close that asks closes, as the user confirms it.
+        for request in plugins.take_requests() {
+            match request {
+                AppRequest::CloseAsked(Closing::Tab(tab)) => {
+                    kernel.workspace.close_tab(tab);
+                }
+                AppRequest::CloseAsked(Closing::Pane(pane)) => {
+                    kernel.workspace.close_pane(pane);
+                }
+                _ => {}
+            }
+        }
         for event in kernel.workspace.take_events() {
             if let lokyr_kernel::workspace::Event::Changed(change) = event {
                 plugins.post(Event::Workspace(change));
@@ -531,7 +548,11 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
             let _ = plugins.run(ASK, Args::new(), &mut kernel.context());
         }
         for event in &step.posts {
-            plugins.post(event.clone());
+            // An answer goes to its plugin alone.
+            match event {
+                Event::Answered { id, text } => plugins.answer(name(scenario), *id, text.clone()),
+                event => plugins.post(event.clone()),
+            }
         }
         deliver(&mut plugins, kernel);
     }
@@ -655,8 +676,8 @@ fn kind(request: &Request) -> usize {
         Request::Layout(_) => 32,
         Request::NewTab { .. } => 33,
         Request::Split { .. } => 34,
-        Request::CloseTab(_) => 35,
-        Request::ClosePane(_) => 36,
+        Request::CloseTab { .. } => 35,
+        Request::ClosePane { .. } => 36,
         Request::ActivateTab(_) => 37,
         Request::FocusPane(_) => 38,
         Request::MoveTab { .. } => 39,
@@ -675,11 +696,14 @@ fn kind(request: &Request) -> usize {
         Request::Config => 52,
         Request::State => 53,
         Request::SetState(_) => 54,
+        Request::SetTabTitle { .. } => 55,
+        Request::SetTabColor { .. } => 56,
+        Request::AskText { .. } => 57,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 55;
+const KINDS: usize = 58;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

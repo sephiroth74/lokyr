@@ -168,6 +168,10 @@ pub struct Tab {
     window: WindowId,
     title: String,
     color: Option<Rgb>,
+    /// The title and the color that a plugin gave it, in place of its
+    /// program's.
+    own_title: Option<String>,
+    own_color: Option<Rgb>,
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
@@ -184,14 +188,16 @@ impl Tab {
         self.window
     }
 
-    /// Its title, its active pane's program's, as the program sets it.
+    /// Its title: its own, as a plugin gave it, or its active pane's
+    /// program's, as the program sets it.
     pub fn title(&self) -> &str {
-        &self.title
+        self.own_title.as_deref().unwrap_or(&self.title)
     }
 
-    /// Its color, as its active pane's program sets it, if it set one.
+    /// Its color: its own, as a plugin gave it, or its active pane's
+    /// program's, if either is set.
     pub fn color(&self) -> Option<Rgb> {
-        self.color
+        self.own_color.or(self.color)
     }
 
     /// The layout of its panes.
@@ -571,6 +577,8 @@ impl Workspace {
                 window: WindowId::of(0),
                 title: String::new(),
                 color: None,
+                own_title: None,
+                own_color: None,
                 layout: Layout::Leaf(pane),
                 active: pane,
                 zoomed: None,
@@ -683,6 +691,31 @@ impl Workspace {
         };
         shown.number = number;
         shown.keys = keys;
+        true
+    }
+
+    /// Gives `tab` a title of its own, in place of its program's, or with
+    /// `None` gives its program's back, which its window takes as of its
+    /// active pane's title; whether it is open.
+    pub fn set_tab_title(&mut self, tab: TabId, title: Option<String>) -> bool {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        if shown.own_title != title {
+            shown.own_title = title;
+            // Its window takes it, as of its active pane's title.
+            self.events.push(Event::TitleChanged(shown.active));
+        }
+        true
+    }
+
+    /// Gives `tab` a color of its own, in place of its program's, or with
+    /// `None` gives its program's back; whether it is open.
+    pub fn set_tab_color(&mut self, tab: TabId, color: Option<Rgb>) -> bool {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        shown.own_color = color;
         true
     }
 

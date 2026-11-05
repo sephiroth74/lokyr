@@ -240,12 +240,18 @@ fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
         let (tab, pane) = cx.new_tab(WindowId(1), None)?;
         assert_ne!(tab, TabId(1));
         assert_ne!(pane, PaneId(1));
-        cx.close_pane(PaneId(3))
+        cx.close_pane(PaneId(3), false)
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
     let done = host.take_done();
     assert!(matches!(done[0], Request::NewTab { .. }));
-    assert_eq!(done[1], Request::ClosePane(PaneId(3)));
+    assert_eq!(
+        done[1],
+        Request::ClosePane {
+            pane: PaneId(3),
+            ask: false
+        }
+    );
     // The new tab is the window's, the closed pane's tab gone with it.
     let mut probe = Probe::new(|cx, _| {
         let tabs: Vec<TabId> = cx.tabs(WindowId(1))?.iter().map(|tab| tab.id).collect();
@@ -341,7 +347,7 @@ fn closes_and_moves_change_the_workspace_as_the_app_s_and_the_focus_follows() {
     let mut probe = Probe::new(|cx, _| {
         cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
         assert_eq!(cx.focused_pane(), Some(PaneId(3)));
-        cx.close_pane(PaneId(3))?;
+        cx.close_pane(PaneId(3), false)?;
         cx.move_tab(TabId(2), WindowId(1), 0)
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
@@ -355,7 +361,7 @@ fn closes_and_moves_change_the_workspace_as_the_app_s_and_the_focus_follows() {
         cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
         assert_eq!(cx.focused_pane(), Some(PaneId(2)));
         assert_eq!(cx.windows()?[0].tabs, [TabId(2), TabId(1)]);
-        cx.close_tab(TabId(2))
+        cx.close_tab(TabId(2), false)
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
     host.deliver(&mut probe).unwrap();
@@ -369,7 +375,7 @@ fn closes_and_moves_change_the_workspace_as_the_app_s_and_the_focus_follows() {
         cx.subscribe(&crate::event::WorkspaceEvent::NAMES)?;
         assert_eq!(cx.focused_pane(), Some(PaneId(1)));
         cx.tab_to_new_window(TabId(1))?;
-        cx.close_pane(PaneId(1))
+        cx.close_pane(PaneId(1), false)
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
     host.deliver(&mut probe).unwrap();
@@ -623,7 +629,7 @@ fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
         };
         let none = WindowId(9);
         push(cx.new_tab(none, None).map(|_| ()));
-        push(cx.close_tab(TabId(9)));
+        push(cx.close_tab(TabId(9), false));
         push(cx.activate_tab(TabId(9)));
         push(cx.move_tab(TabId(1), none, 0));
         push(cx.zoom(TabId(1), Some(PaneId(9))));
@@ -785,7 +791,7 @@ fn a_panel_s_opening_asks_its_render_its_close_drops_its_tree_and_a_decoration_o
     };
     let mut probe = Probe::new(move |cx, name| match name {
         "probe.go" => cx.decorate(PaneId(1), (0, 0), (1, 0), look).map(|_| ()),
-        "probe.close" => cx.close_pane(PaneId(1)),
+        "probe.close" => cx.close_pane(PaneId(1), false),
         _ => cx.undecorate(PaneId(1), FIRST_ID),
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();

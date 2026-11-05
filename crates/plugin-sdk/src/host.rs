@@ -51,8 +51,13 @@ pub struct TabInfo {
     pub id: TabId,
     /// Its window.
     pub window: WindowId,
-    /// Its title, as its active pane's program gives it; empty for none.
+    /// Its title, its own as a plugin gave it, or its active pane's
+    /// program's; empty for none.
     pub title: String,
+    /// Its color, its own as a plugin gave it, or its active pane's
+    /// program's, an RGB one; `None` for none.
+    #[serde(default)]
+    pub color: Option<Color>,
     /// Whether its window shows it.
     pub active: bool,
     /// Its panes, in its layout's order: a split's first part before its

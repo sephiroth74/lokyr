@@ -4,7 +4,8 @@
 
 use lokyr_kernel::config::{ConfirmPaste, LinksConfig, OpenFile, OpenUrl};
 use lokyr_kernel::l10n::Arg;
-use lokyr_kernel::workspace::{Pane, PaneId};
+use lokyr_kernel::plugins::Closing;
+use lokyr_kernel::workspace::{self, Pane, PaneId};
 use lokyr_kernel::{config, paste};
 use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, TargetKind, WindowId};
 use lokyr_vt_core::terminal::ClipboardRequest;
@@ -34,6 +35,16 @@ impl<B: Backend> App<B> {
             && button == 0
         {
             self.close(platform, window);
+        }
+        if let Some((window, closing)) = self.part_asks.remove(&alert)
+            && button == 0
+        {
+            self.close_part(platform, window, closing);
+        }
+        // The text given, to the plugin that asked, or none.
+        if let Some((_, plugin, id)) = self.text_asks.remove(&alert) {
+            let text = (button == 0).then(|| text.unwrap_or_default().to_owned());
+            self.plugins.answer(&plugin, id, text);
         }
         // The title given, or the window's own, for none.
         if let Some(window) = self.title_asks.remove(&alert)
@@ -79,6 +90,8 @@ impl<B: Backend> App<B> {
         let pane = self.focused(window);
         self.close_asks.values().any(|&asked| asked == window)
             || self.title_asks.values().any(|&asked| asked == window)
+            || self.part_asks.values().any(|(asked, _)| *asked == window)
+            || self.text_asks.values().any(|(asked, ..)| *asked == window)
             || self
                 .open_asks
                 .values()
@@ -387,6 +400,118 @@ impl<B: Backend> App<B> {
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.close_asks.insert(alert, window);
+    }
+
+    /// Closes `closing`, a tab or a pane that a plugin closes, once the
+    /// user confirms it while a program other than a shell runs there,
+    /// which closing ends, as for a window; one that waits for the answer
+    /// asks nothing more.
+    pub(super) fn ask_close_part(&mut self, platform: &mut dyn Platform, closing: Closing) {
+        if self.part_asks.values().any(|(_, asked)| *asked == closing) {
+            return;
+        }
+        let panes = match closing {
+            Closing::Tab(tab) => self
+                .workspace
+                .tab(tab)
+                .map(|tab| tab.layout().panes())
+                .unwrap_or_default(),
+            Closing::Pane(pane) => vec![pane],
+        };
+        let Some(window) = panes.first().and_then(|&pane| self.window_of(pane)) else {
+            return;
+        };
+        let running = panes
+            .iter()
+            .find_map(|&pane| self.workspace.pane(pane).and_then(Pane::running));
+        let Some(program) = running else {
+            self.close_part(platform, window, closing);
+            return;
+        };
+        let program = self.program_name(program);
+        let (message, detail) = match closing {
+            Closing::Tab(_) => ("close-tab-running-message", "close-tab-running-detail"),
+            Closing::Pane(_) => ("close-pane-running-message", "close-pane-running-detail"),
+        };
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self.texts.text(message),
+            detail: self
+                .texts
+                .text_with(detail, &[("program", Arg::Text(&program))]),
+            buttons: vec![
+                self.texts.text("close-running-close"),
+                self.texts.text("close-running-cancel"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        let alert = platform.show_alert(Some(window), &alert);
+        self.part_asks.insert(alert, (window, closing));
+    }
+
+    /// Closes `closing`, of `window`'s: a tab, the window with its last; a
+    /// pane, as the app closes one.
+    pub(super) fn close_part(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        closing: Closing,
+    ) {
+        match closing {
+            Closing::Pane(pane) => self.close_pane(platform, window, pane),
+            Closing::Tab(tab) => {
+                let Some(shown) = self.windows.get(&window).map(|state| state.window) else {
+                    return;
+                };
+                if self
+                    .workspace
+                    .window(shown)
+                    .is_none_or(|shown| shown.tabs().len() <= 1)
+                {
+                    self.close(platform, window);
+                    return;
+                }
+                let panes = self
+                    .workspace
+                    .tab(tab)
+                    .map(|tab| tab.layout().panes())
+                    .unwrap_or_default();
+                self.forget_panes(&panes);
+                self.workspace.close_tab(tab);
+                self.keyboard_moved(platform, window);
+                self.show_title(platform, window);
+                platform.request_frame(window);
+            }
+        }
+    }
+
+    /// Asks the user for a text, of `alert`, for `plugin`'s question `id`,
+    /// on the platform's window that shows `window`, or on the focused
+    /// one: without a window, the answer is none.
+    pub(super) fn ask_text(
+        &mut self,
+        platform: &mut dyn Platform,
+        (plugin, id): (String, u64),
+        window: Option<workspace::WindowId>,
+        alert: &Alert,
+    ) {
+        let shown = match window {
+            Some(window) => self
+                .windows
+                .iter()
+                .find(|(_, state)| state.window == window)
+                .map(|(&shown, _)| shown),
+            None => platform
+                .focused_window()
+                .filter(|focused| self.windows.contains_key(focused)),
+        };
+        let Some(shown) = shown else {
+            self.plugins.answer(&plugin, id, None);
+            return;
+        };
+        let asked = platform.show_alert(Some(shown), alert);
+        self.text_asks.insert(asked, (shown, plugin, id));
     }
 
     /// Quits, once the user confirms it while programs other than shells

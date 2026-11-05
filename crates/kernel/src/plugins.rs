@@ -133,6 +133,34 @@ pub enum Request {
         /// Its id.
         id: PanelId,
     },
+    /// Close a tab or a pane once the user confirms it, as the app asks
+    /// for a window while a program other than a shell runs there.
+    CloseAsked(Closing),
+    /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
+    /// plugin.
+    AskText {
+        /// The plugin.
+        plugin: String,
+        /// The question's id.
+        id: u64,
+        /// The window that the alert shows on, or the focused one.
+        window: Option<WindowId>,
+        /// What the alert asks.
+        message: String,
+        /// What it explains.
+        detail: String,
+        /// The field's text as it opens.
+        text: String,
+    },
+}
+
+/// What a close that asks first closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Closing {
+    /// A tab, with its panes.
+    Tab(TabId),
+    /// A pane.
+    Pane(PaneId),
 }
 
 /// The clipboard, which the app reaches through its platform.
@@ -1034,6 +1062,14 @@ impl Plugins {
     /// Takes what the plugins' calls asked of the app since the last take.
     pub fn take_requests(&mut self) -> Vec<Request> {
         std::mem::take(&mut self.out.requests)
+    }
+
+    /// Gives `plugin` the user's answer to its question `id`, the text
+    /// given or none, for the next delivery, to it alone.
+    pub fn answer(&mut self, plugin: &str, id: u64, text: Option<String>) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::Answered { id, text }));
     }
 
     /// Posts `event`, of the workspace's, for the next delivery.
@@ -1965,11 +2001,29 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             )),
             // The workspace's operations do nothing to what an earlier write
             // of the call closed, and record what they change.
-            Asked::CloseTab(tab) => {
+            // A close that asks goes to the app, which asks the user as it
+            // asks for a window.
+            Asked::CloseTab { tab, ask: true } => {
+                requests.push(Request::CloseAsked(Closing::Tab(TabId::of(tab.0))));
+            }
+            Asked::ClosePane { pane, ask: true } => {
+                requests.push(Request::CloseAsked(Closing::Pane(PaneId::of(pane.0))));
+            }
+            Asked::CloseTab { tab, ask: false } => {
                 context.workspace.close_tab(TabId::of(tab.0));
             }
-            Asked::ClosePane(pane) => {
+            Asked::ClosePane { pane, ask: false } => {
                 context.workspace.close_pane(PaneId::of(pane.0));
+            }
+            Asked::SetTabTitle { tab, title } => {
+                context.workspace.set_tab_title(TabId::of(tab.0), title);
+            }
+            Asked::SetTabColor { tab, color } => {
+                let color = match color {
+                    Some(host::Color::Rgb(red, green, blue)) => Some(Rgb::new(red, green, blue)),
+                    _ => None,
+                };
+                context.workspace.set_tab_color(TabId::of(tab.0), color);
             }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
@@ -2480,6 +2534,9 @@ impl Host<'_, '_> {
             id: tab.id().into(),
             window: tab.window().into(),
             title: tab.title().to_owned(),
+            color: tab
+                .color()
+                .map(|color| host::Color::Rgb(color.r, color.g, color.b)),
             active,
             panes: tab.layout().panes().into_iter().map(Into::into).collect(),
             focused: tab.active_pane().into(),
@@ -2700,13 +2757,25 @@ impl Host<'_, '_> {
                 });
                 return Ok(Response::Pane(Some(new.into())));
             }
-            Asked::CloseTab(tab)
+            Asked::SetTabColor { tab, color } => {
+                self.known_tab(*tab)?;
+                if matches!(color, Some(host::Color::Palette(_))) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a tab's color is an RGB one, not one of the palette's",
+                    ));
+                }
+            }
+            Asked::CloseTab { tab, .. }
+            | Asked::SetTabTitle { tab, .. }
             | Asked::ActivateTab(tab)
             | Asked::TabToNewWindow(tab)
             | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }
-            Asked::ClosePane(pane) | Asked::FocusPane(pane) | Asked::PaneToNewWindow(pane) => {
+            Asked::ClosePane { pane, .. }
+            | Asked::FocusPane(pane)
+            | Asked::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
             }
             Asked::MoveTab { tab, window, .. } => {
@@ -2835,6 +2904,32 @@ impl Host<'_, '_> {
                 Request::FontSize(size)
             }
             Asked::OpenWindow => Request::OpenWindow,
+            Asked::AskText {
+                window,
+                message,
+                detail,
+                text,
+            } => {
+                let window = window.map(|window| WindowId::of(window.0));
+                if let Some(window) = window
+                    && self.context.workspace.window(window).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.get()),
+                    ));
+                }
+                let id = new_id();
+                self.out.requests.push(Request::AskText {
+                    plugin: self.state.name.clone(),
+                    id,
+                    window,
+                    message,
+                    detail,
+                    text,
+                });
+                return Ok(Response::Asking(id));
+            }
             Asked::CloseWindow(window) => {
                 let id = WindowId::of(window.0);
                 if self.context.workspace.window(id).is_none() {

@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    Binding, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId, Scroll, Side,
+    Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId, Scroll, Side,
     StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
@@ -219,10 +219,57 @@ pub enum Request {
     },
     /// Closes a tab, with its panes, whose programs are hung up; its window
     /// shows the tab after it, or before it, and closes with its last tab.
-    CloseTab(TabId),
+    /// With `ask`, the host asks the user first, as it asks for a window,
+    /// while a program other than a shell runs in one of its panes, and
+    /// closes it once the user confirms.
+    CloseTab {
+        /// The tab.
+        tab: TabId,
+        /// Whether the host asks the user first.
+        #[serde(default)]
+        ask: bool,
+    },
     /// Closes a pane, whose program is hung up: its room goes to its
-    /// sibling, and its tab closes with its last pane.
-    ClosePane(PaneId),
+    /// sibling, and its tab closes with its last pane. With `ask`, the
+    /// host asks the user first, as [`Request::CloseTab`] says.
+    ClosePane {
+        /// The pane.
+        pane: PaneId,
+        /// Whether the host asks the user first.
+        #[serde(default)]
+        ask: bool,
+    },
+    /// Gives a tab a title of its own, in place of its active pane's
+    /// program's, which `None` gives back.
+    SetTabTitle {
+        /// The tab.
+        tab: TabId,
+        /// Its title.
+        title: Option<String>,
+    },
+    /// Gives a tab a color of its own, an RGB one, in place of its
+    /// program's, which `None` gives back.
+    SetTabColor {
+        /// The tab.
+        tab: TabId,
+        /// Its color.
+        color: Option<Color>,
+    },
+    /// Asks the user for a text, in an alert of `message` and `detail` on
+    /// `window`, or on the focused window without one, in a field that
+    /// holds `text` as it opens: the host answers with the question's id,
+    /// and the user's answer comes as [`Event::Answered`] to the plugin
+    /// alone, the text given, or none as the user cancels.
+    AskText {
+        /// The window.
+        window: Option<WindowId>,
+        /// What the alert asks, in a line.
+        message: String,
+        /// What it explains under the message.
+        detail: String,
+        /// The field's text as it opens.
+        text: String,
+    },
     /// Has a tab's window show it.
     ActivateTab(TabId),
     /// Gives a pane its tab's keyboard.
@@ -391,8 +438,11 @@ impl Request {
             | Self::Layout(_)
             | Self::NewTab { .. }
             | Self::Split { .. }
-            | Self::CloseTab(_)
-            | Self::ClosePane(_)
+            | Self::CloseTab { .. }
+            | Self::ClosePane { .. }
+            | Self::SetTabTitle { .. }
+            | Self::SetTabColor { .. }
+            | Self::AskText { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -446,8 +496,10 @@ impl Request {
             | Self::Emit { .. }
             | Self::NewTab { .. }
             | Self::Split { .. }
-            | Self::CloseTab(_)
-            | Self::ClosePane(_)
+            | Self::CloseTab { .. }
+            | Self::ClosePane { .. }
+            | Self::SetTabTitle { .. }
+            | Self::SetTabColor { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -469,7 +521,8 @@ impl Request {
             | Self::SetText { .. }
             | Self::Select { .. }
             | Self::OpenPanel { .. }
-            | Self::ClosePanel(_) => Effect::App,
+            | Self::ClosePanel(_)
+            | Self::AskText { .. } => Effect::App,
             Self::RegisterCommand(_) | Self::Bind(_) | Self::Subscribe(_) => Effect::Declaration,
         }
     }
@@ -496,6 +549,8 @@ pub enum Response {
     FontSize(f32),
     /// A read's id, whose rows come as an event.
     Reading(u64),
+    /// A question's id, whose answer comes as an event.
+    Asking(u64),
     /// A row's styles, or none of a row that the pane does not hold.
     Styles(Option<Vec<StyleRun>>),
     /// A decoration's id.
@@ -575,6 +630,15 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
+    /// The user's answer to a question that the plugin asked, to it alone:
+    /// the text given, or none as the user cancelled, or the question's
+    /// window closed.
+    Answered {
+        /// The question's id.
+        id: u64,
+        /// The text.
+        text: Option<String>,
+    },
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -597,6 +661,7 @@ impl Event {
             Self::Pointer { .. } => POINTER,
             Self::Lines { .. } => "lines",
             Self::PanelClosed(_) => "panel-closed",
+            Self::Answered { .. } => "answered",
             Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }

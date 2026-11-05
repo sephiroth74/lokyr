@@ -2030,6 +2030,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 id: first_tab.into(),
                 window: window.into(),
                 title: String::new(),
+                color: None,
                 active: true,
                 panes: vec![first.into(), split],
                 focused: first.into(),
@@ -2039,6 +2040,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 id: tab,
                 window: window.into(),
                 title: String::new(),
+                color: None,
                 active: false,
                 panes: vec![tab_pane, early],
                 focused: tab_pane,
@@ -2084,7 +2086,7 @@ fn a_plugin_moves_and_closes_panes_and_tabs_and_their_events_tell_it() {
                                 Some(cx.split(pane, Lie::Vertical, Part::First)?);
                         }
                         "ws.out" => cx.pane_to_new_window(kept.borrow().unwrap())?,
-                        _ => cx.close_pane(kept.borrow().unwrap())?,
+                        _ => cx.close_pane(kept.borrow().unwrap(), false)?,
                     }
                     Ok(())
                 },
@@ -2173,7 +2175,7 @@ fn a_workspace_request_of_what_is_not_there_fails_and_writes_nothing() {
                     if name == "ws.late" {
                         // A tab of a window that an earlier write of the
                         // call closes starts no program.
-                        cx.close_tab(tab)?;
+                        cx.close_tab(tab, false)?;
                         cx.new_tab(window, None)?;
                         return Ok(());
                     }
@@ -2181,7 +2183,7 @@ fn a_workspace_request_of_what_is_not_there_fails_and_writes_nothing() {
                         cx.new_tab(none.0, None).map(|_| ()),
                         cx.tabs(none.0).map(|_| ()),
                         cx.layout(none.1).map(|_| ()),
-                        cx.close_tab(none.1),
+                        cx.close_tab(none.1, false),
                         cx.focus_pane(none.2),
                         cx.move_tab(tab, none.0, 0),
                         cx.zoom(tab, Some(none.2)),

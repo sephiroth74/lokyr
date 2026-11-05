@@ -43,8 +43,8 @@ use std::fmt::Write as _;
 use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    self, Binding, DecorationLook, Direction, Layout, LineText, MOST_STATE, PaneId, Side, StyleRun,
-    TabId, TabInfo, WindowId, WindowInfo,
+    self, Binding, Color, DecorationLook, Direction, Layout, LineText, MOST_STATE, PaneId, Side,
+    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{Call, Data, Effect, Event, Request, Response};
@@ -133,13 +133,16 @@ struct FakeWindow {
 }
 
 /// A tab of the fake host: its window, its layout, the pane that has its
-/// keyboard, and the one that takes its whole room, if one does.
+/// keyboard, the one that takes its whole room, if one does, and the title
+/// and the color that the plugin gave it.
 #[derive(Clone, Debug, PartialEq)]
 struct FakeTab {
     window: WindowId,
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
+    title: Option<String>,
+    color: Option<Color>,
 }
 
 /// What a tab's leaving did to its window, which is told after the tab's
@@ -447,8 +450,9 @@ impl FakeHost {
     }
 
     /// Gives `plugin` the events that it is owed, as a batch, if it is owed
-    /// any: those of the plugin alone, as a panel's closing, a read's rows
-    /// and its config's change, and those that it subscribed to, of the
+    /// any: those of the plugin alone, as a panel's closing, a read's rows,
+    /// a question's answer and its config's change, and those that it
+    /// subscribed to, of the
     /// workspace's, its own writes' among them, and those that it emitted;
     /// the others go.
     pub fn deliver(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
@@ -458,7 +462,10 @@ impl FakeHost {
             .filter(|event| {
                 matches!(
                     event,
-                    Event::Lines { .. } | Event::PanelClosed(_) | Event::ConfigChanged
+                    Event::Lines { .. }
+                        | Event::PanelClosed(_)
+                        | Event::ConfigChanged
+                        | Event::Answered { .. }
                 ) || self.subscribed.iter().any(|name| name == event.name())
             })
             .collect();
@@ -577,6 +584,8 @@ impl FakeHost {
                 layout: Layout::Pane(pane),
                 active: pane,
                 zoomed: None,
+                title: None,
+                color: None,
             });
             if first.insert(tab) {
                 entry.window = window;
@@ -670,8 +679,20 @@ impl FakeHost {
                     self.split(*pane, *direction, *side, new);
                 }
             }
-            Request::CloseTab(tab) => self.close_tab(*tab),
-            Request::ClosePane(pane) => self.close_pane(*pane),
+            // A close that asks closes as the user's confirmation would,
+            // which a test reads among the requests done.
+            Request::CloseTab { tab, .. } => self.close_tab(*tab),
+            Request::ClosePane { pane, .. } => self.close_pane(*pane),
+            Request::SetTabTitle { tab, title } => {
+                if let Some(tab) = self.tabs.get_mut(tab) {
+                    tab.title.clone_from(title);
+                }
+            }
+            Request::SetTabColor { tab, color } => {
+                if let Some(tab) = self.tabs.get_mut(tab) {
+                    tab.color = *color;
+                }
+            }
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
             Request::MoveTab { tab, window, index } => self.move_tab(*tab, *window, *index),
@@ -717,6 +738,8 @@ impl FakeHost {
                 layout: Layout::Pane(pane),
                 active: pane,
                 zoomed: None,
+                title: None,
+                color: None,
             },
         );
         self.panes.insert(
@@ -987,6 +1010,8 @@ impl FakeHost {
                 layout: Layout::Pane(pane),
                 active: pane,
                 zoomed: None,
+                title: None,
+                color: None,
             },
         );
         if let Some(moved) = self.panes.get_mut(&pane) {
@@ -1479,7 +1504,8 @@ impl Calling<'_> {
                             Some(TabInfo {
                                 id,
                                 window: *window,
-                                title: String::new(),
+                                title: tab.title.clone().unwrap_or_default(),
+                                color: tab.color,
                                 active: id == found.active,
                                 focused: tab.active,
                                 panes: leaves(&tab.layout),
@@ -1520,10 +1546,30 @@ impl Calling<'_> {
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }
             | Request::FocusPane(pane)
-            | Request::ClosePane(pane)
+            | Request::ClosePane { pane, .. }
             | Request::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
                 Response::Done
+            }
+            Request::SetTabTitle { tab, .. } => {
+                self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::SetTabColor { tab, color } => {
+                self.known_tab(*tab)?;
+                if matches!(color, Some(Color::Palette(_))) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a tab's color is an RGB one, not one of the palette's",
+                    ));
+                }
+                Response::Done
+            }
+            Request::AskText { window, .. } => {
+                if let Some(window) = window {
+                    self.known_window(*window)?;
+                }
+                Response::Asking(self.host.next_id())
             }
             Request::ResizePane { pane, by, .. } => {
                 self.known_pane(*pane)?;
@@ -1535,7 +1581,7 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::CloseTab(tab)
+            Request::CloseTab { tab, .. }
             | Request::ActivateTab(tab)
             | Request::TabToNewWindow(tab)
             | Request::Equalize(tab) => {

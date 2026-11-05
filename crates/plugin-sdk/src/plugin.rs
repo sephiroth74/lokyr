@@ -47,7 +47,7 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    Binding, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId, Scroll, Side,
+    Binding, Color, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId, Scroll, Side,
     StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
@@ -547,14 +547,54 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// Closes `tab`, with its panes, as this call returns.
-    pub fn close_tab(&mut self, tab: TabId) -> Result<(), Error> {
-        self.done(Request::CloseTab(tab))
+    /// Closes `tab`, with its panes, as this call returns; with `ask`, once
+    /// the user confirms it while a program other than a shell runs there,
+    /// as the host asks for a window.
+    pub fn close_tab(&mut self, tab: TabId, ask: bool) -> Result<(), Error> {
+        self.done(Request::CloseTab { tab, ask })
     }
 
-    /// Closes `pane`, as this call returns.
-    pub fn close_pane(&mut self, pane: PaneId) -> Result<(), Error> {
-        self.done(Request::ClosePane(pane))
+    /// Closes `pane`, as this call returns; with `ask`, as
+    /// [`Cx::close_tab`] says.
+    pub fn close_pane(&mut self, pane: PaneId, ask: bool) -> Result<(), Error> {
+        self.done(Request::ClosePane { pane, ask })
+    }
+
+    /// Gives `tab` a title of its own, in place of its program's, or with
+    /// `None` gives its program's back, as this call returns.
+    pub fn set_tab_title(&mut self, tab: TabId, title: Option<&str>) -> Result<(), Error> {
+        self.done(Request::SetTabTitle {
+            tab,
+            title: title.map(str::to_owned),
+        })
+    }
+
+    /// Gives `tab` a color of its own, an RGB one, in place of its
+    /// program's, or with `None` gives its program's back, as this call
+    /// returns.
+    pub fn set_tab_color(&mut self, tab: TabId, color: Option<Color>) -> Result<(), Error> {
+        self.done(Request::SetTabColor { tab, color })
+    }
+
+    /// Asks the user for a text, in an alert of `message` and `detail` on
+    /// `window`, or on the focused window, of a field that holds `text`:
+    /// the question's id, whose answer comes as [`Event::Answered`].
+    pub fn ask_text(
+        &mut self,
+        window: Option<WindowId>,
+        message: &str,
+        detail: &str,
+        text: &str,
+    ) -> Result<u64, Error> {
+        match self.request(Request::AskText {
+            window,
+            message: message.to_owned(),
+            detail: detail.to_owned(),
+            text: text.to_owned(),
+        }) {
+            Response::Asking(id) => Ok(id),
+            other => Err(failed(other)),
+        }
     }
 
     /// Has `tab`'s window show it, as this call returns.

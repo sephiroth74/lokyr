@@ -74,11 +74,17 @@ close-running-message = Chiudere questa finestra?
 close-running-detail = In questa finestra è in esecuzione { $program }: chiuderla lo termina.
 close-running-close = Chiudi
 close-running-cancel = Annulla
+close-tab-running-message = Chiudere questo tab?
+close-tab-running-detail = In questo tab è in esecuzione { $program }: chiuderlo lo termina.
+close-pane-running-message = Chiudere questo pannello?
+close-pane-running-detail = In questo pannello è in esecuzione { $program }: chiuderlo lo termina.
 
 set-title-message = Il titolo della finestra
 set-title-detail = Lascialo vuoto per quello della finestra: il titolo del programma, o la sua cartella, poi il programma in esecuzione.
 set-title-set = Imposta
 set-title-cancel = Annulla
+ask-text-ok = OK
+ask-text-cancel = Annulla
 
 settings-failed-message = Lokyr non riesce ad aprire il file di configurazione
 settings-no-home = Senza una cartella home non c'è un file di configurazione: valgono i valori predefiniti.

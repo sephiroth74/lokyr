@@ -28,6 +28,7 @@ mod notices;
 mod numbers;
 mod panels;
 mod panes;
+mod parts;
 mod surfaces;
 mod workers;
 
@@ -2979,7 +2980,7 @@ impl plugins::Plugin for Arranger {
                 Ok(())
             }
             "ws.out" => cx.pane_to_new_window(self.0.borrow().unwrap().2),
-            _ => cx.close_pane(self.0.borrow().unwrap().2),
+            _ => cx.close_pane(self.0.borrow().unwrap().2, false),
         }
     }
 

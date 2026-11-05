@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    Binding, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE, PaneId, Scroll,
-    Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
+    Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE, PaneId,
+    Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{Data, Event, Mods, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -132,8 +132,118 @@ pub fn all(world: &World) -> Vec<Scenario> {
         state_and_rows(world),
         views(world),
         workspace(world),
+        tabs(world),
         core_actions(world),
     ]
+}
+
+/// What a tab bar's plugin asks of a tab: a title and a color of its own,
+/// which a read of the tabs gives, and back; a text that the user is asked
+/// for, whose answer comes to the plugin alone; and what of them is
+/// refused.
+fn tabs(world: &World) -> Scenario {
+    let (w, t, p) = (world.window, world.tab, world.pane);
+    let info = |title: &str, color| TabInfo {
+        id: t,
+        window: w,
+        title: title.to_owned(),
+        color,
+        active: true,
+        focused: p,
+        panes: vec![p],
+        zoomed: None,
+    };
+    let red = Color::Rgb(200, 30, 40);
+    let answer = Event::Answered {
+        id: 0,
+        text: Some("work".to_owned()),
+    };
+    Scenario {
+        name: "a tab's own title and color, and a question".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![
+            Step {
+                asks: vec![
+                    (
+                        Request::SetTabTitle {
+                            tab: t,
+                            title: Some("named".to_owned()),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetTabColor {
+                            tab: t,
+                            color: Some(red),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetTabColor {
+                            tab: t,
+                            color: Some(Color::Palette(1)),
+                        },
+                        failed(
+                            Code::Failed,
+                            "a tab's color is an RGB one, not one of the palette's",
+                        ),
+                    ),
+                    (
+                        Request::SetTabTitle {
+                            tab: NO_TAB,
+                            title: None,
+                        },
+                        failed(Code::NotFound, "there is no tab 999999"),
+                    ),
+                    (
+                        Request::AskText {
+                            window: None,
+                            message: "The tab's title".to_owned(),
+                            detail: String::new(),
+                            text: "named".to_owned(),
+                        },
+                        Response::Asking(0),
+                    ),
+                    (
+                        Request::AskText {
+                            window: Some(NO_WINDOW),
+                            message: String::new(),
+                            detail: String::new(),
+                            text: String::new(),
+                        },
+                        failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                ],
+                posts: vec![answer.clone()],
+                heard: vec![answer],
+            },
+            ask(vec![
+                (
+                    Request::Tabs(w),
+                    Response::Tabs(vec![info("named", Some(red))]),
+                ),
+                (
+                    Request::SetTabTitle {
+                        tab: t,
+                        title: None,
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SetTabColor {
+                        tab: t,
+                        color: None,
+                    },
+                    Response::Done,
+                ),
+            ]),
+            ask(vec![(
+                Request::Tabs(w),
+                Response::Tabs(vec![info("", None)]),
+            )]),
+        ],
+    }
 }
 
 /// What `links` asks: the focused pane, its line, its link and its
@@ -773,6 +883,7 @@ fn workspace(world: &World) -> Scenario {
         id,
         window: w,
         title: String::new(),
+        color: None,
         active,
         focused,
         panes,
@@ -834,11 +945,17 @@ fn workspace(world: &World) -> Scenario {
                         failed(Code::NotFound, "there is no window 999999"),
                     ),
                     (
-                        Request::CloseTab(NO_TAB),
+                        Request::CloseTab {
+                            tab: NO_TAB,
+                            ask: false,
+                        },
                         failed(Code::NotFound, "there is no tab 999999"),
                     ),
                     (
-                        Request::ClosePane(NO_PANE),
+                        Request::ClosePane {
+                            pane: NO_PANE,
+                            ask: true,
+                        },
                         failed(Code::NotFound, "there is no pane 999999"),
                     ),
                     (
@@ -1023,8 +1140,21 @@ fn workspace(world: &World) -> Scenario {
             },
             Step {
                 asks: vec![
-                    (Request::CloseTab(tab(1)), Response::Done),
-                    (Request::CloseTab(tab(0)), Response::Done),
+                    (
+                        Request::CloseTab {
+                            tab: tab(1),
+                            ask: false,
+                        },
+                        Response::Done,
+                    ),
+                    // Of a shell at its prompt, as the user confirms it.
+                    (
+                        Request::CloseTab {
+                            tab: tab(0),
+                            ask: true,
+                        },
+                        Response::Done,
+                    ),
                 ],
                 posts: Vec::new(),
                 heard: vec![

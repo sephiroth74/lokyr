@@ -510,6 +510,12 @@ pub struct App<B: Backend> {
     close_asks: BTreeMap<AlertId, WindowId>,
     /// The windows whose title the user is asked for, by their alerts.
     title_asks: BTreeMap<AlertId, WindowId>,
+    /// The tabs and the panes, of their windows, that plugins close, whose
+    /// closing the user is asked to confirm, by their alerts.
+    part_asks: BTreeMap<AlertId, (WindowId, plugins::Closing)>,
+    /// The texts that plugins ask the user for, on their windows, with the
+    /// plugin and the question's id, by their alerts.
+    text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
     /// The question before quitting, while it waits for its answer.
     quit_ask: Option<AlertId>,
     /// Whether the config in force is the defaults, as the start's file did
@@ -660,6 +666,8 @@ impl<B: Backend> App<B> {
             acting: None,
             close_asks: BTreeMap::new(),
             title_asks: BTreeMap::new(),
+            part_asks: BTreeMap::new(),
+            text_asks: BTreeMap::new(),
             quit_ask: None,
             config_fell_back: false,
             update_checks: false,
@@ -1851,6 +1859,19 @@ impl<B: Backend> App<B> {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
+            self.part_asks.retain(|_, (asked, _)| *asked != window);
+            // A question whose window closed has no answer.
+            let unanswered: Vec<AlertId> = self
+                .text_asks
+                .iter()
+                .filter(|(_, (asked, ..))| *asked == window)
+                .map(|(&alert, _)| alert)
+                .collect();
+            for alert in unanswered {
+                if let Some((_, plugin, id)) = self.text_asks.remove(&alert) {
+                    self.plugins.answer(&plugin, id, None);
+                }
+            }
             self.workspace.close_window(state.window);
         }
         if self.quick.is_some_and(|(quick, _)| quick == window) {
@@ -2247,6 +2268,28 @@ impl<B: Backend> App<B> {
                     options,
                 } => self.open_panel(platform, (plugin, id), window, options),
                 Request::ClosePanel { plugin, id } => self.panel_gone(platform, &plugin, &id),
+                Request::CloseAsked(closing) => self.ask_close_part(platform, closing),
+                Request::AskText {
+                    plugin,
+                    id,
+                    window,
+                    message,
+                    detail,
+                    text,
+                } => {
+                    let alert = Alert {
+                        style: AlertStyle::Informational,
+                        message,
+                        detail,
+                        buttons: vec![
+                            self.texts.text("ask-text-ok"),
+                            self.texts.text("ask-text-cancel"),
+                        ],
+                        suppression: None,
+                        input: Some(text),
+                    };
+                    self.ask_text(platform, (plugin, id), window, &alert);
+                }
                 // A field's text and a list's selection in a slot's view.
                 Request::SetText {
                     plugin,

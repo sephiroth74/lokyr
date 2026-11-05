@@ -224,7 +224,8 @@ type WindowInfo = {
 type TabInfo = {
     id: TabId,
     window: WindowId,
-    title: string,
+    title: string, -- its own, as `set_tab_title` gave it, or its active pane's program's
+    color: Color?, -- its own, as `set_tab_color` gave it, or its active pane's program's, an RGB one
     active: boolean, -- whether its window shows it
     panes: { PaneId }, -- in its layout's order
     focused: PaneId, -- the pane that has its keyboard
@@ -335,6 +336,8 @@ type Event =
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     -- A panel of the plugin's closed, as a click outside it, Escape, the app or the plugin closed it, to it alone.
     | { kind: "panel-closed", id: string }
+    -- The user's answer to a question of `ask_text`, to it alone: the text, or none as the user cancelled.
+    | { kind: "answered", id: number, text: string? }
     -- The plugin's section of the config changed, to it alone, which `config` reads.
     | { kind: "config-changed" }
     -- An event that a plugin emitted, of its namespace; a value nests 64 levels at most.
@@ -425,8 +428,13 @@ type Cx = {
     new_tab: (window: WindowId, index: number?) -> (TabId?, PaneId?, Error?),
     -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
-    close_tab: (tab: TabId) -> (boolean, Error?),
-    close_pane: (pane: PaneId) -> (boolean, Error?),
+    -- Closes a tab, or a pane; with `ask`, once the user confirms it while a program other than a shell runs there,
+    -- as the host asks for a window.
+    close_tab: (tab: TabId, ask: boolean?) -> (boolean, Error?),
+    close_pane: (pane: PaneId, ask: boolean?) -> (boolean, Error?),
+    -- A title or a color of a tab's own, in place of its program's; none gives the program's back.
+    set_tab_title: (tab: TabId, title: string?) -> (boolean, Error?),
+    set_tab_color: (tab: TabId, color: Color?) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
@@ -453,6 +461,9 @@ type Cx = {
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
     close_panel: (id: string) -> (boolean, Error?),
+    -- Asks the user for a text, in an alert on `window`, or on the focused one, of a field that holds `text`:
+    -- returns the question's id, and the answer comes as an "answered" event.
+    ask_text: (window: WindowId?, message: string, detail: string, text: string) -> (number?, Error?),
 
     -- The terminal. The reads require `terminal-read`, and return a `denied` error without it.
     selection_text: (pane: PaneId) -> (string?, Error?),

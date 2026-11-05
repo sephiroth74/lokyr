@@ -86,6 +86,10 @@ close-running-message = Close this window?
 close-running-detail = This window is running { $program }, and closing the window ends it.
 close-running-close = Close
 close-running-cancel = Cancel
+close-tab-running-message = Close this tab?
+close-tab-running-detail = This tab is running { $program }, and closing the tab ends it.
+close-pane-running-message = Close this pane?
+close-pane-running-detail = This pane is running { $program }, and closing the pane ends it.
 
 # The question of a window's title, which a field holds, and its buttons,
 # the default one first.
@@ -93,6 +97,8 @@ set-title-message = The window's title
 set-title-detail = Leave it empty for the window's own: the program's title, or its folder, then the program that runs.
 set-title-set = Set
 set-title-cancel = Cancel
+ask-text-ok = OK
+ask-text-cancel = Cancel
 
 # The alert of Settings… that opens nothing: what went wrong, as the
 # system tells it, under the message.
