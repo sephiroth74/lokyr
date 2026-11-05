@@ -1106,9 +1106,12 @@ pub(crate) fn rect(frame: Frame) -> Rect {
     }
 }
 
-/// `from` mixed with `to` as far as `amount`, from 0, `from`, to 1, `to`:
-/// a clear `from` takes `to`'s hue, fading in, rather than going through
-/// black.
+/// `from` mixed with `to` as far as `amount`, from 0, `from`, to 1, `to`,
+/// of their premultiplied components: over any background, the mix shows
+/// as the two drawn over it and crossfaded, between them all the way, a
+/// clear `from` fading `to` in, rather than as a lighter or a darker color
+/// halfway, as an opaque color mixed with a translucent one would show of
+/// their plain components.
 fn mixed(from: Color, to: Color, amount: f32) -> Color {
     // Its ends as they are, of no rounding.
     if amount <= 0.0 {
@@ -1117,17 +1120,17 @@ fn mixed(from: Color, to: Color, amount: f32) -> Color {
     if amount >= 1.0 {
         return to;
     }
-    let base = if from.alpha <= 0.0 {
-        Color { alpha: 0.0, ..to }
-    } else {
-        from
-    };
     let lerp = |a: f32, b: f32| a + (b - a) * amount;
+    let alpha = lerp(from.alpha, to.alpha);
+    if alpha <= 0.0 {
+        return Color::CLEAR;
+    }
+    let channel = |a: f32, b: f32| lerp(a * from.alpha, b * to.alpha) / alpha;
     Color {
-        red: lerp(base.red, to.red),
-        green: lerp(base.green, to.green),
-        blue: lerp(base.blue, to.blue),
-        alpha: lerp(base.alpha, to.alpha),
+        red: channel(from.red, to.red),
+        green: channel(from.green, to.green),
+        blue: channel(from.blue, to.blue),
+        alpha,
     }
 }
 
@@ -2794,6 +2797,50 @@ mod tests {
         ));
         assert_eq!(shapes[1].rect.x, 20);
         assert_eq!(shapes[1].fill.alpha, token("accent").alpha * 0.5);
+    }
+
+    #[test]
+    fn a_mix_shows_between_its_ends_over_any_background() {
+        // An opaque dark gray and a white of a tenth, over a dark
+        // background, as a tab and its hover: each step of the mix, drawn
+        // over it, between the two drawn, no lighter.
+        let (from, to) = (
+            Color {
+                red: 0.1,
+                green: 0.1,
+                blue: 0.1,
+                alpha: 1.0,
+            },
+            Color {
+                red: 1.0,
+                green: 1.0,
+                blue: 1.0,
+                alpha: 0.1,
+            },
+        );
+        let over = |color: Color, background: f32| {
+            color.red * color.alpha + background * (1.0 - color.alpha)
+        };
+        for background in [0.0, 0.1, 0.9] {
+            let (start, end) = (over(from, background), over(to, background));
+            let mut last = start;
+            for step in 1..10 {
+                let shown = over(mixed(from, to, step as f32 / 10.0), background);
+                let (low, high) = (start.min(end), start.max(end));
+                assert!(
+                    (low - 1e-5..=high + 1e-5).contains(&shown),
+                    "{background}: {shown}"
+                );
+                // Steadily, of the crossfade's straight line.
+                let expected = start + (end - start) * step as f32 / 10.0;
+                assert!((shown - expected).abs() < 1e-5, "{background}: {shown}");
+                assert!((shown - last) * (end - start) >= -1e-6);
+                last = shown;
+            }
+        }
+        // A clear one fades the other in, of its hue.
+        let faded = mixed(Color::CLEAR, to, 0.5);
+        assert!((faded.red - 1.0).abs() < 1e-5 && (faded.alpha - 0.05).abs() < 1e-5);
     }
 
     #[test]
