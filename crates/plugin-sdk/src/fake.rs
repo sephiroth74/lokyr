@@ -40,21 +40,29 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
-use crate::command::{Args, Capability, Code, Command, Error};
+use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    self, Binding, DecorationLook, Direction, Layout, LineText, PaneId, Side, StyleRun, TabId,
-    TabInfo, WindowId, WindowInfo,
+    self, Binding, DecorationLook, Direction, Layout, LineText, MOST_STATE, PaneId, Side, StyleRun,
+    TabId, TabInfo, WindowId, WindowInfo,
 };
+use crate::keys::{When, parse_keys};
 use crate::message::{Call, Data, Effect, Event, Request, Response};
 use crate::plugin::{Cx, Plugin};
-use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
-use crate::view::{Kind, Node};
+use crate::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
+use crate::view::{Key, Kind, Node};
 
 /// The first id that the host gives a window, a tab, a pane, a decoration
 /// or a read of its own, past those that a test gives its panes and its
 /// tabs.
 pub const FIRST_ID: u64 = 1001;
+
+/// The name of the pointer's events, as a plugin subscribes to them.
+const POINTER: &str = "pointer";
+
+/// The most levels of a tree that a look for a key goes down, as the app's
+/// host's.
+const DEEPEST: usize = 64;
 
 /// A pane of the fake host: where it is, and what its reads give.
 #[derive(Clone, Debug, PartialEq)]
@@ -161,6 +169,17 @@ pub struct FakeHost {
     /// The capabilities that the plugin holds; `None` for every one, as a
     /// first-party plugin's.
     granted: Option<Vec<Capability>>,
+    /// The commands that its manifest says it runs, of a plugin of the
+    /// capabilities that its manifest declares.
+    uses: Option<Uses>,
+    /// The slots that its manifest fills; `None` for every one.
+    slots: Option<Vec<Slot>>,
+    /// The commands of the app's and of the other plugins', which its own
+    /// join.
+    others: Vec<Command>,
+    /// Whether it was activated, as the config's changes reach an active
+    /// plugin alone.
+    activated: bool,
     panes: BTreeMap<PaneId, FakePane>,
     windows: BTreeMap<WindowId, FakeWindow>,
     tabs: BTreeMap<TabId, FakeTab>,
@@ -180,7 +199,12 @@ pub struct FakeHost {
     done: Vec<Request>,
     decorations: Vec<FakeDecoration>,
     panels: BTreeMap<PanelId, PanelOptions>,
+    /// The window that each open panel shows in.
+    panel_windows: BTreeMap<PanelId, WindowId>,
     views: BTreeMap<ViewId, Option<Node>>,
+    /// The views whose renders the plugin's calls asked for, as a panel's
+    /// opening asks for its own.
+    renders: Vec<ViewId>,
     owed: Vec<Event>,
     last_id: u64,
 }
@@ -193,6 +217,10 @@ impl FakeHost {
         Self {
             caller: caller.to_owned(),
             granted: None,
+            uses: None,
+            slots: None,
+            others: Vec::new(),
+            activated: false,
             panes: BTreeMap::new(),
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
@@ -209,16 +237,44 @@ impl FakeHost {
             done: Vec::new(),
             decorations: Vec::new(),
             panels: BTreeMap::new(),
+            panel_windows: BTreeMap::new(),
             views: BTreeMap::new(),
+            renders: Vec::new(),
             owed: Vec::new(),
             last_id: FIRST_ID - 1,
         }
     }
 
     /// The host, whose plugin holds the capabilities of `granted` alone, as
-    /// another than a first-party plugin does.
+    /// another than a first-party plugin does, of a manifest that declares
+    /// them: its commands are of its namespace, and it runs those of
+    /// [`FakeHost::with_uses`] alone, beside its own.
     pub fn with_capabilities(mut self, granted: Vec<Capability>) -> Self {
         self.granted = Some(granted);
+        self.uses.get_or_insert_with(Uses::default);
+        self
+    }
+
+    /// The host, whose plugin's manifest says that it runs the commands of
+    /// `patterns`, names and namespaces, as `tabs.*`, which a plugin of
+    /// [`FakeHost::with_capabilities`] checks.
+    pub fn with_uses(mut self, patterns: Vec<String>) -> Self {
+        self.uses = Some(Uses::new(patterns));
+        self
+    }
+
+    /// The host, whose plugin's manifest fills the slots of `slots` alone,
+    /// which its views are of, beside its panels.
+    pub fn with_slots(mut self, slots: Vec<Slot>) -> Self {
+        self.slots = Some(slots);
+        self
+    }
+
+    /// The host, of the commands of `commands` beside the plugin's, as the
+    /// app's and the other plugins' registered them, which the plugin's
+    /// calls run.
+    pub fn with_commands(mut self, commands: Vec<Command>) -> Self {
+        self.others = commands;
         self
     }
 
@@ -264,12 +320,15 @@ impl FakeHost {
         self
     }
 
-    /// Gives the plugin the config `config`, a map of its keys' values, of
-    /// which an active plugin hears as [`FakeHost::deliver`] goes on.
+    /// Gives the plugin the config `config`, a map of its keys' values, its
+    /// schema's defaults among them as the app gives them, of which an
+    /// active plugin hears as [`FakeHost::deliver`] goes on.
     pub fn set_config(&mut self, config: Data) -> &mut Self {
         if config != self.config {
             self.config = config;
-            self.owed.push(Event::ConfigChanged);
+            if self.activated {
+                self.owed.push(Event::ConfigChanged);
+            }
         }
         self
     }
@@ -329,8 +388,16 @@ impl FakeHost {
         self.views.get(view).and_then(Option::as_ref)
     }
 
+    /// The views whose renders its calls asked for since the last take, as
+    /// `request_render` and a panel's opening ask, in their order, each
+    /// once, which a test renders with [`FakeHost::render`].
+    pub fn take_renders(&mut self) -> Vec<ViewId> {
+        std::mem::take(&mut self.renders)
+    }
+
     /// Activates `plugin`.
     pub fn activate(&mut self, plugin: &mut dyn Plugin) -> Result<(), Error> {
+        self.activated = true;
         self.call(true, |cx| plugin.activate(cx))
     }
 
@@ -413,8 +480,8 @@ impl FakeHost {
         let kept = (!apply).then(|| {
             (
                 self.decorations.clone(),
-                self.panels.clone(),
-                self.owed.len(),
+                (self.panels.clone(), self.panel_windows.clone()),
+                (self.owed.len(), self.renders.len()),
                 self.last_id,
             )
         });
@@ -425,10 +492,12 @@ impl FakeHost {
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked) = (calling.writes, calling.asked);
-        if let Some((decorations, panels, owed, last_id)) = kept {
+        if let Some((decorations, (panels, windows), (owed, renders), last_id)) = kept {
             self.decorations = decorations;
             self.panels = panels;
+            self.panel_windows = windows;
             self.owed.truncate(owed);
+            self.renders.truncate(renders);
             self.last_id = last_id;
             return result;
         }
@@ -559,6 +628,7 @@ impl FakeHost {
         match &request {
             Request::SetClipboardText(text) => self.clipboard = Some(text.clone()),
             Request::Undecorate { id, .. } => self.decorations.retain(|laid| laid.id != *id),
+            Request::RequestRender(view) => self.ask_render(view.clone()),
             Request::SetState(state) => self.state = state.clone(),
             Request::Emit {
                 name,
@@ -986,6 +1056,132 @@ impl FakeHost {
         }
     }
 
+    /// Asks for a render of `view`, once.
+    fn ask_render(&mut self, view: ViewId) {
+        if !self.renders.contains(&view) {
+            self.renders.push(view);
+        }
+    }
+
+    /// The window of `pane`, as its tab's; `not-found` if the host does not
+    /// hold it.
+    fn pane_window(&self, pane: PaneId) -> Result<WindowId, Error> {
+        self.panes
+            .get(&pane)
+            .and_then(|held| self.tabs.get(&held.tab))
+            .map(|tab| tab.window)
+            .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
+    }
+
+    /// The window that `view` shows in, if the view is one of the
+    /// plugin's: of a slot that its manifest fills, of a window or a pane
+    /// that is there, or one of its open panels; `not-found` otherwise.
+    fn view_window(&self, view: &ViewId) -> Result<WindowId, Error> {
+        let not_found = || Error::new(Code::NotFound, format!("the plugin has no view {view:?}"));
+        if let (Some(slot), Some(slots)) = (view.slot(), &self.slots)
+            && !slots.contains(&slot)
+        {
+            return Err(not_found());
+        }
+        let window = match view {
+            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+                Some(*window).filter(|window| self.windows.contains_key(window))
+            }
+            ViewId::PaneHeader(pane) => self.pane_window(*pane).ok(),
+            ViewId::Panel(id) => self.panel_windows.get(id).copied(),
+        };
+        window.ok_or_else(not_found)
+    }
+
+    /// The node of `key` in the last tree of `view`, one of the plugin's;
+    /// `not-found` without one.
+    fn node(&self, view: &ViewId, key: &Key) -> Result<&Node, Error> {
+        self.view_window(view)?;
+        self.views
+            .get(view)
+            .and_then(Option::as_ref)
+            .and_then(|tree| keyed(tree, key, 0))
+            .ok_or_else(|| {
+                Error::new(
+                    Code::NotFound,
+                    format!("the view {view:?} has no node `{}`", key.0),
+                )
+            })
+    }
+
+    /// The window that a panel at `anchor` shows in: its pane's, its
+    /// window, or its node's view's.
+    fn anchor_window(&self, anchor: &Anchor) -> Result<WindowId, Error> {
+        match anchor {
+            Anchor::Cell { pane, .. } | Anchor::Cursor(pane) | Anchor::PaneCorner { pane, .. } => {
+                self.pane_window(*pane)
+            }
+            Anchor::Pointer(window) | Anchor::WindowCorner { window, .. } => {
+                if self.windows.contains_key(window) {
+                    Ok(*window)
+                } else {
+                    Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ))
+                }
+            }
+            Anchor::Node { view, key } => {
+                self.node(view, key)?;
+                self.view_window(view)
+            }
+        }
+    }
+
+    /// The command `name`, the plugin's or another's, if one is registered.
+    fn registered(&self, name: &str) -> Option<&Command> {
+        self.commands
+            .iter()
+            .chain(&self.others)
+            .find(|command| command.name == name)
+    }
+
+    /// Checks a call of the command `name` with `args` that the plugin
+    /// makes, as the app's registry does: of a command that is registered,
+    /// of the arguments that its parameters take; of a command that the
+    /// plugin's manifest says it runs, and of the capabilities that it
+    /// needs, if the plugin is of a manifest that declares them, its own
+    /// commands needing neither.
+    fn check_run(&self, name: &str, args: &Args) -> Result<(), Error> {
+        let Some(command) = self.registered(name) else {
+            return Err(Error::new(Code::NotFound, format!("no command `{name}`")));
+        };
+        command.check_call(args.clone())?;
+        let (Some(uses), Some(granted)) = (&self.uses, &self.granted) else {
+            return Ok(());
+        };
+        if self.commands.iter().any(|own| own.name == name) {
+            return Ok(());
+        }
+        if !uses.allows(name) {
+            return Err(Error::new(
+                Code::Undeclared,
+                format!("the plugin runs `{name}`, which its manifest does not declare"),
+            ));
+        }
+        if let Some(missing) = command
+            .capabilities
+            .iter()
+            .find(|capability| !granted.contains(capability))
+        {
+            return Err(Error::new(
+                Code::MissingCapability,
+                format!("`{name}` needs `{missing}`, which the plugin does not have"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The plugin's namespace, its name's last part.
+    fn namespace(&self) -> &str {
+        self.caller.rsplit('/').next().unwrap_or_default()
+    }
+
     /// The windows, each of its tabs and the one that it shows.
     fn windows(&self) -> Vec<WindowInfo> {
         self.windows
@@ -1109,6 +1305,39 @@ fn set_ratio(layout: &mut Layout, path: &[Side], to: Option<f64>) {
         Some((Side::First, rest)) => set_ratio(first, rest, to),
         Some((Side::Second, rest)) => set_ratio(second, rest, to),
     }
+}
+
+/// The node of `key` in `node`'s tree, `depth` levels down already, if it
+/// has one within [`DEEPEST`] levels.
+fn keyed<'a>(node: &'a Node, key: &Key, depth: usize) -> Option<&'a Node> {
+    if node.key.as_ref() == Some(key) {
+        return Some(node);
+    }
+    if depth >= DEEPEST {
+        return None;
+    }
+    node.children
+        .iter()
+        .find_map(|child| keyed(child, key, depth + 1))
+}
+
+/// The JSON of `data`, as the app keeps a plugin's state; `None` of a
+/// number that is not finite, as JSON has none.
+fn json(data: &Data) -> Option<serde_json::Value> {
+    use serde_json::Value;
+    Some(match data {
+        Data::Nil => Value::Null,
+        Data::Boolean(boolean) => Value::Bool(*boolean),
+        Data::Integer(integer) => Value::from(*integer),
+        Data::Number(number) => Value::Number(serde_json::Number::from_f64(*number)?),
+        Data::Text(text) => Value::String(text.clone()),
+        Data::List(items) => Value::Array(items.iter().map(json).collect::<Option<_>>()?),
+        Data::Map(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| Some((key.clone(), json(value)?)))
+                .collect::<Option<_>>()?,
+        ),
+    })
 }
 
 /// The host of one call, which queues its writes, each with the ids that
@@ -1270,21 +1499,98 @@ impl Calling<'_> {
             | Request::Scroll { pane, .. }
             | Request::FocusPane(pane)
             | Request::ClosePane(pane)
-            | Request::PaneToNewWindow(pane)
-            | Request::ResizePane { pane, .. } => {
+            | Request::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
+                Response::Done
+            }
+            Request::ResizePane { pane, by, .. } => {
+                self.known_pane(*pane)?;
+                if !(-1.0..=1.0).contains(by) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!("a resize of {by} is not a share from -1 to 1"),
+                    ));
+                }
                 Response::Done
             }
             Request::CloseTab(tab)
             | Request::ActivateTab(tab)
             | Request::TabToNewWindow(tab)
-            | Request::Equalize(tab)
-            | Request::SetRatio { tab, .. } => {
+            | Request::Equalize(tab) => {
                 self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::SetRatio { tab, ratio, .. } => {
+                self.known_tab(*tab)?;
+                if ratio.is_some_and(|ratio| !(0.0..=1.0).contains(&ratio)) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a split's ratio is a share from 0 to 1",
+                    ));
+                }
+                Response::Done
+            }
+            Request::SetFontSize(Some(size)) => {
+                // The text's sizes, in points, as the app takes them.
+                let (smallest, largest) = (4.0_f32, 200.0_f32);
+                let points = f64::from(*size);
+                if !(f64::from(smallest)..=f64::from(largest)).contains(&points) {
+                    return Err(Error::new(
+                        Code::Failed,
+                        format!(
+                            "the size, in points, is from {smallest} to {largest}, not {points}"
+                        ),
+                    ));
+                }
+                Response::Done
+            }
+            Request::SetState(value) => {
+                let failed = |message: String| Error::new(Code::Failed, message);
+                let text = json(value)
+                    .ok_or_else(|| {
+                        failed("a plugin's state holds finite numbers alone".to_owned())
+                    })?
+                    .to_string();
+                if text.len() > MOST_STATE {
+                    return Err(failed(format!(
+                        "a plugin's state is {MOST_STATE} bytes at most as JSON, not {}",
+                        text.len()
+                    )));
+                }
+                Response::Done
+            }
+            Request::RunCommand { name, args } => {
+                self.host.check_run(name, args)?;
+                Response::Done
+            }
+            Request::RequestRender(view) => {
+                self.host.view_window(view)?;
+                Response::Done
+            }
+            Request::SetText { view, key, .. } => {
+                if !matches!(self.host.node(view, key)?.kind, Kind::Field(_)) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("`{}` is not a field", key.0),
+                    ));
+                }
+                Response::Done
+            }
+            Request::Select { view, key, .. } => {
+                if !matches!(self.host.node(view, key)?.kind, Kind::List(_)) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("`{}` is not a list", key.0),
+                    ));
+                }
                 Response::Done
             }
             Request::MoveTab { tab, window, .. } => {
                 self.known_tab(*tab)?;
+                self.known_window(*window)?;
+                Response::Done
+            }
+            Request::CloseWindow(window) => {
                 self.known_window(*window)?;
                 Response::Done
             }
@@ -1343,7 +1649,8 @@ impl Calling<'_> {
                 Response::Decoration(id)
             }
             Request::Undecorate { pane, id } => {
-                self.host.held(*pane)?;
+                // A decoration of a pane that closed since is the plugin's
+                // still, as the app's host keeps it.
                 let own = self
                     .host
                     .decorations
@@ -1374,13 +1681,19 @@ impl Calling<'_> {
                 Response::Pane(Some(new))
             }
             Request::OpenPanel { id, options } => {
+                if id.0.is_empty() {
+                    return Err(Error::new(Code::InvalidName, "a panel's id is not empty"));
+                }
                 if self.host.panels.contains_key(id) {
                     return Err(Error::new(
                         Code::AlreadyRegistered,
                         format!("the plugin has a panel `{}` open", id.0),
                     ));
                 }
+                let window = self.host.anchor_window(&options.anchor)?;
                 self.host.panels.insert(id.clone(), options.clone());
+                self.host.panel_windows.insert(id.clone(), window);
+                self.host.ask_render(ViewId::Panel(id.clone()));
                 Response::Done
             }
             Request::ClosePanel(id) => {
@@ -1390,18 +1703,30 @@ impl Calling<'_> {
                         format!("the plugin has no panel `{}` open", id.0),
                     ));
                 }
+                // Forgotten now, so that the same call can open it again,
+                // of no tree kept.
+                self.host.panel_windows.remove(id);
+                let view = ViewId::Panel(id.clone());
+                self.host.views.remove(&view);
+                self.host.renders.retain(|asked| *asked != view);
                 self.host.owed.push(Event::PanelClosed(id.clone()));
                 Response::Done
             }
-            Request::Emit { name, .. } => {
-                let namespace = self.host.caller.rsplit('/').next().unwrap_or_default();
+            Request::Emit { name, schema, .. } => {
+                let namespace = self.host.namespace();
                 let own = name
                     .strip_prefix(namespace)
                     .is_some_and(|rest| rest.starts_with('.'));
-                if !own {
+                if !is_name(name) || !own {
                     return Err(Error::new(
                         Code::InvalidName,
                         format!("`{name}` is not an event of the plugin's, `{namespace}.event`"),
+                    ));
+                }
+                if schema.is_empty() {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!("the event `{name}` names no schema"),
                     ));
                 }
                 Response::Done
@@ -1415,21 +1740,87 @@ impl Calling<'_> {
         Ok(response)
     }
 
-    /// Takes `request`, a declaration, at once.
-    fn declare(&mut self, request: Request) -> Response {
+    /// Checks `request`, a declaration, as the app's host does, and takes
+    /// it at once.
+    fn declare(&mut self, request: Request) -> Result<Response, Error> {
         match request {
-            Request::RegisterCommand(command) => self.host.commands.push(command),
-            Request::Bind(binding) => self.host.bindings.push(binding),
+            Request::RegisterCommand(command) => {
+                let host = &*self.host;
+                if host.uses.is_some() {
+                    let namespace = host.namespace();
+                    let prefix = format!("{namespace}.");
+                    if !command.name.starts_with(&prefix) {
+                        return Err(Error::new(
+                            Code::InvalidName,
+                            format!(
+                                "`{}` is not of the plugin's namespace, `{namespace}`",
+                                command.name
+                            ),
+                        ));
+                    }
+                    if host
+                        .others
+                        .iter()
+                        .any(|other| other.name.starts_with(&prefix))
+                    {
+                        return Err(Error::new(
+                            Code::AlreadyRegistered,
+                            format!(
+                                "the namespace `{namespace}` has another plugin's commands, or the app's"
+                            ),
+                        ));
+                    }
+                }
+                if host.registered(&command.name).is_some() {
+                    return Err(Error::new(
+                        Code::AlreadyRegistered,
+                        format!("`{}` is registered already", command.name),
+                    ));
+                }
+                command.check()?;
+                self.host.commands.push(command);
+            }
+            Request::Bind(binding) => {
+                let invalid = |message: String| Error::new(Code::InvalidBinding, message);
+                parse_keys(&binding.keys).map_err(invalid)?;
+                if !is_name(&binding.command) {
+                    return Err(invalid(format!(
+                        "`{}` is not a command's name, `namespace.action`",
+                        binding.command
+                    )));
+                }
+                if let Some(when) = &binding.when {
+                    When::parse(when).map_err(invalid)?;
+                }
+                self.host.bindings.push(binding);
+            }
             Request::Subscribe(names) => {
+                if let Some(name) = names.iter().find(|name| {
+                    !WorkspaceEvent::NAMES.contains(&name.as_str())
+                        && name.as_str() != POINTER
+                        && !is_name(name)
+                }) {
+                    return Err(Error::new(
+                        Code::InvalidName,
+                        format!(
+                            "`{name}` is no event: one of the workspace's, as `tab-created`, or a plugin's, `namespace.event`"
+                        ),
+                    ));
+                }
                 for name in names {
                     if !self.host.subscribed.contains(&name) {
                         self.host.subscribed.push(name);
                     }
                 }
             }
-            _ => {}
+            other => {
+                return Err(Error::new(
+                    Code::Fault,
+                    format!("{other:?} is not a declaration"),
+                ));
+            }
         }
-        Response::Done
+        Ok(Response::Done)
     }
 }
 
@@ -1459,7 +1850,7 @@ impl host::Host for Calling<'_> {
         let answered = match request.effect() {
             Effect::Read => self.read(&request),
             Effect::Write | Effect::App => self.queue(request),
-            Effect::Declaration => Ok(self.declare(request)),
+            Effect::Declaration => self.declare(request),
         };
         answered.unwrap_or_else(Response::Failed)
     }

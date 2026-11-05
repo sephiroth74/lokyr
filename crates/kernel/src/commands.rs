@@ -7,7 +7,8 @@
 use std::collections::BTreeMap;
 
 pub use lokyr_plugin_sdk::command::{
-    Args, Capability, Category, Code, Command, Error, ErrorCategory, Kind, Param, Value,
+    Args, Capability, Category, Code, Command, Error, ErrorCategory, Kind, Param, Uses, Value,
+    is_name, is_part,
 };
 
 /// The commands, by name.
@@ -16,47 +17,6 @@ pub struct Registry {
     commands: BTreeMap<String, Command>,
     /// The commands' names, in the order of their registrations.
     order: Vec<String>,
-}
-
-/// The commands that a plugin's manifest says it runs: names, and
-/// namespaces, as `tabs.*`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Uses {
-    patterns: Vec<String>,
-}
-
-impl Uses {
-    /// The commands of `patterns`.
-    pub fn new(patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        Self {
-            patterns: patterns.into_iter().map(Into::into).collect(),
-        }
-    }
-
-    /// Whether the command `name` is among them.
-    pub fn allows(&self, name: &str) -> bool {
-        self.patterns
-            .iter()
-            .any(|pattern| match pattern.strip_suffix('*') {
-                // `tabs.*` takes `tabs.new`, not `tabs` nor `tabsx.new`.
-                Some(prefix) => prefix.ends_with('.') && name.starts_with(prefix),
-                None => pattern == name,
-            })
-    }
-}
-
-/// Whether `name` is a name of a part: lowercase letters, digits and `-`,
-/// from a letter.
-pub(crate) fn is_part(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes.next().is_some_and(|first| first.is_ascii_lowercase())
-        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-/// Whether `name` is a command's name, `namespace.action`, each part of
-/// lowercase letters, digits and `-`, from a letter.
-pub fn is_name(name: &str) -> bool {
-    name.contains('.') && name.split('.').all(is_part)
 }
 
 impl Registry {
@@ -70,54 +30,13 @@ impl Registry {
     /// defaults of their kinds.
     pub fn register(&mut self, command: Command) -> Result<(), Error> {
         let name = &command.name;
-        if !is_name(name) {
-            return Err(Error::new(
-                Code::InvalidName,
-                format!("`{name}` is not a command's name, `namespace.action`"),
-            ));
-        }
         if self.commands.contains_key(name) {
             return Err(Error::new(
                 Code::AlreadyRegistered,
                 format!("`{name}` is registered already"),
             ));
         }
-        for (at, param) in command.params.iter().enumerate() {
-            if !is_part(&param.name) {
-                return Err(Error::new(
-                    Code::InvalidName,
-                    format!("`{}` of `{name}` is not a parameter's name", param.name),
-                ));
-            }
-            if command.params[..at]
-                .iter()
-                .any(|other| other.name == param.name)
-            {
-                return Err(Error::new(
-                    Code::InvalidSchema,
-                    format!("`{name}` has two parameters `{}`", param.name),
-                ));
-            }
-            if let Some(default) = &param.default
-                && !takes(param.kind, default)
-            {
-                return Err(Error::new(
-                    Code::InvalidSchema,
-                    format!(
-                        "the default of `{}` of `{name}` is not {}",
-                        param.name, param.kind
-                    ),
-                ));
-            }
-        }
-        if let Some(when) = &command.when
-            && let Err(error) = crate::keymap::When::parse(when)
-        {
-            return Err(Error::new(
-                Code::InvalidSchema,
-                format!("the context of `{name}`, `{when}`, is not one: {error}"),
-            ));
-        }
+        command.check()?;
         self.order.push(name.clone());
         self.commands.insert(name.clone(), command);
         Ok(())
@@ -149,52 +68,11 @@ impl Registry {
     /// Checks a call of `name` with `args`, and returns its arguments, with
     /// the defaults of those that it leaves out: an integer for a number
     /// becomes a number.
-    pub fn check(&self, name: &str, mut args: Args) -> Result<Args, Error> {
+    pub fn check(&self, name: &str, args: Args) -> Result<Args, Error> {
         let Some(command) = self.commands.get(name) else {
             return Err(Error::new(Code::NotFound, format!("no command `{name}`")));
         };
-        if let Some(unknown) = args
-            .keys()
-            .find(|arg| !command.params.iter().any(|param| &param.name == *arg))
-        {
-            return Err(Error::new(
-                Code::UnknownArgument,
-                format!("`{name}` takes no argument `{unknown}`"),
-            ));
-        }
-        for param in &command.params {
-            match args.get_mut(&param.name) {
-                Some(value) if !takes(param.kind, value) => {
-                    return Err(Error::new(
-                        Code::WrongKind,
-                        format!(
-                            "the argument `{}` of `{name}` is {}, not {}",
-                            param.name,
-                            param.kind,
-                            value.kind()
-                        ),
-                    ));
-                }
-                Some(value) => {
-                    if let (Kind::Number, Value::Integer(whole)) = (param.kind, &*value) {
-                        // An integer of more than 53 bits rounds.
-                        *value = Value::Number(*whole as f64);
-                    }
-                }
-                None => match &param.default {
-                    Some(default) => {
-                        args.insert(param.name.clone(), default.clone());
-                    }
-                    None => {
-                        return Err(Error::new(
-                            Code::MissingArgument,
-                            format!("`{name}` needs the argument `{}`", param.name),
-                        ));
-                    }
-                },
-            }
-        }
-        Ok(args)
+        command.check_call(args)
     }
 
     /// Checks a call of `name` with `args` that a plugin makes, which
@@ -232,12 +110,6 @@ impl Registry {
         }
         Ok(args)
     }
-}
-
-/// Whether a parameter of `kind` takes `value`: a number takes an integer
-/// too.
-fn takes(kind: Kind, value: &Value) -> bool {
-    value.kind() == kind || (kind == Kind::Number && value.kind() == Kind::Integer)
 }
 
 #[cfg(test)]

@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use super::*;
 use crate::command::Category;
+use crate::host::Edge;
 use crate::host::Scroll;
-use crate::ui::{Anchor, Role};
+use crate::ui::{Anchor, Role, Slot};
 use crate::view::{ProgressShape, ProgressState, Role as NodeRole, Tab};
 
 type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
@@ -418,7 +419,7 @@ fn a_pane_moves_out_to_a_tab_and_to_a_window_of_its_own() {
 
 #[test]
 fn the_writes_apply_before_the_app_s_requests() {
-    let mut host = FakeHost::new("acme/probe");
+    let mut host = FakeHost::new("acme/probe").with_commands(vec![named("pane.clear")]);
     host.focus(Some(PaneId(1)));
     let mut probe = Probe::new(|cx, _| {
         cx.run_command("pane.clear", Args::new())?;
@@ -589,4 +590,216 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "      text \"page\"\n",
         )
     );
+}
+
+/// A command of the name `name`, of no parameters.
+fn named(name: &str) -> Command {
+    Command {
+        name: name.to_owned(),
+        title: name.to_owned(),
+        category: Category::Panes,
+        capabilities: Vec::new(),
+        params: Vec::new(),
+        when: None,
+    }
+}
+
+#[test]
+fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
+    let mut host = FakeHost::new("acme/probe")
+        .with_slots(vec![Slot::StatusBar])
+        .with_commands(vec![named("app.other")]);
+    host.focus(Some(PaneId(1)));
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = std::rc::Rc::clone(&codes);
+    let mut probe = Probe::new(move |cx, _| {
+        let push = |result: Result<(), Error>| {
+            seen.borrow_mut().push(result.err().map(|error| error.code))
+        };
+        let none = WindowId(9);
+        push(cx.new_tab(none, None).map(|_| ()));
+        push(cx.close_tab(TabId(9)));
+        push(cx.activate_tab(TabId(9)));
+        push(cx.move_tab(TabId(1), none, 0));
+        push(cx.zoom(TabId(1), Some(PaneId(9))));
+        push(cx.close_window(none));
+        push(cx.resize_pane(PaneId(1), Edge::Right, 2.0));
+        push(cx.set_ratio(TabId(1), Vec::new(), Some(3.0)));
+        push(cx.set_font_size(Some(1000.0)));
+        push(cx.set_state(Data::Number(f64::NAN)));
+        push(cx.emit("probe.ping", "", Data::Nil));
+        push(cx.emit("probe.a b", "x/1", Data::Nil));
+        push(cx.run_command("app.none", Args::new()));
+        push(cx.run_command("app.other", Args::new()));
+        let menu = |anchor| PanelOptions {
+            anchor,
+            role: Role::Menu,
+            close_outside: true,
+            close_escape: true,
+        };
+        push(cx.open_panel("", menu(Anchor::Pointer(WindowId(1)))));
+        push(cx.open_panel("menu", menu(Anchor::Pointer(none))));
+        push(cx.request_render(ViewId::TabBar(WindowId(1))));
+        push(cx.request_render(ViewId::StatusBar(none)));
+        push(cx.request_render(ViewId::StatusBar(WindowId(1))));
+        push(cx.set_text(ViewId::StatusBar(WindowId(1)), "query", "x", 0));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    use Code::{Failed, InvalidName, NotFound};
+    assert_eq!(
+        *codes.borrow(),
+        [
+            Some(NotFound),
+            Some(NotFound),
+            Some(NotFound),
+            Some(NotFound),
+            Some(NotFound),
+            Some(NotFound),
+            Some(Failed),
+            Some(Failed),
+            Some(Failed),
+            Some(Failed),
+            Some(InvalidName),
+            Some(InvalidName),
+            Some(NotFound),
+            None,
+            Some(InvalidName),
+            Some(NotFound),
+            Some(NotFound),
+            Some(NotFound),
+            None,
+            Some(NotFound),
+        ]
+    );
+}
+
+#[test]
+fn the_declarations_are_checked_as_the_app_s_host_checks_them() {
+    let codes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = std::rc::Rc::clone(&codes);
+    let mut probe = Probe::new(move |cx, _| {
+        let push = |result: Result<(), Error>| {
+            seen.borrow_mut().push(result.err().map(|error| error.code))
+        };
+        let bind = |keys: &str, command: &str, when: Option<&str>| Binding {
+            keys: keys.to_owned(),
+            command: command.to_owned(),
+            args: Args::new(),
+            when: when.map(str::to_owned),
+        };
+        push(cx.bind(bind("cmd+shfit+t", "probe.go", None)));
+        push(cx.bind(bind("cmd+t", "probe go", None)));
+        push(cx.bind(bind("cmd+t", "probe.go", Some("pane.focused &&"))));
+        push(cx.bind(bind("cmd+shift+t", "probe.go", Some("pane.focused"))));
+        push(cx.subscribe(&["tab-opened"]));
+        push(cx.register_command(named("probe.go")));
+        push(cx.register_command(named("Probe.other")));
+        Ok(())
+    });
+    let mut host = FakeHost::new("acme/probe");
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    use Code::{AlreadyRegistered, InvalidBinding, InvalidName};
+    assert_eq!(
+        *codes.borrow(),
+        [
+            Some(InvalidBinding),
+            Some(InvalidBinding),
+            Some(InvalidBinding),
+            None,
+            Some(InvalidName),
+            Some(AlreadyRegistered),
+            Some(InvalidName),
+        ]
+    );
+    // A plugin of a manifest that declares its capabilities registers
+    // commands of its namespace alone, which no other has, and runs those
+    // that its manifest declares, of the capabilities that it holds.
+    let mut host = FakeHost::new("acme/probe")
+        .with_capabilities(Vec::new())
+        .with_uses(vec!["tabs.*".to_owned()])
+        .with_commands(vec![named("tabs.new"), named("app.quit")]);
+    let mut probe = Probe::new(|cx, _| {
+        assert_eq!(
+            cx.register_command(named("other.go")).unwrap_err().code,
+            Code::InvalidName
+        );
+        assert!(cx.run_command("tabs.new", Args::new()).is_ok());
+        assert!(cx.run_command("probe.go", Args::new()).is_ok());
+        assert_eq!(
+            cx.run_command("app.quit", Args::new()).unwrap_err().code,
+            Code::Undeclared
+        );
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let mut host = FakeHost::new("acme/tabs")
+        .with_capabilities(Vec::new())
+        .with_commands(vec![named("tabs.new")]);
+    let mut probe = Probe::new(|_, _| Ok(()));
+    assert_eq!(
+        host.activate(&mut probe).unwrap_err().code,
+        Code::InvalidName
+    );
+}
+
+#[test]
+fn a_panel_s_opening_asks_its_render_its_close_drops_its_tree_and_a_decoration_outlives_its_pane() {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(1)));
+    let mut probe = Probe::new(|cx, name| {
+        let pane = PaneId(1);
+        let options = PanelOptions {
+            anchor: Anchor::Cursor(pane),
+            role: Role::Menu,
+            close_outside: true,
+            close_escape: true,
+        };
+        match name {
+            "probe.go" => cx.open_panel("menu", options),
+            _ => cx.close_panel("menu"),
+        }
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let view = ViewId::Panel(PanelId::from("menu"));
+    assert_eq!(host.take_renders(), std::slice::from_ref(&view));
+    probe.tree = Some(Node::text("menu"));
+    host.render(&mut probe, &view);
+    assert!(host.tree(&view).is_some());
+    host.command(&mut probe, "probe.close", Args::new())
+        .unwrap();
+    assert!(host.tree(&view).is_none());
+    // A decoration of a pane that closed since is the plugin's still.
+    let look = DecorationLook {
+        underline: None,
+        underline_color: None,
+        background: None,
+        pointing: false,
+    };
+    let mut probe = Probe::new(move |cx, name| match name {
+        "probe.go" => cx.decorate(PaneId(1), (0, 0), (1, 0), look).map(|_| ()),
+        "probe.close" => cx.close_pane(PaneId(1)),
+        _ => cx.undecorate(PaneId(1), FIRST_ID),
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.command(&mut probe, "probe.close", Args::new())
+        .unwrap();
+    host.command(&mut probe, "probe.undecorate", Args::new())
+        .unwrap();
+    assert!(host.decorations().is_empty());
+}
+
+#[test]
+fn the_config_s_change_reaches_an_active_plugin_alone() {
+    let mut host = FakeHost::new("acme/probe");
+    let mut probe = Probe::new(|_, _| Ok(()));
+    host.set_config(Data::Integer(1));
+    host.activate(&mut probe).unwrap();
+    host.deliver(&mut probe).unwrap();
+    assert!(probe.heard.is_empty());
+    host.set_config(Data::Integer(2));
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard, [["config-changed"]]);
 }

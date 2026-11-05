@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
@@ -20,7 +21,7 @@ serde_json.workspace = true
 # The host's API and the plugins' trait, which may change in a minor release.
 unstable = []
 # A host of the tests' own, for the plugins' unit tests.
-fake = ["unstable"]
+fake = ["unstable", "dep:serde_json"]
 
 [lints]
 workspace = true

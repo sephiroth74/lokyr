@@ -14,18 +14,21 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use lokyr_kernel::commands::{Args, Category, Command, Error, Registry};
+use lokyr_kernel::commands::{Args, Error, Registry};
 use lokyr_kernel::l10n::{KERNEL, Texts};
 use lokyr_kernel::plugins::{Clipboard, Context, Cx, Event, Panes, Plugin, Plugins};
 use lokyr_kernel::workspace::{Environment, Grid, Pane, PaneId, Settings, Workspace};
 use lokyr_plugin_sdk::command::Capability;
+use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host;
+use lokyr_plugin_sdk::host::{self, Layout, TabInfo, WindowInfo};
 use lokyr_plugin_sdk::message::{Request, Response};
+use lokyr_plugin_sdk::ui::ViewId;
+use lokyr_plugin_sdk::view::{ListItem, Node};
 use lokyr_pty::Program;
 use lokyr_vt_core::terminal::Colors;
 
-use scenarios::{Scenario, World};
+use scenarios::{SYMBOL, Scenario, World};
 
 /// What the test plugin did and heard, in its order.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,31 +45,28 @@ pub enum Entry {
 const ASK: &str = "conformer.ask";
 
 /// The test plugin: each call of its command makes the next step's
-/// requests, in their order, through the front end's own requests; its
-/// trace takes them with their answers, and the events that it hears.
+/// requests, in their order, through the front end's own requests, of the
+/// host's ids of their symbols; its trace takes them with their answers,
+/// and the events that it hears, of the symbols of the ids that the
+/// scenario opened. Its panel's tree is of a field and a list.
 struct Conformer {
     asks: VecDeque<Vec<Request>>,
     subscriptions: Vec<String>,
+    symbols: Symbols,
     trace: Rc<RefCell<Vec<Entry>>>,
 }
 
 impl Plugin for Conformer {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        cx.register_command(Command {
-            name: ASK.to_owned(),
-            title: "Ask".to_owned(),
-            category: Category::View,
-            capabilities: Vec::new(),
-            params: Vec::new(),
-            when: None,
-        })?;
+        cx.register_command(scenarios::ask_command())?;
         let names: Vec<&str> = self.subscriptions.iter().map(String::as_str).collect();
         cx.subscribe(&names)
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
         for request in self.asks.pop_front().unwrap_or_default() {
-            let response = normalized(cx.request(request.clone()));
+            let asked = self.symbols.resolved(&request);
+            let response = self.symbols.response(cx.request(asked));
             self.trace
                 .borrow_mut()
                 .push(Entry::Asked(request, response));
@@ -75,22 +75,247 @@ impl Plugin for Conformer {
     }
 
     fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
-        self.trace.borrow_mut().push(Entry::Heard(events.to_vec()));
+        let heard = events
+            .iter()
+            .map(|event| self.symbols.event(event.clone()))
+            .collect();
+        self.trace.borrow_mut().push(Entry::Heard(heard));
         Ok(())
     }
-}
 
-/// `response`, of which the ids of a read and of a decoration are 0.
-fn normalized(response: Response) -> Response {
-    match response {
-        Response::Decoration(_) => Response::Decoration(0),
-        Response::Reading(_) => Response::Reading(0),
-        other => other,
+    fn render(&mut self, _: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        let ViewId::Panel(_) = view else {
+            return None;
+        };
+        Some(Node::container(vec![
+            Node::field("Find").key("query"),
+            Node::list(
+                Node::text("row"),
+                2,
+                (0, vec![ListItem::default(), ListItem::default()]),
+            )
+            .key("results"),
+        ]))
     }
 }
 
-/// The test plugin of `scenario`, and its trace.
-fn conformer(scenario: &Scenario) -> (Conformer, Rc<RefCell<Vec<Entry>>>) {
+/// The ids of the windows, the tabs and the panes that a scenario opened,
+/// each host's own, in the order in which the trace met them, the `k`th of
+/// each kind of the symbol `k`; the world's ids stand for themselves.
+struct Symbols {
+    world: World,
+    windows: Vec<u64>,
+    tabs: Vec<u64>,
+    panes: Vec<u64>,
+}
+
+impl Symbols {
+    fn new(world: &World) -> Self {
+        Self {
+            world: world.clone(),
+            windows: Vec::new(),
+            tabs: Vec::new(),
+            panes: Vec::new(),
+        }
+    }
+
+    /// `request` of the host's ids of its symbols, which the trace met
+    /// before.
+    fn resolved(&self, request: &Request) -> Request {
+        fn resolve(value: &mut serde_json::Value, symbols: &Symbols) {
+            match value {
+                serde_json::Value::Number(number) => {
+                    if let Some(symbol) = number.as_u64().filter(|&id| id >= SYMBOL) {
+                        let (kind, k) = (symbol / SYMBOL, (symbol % SYMBOL) as usize);
+                        let ids = match kind {
+                            1 => &symbols.windows,
+                            2 => &symbols.tabs,
+                            _ => &symbols.panes,
+                        };
+                        let id = ids.get(k).unwrap_or_else(|| {
+                            panic!(
+                                "the symbol {k} of the kind {kind}, which the trace did not meet"
+                            )
+                        });
+                        *value = serde_json::Value::from(*id);
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    items.iter_mut().for_each(|item| resolve(item, symbols));
+                }
+                serde_json::Value::Object(map) => {
+                    map.values_mut().for_each(|item| resolve(item, symbols));
+                }
+                _ => {}
+            }
+        }
+        let mut value = serde_json::to_value(request).expect("a request writes as JSON");
+        resolve(&mut value, self);
+        serde_json::from_value(value).expect("a request reads from JSON")
+    }
+
+    /// The symbol of the id `id`, of the kind `kind`, of those of `ids`.
+    fn symbol(ids: &mut Vec<u64>, id: u64, kind: u64) -> u64 {
+        let k = match ids.iter().position(|&met| met == id) {
+            Some(k) => k,
+            None => {
+                ids.push(id);
+                ids.len() - 1
+            }
+        };
+        kind * SYMBOL + k as u64
+    }
+
+    fn window(&mut self, id: host::WindowId) -> host::WindowId {
+        if id == self.world.window {
+            return id;
+        }
+        host::WindowId(Self::symbol(&mut self.windows, id.0, 1))
+    }
+
+    fn tab(&mut self, id: host::TabId) -> host::TabId {
+        if id == self.world.tab {
+            return id;
+        }
+        host::TabId(Self::symbol(&mut self.tabs, id.0, 2))
+    }
+
+    fn pane(&mut self, id: host::PaneId) -> host::PaneId {
+        if id == self.world.pane {
+            return id;
+        }
+        host::PaneId(Self::symbol(&mut self.panes, id.0, 3))
+    }
+
+    fn layout(&mut self, layout: Layout) -> Layout {
+        match layout {
+            Layout::Pane(pane) => Layout::Pane(self.pane(pane)),
+            Layout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => Layout::Split {
+                direction,
+                ratio,
+                first: Box::new(self.layout(*first)),
+                second: Box::new(self.layout(*second)),
+            },
+        }
+    }
+
+    /// `response` of the symbols of its ids, of which the ids of a read
+    /// and of a decoration are 0.
+    fn response(&mut self, response: Response) -> Response {
+        match response {
+            Response::Decoration(_) => Response::Decoration(0),
+            Response::Reading(_) => Response::Reading(0),
+            Response::Window(window) => Response::Window(window.map(|id| self.window(id))),
+            Response::Pane(pane) => Response::Pane(pane.map(|id| self.pane(id))),
+            Response::Tab { tab, pane } => Response::Tab {
+                tab: self.tab(tab),
+                pane: self.pane(pane),
+            },
+            Response::Windows(windows) => Response::Windows(
+                windows
+                    .into_iter()
+                    .map(|window| WindowInfo {
+                        id: self.window(window.id),
+                        tabs: window.tabs.into_iter().map(|id| self.tab(id)).collect(),
+                        active: self.tab(window.active),
+                    })
+                    .collect(),
+            ),
+            Response::Tabs(tabs) => Response::Tabs(
+                tabs.into_iter()
+                    .map(|info| TabInfo {
+                        id: self.tab(info.id),
+                        window: self.window(info.window),
+                        title: info.title,
+                        active: info.active,
+                        focused: self.pane(info.focused),
+                        panes: info.panes.into_iter().map(|id| self.pane(id)).collect(),
+                        zoomed: info.zoomed.map(|id| self.pane(id)),
+                    })
+                    .collect(),
+            ),
+            Response::Layout(layout) => Response::Layout(self.layout(layout)),
+            other => other,
+        }
+    }
+
+    /// `event` of the symbols of its ids, of which a read's id is 0.
+    fn event(&mut self, event: Event) -> Event {
+        use WorkspaceEvent as W;
+        match event {
+            Event::Lines {
+                pane,
+                lines,
+                complete,
+                ..
+            } => Event::Lines {
+                id: 0,
+                pane: self.pane(pane),
+                lines,
+                complete,
+            },
+            Event::Workspace(change) => Event::Workspace(match change {
+                W::WindowOpened { window } => W::WindowOpened {
+                    window: self.window(window),
+                },
+                W::WindowClosed { window } => W::WindowClosed {
+                    window: self.window(window),
+                },
+                W::TabCreated { tab, window, index } => W::TabCreated {
+                    tab: self.tab(tab),
+                    window: self.window(window),
+                    index,
+                },
+                W::TabClosed { tab, window } => W::TabClosed {
+                    tab: self.tab(tab),
+                    window: self.window(window),
+                },
+                W::TabActivated { tab, window } => W::TabActivated {
+                    tab: self.tab(tab),
+                    window: self.window(window),
+                },
+                W::TabMoved {
+                    tab,
+                    from,
+                    window,
+                    index,
+                } => W::TabMoved {
+                    tab: self.tab(tab),
+                    from: self.window(from),
+                    window: self.window(window),
+                    index,
+                },
+                W::PaneCreated { pane, tab } => W::PaneCreated {
+                    pane: self.pane(pane),
+                    tab: self.tab(tab),
+                },
+                W::PaneClosed { pane, tab } => W::PaneClosed {
+                    pane: self.pane(pane),
+                    tab: self.tab(tab),
+                },
+                W::PaneFocused { pane, tab } => W::PaneFocused {
+                    pane: self.pane(pane),
+                    tab: self.tab(tab),
+                },
+                W::PaneMoved { pane, from, tab } => W::PaneMoved {
+                    pane: self.pane(pane),
+                    from: self.tab(from),
+                    tab: self.tab(tab),
+                },
+                W::LayoutChanged { tab } => W::LayoutChanged { tab: self.tab(tab) },
+            }),
+            other => other,
+        }
+    }
+}
+
+/// The test plugin of `scenario`, in `world`, and its trace.
+fn conformer(scenario: &Scenario, world: &World) -> (Conformer, Rc<RefCell<Vec<Entry>>>) {
     let trace = Rc::new(RefCell::new(Vec::new()));
     let plugin = Conformer {
         asks: scenario
@@ -105,6 +330,7 @@ fn conformer(scenario: &Scenario) -> (Conformer, Rc<RefCell<Vec<Entry>>>) {
             })
             .collect(),
         subscriptions: scenario.subscriptions.clone(),
+        symbols: Symbols::new(world),
         trace: Rc::clone(&trace),
     };
     (plugin, trace)
@@ -261,11 +487,16 @@ fn name(scenario: &Scenario) -> &'static str {
     }
 }
 
-/// The trace of `scenario` on the kernel's host, whose world `kernel` is.
-fn on_kernel(scenario: &Scenario, kernel: &mut Kernel) -> Vec<Entry> {
+/// The trace of `scenario` on the kernel's host, whose world `kernel` is,
+/// of a state directory of its own, `state`: the host's part of the app's,
+/// the workspace's changes posted to the plugins and the renders that
+/// their calls ask for made, after each step's call.
+fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) -> Vec<Entry> {
     // Each scenario's plugin registers its command anew.
     kernel.registry = Registry::default();
-    let (plugin, trace) = conformer(scenario);
+    let _ = kernel.workspace.take_events();
+    let world = kernel.world.clone();
+    let (plugin, trace) = conformer(scenario, &world);
     let mut plugins = Plugins::new();
     match &scenario.capabilities {
         None => plugins.add(name(scenario), Box::new(plugin)).unwrap(),
@@ -275,12 +506,21 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel) -> Vec<Entry> {
             plugins.add_declared(manifest, Box::new(plugin)).unwrap();
         }
     }
+    plugins.set_state_directory(Some(state.to_path_buf()));
     assert!(plugins.activate(&mut kernel.context()).is_empty());
     let deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
         let start = Instant::now();
         while plugins.waiting() {
             plugins.serve(&mut kernel.context());
             assert!(start.elapsed() < Duration::from_secs(10));
+        }
+        for (name, view) in plugins.take_renders() {
+            plugins.render(&name, &view, &mut kernel.context()).unwrap();
+        }
+        for event in kernel.workspace.take_events() {
+            if let lokyr_kernel::workspace::Event::Changed(change) = event {
+                plugins.post(Event::Workspace(change));
+            }
         }
         assert!(plugins.deliver(&mut kernel.context()).is_empty());
     };
@@ -300,8 +540,9 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel) -> Vec<Entry> {
 /// The trace of `scenario` on the SDK's fake host, of the same world as
 /// the kernel's host's.
 fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
-    let (mut plugin, trace) = conformer(scenario);
-    let mut host = FakeHost::new(name(scenario));
+    let (mut plugin, trace) = conformer(scenario, world);
+    // The plugin fills no slot, as a manifest of none.
+    let mut host = FakeHost::new(name(scenario)).with_slots(Vec::new());
     if let Some(capabilities) = &scenario.capabilities {
         host = host.with_capabilities(capabilities.clone());
     }
@@ -312,10 +553,15 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
     pane.tab = world.tab;
     pane.directory = Some("/".to_owned());
     pane.lines.insert(world.row, world.line.clone());
+    pane.rows
+        .insert(world.row, (scenarios::LINE.to_owned(), false));
     host.activate(&mut plugin).unwrap();
     for step in &scenario.steps {
         if !step.asks.is_empty() {
             let _ = host.command(&mut plugin, ASK, Args::new());
+        }
+        for view in host.take_renders() {
+            host.render(&mut plugin, &view);
         }
         for event in &step.posts {
             host.post(event.clone());
@@ -339,11 +585,13 @@ fn every_scenario_s_trace_is_the_same_on_the_kernel_s_host_and_on_the_fake() {
     let mut kernel = Kernel::new();
     let world = kernel.world.clone();
     let scenarios = scenarios::all(&world);
-    assert!(scenarios.len() >= 4);
-    for scenario in &scenarios {
+    assert!(scenarios.len() >= 9);
+    let states = std::env::temp_dir().join(format!("lokyr-conformance-{}", std::process::id()));
+    for (at, scenario) in scenarios.iter().enumerate() {
         let wanted = expected(scenario);
+        let state = states.join(at.to_string());
         assert_eq!(
-            on_kernel(scenario, &mut kernel),
+            on_kernel(scenario, &mut kernel, &state),
             wanted,
             "the kernel's host, `{}`",
             scenario.name
@@ -355,6 +603,7 @@ fn every_scenario_s_trace_is_the_same_on_the_kernel_s_host_and_on_the_fake() {
             scenario.name
         );
     }
+    let _ = std::fs::remove_dir_all(&states);
 }
 
 #[test]
@@ -364,4 +613,91 @@ fn the_scenarios_cross_as_json_and_come_back_the_same() {
         let text = scenarios::json(&scenario);
         assert_eq!(scenarios::from_json(&text), scenario, "{text}");
     }
+}
+
+/// The place of `request`'s kind among the plugin API's requests, of a
+/// match that a new kind does not compile without.
+fn kind(request: &Request) -> usize {
+    match request {
+        Request::RegisterCommand(_) => 0,
+        Request::Bind(_) => 1,
+        Request::Subscribe(_) => 2,
+        Request::Emit { .. } => 3,
+        Request::RunCommand { .. } => 4,
+        Request::ClipboardText => 5,
+        Request::SetClipboardText(_) => 6,
+        Request::FocusedWindow => 7,
+        Request::FocusedPane => 8,
+        Request::SelectionText(_) => 9,
+        Request::LineText { .. } => 10,
+        Request::LinkAt { .. } => 11,
+        Request::WorkingDirectory(_) => 12,
+        Request::ReadLines { .. } => 13,
+        Request::Styles { .. } => 14,
+        Request::Decorate { .. } => 15,
+        Request::Undecorate { .. } => 16,
+        Request::Open(_) => 17,
+        Request::Opens(_) => 18,
+        Request::SelectAll(_) => 19,
+        Request::ClearScrollback(_) => 20,
+        Request::Clear(_) => 21,
+        Request::Paste { .. } => 22,
+        Request::SendText { .. } => 23,
+        Request::Scroll { .. } => 24,
+        Request::FontSize => 25,
+        Request::SetFontSize(_) => 26,
+        Request::OpenWindow => 27,
+        Request::CloseWindow(_) => 28,
+        Request::Quit => 29,
+        Request::Windows => 30,
+        Request::Tabs(_) => 31,
+        Request::Layout(_) => 32,
+        Request::NewTab { .. } => 33,
+        Request::Split { .. } => 34,
+        Request::CloseTab(_) => 35,
+        Request::ClosePane(_) => 36,
+        Request::ActivateTab(_) => 37,
+        Request::FocusPane(_) => 38,
+        Request::MoveTab { .. } => 39,
+        Request::TabToNewWindow(_) => 40,
+        Request::PaneToNewTab { .. } => 41,
+        Request::PaneToNewWindow(_) => 42,
+        Request::ResizePane { .. } => 43,
+        Request::SetRatio { .. } => 44,
+        Request::Equalize(_) => 45,
+        Request::Zoom { .. } => 46,
+        Request::RequestRender(_) => 47,
+        Request::SetText { .. } => 48,
+        Request::Select { .. } => 49,
+        Request::OpenPanel { .. } => 50,
+        Request::ClosePanel(_) => 51,
+        Request::Config => 52,
+        Request::State => 53,
+        Request::SetState(_) => 54,
+    }
+}
+
+/// How many kinds of requests the plugin API has.
+const KINDS: usize = 55;
+
+#[test]
+fn the_scenarios_hold_every_request_of_the_plugin_api() {
+    let world = World {
+        window: host::WindowId(1),
+        tab: host::TabId(1),
+        pane: host::PaneId(1),
+        row: 0,
+        line: host::LineText {
+            text: String::new(),
+            cells: Vec::new(),
+        },
+    };
+    let mut held = [false; KINDS];
+    for scenario in scenarios::all(&world) {
+        for (request, _) in scenario.steps.iter().flat_map(|step| &step.asks) {
+            held[kind(request)] = true;
+        }
+    }
+    let missing: Vec<usize> = (0..KINDS).filter(|&at| !held[at]).collect();
+    assert!(missing.is_empty(), "the kinds of no scenario: {missing:?}");
 }

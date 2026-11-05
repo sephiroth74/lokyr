@@ -332,6 +332,153 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Whether `name` is a name of a part: lowercase letters, digits and `-`,
+/// from a letter.
+pub fn is_part(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
+/// Whether `name` is a command's name, `namespace.action`, each part of
+/// lowercase letters, digits and `-`, from a letter.
+pub fn is_name(name: &str) -> bool {
+    name.contains('.') && name.split('.').all(is_part)
+}
+
+/// Whether `value` is of `kind`, an integer of a number too.
+pub fn takes(kind: Kind, value: &Value) -> bool {
+    value.kind() == kind || (kind == Kind::Number && value.kind() == Kind::Integer)
+}
+
+impl Command {
+    /// Checks the command as the host registers it: its name is
+    /// `namespace.action`, its parameters have names of their own and
+    /// defaults of their kinds, and its `when` is a context.
+    pub fn check(&self) -> Result<(), Error> {
+        let name = &self.name;
+        if !is_name(name) {
+            return Err(Error::new(
+                Code::InvalidName,
+                format!("`{name}` is not a command's name, `namespace.action`"),
+            ));
+        }
+        for (at, param) in self.params.iter().enumerate() {
+            if !is_part(&param.name) {
+                return Err(Error::new(
+                    Code::InvalidName,
+                    format!("`{}` of `{name}` is not a parameter's name", param.name),
+                ));
+            }
+            if self.params[..at]
+                .iter()
+                .any(|other| other.name == param.name)
+            {
+                return Err(Error::new(
+                    Code::InvalidSchema,
+                    format!("`{name}` has two parameters `{}`", param.name),
+                ));
+            }
+            if let Some(default) = &param.default
+                && !takes(param.kind, default)
+            {
+                return Err(Error::new(
+                    Code::InvalidSchema,
+                    format!(
+                        "the default of `{}` of `{name}` is not {}",
+                        param.name, param.kind
+                    ),
+                ));
+            }
+        }
+        if let Some(when) = &self.when
+            && let Err(error) = crate::keys::When::parse(when)
+        {
+            return Err(Error::new(
+                Code::InvalidSchema,
+                format!("the context of `{name}`, `{when}`, is not one: {error}"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Checks a call of the command with `args`, and returns its arguments,
+    /// with the defaults of those that it leaves out: an integer for a
+    /// number becomes a number.
+    pub fn check_call(&self, mut args: Args) -> Result<Args, Error> {
+        let name = &self.name;
+        if let Some(unknown) = args
+            .keys()
+            .find(|arg| !self.params.iter().any(|param| &param.name == *arg))
+        {
+            return Err(Error::new(
+                Code::UnknownArgument,
+                format!("`{name}` takes no argument `{unknown}`"),
+            ));
+        }
+        for param in &self.params {
+            match args.get_mut(&param.name) {
+                Some(value) if !takes(param.kind, value) => {
+                    return Err(Error::new(
+                        Code::WrongKind,
+                        format!(
+                            "the argument `{}` of `{name}` is {}, not {}",
+                            param.name,
+                            param.kind,
+                            value.kind()
+                        ),
+                    ));
+                }
+                Some(value) => {
+                    if let (Kind::Number, Value::Integer(whole)) = (param.kind, &*value) {
+                        // An integer of more than 53 bits rounds.
+                        *value = Value::Number(*whole as f64);
+                    }
+                }
+                None => match &param.default {
+                    Some(default) => {
+                        args.insert(param.name.clone(), default.clone());
+                    }
+                    None => {
+                        return Err(Error::new(
+                            Code::MissingArgument,
+                            format!("`{name}` needs the argument `{}`", param.name),
+                        ));
+                    }
+                },
+            }
+        }
+        Ok(args)
+    }
+}
+
+/// The commands that a plugin's manifest says it runs: names, and
+/// namespaces, as `tabs.*`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Uses {
+    patterns: Vec<String>,
+}
+
+impl Uses {
+    /// The commands of `patterns`.
+    pub fn new(patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            patterns: patterns.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Whether the command `name` is among them.
+    pub fn allows(&self, name: &str) -> bool {
+        self.patterns
+            .iter()
+            .any(|pattern| match pattern.strip_suffix('*') {
+                // `tabs.*` takes `tabs.new`, not `tabs` nor `tabsx.new`.
+                Some(prefix) => prefix.ends_with('.') && name.starts_with(prefix),
+                None => pattern == name,
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -161,7 +161,7 @@ impl<B: Backend> App<B> {
         (column, row): (u16, i64),
     ) -> bool {
         let when = command.when.as_deref().map(When::parse);
-        if when.is_some_and(|when| when.is_ok_and(|when| !when.holds(context))) {
+        if when.is_some_and(|when| when.is_ok_and(|when| !context.holds_when(&when))) {
             return false;
         }
         if command.name == LOOK_UP {
@@ -334,7 +334,7 @@ impl<B: Backend> App<B> {
     /// whose state changes reach the platform.
     pub(super) fn settle_menu(&mut self, platform: &mut dyn Platform, context: &Context) {
         for (command, when) in &self.menu_contexts {
-            let enabled = when.holds(context);
+            let enabled = context.holds_when(when);
             if self.menu_enabled.get(command) != Some(&enabled) {
                 platform.set_command_enabled(command, enabled);
                 self.menu_enabled.insert(command.clone(), enabled);

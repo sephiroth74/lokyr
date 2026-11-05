@@ -145,6 +145,9 @@ pub const MOST_REACH: usize = 256;
 /// The most rows that a read of rows takes.
 pub const MOST_LINES: usize = 100_000;
 
+/// The most bytes of a plugin's state, as JSON.
+pub const MOST_STATE: usize = 1024 * 1024;
+
 /// A row's text, as a read of rows gives it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Line {

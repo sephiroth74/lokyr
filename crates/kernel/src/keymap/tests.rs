@@ -135,22 +135,22 @@ fn keys_make_a_sequence_with_the_wheel_alone() {
 fn a_when_holds_in_its_contexts() {
     let context = |names: &[&str]| Context::new(names.iter().copied());
     let when = When::parse("pane.focused && !selection").unwrap();
-    assert!(when.holds(&context(&["pane.focused"])));
-    assert!(!when.holds(&context(&["pane.focused", "selection"])));
+    assert!((context(&["pane.focused"])).holds_when(&when));
+    assert!(!(context(&["pane.focused", "selection"])).holds_when(&when));
     let when = When::parse("selection || pane.focused && alternate-screen").unwrap();
-    assert!(when.holds(&context(&["selection"])));
+    assert!((context(&["selection"])).holds_when(&when));
     assert!(
-        !when.holds(&context(&["pane.focused"])),
+        !(context(&["pane.focused"])).holds_when(&when),
         "`&&` binds tighter"
     );
     let when = When::parse("!(selection || alternate-screen)").unwrap();
-    assert!(when.holds(&context(&[])));
-    assert!(!when.holds(&context(&["alternate-screen"])));
+    assert!((context(&[])).holds_when(&when));
+    assert!(!(context(&["alternate-screen"])).holds_when(&when));
     // The plugins' panels' contexts, of their namespaces.
     let when = When::parse("pane.focused && !search.open || search-plus.focused").unwrap();
-    assert!(when.holds(&context(&["pane.focused"])));
-    assert!(!when.holds(&context(&["pane.focused", "search.open"])));
-    assert!(when.holds(&context(&["search.open", "search-plus.focused"])));
+    assert!((context(&["pane.focused"])).holds_when(&when));
+    assert!(!(context(&["pane.focused", "search.open"])).holds_when(&when));
+    assert!((context(&["search.open", "search-plus.focused"])).holds_when(&when));
     for text in [
         "focus",
         "pane.open",

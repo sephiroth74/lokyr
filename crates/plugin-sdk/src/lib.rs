@@ -19,6 +19,7 @@ pub mod event;
 pub mod fake;
 #[cfg(feature = "unstable")]
 pub mod host;
+pub mod keys;
 #[cfg(feature = "unstable")]
 pub mod message;
 #[cfg(feature = "unstable")]

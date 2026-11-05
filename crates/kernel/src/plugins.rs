@@ -314,8 +314,7 @@ pub struct ConfigNotice {
     pub text: String,
 }
 
-/// The most bytes of a plugin's state, as JSON.
-pub const MOST_STATE: usize = 1024 * 1024;
+pub use lokyr_plugin_sdk::host::MOST_STATE;
 
 /// A call of a plugin's on the main thread that took long, as the log
 /// tells.
