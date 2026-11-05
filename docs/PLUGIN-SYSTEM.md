@@ -19,7 +19,7 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 |---|---|---|---|
 | Commands | Register and run commands with typed arguments; add menu and palette entries | `tabs.new`, `search.open` | F3 |
 | Keymap | Bindings with a context (`when`), chords and leaders, modal key tables | `cmd+f` → `search.open` when a pane has focus | F3 |
-| Events | Receive kernel events (batched) and emit its own | `tab-created`, `title-changed`, `command-finished` | F3 |
+| Events | Receive kernel events (batched) and emit its own | `tab-created`, `layout-changed`, `pointer`, `search.progress` | F3 |
 | Workspace and layout | Create, close and move tabs and panes; edit the layout tree | split, zoom, move to a new window | F3 |
 | UI | Provide view trees for slots | tab bar, find bar, status bar segments | F3 |
 | Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
@@ -93,6 +93,7 @@ impl Plugin for Search {
             category: Category::View,
             capabilities: Vec::new(),
             params: Vec::new(),
+            when: None,
         })?;
         cx.bind(Binding {
             keys: "cmd+f".to_owned(),
@@ -122,13 +123,13 @@ export_plugin!(Search); // a registration function, which gen-dist wires into th
 local Search = {}
 
 function Search.activate(cx: Cx)
-    cx.commands.register("search-plus.open", "Advanced search")
-    cx.keymap.bind("cmd+shift+f", "search-plus.open", "pane.focused")
+    cx.register_command({ name = "search-plus.open", title = "Advanced search", category = "view" })
+    cx.bind({ keys = "cmd+shift+f", command = "search-plus.open", when = "pane.focused" })
 end
 
 function Search.on_command(cx: Cx, name: string, args: Args)
     if name == "search-plus.open" then
-        cx.ui.open_panel("find", { anchor = { pane_corner = { pane = cx.focused_pane(), corner = "top-right" } }, role = "dialog", close_escape = true })
+        cx.open_panel("find", { anchor = { pane_corner = { pane = cx.focused_pane(), corner = "top-right" } }, role = "dialog", close_escape = true })
     end
 end
 
@@ -182,7 +183,7 @@ return Search
 
 ### Illustrative draft
 
-> This sketch only illustrates the shape of the API. Names and signatures will be settled in F3, and the definitions file will be generated from the Rust types.
+> The Luau front end of the API as `plugin-sdk` 0.1 has it: each of `Cx`'s requests by the Rust front end's name, of its arguments and its answer, and the Rust types' shapes as tables. F4 generates the definitions file from the Rust types, which settles the last details; the requests of the services still to come, as the search's, the tabs' renames and the themes', come with their tasks.
 
 ```luau
 -- lokyr.d.luau: the types of the plugin API, for the type checker.
@@ -310,13 +311,6 @@ type DecorationLook = {
     pointing: boolean?,
 }
 
-type Query = {
-    pattern: string,
-    regex: boolean?,
-    case_sensitive: boolean?,
-    whole_word: boolean?,
-}
-
 -- The workspace's changes, as its operations record them; an index is a
 -- tab's place among its window's tabs.
 type Event =
@@ -331,8 +325,6 @@ type Event =
     | { kind: "pane-focused", pane: PaneId, tab: TabId }
     | { kind: "pane-moved", pane: PaneId, from: TabId, tab: TabId }
     | { kind: "layout-changed", tab: TabId }
-    | { kind: "title-changed", pane: PaneId, title: string }
-    | { kind: "search-progress", id: number, matches: number, done: boolean }
     -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
@@ -340,6 +332,9 @@ type Event =
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     -- A panel of the plugin's closed, as a click outside it, Escape, the app or the plugin closed it, to it alone.
     | { kind: "panel-closed", id: string }
+    -- The plugin's section of the config changed, to it alone, which `config` reads.
+    | { kind: "config-changed" }
+    -- An event that a plugin emitted, of its namespace; a value nests 64 levels at most.
     | { kind: "custom", name: string, schema: string, value: any }
 
 -- A view of a plugin's: a window's slot, a pane's header, or one of its panels, by the id that it gives it.
@@ -380,104 +375,129 @@ type UiEvent = {
     on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
 }
 
+-- A command, as its registration describes it.
+type Command = {
+    name: string, -- `namespace.action`
+    title: string,
+    category: "app" | "windows" | "tabs" | "panes" | "input" | "clipboard" | "edit" | "view",
+    capabilities: { string }?, -- those that its action needs, as "pty-write"
+    params: { { name: string, kind: "string" | "integer" | "number" | "boolean", default: (string | number | boolean)? } }?,
+    when: string?, -- the context in which it can run, as a binding's `when`
+}
+
+-- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
+-- panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
+type Binding = { keys: string, command: string, args: Args?, when: string? }
+
+-- The logical line of a row: its text, and each character's cell, { column, row's number }.
+type LineText = { text: string, cells: { { number } } }
+
+type Scroll = { up: number } | { down: number } | "page-up" | "page-down" | "top" | "bottom"
+
+-- The host's requests, each by the Rust front end's name. A read answers at once, of the state as it is; a
+-- write, and a request of the app's, as a window to open or a command to run, applies as the call returns,
+-- the writes first; a read of the call reads the state before them. A write to a tab or a pane that an
+-- earlier write of the call opens finds it.
 type Cx = {
-    events: {
-        -- The workspace's events, as "tab-created", and plugins' own, as "search.progress".
-        subscribe: (names: { string }) -> (boolean, Error?),
-        -- An event of the plugin's namespace, which comes after the call returns.
-        emit: (name: string, schema: string, value: any) -> (boolean, Error?),
-    },
-    commands: {
-        register: (name: string, title: string) -> (boolean, Error?),
-        execute: (name: string, args: Args?) -> (boolean, Error?),
-    },
-    keymap: {
-        -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a
-        -- plugin's panels give `namespace.open` while one shows, and `namespace.focused` while one has the keyboard.
-        bind: (keys: string, command: string, when: string?) -> (boolean, Error?),
-    },
-    -- The workspace's changes come as the call returns, as every write's: a new tab's and a split's ids
-    -- come at once, and what a move made, as a new window, comes as the workspace's events.
-    workspace: {
-        windows: () -> { WindowInfo },
-        tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
-        -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at
-        -- `index` of its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed.
-        new_tab: (window: WindowId, index: number?) -> (TabId?, PaneId?, Error?),
-        close_tab: (tab: TabId) -> (boolean, Error?),
-        activate_tab: (tab: TabId) -> (boolean, Error?),
-        move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
-        tab_to_new_window: (tab: TabId) -> (boolean, Error?),
-        pane_to_new_tab: (pane: PaneId, window: WindowId, index: number) -> (boolean, Error?),
-        pane_to_new_window: (pane: PaneId) -> (boolean, Error?),
-        close_pane: (pane: PaneId) -> (boolean, Error?),
-        focus_pane: (pane: PaneId) -> (boolean, Error?),
-        -- With the tabs' renames.
-        set_tab_title: (tab: TabId, title: string?) -> (boolean, Error?),
-    },
-    layout: {
-        get: (tab: TabId) -> (Layout?, Error?),
-        -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
-        split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
-        -- Moves an edge by `by`, a share from -1 to 1 of the room of the split whose divider it is.
-        resize: (pane: PaneId, edge: Edge, by: number) -> (boolean, Error?),
-        -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.
-        set_ratio: (tab: TabId, path: { Side }, ratio: number?) -> (boolean, Error?),
-        equalize: (tab: TabId) -> (boolean, Error?),
-        zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
-    },
-    ui: {
-        request_render: (view: ViewId) -> (boolean, Error?),
-        -- Sets the text of a field of the view, by its key, cut to the field's 10 000 characters: its caret at its end, and no
-        -- "input-changed"; of the revision of the "input-changed" that it answers, so that it is not set over the keys typed since.
-        set_text: (view: ViewId, key: string, text: string, revision: number) -> (boolean, Error?),
-        -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to.
-        select: (view: ViewId, key: string, item: number) -> (boolean, Error?),
-        -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
-        open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
-        close_panel: (id: string) -> (boolean, Error?),
-    },
-    terminal: {
-        -- Requires `terminal-read`; returns a `denied` error without it. Reads 100 000 rows at most, from the row numbered
-        -- `first`, on a thread of the host's, a part at a time: returns the read's id, and the rows come as a "lines" event.
-        read_lines: (pane: PaneId, first: number, count: number) -> (number?, Error?),
-        -- The styles of a row, by its number, as runs of cells of one style.
-        styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
-        -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the
-        -- decoration's id. It keeps its text as output scrolls it and a resize reflows it, and goes with it.
-        decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
-        undecorate: (pane: PaneId, id: number) -> (boolean, Error?),
-        -- The logical line of a row, by its number, its wrapped rows joined as far as `reach` rows before it and after it, 256 at most, with each character's cell.
-        line_text: (pane: PaneId, row: number, reach: number) -> (LineText?, Error?),
-        -- The target of the OSC 8 link at a cell, by its row's number.
-        link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
-    },
-    process: {
-        -- Requires `process-read`: the directory of the program in the pane's foreground.
-        working_directory: (pane: PaneId) -> (string?, Error?),
-    },
-    system: {
-        -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, or a path from `/` or `~`.
-        open: (target: string) -> (boolean, Error?),
-        -- Whether `open` would open `target`: a URL of its schemes, or a path that is there.
-        opens: (target: string) -> (boolean, Error?),
-    },
-    search: {
-        -- Runs in the background: results arrive as `search-progress` events.
-        start: (pane: PaneId, query: Query) -> (number?, Error?),
-        select_next: (id: number, forward: boolean) -> (boolean, Error?),
-        cancel: (id: number) -> (),
-    },
-    clipboard: {
-        write_text: (text: string) -> (boolean, Error?),
-        read_text: () -> (string?, Error?),
-    },
+    -- Declarations, at once.
+    register_command: (command: Command) -> (boolean, Error?),
+    bind: (binding: Binding) -> (boolean, Error?),
+    -- The workspace's events, as "tab-created", the pointer's, "pointer", and plugins' own, as "search.progress".
+    subscribe: (names: { string }) -> (boolean, Error?),
+    -- An event of the plugin's namespace, which comes after the call returns.
+    emit: (name: string, schema: string, value: any) -> (boolean, Error?),
+    run_command: (name: string, args: Args?) -> (boolean, Error?),
+
+    -- The focus: the window that has it, and its pane that has the keyboard.
+    focused_window: () -> WindowId?,
+    focused_pane: () -> PaneId?,
+
+    -- The workspace. A new tab's and a split's ids come at once; what a move made, as a new window, comes as
+    -- the workspace's events.
+    windows: () -> ({ WindowInfo }?, Error?),
+    tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
+    layout: (tab: TabId) -> (Layout?, Error?),
+    -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
+    -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed.
+    new_tab: (window: WindowId, index: number?) -> (TabId?, PaneId?, Error?),
+    -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
+    split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
+    close_tab: (tab: TabId) -> (boolean, Error?),
+    close_pane: (pane: PaneId) -> (boolean, Error?),
+    activate_tab: (tab: TabId) -> (boolean, Error?),
+    focus_pane: (pane: PaneId) -> (boolean, Error?),
+    move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
+    tab_to_new_window: (tab: TabId) -> (boolean, Error?),
+    pane_to_new_tab: (pane: PaneId, window: WindowId, index: number) -> (boolean, Error?),
+    pane_to_new_window: (pane: PaneId) -> (boolean, Error?),
+    -- Moves an edge by `by`, a share from -1 to 1 of the room of the split whose divider it is.
+    resize_pane: (pane: PaneId, edge: Edge, by: number) -> (boolean, Error?),
+    -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.
+    set_ratio: (tab: TabId, path: { Side }, ratio: number?) -> (boolean, Error?),
+    equalize: (tab: TabId) -> (boolean, Error?),
+    zoom: (tab: TabId, pane: PaneId?) -> (boolean, Error?),
+    open_window: () -> (boolean, Error?),
+    close_window: (window: WindowId) -> (boolean, Error?),
+    quit: () -> (boolean, Error?),
+
+    -- The views and the panels.
+    request_render: (view: ViewId) -> (boolean, Error?),
+    -- Sets the text of a field of the view, by its key, cut to the field's 10 000 characters: its caret at its end, and no
+    -- "input-changed"; of the revision of the "input-changed" that it answers, so that it is not set over the keys typed since.
+    set_text: (view: ViewId, key: string, text: string, revision: number) -> (boolean, Error?),
+    -- Moves the selection of a list of the view, by its key, to an item, which the list scrolls to.
+    select: (view: ViewId, key: string, item: number) -> (boolean, Error?),
+    -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
+    open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
+    close_panel: (id: string) -> (boolean, Error?),
+
+    -- The terminal. The reads require `terminal-read`, and return a `denied` error without it.
+    selection_text: (pane: PaneId) -> (string?, Error?),
+    -- The logical line of a row, by its number, its wrapped rows joined as far as `reach` rows before it and after it, 256 at most, with each character's cell.
+    line_text: (pane: PaneId, row: number, reach: number) -> (LineText?, Error?),
+    -- The target of the OSC 8 link at a cell, by its row's number.
+    link_at: (pane: PaneId, column: number, row: number) -> (string?, Error?),
+    -- Reads 100 000 rows at most, from the row numbered `first`, on a thread of the host's, a part at a time:
+    -- returns the read's id, and the rows come as a "lines" event.
+    read_lines: (pane: PaneId, first: number, count: number) -> (number?, Error?),
+    -- The styles of a row, by its number, as runs of cells of one style.
+    styles: (pane: PaneId, row: number) -> ({ StyleRun }?, Error?),
+    -- Decorates the cells from one to another, in reading order, each { column, row's number }: returns the
+    -- decoration's id. It keeps its text as output scrolls it and a resize reflows it, and goes with it.
+    decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, Error?),
+    undecorate: (pane: PaneId, id: number) -> (boolean, Error?),
+    select_all: (pane: PaneId) -> (boolean, Error?),
+    clear_scrollback: (pane: PaneId) -> (boolean, Error?),
+    clear: (pane: PaneId) -> (boolean, Error?),
+    -- Require `pty-write`: a paste, as the user's, which a text of line breaks may ask the user to confirm,
+    -- and text sent as typed.
+    paste: (pane: PaneId, text: string) -> (boolean, Error?),
+    send_text: (pane: PaneId, text: string) -> (boolean, Error?),
+    scroll: (pane: PaneId, scroll: Scroll) -> (boolean, Error?),
+    -- The text's size, in points, of every window, from 4 to 200, or the config's with none.
+    font_size: () -> (number?, Error?),
+    set_font_size: (size: number?) -> (boolean, Error?),
+
+    -- Require `process-read`: the directory of the program in the pane's foreground.
+    working_directory: (pane: PaneId) -> (string?, Error?),
+    -- Requires `open`: a URL of `http`, `https`, `mailto` or `file`, or a path from `/` or `~`.
+    open: (target: string) -> (boolean, Error?),
+    -- Whether `open` would open `target`: a URL of its schemes, or a path that is there.
+    opens: (target: string) -> (boolean, Error?),
+    -- Require `clipboard-read` and `clipboard-write`.
+    clipboard_text: () -> (string?, Error?),
+    set_clipboard_text: (text: string) -> (boolean, Error?),
+
+    -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,
+    -- 1 MiB at most as JSON, kept for the next run, as the call returns.
+    config: () -> (any, Error?),
+    state: () -> (any, Error?),
+    set_state: (value: any) -> (boolean, Error?),
 }
 
 -- What a plugin's entry module returns.
 type Plugin = {
     activate: ((cx: Cx) -> ())?,
-    deactivate: ((cx: Cx) -> ())?,
     on_event: ((cx: Cx, events: { Event }) -> ())?,
     on_command: ((cx: Cx, name: string, args: Args) -> ())?,
     -- Whether a command would do something with `args`, as a menu asks before it dims its item; what
@@ -492,7 +512,7 @@ type Plugin = {
 
 - **A command** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)) has a name, `namespace.action`, each part of lowercase letters, digits and `-`, from a letter, as `window.new`, `tabs.goto` or `search-plus.open`; a title, for the menus and the palette; a category, which also tells the menu that lists it; the capabilities that its action needs; its parameters, a flat schema: each named as the parts are, of a string, an integer, a number or a boolean, and required, or optional with a default of its kind; and, if it needs one, the context in which it can run, written as a binding's `when`, as Copy's `selection`, outside of which its menu's item is dimmed. Its plugin's `applies` can dim the item too, where the command would do nothing, as Open Link where no link is. Its title, in the language that Lokyr shows, comes from its plugin's own catalogs ([ADR 0020](adr/0020-localization.md)), by the message `command-` and the command's name with `-` for its `.`, as `command-pane-copy`, or English's; a title that they lack is the one registered. A native plugin gives its catalogs through `Plugin::catalogs`; a Luau plugin carries them in its package.
 - **The pane's context menu**, of a right click, lists the commands of a cell, which take the `column` and the `row` of the cell clicked, then those of the clipboard and of the editing that need no arguments; its commands run in the pane that it opened over ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
-- **The kernel's registry**, `kernel::commands::Registry`, registers the commands of the app and of the plugins, and checks a call before its action runs: its name, and its arguments, to which it adds the defaults of those left out; an integer is a number too. A plugin's call is checked as well against the commands that its manifest declares and the capabilities that it has, its own commands aside. The action runs where it can: in the app for those that the platform does, in the plugin that registered the command otherwise.
+- **The kernel's registry**, `kernel::commands::Registry`, registers the commands of the app and of the plugins, and checks a call before its action runs: its name, and its arguments, to which it adds the defaults of those left out; an integer is a number too. The checks of a command and of a call are the SDK's, `Command::check` and `Command::check_call`, which the registry and the fake host share. A plugin's call is checked as well against the commands that its manifest declares and the capabilities that it has, its own commands aside. The action runs where it can: in the app for those that the platform does, in the plugin that registered the command otherwise.
 - **The app's commands**, whose actions the platform does: `app.quit`, `window.new` and `window.close`; the appearances, `app.appearance-system`, `app.appearance-light` and `app.appearance-dark`; and `pane.look-up` and `pane.man-page`, the context menu's Look Up and Open man Page.
 - **Errors**: a code, never renumbered, whose hundreds tell the category and how serious it is, a kind, as the Luau API names it, and a message:
 
@@ -536,7 +556,7 @@ type Plugin = {
 | `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
 | `user-commands` | Running any command as the user's, without declaring it, as the palette does; reading the whole registry, with each command's plugin, keys and context, and the plugins installed ([ADR 0024](adr/0024-user-commands.md)) | Very high: `pane.send-text` types into the shell |
 
-- **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
+- **Commands** ([ADR 0019](adr/0019-commands-errors-and-permissions.md)): each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands that the user runs, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
 - **Declaration and consent**:
   - Capabilities are declared in the manifest. Sleip shows them at install time, with the commands that the plugin runs, grouped by category, and the capabilities that those need; the app asks for confirmation on first use.
   - Decisions are stored in `~/.config/lokyr/permissions.toml`, which can be versioned with dotfiles and revoked at any time.
