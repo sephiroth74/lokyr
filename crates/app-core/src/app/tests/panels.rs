@@ -532,6 +532,57 @@ fn a_dialog_that_takes_the_focus_as_it_opens_ends_the_pane_s_composition() {
     assert_eq!(fake.window(window).unwrap().compositions_ended, ended + 1);
 }
 
+/// Whether the titlebar's own areas of `window` hold `at`, in points.
+fn titlebar_holds(fake: &Fake, window: WindowId, at: Point) -> bool {
+    fake.window(window)
+        .unwrap()
+        .titlebar_areas
+        .iter()
+        .any(|area| area.contains(at))
+}
+
+#[test]
+fn a_panel_over_the_titlebar_takes_its_presses_there_and_a_menu_the_whole_bar() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    let scale = fake.window(window).unwrap().size.scale;
+    // Far right on the titlebar, the window's own until a menu shows.
+    let bar_end = Point { x: 380.0, y: 10.0 };
+    assert!(!titlebar_holds(&fake, window, bar_end));
+    // A menu at the pointer over the titlebar takes its presses, and the
+    // bar's too, whose press closes it, of no further use.
+    fake.send(
+        &mut app,
+        window,
+        moved(Point { x: 120.0, y: 6.0 }, Modifiers::NONE),
+    );
+    command(&mut fake, &mut app, window, "paneler.menu");
+    let frame = panel_frame(&app, window, "menu").expect("the menu");
+    let on_menu = Point {
+        x: f64::from(frame.x) / scale + 4.0,
+        y: f64::from(frame.y) / scale + 2.0,
+    };
+    assert!(on_menu.y < 28.0);
+    assert!(titlebar_holds(&fake, window, on_menu));
+    assert!(titlebar_holds(&fake, window, bar_end));
+    fake.send(&mut app, window, click(true, bar_end, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, bar_end, Modifiers::NONE, 1));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(heard.borrow().closed, ["menu"]);
+    assert!(!titlebar_holds(&fake, window, bar_end));
+    // A dialog below the bar's button takes the presses of its part over
+    // the titlebar alone.
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    let frame = panel_frame(&app, window, "dialog").expect("the dialog");
+    let top = f64::from(frame.y) / scale;
+    assert!(top < 28.0, "{frame:?}");
+    let on_dialog = Point {
+        x: f64::from(frame.x) / scale + 4.0,
+        y: (top + 28.0) / 2.0,
+    };
+    assert!(titlebar_holds(&fake, window, on_dialog));
+    assert!(!titlebar_holds(&fake, window, bar_end));
+}
+
 #[test]
 fn a_tooltip_in_the_window_s_corner_takes_neither_the_keys_nor_the_pointer() {
     let (mut fake, mut app, window, _) = paneler(reader(""));

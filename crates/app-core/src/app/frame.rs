@@ -875,17 +875,19 @@ impl<B: Backend> App<B> {
         // The pointer's moves over the slots' views come to the app, for
         // their hover and their tooltips, and wake it over them alone; the
         // parts of a titlebar of tabs that are the bar's own take its
-        // presses.
+        // presses, and the panels drawn over a titlebar of either kind.
         let moving = surfaces::move_areas(&state.chrome, size.scale);
         if moving != state.move_areas {
             platform.set_move_areas(window, &moving);
             state.move_areas = moving;
         }
-        let own = if state.titlebar == Titlebar::Tabs {
+        let mut own = if state.titlebar == Titlebar::Tabs {
             surfaces::titlebar_areas(&state.chrome, size.scale)
         } else {
             Vec::new()
         };
+        let band = (size.pixels.width as f32, size.bar_pixels() as f32);
+        own.extend(surfaces::panel_titlebar_areas(state, band, size.scale));
         if own != state.titlebar_areas {
             platform.set_titlebar_areas(window, &own);
             state.titlebar_areas = own;

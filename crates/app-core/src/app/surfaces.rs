@@ -18,6 +18,7 @@ use lokyr_ui_core::chrome;
 use lokyr_ui_core::field::Clipboard;
 use lokyr_ui_core::focus::{Routed, Target};
 use lokyr_ui_core::layout::Frame;
+use lokyr_ui_core::panel::Role;
 use lokyr_ui_core::pointer::{self, Button, NodeEvent};
 use lokyr_ui_core::tree::Tree;
 use lokyr_vt_core::input::{self as vt, KeyAction, Mods};
@@ -733,6 +734,47 @@ pub(super) fn titlebar_areas(chrome: &[SlotView], scale: f64) -> Vec<ContentRect
             )
         })
         .collect()
+}
+
+/// The parts of the titlebar of `state`'s window, `bar` pixels tall in a
+/// window `width` pixels wide, that its drawn panels take, in points of a
+/// display of `scale`, as its content's, whose presses come to the app:
+/// each panel's frame there, but a tooltip's, which the pointer goes
+/// through; the whole bar while a panel shows that a press outside it
+/// closes, so that a press on the bar closes it, as a press outside a menu
+/// of the system's does.
+pub(super) fn panel_titlebar_areas<B: Backend>(
+    state: &Window<B>,
+    (width, bar): (f32, f32),
+    scale: f64,
+) -> Vec<ContentRect> {
+    if bar <= 0.0 {
+        return Vec::new();
+    }
+    let mut areas = Vec::new();
+    for id in state.panels.order() {
+        let (Some(options), Some(frame)) = (state.panels.options(id), state.panels.frame(id))
+        else {
+            continue;
+        };
+        if options.role == Role::Tooltip {
+            continue;
+        }
+        if options.dismiss.outside {
+            let whole = Frame {
+                x: 0.0,
+                y: 0.0,
+                width,
+                height: bar,
+            };
+            return vec![content_rect(whole, scale)];
+        }
+        if frame.y < bar {
+            let height = frame.height.min(bar - frame.y);
+            areas.push(content_rect(Frame { height, ..frame }, scale));
+        }
+    }
+    areas
 }
 
 /// `frame`, of pixels, in points of a display of `scale`.
