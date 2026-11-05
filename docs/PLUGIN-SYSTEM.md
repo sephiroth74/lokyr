@@ -255,8 +255,15 @@ type Style = {
     corner_radius: number?,
     pointer: ("arrow" | "text" | "pointing-hand")?, -- its children's too, unless they give their own
     opacity: number?, -- from 0 to 1, of its children too
-    transition: { duration: number?, easing: ("linear" | "ease-in" | "ease-out" | "ease-in-out")? }?, -- its moves and fades, over seconds
+    transition: { duration: number?, easing: ("linear" | "ease-in" | "ease-out" | "ease-in-out")? }?, -- its moves and fades, over seconds, and its hover's
+    -- What a node of a key takes while the pointer is over it, and what a node takes while the pointer is over its
+    -- nearest node of a key around it, as a tab's close button under its tab: the host applies them as the pointer
+    -- moves, with no render, fading them as the transition says, at once where the system reduces motion.
+    hover: Hover?,
+    parent_hover: Hover?,
 }
+
+type Hover = { background: Color?, color: Color?, border: { color: Color, width: number }?, opacity: number? }
 
 -- A view is a tree of nodes; the host flattens it into its arena. A node
 -- that holds state, a field or a list, needs its key, by which the host

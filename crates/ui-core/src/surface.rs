@@ -99,6 +99,7 @@ impl Surface {
     pub fn animate(&mut self, now: Instant, reduced: bool) {
         self.animations
             .laid_out(&self.tree, &self.layout, now, reduced);
+        self.animations.hovered(self.pointer.hovered_keys(), now);
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
@@ -132,6 +133,7 @@ impl Surface {
             self.fields.drag((&self.tree, &self.layout), at, carets);
         }
         let events = self.pointer.moved(&self.tree, &self.layout, at);
+        self.animations.hovered(self.pointer.hovered_keys(), now);
         let deadline = self
             .tooltip
             .hover(&self.tree, self.pointer.hovered(), at, now);
@@ -142,7 +144,9 @@ impl Surface {
     /// window: the leaves of the nodes that it was over.
     pub fn left(&mut self, now: Instant) -> Vec<NodeEvent> {
         self.tooltip.left(now);
-        self.pointer.left(&self.tree)
+        let events = self.pointer.left(&self.tree);
+        self.animations.hovered(self.pointer.hovered_keys(), now);
+        events
     }
 
     /// `button` went down at `at`, in pixels from the tree's corner, of

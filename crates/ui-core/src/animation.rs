@@ -26,6 +26,14 @@ pub struct Animations {
     revision: Option<u64>,
     /// The pixels a point of the last layout.
     scale: f32,
+    /// The nodes of a key whose hover shows, their own or their
+    /// children's of their parent's, each of its node's transition, if it
+    /// has one.
+    hoverable: HashMap<Key, Option<Transition>>,
+    /// Their hovers, as the pointer goes over them and away.
+    hovers: HashMap<Key, Hovering>,
+    /// Whether the system reduces motion, as the last layout found it.
+    reduced: bool,
 }
 
 impl Default for Animations {
@@ -34,6 +42,28 @@ impl Default for Animations {
             nodes: HashMap::new(),
             revision: None,
             scale: 1.0,
+            hoverable: HashMap::new(),
+            hovers: HashMap::new(),
+            reduced: false,
+        }
+    }
+}
+
+/// A node's hover: whether the pointer is over it, and its fade there, from
+/// how far it showed.
+#[derive(Clone, Copy, Debug)]
+struct Hovering {
+    on: bool,
+    fading: Option<Run<f32>>,
+}
+
+impl Hovering {
+    /// How far its hover shows at `now`, from 0, none, to 1, all of it.
+    fn amount(&self, now: Instant) -> f32 {
+        let target = if self.on { 1.0 } else { 0.0 };
+        match self.fading {
+            Some(run) if !run.ended(now) => run.value + (target - run.value) * run.progress(now),
+            _ => target,
         }
     }
 }
@@ -111,6 +141,15 @@ impl Animations {
     pub fn laid_out(&mut self, tree: &Tree, layout: &Layout, now: Instant, reduced: bool) {
         let rendered = self.revision != Some(tree.revision());
         self.revision = Some(tree.revision());
+        self.reduced = reduced;
+        if rendered {
+            self.hoverable.clear();
+            if let Some(root) = tree.root() {
+                hoverable(tree, root, None, &mut self.hoverable);
+            }
+            let hoverable = &self.hoverable;
+            self.hovers.retain(|key, _| hoverable.contains_key(key));
+        }
         let scale = layout.scale();
         self.scale = scale;
         let mut seen = Vec::new();
@@ -170,12 +209,52 @@ impl Animations {
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
-    /// at each refresh of the display.
+    /// at each refresh of the display: a slide, a fade, or a hover's fade.
     pub fn running(&self, now: Instant) -> bool {
         self.nodes.values().any(|animated| {
             animated.moving.is_some_and(|run| !run.ended(now))
                 || animated.fading.is_some_and(|run| !run.ended(now))
-        })
+        }) || self
+            .hovers
+            .values()
+            .any(|hovering| hovering.fading.is_some_and(|run| !run.ended(now)))
+    }
+
+    /// The pointer is over the nodes of `hovered`'s keys, at `now`: the
+    /// hover of each node that shows one fades in or out, from where it
+    /// showed, as its transition says, at once without one or where the
+    /// system reduces motion.
+    pub fn hovered<'a>(&mut self, hovered: impl IntoIterator<Item = &'a Key>, now: Instant) {
+        let over: Vec<&Key> = hovered.into_iter().collect();
+        for (key, transition) in &self.hoverable {
+            let on = over.contains(&key);
+            let hovering = self.hovers.entry(key.clone()).or_insert(Hovering {
+                on: false,
+                fading: None,
+            });
+            if hovering.on == on {
+                continue;
+            }
+            let from = hovering.amount(now);
+            hovering.on = on;
+            hovering.fading =
+                transition.filter(|_| !self.reduced).map(|transition| Run {
+                    value: from,
+                    start: now,
+                    duration: Duration::from_micros(
+                        (transition.duration.max(0.0) * 1e6).round() as u64
+                    ),
+                    easing: transition.easing,
+                });
+        }
+    }
+
+    /// How far the hover of the node of `key` shows at `now`, from 0, none,
+    /// to 1, all of it.
+    pub fn hover(&self, key: &Key, now: Instant) -> f32 {
+        self.hovers
+            .get(key)
+            .map_or(0.0, |hovering| hovering.amount(now))
     }
 
     /// How far the node of `key` shows from its place at `now`, in pixels
@@ -216,6 +295,42 @@ impl Animated {
             }
             _ => self.opacity,
         }
+    }
+}
+
+/// Takes into `found` the nodes of `id`'s subtree whose hover shows, of
+/// `around`, the nearest node of a key around `id`: those of a key and a
+/// hover of their own, and those of a key around a node of its parent's
+/// hover, each of its own transition.
+fn hoverable(
+    tree: &Tree,
+    id: NodeId,
+    around: Option<NodeId>,
+    found: &mut HashMap<Key, Option<Transition>>,
+) {
+    let style = tree.style(id);
+    let mut take = |node: NodeId| {
+        if let Some(key) = tree.key(node) {
+            let transition = tree.style(node).and_then(|style| style.transition);
+            found.insert(key.clone(), transition);
+        }
+    };
+    if style.is_some_and(|style| style.hover.is_some()) {
+        take(id);
+    }
+    if let (Some(around), true) = (
+        around,
+        style.is_some_and(|style| style.parent_hover.is_some()),
+    ) {
+        take(around);
+    }
+    let inner = if tree.key(id).is_some() {
+        Some(id)
+    } else {
+        around
+    };
+    for &child in tree.children(id) {
+        hoverable(tree, child, inner, found);
     }
 }
 

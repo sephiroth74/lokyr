@@ -448,3 +448,101 @@ fn a_drag_of_a_column_s_edge_resizes_it_and_its_plugin_learns_of_it() {
     fake.send(&mut app, window, click(false, at(left - 260.0), none, 1));
     assert_eq!(width(&app), Some(140.0));
 }
+
+/// A plugin of a status bar of one box of a hover of its own, which counts
+/// its renders.
+struct Hovering(Rc<Cell<usize>>);
+
+impl plugins::Plugin for Hovering {
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot() != Some(Slot::StatusBar) {
+            return None;
+        }
+        self.0.set(self.0.get() + 1);
+        let mut node = Node::container(vec![Node::text("hover me")])
+            .key("box")
+            .style(Style {
+                background: Some(Token::from("tab.inactive.bg")),
+                hover: Some(lokyr_kernel::plugins::view::Hover {
+                    background: Some(Token::from("tab.hover.bg")),
+                    ..Default::default()
+                }),
+                transition: Some(lokyr_kernel::plugins::view::Transition {
+                    duration: 0.1,
+                    easing: lokyr_kernel::plugins::view::Easing::Linear,
+                }),
+                ..Style::default()
+            });
+        node.layout.height = Length::Points(STATUS);
+        node.layout.grow = 1.0;
+        Some(node)
+    }
+}
+
+#[test]
+fn a_hover_fades_with_no_render_of_its_plugin() {
+    let renders = Rc::new(Cell::new(0));
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/hovering\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(manifest, Box::new(Hovering(Rc::clone(&renders))));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    for _ in 0..2 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let rendered = renders.get();
+    assert!(rendered > 0);
+    let state = &app.windows[&window];
+    let bar = state
+        .chrome
+        .iter()
+        .find(|view| view.view.slot() == Some(Slot::StatusBar))
+        .and_then(|view| view.frame)
+        .map(super::super::chrome::rect_of)
+        .unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    let inside = Point {
+        x: f64::from(bar.x) / scale + 20.0,
+        y: (f64::from(bar.y) + f64::from(bar.height) / 2.0) / scale,
+    };
+    let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
+    let tokens = &app.theme.variant(dark).tokens;
+    let (inactive, hovered) = (
+        tokens.get("tab.inactive.bg").unwrap(),
+        tokens.get("tab.hover.bg").unwrap(),
+    );
+    let fills = |app: &App| -> Vec<lokyr_render_core::Color> {
+        app.windows[&window]
+            .shown
+            .as_ref()
+            .map(|shown| {
+                shown
+                    .items
+                    .iter()
+                    .flat_map(|item| match item {
+                        Item::Shapes(shapes) => shapes
+                            .iter()
+                            .filter(|shape| shape.rect == bar)
+                            .map(|shape| shape.fill)
+                            .collect(),
+                        _ => Vec::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(fills(&app), [inactive]);
+    // Over the box, the frames fade its background in, of no render.
+    fake.send(&mut app, window, moved(inside, Modifiers::NONE));
+    assert!(fake.window(window).unwrap().frame_requested);
+    let near = |fills: &[lokyr_render_core::Color]| fills == [hovered];
+    run_until(&mut fake, &mut app, |_, app| near(&fills(app)));
+    assert_eq!(renders.get(), rendered);
+}

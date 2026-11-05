@@ -1280,14 +1280,21 @@ mod tests {
             view.main.tree.kind(boxed),
             Some(lokyr_plugin_sdk::view::Kind::Toggle(toggle)) if !toggle.on
         ));
-        // The pointer over a tab is over it.
+        // The pointer over a tab shows its hover, which the host fades in,
+        // its style staying its render's.
         let at = slot_middle(&view, Slot::TabBar, "bar.tab-0");
-        view.moved(at, &mut Fixed, Instant::now());
+        let now = Instant::now();
+        view.moved(at, &mut Fixed, now);
         view.lay_out(&mut Fixed, (ROOM.0, Some(ROOM.1)));
+        view.animate(now, false);
         assert_eq!(
             tab_background(&view, "bar.tab-0").as_deref(),
-            Some("tab.hover.bg")
+            Some("tab.inactive.bg")
         );
+        let surface = view.surface(slot_id(Slot::TabBar)).unwrap();
+        let later = now + std::time::Duration::from_secs(1);
+        assert_eq!(surface.animations.hover(&"bar.tab-0".into(), later), 1.0);
+        assert_eq!(surface.animations.hover(&"bar.tab-1".into(), later), 0.0);
     }
 
     #[test]

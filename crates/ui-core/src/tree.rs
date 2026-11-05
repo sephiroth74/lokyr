@@ -474,7 +474,13 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
             return Err(Invalid::Number(name));
         }
     }
-    if (node.kind.holds_state() || node.focusable || node.tooltip.is_some()) && node.key.is_none() {
+    // A node's own hover goes by its key, as the hover's events do.
+    if (node.kind.holds_state()
+        || node.focusable
+        || node.tooltip.is_some()
+        || node.style.hover.is_some())
+        && node.key.is_none()
+    {
         return Err(Invalid::NoKey);
     }
     if !node.kind.has_children() && !node.children.is_empty() {
@@ -564,6 +570,21 @@ fn numbers(node: &Node) -> Result<(), Invalid> {
             style.shadow.as_ref().is_none_or(|shadow| {
                 shadow.x.is_finite() && shadow.y.is_finite() && size(shadow.blur)
             }),
+        ),
+        (
+            "hover",
+            [&style.hover, &style.parent_hover]
+                .into_iter()
+                .flatten()
+                .all(|hover| {
+                    hover
+                        .opacity
+                        .is_none_or(|opacity| (0.0..=1.0).contains(&opacity))
+                        && hover
+                            .border
+                            .as_ref()
+                            .is_none_or(|border| size(border.width))
+                }),
         ),
     ];
     match checks.into_iter().find(|(_, holds)| !holds) {
@@ -943,6 +964,16 @@ mod tests {
                 },
                 "transition",
             ),
+            (
+                lokyr_plugin_sdk::view::Style {
+                    parent_hover: Some(lokyr_plugin_sdk::view::Hover {
+                        opacity: Some(2.0),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                "hover",
+            ),
         ] {
             assert_eq!(tree.update(&styled(style)), Err(Invalid::Number(name)));
         }
@@ -980,6 +1011,14 @@ mod tests {
         // own.
         let field = Node::container(vec![Node::field("Find")]);
         assert_eq!(tree.update(&field), Err(Invalid::NoKey));
+        // A hover of its own takes a key.
+        let hovered = Node::container(vec![Node::container(vec![]).style(
+            lokyr_plugin_sdk::view::Style {
+                hover: Some(lokyr_plugin_sdk::view::Hover::default()),
+                ..Default::default()
+            },
+        )]);
+        assert_eq!(tree.update(&hovered), Err(Invalid::NoKey));
         tree.update(&Node::container(vec![Node::field("Find").key("find")]))
             .unwrap();
         assert!(tree.focusable(tree.children(tree.root().unwrap())[0]));

@@ -8,7 +8,7 @@
 
 use std::time::Instant;
 
-use lokyr_plugin_sdk::view::{self, Kind, Style};
+use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
 use lokyr_render_core::{Arc, Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
@@ -92,6 +92,7 @@ fn paint_of<B: FontBackend>(
         pressed: shown.pressed,
         lists: shown.lists,
         motion: shown.motion,
+        group: 0.0,
         clip: None,
         ring: None,
         items: Vec::new(),
@@ -207,6 +208,9 @@ struct Painter<'a, B> {
     pressed: Option<NodeId>,
     lists: &'a Lists,
     motion: Option<(&'a Animations, Instant)>,
+    /// How far the hover of the nearest node of a key around the node
+    /// painted shows, from 0 to 1, which its parent's hover takes.
+    group: f32,
     /// The clips of the node painted, as one: `None` for none.
     clip: Option<Rect>,
     /// The ring of the focus, and the clips of its node.
@@ -214,7 +218,7 @@ struct Painter<'a, B> {
     items: Vec<Item>,
 }
 
-impl<B: FontBackend> Painter<'_, B> {
+impl<'a, B: FontBackend> Painter<'a, B> {
     /// Paints `id` and its children, of `inherited` for their text where
     /// they name no color: moved as its transition slides it, and of its
     /// opacity, as its transition fades it, of its children too.
@@ -224,13 +228,19 @@ impl<B: FontBackend> Painter<'_, B> {
             .style(id)
             .and_then(|style| style.opacity)
             .unwrap_or(1.0);
-        let (offset, opacity) = match (self.motion, self.tree.key(id)) {
+        let (offset, mut opacity) = match (self.motion, self.tree.key(id)) {
             (Some((animations, now)), Some(key)) => (
                 animations.offset(key, now),
                 animations.opacity(key, own, now),
             ),
             _ => ((0.0, 0.0), own),
         };
+        // Its hovers' opacity, as far as they show.
+        for (hover, amount) in self.hovers(id) {
+            if let Some(hovered) = hover.opacity {
+                opacity += (hovered - opacity) * amount;
+            }
+        }
         let (dx, dy) = (offset.0.round() as i32, offset.1.round() as i32);
         if (dx, dy) == (0, 0) && opacity >= 1.0 {
             self.node_itself(id, inherited);
@@ -263,11 +273,21 @@ impl<B: FontBackend> Painter<'_, B> {
             y: frame.y + self.origin.1,
             ..frame
         };
-        let color = style
+        let mut color = style
             .color
             .as_ref()
             .and_then(|token| self.tokens.get(&token.0))
             .unwrap_or(inherited);
+        let hovers = self.hovers(id);
+        for (hover, amount) in &hovers {
+            if let Some(hovered) = hover
+                .color
+                .as_ref()
+                .and_then(|token| self.tokens.get(&token.0))
+            {
+                color = mixed(color, hovered, *amount);
+            }
+        }
         // A field, a button, a toggle and a separator of no box of their
         // own take theirs, a button's and a toggle's of their state; a
         // progress's background is its track's, which it draws itself.
@@ -321,7 +341,7 @@ impl<B: FontBackend> Painter<'_, B> {
             }
             .map(|ring| (ring, self.clip));
         }
-        if let Some(shape) = self.shape(frame, style) {
+        if let Some(shape) = self.hovered_shape(frame, style, &hovers) {
             self.push_shape(shape);
         }
         match kind {
@@ -359,9 +379,16 @@ impl<B: FontBackend> Painter<'_, B> {
             self.items.push(Item::PushClip(inside));
             self.clip = Some(outer.map_or(inside, |outer| intersection(outer, inside)));
         }
+        // Its children take its hover as their parent's, a node of a key
+        // around them.
+        let outer_group = self.group;
+        if let (Some(key), Some((animations, now))) = (tree.key(id), self.motion) {
+            self.group = animations.hover(key, now);
+        }
         for &child in children {
             self.node(child, color);
         }
+        self.group = outer_group;
         if matches!(kind, Kind::Scroll) {
             let scale = self.layout.scale();
             let room = self.layout.scroll_room(tree, id) / scale;
@@ -668,6 +695,72 @@ impl<B: FontBackend> Painter<'_, B> {
             shadow,
             arc: None,
         })
+    }
+
+    /// The hovers of `id` that show, each with how far: its own, as far as
+    /// the pointer's hover of it, and its parent's, as far as the hover of
+    /// the nearest node of a key around it.
+    fn hovers(&self, id: NodeId) -> Vec<(&'a Hover, f32)> {
+        let (Some(style), Some((animations, now))) = (self.tree.style(id), self.motion) else {
+            return Vec::new();
+        };
+        let own = style.hover.as_ref().and_then(|hover| {
+            let amount = animations.hover(self.tree.key(id)?, now);
+            Some((hover, amount))
+        });
+        let parent = style.parent_hover.as_ref().map(|hover| (hover, self.group));
+        own.into_iter()
+            .chain(parent)
+            .filter(|(_, amount)| *amount > 0.0)
+            .collect()
+    }
+
+    /// The box of `style` at `frame`, as [`Painter::shape`] gives it, of
+    /// the background and the border of `hovers` as far as they show: from
+    /// a clear one where the style has none.
+    fn hovered_shape(
+        &self,
+        frame: Frame,
+        style: &Style,
+        hovers: &[(&Hover, f32)],
+    ) -> Option<Shape> {
+        let mut shape = self.shape(frame, style);
+        let scale = self.layout.scale();
+        for &(hover, amount) in hovers {
+            let fill = hover
+                .background
+                .as_ref()
+                .and_then(|token| self.tokens.get(&token.0));
+            let border = hover
+                .border
+                .as_ref()
+                .and_then(|border| Some((self.tokens.get(&border.color.0)?, border.width)));
+            if fill.is_none() && border.is_none() {
+                continue;
+            }
+            let pixels = rect(frame);
+            if pixels.width == 0 || pixels.height == 0 {
+                continue;
+            }
+            let shown = shape.get_or_insert(Shape {
+                rect: pixels,
+                radius: style.radius * scale,
+                fill: Color::CLEAR,
+                border: 0.0,
+                border_color: Color::CLEAR,
+                shadow: None,
+                arc: None,
+            });
+            if let Some(fill) = fill {
+                shown.fill = mixed(shown.fill, fill, amount);
+            }
+            if let Some((color, width)) = border {
+                let width = (width * scale).round().max(0.0);
+                shown.border += (width - shown.border) * amount;
+                shown.border_color = mixed(shown.border_color, color, amount);
+            }
+        }
+        shape
     }
 
     /// Adds `shape` to the shapes of the item before, if they are shapes.
@@ -1010,6 +1103,31 @@ pub(crate) fn rect(frame: Frame) -> Rect {
         y: frame.y.round() as i32,
         width: frame.width.round().max(0.0) as u32,
         height: frame.height.round().max(0.0) as u32,
+    }
+}
+
+/// `from` mixed with `to` as far as `amount`, from 0, `from`, to 1, `to`:
+/// a clear `from` takes `to`'s hue, fading in, rather than going through
+/// black.
+fn mixed(from: Color, to: Color, amount: f32) -> Color {
+    // Its ends as they are, of no rounding.
+    if amount <= 0.0 {
+        return from;
+    }
+    if amount >= 1.0 {
+        return to;
+    }
+    let base = if from.alpha <= 0.0 {
+        Color { alpha: 0.0, ..to }
+    } else {
+        from
+    };
+    let lerp = |a: f32, b: f32| a + (b - a) * amount;
+    Color {
+        red: lerp(base.red, to.red),
+        green: lerp(base.green, to.green),
+        blue: lerp(base.blue, to.blue),
+        alpha: lerp(base.alpha, to.alpha),
     }
 }
 
@@ -2676,6 +2794,133 @@ mod tests {
         ));
         assert_eq!(shapes[1].rect.x, 20);
         assert_eq!(shapes[1].fill.alpha, token("accent").alpha * 0.5);
+    }
+
+    #[test]
+    fn a_hover_fades_in_and_out_with_no_render_its_children_of_their_parent_s() {
+        use std::time::{Duration, Instant};
+
+        use lokyr_plugin_sdk::view::{Easing, Hover, Key, Transition};
+
+        use crate::animation::Animations;
+        // A tab of a background and a hover's, of a linear transition, and
+        // its close button, clear but under its tab's hover.
+        let root = Node::container(vec![
+            Node::container(vec![
+                Node::text("tab"),
+                Node::container(vec![Node::text("x")])
+                    .key("close")
+                    .style(view::Style {
+                        opacity: Some(0.0),
+                        parent_hover: Some(Hover {
+                            opacity: Some(1.0),
+                            ..Hover::default()
+                        }),
+                        ..view::Style::default()
+                    }),
+            ])
+            .key("tab")
+            .style(view::Style {
+                background: Some(Token::from("tab.inactive.bg")),
+                hover: Some(Hover {
+                    background: Some(Token::from("tab.hover.bg")),
+                    color: Some(Token::from("accent")),
+                    ..Hover::default()
+                }),
+                transition: Some(Transition {
+                    duration: 0.2,
+                    easing: Easing::Linear,
+                }),
+                ..view::Style::default()
+            }),
+        ]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let mut layout = Layout::new(1.0);
+        let mut animations = Animations::new();
+        let changes = tree.update(&root).unwrap();
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let start = Instant::now();
+        animations.laid_out(&tree, &layout, start, false);
+        let tab: Key = "tab".into();
+        // The pointer over the tab, at the start.
+        animations.hovered([&tab], start);
+        let at = |font: &mut Font<Blocks>, animations: &Animations, ms: u64| {
+            let fields = Fields::new();
+            let items = paint(
+                &tree,
+                &layout,
+                font,
+                &Theme::builtin().dark.tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: None,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &Lists::new(),
+                    motion: Some((animations, start + Duration::from_millis(ms))),
+                },
+            );
+            let mut shapes = Vec::new();
+            let mut glyphs = Vec::new();
+            for item in items {
+                match item {
+                    Item::Shapes(found) => shapes.extend(found),
+                    Item::Glyphs(found) => glyphs.extend(found),
+                    _ => {}
+                }
+            }
+            (shapes, glyphs)
+        };
+        let close_to = |a: Color, b: Color| {
+            (a.red - b.red).abs() < 1e-3
+                && (a.green - b.green).abs() < 1e-3
+                && (a.blue - b.blue).abs() < 1e-3
+                && (a.alpha - b.alpha).abs() < 1e-3
+        };
+        let (inactive, hovered) = (token("tab.inactive.bg"), token("tab.hover.bg"));
+        let (text, accent) = (token("text"), token("accent"));
+        // Halfway in: the background and the text's color half the hover's,
+        // the close button half opaque.
+        let (shapes, glyphs) = at(&mut font, &animations, 100);
+        assert!(
+            close_to(shapes[0].fill, mixed(inactive, hovered, 0.5)),
+            "{:?}",
+            shapes[0].fill
+        );
+        assert!(close_to(glyphs[0].color, mixed(text, accent, 0.5)));
+        let close = glyphs.last().unwrap();
+        assert!((close.color.alpha - mixed(text, accent, 0.5).alpha * 0.5).abs() < 1e-3);
+        // In whole, then the pointer away, halfway out.
+        let (shapes, glyphs) = at(&mut font, &animations, 200);
+        assert!(close_to(shapes[0].fill, hovered));
+        assert!((glyphs.last().unwrap().color.alpha - accent.alpha).abs() < 1e-3);
+        animations.hovered([], start + Duration::from_millis(200));
+        assert!(animations.running(start + Duration::from_millis(250)));
+        let (shapes, glyphs) = at(&mut font, &animations, 300);
+        assert!(close_to(shapes[0].fill, mixed(inactive, hovered, 0.5)));
+        assert!(
+            (glyphs.last().unwrap().color.alpha - mixed(text, accent, 0.5).alpha * 0.5).abs()
+                < 1e-3
+        );
+        // Its end, as before the hover, the close button not drawn at all.
+        let (shapes, glyphs) = at(&mut font, &animations, 400);
+        assert!(close_to(shapes[0].fill, inactive));
+        assert!(!animations.running(start + Duration::from_millis(400)));
+        assert!(
+            glyphs
+                .iter()
+                .all(|glyph| glyph.color.alpha == 0.0 || close_to(glyph.color, text))
+        );
+        // Where the system reduces motion, at once.
+        animations.laid_out(&tree, &layout, start, true);
+        animations.hovered([&tab], start + Duration::from_millis(400));
+        let (shapes, _) = at(&mut font, &animations, 400);
+        assert!(close_to(shapes[0].fill, hovered));
+        assert!(!animations.running(start + Duration::from_millis(400)));
     }
 
     #[test]

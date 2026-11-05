@@ -492,6 +492,11 @@ impl Pointer {
         self.hovered.iter().map(|(id, _)| *id)
     }
 
+    /// The keys of the nodes that the pointer is over, from the root's.
+    pub fn hovered_keys(&self) -> impl Iterator<Item = &Key> + '_ {
+        self.hovered.iter().map(|(_, key)| key)
+    }
+
     /// The node that the primary button went down over, while the pointer
     /// is still over it, as a button shows itself pressed.
     pub fn pressing(&self) -> Option<NodeId> {

@@ -465,8 +465,34 @@ pub struct Style {
     /// opaque.
     pub opacity: Option<f32>,
     /// How its changes of place and of opacity go, as a render moves it or
-    /// changes its opacity: over a time, of a curve; `None` at once.
+    /// changes its opacity, and its hover's, as the pointer goes over it
+    /// and away: over a time, of a curve; `None` at once.
     pub transition: Option<Transition>,
+    /// What a node of a key takes while the pointer is over it, its
+    /// children's boxes too, as the hover's events have it, which the host
+    /// applies as the pointer moves, with no render, fading it as its
+    /// `transition` says; `None` for nothing.
+    pub hover: Option<Hover>,
+    /// What it takes while the pointer is over its nearest node of a key
+    /// around it, as a tab's close button shows under the pointer over its
+    /// tab, fading as that node's transition says; `None` for nothing.
+    pub parent_hover: Option<Hover>,
+}
+
+/// What a node takes under the pointer, in place of its style's: a part
+/// left `None` stays the style's.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Hover {
+    /// What fills its box.
+    pub background: Option<Token>,
+    /// The color of its text or icon, and of its children's that name
+    /// none.
+    pub color: Option<Token>,
+    /// Its border, inside its edges.
+    pub border: Option<Border>,
+    /// How opaque it draws, with its children, from 0 to 1.
+    pub opacity: Option<f32>,
 }
 
 /// How a node's changes of place and of opacity go.
@@ -946,6 +972,18 @@ mod tests {
             pointer: Some(PointerShape::PointingHand),
             opacity: Some(0.5),
             transition: Some(Transition::default()),
+            hover: Some(Hover {
+                background: Some(Token::from("tab.hover.bg")),
+                opacity: Some(1.0),
+                ..Hover::default()
+            }),
+            parent_hover: Some(Hover {
+                border: Some(Border {
+                    color: Token::from("accent"),
+                    width: 2.0,
+                }),
+                ..Hover::default()
+            }),
         });
         let json = serde_json::to_string(&tree).unwrap();
         assert_eq!(serde_json::from_str::<Node>(&json).unwrap(), tree);

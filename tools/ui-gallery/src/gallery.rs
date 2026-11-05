@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Border, Direction, Easing, Edges, Justify, Kind, Layout, Length, ListItem, Node,
-    PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
+    self, Align, Border, Direction, Easing, Edges, Hover, Justify, Kind, Layout, Length, ListItem,
+    Node, PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
     UiEventKind,
 };
 use lokyr_ui_core::chrome::TabBarPlace;
@@ -200,18 +200,21 @@ impl Gallery {
     }
 
     /// The tab bar: its tabs, the chosen one of the active tab's colors,
-    /// the others lighter under the pointer, and a button of a new one.
+    /// the others lighter under the pointer, which the host fades in and
+    /// out, and a button of a new one.
     fn tab_bar(&self) -> Node {
         let mut children: Vec<Node> = (0..self.tabs)
             .map(|tab| {
                 let key = format!("bar.tab-{tab}");
                 let (background, color) = if tab == self.chosen {
                     ("tab.active.bg", "tab.active.fg")
-                } else if self.hovered.contains(&key) {
-                    ("tab.hover.bg", "tab.inactive.fg")
                 } else {
                     ("tab.inactive.bg", "tab.inactive.fg")
                 };
+                let hover = (tab != self.chosen).then(|| Hover {
+                    background: Some(Token::from("tab.hover.bg")),
+                    ..Hover::default()
+                });
                 Node::container(vec![Node::text(format!("Tab {}", tab + 1))])
                     .key(key.as_str())
                     .layout(Layout {
@@ -227,6 +230,11 @@ impl Gallery {
                         background: Some(Token::from(background)),
                         color: Some(Token::from(color)),
                         radius: 6.0,
+                        hover,
+                        transition: Some(Transition {
+                            duration: 0.15,
+                            easing: Easing::EaseOut,
+                        }),
                         ..Style::default()
                     })
             })
@@ -984,10 +992,24 @@ impl Gallery {
             gap: 8.0,
             ..Layout::default()
         });
+        // The close shows under the tab's hover, and lights under its own,
+        // as the host fades them, of no render.
         let close = Node::icon("close").key("tab.close").style(Style {
-            background: hovered("tab.close").then(|| Token::from("button.hover.bg")),
             radius: 4.0,
             pointer: Some(PointerShape::PointingHand),
+            opacity: Some(0.0),
+            hover: Some(Hover {
+                background: Some(Token::from("button.hover.bg")),
+                ..Hover::default()
+            }),
+            parent_hover: Some(Hover {
+                opacity: Some(1.0),
+                ..Hover::default()
+            }),
+            transition: Some(Transition {
+                duration: 0.15,
+                easing: Easing::EaseOut,
+            }),
             ..Style::default()
         });
         let tab = Node::container(vec![
@@ -1005,21 +1027,22 @@ impl Gallery {
             ..Layout::default()
         })
         .style(Style {
-            background: Some(Token::from(if hovered("tab") {
-                "tab.hover.bg"
-            } else {
-                "tab.inactive.bg"
-            })),
+            background: Some(Token::from("tab.inactive.bg")),
             border: Some(Border {
                 color: Token::from("separator"),
                 width: 1.0,
             }),
             radius: 6.0,
-            color: Some(Token::from(if hovered("tab") {
-                "tab.active.fg"
-            } else {
-                "tab.inactive.fg"
-            })),
+            color: Some(Token::from("tab.inactive.fg")),
+            hover: Some(Hover {
+                background: Some(Token::from("tab.hover.bg")),
+                color: Some(Token::from("tab.active.fg")),
+                ..Hover::default()
+            }),
+            transition: Some(Transition {
+                duration: 0.15,
+                easing: Easing::EaseOut,
+            }),
             ..Style::default()
         });
         let over = if self.hovered.is_empty() {
