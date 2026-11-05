@@ -667,7 +667,7 @@ Whether the window's title ends with the size of its grid, in columns and rows, 
 
 <sub>Platforms: macOS</sub>
 
-Whether the titlebar shows, at its right, the keys that bring the window forward, as `⌥⌘1`.
+Whether the titlebar shows, at its right, the keys that bring the window forward, as `⌥⌘1`; in a titlebar of tabs, after the window's buttons, as the tab bar shows them.
 
 | Values | Default |
 |---|---|
@@ -1372,8 +1372,11 @@ The bar's look.
 |---|---|
 | `"regular"`, `"compact"`, `"minimal"` | `"compact"` |
 
-- `"regular"` puts the bar below a titlebar of the window's title; `"compact"` puts the tabs in the titlebar, past the window's buttons, of the theme's colors; `"minimal"` too, of the terminal's colors. Elsewhere than at the top, `"compact"` and `"minimal"` give the tabs their look alone.
-- A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion.
+- `"regular"` puts the bar in a strip below a titlebar of the window's title: the tabs side by side in a rounded track, of equal widths, each its title and its keys in its middle, the one shown raised over the track; the button of a new tab a circle after the track.
+- `"compact"` puts the same tabs in the titlebar, past the window's buttons and the keys that bring the window forward, as [`title-shortcut`](#title-shortcut) shows them.
+- `"minimal"` puts the tabs in the titlebar too, of the terminal's colors: each a cell of the titlebar's height, a line between two, the one shown open to the terminal below it and the others over a line; its title in its middle, its color and its keys at its end, and the button of a new tab a cell of its own.
+- At the bottom, each look keeps its tabs, under a titlebar of the window's title; down a column, the tabs are rows, the one shown raised, or of the terminal's colors in `"minimal"`.
+- A title too long for its tab ends in an ellipsis. A tab's background lightens under the pointer and darkens as you press it, fading in and out, at once where the system reduces motion; its close button shows at its start.
 - It applies at once, as you save the file.
 
 ### `hide-when-single`

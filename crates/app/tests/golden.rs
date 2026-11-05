@@ -11,17 +11,22 @@
 
 #![cfg(target_os = "macos")]
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
+use lokyr_plugin_sdk::host::{Color, PaneId, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
     self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
 };
 use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
 use lokyr_text_core::{FontConfig, Size};
+use lokyr_ui_core::animation::Animations;
 use lokyr_ui_core::field::Fields;
 use lokyr_ui_core::font::Font;
 use lokyr_ui_core::layout::Layout;
@@ -955,6 +960,138 @@ fn progresses_draw_as_their_golden_images() {
             check_tree("progress", &progress_tree(), (dark, scale), |_| {
                 (None, None, None, None)
             });
+        }
+    }
+}
+
+/// The tabs of a tab bar's images: a tab of its program's color, the
+/// active one, and one of a title too long for its room.
+fn bar_tabs() -> Vec<TabInfo> {
+    let tab = |id: u64, title: &str, active: bool| TabInfo {
+        id: TabId(id),
+        window: WindowId(1),
+        title: title.to_owned(),
+        color: None,
+        active,
+        panes: vec![PaneId(id)],
+        focused: PaneId(id),
+        zoomed: None,
+    };
+    let mut colored = tab(1, "lokyr — vim", false);
+    colored.color = Some(Color::Rgb(0x3a, 0x7b, 0xe6));
+    vec![
+        colored,
+        tab(2, "-zsh", true),
+        tab(
+            3,
+            "~/Documents/git/sephiroth74/rust/lokyr — cargo test",
+            false,
+        ),
+    ]
+}
+
+/// A tab bar's image: its name, its config's `style` and `position`, and
+/// the room that a window gives it, its width and its height, in points,
+/// its height its own without one.
+type Bar = (&'static str, &'static str, &'static str, (f32, Option<f32>));
+
+/// The images of the tab bar: each of its looks at each of its places, as
+/// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
+/// down a column, of their height, in points, the pointer over the third
+/// tab.
+const BARS: [Bar; 7] = [
+    ("regular-top", "regular", "top", (640.0, None)),
+    ("regular-bottom", "regular", "bottom", (640.0, None)),
+    ("compact", "compact", "top", (640.0, Some(40.0))),
+    ("minimal-top", "minimal", "top", (640.0, Some(40.0))),
+    ("minimal-bottom", "minimal", "bottom", (640.0, None)),
+    ("regular-left", "regular", "left", (200.0, Some(180.0))),
+    ("minimal-left", "minimal", "left", (200.0, Some(180.0))),
+];
+
+/// Draws the tab bar of `style` at `position`, laid out as a window lays
+/// it out in a room of `size` points, its height its own without one, at
+/// `scale`, in the dark variant or the light one, the pointer over the
+/// third tab, which shows its close button, and compares the image with
+/// its golden one, `tabs-{name}-{appearance}-{scale}x`.
+fn check_tab_bar((name, style, position, (width, height)): Bar, (dark, scale): (bool, u32)) {
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let variant = Theme::builtin().variant(dark).clone();
+    let config = Data::Map(BTreeMap::from([
+        ("style".to_owned(), Data::Text(style.to_owned())),
+        ("position".to_owned(), Data::Text(position.to_owned())),
+    ]));
+    let keys = ["⌘1", "⌘2", "⌘3"].map(|keys| Some(keys.to_owned()));
+    let (root, _) = lokyr_tabs::tab_bar(&bar_tabs(), &keys, Some("⌥⌘1"), &config);
+    let mut tree = Tree::new();
+    let changes = tree.update(&root.unwrap()).unwrap();
+    let pixels = scale as f32;
+    let mut layout = Layout::new(pixels);
+    layout.update(&tree, &changes);
+    layout.compute(
+        &tree,
+        Some(width * pixels),
+        height.map(|height| height * pixels),
+        &mut drawing.font,
+    );
+    let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    let (width, height) = (frame.width as u32, frame.height as u32);
+    // The pointer over the third tab, its hover shown whole.
+    let now = Instant::now();
+    let mut animations = Animations::new();
+    animations.laid_out(&tree, &layout, now, true);
+    let hovered = view::Key::from("tab-3");
+    animations.hovered([&hovered], now);
+    drawing.font.begin_frame();
+    let items = paint(
+        &tree,
+        &layout,
+        &mut drawing.font,
+        &variant.tokens,
+        (0.0, 0.0),
+        Shown {
+            dark,
+            focused: None,
+            fields: &Fields::new(),
+            hovered: tree.by_key(&hovered),
+            pressed: None,
+            lists: &Lists::new(),
+            motion: Some((&animations, now)),
+        },
+    );
+    let list = DisplayList {
+        background: lokyr_render_core::Color::from_rgb8(
+            variant.colors.background.r,
+            variant.colors.background.g,
+            variant.colors.background.b,
+        ),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let appearance = if dark { "dark" } else { "light" };
+    let most = (f64::from(width * height) * SHARE) as usize;
+    compare(
+        &format!("tabs-{name}-{appearance}-{scale}x"),
+        (width, height, &pixels),
+        most,
+    );
+}
+
+#[test]
+fn the_tab_bar_draws_as_its_golden_images_of_each_look_and_place() {
+    for bar in BARS {
+        for dark in [false, true] {
+            for scale in [1, 2] {
+                check_tab_bar(bar, (dark, scale));
+            }
         }
     }
 }

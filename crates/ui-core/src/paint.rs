@@ -877,12 +877,18 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         let face = self.font.interface();
         let (line, ascent) = (face.line() * scale, face.ascent() * scale);
         let baseline = (frame.y + (frame.height - line) / 2.0 + ascent).round();
-        let (glyphs, _) = self
-            .font
-            .interface_text(text, (frame.x, baseline), color, self.dark);
         // A pixel past the frame, as the layout's rounding of edges takes
         // up to one from a text's width.
         let past = natural.is_some_and(|width| width * scale > frame.width + 1.0);
+        // A text too long for its frame ends in an ellipsis, as macOS's
+        // labels do.
+        let shortened = past.then(|| self.shortened(text, frame.width / scale));
+        let (glyphs, _) = self.font.interface_text(
+            shortened.as_deref().unwrap_or(text),
+            (frame.x, baseline),
+            color,
+            self.dark,
+        );
         if past {
             self.items.push(Item::PushClip(Rect {
                 y: ACROSS.0,
@@ -894,6 +900,23 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         } else {
             self.glyphs(glyphs);
         }
+    }
+
+    /// `text` cut at the end of a grapheme cluster, of an ellipsis after
+    /// it, within `room` points: its clusters that fit before the
+    /// ellipsis, the spaces before it left out; the ellipsis alone where
+    /// none fits.
+    fn shortened(&mut self, text: &str, room: f32) -> String {
+        const ELLIPSIS: &str = "…";
+        let ellipsis = Measure::text(&mut *self.font, ELLIPSIS).0;
+        let carets = self.font.interface_carets(text);
+        let cut = carets
+            .iter()
+            .filter(|(_, x)| x + ellipsis <= room)
+            .map(|&(byte, _)| byte)
+            .max()
+            .unwrap_or(0);
+        format!("{}{ELLIPSIS}", text[..cut].trim_end())
     }
 
     /// A button's or a toggle's content, of `label` and `icon`, either
@@ -1496,7 +1519,13 @@ mod tests {
                 height: ACROSS.1
             }
         );
-        assert_eq!(glyphs.len(), 16);
+        // Cut short, of an ellipsis at its end, within its box.
+        assert!(glyphs.len() < 16, "{}", glyphs.len());
+        assert!(
+            glyphs
+                .iter()
+                .all(|glyph| glyph.x + glyph.region.width as i32 <= 41)
+        );
         // The box of the text of 7.8, 8 rounded, inside its border.
         assert_eq!(
             *box_clip,
@@ -2989,7 +3018,7 @@ mod tests {
             ])
             .key("tab")
             .style(view::Style {
-                background: Some(Token::from("tab.inactive.bg")),
+                background: Some(Token::from("tab.bar.bg")),
                 hover: Some(Hover {
                     background: Some(Token::from("tab.hover.bg")),
                     color: Some(Token::from("accent")),
@@ -3051,7 +3080,7 @@ mod tests {
         };
         // The hover's veil over the tab's own background; the accent over
         // the text's color, opaque.
-        let (inactive, veil) = (token("tab.inactive.bg"), token("tab.hover.bg"));
+        let (inactive, veil) = (token("tab.bar.bg"), token("tab.hover.bg"));
         let hovered = over(veil, inactive);
         assert!(hovered.alpha >= 1.0 - 1e-6 && veil.alpha < 1.0);
         let (text, accent) = (token("text"), token("accent"));

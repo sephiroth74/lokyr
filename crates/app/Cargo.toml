@@ -46,6 +46,7 @@ lokyr-render-metal.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+lokyr-tabs.workspace = true
 lokyr-ui-core.workspace = true
 lokyr-vt-core.workspace = true
 png.workspace = true

@@ -76,11 +76,15 @@ fn the_config_hides_the_keys_and_a_binding_of_the_user_s_shows_its_own() {
     let accessory = |fake: &Fake| fake.window(window).unwrap().title_accessory.clone();
     assert_eq!(accessory(&fake).as_deref(), Some("⌥⌘1"));
     let config = |text: &str| Config::parse(text, std::path::Path::new("config.toml")).unwrap();
-    // Hidden, the keys stay the plugins'.
+    // Hidden, from a bar of tabs in the titlebar too, which reads none.
     app.apply(&mut fake, config("[window]\ntitle-shortcut = false\n"));
     fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(accessory(&fake), None);
+    assert_eq!(numbered(&app, window), (Some(1), None));
+    app.apply(&mut fake, config(""));
+    fake.send(&mut app, window, WindowEvent::Frame);
     assert_eq!(numbered(&app, window).1.as_deref(), Some("⌥⌘1"));
+    assert_eq!(accessory(&fake).as_deref(), Some("⌥⌘1"));
     // The user's binding of the window's number, the default's taken away.
     app.apply(
         &mut fake,

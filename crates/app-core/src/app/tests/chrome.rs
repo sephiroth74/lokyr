@@ -462,7 +462,7 @@ impl plugins::Plugin for Hovering {
         let mut node = Node::container(vec![Node::text("hover me")])
             .key("box")
             .style(Style {
-                background: Some(Token::from("tab.inactive.bg")),
+                background: Some(Token::from("tab.bar.bg")),
                 hover: Some(lokyr_kernel::plugins::view::Hover {
                     background: Some(Token::from("tab.hover.bg")),
                     ..Default::default()
@@ -515,7 +515,7 @@ fn a_hover_fades_with_no_render_of_its_plugin() {
     let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
     let tokens = &app.theme.variant(dark).tokens;
     let (inactive, veil) = (
-        tokens.get("tab.inactive.bg").unwrap(),
+        tokens.get("tab.bar.bg").unwrap(),
         tokens.get("tab.hover.bg").unwrap(),
     );
     // The hover's veil over the box's own background, opaque.

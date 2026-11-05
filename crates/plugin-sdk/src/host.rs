@@ -39,7 +39,9 @@ pub struct WindowInfo {
     #[serde(default)]
     pub number: Option<u32>,
     /// The keys that bring it forward, as the platform writes them, as
-    /// `⌥⌘1`; `None` while no binding has them.
+    /// `⌥⌘1`, for its titlebar to show, a bar of tabs there too; `None`
+    /// while no binding has them, or while the config hides them from the
+    /// titlebar.
     #[serde(default)]
     pub keys: Option<String>,
 }

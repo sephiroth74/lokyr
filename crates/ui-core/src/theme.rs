@@ -101,12 +101,17 @@ const LIGHT_TOKENS: &[TokenColor] = &[
     ("progress.normal", 0x0a64d8, 1.0),
     ("progress.error", 0xd63b3b, 1.0),
     ("progress.paused", 0xd99a00, 1.0),
-    ("tab.bar.bg", 0xe6e6e8, 1.0),
-    ("tab.active.bg", 0xfafafa, 1.0),
+    ("tab.bar.bg", 0xf4f4f6, 1.0),
+    ("tab.track.bg", 0x000000, 0.07),
+    ("tab.active.bg", 0xffffff, 1.0),
     ("tab.active.fg", 0x1e1e20, 1.0),
-    ("tab.inactive.bg", 0xe6e6e8, 1.0),
+    ("tab.active.border", 0x000000, 0.1),
+    ("tab.active.shadow", 0x000000, 0.12),
+    ("tab.inactive.bg", 0x000000, 0.0),
     ("tab.inactive.fg", 0x5e5e64, 1.0),
     ("tab.hover.bg", 0x000000, 0.05),
+    ("tab.minimal.line", 0x000000, 0.12),
+    ("tab.minimal.bar.bg", 0xececee, 1.0),
     ("tabs.bg", 0x000000, 0.06),
     ("tabs.chosen.bg", 0x0a64d8, 1.0),
     ("tabs.chosen.fg", 0xffffff, 1.0),
@@ -147,12 +152,17 @@ const DARK_TOKENS: &[TokenColor] = &[
     ("progress.normal", 0x4c9bff, 1.0),
     ("progress.error", 0xff5f57, 1.0),
     ("progress.paused", 0xffbd2e, 1.0),
-    ("tab.bar.bg", 0x161618, 1.0),
-    ("tab.active.bg", 0x1e1e20, 1.0),
-    ("tab.active.fg", 0xe6e6e6, 1.0),
-    ("tab.inactive.bg", 0x161618, 1.0),
+    ("tab.bar.bg", 0x232326, 1.0),
+    ("tab.track.bg", 0x000000, 0.3),
+    ("tab.active.bg", 0x404044, 1.0),
+    ("tab.active.fg", 0xf4f4f6, 1.0),
+    ("tab.active.border", 0xffffff, 0.12),
+    ("tab.active.shadow", 0x000000, 0.4),
+    ("tab.inactive.bg", 0x000000, 0.0),
     ("tab.inactive.fg", 0x9a9aa0, 1.0),
     ("tab.hover.bg", 0xffffff, 0.06),
+    ("tab.minimal.line", 0xffffff, 0.12),
+    ("tab.minimal.bar.bg", 0x161618, 1.0),
     ("tabs.bg", 0xffffff, 0.08),
     ("tabs.chosen.bg", 0x2462c4, 1.0),
     ("tabs.chosen.fg", 0xffffff, 1.0),
@@ -394,7 +404,9 @@ mod tests {
                 ("text", "field.bg"),
                 ("text.secondary", "panel.bg"),
                 ("tab.active.fg", "tab.active.bg"),
-                ("tab.inactive.fg", "tab.inactive.bg"),
+                ("tab.inactive.fg", "tab.bar.bg"),
+                ("tab.inactive.fg", "tab.minimal.bar.bg"),
+                ("tab.inactive.fg", "terminal.bg"),
                 ("accent", "panel.bg"),
                 ("tooltip.fg", "tooltip.bg"),
                 ("list.selection.fg", "list.selection.bg"),
@@ -405,6 +417,13 @@ mod tests {
                 // WCAG's AA for text.
                 assert!(ratio >= 4.5, "{name}: {text} on {background}: {ratio:.2}");
             }
+            // A tab's text on the track, over the bar.
+            let track = over(token("tab.track.bg"), opaque(token("tab.bar.bg")));
+            let ratio = contrast(opaque(token("tab.inactive.fg")), track);
+            assert!(
+                ratio >= 4.5,
+                "{name}: tab.inactive.fg on the track: {ratio:.2}"
+            );
             // A match shows on the terminal's background, of its hue as
             // much as of its lightness, the current one apart from the
             // others, and the text reads on both.
@@ -428,8 +447,10 @@ mod tests {
                 let ratio = contrast(opaque(token("toggle.on.fg")), over(under, panel));
                 assert!(ratio >= 4.5, "{name}: toggle.on.fg: {ratio:.2}");
             }
-            // The active tab is the terminal's background.
-            assert_eq!(opaque(token("tab.active.bg")), background, "{name}");
+            // The active tab stands out of the track that it is raised
+            // over, lighter.
+            let pill = opaque(token("tab.active.bg"));
+            assert!(contrast(pill, track) > 1.2, "{name}: {pill:?} on {track:?}");
         }
     }
 

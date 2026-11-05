@@ -81,16 +81,16 @@ fn the_config_gives_the_bar_its_place_and_its_look() {
 fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let settings = Settings::default();
     // One tab, hidden by default, and shown as the config says.
-    assert!(bar(&[tab(1, "zsh", true)], &[], &settings).is_none());
+    assert!(bar(&[tab(1, "zsh", true)], &[], None, &settings).is_none());
     let shown = Settings {
         hide_when_single: false,
         ..settings
     };
-    assert!(bar(&[tab(1, "zsh", true)], &[], &shown).is_some());
-    assert!(bar(&[], &[], &shown).is_none());
+    assert!(bar(&[tab(1, "zsh", true)], &[], None, &shown).is_some());
+    assert!(bar(&[], &[], None, &shown).is_none());
     let tabs = [tab(1, "src — vim", true), tab(2, "", false)];
     let keys = [Some("⌘1".to_owned()), None];
-    let node = bar(&tabs, &keys, &settings).unwrap();
+    let node = bar(&tabs, &keys, None, &settings).unwrap();
     // Each tab's title, the second of its place, the first's keys alone.
     assert_eq!(texts(&node), ["src — vim", "⌘1", "Tab 2"]);
     assert_eq!(node.layout.direction, Direction::Row);
@@ -99,11 +99,12 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let first = keyed(&node, "tab-1").unwrap();
     assert_eq!(first.style.background, Some(Token::from("tab.active.bg")));
     assert!(first.style.hover.is_none() && first.style.pressed.is_some());
+    assert!(first.style.border.is_some() && first.style.shadow.is_some());
+    // The tabs of equal widths, whatever their titles.
+    assert_eq!(first.layout.width, Length::Points(0.0));
+    assert_eq!(first.layout.grow, 1.0);
     let second = keyed(&node, "tab-2").unwrap();
-    assert_eq!(
-        second.style.background,
-        Some(Token::from("tab.inactive.bg"))
-    );
+    assert_eq!(second.style.background, None);
     assert!(second.style.hover.is_some());
     assert!(second.style.transition.is_some());
     // The close button, shown under the tab's hover.
@@ -122,6 +123,7 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let always = bar(
         &tabs,
         &keys,
+        None,
         &Settings {
             close_button: CloseButton::Always,
             ..settings
@@ -133,6 +135,7 @@ fn a_bar_shows_its_tabs_their_keys_and_their_close_buttons() {
     let never = bar(
         &tabs,
         &keys,
+        None,
         &Settings {
             close_button: CloseButton::Never,
             show_index: false,
@@ -151,29 +154,103 @@ fn a_column_lays_its_tabs_down_and_a_minimal_bar_takes_the_terminal_s_colors() {
         ..Settings::default()
     };
     let tabs = [tab(1, "a", true), tab(2, "b", false)];
-    let node = bar(&tabs, &[], &column).unwrap();
-    assert_eq!(node.layout.direction, Direction::Column);
+    let node = bar(&tabs, &[], Some("⌥⌘1"), &column).unwrap();
+    // The rows down the column, and a line along its edge by the panes.
+    let [list, edge] = &node.children[..] else {
+        panic!("{node:#?}");
+    };
+    assert_eq!(list.layout.direction, Direction::Column);
+    assert!(matches!(edge.kind, Kind::Separator));
     assert_eq!(keyed(&node, "tab-1").unwrap().layout.grow, 0.0);
+    // The window's keys in the titlebar alone.
+    assert!(!texts(&node).contains(&"⌥⌘1".to_owned()));
+    let right = Settings {
+        position: Position::Right,
+        ..column
+    };
+    let node = bar(&tabs, &[], None, &right).unwrap();
+    assert!(matches!(node.children[0].kind, Kind::Separator));
     let minimal = Settings {
         look: Look::Minimal,
         ..Settings::default()
     };
-    let node = bar(&tabs, &[], &minimal).unwrap();
+    let node = bar(&tabs, &[], None, &minimal).unwrap();
     assert_eq!(node.style.background, Some(Token::from("terminal.bg")));
+    let active = keyed(&node, "tab-1").unwrap();
+    assert_eq!(active.style.color, Some(Token::from("terminal.fg")));
+    // The active cell open to the terminal, the other over a line.
+    let line = |cell: &Node| cell.children.last().unwrap().style.background.clone();
+    assert_eq!(line(active), None);
     assert_eq!(
-        keyed(&node, "tab-1").unwrap().style.color,
-        Some(Token::from("terminal.fg"))
+        line(keyed(&node, "tab-2").unwrap()),
+        Some(Token::from("tab.minimal.line"))
     );
+    // A line between two cells.
+    assert!(
+        node.children
+            .iter()
+            .any(|child| matches!(child.kind, Kind::Separator))
+    );
+    // At the bottom, the line above.
+    let bottom = Settings {
+        position: Position::Bottom,
+        ..minimal
+    };
+    let node = bar(&tabs, &[], None, &bottom).unwrap();
+    let other = keyed(&node, "tab-2").unwrap();
+    assert_eq!(
+        other.children[0].style.background,
+        Some(Token::from("tab.minimal.line"))
+    );
+}
+
+#[test]
+fn a_bar_in_the_titlebar_shows_the_window_s_keys_first() {
+    let tabs = [tab(1, "a", true), tab(2, "b", false)];
+    for look in [Look::Compact, Look::Minimal] {
+        let settings = Settings {
+            look,
+            ..Settings::default()
+        };
+        let node = bar(&tabs, &[], Some("⌥⌘1"), &settings).unwrap();
+        assert_eq!(texts(&node)[0], "⌥⌘1", "{look:?}");
+        // None while the config hides them, which the host gives none.
+        let node = bar(&tabs, &[], None, &settings).unwrap();
+        assert_eq!(texts(&node), ["a", "b"], "{look:?}");
+    }
+    // Below the titlebar, the titlebar's.
+    let regular = Settings {
+        look: Look::Regular,
+        ..Settings::default()
+    };
+    let node = bar(&tabs, &[], Some("⌥⌘1"), &regular).unwrap();
+    assert_eq!(texts(&node), ["a", "b"]);
 }
 
 #[test]
 fn a_tab_of_a_color_shows_it() {
     let mut colored = tab(1, "a", true);
     colored.color = Some(Color::Rgb(200, 30, 4));
-    let node = bar(&[colored, tab(2, "b", false)], &[], &Settings::default()).unwrap();
-    let first = keyed(&node, "tab-1").unwrap();
-    assert_eq!(
-        first.children[0].style.background,
-        Some(Token::from("#c81e04"))
-    );
+    let tabs = [colored, tab(2, "b", false)];
+    for look in [Look::Compact, Look::Minimal] {
+        for position in [Position::Top, Position::Left] {
+            let settings = Settings {
+                look,
+                position,
+                ..Settings::default()
+            };
+            let node = bar(&tabs, &[], None, &settings).unwrap();
+            let first = keyed(&node, "tab-1").unwrap();
+            assert!(
+                colored_dot(first, "#c81e04"),
+                "{look:?} {position:?}: {first:#?}"
+            );
+        }
+    }
+}
+
+/// Whether `node`'s subtree holds a node of the background `token`.
+fn colored_dot(node: &Node, token: &str) -> bool {
+    node.style.background == Some(Token::from(token))
+        || node.children.iter().any(|child| colored_dot(child, token))
 }

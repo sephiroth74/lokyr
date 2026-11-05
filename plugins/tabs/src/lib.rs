@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{Color, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::host::{BarPlace, Color, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
@@ -96,6 +96,24 @@ fn commands() -> [Spec; 9] {
 
 /// The most tabs whose keys a tab bar shows, from the first.
 const NUMBERED: usize = 9;
+
+/// The tab bar of `tabs`, each of the keys that select it of `keys`, and of
+/// the keys that bring its window forward, `window`, as the section of the
+/// config `config` lays it out, and its place: as a window shows it, for
+/// the golden images of its looks.
+#[doc(hidden)]
+pub fn tab_bar(
+    tabs: &[TabInfo],
+    keys: &[Option<String>],
+    window: Option<&str>,
+    config: &Data,
+) -> (Option<Node>, BarPlace) {
+    let settings = Settings::of(config);
+    (
+        bar::bar(tabs, keys, window, &settings),
+        settings.place(None),
+    )
+}
 
 /// The plugin of the tabs: the tabs whose titles it asked the user for, by
 /// their questions; its bar's config, the width that the user's drag left
@@ -304,6 +322,14 @@ impl Tabs {
             return None;
         };
         let tabs = cx.tabs(*window).ok()?;
+        // The keys that bring the window forward, which a bar in the
+        // titlebar shows after its buttons.
+        let shortcut = cx
+            .windows()
+            .ok()?
+            .into_iter()
+            .find(|shown| shown.id == *window)
+            .and_then(|shown| shown.keys);
         let keys: Vec<Option<String>> = (1..=NUMBERED)
             .take(tabs.len())
             .map(|index| {
@@ -311,7 +337,7 @@ impl Tabs {
                 cx.keys_of(GOTO, args).ok().flatten()
             })
             .collect();
-        bar::bar(&tabs, &keys, &self.settings)
+        bar::bar(&tabs, &keys, shortcut.as_deref(), &self.settings)
     }
 
     /// Renders again its views whose trees changed, so that the host draws

@@ -1174,6 +1174,7 @@ impl<B: Backend> App<B> {
         let language_changed = config.app.language != self.config.app.language;
         let appearance_changed = config.app.appearance != self.config.app.appearance;
         let keys_changed = config.keys != self.config.keys;
+        let shortcut_changed = config.window.title_shortcut != self.config.window.title_shortcut;
         let remember_changed = config.window.remember_frame != self.config.window.remember_frame;
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
@@ -1238,7 +1239,9 @@ impl<B: Backend> App<B> {
             self.texts = texts(&self.config.app.language, &self.preferred);
             self.commands = commands(&self.texts, &self.plugins);
             self.set_menu(platform);
-        } else if keys_changed {
+        } else if keys_changed || shortcut_changed {
+            // The windows' keys too, which the titlebar shows as the config
+            // says.
             self.set_menu(platform);
         }
         if keys_changed {
@@ -1571,8 +1574,10 @@ impl<B: Backend> App<B> {
 
     /// Gives each numbered window the keys that bring it forward, as the
     /// keymap binds `window.goto` of its number and the platform writes
-    /// them, which the plugins read and its titlebar shows.
+    /// them, which the plugins read and its titlebar shows, a bar of tabs
+    /// there too; none while the config hides them from the titlebar.
     fn window_keys(&mut self, platform: &mut dyn Platform) {
+        let shown = self.config.window.title_shortcut;
         let mut changed = Vec::new();
         for (&window, state) in &self.windows {
             let Some(number) = self
@@ -1587,6 +1592,7 @@ impl<B: Backend> App<B> {
                 .keymap
                 .shortcut_with(GOTO_WINDOW, &args)
                 .and_then(menus::shortcut)
+                .filter(|_| shown)
                 .map(|shortcut| platform.shortcut_text(shortcut));
             let told = self
                 .workspace
@@ -1614,10 +1620,7 @@ impl<B: Backend> App<B> {
             .workspace
             .window(state.window)
             .and_then(workspace::Window::keys)
-            .filter(|_| {
-                self.config.window.title_shortcut
-                    && state.titlebar == lokyr_platform_core::Titlebar::Titled
-            });
+            .filter(|_| state.titlebar == lokyr_platform_core::Titlebar::Titled);
         if keys != state.accessory.as_deref() {
             platform.set_title_accessory(window, keys);
             state.accessory = keys.map(str::to_owned);
