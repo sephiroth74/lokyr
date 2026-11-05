@@ -62,11 +62,16 @@ pub struct FakePane {
     pub selection: Option<String>,
     /// The working directory of its program in the foreground.
     pub directory: Option<String>,
+    /// The numbers of the rows that it holds, of its scrollback and its
+    /// screen, which a decoration's cells are of: a screen of 24 rows
+    /// without a scrollback by default.
+    pub held: std::ops::Range<i64>,
 }
 
 impl Default for FakePane {
     fn default() -> Self {
         Self {
+            held: 0..24,
             window: WindowId(1),
             tab: TabId(1),
             lines: BTreeMap::new(),
@@ -540,7 +545,6 @@ impl Calling<'_> {
             | Request::Paste { pane, .. }
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }
-            | Request::Undecorate { pane, .. }
             | Request::FocusPane(pane)
             | Request::ClosePane(pane) => {
                 self.host.held(*pane)?;
@@ -552,7 +556,16 @@ impl Calling<'_> {
                 to,
                 look,
             } => {
-                self.host.held(*pane)?;
+                let held = &self.host.held(*pane)?.held;
+                if !held.contains(&from.1)
+                    || !held.contains(&to.1)
+                    || (to.1, to.0) < (from.1, from.0)
+                {
+                    return Err(Error::new(
+                        Code::Failed,
+                        "a decoration's cells are not the pane's, or not in reading order",
+                    ));
+                }
                 let id = self.host.next_id();
                 self.host.decorations.push(FakeDecoration {
                     id,
@@ -562,6 +575,21 @@ impl Calling<'_> {
                     look: *look,
                 });
                 Response::Decoration(id)
+            }
+            Request::Undecorate { pane, id } => {
+                self.host.held(*pane)?;
+                let own = self
+                    .host
+                    .decorations
+                    .iter()
+                    .any(|laid| laid.id == *id && laid.pane == *pane);
+                if !own {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("the plugin has no decoration {id} of the pane {}", pane.0),
+                    ));
+                }
+                Response::Done
             }
             Request::Open(target) => {
                 opening(target).map_err(|message| Error::new(Code::Failed, message))?;
