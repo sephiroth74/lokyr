@@ -134,6 +134,64 @@ pub trait Plugin {
     }
 }
 
+/// A built-in plugin as the app takes it: the text of its manifest, its
+/// `plugin.toml`, and what makes it, a new one each time, as the config
+/// turns it on again. [`export_plugin!`](crate::export_plugin) gives a
+/// plugin's crate its registration.
+#[derive(Clone, Copy)]
+pub struct Registration {
+    /// The text of its manifest.
+    pub manifest: &'static str,
+    /// Makes the plugin, anew.
+    pub make: fn() -> Box<dyn Plugin + Send>,
+}
+
+impl std::fmt::Debug for Registration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Registration")
+            .field("manifest", &self.manifest)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Gives a built-in plugin's crate its manifest, `MANIFEST`, the text of the
+/// `plugin.toml` beside its `Cargo.toml`, and its registration,
+/// `registration()`, which the app's distribution takes: of the plugin's
+/// type, made by its `Default`, or by the expression after it.
+///
+/// ```ignore
+/// #[derive(Default)]
+/// struct Search;
+///
+/// impl Plugin for Search {}
+///
+/// lokyr_plugin_sdk::export_plugin!(Search);
+/// ```
+#[macro_export]
+macro_rules! export_plugin {
+    ($plugin:ty) => {
+        $crate::export_plugin!($plugin, <$plugin as ::core::default::Default>::default());
+    };
+    ($plugin:ty, $make:expr) => {
+        /// The plugin's manifest, its `plugin.toml`, which the app reads as
+        /// it adds the plugin.
+        pub const MANIFEST: &str =
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/plugin.toml"));
+
+        /// The plugin's registration, which the app's distribution takes.
+        pub fn registration() -> $crate::plugin::Registration {
+            fn make() -> ::std::boxed::Box<dyn $crate::plugin::Plugin + ::core::marker::Send> {
+                let plugin: $plugin = $make;
+                ::std::boxed::Box::new(plugin)
+            }
+            $crate::plugin::Registration {
+                manifest: MANIFEST,
+                make,
+            }
+        }
+    };
+}
+
 /// What a plugin's callbacks reach the host through: each method sends a
 /// request, as the plugin, and reads the host's response. A read answers
 /// with the host's state as it handles the request; a write is queued, and

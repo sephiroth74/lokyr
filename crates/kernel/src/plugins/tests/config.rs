@@ -374,3 +374,273 @@ fn a_plugin_keeps_its_state_for_the_next_run() {
     let refused = keep(&mut plugins, &mut app, "x").unwrap_err();
     assert_eq!(refused.code, Code::Unavailable);
 }
+
+/// The plugins that `Toggled` made, and those that it activated.
+static TOGGLED_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A plugin of a status bar, which registers `toggled.go`, binds it and
+/// subscribes as it activates; its command decorates the focused pane's
+/// first cells and opens a panel `p` at the pointer.
+struct Toggled;
+
+impl Plugin for Toggled {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("toggled.go"))?;
+        cx.register_command(command("toggled.boom"))?;
+        cx.bind(binding("cmd+t", "toggled.go", None))?;
+        cx.subscribe(&["tab-created"])
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        assert_ne!(name, "toggled.boom", "a fault");
+        let pane = cx.focused_pane().expect("a focused pane");
+        cx.decorate(
+            pane,
+            (0, 0),
+            (3, 0),
+            host::DecorationLook {
+                underline: Some(host::Underline::Single),
+                underline_color: None,
+                background: None,
+                pointing: false,
+            },
+        )?;
+        let window = cx.focused_window().expect("a focused window");
+        cx.open_panel(
+            "p",
+            lokyr_plugin_sdk::ui::PanelOptions {
+                anchor: lokyr_plugin_sdk::ui::Anchor::Pointer(window),
+                role: lokyr_plugin_sdk::ui::Role::Menu,
+                close_outside: true,
+                close_escape: true,
+            },
+        )
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<lokyr_plugin_sdk::view::Node> {
+        Some(lokyr_plugin_sdk::view::Node::text("toggled"))
+    }
+}
+
+const TOGGLED: &str = concat!(
+    "[plugin]\nname = \"acme/toggled\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[contributes]\nslots = [\"status-bar\"]\n",
+);
+
+fn make_toggled() -> Box<dyn Plugin + Send> {
+    TOGGLED_MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Box::new(Toggled)
+}
+
+#[test]
+fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew() {
+    use std::sync::atomic::Ordering;
+
+    let made = || TOGGLED_MADE.load(Ordering::Relaxed);
+    let mut app = App::default();
+    let window = window(&mut app, "echo hello; sleep 30");
+    let pane = app.workspace.active_pane(window).unwrap();
+    text_once(&app, pane, "hello");
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: TOGGLED,
+            make: make_toggled,
+        })
+        .unwrap();
+    assert_eq!(made(), 1);
+    // Off from the start: never activated, it keeps the plugin made.
+    let off = config("[plugins.toggled]\nenabled = false\n");
+    assert!(plugins.configure(&off.plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Off));
+    assert!(app.registry.get("toggled.go").is_none());
+    assert!(plugins.providers(Slot::StatusBar).is_empty());
+    let on = config("[plugins.toggled]\nenabled = true\n");
+    assert!(plugins.configure(&on.plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
+    assert_eq!(made(), 1);
+    assert!(app.registry.get("toggled.go").is_some());
+    assert!(plugins.take_bindings_changed());
+    // Active, with a decoration, a panel and a view.
+    plugins
+        .run("toggled.go", Args::new(), &mut app.context())
+        .unwrap();
+    let view = ViewId::StatusBar(host::WindowId(window.get()));
+    plugins
+        .render("acme/toggled", &view, &mut app.context())
+        .unwrap();
+    assert!(plugins.tree("acme/toggled", &view).is_some());
+    let _ = plugins.take_requests();
+    let decorations = |app: &mut App| {
+        let found = app.workspace.pane_mut(pane).unwrap();
+        found.update();
+        found.snapshot().decorations().len()
+    };
+    assert_eq!(decorations(&mut app), 1);
+    // Turned off, it stops: its command, its keys, its subscription, its
+    // view, its panel and its decoration go.
+    assert!(plugins.configure(&off.plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Off));
+    assert!(app.registry.get("toggled.go").is_none());
+    assert!(plugins.take_bindings_changed());
+    assert_eq!(plugins.bindings().count(), 0);
+    assert!(plugins.take_written());
+    assert_eq!(
+        plugins.take_requests(),
+        [Request::ClosePanel {
+            plugin: "acme/toggled".to_owned(),
+            id: PanelId::from("p"),
+        }]
+    );
+    assert_eq!(plugins.tree("acme/toggled", &view), None);
+    assert!(plugins.providers(Slot::StatusBar).is_empty());
+    assert_eq!(decorations(&mut app), 0);
+    assert!(!plugins.subscribes("tab-created"));
+    assert!(plugins.take_disabled().is_empty());
+    // Turned on again, a new one of it starts.
+    assert!(plugins.configure(&config("").plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
+    assert_eq!(made(), 2);
+    assert!(app.registry.get("toggled.go").is_some());
+    assert!(plugins.subscribes("tab-created"));
+    assert_eq!(plugins.providers(Slot::StatusBar), ["acme/toggled"]);
+}
+
+#[test]
+fn enabled_is_true_or_false_the_host_s_key_of_every_section() {
+    let mut app = App::default();
+    let read = Rc::default();
+    let mut plugins = greeter(&read);
+    plugins
+        .add("keyless", scripted(|_| Ok(()), |_, _, _| Ok(())))
+        .unwrap();
+    // The host's key, which neither the schema nor a keyless plugin counts.
+    let text =
+        "[plugins.greeter]\nenabled = true\ncount = 4\n\n[plugins.keyless]\nenabled = false\n";
+    assert!(plugins.configure(&config(text).plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(*read.borrow(), [greeting("hello", 4)]);
+    assert_eq!(plugins.status("keyless"), Some(Status::Off));
+    // A plugin turned off takes no keys, which tell nothing.
+    let off = "[plugins.greeter]\nenabled = false\ncount = 0\nwrong = 1\n";
+    assert!(plugins.configure(&config(off).plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/greeter"), Some(Status::Off));
+    // Another value stays as it is.
+    let wrong = "[plugins.greeter]\nenabled = \"yes\"\n";
+    assert_eq!(
+        plugins.configure(&config(wrong).plugins),
+        [ConfigNotice {
+            namespace: "greeter".to_owned(),
+            refused: true,
+            text: "config.toml:2:1: `enabled` is true or false, not \"yes\" in `[plugins.greeter]`; the plugin `acme/greeter` stays as it is".to_owned(),
+        }]
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/greeter"), Some(Status::Off));
+    // A plugin added without its registration starts again at the next
+    // start alone.
+    assert!(plugins.configure(&config("").plugins).is_empty());
+    let errors = plugins.activate(&mut app.context());
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0]
+            .message
+            .contains("starts again at the app's next start")
+    );
+    assert_eq!(plugins.status("acme/greeter"), Some(Status::Off));
+    assert_eq!(plugins.status("keyless"), Some(Status::Active));
+    // A schema of `enabled` adds no plugin.
+    let schema = r#"{ "type": "object", "properties": { "enabled": { "type": "boolean" } } }"#;
+    let mut plugins = Plugins::new();
+    let refused = plugins
+        .add_builtin(
+            MANIFEST,
+            Box::new(Greeter {
+                read: Rc::default(),
+                kept: Rc::default(),
+                schema: Some(schema),
+            }),
+        )
+        .unwrap_err();
+    assert!(
+        refused
+            .message
+            .contains("the key `enabled`, which is the host's"),
+        "{}",
+        refused.message
+    );
+}
+
+/// A `Toggled`, which no count tells, of the tests that run beside the one
+/// that counts them.
+fn make_uncounted() -> Box<dyn Plugin + Send> {
+    Box::new(Toggled)
+}
+
+#[test]
+fn a_plugin_that_stopped_of_a_fault_starts_again_as_its_section_turns_it_off_and_on() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: TOGGLED,
+            make: make_uncounted,
+        })
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let boom = |plugins: &mut Plugins, app: &mut App| {
+        assert!(
+            plugins
+                .run("toggled.boom", Args::new(), &mut app.context())
+                .is_err()
+        );
+        assert_eq!(plugins.status("acme/toggled"), Some(Status::Disabled));
+        let told = plugins.take_disabled();
+        assert_eq!(told.len(), 1, "{told:?}");
+    };
+    boom(&mut plugins, &mut app);
+    for text in ["[plugins.toggled]\nenabled = false\n", ""] {
+        assert!(plugins.configure(&config(text).plugins).is_empty());
+        assert!(plugins.activate(&mut app.context()).is_empty());
+    }
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
+    // The new one's fault is told too.
+    boom(&mut plugins, &mut app);
+}
+
+#[test]
+fn a_plugin_of_a_thread_of_its_own_that_its_section_turns_off_ends_its_thread() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: concat!(
+                "[plugin]\nname = \"acme/toggled\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+                "thread = \"worker\"\n",
+            ),
+            make: make_uncounted,
+        })
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let start = std::time::Instant::now();
+    while plugins.waiting() {
+        plugins.serve(&mut app.context());
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+    }
+    assert!(app.registry.get("toggled.go").is_some());
+    assert!(matches!(plugins.entries[0].runner, Runner::Worker(_)));
+    assert!(
+        plugins
+            .configure(&config("[plugins.toggled]\nenabled = false\n").plugins)
+            .is_empty()
+    );
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(matches!(plugins.entries[0].runner, Runner::Stopped));
+    assert!(app.registry.get("toggled.go").is_none());
+}

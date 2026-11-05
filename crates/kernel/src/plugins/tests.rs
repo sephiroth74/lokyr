@@ -1127,6 +1127,8 @@ fn a_call_is_its_own_plugin_s() {
             schema: None,
             config: Data::Map(BTreeMap::new()),
             stored: Stored::default(),
+            wanted: true,
+            ran: true,
         },
         Outbox::default(),
         Vec::new(),

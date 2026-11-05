@@ -79,6 +79,18 @@ deny:
 check-deps:
     cargo xtask check-deps
 
+# Write the app's distributions' features and plugins, of dist/*.toml.
+gen-dist:
+    cargo xtask gen-dist
+
+# Check that the app's distributions' features and plugins are those of dist/*.toml.
+check-dist:
+    cargo xtask gen-dist --check
+
+# Build the app of the minimal distribution, the terminal's own actions alone.
+build-minimal:
+    cargo build --locked -p lokyr-app --no-default-features --features dist-minimal
+
 # Check that the code's comments name no task, phase or ADR.
 check-comments:
     cargo xtask check-comments
@@ -96,9 +108,9 @@ ui-gallery *args:
     cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
 # Run the CI checks locally. Linux is covered by `check-linux`.
-ci: lint build test check-linux deny check-deps check-comments check-links bundle
+ci: lint build test check-linux deny check-deps check-comments check-links check-dist build-minimal bundle
 
-# Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc; `--features three-drawables` builds it of three drawables a window.
+# Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc; `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:
     cargo xtask bundle {{args}}
 

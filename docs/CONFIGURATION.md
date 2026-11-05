@@ -158,8 +158,9 @@ performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bot
 "global:ctrl+`" = "window.toggle-quick-terminal"   # from every app: the quick terminal
 
 # A plugin's own keys, in a section of its namespace, as its schema has them;
-# no built-in plugin has keys yet:
+# no built-in plugin has keys yet; `enabled` turns any plugin off:
 # [plugins.<namespace>]
+# enabled = false                    # true | false: the plugin runs
 # key = "value"
 ```
 
@@ -1267,3 +1268,21 @@ position = "top"
 - **What another version would know** is ignored, as the bar tells: the section of a plugin that is not installed, and a key that the plugin's schema lacks, as one of a newer version, so that one file serves two Macs.
 - **Reloading**: as you save the file, each plugin takes its section anew, and hears of a change.
 - `lokyr +validate-config` checks the file's own keys and the sections' form, each a table of keys, and `lokyr +show-config` prints the sections as the file has them; their keys apply as the plugins take them, once Lokyr runs.
+
+### `enabled`
+
+<sub>Platforms: macOS</sub>
+
+Whether the plugin runs: `false` turns it off, any plugin, the built-in ones too, whatever its keys.
+
+| Value | Meaning |
+|---|---|
+| `true` | The plugin runs, as by default |
+| `false` | The plugin is off: its commands, its keys, its bars and its panels go, and the program's text loses its marks |
+
+Default: `true`.
+
+- It applies as you save the file: a plugin turned off stops at once, and one turned on again starts anew.
+- The plugin's other keys are not checked while it is off.
+- `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
+- A value other than `true` or `false` shows in the bar, and the plugin stays as it is.

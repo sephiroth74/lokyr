@@ -559,27 +559,20 @@ impl<B: Backend> App<B> {
             drawing.set_interface(&config.interface);
         }
         let mut plugins = Plugins::new();
-        // Their manifests read, as the build checked them.
-        let builtins: [(&str, Box<dyn plugins::Plugin>); 2] = [
-            (
-                lokyr_core_actions::MANIFEST,
-                Box::new(lokyr_core_actions::CoreActions),
-            ),
-            (
-                lokyr_links::MANIFEST,
-                Box::new(lokyr_links::Links::default()),
-            ),
-        ];
-        // A view in every slot, for a build of tests.
-        #[cfg(feature = "sample-slots")]
-        let builtins = builtins.into_iter().chain([(
-            crate::sample::MANIFEST,
-            Box::new(crate::sample::SampleSlots::default()) as Box<dyn plugins::Plugin>,
-        )]);
-        for (manifest, plugin) in builtins {
-            if let Err(error) = plugins.add_builtin(manifest, plugin) {
+        // The distribution's plugins, whose manifests read, as the build
+        // checked them.
+        for registration in crate::dist::plugins() {
+            if let Err(error) = plugins.add_registered(registration) {
                 eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
             }
+        }
+        // A view in every slot, for a build of tests.
+        #[cfg(feature = "sample-slots")]
+        if let Err(error) = plugins.add_builtin(
+            crate::sample::MANIFEST,
+            Box::new(crate::sample::SampleSlots::default()),
+        ) {
+            eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
         }
         // A plugin on a thread of its own that renders without pause, for a
         // build of tests.
@@ -915,6 +908,16 @@ impl<B: Backend> App<B> {
         self
     }
 
+    /// The app, with the plugin of `registration`, as a built-in one of a
+    /// distribution, after the others.
+    #[cfg(test)]
+    fn with_registration(mut self, registration: plugins::Registration) -> Self {
+        if let Err(error) = self.plugins.add_registered(registration) {
+            eprintln!("lokyr: {error}");
+        }
+        self
+    }
+
     /// The app, with `plugin` of `manifest`, as a built-in one of the
     /// thread that its manifest asks for, after the others.
     #[cfg(test)]
@@ -1122,9 +1125,15 @@ impl<B: Backend> App<B> {
         }
         let plugins_changed = config.plugins != self.config.plugins;
         self.config = config;
-        // The plugins take their sections, and hear of their changes.
+        // The plugins take their sections, and hear of their changes; those
+        // that their sections turn off stop, and those turned on again
+        // start.
         if plugins_changed {
             self.configure_plugins(platform);
+            for error in self.with_plugins(platform, Plugins::activate) {
+                eprintln!("lokyr: {error}");
+            }
+            self.after_plugins(platform, 0);
         }
         if term_changed {
             self.tell_term(platform);

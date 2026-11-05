@@ -115,3 +115,118 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
     assert_eq!(heard.borrow().len(), 2);
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// The `Barred` plugins that the test made.
+static BARRED_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A plugin of a status bar of a text, and of a command, `barred.go`.
+struct Barred;
+
+impl Plugin for Barred {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "barred.go".to_owned(),
+            title: "Go".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn render(
+        &mut self,
+        _: &mut Cx<'_>,
+        _: &lokyr_kernel::plugins::ui::ViewId,
+    ) -> Option<lokyr_kernel::plugins::view::Node> {
+        let mut text = lokyr_kernel::plugins::view::Node::text("barred");
+        text.layout.width = lokyr_kernel::plugins::view::Length::Points(60.0);
+        text.layout.height = lokyr_kernel::plugins::view::Length::Points(20.0);
+        Some(lokyr_kernel::plugins::view::Node::container(vec![text]))
+    }
+}
+
+/// Tells the app that its file changed, as its watch does, and fires the
+/// reading's timer alone.
+fn reload(fake: &mut Fake, app: &mut App) {
+    let file = app.config_file.as_ref().unwrap();
+    file.changed.store(true, Ordering::Release);
+    fake.send_app(app, AppEvent::Wake);
+    let reading = app
+        .config_file
+        .as_ref()
+        .unwrap()
+        .reading
+        .expect("a reading");
+    let at = fake
+        .timers()
+        .find(|(timer, _)| *timer == reading)
+        .map(|(_, at)| at)
+        .expect("the reading's timer");
+    fake.fire_timers(app, at);
+    assert_eq!(app.config_file.as_ref().unwrap().reading, None);
+}
+
+fn make_barred() -> Box<dyn Plugin + Send> {
+    BARRED_MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Box::new(Barred)
+}
+
+#[test]
+fn a_plugin_turned_off_by_its_section_leaves_the_windows_and_comes_back_anew() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-plugin-off-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let mut fake = Fake::default();
+    let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(quiet())
+    .with_registration(plugins::Registration {
+        manifest: concat!(
+            "[plugin]\nname = \"lokyr/barred\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+            "[contributes]\nslots = [\"status-bar\"]\n",
+        ),
+        make: make_barred,
+    });
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
+    let status_bar = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .any(|view| view.view.slot() == Some(lokyr_kernel::plugins::ui::Slot::StatusBar))
+    };
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+    };
+    frames(&mut fake, &mut app);
+    assert!(status_bar(&app));
+    assert!(app.commands.get("barred.go").is_some());
+    let made = BARRED_MADE.load(Ordering::Relaxed);
+    // Turned off: its bar and its command go.
+    std::fs::write(&path, "[plugins.barred]\nenabled = false\n").unwrap();
+    reload(&mut fake, &mut app);
+    assert!(fake.window(window).unwrap().frame_requested);
+    frames(&mut fake, &mut app);
+    assert!(!status_bar(&app));
+    assert!(app.commands.get("barred.go").is_none());
+    assert_eq!(app.diagnostics.shown(), None);
+    // Turned on again: a new one, its bar back.
+    std::fs::write(&path, "[plugins.barred]\nenabled = true\n").unwrap();
+    reload(&mut fake, &mut app);
+    frames(&mut fake, &mut app);
+    assert!(status_bar(&app));
+    assert!(app.commands.get("barred.go").is_some());
+    assert_eq!(BARRED_MADE.load(Ordering::Relaxed), made + 1);
+    let _ = std::fs::remove_dir_all(&directory);
+}

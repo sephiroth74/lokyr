@@ -20,9 +20,7 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
 pub use scan::{Found, find};
 
-/// The plugin's manifest, `plugin.toml`, which the app reads as it adds the
-/// plugin.
-pub const MANIFEST: &str = include_str!("../plugin.toml");
+lokyr_plugin_sdk::export_plugin!(Links);
 
 /// Opens the link at the cell of its `column` and `row`, the row's number,
 /// in the focused pane.

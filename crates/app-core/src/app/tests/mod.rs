@@ -438,10 +438,11 @@ fn the_app_s_catalogs_match_their_source() {
     }
     // The built-in plugins' catalogs, each language's against English's,
     // whose titles are those that the commands register.
-    let builtins: [Box<dyn plugins::Plugin>; 2] = [
-        Box::new(lokyr_core_actions::CoreActions),
-        Box::new(lokyr_links::Links::default()),
-    ];
+    let builtins: Vec<Box<dyn plugins::Plugin + Send>> = crate::dist::plugins()
+        .iter()
+        .map(|registration| (registration.make)())
+        .collect();
+    assert_eq!(builtins.len(), 2);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         let source = catalogs

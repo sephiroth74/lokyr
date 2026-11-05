@@ -12,9 +12,7 @@ use lokyr_plugin_sdk::command::{
 use lokyr_plugin_sdk::host::{Binding, Scroll};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 
-/// The plugin's manifest, `plugin.toml`, which the app reads as it adds the
-/// plugin.
-pub const MANIFEST: &str = include_str!("../plugin.toml");
+lokyr_plugin_sdk::export_plugin!(CoreActions);
 
 /// Copies the focused pane's selection to the clipboard.
 const COPY: &str = "pane.copy";

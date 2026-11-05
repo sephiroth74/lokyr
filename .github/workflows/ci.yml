@@ -60,6 +60,7 @@ jobs:
           fi
       - run: just clippy
       - run: just build
+      - run: just build-minimal
       - run: just test
         timeout-minutes: 8
       # Signed ad hoc, as the runner has no Developer ID.
@@ -88,6 +89,7 @@ jobs:
       - run: just check-deps
       - run: just check-comments
       - run: just check-links
+      - run: just check-dist
       - run: just deny
       - run: just test-portable
 

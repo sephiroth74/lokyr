@@ -14,7 +14,12 @@ name = "lokyr"
 path = "src/main.rs"
 
 [features]
-default = ["luau-plugins"]
+default = ["luau-plugins", "dist-default"]
+# The distributions, each of the first-party plugins that its build holds.
+# What `cargo xtask gen-dist` writes of dist/*.toml, which it rewrites.
+dist-default = ["lokyr-app-core/dist-default"]
+dist-minimal = ["lokyr-app-core/dist-minimal"]
+# The end of what `cargo xtask gen-dist` writes.
 # Support for third-party plugins written in Luau.
 luau-plugins = ["dep:lokyr-plugin-host-luau"]
 # Three drawables a window, rather than two, to measure against them.

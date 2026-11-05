@@ -9,6 +9,7 @@
 use std::sync::atomic::AtomicBool;
 
 mod app;
+mod dist;
 mod drawing;
 mod environment;
 #[cfg(test)]

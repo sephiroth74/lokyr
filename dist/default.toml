@@ -1,0 +1,10 @@
+# The default distribution: the first-party plugins that the app's build
+# holds, in the order of their activation, as the app's later plugins' keys
+# take a key before the earlier ones'. `cargo xtask gen-dist` makes the
+# app's features and registrations of every distribution, `dist-<name>`.
+[distribution]
+name = "default"
+
+[plugins]
+core-actions = { path = "../plugins/core-actions" }
+links = { path = "../plugins/links" }

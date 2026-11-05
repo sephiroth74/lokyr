@@ -34,7 +34,7 @@ pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response};
 pub use lokyr_plugin_sdk::message::{Data, Mods, POINTER};
-pub use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
 pub use lokyr_plugin_sdk::{ui, view};
@@ -45,7 +45,7 @@ use lokyr_vt_core::terminal::{Look, Scroll};
 use serde_json::{Map, Value};
 
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
-use crate::config::{ConfirmPaste, PluginSection, PluginsConfig};
+use crate::config::{ConfirmPaste, PluginsConfig};
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::Texts;
 use crate::paste::{self, Paste};
@@ -175,12 +175,18 @@ pub enum Status {
     /// Stopped, as its activation failed or a call panicked: it has no
     /// commands nor bindings.
     Disabled,
+    /// Turned off by its section of the config, `enabled = false`: it has
+    /// no commands, bindings, views nor panels, until the config turns it
+    /// on again.
+    Off,
 }
 
-/// A plugin, and what the host keeps of it.
+/// A plugin, and what the host keeps of it: what makes it anew, as the
+/// config turns it on again, if it was registered.
 struct Entry {
     runner: Runner,
     state: State,
+    make: Option<fn() -> Box<dyn Plugin + Send>>,
 }
 
 /// Where a plugin's calls run.
@@ -236,6 +242,10 @@ struct State {
     config: Data,
     /// Its state on the disk.
     stored: Stored,
+    /// Whether its section of the config turns it on, as by default.
+    wanted: bool,
+    /// Whether it was activated, as a plugin turned on again is made anew.
+    ran: bool,
 }
 
 /// A plugin's state on the disk: its file, in the app's state directory,
@@ -480,6 +490,17 @@ impl Plugins {
         self.insert(&name, Some(manifest), runner, None)
     }
 
+    /// Adds the plugin of `registration`, a built-in one, as
+    /// [`Plugins::add_builtin_send`] does, which its config can turn off,
+    /// and on again, a new one of it.
+    pub fn add_registered(&mut self, registration: Registration) -> Result<(), Error> {
+        self.add_builtin_send(registration.manifest, (registration.make)())?;
+        if let Some(entry) = self.entries.last_mut() {
+            entry.make = Some(registration.make);
+        }
+        Ok(())
+    }
+
     /// Adds `plugin`, which `manifest` describes, by the manifest's name,
     /// to activate, with what the manifest declares: its capabilities, and
     /// the commands of its `[uses]` with those that it registers, of its
@@ -564,6 +585,7 @@ impl Plugins {
         let (granted, uses) = declared.unzip();
         self.entries.push(Entry {
             runner,
+            make: None,
             state: State {
                 name: name.to_owned(),
                 manifest,
@@ -583,6 +605,8 @@ impl Plugins {
                 schema,
                 config: data(&Value::Object(config)),
                 stored: Stored { file, held: None },
+                wanted: true,
+                ran: false,
             },
         });
         Ok(())
@@ -623,8 +647,33 @@ impl Plugins {
                     .map(|section| section.at(path) + ": ")
                     .unwrap_or_default()
             };
+            // `enabled`, the host's key of every section, which turns its
+            // plugin off, and on again.
+            let mut values = section
+                .map(|section| section.values().clone())
+                .unwrap_or_default();
+            match values.remove(ENABLED) {
+                None => state.wanted = true,
+                Some(Value::Bool(enabled)) => state.wanted = enabled,
+                Some(other) => {
+                    notices.push(ConfigNotice {
+                        text: format!(
+                            "{}`{ENABLED}` is true or false, not {other} in `[plugins.{namespace}]`; the plugin `{}` stays as it is",
+                            at(&[ENABLED.to_owned()]),
+                            state.name
+                        ),
+                        namespace,
+                        refused: true,
+                    });
+                    continue;
+                }
+            }
+            // A plugin turned off takes no keys.
+            if !state.wanted {
+                continue;
+            }
             let Some(schema) = &state.schema else {
-                if section.is_some() {
+                if !values.is_empty() {
                     notices.push(ConfigNotice {
                         text: format!(
                             "{}the plugin `{}` has no keys, and `[plugins.{namespace}]` is ignored",
@@ -637,8 +686,7 @@ impl Plugins {
                 }
                 continue;
             };
-            let empty = Map::new();
-            let checked = schema.check(section.map_or(&empty, PluginSection::values));
+            let checked = schema.check(&values);
             match checked.values {
                 Ok(values) => {
                     let values = data(&Value::Object(values));
@@ -715,15 +763,59 @@ impl Plugins {
     /// Activates the plugins that are not active yet, in their order, and
     /// returns the errors of those whose activation failed or panicked,
     /// which are disabled. A plugin of a thread of its own starts it, and
-    /// activates there: its failure comes through [`Plugins::serve`].
+    /// activates there: its failure comes through [`Plugins::serve`]. A
+    /// plugin that its section of the config, as [`Plugins::configure`]
+    /// took it, turns off stops, its commands, bindings, views, panels and
+    /// decorations going; one that it turns on again activates, a new one
+    /// of its registration if it ran.
     pub fn activate(&mut self, context: &mut Context<'_>) -> Vec<Error> {
         let mut errors = Vec::new();
         for entry in &mut self.entries {
+            // A plugin that its section turns off stops; one that it turns
+            // on again starts, a new one of it if it ran.
+            if !entry.state.wanted && entry.state.status != Status::Off {
+                if matches!(entry.state.status, Status::Active | Status::Disabled) {
+                    stop(entry, context, &mut self.out, &mut self.bindings_changed);
+                }
+                entry.state.status = Status::Off;
+                self.out.written = true;
+                continue;
+            }
+            if entry.state.wanted && entry.state.status == Status::Off {
+                if entry.state.ran {
+                    let Some(make) = entry.make else {
+                        errors.push(Error::new(
+                            Code::Unavailable,
+                            format!(
+                                "the plugin `{}` starts again at the app's next start",
+                                entry.state.name
+                            ),
+                        ));
+                        continue;
+                    };
+                    let worker = entry
+                        .state
+                        .manifest
+                        .as_ref()
+                        .is_some_and(|manifest| manifest.thread == Thread::Worker);
+                    entry.runner = if worker {
+                        Runner::Unstarted(make())
+                    } else {
+                        Runner::Main(make())
+                    };
+                    // A fault of the new one is told again.
+                    entry.state.fault = None;
+                    self.told_disabled.remove(&entry.state.name);
+                }
+                entry.state.status = Status::Inactive;
+                self.out.written = true;
+            }
             if entry.state.status != Status::Inactive {
                 continue;
             }
             entry.state.status = Status::Active;
-            let Entry { runner, state } = entry;
+            entry.state.ran = true;
+            let Entry { runner, state, .. } = entry;
             let plugin = match runner {
                 Runner::Main(plugin) => plugin,
                 Runner::Unstarted(_) => {
@@ -802,7 +894,7 @@ impl Plugins {
                 format!("no plugin runs `{command}`"),
             ));
         };
-        let Entry { runner, state } = &mut self.entries[at];
+        let Entry { runner, state, .. } = &mut self.entries[at];
         match runner {
             Runner::Main(plugin) => call(
                 (plugin.as_mut(), state),
@@ -838,7 +930,7 @@ impl Plugins {
                 format!("no plugin runs `{command}`"),
             ));
         };
-        let Entry { runner, state } = &mut self.entries[at];
+        let Entry { runner, state, .. } = &mut self.entries[at];
         let Runner::Main(plugin) = runner else {
             return Ok(true);
         };
@@ -958,7 +1050,9 @@ impl Plugins {
         self.entries
             .iter()
             .map(|entry| &entry.state)
-            .filter(|state| state.status != Status::Inactive && state.fills(slot))
+            .filter(|state| {
+                !matches!(state.status, Status::Inactive | Status::Off) && state.fills(slot)
+            })
             .map(|state| state.name.as_str())
             .collect()
     }
@@ -997,7 +1091,7 @@ impl Plugins {
                 format!("there is no plugin `{name}`"),
             ));
         };
-        let Entry { runner, state } = &mut self.entries[at];
+        let Entry { runner, state, .. } = &mut self.entries[at];
         if state.status != Status::Active || !shows(state, view, context.workspace) {
             return Ok(());
         }
@@ -1098,7 +1192,7 @@ impl Plugins {
         else {
             return Ok(());
         };
-        let Entry { runner, state } = &mut self.entries[at];
+        let Entry { runner, state, .. } = &mut self.entries[at];
         match runner {
             Runner::Main(plugin) => call(
                 (plugin.as_mut(), state),
@@ -1185,7 +1279,7 @@ impl Plugins {
             if batch.is_empty() {
                 continue;
             }
-            let Entry { runner, state } = entry;
+            let Entry { runner, state, .. } = entry;
             let delivered = match runner {
                 Runner::Main(plugin) => call(
                     (plugin.as_mut(), state),
@@ -1283,7 +1377,7 @@ impl Plugins {
             bindings_changed,
             ..
         } = self;
-        let Entry { runner, state } = &mut entries[at];
+        let Entry { runner, state, .. } = &mut entries[at];
         let Runner::Worker(worker) = runner else {
             return false;
         };
@@ -1432,14 +1526,20 @@ fn schema(
             _ => {}
         }
     }
-    text.map(|text| {
-        Schema::parse(text).map_err(|error| {
-            invalid(format!(
-                "the config schema of the plugin `{name}` does not read: {error}"
-            ))
-        })
-    })
-    .transpose()
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    let schema = Schema::parse(text).map_err(|error| {
+        invalid(format!(
+            "the config schema of the plugin `{name}` does not read: {error}"
+        ))
+    })?;
+    if schema.keys().contains(&ENABLED) {
+        return Err(invalid(format!(
+            "the config schema of the plugin `{name}` has the key `{ENABLED}`, which is the host's, as it turns plugins off"
+        )));
+    }
+    Ok(Some(schema))
 }
 
 /// The file of the state of the plugin of `namespace`, in the app's state
@@ -1597,6 +1697,41 @@ fn within<T>(
         state.fault = Some(fault.clone());
         Err(Error::new(Code::Fault, fault))
     })
+}
+
+/// The key of every plugin's section of the config that turns it off with
+/// `false`, the host's, which no schema can have.
+pub const ENABLED: &str = "enabled";
+
+/// Stops the plugin of `entry`, which its section of the config turns off:
+/// its commands and its bindings go, as a disabled plugin's, its panels
+/// close, as the app hears, its decorations leave their panes, its views
+/// show no more, and its thread, if it has one, ends.
+fn stop(
+    entry: &mut Entry,
+    context: &mut Context<'_>,
+    out: &mut Outbox,
+    bindings_changed: &mut bool,
+) {
+    let state = &mut entry.state;
+    disable(state, context.registry, bindings_changed);
+    *bindings_changed = true;
+    for (id, pane) in std::mem::take(&mut state.decorations) {
+        if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
+            pane.undecorate(id);
+        }
+    }
+    for id in std::mem::take(&mut state.panels).into_keys() {
+        out.requests.push(Request::ClosePanel {
+            plugin: state.name.clone(),
+            id,
+        });
+    }
+    state.views.clear();
+    state.subscribed.clear();
+    if let Runner::Worker(_) = entry.runner {
+        entry.runner = Runner::Stopped;
+    }
 }
 
 /// Whether `view`, of the plugin of `state`, shows: a slot's of a window

@@ -112,14 +112,20 @@ const SYMBOLS_FONT: &str = "crates/text-core/fonts";
 const SOURCE: &str = "en";
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
-    // The app's features to build with, as `--features three-drawables`.
-    let features = match (args.next(), args.next()) {
-        (None, _) => None,
-        (Some(flag), Some(features)) if flag == "--features" => Some(features),
-        (Some(arg), _) => bail!("bundle takes `--features <features>` alone, not `{arg}`"),
-    };
-    if let Some(arg) = args.next() {
-        bail!("bundle takes `--features <features>` alone, not `{arg}`");
+    // The app's features to build with, as `--features three-drawables`,
+    // and without its defaults, as the minimal distribution's build.
+    let (mut features, mut bare) = (None, false);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--features" if features.is_none() => match args.next() {
+                Some(list) => features = Some(list),
+                None => bail!("`--features` takes the features"),
+            },
+            "--no-default-features" if !bare => bare = true,
+            _ => bail!(
+                "bundle takes `--features <features>` and `--no-default-features` alone, not `{arg}`"
+            ),
+        }
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -136,6 +142,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
                     .iter()
                     .flat_map(|features| ["--features", features]),
             )
+            .args(bare.then_some("--no-default-features"))
             .current_dir(&root),
         "building the app",
     )?;

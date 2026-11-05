@@ -669,8 +669,8 @@ keymap-macos    = { path = "../plugins/keymap-macos", target = "macos" }
 keymap-linux    = { path = "../plugins/keymap-linux", target = "linux" }    # from F7
 ```
 
-- **Generation**: `xtask gen-dist <file>` generates the `app` crate's dependencies and the static registration function.
-- **Minimal distribution**: `dist/minimal.toml` contains only `core-actions` and a keymap, Alacritty-style. It proves the terminal works without any of the "visible" features.
+- **Generation**: `cargo xtask gen-dist` reads every `dist/*.toml`, and writes, between its markers, each distribution as a feature of `lokyr-app-core` and of `lokyr-app`, `dist-<name>`, of a feature of each of its plugins, `plugin-<name>`, which takes the plugin's crate, a dependency of `lokyr-app-core` that is optional; and `crates/app-core/src/dist.rs`, the build's plugins' registrations, `export_plugin!`'s, in the files' order, `default` first. The default distribution is the crates' default; `just check-dist` checks that what it would write is written, and `just build-minimal` builds the minimal one, as CI does.
+- **Minimal distribution**: `dist/minimal.toml` contains only `core-actions`, and a keymap once a plugin holds the default keys, Alacritty-style. It proves the terminal works without any of the "visible" features: `cargo xtask bundle --no-default-features --features dist-minimal` builds its app.
 - **At runtime**:
-  - `[plugins] disabled = ["tabs"]` turns off a first-party plugin.
+  - `[plugins.<namespace>] enabled = false` turns off a first-party plugin, at once as the config is saved, and `true` turns it on again, a new one of it ([ADR 0033](adr/0033-plugins-turned-off-in-their-sections.md)): its commands, its keys, its views, its panels and its decorations go as it stops.
   - For single-provider slots (`tab-bar`, `pane-header`), the config's [`[slots]`](CONFIGURATION.md#slots) picks the provider, the first that fills it by default, so a third-party plugin can replace our tab bar.
