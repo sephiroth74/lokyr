@@ -26,6 +26,7 @@ use lokyr_ui_core::tree::NodeId;
 
 use super::App;
 use crate::Backend;
+use crate::window::NativeMenu;
 
 /// What a panel keeps of its opening: its plugin's options, and where the
 /// pointer was as it opened, in pixels, which an anchor at the pointer
@@ -162,10 +163,13 @@ impl<B: Backend> App<B> {
         let placed = state.panels.order().filter_map(panel);
         let native = state
             .native
-            .as_ref()
-            .map(|(id, _)| *id)
-            .or(state.native_due)
-            .and_then(panel)
+            .iter()
+            .filter_map(|menu| match menu {
+                NativeMenu::Panel(id, _) => Some(*id),
+                NativeMenu::Window | NativeMenu::Closed => None,
+            })
+            .chain(state.native_due.iter().copied())
+            .filter_map(panel)
             .filter(|view| !state.panels.is_open(view.id));
         for view in placed.chain(native) {
             views.push((view.plugin.clone(), view.view.clone()));
@@ -278,7 +282,7 @@ impl<B: Backend> App<B> {
                     let role = placed.options.role;
                     if role == Role::Menu && panel::native_menu(&slot.surface.tree).is_some() {
                         state.panels.close(slot.id);
-                        state.native_due = Some(slot.id);
+                        state.native_due.push(slot.id);
                     } else if role != Role::Tooltip {
                         state.focus.first(slot.id, &slot.surface.tree);
                     }

@@ -23,7 +23,7 @@ use super::{
 };
 use crate::drawing::Backend;
 use crate::mouse;
-use crate::window::Selecting;
+use crate::window::{NativeMenu, Selecting};
 
 impl<B: Backend> App<B> {
     /// Opens `window`'s context menu at `position`, over the cell there,
@@ -147,6 +147,9 @@ impl<B: Backend> App<B> {
             ticked: Vec::new(),
         };
         platform.show_context_menu(window, position, &menu);
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.native.push_back(NativeMenu::Window);
+        }
     }
 
     /// Whether `command` would do something in `context`, at the cell

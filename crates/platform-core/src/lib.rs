@@ -422,8 +422,14 @@ pub trait Platform {
     /// Opens `menu` at `position` of `window`'s content, once the call in
     /// progress has returned, so that the windows go on drawing while it is
     /// open: its chosen item comes as [`WindowEvent::ContextCommand`]. A
-    /// menu that is open closes first.
+    /// menu that is open, or that waits to open, closes first: each menu
+    /// that the app asks for gets its [`WindowEvent::ContextMenuClosed`],
+    /// in their order.
     fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu);
+
+    /// Closes `window`'s context menu, open or waiting to open, without a
+    /// choice, which its [`WindowEvent::ContextMenuClosed`] tells.
+    fn close_context_menu(&mut self, window: WindowId);
 
     /// Shows the system's definition of `text`, in its dictionary's panel,
     /// over `window`, where the text is: the left end of its baseline at

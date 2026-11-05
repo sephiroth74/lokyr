@@ -614,7 +614,7 @@ fn the_requests_that_the_app_s_host_refuses_the_fake_refuses_alike() {
     let seen = std::rc::Rc::clone(&codes);
     let mut probe = Probe::new(move |cx, _| {
         let push = |result: Result<(), Error>| {
-            seen.borrow_mut().push(result.err().map(|error| error.code))
+            seen.borrow_mut().push(result.err().map(|error| error.code));
         };
         let none = WindowId(9);
         push(cx.new_tab(none, None).map(|_| ()));
@@ -680,7 +680,7 @@ fn the_declarations_are_checked_as_the_app_s_host_checks_them() {
     let seen = std::rc::Rc::clone(&codes);
     let mut probe = Probe::new(move |cx, _| {
         let push = |result: Result<(), Error>| {
-            seen.borrow_mut().push(result.err().map(|error| error.code))
+            seen.borrow_mut().push(result.err().map(|error| error.code));
         };
         let bind = |keys: &str, command: &str, when: Option<&str>| Binding {
             keys: keys.to_owned(),

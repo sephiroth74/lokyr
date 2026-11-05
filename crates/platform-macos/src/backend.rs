@@ -216,6 +216,20 @@ impl Backend {
         }
     }
 
+    /// Forgets the context menu that waits to open, if one does, whose
+    /// closing its window then hears, as it never opened; one that is
+    /// open stays, whose loop tells its own closing.
+    fn drop_waiting_context_menu(&mut self) {
+        if let Some(waiting) = self.context_menu.take_if(|menu| !menu.open)
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(
+                waiting.window,
+                WindowEvent::ContextMenuClosed,
+            ));
+        }
+    }
+
     /// Stops the application's loop, which makes `run` return.
     pub(crate) fn stop(&mut self) {
         self.stopped = true;
@@ -590,6 +604,7 @@ impl Platform for Backend {
         if !self.windows.contains_key(&window) {
             return;
         }
+        self.drop_waiting_context_menu();
         self.cancel_context_menu();
         let (menu, target) = menu::context(self.mtm, self.shared.clone(), window, menu);
         self.context_menu = Some(OpenMenu {
@@ -603,6 +618,17 @@ impl Platform for Backend {
         // returned.
         if let Some(shared) = self.shared.upgrade() {
             shared.enqueue(Pending::ContextMenu);
+        }
+    }
+
+    fn close_context_menu(&mut self, window: WindowId) {
+        if self
+            .context_menu
+            .as_ref()
+            .is_some_and(|menu| menu.window == window)
+        {
+            self.drop_waiting_context_menu();
+            self.cancel_context_menu();
         }
     }
 

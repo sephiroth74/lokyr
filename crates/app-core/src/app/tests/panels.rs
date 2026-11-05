@@ -12,6 +12,7 @@ use lokyr_text_core::FontConfig;
 
 use super::*;
 use crate::fakes;
+use crate::window::NativeMenu;
 
 /// What the plugin of [`Paneler`] heard: its nodes' events, and its panels'
 /// closings, by their ids.
@@ -29,7 +30,10 @@ struct Heard {
 /// `paneler.tip`, a tooltip in the window's bottom right corner;
 /// `paneler.cell`, `paneler.cursor` and `paneler.corner`, dialogs below the
 /// pane's cell of its first row's third column, below its cursor, and in
-/// its top right corner; `paneler.close` closes the dialog.
+/// its top right corner; `paneler.close` closes the dialog;
+/// `paneler.commands`, a menu of two buttons alone keyed `window.new` and
+/// `third`, which `paneler.close-commands` closes; `paneler.both` opens
+/// `native` and `commands` in one call.
 struct Paneler {
     heard: Rc<RefCell<Heard>>,
 }
@@ -39,7 +43,7 @@ const MANIFEST: &str = concat!(
     "[contributes]\nslots = [\"tab-bar\"]\n",
 );
 
-const COMMANDS: [&str; 8] = [
+const COMMANDS: [&str; 11] = [
     "paneler.dialog",
     "paneler.menu",
     "paneler.native",
@@ -48,6 +52,9 @@ const COMMANDS: [&str; 8] = [
     "paneler.cursor",
     "paneler.corner",
     "paneler.close",
+    "paneler.commands",
+    "paneler.close-commands",
+    "paneler.both",
 ];
 
 fn sized(node: Node, width: f32, height: f32) -> Node {
@@ -110,6 +117,20 @@ impl plugins::Plugin for Paneler {
                 "native",
                 options(Anchor::Pointer(window), Role::Menu, (true, true)),
             ),
+            "paneler.commands" => (
+                "commands",
+                options(Anchor::Pointer(window), Role::Menu, (true, true)),
+            ),
+            "paneler.close-commands" => return cx.close_panel("commands"),
+            "paneler.both" => {
+                for id in ["native", "commands"] {
+                    cx.open_panel(
+                        id,
+                        options(Anchor::Pointer(window), Role::Menu, (true, true)),
+                    )?;
+                }
+                return Ok(());
+            }
             "paneler.tip" => (
                 "tip",
                 options(
@@ -182,6 +203,10 @@ impl plugins::Plugin for Paneler {
             "native" => Node::container(vec![
                 Node::button("First").key("first"),
                 Node::button("Second").key("second"),
+            ]),
+            "commands" => Node::container(vec![
+                Node::button("New Window").key("window.new"),
+                Node::button("Third").key("third"),
             ]),
             "menu" => Node::container(vec![
                 sized(Node::field("Filter"), 100.0, 20.0).key("filter"),
@@ -397,7 +422,95 @@ fn a_menu_of_menu_items_alone_is_the_platform_s_own_whose_choice_and_closing_its
     fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
     frames(&mut fake, &mut app, window);
     assert_eq!(heard.borrow().closed, ["native", "native"]);
-    assert!(app.windows[&window].native.is_none());
+    assert!(app.windows[&window].native.is_empty());
+}
+
+/// The commands of the items of the platform's last menu.
+fn last_menu(fake: &Fake) -> Vec<String> {
+    let (_, _, menu) = fake.context_menus().last().cloned().expect("a menu");
+    menu.items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_platform_core::MenuItem::Command { command, .. } => Some(command.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_native_menu_whose_panel_its_plugin_closes_closes_and_its_choice_runs_no_command() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.commands");
+    assert_eq!(last_menu(&fake), ["window.new", "third"]);
+    command(&mut fake, &mut app, window, "paneler.close-commands");
+    assert_eq!(fake.closed_context_menus(), [window]);
+    assert_eq!(heard.borrow().closed, ["commands"]);
+    // A choice that came before the platform's menu closed runs nothing,
+    // though its item's key is an app's command.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("window.new".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(fake.windows().count(), 1);
+    assert!(heard.borrow().events.is_empty());
+    assert!(app.windows[&window].native.is_empty());
+    // The window's own context menu runs its commands still.
+    right_click(&mut fake, &mut app, window, OVER_PANE, Modifiers::NONE);
+    assert_eq!(fake.context_menus().len(), 2);
+    assert_eq!(app.windows[&window].native, [NativeMenu::Window]);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("window.new".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    assert_eq!(fake.windows().count(), 2);
+}
+
+#[test]
+fn native_menus_shown_one_after_another_close_in_their_order_each_told() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    command(&mut fake, &mut app, window, "paneler.native");
+    command(&mut fake, &mut app, window, "paneler.commands");
+    assert_eq!(fake.context_menus().len(), 2);
+    // The first's closing, as the second's showing closed it, closes the
+    // first's panel alone.
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(heard.borrow().closed, ["native"]);
+    assert_eq!(app.windows[&window].native.len(), 1);
+    // The second's choice is its own.
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("third".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert!(
+        heard
+            .borrow()
+            .events
+            .iter()
+            .any(|event| event.key.0 == "third" && event.kind == UiEventKind::Click)
+    );
+    assert_eq!(heard.borrow().closed, ["native", "commands"]);
+    // Two of one call show in their order, and the first opens again.
+    command(&mut fake, &mut app, window, "paneler.both");
+    assert_eq!(fake.context_menus().len(), 4);
+    assert_eq!(last_menu(&fake), ["window.new", "third"]);
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    assert_eq!(
+        heard.borrow().closed,
+        ["native", "commands", "native", "commands"]
+    );
+    command(&mut fake, &mut app, window, "paneler.native");
+    assert_eq!(fake.context_menus().len(), 5);
 }
 
 #[test]

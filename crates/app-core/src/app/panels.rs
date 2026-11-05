@@ -24,7 +24,7 @@ use super::chrome::{PanelPlace, SlotView, ui_event};
 use super::input::shown_top;
 use super::surfaces;
 use crate::drawing::Backend;
-use crate::window::Window;
+use crate::window::{NativeMenu, Window};
 
 /// The room between a panel in a corner and its rectangle's edges, in
 /// points.
@@ -135,12 +135,20 @@ impl<B: Backend> App<B> {
         }
         let closed = state.chrome.remove(at);
         state.panels.close(view);
-        if state.native.as_ref().is_some_and(|(id, _)| *id == view) {
-            state.native = None;
+        // The platform's menu of the panel closes, if the platform holds it
+        // still; its choice, if one comes before its closing, does nothing.
+        let last = state.native.len().checked_sub(1);
+        if let Some(shown) = state
+            .native
+            .iter()
+            .position(|menu| matches!(menu, NativeMenu::Panel(id, _) if *id == view))
+        {
+            state.native[shown] = NativeMenu::Closed;
+            if Some(shown) == last {
+                platform.close_context_menu(window);
+            }
         }
-        if state.native_due == Some(view) {
-            state.native_due = None;
-        }
+        state.native_due.retain(|&due| due != view);
         {
             let (focus, chrome) = (&mut state.focus, &state.chrome);
             focus.closed(view, |id| {
@@ -217,8 +225,10 @@ impl<B: Backend> App<B> {
         self.ui_events.extend(events);
     }
 
-    /// Shows `window`'s menu's panel that waits as the platform's own menu,
-    /// at its anchor, its items' choices kept by their commands.
+    /// Shows `window`'s menus' panels that wait as the platform's own
+    /// menus, in their order, each at its anchor, its items' choices kept
+    /// by their commands: each closes the one before it, as its closing
+    /// tells.
     pub(super) fn show_native(
         &mut self,
         platform: &mut dyn Platform,
@@ -228,64 +238,64 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(id) = state.native_due.take() else {
-            return;
-        };
-        let Some(view) = state.chrome.iter().find(|shown| shown.id == id) else {
-            return;
-        };
-        let (Some(entries), Some(placed)) =
-            (panel::native_menu(&view.surface.tree), view.placed.as_ref())
-        else {
-            return;
-        };
-        let scale = size.scale as f32;
-        let (x, y) = point(&anchor_of(&self.workspace, state, placed, scale));
-        let mut menu = ContextMenu::default();
-        let mut choices = BTreeMap::new();
-        menu.items = menu_items(&entries, &mut menu, &mut choices);
-        let position = Point {
-            x: f64::from(x / scale),
-            y: f64::from(y / scale),
-        };
-        platform.show_context_menu(window, position, &menu);
-        state.native = Some((id, choices));
+        for id in std::mem::take(&mut state.native_due) {
+            let Some(view) = state.chrome.iter().find(|shown| shown.id == id) else {
+                continue;
+            };
+            let (Some(entries), Some(placed)) =
+                (panel::native_menu(&view.surface.tree), view.placed.as_ref())
+            else {
+                continue;
+            };
+            let scale = size.scale as f32;
+            let (x, y) = point(&anchor_of(&self.workspace, state, placed, scale));
+            let mut menu = ContextMenu::default();
+            let mut choices = BTreeMap::new();
+            menu.items = menu_items(&entries, &mut menu, &mut choices);
+            let position = Point {
+                x: f64::from(x / scale),
+                y: f64::from(y / scale),
+            };
+            platform.show_context_menu(window, position, &menu);
+            state.native.push_back(NativeMenu::Panel(id, choices));
+        }
     }
 
-    /// The platform's menu of a menu's panel of `window` gave `command`:
-    /// its item's node's event to the panel's plugin, as its press would
-    /// tell. Whether it was the menu's.
+    /// The platform's menu of `window` that is open gave `command`: of a
+    /// menu's panel, its item's node's event to the panel's plugin, as its
+    /// press would tell, or nothing once the panel closed. Whether the menu
+    /// was a panel's, whose items are no commands of the app's.
     pub(super) fn native_chosen(&mut self, window: WindowId, command: &str) -> bool {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
-        let Some((id, choices)) = &state.native else {
-            return false;
-        };
-        let (Some((key, kind)), Some(view)) = (
-            choices.get(command),
-            state.chrome.iter().find(|shown| shown.id == *id),
-        ) else {
-            return false;
-        };
-        let event = UiEvent {
-            view: view.view.clone(),
-            key: key.clone(),
-            kind: kind.clone(),
-        };
-        self.ui_events.push((view.plugin.clone(), event));
-        true
+        match state.native.front() {
+            Some(NativeMenu::Panel(id, choices)) => {
+                let view = state.chrome.iter().find(|shown| shown.id == *id);
+                if let (Some((key, kind)), Some(view)) = (choices.get(command), view) {
+                    let event = UiEvent {
+                        view: view.view.clone(),
+                        key: key.clone(),
+                        kind: kind.clone(),
+                    };
+                    self.ui_events.push((view.plugin.clone(), event));
+                }
+                true
+            }
+            Some(NativeMenu::Closed) => true,
+            Some(NativeMenu::Window) | None => false,
+        }
     }
 
-    /// The platform's menu of `window` closed: a menu's panel that it
-    /// showed closes, as its plugin hears, after its choice where one was
-    /// made.
+    /// The platform's menu of `window` that was open closed: a menu's panel
+    /// that it showed closes, as its plugin hears, after its choice where
+    /// one was made.
     pub(super) fn native_closed(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let shown = self
             .windows
             .get_mut(&window)
-            .and_then(|state| state.native.take());
-        if let Some((view, _)) = shown {
+            .and_then(|state| state.native.pop_front());
+        if let Some(NativeMenu::Panel(view, _)) = shown {
             self.close_panel(platform, window, view, true);
         }
     }

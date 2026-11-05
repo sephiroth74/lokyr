@@ -30,6 +30,21 @@ use crate::notice;
 /// its node's key and its press's event.
 pub(crate) type Choices = BTreeMap<String, (NodeKey, UiEventKind)>;
 
+/// A menu that the platform shows over a window, whose choice and closing
+/// come as the window's events.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum NativeMenu {
+    /// The window's own context menu, whose choice runs its command.
+    Window,
+    /// A menu's panel, by its view's id, and its items' events by their
+    /// commands, whose choice its plugin hears and whose closing closes
+    /// the panel.
+    Panel(u32, Choices),
+    /// A menu's panel that closed while the platform showed it, whose
+    /// choice and closing do nothing.
+    Closed,
+}
+
 /// A layer of a window, over its grid, which the window server blinks.
 #[derive(Debug)]
 pub(crate) struct WindowLayer<B: Backend> {
@@ -200,11 +215,13 @@ pub(crate) struct Window<B: Backend> {
     /// Its plugins' panels that it draws, by their views' ids, from the
     /// lowest, where each goes and what closes it.
     pub(crate) panels: Panels<u32>,
-    /// The menu's panel that the platform shows as its own menu, by its
-    /// view's id, and its items' events by their commands; the one that
-    /// waits to show.
-    pub(crate) native: Option<(u32, Choices)>,
-    pub(crate) native_due: Option<u32>,
+    /// The menus that the platform shows, in the order that the app asked
+    /// for them, each of which its closing takes away, its first the one
+    /// that is open, its last the one that the platform holds.
+    pub(crate) native: std::collections::VecDeque<NativeMenu>,
+    /// The menus' panels that wait to show as the platform's, in their
+    /// order.
+    pub(crate) native_due: Vec<u32>,
     /// The window's room below its titlebar and its tab bar, in pixels, as
     /// its last layout placed it, whose corners panels anchor in.
     pub(crate) overlay: Frame,
@@ -320,8 +337,8 @@ impl<B: Backend> Window<B> {
             titlebar_areas: Vec::new(),
             composition_dropped: false,
             panels: Panels::new(),
-            native: None,
-            native_due: None,
+            native: std::collections::VecDeque::new(),
+            native_due: Vec::new(),
             overlay: Frame::default(),
         }
     }

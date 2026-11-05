@@ -163,6 +163,7 @@ pub struct Fake {
     /// The context menus that the app opened, from the first, each over its
     /// window at its position.
     context_menus: Vec<(WindowId, Point, ContextMenu)>,
+    closed_context_menus: Vec<WindowId>,
     /// The height of the titlebar of the windows that open, which their
     /// content runs under.
     bar: f64,
@@ -242,6 +243,7 @@ impl Fake {
             disabled: std::collections::BTreeSet::new(),
             checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
+            closed_context_menus: Vec::new(),
             bar: 0.0,
             definitions: Vec::new(),
             clipboard: None,
@@ -500,6 +502,12 @@ impl Fake {
     /// window at its position.
     pub fn context_menus(&self) -> &[(WindowId, Point, ContextMenu)] {
         &self.context_menus
+    }
+
+    /// The windows whose context menus the app closed, from the first,
+    /// whose closings the tests send.
+    pub fn closed_context_menus(&self) -> &[WindowId] {
+        &self.closed_context_menus
     }
 
     /// The definitions that the app showed, from the first.
@@ -920,6 +928,10 @@ impl Platform for Fake {
 
     fn show_context_menu(&mut self, window: WindowId, position: Point, menu: &ContextMenu) {
         self.context_menus.push((window, position, menu.clone()));
+    }
+
+    fn close_context_menu(&mut self, window: WindowId) {
+        self.closed_context_menus.push(window);
     }
 
     fn show_definition(
