@@ -514,6 +514,25 @@ fn native_menus_shown_one_after_another_close_in_their_order_each_told() {
 }
 
 #[test]
+fn a_dialog_that_takes_the_focus_as_it_opens_ends_the_pane_s_composition() {
+    let (mut fake, mut app, window, _) = paneler(reader(""));
+    let composing = Ime::Preedit {
+        text: "にほ".to_owned(),
+        selection: 6..6,
+    };
+    fake.send(&mut app, window, WindowEvent::Ime(composing));
+    assert!(app.windows[&window].preedit.is_some());
+    let ended = fake.window(window).unwrap().compositions_ended;
+    command(&mut fake, &mut app, window, "paneler.dialog");
+    let state = &app.windows[&window];
+    assert!(!state.pane_has_focus());
+    // The pane's composition ended as the dialog's field took the keys,
+    // which the input method forgot.
+    assert!(state.preedit.is_none());
+    assert_eq!(fake.window(window).unwrap().compositions_ended, ended + 1);
+}
+
+#[test]
 fn a_tooltip_in_the_window_s_corner_takes_neither_the_keys_nor_the_pointer() {
     let (mut fake, mut app, window, _) = paneler(reader(""));
     command(&mut fake, &mut app, window, "paneler.tip");

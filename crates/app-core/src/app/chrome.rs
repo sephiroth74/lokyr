@@ -311,12 +311,17 @@ impl<B: Backend> App<B> {
             }
         }
         // A move of the focus that a render made, as back to the pane of a
-        // field gone, the pane's program learns of.
+        // field gone, or to a panel's field as the panel shows, the pane's
+        // program learns of; the composition of where the focus was ends
+        // as it stands, which the input method forgets.
+        let mut events = Vec::new();
         if state.focus.target() != before {
+            state.composition_dropped |=
+                super::surfaces::end_composition(state, before, &mut events);
             super::surfaces::tell_pane(&self.workspace, state, before);
         }
-        let told = super::surfaces::focus_events(state);
-        self.ui_events.extend(told);
+        events.extend(super::surfaces::focus_events(state));
+        self.ui_events.extend(events);
     }
 
     /// Lays out `window`'s slots' views in a window of `size`, as `ui-core`'s

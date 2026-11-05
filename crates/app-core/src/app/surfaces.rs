@@ -467,24 +467,7 @@ impl<B: Backend> App<B> {
         let now = state.focus.target();
         let mut events = Vec::new();
         if now != before {
-            let ended = match before {
-                Target::Node { panel, node } => match view_mut(&mut state.chrome, panel) {
-                    Some(view)
-                        if view.surface.fields.composing(&view.surface.tree) == Some(node) =>
-                    {
-                        let kept = view
-                            .surface
-                            .fields
-                            .keep_composition(&view.surface.tree, node)
-                            .unwrap_or_default();
-                        events.extend(told(view, kept));
-                        true
-                    }
-                    _ => false,
-                },
-                Target::Pane => state.preedit.take().is_some(),
-            };
-            if ended {
+            if end_composition(state, before, &mut events) {
                 platform.end_composition(window);
             }
             tell_pane(&self.workspace, state, before);
@@ -643,6 +626,32 @@ pub(super) fn tell_pane<B: Backend>(
 
 /// The focus's and the blur's events of the moves of `state`'s focus
 /// since it told them last, each to its view's plugin.
+/// Ends the composition of where `state`'s keyboard's focus was, `before`,
+/// as the focus moved: a field's, as it stands, whose events its plugin
+/// hears, into `events`, or the pane's; whether one ended, which the input
+/// method is to forget.
+pub(super) fn end_composition<B: Backend>(
+    state: &mut Window<B>,
+    before: Target<u32>,
+    events: &mut Vec<(String, UiEvent)>,
+) -> bool {
+    match before {
+        Target::Node { panel, node } => match view_mut(&mut state.chrome, panel) {
+            Some(view) if view.surface.fields.composing(&view.surface.tree) == Some(node) => {
+                let kept = view
+                    .surface
+                    .fields
+                    .keep_composition(&view.surface.tree, node)
+                    .unwrap_or_default();
+                events.extend(told(view, kept));
+                true
+            }
+            _ => false,
+        },
+        Target::Pane => state.preedit.take().is_some(),
+    }
+}
+
 pub(super) fn focus_events<B: Backend>(state: &mut Window<B>) -> Vec<(String, UiEvent)> {
     let (focus, chrome) = (&mut state.focus, &state.chrome);
     focus
