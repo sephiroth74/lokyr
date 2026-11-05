@@ -77,26 +77,12 @@ impl<B: Backend> Drawing<B> {
     }
 
     /// Gives the interface's text the face of `config`, now and with each
-    /// font of the text after; a family that is not installed gives the
-    /// default one, as the log tells.
+    /// font of the text after, which its first text finds, so that the
+    /// app's start does not pay for it; a family that is not installed
+    /// gives the default one, as the log tells.
     pub(crate) fn set_interface(&mut self, config: &InterfaceConfig) {
         self.interface = config.clone();
-        self.apply_interface();
-    }
-
-    /// Gives the font the interface's face, or the default one, as the log
-    /// tells, where it fails.
-    fn apply_interface(&mut self) {
-        if let Err(error) = self.font.set_interface(&self.interface) {
-            eprintln!("lokyr: the interface's font is the default one, {error}");
-            let default = InterfaceConfig {
-                font_family: None,
-                ..self.interface.clone()
-            };
-            if let Err(error) = self.font.set_interface(&default) {
-                eprintln!("lokyr: {error}");
-            }
-        }
+        self.font.set_interface(&self.interface);
     }
 
     /// Takes the font that `config` gives, with an atlas of its own, and a
@@ -109,7 +95,7 @@ impl<B: Backend> Drawing<B> {
         self.font = font;
         self.renderer = renderer;
         self.fonts += 1;
-        self.apply_interface();
+        self.font.set_interface(&self.interface);
         Ok(())
     }
 

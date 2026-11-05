@@ -198,9 +198,12 @@ pub struct Font<B> {
     /// The glyphs that [`Font::draw_pending`] left, as the frame's time for
     /// glyphs ran out, which the frame shows without.
     deferred: FastMap<GlyphKey, ()>,
+    /// The configuration of the interface's face, which its first text
+    /// finds.
+    interface_config: InterfaceConfig,
     /// The face of the interface's text, once found: the first text of the
-    /// interface finds the default one, so that a window without them does
-    /// not pay for it.
+    /// interface finds it, so that a window without them, and the app's
+    /// start, do not pay for it.
     interface: Option<InterfaceFace>,
     /// The glyph of each icon's character in the symbols' font, once
     /// asked for.
@@ -475,6 +478,7 @@ impl<B: FontBackend> Font<B> {
             pending: Vec::new(),
             pending_keys: FastMap::default(),
             deferred: FastMap::default(),
+            interface_config: InterfaceConfig::default(),
             interface: None,
             icons: FastMap::default(),
             icon_pixels: FastMap::default(),
@@ -1082,30 +1086,39 @@ impl<B: FontBackend> Font<B> {
             .collect()
     }
 
-    /// Takes the interface's face that `config` names; or, if it fails,
-    /// keeps the one before.
-    pub fn set_interface(&mut self, config: &InterfaceConfig) -> Result<(), FaceError> {
-        self.interface = Some(InterfaceFace::new(&mut self.backend, config)?);
-        Ok(())
+    /// Takes `config` for the interface's face, which the interface's next
+    /// text finds, as [`Font::interface`] tells.
+    pub fn set_interface(&mut self, config: &InterfaceConfig) {
+        self.interface_config = config.clone();
+        self.interface = None;
     }
 
-    /// The face of the interface's text: the one that
-    /// [`Font::set_interface`] took, or else the default one, found the
-    /// first time; the terminal's face where the system has no interface
-    /// family.
+    /// The face of the interface's text, found the first time: the one that
+    /// [`Font::set_interface`]'s configuration names; the default one where
+    /// that fails, as the log tells; the terminal's face where the system
+    /// has no interface family.
     pub fn interface(&mut self) -> &InterfaceFace {
-        let (backend, resolved) = (&mut self.backend, &self.resolved);
+        let (backend, resolved, config) =
+            (&mut self.backend, &self.resolved, &self.interface_config);
         self.interface.get_or_insert_with(|| {
-            let config = InterfaceConfig::default();
-            InterfaceFace::new(backend, &config).unwrap_or_else(|_| {
-                InterfaceFace::of(
-                    backend,
-                    resolved.family.clone(),
-                    None,
-                    resolved.faces.regular.id,
-                    config.font_size.points(),
-                )
-            })
+            InterfaceFace::new(backend, config)
+                .or_else(|error| {
+                    eprintln!("lokyr: the interface's font is the default one, {error}");
+                    let default = InterfaceConfig {
+                        font_family: None,
+                        ..config.clone()
+                    };
+                    InterfaceFace::new(backend, &default)
+                })
+                .unwrap_or_else(|_| {
+                    InterfaceFace::of(
+                        backend,
+                        resolved.family.clone(),
+                        None,
+                        resolved.faces.regular.id,
+                        config.font_size.points(),
+                    )
+                })
         })
     }
 
@@ -3091,9 +3104,12 @@ mod tests {
             font_size: lokyr_text_core::Size::try_from(20.0).unwrap(),
             ..InterfaceConfig::default()
         };
-        font.set_interface(&larger).unwrap();
+        font.set_interface(&larger);
+        // Its face is found as its first text needs it, not as it is set.
+        assert!(font.interface.is_none());
         assert_ne!(*font.interface_carets("find"), *first);
-        font.set_interface(&InterfaceConfig::default()).unwrap();
+        assert!(font.interface.is_some());
+        font.set_interface(&InterfaceConfig::default());
         assert!(Rc::ptr_eq(&first, &font.interface_carets("find")));
         // The last texts asked for kept, a text asked for again the newest,
         // the oldest past them found anew.
@@ -3236,13 +3252,13 @@ mod system {
             font_family: Some(lokyr_text_core::Name::try_from(name.to_owned()).unwrap()),
             ..InterfaceConfig::default()
         };
-        font.set_interface(&named("No Such Family Here")).unwrap();
+        font.set_interface(&named("No Such Family Here"));
         assert_eq!(
             font.interface().missing_family(),
             Some("No Such Family Here")
         );
         assert_eq!(font.interface().family(), backend.interface_family());
-        font.set_interface(&named("Helvetica")).unwrap();
+        font.set_interface(&named("Helvetica"));
         assert_eq!(font.interface().family(), "Helvetica");
         assert_eq!(font.interface().missing_family(), None);
     }

@@ -1,0 +1,31 @@
+15:12:35 startup o 1
+15:12:50 startup h0 1
+15:13:05 startup l 1
+15:13:21 startup floor 1
+15:13  up 9 days,  9:14, 70 users, load averages: 5.73 5.94 4.72
+15:13:36 startup h0 2
+15:13:52 startup l 2
+15:14:07 startup o 2
+15:14:22 startup floor 2
+15:14  up 9 days,  9:15, 70 users, load averages: 5.29 5.77 4.74
+15:14:37 startup l 3
+15:14:53 startup o 3
+15:15:08 startup h0 3
+15:15:23 startup floor 3
+15:15  up 9 days,  9:16, 70 users, load averages: 5.13 5.68 4.78
+15:15:39 startup l 4
+15:15:54 startup h0 4
+15:16:09 startup o 4
+15:16:25 startup floor 4
+15:16  up 9 days,  9:17, 70 users, load averages: 3.68 5.22 4.67
+15:16:40 startup o 5
+15:16:55 startup l 5
+15:17:10 startup h0 5
+15:17:25 startup floor 5
+15:17  up 9 days,  9:18, 70 users, load averages: 2.59 4.61 4.47
+15:17:40 startup h0 6
+15:17:55 startup o 6
+15:18:11 startup l 6
+15:18:26 startup floor 6
+15:18  up 9 days,  9:19, 70 users, load averages: 7.02 5.45 4.79
+15:18:41 done

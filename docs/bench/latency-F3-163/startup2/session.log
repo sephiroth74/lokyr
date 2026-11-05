@@ -1,0 +1,25 @@
+15:00:18 startup o 1
+15:00:33 startup m2 1
+15:00:49 startup k 1
+15:01:04 startup m3 1
+15:01:19 startup floor 1
+15:01  up 9 days,  9:02, 70 users, load averages: 2.08 2.52 2.91
+15:01:35 startup m2 2
+15:01:50 startup m3 2
+15:02:05 startup o 2
+15:02:21 startup k 2
+15:02:36 startup floor 2
+15:02  up 9 days,  9:03, 70 users, load averages: 6.11 3.65 3.30
+15:02:51 startup m3 3
+15:03:06 startup k 3
+15:03:22 startup m2 3
+15:03:37 startup o 3
+15:03:52 startup floor 3
+15:04  up 9 days,  9:05, 70 users, load averages: 9.27 4.95 3.81
+15:04:07 startup k 4
+15:04:23 startup o 4
+15:04:38 startup m3 4
+15:04:53 startup m2 4
+15:05:08 startup floor 4
+15:05  up 9 days,  9:06, 70 users, load averages: 3.92 4.22 3.62
+15:05:23 done

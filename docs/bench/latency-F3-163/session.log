@@ -1,0 +1,71 @@
+14:47  up 9 days,  8:48, 70 users, load averages: 5.21 4.91 3.92
+14:47:04 warm-up o
+14:47:20 warm-up k
+14:47:22 warm-up m
+14:47:25 warm-up h
+14:47:28 latency o 1 place 1
+14:47:40 latency k 1 place 2
+14:47:53 latency h 1 place 3
+14:48:05 latency m 1 place 4
+14:48  up 9 days,  8:49, 70 users, load averages: 3.88 4.60 3.88
+14:48:17 latency k 2 place 1
+14:48:30 latency m 2 place 2
+14:48:42 latency o 2 place 3
+14:48:54 latency h 2 place 4
+14:49  up 9 days,  8:50, 70 users, load averages: 2.81 4.19 3.76
+14:49:07 latency m 3 place 1
+14:49:19 latency h 3 place 2
+14:49:31 latency k 3 place 3
+14:49:44 latency o 3 place 4
+14:49  up 9 days,  8:51, 70 users, load averages: 1.90 3.74 3.62
+14:49:56 latency h 4 place 1
+14:50:08 latency o 4 place 2
+14:50:21 latency m 4 place 3
+14:50:33 latency k 4 place 4
+14:50  up 9 days,  8:51, 70 users, load averages: 1.58 3.36 3.49
+14:50:45 latency o 5 place 1
+14:50:58 latency k 5 place 2
+14:51:10 latency h 5 place 3
+14:51:22 latency m 5 place 4
+14:51  up 9 days,  8:52, 70 users, load averages: 1.47 3.05 3.36
+14:51:34 latency k 6 place 1
+14:51:47 latency m 6 place 2
+14:51:59 latency o 6 place 3
+14:52:11 latency h 6 place 4
+14:52  up 9 days,  8:53, 70 users, load averages: 0.86 2.67 3.21
+14:52:24 latency m 7 place 1
+14:52:36 latency h 7 place 2
+14:52:48 latency k 7 place 3
+14:53:01 latency o 7 place 4
+14:53  up 9 days,  8:54, 70 users, load averages: 1.80 2.68 3.18
+14:53:13 latency h 8 place 1
+14:53:25 latency o 8 place 2
+14:53:38 latency m 8 place 3
+14:53:50 latency k 8 place 4
+14:54  up 9 days,  8:55, 70 users, load averages: 1.71 2.52 3.09
+14:54:02 done
+14:54:30 startup o 1
+14:54:45 startup k 1
+14:55:00 startup h 1
+14:55:15 startup m 1
+14:55:31 startup floor 1
+14:55  up 9 days,  8:56, 70 users, load averages: 2.57 2.58 3.04
+14:55:46 startup k 2
+14:56:01 startup m 2
+14:56:17 startup o 2
+14:56:32 startup h 2
+14:56:47 startup floor 2
+14:57  up 9 days,  8:58, 70 users, load averages: 4.52 3.15 3.21
+14:57:02 startup m 3
+14:57:18 startup h 3
+14:57:33 startup k 3
+14:57:48 startup o 3
+14:58:04 startup floor 3
+14:58  up 9 days,  8:59, 70 users, load averages: 3.46 3.18 3.22
+14:58:19 startup h 4
+14:58:34 startup o 4
+14:58:49 startup m 4
+14:59:04 startup k 4
+14:59:20 startup floor 4
+14:59  up 9 days, 9 hrs, 70 users, load averages: 2.01 2.77 3.06
+14:59:35 done
