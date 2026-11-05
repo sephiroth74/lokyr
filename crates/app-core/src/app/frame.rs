@@ -876,9 +876,13 @@ impl<B: Backend> App<B> {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
         }
-        // The titlebar of a tab bar while one shows, the system's otherwise;
-        // a quick window has none.
-        let titlebar = if chrome::has_tab_bar(&state.chrome) {
+        // The titlebar of a tab bar while one shows in it, the system's
+        // otherwise, of a bar below it, at the bottom or down a column; a
+        // quick window has none.
+        let titlebar = if chrome::has_tab_bar(&state.chrome)
+            && chrome::tab_bar_place(&state.chrome, &self.plugins)
+                == lokyr_kernel::plugins::host::BarPlace::Titlebar
+        {
             Titlebar::Tabs
         } else {
             Titlebar::Titled

@@ -175,6 +175,59 @@ pub struct Line {
     pub wrapped: bool,
 }
 
+/// Where a plugin's tab bar goes in the windows that show it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BarPlace {
+    /// In the titlebar, past the window's buttons.
+    #[default]
+    Titlebar,
+    /// Under a titlebar of the window's title, across the window.
+    BelowTitlebar,
+    /// Across the window's bottom, below the status bar.
+    Bottom,
+    /// Down a column at the window's left, from below the titlebar to the
+    /// window's bottom.
+    Left {
+        /// The column's width, in points.
+        width: f32,
+    },
+    /// Down a column at the window's right, likewise.
+    Right {
+        /// The column's width, in points.
+        width: f32,
+    },
+}
+
+/// The narrowest and the widest that a tab bar's column is, in points.
+pub const COLUMN_WIDTHS: (f32, f32) = (60.0, 600.0);
+
+impl BarPlace {
+    /// Whether the place is one that a host takes: a column's width from
+    /// [`COLUMN_WIDTHS`]'s narrowest to its widest; why not otherwise.
+    pub fn check(self) -> Result<(), String> {
+        let (narrowest, widest) = COLUMN_WIDTHS;
+        match self {
+            Self::Left { width } | Self::Right { width }
+                if !(narrowest..=widest).contains(&width) =>
+            {
+                Err(format!(
+                    "a tab bar's column is from {narrowest} to {widest} points wide, not {width}"
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// The column's width, in points, of a place on a side.
+    pub fn width(self) -> Option<f32> {
+        match self {
+            Self::Left { width } | Self::Right { width } => Some(width),
+            _ => None,
+        }
+    }
+}
+
 /// A color: one of the 256's palette, or an RGB one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

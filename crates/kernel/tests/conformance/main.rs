@@ -699,11 +699,13 @@ fn kind(request: &Request) -> usize {
         Request::SetTabTitle { .. } => 55,
         Request::SetTabColor { .. } => 56,
         Request::AskText { .. } => 57,
+        Request::SetTabBarPlace(_) => 58,
+        Request::TabBarPlace => 59,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 58;
+const KINDS: usize = 60;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

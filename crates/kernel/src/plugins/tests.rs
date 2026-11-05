@@ -1132,6 +1132,7 @@ fn a_call_is_its_own_plugin_s() {
             stored: Stored::default(),
             wanted: true,
             ran: true,
+            bar_place: host::BarPlace::default(),
         },
         Outbox::default(),
         Vec::new(),

@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId, Scroll, Side,
-    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId,
+    Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -255,6 +255,15 @@ pub enum Request {
         /// Its color.
         color: Option<Color>,
     },
+    /// Puts the plugin's tab bar at `place` in the windows that show it, a
+    /// column's width from [`COLUMN_WIDTHS`](crate::host::COLUMN_WIDTHS)'s
+    /// narrowest to its widest, in
+    /// place of the place before, as its config says: a plugin that fills
+    /// no tab bar puts it nowhere.
+    SetTabBarPlace(BarPlace),
+    /// The plugin's tab bar's place, a column's width as the user's drag
+    /// of its edge left it, as its view lays its tabs out across or down.
+    TabBarPlace,
     /// Asks the user for a text, in an alert of `message` and `detail` on
     /// `window`, or on the focused window without one, in a field that
     /// holds `text` as it opens: the host answers with the question's id,
@@ -446,6 +455,8 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::AskText { .. }
+            | Self::SetTabBarPlace(_)
+            | Self::TabBarPlace
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -486,7 +497,8 @@ impl Request {
             | Self::Tabs(_)
             | Self::Layout(_)
             | Self::Config
-            | Self::State => Effect::Read,
+            | Self::State
+            | Self::TabBarPlace => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -503,6 +515,7 @@ impl Request {
             | Self::ClosePane { .. }
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
+            | Self::SetTabBarPlace(_)
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -554,6 +567,8 @@ pub enum Response {
     Reading(u64),
     /// A question's id, whose answer comes as an event.
     Asking(u64),
+    /// A tab bar's place.
+    TabBarPlace(BarPlace),
     /// A row's styles, or none of a row that the pane does not hold.
     Styles(Option<Vec<StyleRun>>),
     /// A decoration's id.

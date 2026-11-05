@@ -221,6 +221,13 @@ type WindowInfo = {
     keys: string?, -- the keys that bring it forward, as the platform writes them, as "⌥⌘1"
 }
 
+type BarPlace =
+    | { kind: "titlebar" }
+    | { kind: "below-titlebar" }
+    | { kind: "bottom" }
+    | { kind: "left", width: number }
+    | { kind: "right", width: number }
+
 type TabInfo = {
     id: TabId,
     window: WindowId,
@@ -461,6 +468,11 @@ type Cx = {
     -- Opens a panel, by an id of the plugin's, which the host then renders; a "panel-closed" event tells as it closes.
     open_panel: (id: string, options: PanelOptions) -> (boolean, Error?),
     close_panel: (id: string) -> (boolean, Error?),
+    -- Puts the plugin's tab bar, in the windows that show it, in the titlebar, below a titlebar of the window's title,
+    -- at the bottom, or down a column on a side of 60 to 600 points; `tab_bar_place` reads it, a column's width as the
+    -- user's drag of its edge left it, as the bar's view lays its tabs out across or down.
+    set_tab_bar_place: (place: BarPlace) -> (boolean, Error?),
+    tab_bar_place: () -> (BarPlace?, Error?),
     -- Asks the user for a text, in an alert on `window`, or on the focused one, of a field that holds `text`:
     -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
     -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.

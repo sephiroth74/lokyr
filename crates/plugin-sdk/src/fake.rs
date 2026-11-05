@@ -43,8 +43,8 @@ use std::fmt::Write as _;
 use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    self, Binding, Color, DecorationLook, Direction, Layout, LineText, MOST_STATE, PaneId, Side,
-    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    self, BarPlace, Binding, Color, DecorationLook, Direction, Layout, LineText, MOST_STATE,
+    PaneId, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{Call, Data, Effect, Event, Request, Response};
@@ -189,6 +189,8 @@ pub struct FakeHost {
     /// The windows' numbers and the keys that select them, as the test
     /// gave them.
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
+    /// The place of the plugin's tab bar.
+    bar_place: BarPlace,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -231,6 +233,7 @@ impl FakeHost {
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
+            bar_place: BarPlace::default(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -688,6 +691,7 @@ impl FakeHost {
                     tab.title.clone_from(title);
                 }
             }
+            Request::SetTabBarPlace(place) => self.bar_place = *place,
             Request::SetTabColor { tab, color } => {
                 if let Some(tab) = self.tabs.get_mut(tab) {
                     tab.color = *color;
@@ -1487,6 +1491,7 @@ impl Calling<'_> {
                 Response::Boolean(opening(target).is_ok() && !host.missing.contains(target))
             }
             Request::FontSize => Response::FontSize(host.font_size),
+            Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Windows => Response::Windows(host.windows()),
             Request::Tabs(window) => {
                 let Some(found) = host.windows.get(window) else {
@@ -1553,6 +1558,12 @@ impl Calling<'_> {
             }
             Request::SetTabTitle { tab, .. } => {
                 self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::SetTabBarPlace(place) => {
+                place
+                    .check()
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
             Request::SetTabColor { tab, color } => {

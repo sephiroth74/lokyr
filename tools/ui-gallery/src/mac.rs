@@ -495,11 +495,11 @@ impl App {
 }
 
 /// The window's titlebar of the tab bar's place: of tabs where it is in
-/// the titlebar.
+/// the titlebar, of the window's title elsewhere.
 fn titlebar_of(place: TabBarPlace) -> Titlebar {
     match place {
         TabBarPlace::Titlebar => Titlebar::Tabs,
-        TabBarPlace::BelowTitlebar => Titlebar::Titled,
+        _ => Titlebar::Titled,
     }
 }
 

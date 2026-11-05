@@ -47,8 +47,8 @@
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    Binding, Color, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId, Scroll, Side,
-    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId,
+    Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -574,6 +574,21 @@ impl<'a> Cx<'a> {
     /// returns.
     pub fn set_tab_color(&mut self, tab: TabId, color: Option<Color>) -> Result<(), Error> {
         self.done(Request::SetTabColor { tab, color })
+    }
+
+    /// Puts the plugin's tab bar at `place` in the windows that show it, as
+    /// this call returns.
+    pub fn set_tab_bar_place(&mut self, place: BarPlace) -> Result<(), Error> {
+        self.done(Request::SetTabBarPlace(place))
+    }
+
+    /// The plugin's tab bar's place, a column's width as the user's drag
+    /// left it.
+    pub fn tab_bar_place(&mut self) -> Result<BarPlace, Error> {
+        match self.request(Request::TabBarPlace) {
+            Response::TabBarPlace(place) => Ok(place),
+            other => Err(failed(other)),
+        }
     }
 
     /// Asks the user for a text, in an alert of `message` and `detail` on

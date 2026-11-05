@@ -22,8 +22,8 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE, PaneId,
-    Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
+    BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
+    PaneId, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{Data, Event, Mods, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -139,8 +139,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
 
 /// What a tab bar's plugin asks of a tab: a title and a color of its own,
 /// which a read of the tabs gives, and back; a text that the user is asked
-/// for, whose answer comes to the plugin alone; and what of them is
-/// refused.
+/// for, whose answer comes to the plugin alone; its bar's place, which a
+/// later call reads; and what of them is refused.
 fn tabs(world: &World) -> Scenario {
     let (w, t, p) = (world.window, world.tab, world.pane);
     let info = |title: &str, color| TabInfo {
@@ -242,6 +242,32 @@ fn tabs(world: &World) -> Scenario {
                 Request::Tabs(w),
                 Response::Tabs(vec![info("", None)]),
             )]),
+            // Its tab bar's place, which a later call reads, a column's
+            // width within its limits.
+            ask(vec![
+                (
+                    Request::SetTabBarPlace(BarPlace::Left { width: 200.0 }),
+                    Response::Done,
+                ),
+                (
+                    Request::SetTabBarPlace(BarPlace::Right { width: 10.0 }),
+                    failed(
+                        Code::Failed,
+                        "a tab bar's column is from 60 to 600 points wide, not 10",
+                    ),
+                ),
+                (
+                    Request::TabBarPlace,
+                    Response::TabBarPlace(BarPlace::Titlebar),
+                ),
+            ]),
+            ask(vec![
+                (
+                    Request::TabBarPlace,
+                    Response::TabBarPlace(BarPlace::Left { width: 200.0 }),
+                ),
+                (Request::SetTabBarPlace(BarPlace::Titlebar), Response::Done),
+            ]),
         ],
     }
 }

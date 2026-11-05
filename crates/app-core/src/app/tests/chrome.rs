@@ -27,11 +27,13 @@ struct Bars {
     panics: Rc<Cell<bool>>,
     views: Vec<ViewId>,
     closed: Rc<Cell<usize>>,
+    /// The place that `bars.place` gives its tab bar.
+    place: Rc<Cell<plugins::host::BarPlace>>,
 }
 
 impl plugins::Plugin for Bars {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
-        for name in ["bars.again", "bars.panel"] {
+        for name in ["bars.again", "bars.panel", "bars.place"] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: name.to_owned(),
@@ -47,6 +49,9 @@ impl plugins::Plugin for Bars {
     fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
         if name == "bars.panel" {
             return cx.emit("bars.open", "bars.open", plugins::Data::Nil);
+        }
+        if name == "bars.place" {
+            cx.set_tab_bar_place(self.place.get())?;
         }
         for view in &self.views {
             cx.request_render(view.clone())?;
@@ -127,6 +132,7 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
         panics: Rc::clone(&panics),
         views: Vec::new(),
         closed: Rc::new(Cell::new(0)),
+        place: Rc::new(Cell::new(plugins::host::BarPlace::default())),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -227,6 +233,7 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
         panics: Rc::new(Cell::new(false)),
         views: Vec::new(),
         closed: Rc::clone(&closed),
+        place: Rc::new(Cell::new(plugins::host::BarPlace::default())),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -257,4 +264,94 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
     fake.fire_timers(&mut app, Instant::now());
     assert_eq!(closed.get(), 1);
     assert!(app.deliver_timer.is_none());
+}
+
+#[test]
+fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
+    use plugins::host::BarPlace;
+    let place = Rc::new(Cell::new(BarPlace::Bottom));
+    let bars = Bars {
+        empty: Rc::new(RefCell::new(Vec::new())),
+        panics: Rc::new(Cell::new(false)),
+        views: Vec::new(),
+        closed: Rc::new(Cell::new(0)),
+        place: Rc::clone(&place),
+    };
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"tab-bar\", \"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(manifest, Box::new(bars));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let placed = |fake: &mut Fake, app: &mut App, at: BarPlace| {
+        place.set(at);
+        app.run(fake, "bars.place", Args::new());
+        app.run(fake, "bars.again", Args::new());
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+        let state = &app.windows[&window];
+        let framed = |slot: Slot| {
+            state
+                .chrome
+                .iter()
+                .find(|view| view.view.slot() == Some(slot))
+                .and_then(|view| view.frame)
+                .map(super::super::chrome::rect_of)
+                .expect("a view's frame")
+        };
+        (
+            fake.window(window).unwrap().titlebar,
+            framed(Slot::TabBar),
+            framed(Slot::StatusBar),
+            state.views[0].rect,
+        )
+    };
+    let size = fake.window(window).unwrap().size;
+    let (width, height) = (size.pixels.width as i32, size.pixels.height as i32);
+    let pixels = |points: f32| (f64::from(points) * size.scale).round() as i32;
+    let titlebar = size.bar_pixels() as i32;
+    // At the bottom, below the status bar, under a titlebar of the title.
+    let (bar, tab_bar, status, pane) = placed(&mut fake, &mut app, BarPlace::Bottom);
+    assert_eq!(bar, Titlebar::Titled);
+    assert_eq!(tab_bar.y + tab_bar.height as i32, height);
+    assert_eq!(status.y + status.height as i32, tab_bar.y);
+    assert_eq!((pane.y, pane.y + pane.height as i32), (titlebar, status.y));
+    // Down a column on the left, from below the titlebar, the rest beside.
+    let (bar, tab_bar, status, pane) = placed(&mut fake, &mut app, BarPlace::Left { width: 100.0 });
+    assert_eq!(bar, Titlebar::Titled);
+    assert_eq!(
+        (tab_bar.x, tab_bar.y, tab_bar.width as i32),
+        (0, titlebar, pixels(100.0))
+    );
+    assert_eq!(tab_bar.y + tab_bar.height as i32, height);
+    assert_eq!((status.x, pane.x), (pixels(100.0), pixels(100.0)));
+    assert_eq!(pane.x + pane.width as i32, width);
+    // And on the right.
+    let (_, tab_bar, status, pane) = placed(&mut fake, &mut app, BarPlace::Right { width: 100.0 });
+    assert_eq!(tab_bar.x + tab_bar.width as i32, width);
+    assert_eq!(pane.x + pane.width as i32, tab_bar.x);
+    assert_eq!(status.x + status.width as i32, tab_bar.x);
+    // Below a titlebar of the title, across the window.
+    let (bar, tab_bar, _, pane) = placed(&mut fake, &mut app, BarPlace::BelowTitlebar);
+    assert_eq!(bar, Titlebar::Titled);
+    assert_eq!(
+        (tab_bar.y, pane.y),
+        (titlebar, titlebar + tab_bar.height as i32)
+    );
+    // In the titlebar again, of a titlebar of tabs.
+    let (bar, tab_bar, ..) = placed(&mut fake, &mut app, BarPlace::Titlebar);
+    assert_eq!(bar, Titlebar::Tabs);
+    assert_eq!(tab_bar.y, 0);
+    // A column too wide is refused, the place staying.
+    place.set(BarPlace::Left { width: 2000.0 });
+    app.run(&mut fake, "bars.place", Args::new());
+    assert_eq!(app.plugins.tab_bar_place("lokyr/bars"), BarPlace::Titlebar);
 }

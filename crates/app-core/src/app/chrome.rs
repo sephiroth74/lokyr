@@ -7,7 +7,8 @@
 use std::fmt;
 use std::time::Instant;
 
-use lokyr_kernel::plugins::host;
+use lokyr_kernel::plugins::Plugins;
+use lokyr_kernel::plugins::host::{self, BarPlace};
 use lokyr_kernel::plugins::ui::{PanelId, PanelOptions, Role, Slot, UiEvent, ViewId};
 use lokyr_kernel::workspace::PaneId;
 use lokyr_platform_core::{Platform, Point, Size, Sweep, SweepShape, WindowId, WindowSize};
@@ -112,10 +113,6 @@ impl SlotView {
             .is_some_and(|placed| placed.options.role == Role::Tooltip)
     }
 }
-
-/// Where the tab bar goes: in the titlebar, past the window's buttons, or at
-/// the window's top where it has no titlebar.
-const PLACE: TabBarPlace = TabBarPlace::Titlebar;
 
 impl<B: Backend> App<B> {
     /// The views that `window` shows in its slots, in the order that they
@@ -337,6 +334,15 @@ impl<B: Backend> App<B> {
         let titlebar = size.bar_pixels() as f32;
         let mut events = Vec::new();
         let tab_bar_shows = has_tab_bar(&state.chrome);
+        // The place that the bar's plugin gives it, a column's width in
+        // pixels.
+        let place = match tab_bar_place(&state.chrome, &self.plugins) {
+            BarPlace::Titlebar => TabBarPlace::Titlebar,
+            BarPlace::BelowTitlebar => TabBarPlace::BelowTitlebar,
+            BarPlace::Bottom => TabBarPlace::Bottom,
+            BarPlace::Left { width } => TabBarPlace::Left(width * size.scale as f32),
+            BarPlace::Right { width } => TabBarPlace::Right(width * size.scale as f32),
+        };
         // Each slot's height, of its views laid out across the window, or
         // its share of it for a slot of many.
         let mut natural = |slot: Slot| {
@@ -358,10 +364,13 @@ impl<B: Backend> App<B> {
                 })
                 .fold(0.0_f32, f32::max)
         };
-        let tab_bar = if titlebar > 0.0 {
-            if tab_bar_shows { titlebar } else { 0.0 }
-        } else {
-            natural(Slot::TabBar)
+        // The titlebar's height in the titlebar, a column's whole height,
+        // and across the window its view's.
+        let tab_bar = match place {
+            _ if !tab_bar_shows => 0.0,
+            TabBarPlace::Titlebar if titlebar > 0.0 => titlebar,
+            TabBarPlace::Left(_) | TabBarPlace::Right(_) => 1.0,
+            _ => natural(Slot::TabBar),
         };
         let heights = Heights {
             tab_bar,
@@ -373,7 +382,7 @@ impl<B: Backend> App<B> {
             titlebar,
             buttons: (size.buttons * size.scale) as f32,
         };
-        let regions = chrome::regions(&shape, PLACE, heights);
+        let regions = chrome::regions(&shape, place, heights);
         state.overlay = regions.window_overlay;
         for slot in [Slot::TabBar, Slot::WindowStrip, Slot::StatusBar] {
             let region = match slot {
@@ -621,6 +630,16 @@ pub(super) fn has_tab_bar(chrome: &[SlotView]) -> bool {
     chrome
         .iter()
         .any(|view| view.view.slot() == Some(Slot::TabBar) && view.shows())
+}
+
+/// Where `chrome`'s tab bar goes, as its plugin, of `plugins`, gives it; in
+/// the titlebar without one.
+pub(super) fn tab_bar_place(chrome: &[SlotView], plugins: &Plugins) -> BarPlace {
+    chrome
+        .iter()
+        .find(|view| view.view.slot() == Some(Slot::TabBar))
+        .map(|view| plugins.tab_bar_place(&view.plugin))
+        .unwrap_or_default()
 }
 
 /// Whether a transition of `chrome`'s views runs at `now`.

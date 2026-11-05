@@ -9,6 +9,18 @@
       "minLength": 1,
       "maxLength": 30,
       "default": "sample-slots"
+    },
+    "place": {
+      "description": "Where the tab bar goes.",
+      "enum": ["titlebar", "below-titlebar", "bottom", "left", "right"],
+      "default": "titlebar"
+    },
+    "width": {
+      "description": "A column's width, in points, on the left or the right.",
+      "type": "number",
+      "minimum": 60,
+      "maximum": 600,
+      "default": 180
     }
   }
 }

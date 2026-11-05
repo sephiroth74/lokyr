@@ -281,6 +281,8 @@ struct State {
     wanted: bool,
     /// Whether it was activated, as a plugin turned on again is made anew.
     ran: bool,
+    /// Where its tab bar goes in the windows that show it.
+    bar_place: host::BarPlace,
 }
 
 /// A plugin's state on the disk: its file, in the app's state directory,
@@ -642,6 +644,7 @@ impl Plugins {
                 stored: Stored { file, held: None },
                 wanted: true,
                 ran: false,
+                bar_place: host::BarPlace::default(),
             },
         });
         Ok(())
@@ -1034,6 +1037,16 @@ impl Plugins {
             }));
         }
         commands
+    }
+
+    /// Where the tab bar of `plugin`, the provider of a window's, goes; at
+    /// the titlebar for a plugin not there.
+    pub fn tab_bar_place(&self, plugin: &str) -> host::BarPlace {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .map(|entry| entry.state.bar_place)
+            .unwrap_or_default()
     }
 
     /// The text of `text`, a message of `plugin`'s catalogs, in
@@ -2029,6 +2042,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SetTabTitle { tab, title } => {
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
+            Asked::SetTabBarPlace(place) => state.bar_place = place,
             Asked::SetTabColor { tab, color } => {
                 let color = match color {
                     Some(host::Color::Rgb(red, green, blue)) => Some(Rgb::new(red, green, blue)),
@@ -2664,6 +2678,7 @@ impl Host<'_, '_> {
             }
             Asked::Opens(target) => Response::Boolean(opens(&target)),
             Asked::FontSize => Response::FontSize(self.context.font_size),
+            Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),
             Asked::Windows => Response::Windows(
                 self.context
                     .workspace
@@ -2767,6 +2782,11 @@ impl Host<'_, '_> {
                     new,
                 });
                 return Ok(Response::Pane(Some(new.into())));
+            }
+            Asked::SetTabBarPlace(place) => {
+                place
+                    .check()
+                    .map_err(|message| Error::new(Code::Failed, message))?;
             }
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;

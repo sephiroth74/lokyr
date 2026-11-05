@@ -8,15 +8,17 @@
 //! the platform shows as its own, whose choice the status bar tells; and
 //! each pane's id in its header. Each change of the workspace renders its
 //! views again. Its section of the config, `[plugins.sample-slots]`, takes
-//! `title`, the status bar's first text; the field's text is its state,
-//! which the status bar tells again at the next run.
+//! `title`, the status bar's first text, and `place`, where the tab bar
+//! goes, `titlebar`, `below-titlebar`, `bottom`, `left` or `right`, of a
+//! column `width` points wide, which lays its tabs down; the field's text
+//! is its state, which the status bar tells again at the next run.
 
 use lokyr_kernel::commands::Error;
-use lokyr_kernel::plugins::host::{TabId, WindowId};
+use lokyr_kernel::plugins::host::{BarPlace, TabId, WindowId};
 use lokyr_kernel::plugins::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{
-    Align, Edges, Length, Node, PointerShape, ProgressShape, ProgressState, Style, Token,
-    UiEventKind,
+    Align, Direction, Edges, Length, Node, PointerShape, ProgressShape, ProgressState, Style,
+    Token, UiEventKind,
 };
 use lokyr_kernel::plugins::{Cx, Data, Event, Plugin, WorkspaceEvent};
 
@@ -73,14 +75,30 @@ impl SampleSlots {
         }
     }
 
-    /// Takes its config's title.
+    /// Takes its config's title, and puts its tab bar at its place.
     fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        if let Data::Map(config) = cx.config()?
-            && let Some(Data::Text(title)) = config.get("title")
-        {
+        let Data::Map(config) = cx.config()? else {
+            return Ok(());
+        };
+        if let Some(Data::Text(title)) = config.get("title") {
             self.title.clone_from(title);
         }
-        Ok(())
+        let width = match config.get("width") {
+            Some(Data::Number(width)) => *width as f32,
+            Some(Data::Integer(width)) => *width as f32,
+            _ => 180.0,
+        };
+        let place = match config.get("place") {
+            Some(Data::Text(place)) => match place.as_str() {
+                "below-titlebar" => BarPlace::BelowTitlebar,
+                "bottom" => BarPlace::Bottom,
+                "left" => BarPlace::Left { width },
+                "right" => BarPlace::Right { width },
+                _ => BarPlace::Titlebar,
+            },
+            _ => BarPlace::Titlebar,
+        };
+        cx.set_tab_bar_place(place)
     }
 }
 
@@ -262,6 +280,16 @@ impl SampleSlots {
             })
             .collect();
         shown.push(Node::button("+").key("new").tooltip("New Tab"));
-        bar(shown, "tab.bar.bg")
+        let mut bar = bar(shown, "tab.bar.bg");
+        // Down a column, of its place.
+        if cx
+            .tab_bar_place()
+            .is_ok_and(|place| place.width().is_some())
+        {
+            bar.layout.direction = Direction::Column;
+            bar.layout.align = Align::Stretch;
+            bar.layout.gap = 4.0;
+        }
+        bar
     }
 }
