@@ -389,3 +389,58 @@ fn a_change_of_the_appearance_gives_every_pane_its_colors() {
     });
     let _ = window;
 }
+
+/// A program that tracks the mouse's buttons and drags, in SGR's reports,
+/// tells it is ready after its `name`, and shows what it reads.
+fn tracking(name: &str) -> Program {
+    shell(&format!(
+        "stty raw -echo; printf '\\033[?1002h\\033[?1006h'; echo ready-{name}; cat -v"
+    ))
+}
+
+#[test]
+fn a_program_s_drag_stays_in_its_pane_across_the_divider() {
+    let (mut fake, mut app, window, a, b) = two_panes(tracking("a"), &tracking("b"));
+    let (from, to) = (
+        middle_of(&fake, &app, window, a),
+        middle_of(&fake, &app, window, b),
+    );
+    let none = Modifiers::NONE;
+    fake.send(&mut app, window, click(true, from, none, 1));
+    fake.send(&mut app, window, moved(to, none));
+    // A second button over the other pane goes to the first too, which
+    // keeps the keyboard.
+    fake.send(&mut app, window, press(MouseButton::Right, true, to, none));
+    fake.send(&mut app, window, press(MouseButton::Right, false, to, none));
+    fake.send(&mut app, window, click(false, to, none, 1));
+    assert_eq!(app.focused(window), Some(a));
+    // The moves at the first pane's last column, past its right edge; the
+    // release there.
+    let columns = app.workspace.pane(a).unwrap().grid().columns;
+    let row = app.windows[&window].views[0].grid.rows / 2 + 1;
+    let at_edge = format!("^[[<32;{columns};{row}M");
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, a).contains(&format!("^[[<0;{columns};{row}m"))
+    });
+    let first = screen_of(&app, a);
+    assert!(first.contains("^[[<0;"), "{first}");
+    assert!(first.contains(&at_edge), "{first}");
+    assert!(
+        first.contains(&format!("^[[<2;{columns};{row}M")),
+        "{first}"
+    );
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(
+        !screen_of(&app, b).contains("^[[<"),
+        "{}",
+        screen_of(&app, b)
+    );
+    // Released, a press over the second goes to the second.
+    fake.send(&mut app, window, click(true, to, none, 1));
+    fake.send(&mut app, window, click(false, to, none, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, b).contains("^[[<0;")
+    });
+    assert_eq!(app.focused(window), Some(b));
+}

@@ -321,7 +321,9 @@ impl<B: Backend> App<B> {
     /// not of a press above the screen, in a view scrolled up. Shift keeps
     /// a press for the terminal, which selects with it; a release goes to
     /// the program whenever it learned of the press, so that no button stays
-    /// down for it.
+    /// down for it. While a program holds a button, its pane takes the
+    /// presses and the releases, over another pane too, at its nearest
+    /// cell.
     pub(super) fn mouse_button(
         &mut self,
         platform: &mut dyn Platform,
@@ -356,8 +358,15 @@ impl<B: Backend> App<B> {
         ) {
             return;
         }
-        // A press gives the pane under it the keyboard, then acts there.
+        // A press gives the pane under it the keyboard, then acts there;
+        // while a program holds a button, its pane takes the others' presses
+        // and releases, wherever they are.
+        let holder = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.mouse.holder());
         if pressed
+            && holder.is_none()
             && let Some(under) = self.pane_at(platform, window, position)
             && self.focused(window) != Some(under)
         {
@@ -395,17 +404,17 @@ impl<B: Backend> App<B> {
         if pressed && mods.shift {
             return;
         }
-        let Some(pointer) = self.pointer(platform, window, position) else {
+        let Some(target) = holder.or_else(|| self.focused(window)) else {
+            return;
+        };
+        // Past the pane's edges, at its nearest cell.
+        let Some(pointer) = self.pointer_in(platform, window, target, position) else {
             return;
         };
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
-        let Some(pane) = self
-            .workspace
-            .focused(state.window)
-            .filter(|pane| !pane.is_kept())
-        else {
+        let Some(pane) = self.workspace.pane(target).filter(|pane| !pane.is_kept()) else {
             return;
         };
         let on_screen =
@@ -414,13 +423,13 @@ impl<B: Backend> App<B> {
             let Some(pointer) = on_screen else {
                 return;
             };
-            state.mouse.moved(pointer, true);
+            state.mouse.moved(target, pointer, true);
             if pane.mouse(&mouse_event(MouseAction::Press(button), mods, pointer)) {
-                state.mouse.press(button);
+                state.mouse.press(target, button);
             }
         } else if state.mouse.release(button) {
             let pointer = on_screen.unwrap_or(mouse::at_top(pointer));
-            state.mouse.moved(pointer, true);
+            state.mouse.moved(target, pointer, true);
             pane.mouse(&mouse_event(MouseAction::Release(button), mods, pointer));
         }
     }
@@ -692,7 +701,13 @@ impl<B: Backend> App<B> {
         if mods.shift {
             return;
         }
-        let Some(target) = self.pane_under(platform, window, position) else {
+        // A drag that a program holds goes to its pane alone, wherever the
+        // pointer goes, at the pane's nearest cell past its edges.
+        let holder = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.mouse.holder());
+        let Some(target) = holder.or_else(|| self.pane_under(platform, window, position)) else {
             return;
         };
         let Some(pointer) = self.pointer_in(platform, window, target, position) else {
@@ -715,7 +730,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
-        if state.mouse.moved(pointer, pixels) {
+        if state.mouse.moved(target, pointer, pixels) {
             let action = MouseAction::Motion(state.mouse.held());
             pane.mouse(&mouse_event(action, mods, pointer));
         }

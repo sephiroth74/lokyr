@@ -1860,13 +1860,16 @@ impl<B: Backend> App<B> {
 
     /// Forgets what the app keeps of `panes`, which close: their programs'
     /// reads of the clipboard and their pastes that the user is asked
-    /// about, and their wakes.
+    /// about, their wakes, and the mouse's buttons that they held.
     fn forget_panes(&mut self, panes: &[PaneId]) {
         self.clipboard_asks
             .retain(|_, (pane, _)| !panes.contains(pane));
         self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
-        for pane in panes {
-            self.pane_wakes.remove(pane);
+        for &pane in panes {
+            self.pane_wakes.remove(&pane);
+            for state in self.windows.values_mut() {
+                state.mouse.forget(pane);
+            }
         }
     }
 

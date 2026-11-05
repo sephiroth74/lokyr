@@ -2,7 +2,9 @@
 //! that the program learned were held, the wheel's scroll, which adds up to
 //! whole steps, and the cells that a drag selects.
 
-use lokyr_kernel::workspace::Grid;
+use std::collections::BTreeMap;
+
+use lokyr_kernel::workspace::{Grid, PaneId};
 use lokyr_platform_core::{MouseButton as Button, Point, ScrollDelta, ScrollPhase};
 use lokyr_vt_core::input::MouseButton;
 
@@ -177,20 +179,26 @@ fn number(button: MouseButton) -> u8 {
     }
 }
 
-/// A window's mouse: the buttons pressed that the program learned of,
-/// where it last learned the pointer was, and the scroll that adds up to the
-/// wheel's next steps.
+/// A window's mouse: the buttons pressed that a pane's program learned of,
+/// and that pane, which takes the moves and the releases until the last
+/// goes up; where each pane's program last learned the pointer was; and the
+/// scroll that adds up to the wheel's next steps.
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
     held: Vec<MouseButton>,
-    last: Option<Pointer>,
+    holder: Option<PaneId>,
+    last: BTreeMap<PaneId, Pointer>,
     /// The scroll that makes no whole step yet, across and up, in rows.
     rest: (f64, f64),
 }
 
 impl Mouse {
-    /// Notes that `button` went down.
-    pub(crate) fn press(&mut self, button: MouseButton) {
+    /// Notes that `button` went down, which `pane`'s program learned of:
+    /// the pane of the first button holds the others.
+    pub(crate) fn press(&mut self, pane: PaneId, button: MouseButton) {
+        if self.held.is_empty() {
+            self.holder = Some(pane);
+        }
         if !self.held.contains(&button) {
             self.held.push(button);
         }
@@ -201,7 +209,25 @@ impl Mouse {
     pub(crate) fn release(&mut self, button: MouseButton) -> bool {
         let held = self.held.contains(&button);
         self.held.retain(|&other| other != button);
+        if self.held.is_empty() {
+            self.holder = None;
+        }
         held
+    }
+
+    /// The pane whose program learned of the buttons held, while one is.
+    pub(crate) fn holder(&self) -> Option<PaneId> {
+        self.holder
+    }
+
+    /// Forgets `pane`, which closed, and its buttons, which no program
+    /// holds any more.
+    pub(crate) fn forget(&mut self, pane: PaneId) {
+        self.last.remove(&pane);
+        if self.holder == Some(pane) {
+            self.holder = None;
+            self.held.clear();
+        }
     }
 
     /// The lowest-numbered of the buttons down, which a motion reports.
@@ -212,17 +238,16 @@ impl Mouse {
             .min_by_key(|&button| number(button))
     }
 
-    /// Notes that the program learns the pointer is at `pointer`, and
-    /// returns whether that is news: another cell, or with `pixels`, as
-    /// reports in pixels have it, another pixel.
-    pub(crate) fn moved(&mut self, pointer: Pointer, pixels: bool) -> bool {
-        let new = match self.last {
+    /// Notes that `pane`'s program learns the pointer is at `pointer`, and
+    /// returns whether that is news to it: another cell than the one that
+    /// it learned last, or with `pixels`, as reports in pixels have it,
+    /// another pixel.
+    pub(crate) fn moved(&mut self, pane: PaneId, pointer: Pointer, pixels: bool) -> bool {
+        match self.last.insert(pane, pointer) {
             Some(last) if pixels => last != pointer,
             Some(last) => (last.col, last.row) != (pointer.col, pointer.row),
             None => true,
-        };
-        self.last = Some(pointer);
-        new
+        }
     }
 
     /// The whole steps, across and up, that `delta` makes with the scroll
@@ -411,12 +436,23 @@ mod tests {
         assert_eq!(button(Button::Other(5)), Some(MouseButton::Button10));
         assert_eq!(button(Button::Other(7)), None);
         let mut mouse = Mouse::default();
+        let (first, second) = (PaneId::of(1), PaneId::of(2));
         assert!(!mouse.release(MouseButton::Left), "never pressed");
-        mouse.press(MouseButton::Right);
-        mouse.press(MouseButton::Left);
+        mouse.press(first, MouseButton::Right);
+        mouse.press(second, MouseButton::Left);
         assert_eq!(mouse.held(), Some(MouseButton::Left));
+        // The pane of the first press holds them all, until the last goes
+        // up.
+        assert_eq!(mouse.holder(), Some(first));
         assert!(mouse.release(MouseButton::Left));
         assert_eq!(mouse.held(), Some(MouseButton::Right));
+        assert_eq!(mouse.holder(), Some(first));
+        assert!(mouse.release(MouseButton::Right));
+        assert_eq!(mouse.holder(), None);
+        // A pane that closes takes its buttons with it.
+        mouse.press(second, MouseButton::Left);
+        mouse.forget(second);
+        assert_eq!((mouse.holder(), mouse.held()), (None, None));
     }
 
     #[test]
@@ -428,10 +464,14 @@ mod tests {
             x,
             y: 0,
         };
-        assert!(mouse.moved(at(0, 1), false));
-        assert!(!mouse.moved(at(0, 5), false), "the same cell");
-        assert!(mouse.moved(at(0, 6), true), "another pixel");
-        assert!(mouse.moved(at(1, 17), false));
+        let (first, second) = (PaneId::of(1), PaneId::of(2));
+        assert!(mouse.moved(first, at(0, 1), false));
+        assert!(!mouse.moved(first, at(0, 5), false), "the same cell");
+        assert!(mouse.moved(first, at(0, 6), true), "another pixel");
+        assert!(mouse.moved(first, at(1, 17), false));
+        // Each pane's program learns of its own cell.
+        assert!(mouse.moved(second, at(1, 17), false), "news to the second");
+        assert!(!mouse.moved(first, at(1, 18), false), "the first's cell");
     }
 
     #[test]
