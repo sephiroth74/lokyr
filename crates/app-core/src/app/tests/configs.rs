@@ -116,6 +116,43 @@ fn a_plugin_s_section_applies_as_the_file_reloads_and_a_wrong_one_tells_its_line
     let _ = std::fs::remove_dir_all(&directory);
 }
 
+#[test]
+fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer() {
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-plugin-lines-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[plugins.keyed]\ncount = 0\n").unwrap();
+    let heard = Rc::new(RefCell::new(Vec::new()));
+    let mut fake = Fake::default();
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_builtin(
+            MANIFEST,
+            Box::new(Keyed {
+                heard: Rc::clone(&heard),
+            }),
+        );
+    fake.start(&mut app);
+    let text = |app: &App| app.diagnostics.shown().map(|shown| shown.text.clone());
+    assert!(text(&app).is_some_and(|text| text.contains("config.toml:2:1:")));
+    // Lines above it, of the same values, move its notice with it.
+    std::fs::write(&path, "# mine\n\n[plugins.keyed]\ncount = 0\n").unwrap();
+    change(&mut fake, &mut app);
+    assert!(
+        text(&app).is_some_and(|text| text.contains("config.toml:4:1:")),
+        "{:?}",
+        text(&app)
+    );
+    // A whole number of a fraction is the integer that the schema asks.
+    std::fs::write(&path, "[plugins.keyed]\ncount = 5.0\n").unwrap();
+    change(&mut fake, &mut app);
+    assert_eq!(text(&app), None);
+    assert_eq!(heard.borrow().last(), Some(&count(5)));
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
 /// The `Barred` plugins that the test made.
 static BARRED_MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 

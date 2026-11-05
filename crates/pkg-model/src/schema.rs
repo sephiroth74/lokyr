@@ -297,15 +297,40 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
             }
         }
     }
-    if let Some(default) = &node.default
-        && let Err(problem) = check(&node, default, &mut Vec::new())
-    {
-        return Err(format!(
-            "the default at `{place}` is not of its schema: {}",
-            problem.message.replacen("the section", "it", 1)
-        ));
+    // A default is its schema's value, as a whole number of a fraction of
+    // an integer's schema is the integer.
+    if let Some(default) = &node.default {
+        match check(&node, default, &mut Vec::new()) {
+            Ok(checked) => node.default = Some(checked),
+            Err(problem) => {
+                return Err(format!(
+                    "the default at `{place}` is not of its schema: {}",
+                    problem.message.replacen("the section", "it", 1)
+                ));
+            }
+        }
     }
     Ok(node)
+}
+
+/// Whether `a` and `b` are the same value, their numbers by their values,
+/// as `1` and `1.0`, as JSON Schema compares them.
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(a), Value::Number(b)) => match (a.as_i64(), b.as_i64()) {
+            (Some(a), Some(b)) => a == b,
+            _ => a.as_f64() == b.as_f64(),
+        },
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, value)| b.get(key).is_some_and(|other| same(value, other)))
+        }
+        _ => a == b,
+    }
 }
 
 /// `value` written as JSON, for a message.
@@ -339,7 +364,7 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
         ));
     }
     if let Some(choices) = &node.choices
-        && !choices.contains(value)
+        && !choices.iter().any(|choice| same(choice, value))
     {
         let names: Vec<String> = choices.iter().map(shown).collect();
         return Err(fail(
@@ -353,7 +378,7 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
         ));
     }
     if let Some(constant) = &node.constant
-        && constant != value
+        && !same(constant, value)
     {
         return Err(fail(
             path,
@@ -474,6 +499,22 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
                 }
             }
             Ok(Value::Object(checked))
+        }
+        // A whole number of a fraction, as `5.0`, of a schema of integers
+        // alone is the integer, as the plugin takes it.
+        Value::Number(number)
+            if !number.is_i64()
+                && !number.is_u64()
+                && node.types.as_deref().is_some_and(|types| {
+                    types.contains(&Type::Integer) && !types.contains(&Type::Number)
+                }) =>
+        {
+            match number.as_f64() {
+                Some(whole) if whole.fract() == 0.0 && whole.abs() < 9.0e18 => {
+                    Ok(Value::from(whole as i64))
+                }
+                _ => Ok(value.clone()),
+            }
         }
         _ => Ok(value.clone()),
     }

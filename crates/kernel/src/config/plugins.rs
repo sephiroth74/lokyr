@@ -60,6 +60,18 @@ impl PluginsConfig {
         self.sections.get(namespace)
     }
 
+    /// Whether `other`'s sections are where these are, in the same file,
+    /// each of its values at the same place, which equality, of the values
+    /// alone, does not tell.
+    pub fn same_places(&self, other: &Self) -> bool {
+        self.sections.len() == other.sections.len()
+            && self.sections.iter().all(|(namespace, section)| {
+                other.sections.get(namespace).is_some_and(|other| {
+                    section.places == other.places && section.path == other.path
+                })
+            })
+    }
+
     /// The `[plugins]` section of `root`, the document of `text`, the file
     /// at `path`: a table of a table of each plugin; the place and the
     /// error of what is not, or of a value that JSON does not hold, as a

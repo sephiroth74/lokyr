@@ -72,7 +72,7 @@ fn a_section_takes_the_defaults_of_the_keys_that_it_leaves_out() {
     assert_eq!(
         Value::Object(checked.values.unwrap()),
         json!({
-            "position": "left", "style": "minimal", "max-title": 12.0, "numbers": true,
+            "position": "left", "style": "minimal", "max-title": 12, "numbers": true,
             "fade": 0.5, "label": "αβγ", "hidden": ["a"], "version": 1,
             "colors": { "active": "red" }, "extra": { "a": 1 },
         })
@@ -241,5 +241,47 @@ fn a_schema_of_a_keyword_that_the_host_does_not_check_does_not_read() {
         Schema::parse("{")
             .unwrap_err()
             .starts_with("it is not JSON")
+    );
+}
+
+#[test]
+fn numbers_are_the_same_of_the_same_value_and_a_whole_one_of_an_integer_s_schema_is_the_integer() {
+    let schema = Schema::parse(
+        r#"{
+            "type": "object",
+            "properties": {
+                "level": { "enum": [1, 2, [3]] },
+                "fixed": { "const": { "n": 4 } },
+                "count": { "type": "integer", "default": 7.0 },
+                "share": { "type": "number" },
+                "either": { "type": ["integer", "number"] }
+            }
+        }"#,
+    )
+    .unwrap();
+    let values = schema
+        .check(&section(&json!({
+            "level": 1.0,
+            "fixed": { "n": 4.0 },
+            "share": 5.0,
+            "either": 6.0,
+        })))
+        .values
+        .unwrap();
+    assert_eq!(values["level"], json!(1.0));
+    // An integer's of a fraction, its default too, is the integer; a
+    // number's, or one of either, stays as it is.
+    assert!(values["count"].is_i64(), "{:?}", values["count"]);
+    assert_eq!(values["count"], json!(7));
+    assert!(values["share"].is_f64());
+    assert!(values["either"].is_f64());
+    let values = schema
+        .check(&section(&json!({ "count": 5.0, "level": [3.0] })))
+        .values
+        .unwrap();
+    assert_eq!(values["count"], json!(5));
+    assert_eq!(
+        problem(&schema, &json!({ "level": 1.5 })).message,
+        "`level` is one of 1, 2, [3], not 1.5"
     );
 }

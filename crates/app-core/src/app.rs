@@ -1090,8 +1090,16 @@ impl<B: Backend> App<B> {
     /// or nothing of it, if its font fails.
     fn apply(&mut self, platform: &mut dyn Platform, config: Config) {
         if config == self.config {
+            // The plugins' sections of the same values moved, as lines above
+            // them came or went: their notices tell their new places.
+            let check = config.updates.check;
+            let moved = !config.plugins.same_places(&self.config.plugins);
+            self.config.plugins = config.plugins;
+            if moved {
+                self.configure_plugins(platform);
+            }
             self.resolve(platform, &About::Config);
-            self.settle_update_checks(platform, config.updates.check);
+            self.settle_update_checks(platform, check);
             return;
         }
         let font_changed = config.font != self.config.font;
