@@ -5,7 +5,7 @@ Measured on 2026-11-05, between 09:07 and 09:44, of the session's script, its an
 ## Method
 
 - **The probe**: `lokyr-bench motion` drags a window by its titlebar, or resizes it by its bottom-right corner, along a sine of 200 points and of 2 s, for 10 s, of the mouse's synthetic events at 120 Hz, as a hand would; Instruments' Animation Hitches records every process meanwhile, `xctrace record --all-processes`, and `tools/bench/motion_extract.py` reads the recording, of the motion less its first and its last 0.3 s: the frames that the display showed, the window server's surfaces' swaps, a second; those that it missed, as the gaps between two swaps longer than a refresh and a half count them; the compositor's delay of each, its median and its 95th percentile; and the window server's and the app's CPU, in percent of a core.
-- **Nine configurations**, each of Menlo 20 and 88 by 27 cells: Lokyr opaque, translucent, `background-opacity = 0.9`, and translucent with a blur of 10, each with the cursor's fades of the user's config, 100, 500, 500 and 100 ms, and without them, a switch of the same cycle, 600 and 600 ms; Ghostty 1.x in the same three, of the options of its command line alone, `--config-default-files=false`, its cursor a switch, as it has no fades. The display, the Mac's built-in one, ran at 60 Hz.
+- **Nine configurations**, each of Menlo 20 and 88 by 27 cells: Lokyr opaque, translucent, `background-opacity = 0.9`, and translucent with a blur of 10, each with the cursor's fades of the user's config, 100, 500, 500 and 100 ms, and without them, a switch of the same cycle, 600 and 600 ms; Ghostty 1.x in the same three, of the options of its command line alone, `--config-default-files=false`, its cursor a switch, as it has no fades. The display, the Dell P2721Q, ran at 60 Hz, every window on it.
 - **Two rounds**, the second in the reverse order.
 
 ## Results
@@ -41,6 +41,7 @@ The means of the two rounds; 9.4 s of motion a run.
 | Ghostty, blur | 57.7 | 17.5 | 11.2 ms | 27.5 ms | 44 % | 34 % |
 
 - **A drag shows as many frames in Lokyr as in Ghostty**, 57 to 59 a second of 60, in every configuration: the differences are those between two rounds of one configuration. Lokyr draws nothing as its window moves; the window server moves it.
+- **A drag's misses are the path's turns, mostly**: where the sine turns, the window moves less than a point a refresh, and the window server shows nothing new; of the first round, Lokyr opaque of a switch, 22 of its 24 misses fall within a twentieth of the period of a turn, and all 9 of Ghostty opaque's, so that the column of the drag tells the path more than the hitches.
 - **The fades and the translucency cost the window server**, not frames: of a drag, 24 % of a core for Lokyr opaque of a switch, 28 to 34 % for the others, Ghostty 33 to 36 %.
 - **A resize draws at half Ghostty's rate**: the frames that the display shows are alike, the window server's, but Lokyr's own come every 33 ms, 29.8 a second in a run of its Metal command buffers, and Ghostty's at the display's rate, 87 of its command buffers a second, at twice Lokyr's CPU. Three drawables, the build's feature `three-drawables`, draw 29.3 a second: the drawables are not what halves it. A step of the resize that comes within a refresh of the last frame waits for the display link's next refresh, as F3-141 made it to keep a frame from waiting for a drawable within Core Animation's flush, and its frame then comes of a transaction of its own.
 
@@ -50,7 +51,7 @@ A slow-motion recording of the user's, 240 frames a second, showed the powerline
 
 ## After F3-153, and at 120 Hz
 
-F3-153 had a step of a live resize draw in its own transaction past a frame within half a refresh. Of a resize of 10 s on the Dell P2721Q at 60 Hz, the window of the session's: Lokyr's frames 56.7 a second, the window server's 59.2, 3 missed, where 29.8, 56.6 and 28.5 before.
+F3-153 had a step of a live resize draw in its own transaction past a frame within half a refresh. Of a resize of 10 s on the Dell P2721Q at 60 Hz, the window of the session's: Lokyr's frames 53.9 a second while Instruments recorded and 56.7 without it, the window server's 59.2, 3 missed, where 29.8, 56.6 and 28.5 before.
 
 Measured on 2026-11-05, between 11:09 and 11:16, of [promotion/run.sh](motion-F3-152/promotion/run.sh) and its reports: the built-in display the main one, in ProMotion at 120 Hz, every window on it; of 9.4 s of motion a run, and of each display's swaps apart, as the table names both displays alike.
 
@@ -61,6 +62,6 @@ Measured on 2026-11-05, between 11:09 and 11:16, of [promotion/run.sh](motion-F3
 | Lokyr, a drag, blurred, of the fades | 0 | 119.6 | 4 |
 | Ghostty, a drag, blurred | 2.6 | 118.4 | 16 |
 
-- **A drag at 120 Hz loses no more frames in Lokyr than in Ghostty**, of the blur and the cursor's fades: 4 against 16.
-- **A resize at 120 Hz draws Lokyr's frames at 107 a second**, where Ghostty draws 192, more than the display shows: the window server misses 42 of Lokyr's, in 24 gaps of 2 to 5 refreshes, 3.7 % of the frames, and 1 of Ghostty's.
+- **A drag at 120 Hz loses few frames in Lokyr**, of the blur and the cursor's fades: 4. Ghostty's 16 compare with them only in part: its window started right under the menu bar, which the path's upper half pushed it against, and its misses fall as it comes back out; one run of each, of no reversed round.
+- **A resize at 120 Hz draws Lokyr's frames at 107 a second**, where Ghostty draws 192, more than the display shows: the window server misses 42 of Lokyr's, in 24 gaps of 2 to 5 refreshes, 3.7 % of the frames, and 1 of Ghostty's. 30 of Lokyr's 42 fall as the window is at its largest, where it stops growing and starts shrinking, and none at its smallest: not the path standing still alone, as that would miss at both turns.
 - An earlier run at 120 Hz, of Lokyr's window across both displays, the built-in and the Dell, and Ghostty's on the Dell, compared nothing: the window server drew Lokyr's on both.
