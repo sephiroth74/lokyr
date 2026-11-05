@@ -1,0 +1,314 @@
+use std::collections::BTreeMap;
+
+use super::*;
+use crate::command::Category;
+use crate::host::Scroll;
+use crate::ui::{Anchor, Role};
+use crate::view::{ProgressShape, ProgressState, Role as NodeRole, Tab};
+
+type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
+
+/// A plugin whose command's call the test gives, which takes the command's
+/// name, and which renders `tree`.
+struct Probe {
+    on_command: Callback,
+    tree: Option<Node>,
+    heard: Vec<Vec<String>>,
+}
+
+impl Probe {
+    fn new(on_command: impl FnMut(&mut Cx<'_>, &str) -> Result<(), Error> + 'static) -> Self {
+        Self {
+            on_command: Box::new(on_command),
+            tree: None,
+            heard: Vec::new(),
+        }
+    }
+}
+
+impl Plugin for Probe {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "probe.go".to_owned(),
+            title: "Go".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.subscribe(&["tab-created", "probe.ping"])
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        (self.on_command)(cx, name)
+    }
+
+    fn on_event(&mut self, _: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        self.heard
+            .push(events.iter().map(|event| event.name().to_owned()).collect());
+        Ok(())
+    }
+
+    fn applies(&mut self, cx: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+        let pane = cx.focused_pane().unwrap();
+        cx.select_all(pane).is_ok()
+    }
+
+    fn render(&mut self, _: &mut Cx<'_>, _: &ViewId) -> Option<Node> {
+        self.tree.clone()
+    }
+}
+
+#[test]
+fn a_read_after_a_write_reads_what_was_before_and_the_write_applies_as_the_call_returns() {
+    let mut host = FakeHost::new("acme/probe");
+    host.focus(Some(PaneId(2))).set_clipboard(Some("old"));
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let saw = std::rc::Rc::clone(&seen);
+    let mut probe = Probe::new(move |cx, _| {
+        cx.set_clipboard_text("new")?;
+        saw.borrow_mut().push(cx.clipboard_text()?);
+        cx.set_state(Data::Integer(4))?;
+        saw.borrow_mut().push(Some(format!("{:?}", cx.state()?)));
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    assert_eq!(host.commands()[0].name, "probe.go");
+    assert_eq!(host.subscriptions(), ["tab-created", "probe.ping"]);
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        *seen.borrow(),
+        [Some("old".to_owned()), Some("Nil".to_owned())]
+    );
+    assert_eq!(host.clipboard(), Some("new"));
+    assert_eq!(*host.state(), Data::Integer(4));
+    assert_eq!(
+        host.take_done(),
+        [
+            Request::SetClipboardText("new".to_owned()),
+            Request::SetState(Data::Integer(4)),
+        ]
+    );
+    // A look drops what it asks.
+    assert!(host.applies(&mut probe, "probe.go", &Args::new()));
+    assert!(host.take_done().is_empty());
+}
+
+#[test]
+fn a_request_of_a_pane_not_there_or_that_the_plugin_may_not_make_fails() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::ClipboardRead]);
+    host.pane(PaneId(1)).selection = Some("x".to_owned());
+    let errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let failed = std::rc::Rc::clone(&errors);
+    let mut probe = Probe::new(move |cx, _| {
+        let push = |error: Option<Error>| failed.borrow_mut().push(error.map(|error| error.code));
+        push(cx.clipboard_text().err());
+        push(cx.selection_text(PaneId(1)).err());
+        push(cx.scroll(PaneId(9), Scroll::Top).err());
+        push(cx.open("javascript:alert(1)").err());
+        push(cx.emit("other.ping", "x/1", Data::Nil).err());
+        push(cx.emit("probe.ping", "probe/1", Data::Nil).err());
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(
+        *errors.borrow(),
+        [
+            None,
+            Some(Code::MissingCapability),
+            Some(Code::NotFound),
+            Some(Code::MissingCapability),
+            Some(Code::InvalidName),
+            None,
+        ]
+    );
+    // A first-party plugin's open of a scheme that does not open fails.
+    let mut host = FakeHost::new("acme/probe");
+    let mut probe = Probe::new(|cx, _| {
+        assert!(cx.opens("https://lokyr.dev")? && cx.opens("~/notes")?);
+        assert!(!cx.opens("javascript:x")?);
+        cx.open("javascript:x")
+    });
+    host.set_missing(&["~/gone"]);
+    assert_eq!(
+        host.command(&mut probe, "probe.go", Args::new())
+            .unwrap_err()
+            .code,
+        Code::Failed
+    );
+    let mut probe = Probe::new(|cx, _| {
+        assert!(!cx.opens("~/gone")?);
+        cx.open("~/gone")
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.take_done(), [Request::Open("~/gone".to_owned())]);
+}
+
+#[test]
+fn the_events_that_a_plugin_is_owed_come_as_a_batch_of_those_of_its_own_and_its_subscriptions() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1)).lines.insert(
+        5,
+        LineText {
+            text: "five".to_owned(),
+            cells: Vec::new(),
+        },
+    );
+    let mut probe = Probe::new(|cx, _| {
+        let window = WindowId(1);
+        cx.read_lines(PaneId(1), 0, 10)?;
+        cx.emit("probe.ping", "probe/1", Data::Nil)?;
+        cx.open_panel(
+            "menu",
+            PanelOptions {
+                anchor: Anchor::Pointer(window),
+                role: Role::Menu,
+                close_outside: true,
+                close_escape: true,
+            },
+        )?;
+        cx.close_panel("menu")
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.post(Event::Workspace(crate::event::WorkspaceEvent::TabCreated {
+        tab: TabId(2),
+        window: WindowId(1),
+        index: 1,
+    }));
+    host.post(Event::Workspace(crate::event::WorkspaceEvent::TabClosed {
+        tab: TabId(2),
+        window: WindowId(1),
+    }));
+    host.set_config(Data::Map(BTreeMap::from([(
+        "a".to_owned(),
+        Data::Integer(1),
+    )])));
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(
+        probe.heard,
+        [[
+            "lines",
+            "panel-closed",
+            "probe.ping",
+            "tab-created",
+            "config-changed"
+        ]]
+    );
+    assert!(host.panels().is_empty());
+    // Nothing owed, nothing delivered.
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard.len(), 1);
+}
+
+#[test]
+fn the_workspace_s_reads_give_the_panes_windows_and_tabs() {
+    let mut host = FakeHost::new("acme/probe");
+    for (pane, tab) in [(1, 1), (2, 1), (3, 2)] {
+        host.pane(PaneId(pane)).tab = TabId(tab);
+    }
+    host.focus(Some(PaneId(2)));
+    let mut probe = Probe::new(|cx, _| {
+        assert_eq!(cx.focused_window(), Some(WindowId(1)));
+        let windows = cx.windows()?;
+        assert_eq!(
+            windows,
+            [WindowInfo {
+                id: WindowId(1),
+                tabs: vec![TabId(1), TabId(2)],
+                active: TabId(1),
+            }]
+        );
+        let tabs = cx.tabs(WindowId(1))?;
+        assert_eq!(tabs[0].panes, [PaneId(1), PaneId(2)]);
+        assert_eq!((tabs[0].focused, tabs[0].active), (PaneId(2), true));
+        assert_eq!(tabs[1].focused, PaneId(3));
+        assert_eq!(
+            cx.layout(TabId(1))?,
+            Layout::Split {
+                direction: Direction::Horizontal,
+                ratio: None,
+                first: Box::new(Layout::Pane(PaneId(1))),
+                second: Box::new(Layout::Pane(PaneId(2))),
+            }
+        );
+        assert_eq!(cx.layout(TabId(9)).unwrap_err().code, Code::NotFound);
+        let (tab, pane) = cx.new_tab(WindowId(1), None)?;
+        assert_ne!(tab, TabId(1));
+        assert_ne!(pane, PaneId(1));
+        cx.close_pane(PaneId(3))
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let done = host.take_done();
+    assert!(matches!(done[0], Request::NewTab { .. }));
+    assert_eq!(done[1], Request::ClosePane(PaneId(3)));
+    let mut probe = Probe::new(|cx, _| {
+        assert_eq!(cx.tabs(WindowId(1))?.len(), 1);
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}
+
+#[test]
+fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
+    let mut host = FakeHost::new("acme/probe");
+    let mut probe = Probe::new(|_, _| Ok(()));
+    let mut field = Node::field("Find").key("query").focusable();
+    field.tooltip = Some("What to find".to_owned());
+    probe.tree = Some(Node::container(vec![
+        Node::text("2 matches").role(NodeRole::Status),
+        field,
+        Node::toggle("case", true).key("case"),
+        Node::button("Next").key("next").label("Next match"),
+        Node::icon_button("gear").key("settings"),
+        Node::spacer(),
+        Node::separator(),
+        Node::progress(ProgressShape::Bar, ProgressState::Normal, 0.5),
+        Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0),
+        Node::list(
+            Node::container(vec![Node::text("row")]),
+            100,
+            (10, Vec::new()),
+        )
+        .key("results"),
+        Node::tabs(
+            vec![
+                Tab {
+                    label: "One".to_owned(),
+                    ..Tab::default()
+                },
+                Tab {
+                    label: "Two".to_owned(),
+                    ..Tab::default()
+                },
+            ],
+            1,
+            Node::scroll(vec![Node::text("page")]),
+        ),
+    ]));
+    let view = ViewId::StatusBar(WindowId(1));
+    let tree = host.render(&mut probe, &view).unwrap();
+    assert_eq!(host.tree(&view), Some(&tree));
+    assert_eq!(
+        snapshot(&tree),
+        concat!(
+            "container\n",
+            "  text \"2 matches\" role=Status\n",
+            "  field \"Find\" key=query tooltip=\"What to find\" focusable\n",
+            "  toggle \"\" icon=\"case\" on key=case\n",
+            "  button \"Next\" key=next label=\"Next match\"\n",
+            "  button \"\" icon=\"gear\" key=settings\n",
+            "  spacer\n",
+            "  separator\n",
+            "  progress Bar Normal 0.5\n",
+            "  progress Ring Indeterminate\n",
+            "  list of 100, 0 given from 10 key=results\n",
+            "    row:\n",
+            "      container\n",
+            "        text \"row\"\n",
+            "  tabs \"One\" | \"Two\" chosen 1\n",
+            "    scroll\n",
+            "      text \"page\"\n",
+        )
+    );
+}

@@ -7,13 +7,16 @@
 //! data, are never re-entered, and neither spawn threads nor block.
 //!
 //! The host's API and the plugins' trait come with the `unstable` feature,
-//! as they can change in a minor release.
+//! as they can change in a minor release; a host of the tests' own, for
+//! the plugins' unit tests, with the `fake` feature.
 
 #![forbid(unsafe_code)]
 
 pub mod command;
 #[cfg(feature = "unstable")]
 pub mod event;
+#[cfg(feature = "fake")]
+pub mod fake;
 #[cfg(feature = "unstable")]
 pub mod host;
 #[cfg(feature = "unstable")]

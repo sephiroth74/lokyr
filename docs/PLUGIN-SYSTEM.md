@@ -154,7 +154,7 @@ return Search
 - **Names**: the Luau API uses the Rust names (`request_render`, `on_event`), so the two front ends read the same and share one reference.
 - **Conformance**: the conformance suite runs the same scenarios through both front ends, with Rust and Luau test plugins, and compares their command and event traces.
 - **Testing for plugin authors**:
-  - The Rust SDK ships a fake host for unit tests. It simulates events, lets tests assert on commands and view trees, and snapshots view trees.
+  - The Rust SDK ships a fake host for unit tests, `lokyr_plugin_sdk::fake::FakeHost`, of its `fake` feature, a plugin's dev-dependency. The test sets what it holds, its panes, their lines, links, styles, selections and directories, the focus, the clipboard, the text's size, the targets not there, and the plugin's config and state; it answers the requests as the app's host does, the reads at once and the writes as the call returns, refuses what the plugin's capabilities lack, and keeps the plugin's commands, bindings and subscriptions, what it did as the requests themselves, its decorations, its panels and its views' trees. It owes the plugin its events, which `deliver` gives it as a batch, and `snapshot` writes a view tree as text, a node a line, for tests to compare. `core-actions`' and `links`' tests run on it.
   - For Luau, `sleip test` runs the plugin in the same headless host.
 
 ## The Luau API

@@ -1,73 +1,32 @@
-//! The plugin against a host of the tests', which records what it asks.
+//! The plugin against the SDK's fake host, which records what it does.
 
-use lokyr_plugin_sdk::host::{PaneId, WindowId};
-use lokyr_plugin_sdk::message::{Call, Request, Response};
+use lokyr_plugin_sdk::fake::FakeHost;
+use lokyr_plugin_sdk::host::PaneId;
+use lokyr_plugin_sdk::message::Request;
 
 use super::*;
 
-/// A host that records the plugin's calls, with a pane, a selection and a
-/// clipboard of the test's own.
-#[derive(Default)]
-struct Host {
-    pane: Option<PaneId>,
-    selection: Option<String>,
-    clipboard: Option<String>,
-    commands: Vec<Command>,
-    bindings: Vec<Binding>,
-    calls: Vec<String>,
-    font: f32,
-}
+/// The plugin's name, as its calls give it.
+const NAME: &str = "lokyr/core-actions";
 
-impl lokyr_plugin_sdk::host::Host for Host {
-    fn handle(&mut self, call: Call) -> Response {
-        assert_eq!(call.caller, "core-actions");
-        let mut done = |call: String| {
-            self.calls.push(call);
-            Response::Done
-        };
-        match call.request {
-            Request::RegisterCommand(command) => {
-                self.commands.push(command);
-                Response::Done
-            }
-            Request::Bind(binding) => {
-                self.bindings.push(binding);
-                Response::Done
-            }
-            Request::ClipboardText => Response::Text(self.clipboard.clone()),
-            Request::SetClipboardText(text) => {
-                self.clipboard = Some(text);
-                Response::Done
-            }
-            Request::FocusedWindow => Response::Window(self.pane.map(|_| WindowId(1))),
-            Request::FocusedPane => Response::Pane(self.pane),
-            Request::SelectionText(_) => Response::Text(self.selection.clone()),
-            Request::SelectAll(pane) => done(format!("select all {}", pane.0)),
-            Request::ClearScrollback(pane) => done(format!("clear scrollback {}", pane.0)),
-            Request::Clear(pane) => done(format!("clear {}", pane.0)),
-            Request::Paste { pane, text } => done(format!("paste {} {text:?}", pane.0)),
-            Request::SendText { pane, text } => done(format!("send {} {text:?}", pane.0)),
-            Request::Scroll { pane, scroll } => done(format!("scroll {} {scroll:?}", pane.0)),
-            Request::FontSize => Response::FontSize(self.font),
-            Request::SetFontSize(size) => done(format!("font {size:?}")),
-            other => panic!("core-actions asked {other:?}"),
-        }
-    }
+/// A host of the plugin's, whose focused pane, if any, is `pane`.
+fn host(pane: Option<u64>) -> FakeHost {
+    let mut host = FakeHost::new(NAME);
+    host.focus(pane.map(PaneId));
+    host
 }
 
 /// Runs `name` on `host`.
-fn run(host: &mut Host, name: &str) -> Result<(), Error> {
-    CoreActions.on_command(&mut Cx::new(host, "core-actions"), name, Args::new())
+fn run(host: &mut FakeHost, name: &str) -> Result<(), Error> {
+    host.command(&mut CoreActions, name, Args::new())
 }
 
 #[test]
 fn the_commands_register_with_their_keys() {
-    let mut host = Host::default();
-    CoreActions
-        .activate(&mut Cx::new(&mut host, "core-actions"))
-        .unwrap();
+    let mut host = host(None);
+    host.activate(&mut CoreActions).unwrap();
     let registered: Vec<(&str, Category, Vec<String>)> = host
-        .commands
+        .commands()
         .iter()
         .map(|command| {
             assert!(command.params.is_empty() || command.name == "pane.send-text");
@@ -111,14 +70,14 @@ fn the_commands_register_with_their_keys() {
     );
     // Copying takes a selection; the others run in any context.
     let whens: Vec<(&str, Option<&str>)> = host
-        .commands
+        .commands()
         .iter()
         .filter(|command| command.when.is_some())
         .map(|command| (command.name.as_str(), command.when.as_deref()))
         .collect();
     assert_eq!(whens, [("pane.copy", Some("selection"))]);
     // Sending text takes its text, and has no keys of its own.
-    let send = host.commands.last().unwrap();
+    let send = host.commands().last().unwrap();
     assert_eq!(send.params.len(), 1);
     assert_eq!(
         (
@@ -129,12 +88,12 @@ fn the_commands_register_with_their_keys() {
         ("text", lokyr_plugin_sdk::command::Kind::String, &None)
     );
     assert!(
-        host.bindings
+        host.bindings()
             .iter()
             .all(|binding| binding.command != "pane.send-text")
     );
     let bound: Vec<(&str, &str)> = host
-        .bindings
+        .bindings()
         .iter()
         .map(|binding| {
             assert_eq!((binding.args.len(), &binding.when), (0, &None));
@@ -167,49 +126,52 @@ fn the_commands_register_with_their_keys() {
 
 #[test]
 fn copy_and_paste_go_through_the_clipboard() {
-    let mut host = Host {
-        pane: Some(PaneId(7)),
-        selection: Some("ls -la".to_owned()),
-        ..Host::default()
-    };
+    let mut host = host(Some(7));
+    host.pane(PaneId(7)).selection = Some("ls -la".to_owned());
     run(&mut host, COPY).unwrap();
-    assert_eq!(host.clipboard.as_deref(), Some("ls -la"));
+    assert_eq!(host.clipboard(), Some("ls -la"));
     run(&mut host, PASTE).unwrap();
-    assert_eq!(host.calls, ["paste 7 \"ls -la\""]);
+    assert_eq!(
+        host.take_done(),
+        [
+            Request::SetClipboardText("ls -la".to_owned()),
+            Request::Paste {
+                pane: PaneId(7),
+                text: "ls -la".to_owned(),
+            },
+        ]
+    );
     // Without a selection, or with an empty one, the clipboard keeps its
     // text; an empty clipboard pastes nothing.
     for selection in [None, Some(String::new())] {
-        host.selection = selection;
+        host.pane(PaneId(7)).selection = selection;
         run(&mut host, COPY).unwrap();
-        assert_eq!(host.clipboard.as_deref(), Some("ls -la"));
+        assert_eq!(host.clipboard(), Some("ls -la"));
     }
-    host.calls.clear();
-    for clipboard in [None, Some(String::new())] {
-        host.clipboard = clipboard;
+    for clipboard in [None, Some("")] {
+        host.set_clipboard(clipboard);
         run(&mut host, PASTE).unwrap();
     }
-    assert!(host.calls.is_empty());
+    assert!(host.take_done().is_empty());
 }
 
 #[test]
 fn select_all_and_clear_act_on_the_focused_pane() {
-    let mut host = Host {
-        pane: Some(PaneId(3)),
-        ..Host::default()
-    };
+    let mut host = host(Some(3));
     run(&mut host, SELECT_ALL).unwrap();
     run(&mut host, CLEAR).unwrap();
-    assert_eq!(host.calls, ["select all 3", "clear 3"]);
+    assert_eq!(
+        host.take_done(),
+        [Request::SelectAll(PaneId(3)), Request::Clear(PaneId(3))]
+    );
     // Without a focused pane, nothing.
-    let mut host = Host::default();
+    let mut host = self::host(None);
+    host.set_clipboard(Some("x"));
     for name in [COPY, PASTE, SELECT_ALL, CLEAR] {
         run(&mut host, name).unwrap();
     }
-    assert!(host.calls.is_empty() && host.clipboard.is_none());
-    let mut host = Host {
-        pane: Some(PaneId(3)),
-        ..Host::default()
-    };
+    assert!(host.take_done().is_empty());
+    let mut host = self::host(Some(3));
     assert_eq!(
         run(&mut host, "pane.other").unwrap_err().code,
         Code::NotFound
@@ -218,46 +180,33 @@ fn select_all_and_clear_act_on_the_focused_pane() {
 
 #[test]
 fn the_font_grows_and_shrinks_a_point_within_its_sizes() {
-    let mut host = Host {
-        font: 13.0,
-        ..Host::default()
-    };
+    let mut host = host(None);
+    host.set_font_size(13.0);
     for name in [FONT_BIGGER, FONT_SMALLER, FONT_RESET] {
         run(&mut host, name).unwrap();
     }
     // A size between points goes to the next whole one.
-    host.font = 13.5;
+    host.set_font_size(13.5);
     run(&mut host, FONT_BIGGER).unwrap();
     run(&mut host, FONT_SMALLER).unwrap();
     // At the ends, nothing more; past them, back within.
-    host.font = 200.0;
-    run(&mut host, FONT_BIGGER).unwrap();
-    host.font = 4.0;
-    run(&mut host, FONT_SMALLER).unwrap();
-    host.font = 199.5;
-    run(&mut host, FONT_BIGGER).unwrap();
-    host.font = 4.5;
-    run(&mut host, FONT_SMALLER).unwrap();
-    assert_eq!(
-        host.calls,
-        [
-            "font Some(14.0)",
-            "font Some(12.0)",
-            "font None",
-            "font Some(14.0)",
-            "font Some(13.0)",
-            "font Some(200.0)",
-            "font Some(4.0)",
-        ]
-    );
+    for (size, name) in [
+        (200.0, FONT_BIGGER),
+        (4.0, FONT_SMALLER),
+        (199.5, FONT_BIGGER),
+        (4.5, FONT_SMALLER),
+    ] {
+        host.set_font_size(size);
+        run(&mut host, name).unwrap();
+    }
+    let sizes = [14.0, 12.0, -1.0, 14.0, 13.0, 200.0, 4.0]
+        .map(|size: f32| Request::SetFontSize((size > 0.0).then_some(size)));
+    assert_eq!(host.take_done(), sizes);
 }
 
 #[test]
 fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
-    let mut host = Host {
-        pane: Some(PaneId(5)),
-        ..Host::default()
-    };
+    let mut host = host(Some(5));
     for name in [
         SCROLL_LINE_UP,
         SCROLL_LINE_DOWN,
@@ -268,42 +217,40 @@ fn the_view_scrolls_by_lines_pages_and_to_its_ends() {
     ] {
         run(&mut host, name).unwrap();
     }
-    assert_eq!(
-        host.calls,
-        [
-            "scroll 5 Up(1)",
-            "scroll 5 Down(1)",
-            "scroll 5 PageUp",
-            "scroll 5 PageDown",
-            "scroll 5 Top",
-            "scroll 5 Bottom",
-        ]
-    );
+    let scrolls = [
+        Scroll::Up(1),
+        Scroll::Down(1),
+        Scroll::PageUp,
+        Scroll::PageDown,
+        Scroll::Top,
+        Scroll::Bottom,
+    ]
+    .map(|scroll| Request::Scroll {
+        pane: PaneId(5),
+        scroll,
+    });
+    assert_eq!(host.take_done(), scrolls);
     // Without a focused pane, nothing.
-    let mut host = Host::default();
+    let mut host = self::host(None);
     run(&mut host, SCROLL_TOP).unwrap();
-    assert!(host.calls.is_empty());
+    assert!(host.take_done().is_empty());
 }
 
 #[test]
 fn sending_text_sends_it_as_it_is() {
-    let mut host = Host {
-        pane: Some(PaneId(9)),
-        ..Host::default()
-    };
+    let mut host = host(Some(9));
     let args = Args::from([("text".to_owned(), Value::String("\u{17}\u{1b}b".to_owned()))]);
-    CoreActions
-        .on_command(
-            &mut Cx::new(&mut host, "core-actions"),
-            SEND_TEXT,
-            args.clone(),
-        )
+    host.command(&mut CoreActions, SEND_TEXT, args.clone())
         .unwrap();
-    assert_eq!(host.calls, ["send 9 \"\\u{17}\\u{1b}b\""]);
+    assert_eq!(
+        host.take_done(),
+        [Request::SendText {
+            pane: PaneId(9),
+            text: "\u{17}\u{1b}b".to_owned(),
+        }]
+    );
     // Without a focused pane, nothing.
-    let mut host = Host::default();
-    CoreActions
-        .on_command(&mut Cx::new(&mut host, "core-actions"), SEND_TEXT, args)
-        .unwrap();
-    assert!(host.calls.is_empty());
+    let mut host = self::host(None);
+    host.command(&mut CoreActions, SEND_TEXT, args).unwrap();
+    assert!(host.take_done().is_empty());
 }

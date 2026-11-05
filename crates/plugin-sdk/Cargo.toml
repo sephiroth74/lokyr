@@ -19,6 +19,8 @@ serde_json.workspace = true
 [features]
 # The host's API and the plugins' trait, which may change in a minor release.
 unstable = []
+# A host of the tests' own, for the plugins' unit tests.
+fake = ["unstable"]
 
 [lints]
 workspace = true
