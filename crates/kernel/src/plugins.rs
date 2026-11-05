@@ -12,12 +12,21 @@
 //! capability, which the plugin's grants hold: a first-party plugin holds
 //! every one, and runs any command; another, those that its manifest
 //! declares, and the commands of its `[uses]`.
+//!
+//! A plugin whose manifest asks for a thread of its own, `thread =
+//! "worker"`, makes its calls there, its renders too: the main thread
+//! answers its requests and takes its calls' ends as it turns, through
+//! [`Plugins::serve`], never waiting for them.
 
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use lokyr_pkg_model::manifest::Thread;
 
 use lokyr_pkg_model::manifest::{Manifest, ManifestError};
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -42,6 +51,10 @@ use crate::paste::{self, Paste};
 use crate::workspace::{
     Direction, Edge, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
 };
+
+mod worker;
+
+use worker::{Called, Done, FromWorker, Job, Worker};
 
 /// What a plugin asks of the app, which the app does once the plugin's
 /// call returns.
@@ -165,8 +178,20 @@ pub enum Status {
 
 /// A plugin, and what the host keeps of it.
 struct Entry {
-    plugin: Box<dyn Plugin>,
+    runner: Runner,
     state: State,
+}
+
+/// Where a plugin's calls run.
+enum Runner {
+    /// On the main thread, which calls it in place.
+    Main(Box<dyn Plugin>),
+    /// On a thread of its own, which starts as it activates.
+    Unstarted(Box<dyn Plugin + Send>),
+    /// On its thread.
+    Worker(Worker),
+    /// Nowhere, as it stopped on its thread, which ended.
+    Stopped,
 }
 
 /// What the host keeps of a plugin: its name, its manifest, its status,
@@ -197,6 +222,11 @@ struct State {
     views: BTreeMap<ViewId, (u64, Option<Node>)>,
     /// Its open panels, each in its window.
     panels: BTreeMap<PanelId, WindowId>,
+    /// The decorations that it laid, by their ids, each of its pane.
+    decorations: BTreeMap<u64, host::PaneId>,
+    /// Its calls on the main thread that took long, since the last look:
+    /// each callback's name, and how long.
+    slow: Vec<(&'static str, Duration)>,
     /// What disabled it, if something did: its error's message.
     fault: Option<String>,
 }
@@ -225,7 +255,55 @@ pub struct Plugins {
     bindings_changed: bool,
     /// The plugins disabled that [`Plugins::take_disabled`] told.
     told_disabled: std::collections::BTreeSet<String>,
+    /// What wakes the main thread as the plugins' threads send it
+    /// messages, if the app gave it.
+    wake: Option<worker::Wake>,
+    /// The plugin whose thread's messages the next turn takes first, after
+    /// the one that the last turn's time ran out at.
+    serve_from: usize,
+    /// How long a turn takes the plugins' threads' messages at most,
+    /// [`SERVE_FOR`] but in the tests.
+    serve_for: Option<Duration>,
 }
+
+/// A call of a plugin's on the main thread that took long, as the log
+/// tells.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlowCall {
+    /// The plugin.
+    pub plugin: String,
+    /// The callback, as `on_command`.
+    pub callback: &'static str,
+    /// How long it took.
+    pub took: Duration,
+}
+
+/// What a turn of [`Plugins::serve`] took of the plugins' threads and the
+/// reads of rows.
+#[derive(Debug, Default)]
+pub struct Served {
+    /// Whether it took a message, or a read's end, whose changes the app
+    /// then takes, as [`Plugins::take_requests`] and the others give them.
+    pub any: bool,
+    /// The failures of the commands that ran on plugins' threads, as the
+    /// user is told of a command's.
+    pub commands: Vec<Error>,
+    /// The other calls' errors, for the log, of which a panic's disabled
+    /// its plugin.
+    pub errors: Vec<Error>,
+    /// Whether messages may wait still, for the next turn, which the host
+    /// woke the main thread for, as the turn's time ran out.
+    pub more: bool,
+}
+
+/// How long a call of a plugin's on the main thread takes at most before
+/// the log tells of it: a frame's time at 120 Hz.
+pub const SLOW: Duration = Duration::from_millis(8);
+
+/// How long a turn of the main thread takes the messages of the plugins'
+/// threads at most, those left waiting for the next turn, so that frames
+/// and keys come between.
+const SERVE_FOR: Duration = Duration::from_millis(1);
 
 /// What plugins' calls send out, once they return: their requests of the
 /// app's, since the app's last take, and the events to deliver, since the
@@ -237,15 +315,28 @@ struct Outbox {
     events: Vec<(Option<String>, Event)>,
     /// The reads of rows under way, whose rows come as events.
     reads: Vec<Read>,
-    /// The decorations that the plugins laid, by their ids: each one's
-    /// pane and plugin.
-    decorations: BTreeMap<u64, (host::PaneId, String)>,
     /// Whether a call wrote to the kernel's state since the last look, as
     /// what the windows show may have changed.
     written: bool,
     /// The views whose renders the plugins asked for, or whose panels
     /// they opened, by their plugins, in their order.
     renders: Vec<(String, ViewId)>,
+}
+
+impl Outbox {
+    /// Takes what a call of a plugin's thread sent out, as it returned,
+    /// after what came before it.
+    fn merge(&mut self, call: Outbox) {
+        self.requests.extend(call.requests);
+        self.events.extend(call.events);
+        self.reads.extend(call.reads);
+        self.written |= call.written;
+        for render in call.renders {
+            if !self.renders.contains(&render) {
+                self.renders.push(render);
+            }
+        }
+    }
 }
 
 /// A read of a pane's rows, on a thread of the host's.
@@ -320,23 +411,36 @@ impl Plugins {
     /// every capability, as a first-party plugin has them; its namespace is
     /// its name, which no other plugin's may be.
     pub fn add(&mut self, name: &str, plugin: Box<dyn Plugin>) -> Result<(), Error> {
-        self.insert(name, None, plugin, None)
+        self.insert(name, None, Runner::Main(plugin), None)
     }
 
     /// Adds `plugin`, a first-party one, which the text `manifest`
     /// describes, by the manifest's name, to activate: with every
     /// capability and any command, as first-party plugins have them; its
     /// manifest's capabilities tell what it uses. A manifest that does not
-    /// read, or of another plugin's namespace, adds nothing.
+    /// read, or of another plugin's namespace, or that asks for a thread of
+    /// its own, which [`Plugins::add_builtin_send`] gives, adds nothing.
     pub fn add_builtin(&mut self, manifest: &str, plugin: Box<dyn Plugin>) -> Result<(), Error> {
-        let manifest = Manifest::parse(manifest).map_err(|error: ManifestError| {
-            Error::new(
-                Code::InvalidConfig,
-                format!("a plugin's manifest does not read: {error}"),
-            )
-        })?;
+        let manifest = builtin_manifest(manifest)?;
         let name = manifest.name.clone();
-        self.insert(&name, Some(manifest), plugin, None)
+        self.insert(&name, Some(manifest), Runner::Main(plugin), None)
+    }
+
+    /// Adds `plugin`, as [`Plugins::add_builtin`] does, on the thread that
+    /// its manifest asks for: one of its own, which starts as it
+    /// activates, for `thread = "worker"`, or the main thread.
+    pub fn add_builtin_send(
+        &mut self,
+        manifest: &str,
+        plugin: Box<dyn Plugin + Send>,
+    ) -> Result<(), Error> {
+        let manifest = builtin_manifest(manifest)?;
+        let name = manifest.name.clone();
+        let runner = match manifest.thread {
+            Thread::Worker => Runner::Unstarted(plugin),
+            Thread::Main => Runner::Main(plugin),
+        };
+        self.insert(&name, Some(manifest), runner, None)
     }
 
     /// Adds `plugin`, which `manifest` describes, by the manifest's name,
@@ -355,16 +459,28 @@ impl Plugins {
             manifest.capabilities.clone(),
             Uses::new(manifest.uses.clone()),
         );
-        self.insert(&name, Some(manifest), plugin, Some(granted))
+        self.insert(&name, Some(manifest), Runner::Main(plugin), Some(granted))
     }
 
     fn insert(
         &mut self,
         name: &str,
         manifest: Option<Manifest>,
-        plugin: Box<dyn Plugin>,
+        runner: Runner,
         declared: Option<(Vec<Capability>, Uses)>,
     ) -> Result<(), Error> {
+        if matches!(runner, Runner::Main(_))
+            && manifest
+                .as_ref()
+                .is_some_and(|manifest| manifest.thread == Thread::Worker)
+        {
+            return Err(Error::new(
+                Code::InvalidConfig,
+                format!(
+                    "the plugin `{name}` asks for a thread of its own, which a plugin that cannot be sent to one does not have"
+                ),
+            ));
+        }
         let namespace = manifest
             .as_ref()
             .map_or(name, Manifest::namespace)
@@ -396,10 +512,15 @@ impl Plugins {
             ));
         }
         // A plugin whose catalogs panic has none.
-        let catalogs = panic::catch_unwind(AssertUnwindSafe(|| plugin.catalogs())).unwrap_or(&[]);
+        let catalogs = panic::catch_unwind(AssertUnwindSafe(|| match &runner {
+            Runner::Main(plugin) => plugin.catalogs(),
+            Runner::Unstarted(plugin) => plugin.catalogs(),
+            Runner::Worker(_) | Runner::Stopped => &[],
+        }))
+        .unwrap_or(&[]);
         let (granted, uses) = declared.unzip();
         self.entries.push(Entry {
-            plugin,
+            runner,
             state: State {
                 name: name.to_owned(),
                 manifest,
@@ -413,15 +534,25 @@ impl Plugins {
                 catalogs,
                 views: BTreeMap::new(),
                 panels: BTreeMap::new(),
+                decorations: BTreeMap::new(),
+                slow: Vec::new(),
                 fault: None,
             },
         });
         Ok(())
     }
 
+    /// Gives the host what wakes the main thread, as the plugins' threads
+    /// send it messages, which [`Plugins::serve`] takes: before their
+    /// activation, which starts them.
+    pub fn set_wake(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        self.wake = Some(Arc::new(wake));
+    }
+
     /// Activates the plugins that are not active yet, in their order, and
     /// returns the errors of those whose activation failed or panicked,
-    /// which are disabled.
+    /// which are disabled. A plugin of a thread of its own starts it, and
+    /// activates there: its failure comes through [`Plugins::serve`].
     pub fn activate(&mut self, context: &mut Context<'_>) -> Vec<Error> {
         let mut errors = Vec::new();
         for entry in &mut self.entries {
@@ -429,26 +560,50 @@ impl Plugins {
                 continue;
             }
             entry.state.status = Status::Active;
+            let Entry { runner, state } = entry;
+            let plugin = match runner {
+                Runner::Main(plugin) => plugin,
+                Runner::Unstarted(_) => {
+                    let Runner::Unstarted(plugin) = std::mem::replace(runner, Runner::Stopped)
+                    else {
+                        continue;
+                    };
+                    let wake = self.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
+                    match Worker::start(&state.name, plugin, wake) {
+                        Ok(mut worker) => {
+                            worker.ask(Job::Activate);
+                            *runner = Runner::Worker(worker);
+                        }
+                        Err(error) => errors.push(failed_start(
+                            state,
+                            context.registry,
+                            &mut self.bindings_changed,
+                            &Error::new(
+                                Code::Unavailable,
+                                format!("its thread did not start: {error}"),
+                            ),
+                        )),
+                    }
+                    continue;
+                }
+                Runner::Worker(_) | Runner::Stopped => continue,
+            };
             let activated = call(
-                entry,
+                (plugin.as_mut(), state),
                 context,
                 &mut self.out,
                 &mut self.bindings_changed,
+                "activate",
                 |plugin, cx| plugin.activate(cx),
             );
             if let Err(error) = activated {
-                if entry.state.status == Status::Active {
-                    disable(
-                        &mut entry.state,
+                if state.status == Status::Active {
+                    errors.push(failed_start(
+                        state,
                         context.registry,
                         &mut self.bindings_changed,
-                    );
-                    let message = format!(
-                        "the plugin `{}` did not start, and is disabled: {}",
-                        entry.state.name, error.message
-                    );
-                    entry.state.fault = Some(message.clone());
-                    errors.push(Error::new(error.code, message));
+                        &error,
+                    ));
                 } else {
                     errors.push(error);
                 }
@@ -484,19 +639,30 @@ impl Plugins {
                 format!("no plugin runs `{command}`"),
             ));
         };
-        call(
-            &mut self.entries[at],
-            context,
-            &mut self.out,
-            &mut self.bindings_changed,
-            |plugin, cx| plugin.on_command(cx, command, args),
-        )
+        let Entry { runner, state } = &mut self.entries[at];
+        match runner {
+            Runner::Main(plugin) => call(
+                (plugin.as_mut(), state),
+                context,
+                &mut self.out,
+                &mut self.bindings_changed,
+                "on_command",
+                |plugin, cx| plugin.on_command(cx, command, args),
+            ),
+            // Its failure comes as its call ends.
+            Runner::Worker(worker) => {
+                worker.ask(Job::Command(command.to_owned(), args));
+                Ok(())
+            }
+            Runner::Unstarted(_) | Runner::Stopped => Ok(()),
+        }
     }
 
     /// Whether `command`, which an active plugin registered, would do
     /// something with `args`, which the registry checked, as its plugin
     /// tells: what the call asks of the app is dropped; a fault when it
-    /// panicked, which disables it.
+    /// panicked, which disables it. A plugin of a thread of its own is not
+    /// asked, as the main thread does not wait for it: its commands apply.
     pub fn applies(
         &mut self,
         command: &str,
@@ -509,15 +675,17 @@ impl Plugins {
                 format!("no plugin runs `{command}`"),
             ));
         };
-        let before = self.out.requests.len();
-        let applies = look(
-            &mut self.entries[at],
+        let Entry { runner, state } = &mut self.entries[at];
+        let Runner::Main(plugin) = runner else {
+            return Ok(true);
+        };
+        look(
+            (plugin.as_mut(), state),
             context,
             &mut self.bindings_changed,
+            "applies",
             |plugin, cx| Ok(plugin.applies(cx, command, args)),
-        );
-        self.out.requests.truncate(before);
-        applies
+        )
     }
 
     /// The bindings of the active plugins, in their order, which the
@@ -647,7 +815,9 @@ impl Plugins {
     /// keeps it: a disabled plugin is not asked, and keeps its last; a
     /// panel that is not open, or a view of a window or a pane that closed,
     /// is not asked, as no tree of it stays; a fault when it panicked, which
-    /// disables it, its last tree staying.
+    /// disables it, its last tree staying. A plugin of a thread of its own
+    /// renders there, its tree coming through [`Plugins::serve`], its last
+    /// one staying meanwhile.
     pub fn render(
         &mut self,
         name: &str,
@@ -664,30 +834,25 @@ impl Plugins {
                 format!("there is no plugin `{name}`"),
             ));
         };
-        if self.entries[at].state.status != Status::Active {
+        let Entry { runner, state } = &mut self.entries[at];
+        if state.status != Status::Active || !shows(state, view, context.workspace) {
             return Ok(());
         }
-        let shows = match view {
-            ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
-                context.workspace.window(WindowId::of(window.0)).is_some()
+        match runner {
+            Runner::Main(plugin) => {
+                let tree = call(
+                    (plugin.as_mut(), state),
+                    context,
+                    &mut self.out,
+                    &mut self.bindings_changed,
+                    "render",
+                    |plugin, cx| Ok(plugin.render(cx, view)),
+                )?;
+                state.views.insert(view.clone(), (new_id(), tree));
             }
-            ViewId::PaneHeader(pane) => context.workspace.pane(PaneId::of(pane.0)).is_some(),
-            ViewId::Panel(id) => self.entries[at].state.panels.contains_key(id),
-        };
-        if !shows {
-            return Ok(());
+            Runner::Worker(worker) => worker.ask(Job::Render(view.clone())),
+            Runner::Unstarted(_) | Runner::Stopped => {}
         }
-        let tree = call(
-            &mut self.entries[at],
-            context,
-            &mut self.out,
-            &mut self.bindings_changed,
-            |plugin, cx| Ok(plugin.render(cx, view)),
-        )?;
-        self.entries[at]
-            .state
-            .views
-            .insert(view.clone(), (new_id(), tree));
         Ok(())
     }
 
@@ -770,13 +935,22 @@ impl Plugins {
         else {
             return Ok(());
         };
-        call(
-            &mut self.entries[at],
-            context,
-            &mut self.out,
-            &mut self.bindings_changed,
-            |plugin, cx| plugin.on_ui_event(cx, event),
-        )
+        let Entry { runner, state } = &mut self.entries[at];
+        match runner {
+            Runner::Main(plugin) => call(
+                (plugin.as_mut(), state),
+                context,
+                &mut self.out,
+                &mut self.bindings_changed,
+                "on_ui_event",
+                |plugin, cx| plugin.on_ui_event(cx, event),
+            ),
+            Runner::Worker(worker) => {
+                worker.ask(Job::Ui(event.clone()));
+                Ok(())
+            }
+            Runner::Unstarted(_) | Runner::Stopped => Ok(()),
+        }
     }
 
     /// Tells the plugin `name` that its panel `id` closed, which its next
@@ -823,7 +997,8 @@ impl Plugins {
     /// their order, as a batch to each active plugin, in their order, of
     /// those that it subscribed to; those that the deliveries' calls emit
     /// wait for the next. Returns the calls' errors, of which a panic's
-    /// disables its plugin.
+    /// disables its plugin. A plugin of a thread of its own takes its batch
+    /// there, which joins the one that waits for it, if one does.
     pub fn deliver(&mut self, context: &mut Context<'_>) -> Vec<Error> {
         self.take_reads();
         let events = std::mem::take(&mut self.out.events);
@@ -847,13 +1022,22 @@ impl Plugins {
             if batch.is_empty() {
                 continue;
             }
-            let delivered = call(
-                entry,
-                context,
-                &mut self.out,
-                &mut self.bindings_changed,
-                |plugin, cx| plugin.on_event(cx, &batch),
-            );
+            let Entry { runner, state } = entry;
+            let delivered = match runner {
+                Runner::Main(plugin) => call(
+                    (plugin.as_mut(), state),
+                    context,
+                    &mut self.out,
+                    &mut self.bindings_changed,
+                    "on_event",
+                    |plugin, cx| plugin.on_event(cx, &batch),
+                ),
+                Runner::Worker(worker) => {
+                    worker.ask(Job::Events(batch));
+                    Ok(())
+                }
+                Runner::Unstarted(_) | Runner::Stopped => Ok(()),
+            };
             if let Err(error) = delivered {
                 errors.push(error);
             }
@@ -868,10 +1052,174 @@ impl Plugins {
             .any(|state| state.subscribed.iter().any(|subscribed| subscribed == name))
     }
 
-    /// Whether events wait for the next delivery, or reads of rows, whose
-    /// rows will come as events.
+    /// Whether events wait for the next delivery: those of the reads of
+    /// rows that ended once [`Plugins::serve`] took them.
     pub fn has_events(&self) -> bool {
-        !self.out.events.is_empty() || !self.out.reads.is_empty()
+        !self.out.events.is_empty()
+    }
+
+    /// Whether reads of rows, or calls of plugins on threads of their own,
+    /// are under way, whose ends [`Plugins::serve`] takes, as they wake the
+    /// main thread.
+    pub fn waiting(&self) -> bool {
+        !self.out.reads.is_empty()
+            || self
+                .entries
+                .iter()
+                .any(|entry| matches!(&entry.runner, Runner::Worker(worker) if worker.is_busy()))
+    }
+
+    /// Takes what came since the last turn: the reads of rows that ended,
+    /// as events to their plugins, and the messages of the plugins'
+    /// threads, in turn, for [`SERVE_FOR`] at most, past which those left
+    /// wait for the next turn, which takes the next plugin's first, and
+    /// which the host wakes the main thread for: each request answered with the state as it
+    /// is now, a write queued for its call; each call that ended, its
+    /// writes applied and what it asked of the app passed on, a render's
+    /// tree kept, of a view that still shows, and the next call that waits
+    /// for its plugin begun. A call that panicked disables its plugin,
+    /// whose thread ends, and its writes go.
+    pub fn serve(&mut self, context: &mut Context<'_>) -> Served {
+        let mut served = Served::default();
+        let reads = self.out.reads.len();
+        self.take_reads();
+        served.any = self.out.reads.len() < reads;
+        let (start, most) = (Instant::now(), self.serve_for.unwrap_or(SERVE_FOR));
+        let count = self.entries.len();
+        loop {
+            let mut took = false;
+            for step in 0..count {
+                let at = (self.serve_from + step) % count;
+                if self.serve_one(at, context, &mut served) {
+                    took = true;
+                    served.any = true;
+                    if start.elapsed() >= most {
+                        // The messages left bring the next turn, as their
+                        // wakes came already.
+                        self.serve_from = (at + 1) % count;
+                        served.more = true;
+                        if let Some(wake) = &self.wake {
+                            wake();
+                        }
+                        return served;
+                    }
+                }
+            }
+            if !took {
+                return served;
+            }
+        }
+    }
+
+    /// Takes the next message of the thread of the plugin at `at`, if it
+    /// has one, and one came: whether one did.
+    fn serve_one(&mut self, at: usize, context: &mut Context<'_>, served: &mut Served) -> bool {
+        let Plugins {
+            entries,
+            out,
+            bindings_changed,
+            ..
+        } = self;
+        let Entry { runner, state } = &mut entries[at];
+        let Runner::Worker(worker) = runner else {
+            return false;
+        };
+        let done = match worker.take() {
+            Err(mpsc::TryRecvError::Empty) => return false,
+            // A thread that ended within a call, as none should.
+            Err(mpsc::TryRecvError::Disconnected) => {
+                if !worker.is_busy() {
+                    return false;
+                }
+                Done::Panicked(": its thread ended".to_owned())
+            }
+            Ok(FromWorker::Request(asked)) => {
+                let response = match worker.busy_mut() {
+                    Some(busy) => {
+                        let mut host = Host {
+                            state,
+                            context,
+                            out: &mut busy.out,
+                            writes: &mut busy.writes,
+                            bindings_changed,
+                        };
+                        host::Host::handle(&mut host, asked)
+                    }
+                    None => {
+                        Response::Failed(Error::new(Code::Fault, "a request came outside a call"))
+                    }
+                };
+                worker.answer(response);
+                return true;
+            }
+            Ok(FromWorker::Done(done)) => done,
+        };
+        let Some(busy) = worker.end() else {
+            return true;
+        };
+        let worker::Busy {
+            called,
+            writes,
+            out: mut sent,
+        } = busy;
+        let result = match done {
+            Done::Panicked(message) => {
+                disable(state, context.registry, bindings_changed);
+                let fault = format!(
+                    "the plugin `{}` panicked{message}; it is disabled",
+                    state.name
+                );
+                state.fault = Some(fault.clone());
+                served.errors.push(Error::new(Code::Fault, fault));
+                *runner = Runner::Stopped;
+                return true;
+            }
+            Done::Returned(result) => result,
+            Done::Rendered(tree) => {
+                if let Called::Render(view) = &called
+                    && shows(state, view, context.workspace)
+                {
+                    state
+                        .views
+                        .insert(view.clone(), (new_id(), tree.map(|tree| *tree)));
+                }
+                Ok(())
+            }
+        };
+        apply(writes, context, &mut sent, state);
+        out.merge(sent);
+        match (called, result) {
+            (_, Ok(())) => {}
+            (Called::Activate, Err(error)) => {
+                served.errors.push(failed_start(
+                    state,
+                    context.registry,
+                    bindings_changed,
+                    &error,
+                ));
+                *runner = Runner::Stopped;
+                return true;
+            }
+            (Called::Command, Err(error)) => served.commands.push(error),
+            (_, Err(error)) => served.errors.push(error),
+        }
+        worker.next();
+        true
+    }
+
+    /// Takes the calls of the plugins on the main thread that took
+    /// [`SLOW`] or longer since the last look, as the log tells of them.
+    pub fn take_slow(&mut self) -> Vec<SlowCall> {
+        let mut slow = Vec::new();
+        for entry in &mut self.entries {
+            let state = &mut entry.state;
+            slow.extend(state.slow.drain(..).map(|(callback, took)| SlowCall {
+                plugin: state.name.clone(),
+                callback,
+                took,
+            }));
+        }
+        slow
     }
 
     /// Whether the plugins' bindings changed since the last call, as a
@@ -890,34 +1238,47 @@ impl Plugins {
     }
 }
 
+/// The manifest of a built-in plugin, of the text `manifest`; an error if
+/// it does not read.
+fn builtin_manifest(manifest: &str) -> Result<Manifest, Error> {
+    Manifest::parse(manifest).map_err(|error: ManifestError| {
+        Error::new(
+            Code::InvalidConfig,
+            format!("a plugin's manifest does not read: {error}"),
+        )
+    })
+}
+
 /// The message of a plugin's catalogs that titles its command `name`:
 /// `command-` and the name, with `-` for its `.`, as `command-pane-copy`.
 pub fn title_message(name: &str) -> String {
     format!("command-{}", name.replace('.', "-"))
 }
 
-/// Calls `call` on `entry`'s plugin, within `catch_unwind`, and applies
-/// its writes, in their order, as it returns: a plugin that panics is
-/// disabled, and the writes and the requests of the call go.
+/// Calls `call`, of the callback `callback`, on a plugin of the main
+/// thread, of `state`, within `catch_unwind`, and applies its writes, in
+/// their order, as it returns: a plugin that panics is disabled, and the
+/// writes and the requests of the call go.
 fn call<T>(
-    entry: &mut Entry,
+    (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     out: &mut Outbox,
     bindings_changed: &mut bool,
+    callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let before = out.requests.len();
     let mut writes = Vec::new();
     let outcome = within(
-        entry,
+        (plugin, state),
         context,
         (&mut *out, &mut writes),
-        bindings_changed,
+        (bindings_changed, callback),
         call,
     );
     match outcome {
         Ok(result) => {
-            apply(writes, context, out, &entry.state.name);
+            apply(writes, context, out, state);
             result
         }
         Err(fault) => {
@@ -927,40 +1288,43 @@ fn call<T>(
     }
 }
 
-/// Calls `call` on `entry`'s plugin, as [`call`] does, but drops its
-/// writes and its requests, as the call only looks: the panels that it
-/// opens or closes stay as they were.
+/// Calls `call` on a plugin of the main thread, as [`call`] does, but
+/// drops its writes and its requests, as the call only looks: the panels
+/// that it opens or closes, and its decorations, stay as they were.
 fn look<T>(
-    entry: &mut Entry,
+    (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     bindings_changed: &mut bool,
+    callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     let (mut out, mut writes) = (Outbox::default(), Vec::new());
-    let panels = entry.state.panels.clone();
+    let (panels, decorations) = (state.panels.clone(), state.decorations.clone());
     let outcome = within(
-        entry,
+        (plugin, state),
         context,
         (&mut out, &mut writes),
-        bindings_changed,
+        (bindings_changed, callback),
         call,
     );
-    entry.state.panels = panels;
+    state.panels = panels;
+    state.decorations = decorations;
     outcome.unwrap_or_else(|fault| fault)
 }
 
-/// Calls `call` on `entry`'s plugin within `catch_unwind`, its writes and
-/// its requests into `queues`: the call's result, or, as it panicked, which
-/// disables the plugin, the fault's error.
+/// Calls `call` on a plugin of the main thread within `catch_unwind`, its
+/// writes and its requests into `queues`: the call's result, or, as it
+/// panicked, which disables the plugin, the fault's error. A call of
+/// [`SLOW`] or longer is noted, by its `callback`, for the log.
 fn within<T>(
-    entry: &mut Entry,
+    (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     (out, writes): (&mut Outbox, &mut Vec<Write>),
-    bindings_changed: &mut bool,
+    (bindings_changed, callback): (&mut bool, &'static str),
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<Result<T, Error>, Result<T, Error>> {
-    let Entry { plugin, state } = entry;
     let name = state.name.clone();
+    let start = Instant::now();
     let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
         let mut host = Host {
             state: &mut *state,
@@ -969,8 +1333,12 @@ fn within<T>(
             writes: &mut *writes,
             bindings_changed: &mut *bindings_changed,
         };
-        call(plugin.as_mut(), &mut Cx::new(&mut host, &name))
+        call(plugin, &mut Cx::new(&mut host, &name))
     }));
+    let took = start.elapsed();
+    if took >= SLOW {
+        state.slow.push((callback, took));
+    }
     outcome.map_err(|payload| {
         disable(state, context.registry, bindings_changed);
         let fault = format!(
@@ -983,11 +1351,41 @@ fn within<T>(
     })
 }
 
-/// Applies a call's `writes` to the kernel's state, in their order: the
-/// writes to a pane that closed since do nothing; a paste that asks the
-/// user first becomes a request of the app's; an event emitted waits for
-/// the next delivery.
-fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, plugin: &str) {
+/// Whether `view`, of the plugin of `state`, shows: a slot's of a window
+/// or a pane that is there, or one of its open panels.
+fn shows(state: &State, view: &ViewId, workspace: &Workspace) -> bool {
+    match view {
+        ViewId::TabBar(window) | ViewId::WindowStrip(window) | ViewId::StatusBar(window) => {
+            workspace.window(WindowId::of(window.0)).is_some()
+        }
+        ViewId::PaneHeader(pane) => workspace.pane(PaneId::of(pane.0)).is_some(),
+        ViewId::Panel(id) => state.panels.contains_key(id),
+    }
+}
+
+/// Disables the plugin of `state`, whose activation failed with `error`,
+/// as [`disable`] does: the error that tells it, which its fault keeps.
+fn failed_start(
+    state: &mut State,
+    registry: &mut Registry,
+    bindings_changed: &mut bool,
+    error: &Error,
+) -> Error {
+    disable(state, registry, bindings_changed);
+    let message = format!(
+        "the plugin `{}` did not start, and is disabled: {}",
+        state.name, error.message
+    );
+    state.fault = Some(message.clone());
+    Error::new(error.code, message)
+}
+
+/// Applies a call's `writes`, of the plugin of `state`, to the kernel's
+/// state, in their order: the writes to a pane that closed since do
+/// nothing; a paste that asks the user first becomes a request of the
+/// app's; an event emitted waits for the next delivery.
+fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state: &mut State) {
+    let plugin = state.name.as_str();
     out.written |= writes
         .iter()
         .any(|write| !matches!(write, Write::Render(_)));
@@ -1004,7 +1402,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, plugin
                 look,
             } => {
                 if !pane(on).is_some_and(|pane| pane.decorate(id, from, to, decoration(look))) {
-                    out.decorations.remove(&id);
+                    state.decorations.remove(&id);
                 }
                 continue;
             }
@@ -1095,7 +1493,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, plugin
                 if let Some(pane) = pane(on) {
                     pane.undecorate(id);
                 }
-                out.decorations.remove(&id);
+                state.decorations.remove(&id);
             }
             Asked::Emit {
                 name,
@@ -1734,9 +2132,7 @@ impl Host<'_, '_> {
                     ));
                 }
                 let id = new_id();
-                self.out
-                    .decorations
-                    .insert(id, (*pane, self.state.name.clone()));
+                self.state.decorations.insert(id, *pane);
                 self.writes.push(Write::Decorate {
                     id,
                     pane: *pane,
@@ -1747,11 +2143,7 @@ impl Host<'_, '_> {
                 return Ok(Response::Decoration(id));
             }
             Asked::Undecorate { pane, id } => {
-                let own = self
-                    .out
-                    .decorations
-                    .get(id)
-                    .is_some_and(|(on, plugin)| on == pane && *plugin == self.state.name);
+                let own = self.state.decorations.get(id) == Some(pane);
                 if !own {
                     return Err(Error::new(
                         Code::NotFound,

@@ -58,9 +58,13 @@ use crate::view::{Key, Node};
 /// keys, and the calls of its commands, which the host checked against
 /// their parameters, with their defaults.
 ///
-/// The host calls it on the main thread, and never while it runs: what its
-/// calls ask of the app comes once they return. A call that panics
-/// disables the plugin, and takes its commands and its bindings away.
+/// The host calls it on the main thread, or on a thread of its own, which
+/// its manifest asks for with `thread = "worker"` and which makes all its
+/// calls, and never while it runs: what its calls ask of the app comes
+/// once they return. On its own thread, each request waits for the main
+/// thread's answer, and the host renders its views as their trees come,
+/// the last ones staying meanwhile. A call that panics disables the
+/// plugin, and takes its commands and its bindings away.
 pub trait Plugin {
     /// Starts the plugin.
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {

@@ -12,6 +12,9 @@ publish = false
 [features]
 # A plugin of a view in every slot of the windows, for a build of tests.
 sample-slots = []
+# A plugin on a thread of its own that renders the status bar without pause,
+# reading the focused pane, for a build of tests.
+sample-worker = []
 
 [dependencies]
 accesskit.workspace = true

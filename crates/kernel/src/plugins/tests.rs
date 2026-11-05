@@ -71,7 +71,7 @@ fn listening(names: &'static [&'static str], log: &Rc<RefCell<Vec<String>>>) -> 
     })
 }
 
-fn command(name: &str) -> Command {
+pub(super) fn command(name: &str) -> Command {
     Command {
         name: name.to_owned(),
         title: name.to_owned(),
@@ -82,7 +82,7 @@ fn command(name: &str) -> Command {
     }
 }
 
-fn binding(keys: &str, command: &str, when: Option<&str>) -> PluginBinding {
+pub(super) fn binding(keys: &str, command: &str, when: Option<&str>) -> PluginBinding {
     PluginBinding {
         keys: keys.to_owned(),
         command: command.to_owned(),
@@ -94,7 +94,7 @@ fn binding(keys: &str, command: &str, when: Option<&str>) -> PluginBinding {
 /// A clipboard of the test's own: its text, and every text put on it, in
 /// order.
 #[derive(Default)]
-struct Board(Option<String>, Vec<String>);
+pub(super) struct Board(Option<String>, Vec<String>);
 
 impl Clipboard for Board {
     fn text(&self) -> Option<String> {
@@ -110,7 +110,7 @@ impl Clipboard for Board {
 /// The panes of the tests' plugins: a shell that waits, and each pane
 /// asked, by its id, with the pane that it was beside.
 #[derive(Default)]
-struct Spawner(Vec<(PaneId, Option<PaneId>)>);
+pub(super) struct Spawner(Vec<(PaneId, Option<PaneId>)>);
 
 impl Panes for Spawner {
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>) -> Pane {
@@ -138,16 +138,16 @@ const GRID: Grid = Grid {
 
 /// What the host of the tests reaches.
 #[derive(Default)]
-struct App {
-    registry: Registry,
-    workspace: Workspace,
+pub(super) struct App {
+    pub(super) registry: Registry,
+    pub(super) workspace: Workspace,
     panes: Spawner,
     clipboard: Board,
     focused: Option<WindowId>,
 }
 
 impl App {
-    fn context(&mut self) -> Context<'_> {
+    pub(super) fn context(&mut self) -> Context<'_> {
         Context {
             registry: &mut self.registry,
             workspace: &mut self.workspace,
@@ -161,7 +161,7 @@ impl App {
 }
 
 /// A window whose pane runs `script` with `sh`, with the focus.
-fn window(app: &mut App, script: &str) -> WindowId {
+pub(super) fn window(app: &mut App, script: &str) -> WindowId {
     let pane = Pane::spawn(
         &Program::command("/bin/sh", ["-c", script]),
         &Environment::default(),
@@ -178,7 +178,7 @@ fn window(app: &mut App, script: &str) -> WindowId {
 
 /// The text of the whole of `pane`, once it holds `wanted`, for ten
 /// seconds at most.
-fn text_once(app: &App, pane: PaneId, wanted: &str) -> String {
+pub(super) fn text_once(app: &App, pane: PaneId, wanted: &str) -> String {
     let start = Instant::now();
     loop {
         let pane = app.workspace.pane(pane).unwrap();
@@ -1119,6 +1119,8 @@ fn a_call_is_its_own_plugin_s() {
             catalogs: &[],
             views: BTreeMap::new(),
             panels: BTreeMap::new(),
+            decorations: BTreeMap::new(),
+            slow: Vec::new(),
             fault: None,
         },
         Outbox::default(),

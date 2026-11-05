@@ -27,6 +27,7 @@ mod notices;
 mod panels;
 mod panes;
 mod surfaces;
+mod workers;
 
 /// The app of the tests, which draws with the tests' drawing, if at all.
 type App = super::App<fakes::Gpu>;

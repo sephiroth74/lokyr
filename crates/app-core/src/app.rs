@@ -581,6 +581,15 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
             }
         }
+        // A plugin on a thread of its own that renders without pause, for a
+        // build of tests.
+        #[cfg(feature = "sample-worker")]
+        if let Err(error) = plugins.add_builtin_send(
+            crate::sample_worker::MANIFEST,
+            Box::new(crate::sample_worker::SampleWorker::default()),
+        ) {
+            eprintln!("lokyr: a built-in plugin's manifest does not read: {error}");
+        }
         let keymap = Keymap::with_config(bindings(&plugins), &config.keys);
         let budget = Arc::new(Budget::new(config.scrollback.budget.bytes()));
         Self {
@@ -901,6 +910,20 @@ impl<B: Backend> App<B> {
     #[cfg(test)]
     fn with_builtin(mut self, manifest: &str, plugin: Box<dyn plugins::Plugin>) -> Self {
         if let Err(error) = self.plugins.add_builtin(manifest, plugin) {
+            eprintln!("lokyr: {error}");
+        }
+        self
+    }
+
+    /// The app, with `plugin` of `manifest`, as a built-in one of the
+    /// thread that its manifest asks for, after the others.
+    #[cfg(test)]
+    fn with_builtin_send(
+        mut self,
+        manifest: &str,
+        plugin: Box<dyn plugins::Plugin + Send>,
+    ) -> Self {
+        if let Err(error) = self.plugins.add_builtin_send(manifest, plugin) {
             eprintln!("lokyr: {error}");
         }
         self
@@ -1946,6 +1969,10 @@ impl<B: Backend> App<B> {
     /// Activates the plugins, which register their commands and bind their
     /// keys; one that fails is disabled, as the log tells.
     fn activate_plugins(&mut self, platform: &mut dyn Platform) {
+        // The plugins on threads of their own wake the main thread as they
+        // send it messages, which the turns take.
+        let waker = platform.waker();
+        self.plugins.set_wake(move || waker.wake());
         // A plugin whose activation failed is disabled, which the notice of
         // the plugins that stopped tells.
         let _failed = self.with_plugins(platform, Plugins::activate);
@@ -2067,6 +2094,15 @@ impl<B: Backend> App<B> {
         }
         // A window that shows a view rendered anew draws it.
         self.frame_rendered(platform);
+        // A call of the main thread's that took long goes to the log.
+        for slow in self.plugins.take_slow() {
+            eprintln!(
+                "lokyr: the plugin `{}` took {:.1} ms in `{}` on the main thread",
+                slow.plugin,
+                slow.took.as_secs_f64() * 1000.0,
+                slow.callback
+            );
+        }
         // A plugin that stopped, whose views show as they were and take no
         // event, tells it in a notice.
         for (plugin, fault) in self.plugins.take_disabled() {
@@ -2120,16 +2156,32 @@ impl<B: Backend> App<B> {
     }
 
     /// Ends a turn of the main thread: the workspace's events, whose
-    /// changes the plugins take, then the plugins' events delivered, a
-    /// batch to each plugin of those that it subscribed to, whose calls'
-    /// requests the app then takes, and whose writes' changes of the
-    /// workspace the windows follow. A turn without events costs nothing.
+    /// changes the plugins take; what the plugins' threads and the reads of
+    /// rows sent since, which a command's failure among tells the user;
+    /// then the plugins' events delivered, a batch to each plugin of those
+    /// that it subscribed to, whose calls' requests the app then takes, and
+    /// whose writes' changes of the workspace the windows follow. A turn
+    /// without events costs nothing.
     fn end_turn(&mut self, platform: &mut dyn Platform) {
         self.events(platform);
+        let served = if self.plugins.waiting() {
+            self.with_plugins(platform, Plugins::serve)
+        } else {
+            plugins::Served::default()
+        };
+        for error in served.commands {
+            self.report(
+                platform,
+                Diagnostic::new(error.code, error.message, About::Other),
+            );
+        }
+        for error in &served.errors {
+            eprintln!("lokyr: {error}");
+        }
         let ui_events = std::mem::take(&mut self.ui_events);
         let delivers = self.plugins.has_events();
         let rendered = std::mem::take(&mut self.rendered_slots);
-        if ui_events.is_empty() && !delivers && !rendered {
+        if ui_events.is_empty() && !delivers && !rendered && !served.any {
             return;
         }
         for (plugin, event) in &ui_events {
