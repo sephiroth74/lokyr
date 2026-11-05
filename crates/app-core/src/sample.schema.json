@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/sample-slots",
+  "type": "object",
+  "properties": {
+    "title": {
+      "description": "The status bar's first text, before the tabs' count.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30,
+      "default": "sample-slots"
+    }
+  }
+}

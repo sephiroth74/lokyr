@@ -325,6 +325,17 @@ pub enum Request {
     },
     /// Closes a panel of the plugin's, as the call returns.
     ClosePanel(PanelId),
+    /// The plugin's config: the values of its section of the config file,
+    /// `[plugins.<namespace>]`, as its schema checked them, with the
+    /// defaults of the keys that it leaves out, as a map; an empty map of
+    /// a plugin without a schema.
+    Config,
+    /// The plugin's state, which it kept for the app's next runs: what it
+    /// last wrote, or nothing.
+    State,
+    /// Keeps a value as the plugin's state, 1 MiB at most as JSON, written
+    /// whole as the call returns.
+    SetState(Data),
 }
 
 /// What a request is to the host.
@@ -396,7 +407,10 @@ impl Request {
             | Self::SetText { .. }
             | Self::Select { .. }
             | Self::OpenPanel { .. }
-            | Self::ClosePanel(_) => None,
+            | Self::ClosePanel(_)
+            | Self::Config
+            | Self::State
+            | Self::SetState(_) => None,
         }
     }
 
@@ -417,7 +431,9 @@ impl Request {
             | Self::FontSize
             | Self::Windows
             | Self::Tabs(_)
-            | Self::Layout(_) => Effect::Read,
+            | Self::Layout(_)
+            | Self::Config
+            | Self::State => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -442,7 +458,8 @@ impl Request {
             | Self::SetRatio { .. }
             | Self::Equalize(_)
             | Self::Zoom { .. }
-            | Self::RequestRender(_) => Effect::Write,
+            | Self::RequestRender(_)
+            | Self::SetState(_) => Effect::Write,
             Self::RunCommand { .. }
             | Self::Open(_)
             | Self::SetFontSize(_)
@@ -489,6 +506,8 @@ pub enum Response {
     Tabs(Vec<TabInfo>),
     /// A tab's layout.
     Layout(Layout),
+    /// A plain value, as the plugin's config or its state.
+    Data(Data),
     /// A tab that opens as the call returns, and its pane.
     Tab {
         /// The tab.
@@ -554,6 +573,9 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
+    /// The plugin's config changed, as the config file reloaded, to it
+    /// alone: its request of [`Request::Config`] reads the new one.
+    ConfigChanged,
     /// An event of a plugin's own.
     Custom {
         /// Its name, `namespace.event`, of the plugin's namespace.
@@ -573,6 +595,7 @@ impl Event {
             Self::Pointer { .. } => POINTER,
             Self::Lines { .. } => "lines",
             Self::PanelClosed(_) => "panel-closed",
+            Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }
     }

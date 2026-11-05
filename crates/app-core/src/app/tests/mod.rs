@@ -20,6 +20,7 @@ use crate::{fakes, notice};
 mod access;
 mod asks;
 mod chrome;
+mod configs;
 mod frame;
 mod input;
 mod menus;

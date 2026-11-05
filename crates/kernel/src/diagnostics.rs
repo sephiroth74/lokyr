@@ -19,6 +19,9 @@ pub enum About {
     /// The `TERM` that the programs take, which a name of a terminfo entry
     /// fixes.
     Term,
+    /// A plugin's section of the config, `[plugins.<namespace>]`, by the
+    /// namespace, which a section that its plugin takes fixes.
+    PluginConfig(String),
     /// Anything else, as a plugin or a command, of which each diagnostic
     /// is its own.
     Other,
@@ -101,6 +104,15 @@ impl Diagnostics {
     pub fn resolve(&mut self, about: &About) -> bool {
         let before = self.notices.len();
         self.notices.retain(|shown| shown.about != *about);
+        self.notices.len() != before
+    }
+
+    /// Takes away the notices about what `of` holds for, as the plugins'
+    /// sections that a config's reload checks again. Whether there were
+    /// any.
+    pub fn resolve_all(&mut self, of: impl Fn(&About) -> bool) -> bool {
+        let before = self.notices.len();
+        self.notices.retain(|shown| !of(&shown.about));
         self.notices.len() != before
     }
 

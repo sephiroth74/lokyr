@@ -14,7 +14,7 @@ Under each key's name, a small line tells the platforms where the key applies: m
 - **Opening it**: Lokyr › Settings… (⌘,) opens the file in your text editor, the application that opens plain text, as TextEdit or the one that you chose in the Finder. When there is no file, it makes one first: every key, commented out with its default and its text, under its section, so that you take a key's `#` away to change it, and the others keep the defaults to come. A key without a default shows an example of its value, as `family = "Menlo"`, and `[keys]` each default binding, a line a key, under what it does. In an editor that changes the quotes that you type, as TextEdit's Edit › Substitutions › Smart Quotes does, turn that off: TOML takes straight quotes alone. When the file cannot be made, as in a folder that you cannot write, or no editor opens it, an alert tells why.
 - **Links**: the file, or its directory, can be a symbolic link, as dotfiles managers such as GNU Stow make it. Lokyr watches the file the link points to as well, and follows a link that is pointed elsewhere: the edits of its new target apply too. A target that goes, as a checkout of the dotfiles removes and writes it, applies again as it comes back; while it is gone, the defaults apply.
 - **Reloading**: Lokyr applies the file as soon as you save it, without a restart. Saving from vim, which writes another file and renames it over the config, works as well as saving from any other editor. Removing the file, or its directory, brings the defaults back.
-- **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults.
+- **All or nothing**: a file applies whole, or not at all. When it has an error, none of its values apply, and the settings in force stay as they were. At startup, an invalid file gives the defaults. A plugin's section, which its plugin checks, applies on its own, as [`[plugins.<namespace>]`](#pluginsnamespace) says.
 - **Errors**: an error tells the file, the line and the column, and what is wrong. For a key that Lokyr does not know, it names the nearest key that it knows:
 
   ```text
@@ -156,6 +156,11 @@ performance-corner = "bottom-right"  # top-right | top-left | bottom-right | bot
 "cmd+q" = false                      # takes the binding away; the menu's Command-Q stays, for now
 "alt+backspace" = { command = "pane.send-text", args = { text = "\u0017" } }   # sends Control-W
 "global:ctrl+`" = "window.toggle-quick-terminal"   # from every app: the quick terminal
+
+# A plugin's own keys, in a section of its namespace, as its schema has them;
+# no built-in plugin has keys yet:
+# [plugins.<namespace>]
+# key = "value"
 ```
 
 ## `config_version`
@@ -1240,3 +1245,25 @@ The defaults:
 | `cmd+pageup`, `shift+pageup`, `cmd+pagedown`, `shift+pagedown` | `pane.scroll-page-up`, `pane.scroll-page-down` | Scrolls the view a page up or down |
 | `cmd+home`, `cmd+end` | `pane.scroll-top`, `pane.scroll-bottom` | Scrolls the view to the scrollback's first row, or back to the screen |
 | `cmd+click` | `links.open` | Opens what you click: the link that the program gave the text, or the URL or the path that the text holds there. A URL is of `http`, `https`, `mailto` or `file`; a path starts from `/`, from `~`, or from the directory of the program in the foreground, as `ls` lists files, and compilers and `grep -n` write a line after it, as `src/main.rs:42:7`; between quotes, a path that is there can have spaces, as `git status` and Python write one, and a URL ends at a space. A URL or a file asks you first, as [`[links]`](#links) says; a folder opens in the Finder; a program, an application or a script that would run shows in the Finder, selected, and does not run. While you hold Command, the link under the pointer that would open is underlined, and the pointer over it is the pointing hand, as you move over it or press Command with the pointer still |
+
+## `[plugins.<namespace>]`
+
+<sub>Platforms: macOS</sub>
+
+A plugin's own keys, in a section of its namespace: the plugin's name after its owner, as `[plugins.tabs]` of `lokyr/tabs`. Each plugin tells its keys; no built-in plugin has keys yet, so that a section applies once one has.
+
+```toml
+[plugins.tabs]
+position = "top"
+```
+
+- **Its keys** are those of the plugin's schema, the JSON Schema file that its manifest names, with their values and their defaults: a key left out takes its default, and a section left out gives all of them.
+- **A wrong value**, of another type or none of its choices, refuses that plugin's section alone: the plugin keeps the keys in force, its defaults at the start, and the rest of the file applies. The bar across the windows' top tells the error at its line, until you save a section that the plugin takes:
+
+  ```text
+  lokyr: error 109 (usage): /Users/you/.config/lokyr/config.toml:12:1: `position` is one of "top", "bottom", not "middle" in `[plugins.tabs]`; the plugin `lokyr/tabs` keeps its config in force
+  ```
+
+- **What another version would know** is ignored, as the bar tells: the section of a plugin that is not installed, and a key that the plugin's schema lacks, as one of a newer version, so that one file serves two Macs.
+- **Reloading**: as you save the file, each plugin takes its section anew, and hears of a change.
+- `lokyr +validate-config` checks the file's own keys and the sections' form, each a table of keys, and `lokyr +show-config` prints the sections as the file has them; their keys apply as the plugins take them, once Lokyr runs.

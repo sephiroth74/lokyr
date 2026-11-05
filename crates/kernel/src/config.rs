@@ -70,7 +70,9 @@
 //! `[keyboard]` [`KeyboardConfig`],
 //! `[clipboard]` [`ClipboardConfig`], `[links]` [`LinksConfig`], `[bell]`
 //! [`BellConfig`], `[app]`
-//! [`AppConfig`], `[updates]` [`UpdatesConfig`], and `[keys]` [`KeysConfig`]. Every key and every section can be
+//! [`AppConfig`], `[updates]` [`UpdatesConfig`], `[keys]` [`KeysConfig`],
+//! and the plugins' own, `[plugins.<namespace>]`, [`PluginsConfig`], which
+//! their schemas check. Every key and every section can be
 //! left out, for its default. An error, of the
 //! syntax, of a key or of a value, tells its place in the file, and a key
 //! that no section has tells the nearest that it has.
@@ -92,7 +94,10 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 use toml_edit::{Document, DocumentMut, Item, TableLike};
 
+mod plugins;
 mod written;
+
+pub use plugins::{PluginSection, PluginsConfig};
 
 /// The version of the file's format that the app reads.
 pub const VERSION: i64 = 1;
@@ -145,6 +150,10 @@ pub struct Config {
     pub debug: DebugConfig,
     /// The `[keys]` section.
     pub keys: KeysConfig,
+    /// The plugins' sections, `[plugins.<namespace>]`, which their schemas
+    /// check once the plugins are there.
+    #[serde(skip_serializing)]
+    pub plugins: PluginsConfig,
 }
 
 /// The `[keys]` section: bindings of keys to commands over the defaults, by
@@ -1277,8 +1286,12 @@ impl Config {
         let document = Document::parse(text).map_err(|e| error(e.span(), e.message()))?;
         check_keys(document.as_table()).map_err(|(span, message)| error(span, &message))?;
         check_bindings(document.as_table()).map_err(|(span, message)| error(span, &message))?;
-        Self::deserialize(toml_edit::de::Deserializer::from(document))
-            .map_err(|e| error(e.span(), e.message()))
+        let plugins = PluginsConfig::read(document.as_table(), text, path)
+            .map_err(|(span, message)| error(span, &message))?;
+        let mut config = Self::deserialize(toml_edit::de::Deserializer::from(document))
+            .map_err(|e| error(e.span(), e.message()))?;
+        config.plugins = plugins;
+        Ok(config)
     }
 }
 
@@ -1684,7 +1697,7 @@ fn check_keys(root: &dyn TableLike) -> Result<(), (Option<std::ops::Range<usize>
 
 /// `; did you mean …?`, with the known name nearest to `name`, when one is
 /// near enough to be a typing error; nothing otherwise.
-fn nearest(name: &str, known: &[&str], open: &str, close: &str) -> String {
+pub(crate) fn nearest(name: &str, known: &[&str], open: &str, close: &str) -> String {
     let limit = (name.chars().count() / 3).max(2);
     known
         .iter()
@@ -2467,6 +2480,86 @@ mod tests {
     }
 
     #[test]
+    fn the_plugins_sections_read_with_their_places_and_write_back() {
+        let text = "[font]\nsize = 14\n\n[plugins.tabs]\nposition = \"top\"\ncolors = { active = \"red\", sizes = [1, 2.5] }\nwhen = 1979-05-27\n\n[plugins.links.look]\nunderline = true\n\n[[plugins.other.rows]]\nname = \"a\"\n";
+        let config = parse(text).unwrap();
+        let sections: Vec<(&str, serde_json::Value)> = config
+            .plugins
+            .sections()
+            .map(|(namespace, section)| {
+                (
+                    namespace,
+                    serde_json::Value::Object(section.values().clone()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                (
+                    "links",
+                    serde_json::json!({ "look": { "underline": true } })
+                ),
+                ("other", serde_json::json!({ "rows": [{ "name": "a" }] })),
+                (
+                    "tabs",
+                    serde_json::json!({
+                        "position": "top",
+                        "colors": { "active": "red", "sizes": [1, 2.5] },
+                        "when": "1979-05-27",
+                    })
+                ),
+            ]
+        );
+        let tabs = config.plugins.get("tabs").unwrap();
+        let place = |path: &[&str]| {
+            let path: Vec<String> = path.iter().map(|&key| key.to_owned()).collect();
+            tabs.place(&path).map(|place| (place.line, place.column))
+        };
+        assert_eq!(place(&[]), Some((4, 1)));
+        assert_eq!(place(&["position"]), Some((5, 1)));
+        assert_eq!(place(&["colors", "active"]), Some((6, 12)));
+        assert_eq!(place(&["colors", "sizes", "1"]), Some((6, 40)));
+        // A value without a place of its own tells its nearest key's.
+        assert_eq!(place(&["colors", "missing"]), Some((6, 1)));
+        assert_eq!(tabs.at(&["position".to_owned()]), "config.toml:5:1");
+        // Written whole, the sections read back as the same, of other
+        // places.
+        let written = config.written(false);
+        assert!(written.ends_with("\n[plugins.tabs]\ncolors = { active = \"red\", sizes = [1, 2.5] }\nposition = \"top\"\nwhen = \"1979-05-27\"\n"), "{written}");
+        let again = parse(&written).unwrap();
+        assert_eq!(again, config);
+        assert_ne!(
+            again.plugins.get("tabs").unwrap().place(&[]),
+            tabs.place(&[])
+        );
+    }
+
+    #[test]
+    fn the_plugins_sections_are_tables_of_values_that_json_holds() {
+        for (text, message) in [
+            (
+                "plugins = 1\n",
+                "config.toml:1:11: `plugins` is a section, not a value",
+            ),
+            (
+                "[plugins]\ntabs = 1\n",
+                "config.toml:2:8: `plugins.tabs` is a plugin's section, of its keys, not a value",
+            ),
+            (
+                "[plugins.tabs]\nfade = nan\n",
+                "config.toml:2:8: `fade` is not a finite number",
+            ),
+            (
+                "[plugins.tabs]\nsizes = [1, inf]\n",
+                "config.toml:2:13: `sizes.1` is not a finite number",
+            ),
+        ] {
+            assert_eq!(parse(text).unwrap_err().to_string(), message, "{text}");
+        }
+    }
+
+    #[test]
     fn the_sections_keys_are_serde_s() {
         assert_eq!(
             keys::<Config>(),
@@ -2488,7 +2581,8 @@ mod tests {
                 "app",
                 "updates",
                 "debug",
-                "keys"
+                "keys",
+                "plugins"
             ]
         );
         assert_eq!(keys::<LinksConfig>(), ["urls", "files"]);
@@ -2574,9 +2668,12 @@ mod tests {
         parse(example).expect("the complete example reads");
         let document: Document<String> = example.parse().unwrap();
         let root = document.as_table();
-        for key in keys::<Config>() {
+        // The plugins' sections hold their plugins' keys, which no built-in
+        // plugin has yet: the example shows their form in a comment.
+        for key in keys::<Config>().iter().filter(|key| **key != "plugins") {
             assert!(root.contains_key(key), "`{key}` is in the complete example");
         }
+        assert!(example.contains("\n# [plugins.<namespace>]\n"));
         for (section, keys) in sections() {
             let table = root[section].as_table().expect("a section");
             for key in keys {

@@ -1017,6 +1017,27 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Checks the plugins' sections of the config against their schemas,
+    /// which tell what they refused and ignored in notices of their own,
+    /// in place of those of the config before.
+    fn configure_plugins(&mut self, platform: &mut dyn Platform) {
+        let notices = self.plugins.configure(&self.config.plugins);
+        if self
+            .diagnostics
+            .resolve_all(|about| matches!(about, About::PluginConfig(_)))
+        {
+            self.request_frames(platform);
+        }
+        for notice in notices {
+            let diagnostic = Diagnostic::new(
+                Code::InvalidConfig,
+                notice.text,
+                About::PluginConfig(notice.namespace),
+            );
+            self.report(platform, diagnostic);
+        }
+    }
+
     /// Takes the notice about `about` away, as a fix does.
     fn resolve(&mut self, platform: &mut dyn Platform, about: &About) {
         if self.diagnostics.resolve(about) {
@@ -1099,7 +1120,12 @@ impl<B: Backend> App<B> {
         if keys_changed {
             self.keymap = Keymap::with_config(bindings(&self.plugins), &config.keys);
         }
+        let plugins_changed = config.plugins != self.config.plugins;
         self.config = config;
+        // The plugins take their sections, and hear of their changes.
+        if plugins_changed {
+            self.configure_plugins(platform);
+        }
         if term_changed {
             self.tell_term(platform);
         }
@@ -1973,6 +1999,10 @@ impl<B: Backend> App<B> {
         // send it messages, which the turns take.
         let waker = platform.waker();
         self.plugins.set_wake(move || waker.wake());
+        // Their states and their sections of the config, which their
+        // activation reads.
+        self.plugins.set_state_directory(self.state.clone());
+        self.configure_plugins(platform);
         // A plugin whose activation failed is disabled, which the notice of
         // the plugins that stopped tells.
         let _failed = self.with_plugins(platform, Plugins::activate);
@@ -2094,6 +2124,10 @@ impl<B: Backend> App<B> {
         }
         // A window that shows a view rendered anew draws it.
         self.frame_rendered(platform);
+        // A plugin's state that could not be written goes to the log.
+        for fault in self.plugins.take_faults() {
+            eprintln!("lokyr: {fault}");
+        }
         // A call of the main thread's that took long goes to the log.
         for slow in self.plugins.take_slow() {
             eprintln!(

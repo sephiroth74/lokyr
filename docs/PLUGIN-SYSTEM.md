@@ -24,8 +24,8 @@ Everything you see in Lokyr is a plugin: the tab bar, splits, the find bar, them
 | UI | Provide view trees for slots | tab bar, find bar, status bar segments | F3 |
 | Terminal | Read lines and the selection; write input (with a capability); use the search and decoration services | highlight matches, gutter marks | F3 |
 | Themes | Register themes and importers | `.itermcolors`, base16 | F3 |
-| Config | A `[plugins.<name>]` section with a JSON schema and migrations, or a file of the plugin's own, which is [open](ROADMAP.md#open-questions) | `[plugins.tabs] position = "top"` | F3 |
-| Storage | Persistent per-plugin state | search history | F3 |
+| Config | A `[plugins.<namespace>]` section of the config file, checked against the plugin's JSON Schema, of the keywords that the host checks, a wrong value refusing that section alone, and what another version would know ignored with a notice ([ADR 0032](adr/0032-plugins-config-and-state.md)); read as a request, a change told as `config-changed` | `[plugins.tabs] position = "top"` | F3 |
+| Storage | A file of the plugin's state, of plain values as JSON, 1 MiB at most, in the app's state directory, read as a request and written as the call returns ([ADR 0032](adr/0032-plugins-config-and-state.md)) | search history | F3 |
 | System | Clipboard, notifications, opening URLs and files, global hotkeys and quick windows in F3; processes and the network, through the app to Sleip's helper, from F4 (with capabilities) | notify when a command finishes | F3–F4 |
 | Protocols | Handlers for rare OSC/DCS/APC sequences | iTerm2's OSC 1337 | F5 |
 | Triggers | Regexes over completed lines, with batched callbacks | highlight `ERROR` in red | F5b |
@@ -644,7 +644,7 @@ As the user asked on 31 October 2026, after VS Code's [CodeSnap](https://marketp
 | `scale` | `1`, `2`, `3` | the display's | The pixels of a point |
 
 - **Capabilities**: `terminal-read`, for the cells; `clipboard-write`, for `copy`; `fs-write` of its folder, for `save`. Sleip shows them at install, and the app asks for each on first use.
-- **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file's write of bytes; and a config of the plugin's own, whose form is an [open question](ROADMAP.md#open-questions).
+- **What the API needs for it**: the cells of the selection, of the screen and of a command, with their styles, not only their text; the `image` service; an image on the clipboard, not only text; a file's write of bytes; and a config of the plugin's own, its section of the config file ([ADR 0032](adr/0032-plugins-config-and-state.md)).
 
 ## Distribution
 

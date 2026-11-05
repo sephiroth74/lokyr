@@ -21,14 +21,14 @@
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use lokyr_pkg_model::manifest::Thread;
-
-use lokyr_pkg_model::manifest::{Manifest, ManifestError};
+use lokyr_pkg_model::manifest::{Manifest, ManifestError, Thread};
+use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
@@ -42,9 +42,10 @@ use lokyr_session::Reader;
 use lokyr_text_core::Size;
 use lokyr_vt_core::page::{self, Rgb, Style};
 use lokyr_vt_core::terminal::{Look, Scroll};
+use serde_json::{Map, Value};
 
 use crate::commands::{self, Args, Capability, Code, Command, Error, Registry, Uses};
-use crate::config::ConfirmPaste;
+use crate::config::{ConfirmPaste, PluginSection, PluginsConfig};
 use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::Texts;
 use crate::paste::{self, Paste};
@@ -189,7 +190,7 @@ enum Runner {
     /// On a thread of its own, which starts as it activates.
     Unstarted(Box<dyn Plugin + Send>),
     /// On its thread.
-    Worker(Worker),
+    Worker(Box<Worker>),
     /// Nowhere, as it stopped on its thread, which ended.
     Stopped,
 }
@@ -229,6 +230,20 @@ struct State {
     slow: Vec<(&'static str, Duration)>,
     /// What disabled it, if something did: its error's message.
     fault: Option<String>,
+    /// The schema of its section of the config, if it has keys.
+    schema: Option<Schema>,
+    /// Its config in force: a map of its keys' values.
+    config: Data,
+    /// Its state on the disk.
+    stored: Stored,
+}
+
+/// A plugin's state on the disk: its file, in the app's state directory,
+/// and what it holds once read or written.
+#[derive(Debug, Default)]
+struct Stored {
+    file: Option<PathBuf>,
+    held: Option<Data>,
 }
 
 impl State {
@@ -264,7 +279,25 @@ pub struct Plugins {
     /// How long a turn takes the plugins' threads' messages at most,
     /// [`SERVE_FOR`] but in the tests.
     serve_for: Option<Duration>,
+    /// The app's state directory, which the plugins' states are kept in.
+    state_directory: Option<PathBuf>,
 }
+
+/// What a plugin's section of the config tells the user, of the plugin's
+/// namespace: why it was refused, or what it ignored.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigNotice {
+    /// The namespace, of `[plugins.<namespace>]`.
+    pub namespace: String,
+    /// Whether the section was refused, which leaves the plugin's config in
+    /// force as it was.
+    pub refused: bool,
+    /// What it tells, of the file's place, as `config.toml:3:1: …`.
+    pub text: String,
+}
+
+/// The most bytes of a plugin's state, as JSON.
+pub const MOST_STATE: usize = 1024 * 1024;
 
 /// A call of a plugin's on the main thread that took long, as the log
 /// tells.
@@ -318,6 +351,9 @@ struct Outbox {
     /// Whether a call wrote to the kernel's state since the last look, as
     /// what the windows show may have changed.
     written: bool,
+    /// The failures of the writes that the calls' returns made, as of the
+    /// plugins' states, for the log.
+    faults: Vec<Error>,
     /// The views whose renders the plugins asked for, or whose panels
     /// they opened, by their plugins, in their order.
     renders: Vec<(String, ViewId)>,
@@ -331,6 +367,7 @@ impl Outbox {
         self.events.extend(call.events);
         self.reads.extend(call.reads);
         self.written |= call.written;
+        self.faults.extend(call.faults);
         for render in call.renders {
             if !self.renders.contains(&render) {
                 self.renders.push(render);
@@ -518,6 +555,12 @@ impl Plugins {
             Runner::Worker(_) | Runner::Stopped => &[],
         }))
         .unwrap_or(&[]);
+        let schema = self::schema(name, manifest.as_ref(), &runner)?;
+        let config = schema.as_ref().map_or_else(Map::new, Schema::defaults);
+        let file = self
+            .state_directory
+            .as_ref()
+            .map(|directory| state_file(directory, &namespace));
         let (granted, uses) = declared.unzip();
         self.entries.push(Entry {
             runner,
@@ -537,9 +580,129 @@ impl Plugins {
                 decorations: BTreeMap::new(),
                 slow: Vec::new(),
                 fault: None,
+                schema,
+                config: data(&Value::Object(config)),
+                stored: Stored { file, held: None },
             },
         });
         Ok(())
+    }
+
+    /// Gives the host the app's state directory, which the plugins' states
+    /// are kept in, as `plugins/<namespace>.json`: before their activation,
+    /// which reads them.
+    pub fn set_state_directory(&mut self, directory: Option<PathBuf>) {
+        for entry in &mut self.entries {
+            let state = &mut entry.state;
+            state.stored = Stored {
+                file: directory
+                    .as_ref()
+                    .map(|directory| state_file(directory, &state.namespace)),
+                held: None,
+            };
+        }
+        self.state_directory = directory;
+    }
+
+    /// Checks the plugins' sections of `config` against their schemas: a
+    /// section that one refuses leaves its plugin's config in force; one
+    /// that it takes, with the defaults of the keys that it leaves out,
+    /// becomes the plugin's, which an [`Event::ConfigChanged`] tells an
+    /// active plugin as it changes. What the sections tell the user, a
+    /// notice of each plugin's at most: a section refused, its keys that
+    /// the schema lacks, or a section of no plugin's or of a plugin of no
+    /// keys, which it ignores.
+    pub fn configure(&mut self, config: &PluginsConfig) -> Vec<ConfigNotice> {
+        let mut notices = Vec::new();
+        for entry in &mut self.entries {
+            let state = &mut entry.state;
+            let namespace = state.namespace.clone();
+            let section = config.get(&namespace);
+            let at = |path: &[String]| {
+                section
+                    .map(|section| section.at(path) + ": ")
+                    .unwrap_or_default()
+            };
+            let Some(schema) = &state.schema else {
+                if section.is_some() {
+                    notices.push(ConfigNotice {
+                        text: format!(
+                            "{}the plugin `{}` has no keys, and `[plugins.{namespace}]` is ignored",
+                            at(&[]),
+                            state.name
+                        ),
+                        namespace,
+                        refused: false,
+                    });
+                }
+                continue;
+            };
+            let empty = Map::new();
+            let checked = schema.check(section.map_or(&empty, PluginSection::values));
+            match checked.values {
+                Ok(values) => {
+                    let values = data(&Value::Object(values));
+                    if values != state.config {
+                        state.config = values;
+                        if state.status == Status::Active {
+                            self.out
+                                .events
+                                .push((Some(state.name.clone()), Event::ConfigChanged));
+                        }
+                    }
+                    if let Some(first) = checked.ignored.first() {
+                        let known = schema.keys();
+                        let more = match checked.ignored.len() {
+                            1 => String::new(),
+                            count => format!(", and {} more", count - 1),
+                        };
+                        notices.push(ConfigNotice {
+                            text: format!(
+                                "{}unknown key `{first}` in `[plugins.{namespace}]`{more}, which the plugin `{}` ignores{}",
+                                at(std::slice::from_ref(first)),
+                                state.name,
+                                crate::config::nearest(first, &known, "", ""),
+                            ),
+                            namespace,
+                            refused: false,
+                        });
+                    }
+                }
+                Err(problem) => notices.push(ConfigNotice {
+                    text: format!(
+                        "{}{} in `[plugins.{namespace}]`; the plugin `{}` keeps its config in force",
+                        at(&problem.path),
+                        problem.message,
+                        state.name
+                    ),
+                    namespace,
+                    refused: true,
+                }),
+            }
+        }
+        for (namespace, section) in config.sections() {
+            if !self
+                .entries
+                .iter()
+                .any(|entry| entry.state.namespace == namespace)
+            {
+                notices.push(ConfigNotice {
+                    namespace: namespace.to_owned(),
+                    refused: false,
+                    text: format!(
+                        "{}: no plugin of the namespace `{namespace}` is here, and `[plugins.{namespace}]` is ignored",
+                        section.at(&[])
+                    ),
+                });
+            }
+        }
+        notices
+    }
+
+    /// Takes the failures of the writes that the plugins' calls made as
+    /// they returned, as of their states, for the log.
+    pub fn take_faults(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.out.faults)
     }
 
     /// Gives the host what wakes the main thread, as the plugins' threads
@@ -572,7 +735,7 @@ impl Plugins {
                     match Worker::start(&state.name, plugin, wake) {
                         Ok(mut worker) => {
                             worker.ask(Job::Activate);
-                            *runner = Runner::Worker(worker);
+                            *runner = Runner::Worker(Box::new(worker));
                         }
                         Err(error) => errors.push(failed_start(
                             state,
@@ -1238,6 +1401,91 @@ impl Plugins {
     }
 }
 
+/// The schema of the config of the plugin `name`, of `manifest` and of
+/// `runner`'s plugin: the text that the plugin gives, which its manifest
+/// names, if it has one; an error of a schema that does not read, or that
+/// one names and the other lacks.
+fn schema(
+    name: &str,
+    manifest: Option<&Manifest>,
+    runner: &Runner,
+) -> Result<Option<Schema>, Error> {
+    let text = panic::catch_unwind(AssertUnwindSafe(|| match runner {
+        Runner::Main(plugin) => plugin.config_schema(),
+        Runner::Unstarted(plugin) => plugin.config_schema(),
+        Runner::Worker(_) | Runner::Stopped => None,
+    }))
+    .unwrap_or(None);
+    let invalid = |message: String| Error::new(Code::InvalidConfig, message);
+    if let Some(manifest) = manifest {
+        match (&manifest.contributes.config_schema, text) {
+            (Some(file), None) => {
+                return Err(invalid(format!(
+                    "the plugin `{name}`'s manifest names the config schema `{file}`, which the plugin does not give"
+                )));
+            }
+            (None, Some(_)) => {
+                return Err(invalid(format!(
+                    "the plugin `{name}` gives a config schema that its manifest does not name as `config-schema`"
+                )));
+            }
+            _ => {}
+        }
+    }
+    text.map(|text| {
+        Schema::parse(text).map_err(|error| {
+            invalid(format!(
+                "the config schema of the plugin `{name}` does not read: {error}"
+            ))
+        })
+    })
+    .transpose()
+}
+
+/// The file of the state of the plugin of `namespace`, in the app's state
+/// `directory`.
+fn state_file(directory: &std::path::Path, namespace: &str) -> PathBuf {
+    directory.join("plugins").join(format!("{namespace}.json"))
+}
+
+/// The plain value of `value`: JSON's null is nothing, and a number is an
+/// integer if it has no fraction and fits.
+fn data(value: &Value) -> Data {
+    match value {
+        Value::Null => Data::Nil,
+        Value::Bool(boolean) => Data::Boolean(*boolean),
+        Value::Number(number) => match number.as_i64() {
+            Some(integer) => Data::Integer(integer),
+            None => Data::Number(number.as_f64().unwrap_or(f64::NAN)),
+        },
+        Value::String(text) => Data::Text(text.clone()),
+        Value::Array(items) => Data::List(items.iter().map(data).collect()),
+        Value::Object(map) => Data::Map(
+            map.iter()
+                .map(|(key, value)| (key.clone(), self::data(value)))
+                .collect(),
+        ),
+    }
+}
+
+/// The JSON of `data`; `None` of a number that is not finite, as JSON has
+/// none.
+fn json(data: &Data) -> Option<Value> {
+    Some(match data {
+        Data::Nil => Value::Null,
+        Data::Boolean(boolean) => Value::Bool(*boolean),
+        Data::Integer(integer) => Value::from(*integer),
+        Data::Number(number) => Value::Number(serde_json::Number::from_f64(*number)?),
+        Data::Text(text) => Value::String(text.clone()),
+        Data::List(items) => Value::Array(items.iter().map(json).collect::<Option<_>>()?),
+        Data::Map(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| Some((key.clone(), self::json(value)?)))
+                .collect::<Option<_>>()?,
+        ),
+    })
+}
+
 /// The manifest of a built-in plugin, of the text `manifest`; an error if
 /// it does not read.
 fn builtin_manifest(manifest: &str) -> Result<Manifest, Error> {
@@ -1566,6 +1814,23 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     .workspace
                     .zoom(TabId::of(tab.0), pane.map(|pane| PaneId::of(pane.0)));
             }
+            Asked::SetState(value) => {
+                let Some(file) = &state.stored.file else {
+                    continue;
+                };
+                let text = json(&value).unwrap_or(Value::Null).to_string();
+                if let Err(error) = crate::state::write_whole(file, text.as_bytes()) {
+                    out.faults.push(Error::new(
+                        Code::Failed,
+                        format!(
+                            "the state of the plugin `{}` cannot be written to {}: {error}",
+                            state.name,
+                            file.display()
+                        ),
+                    ));
+                }
+                state.stored.held = Some(value);
+            }
             // The host queues writes alone.
             _ => {}
         }
@@ -1823,6 +2088,39 @@ struct Host<'h, 'c> {
 }
 
 impl Host<'_, '_> {
+    /// The plugin's state, as it last wrote it: of its file, read the first
+    /// time, whose failure tells the log as the state starts anew.
+    fn stored(&mut self) -> Data {
+        if let Some(held) = &self.state.stored.held {
+            return held.clone();
+        }
+        let read = match &self.state.stored.file {
+            None => Ok(Data::Nil),
+            Some(file) => match std::fs::read(file) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Data::Nil),
+                Err(error) => Err(format!(
+                    "it cannot be read from {}: {error}",
+                    file.display()
+                )),
+                Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
+                    .map(|value| data(&value))
+                    .map_err(|error| format!("{} is not JSON: {error}", file.display())),
+            },
+        };
+        let held = read.unwrap_or_else(|message| {
+            self.out.faults.push(Error::new(
+                Code::Failed,
+                format!(
+                    "the state of the plugin `{}` starts anew, as {message}",
+                    self.state.name
+                ),
+            ));
+            Data::Nil
+        });
+        self.state.stored.held = Some(held.clone());
+        held
+    }
+
     /// The pane of `pane`'s handle; `not-found` once it closed.
     fn pane(&self, pane: host::PaneId) -> Result<&Pane, Error> {
         self.context
@@ -2101,6 +2399,8 @@ impl Host<'_, '_> {
                 )
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
+            Asked::Config => Response::Data(self.state.config.clone()),
+            Asked::State => Response::Data(self.stored()),
             other => {
                 return Err(Error::new(Code::Fault, format!("{other:?} is not a read")));
             }
@@ -2233,6 +2533,26 @@ impl Host<'_, '_> {
                 self.view_window(view)?;
                 self.writes.push(Write::Render(view.clone()));
                 return Ok(Response::Done);
+            }
+            Asked::SetState(value) => {
+                let failed = |message: String| Error::new(Code::Failed, message);
+                let text = json(value)
+                    .ok_or_else(|| {
+                        failed("a plugin's state holds finite numbers alone".to_owned())
+                    })?
+                    .to_string();
+                if text.len() > MOST_STATE {
+                    return Err(failed(format!(
+                        "a plugin's state is {MOST_STATE} bytes at most as JSON, not {}",
+                        text.len()
+                    )));
+                }
+                if self.state.stored.file.is_none() {
+                    return Err(Error::new(
+                        Code::Unavailable,
+                        "the app keeps no state, as it has no state directory",
+                    ));
+                }
             }
             Asked::Emit { name, schema, .. } => {
                 let own = name

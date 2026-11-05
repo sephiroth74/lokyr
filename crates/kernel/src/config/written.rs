@@ -461,6 +461,7 @@ impl Config {
                 let _ = writeln!(out, "{} = {value}", Key::new(keys));
             }
         }
+        self.plugins.write(&mut out);
         out
     }
 }

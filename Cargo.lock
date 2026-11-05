@@ -827,6 +827,7 @@ dependencies = [
  "lokyr-vt-core",
  "proptest",
  "serde",
+ "serde_json",
  "toml_edit",
  "unic-langid",
 ]
@@ -844,6 +845,7 @@ version = "0.4.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "serde",
+ "serde_json",
  "toml",
 ]
 

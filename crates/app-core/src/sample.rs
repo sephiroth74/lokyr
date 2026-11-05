@@ -7,7 +7,9 @@
 //! Escape and a click outside close, and one of a menu of two items, which
 //! the platform shows as its own, whose choice the status bar tells; and
 //! each pane's id in its header. Each change of the workspace renders its
-//! views again.
+//! views again. Its section of the config, `[plugins.sample-slots]`, takes
+//! `title`, the status bar's first text; the field's text is its state,
+//! which the status bar tells again at the next run.
 
 use lokyr_kernel::commands::Error;
 use lokyr_kernel::plugins::host::{TabId, WindowId};
@@ -16,21 +18,24 @@ use lokyr_kernel::plugins::view::{
     Align, Edges, Length, Node, PointerShape, ProgressShape, ProgressState, Style, Token,
     UiEventKind,
 };
-use lokyr_kernel::plugins::{Cx, Event, Plugin, WorkspaceEvent};
+use lokyr_kernel::plugins::{Cx, Data, Event, Plugin, WorkspaceEvent};
 
 /// Its manifest, of every slot.
 pub(crate) const MANIFEST: &str = concat!(
     "[plugin]\nname = \"lokyr/sample-slots\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
     "[contributes]\nslots = [\"tab-bar\", \"window-strip\", \"status-bar\", \"pane-header\"]\n",
+    "config-schema = \"sample.schema.json\"\n",
 );
 
 /// The plugin, the views that it rendered, which it renders again, the tab
-/// under the pointer, and the text of the status bar's field.
+/// under the pointer, the text of the status bar's field, and its config's
+/// title.
 #[derive(Default)]
 pub(crate) struct SampleSlots {
     views: Vec<ViewId>,
     hovered: Option<String>,
     typed: String,
+    title: String,
 }
 
 /// A bar of `children`, of a token's background, its texts in the middle
@@ -67,16 +72,40 @@ impl SampleSlots {
             let _ = cx.request_render(view.clone());
         }
     }
+
+    /// Takes its config's title.
+    fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if let Data::Map(config) = cx.config()?
+            && let Some(Data::Text(title)) = config.get("title")
+        {
+            self.title.clone_from(title);
+        }
+        Ok(())
+    }
 }
 
 impl Plugin for SampleSlots {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.configure(cx)?;
+        // The field's text of the last run, if the app keeps a state.
+        if let Ok(Data::Map(state)) = cx.state()
+            && let Some(Data::Text(typed)) = state.get("typed")
+        {
+            self.typed.clone_from(typed);
+        }
         cx.subscribe(&WorkspaceEvent::NAMES)
     }
 
-    fn on_event(&mut self, cx: &mut Cx<'_>, _: &[Event]) -> Result<(), Error> {
+    fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        if events.contains(&Event::ConfigChanged) {
+            self.configure(cx)?;
+        }
         self.render_again(cx);
         Ok(())
+    }
+
+    fn config_schema(&self) -> Option<&'static str> {
+        Some(include_str!("sample.schema.json"))
     }
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
@@ -100,6 +129,9 @@ impl Plugin for SampleSlots {
             }
             UiEventKind::InputChanged { text, .. } if key == "note" || key == "query" => {
                 self.typed.clone_from(text);
+                let state = Data::Map([("typed".to_owned(), Data::Text(text.clone()))].into());
+                // Without a state directory, the text stays for this run.
+                let _ = cx.set_state(state);
             }
             UiEventKind::Click if key == "find" || key == "menu" => {
                 let role = if key == "find" {
@@ -151,7 +183,7 @@ impl Plugin for SampleSlots {
                 note.style.pointer = Some(PointerShape::Text);
                 Some(bar(
                     vec![
-                        text(format!("sample-slots: {count} tab(s)"), "text.secondary"),
+                        text(format!("{}: {count} tab(s)", self.title), "text.secondary"),
                         note,
                         text(format!("typed: {}", self.typed), "text.secondary"),
                         Node::button("Find").key("find").tooltip("A find panel"),

@@ -797,6 +797,7 @@ impl<B: Backend> App<B> {
                 (About::Font, _) => "notice-font",
                 (About::GlobalKeys, _) => "notice-global-keys",
                 (About::Term, _) => "notice-term",
+                (About::PluginConfig(_), _) => "notice-plugin-config",
                 (About::Other, ErrorCategory::Fault) => "notice-fault",
                 (About::Other, _) => "notice-failed",
             };

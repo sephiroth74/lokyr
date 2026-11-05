@@ -123,6 +123,15 @@ pub trait Plugin {
         let _ = (cx, event);
         Ok(())
     }
+
+    /// The text of the JSON Schema of its section of the config file,
+    /// `[plugins.<namespace>]`, the file that its manifest names as
+    /// `config-schema`, which a built-in plugin includes as it builds: an
+    /// object of its keys, each with its `default`, of the keywords that
+    /// the host checks. By default, none: the plugin has no keys.
+    fn config_schema(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// What a plugin's callbacks reach the host through: each method sends a
@@ -608,6 +617,35 @@ impl<'a> Cx<'a> {
     /// Closes the panel `id`, as this call returns.
     pub fn close_panel(&mut self, id: impl Into<PanelId>) -> Result<(), Error> {
         self.done(Request::ClosePanel(id.into()))
+    }
+
+    /// The plugin's config, as a map of its keys: the values of its section
+    /// of the config file, `[plugins.<namespace>]`, as its schema checked
+    /// them, with the defaults of the keys that it leaves out. As the file
+    /// reloads, an [`Event::ConfigChanged`] tells that it changed.
+    pub fn config(&mut self) -> Result<Data, Error> {
+        self.data(Request::Config)
+    }
+
+    /// The plugin's state, as it last kept it with
+    /// [`set_state`](Self::set_state), of this run or an earlier one;
+    /// [`Data::Nil`] if it kept none.
+    pub fn state(&mut self) -> Result<Data, Error> {
+        self.data(Request::State)
+    }
+
+    /// Keeps `value` as the plugin's state for the app's next runs, as this
+    /// call returns: 1 MiB at most as JSON, whose numbers are finite.
+    pub fn set_state(&mut self, value: Data) -> Result<(), Error> {
+        self.done(Request::SetState(value))
+    }
+
+    /// Sends `request`, which a plain value answers.
+    fn data(&mut self, request: Request) -> Result<Data, Error> {
+        match self.request(request) {
+            Response::Data(data) => Ok(data),
+            other => Err(failed(other)),
+        }
     }
 }
 

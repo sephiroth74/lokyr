@@ -17,6 +17,8 @@ use crate::keymap::{Context as Keys, Keymap, Pressed, Resolved, Resolver};
 use crate::l10n::Texts;
 use crate::workspace::{Environment, Grid, Settings};
 
+mod config;
+
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
 type OnCommand = Box<dyn FnMut(&mut Cx<'_>, &str, Args) -> Result<(), Error>>;
 type OnEvent = Box<dyn FnMut(&mut Cx<'_>, &[Event]) -> Result<(), Error>>;
@@ -1122,6 +1124,9 @@ fn a_call_is_its_own_plugin_s() {
             decorations: BTreeMap::new(),
             slow: Vec::new(),
             fault: None,
+            schema: None,
+            config: Data::Map(BTreeMap::new()),
+            stored: Stored::default(),
         },
         Outbox::default(),
         Vec::new(),
