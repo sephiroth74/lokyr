@@ -231,7 +231,7 @@ type BarPlace =
 type TabInfo = {
     id: TabId,
     window: WindowId,
-    title: string, -- its own, as `set_tab_title` gave it, or its active pane's program's
+    title: string, -- its own, as `set_tab_title` gave it, or its active pane's program's, or, of `process-read`, its pane's folder and program, as "src — vim"
     color: Color?, -- its own, as `set_tab_color` gave it, or its active pane's program's, an RGB one
     active: boolean, -- whether its window shows it
     panes: { PaneId }, -- in its layout's order
@@ -345,6 +345,10 @@ type Event =
     | { kind: "pane-focused", pane: PaneId, tab: TabId }
     | { kind: "pane-moved", pane: PaneId, from: TabId, tab: TabId }
     | { kind: "layout-changed", tab: TabId }
+    -- A tab's title or color changed, its own, its program's, or its active pane's folder and program as output comes.
+    | { kind: "tab-changed", tab: TabId }
+    -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
+    | { kind: "keys-changed" }
     -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it, or a frame changed the text
     -- of its row or scrolled its pane's rows under it, at the same cell; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
@@ -486,6 +490,9 @@ type Cx = {
     -- user's drag of its edge left it, as the bar's view lays its tabs out across or down.
     set_tab_bar_place: (place: BarPlace) -> (boolean, Error?),
     tab_bar_place: () -> (BarPlace?, Error?),
+    -- The keys that run a command of its arguments, one key that no later binding takes, as the platform writes them,
+    -- as "⌘1"; none without a binding.
+    keys_of: (command: string, args: { [string]: any }) -> (string?, Error?),
     -- Asks the user for a text, in an alert on `window`, or on the focused one, of a field that holds `text`:
     -- returns the question's id, and the answer comes as an "answered" event. The message and the detail are
     -- messages of the plugin's catalogs, shown in the language shown, or the texts themselves where they lack them.

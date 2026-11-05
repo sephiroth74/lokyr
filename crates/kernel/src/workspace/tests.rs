@@ -569,6 +569,55 @@ fn a_tab_takes_the_title_and_the_color_of_the_pane_that_takes_its_keyboard() {
 }
 
 #[test]
+fn a_tab_s_label_is_its_title_or_its_place_and_its_changes_are_told() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 5"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    workspace.take_events();
+    let told = |workspace: &mut Workspace| {
+        workspace
+            .take_events()
+            .iter()
+            .filter(|event| **event == Event::Changed(Change::TabChanged { tab: tab.into() }))
+            .count()
+    };
+    let label = |workspace: &Workspace| workspace.tab(tab).unwrap().label().to_owned();
+    // Its place, without a title, told once.
+    assert!(workspace.set_tab_place(tab, Some("src — vim".to_owned())));
+    assert_eq!(
+        (label(&workspace), told(&mut workspace)),
+        ("src — vim".to_owned(), 1)
+    );
+    workspace.set_tab_place(tab, Some("src — vim".to_owned()));
+    assert_eq!(told(&mut workspace), 0);
+    // A title of its own before it, and back; a color.
+    workspace.set_tab_title(tab, Some("work".to_owned()));
+    assert_eq!(
+        (label(&workspace), told(&mut workspace)),
+        ("work".to_owned(), 1)
+    );
+    workspace.set_tab_color(tab, Some(Rgb::new(1, 2, 3)));
+    assert_eq!(told(&mut workspace), 1);
+    workspace.set_tab_title(tab, None);
+    assert_eq!(
+        (label(&workspace), told(&mut workspace)),
+        ("src — vim".to_owned(), 1)
+    );
+    // Another pane's keyboard: its place goes, which the app gives anew.
+    let first = workspace.active_pane(window).unwrap();
+    let second = workspace
+        .split(first, Direction::Horizontal, pane("sleep 5"), Side::Second)
+        .unwrap();
+    workspace.take_events();
+    assert!(workspace.focus_pane(second));
+    assert_eq!(
+        (label(&workspace), told(&mut workspace)),
+        (String::new(), 1)
+    );
+    assert!(!workspace.set_tab_place(TabId::of(999_999), None));
+}
+
+#[test]
 fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
     let program = Program::command("/bin/sh", ["-c", "exit 3"]);
     let texts = Texts::new("it", &crate::l10n::KERNEL);
@@ -833,6 +882,8 @@ mod told {
         /// layouts it changed into `laid_out`.
         fn take(&mut self, change: &Change, laid_out: &mut BTreeSet<sdk::TabId>) {
             match *change {
+                // A tab's look, which the model does not keep.
+                Change::TabChanged { .. } => {}
                 Change::WindowOpened { window } => {
                     assert!(self.windows.insert(window, Window::default()).is_none());
                 }

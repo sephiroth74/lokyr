@@ -314,6 +314,7 @@ impl Symbols {
                     tab: self.tab(tab),
                 },
                 W::LayoutChanged { tab } => W::LayoutChanged { tab: self.tab(tab) },
+                W::TabChanged { tab } => W::TabChanged { tab: self.tab(tab) },
             }),
             other => other,
         }
@@ -480,8 +481,23 @@ impl Kernel {
             focused: Some(lokyr_kernel::workspace::WindowId::of(self.world.window.0)),
             font_size: 13.0,
             confirm_paste: lokyr_kernel::config::ConfirmPaste::Auto,
+            keys: &keys,
         }
     }
+}
+
+/// The keys of the world's bindings, as the platform writes them: `⌘1` of
+/// the first tab's.
+fn keys(command: &str, args: &Args) -> Option<String> {
+    (command == "tabs.goto" && *args == goto_first()).then(|| "⌘1".to_owned())
+}
+
+/// The arguments of the first tab's selection.
+fn goto_first() -> Args {
+    Args::from([(
+        "index".to_owned(),
+        lokyr_kernel::commands::Value::Integer(1),
+    )])
 }
 
 /// The plugin's name, of its manifest, which the scenarios' messages name.
@@ -578,6 +594,7 @@ fn on_fake(scenario: &Scenario, world: &World) -> Vec<Entry> {
     pane.lines.insert(world.row, world.line.clone());
     pane.rows
         .insert(world.row, (scenarios::LINE.to_owned(), false));
+    host.set_keys("tabs.goto", goto_first(), Some("⌘1"));
     host.activate(&mut plugin).unwrap();
     for step in &scenario.steps {
         if !step.asks.is_empty() {
@@ -702,11 +719,12 @@ fn kind(request: &Request) -> usize {
         Request::AskText { .. } => 57,
         Request::SetTabBarPlace(_) => 58,
         Request::TabBarPlace => 59,
+        Request::KeysOf { .. } => 60,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 60;
+const KINDS: usize = 61;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

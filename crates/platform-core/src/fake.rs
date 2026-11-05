@@ -845,8 +845,8 @@ impl Platform for Fake {
         }
     }
 
-    fn shortcut_text(&self, shortcut: Shortcut) -> String {
-        shortcut.mac_text()
+    fn shortcut_writer(&self) -> fn(Shortcut) -> String {
+        |shortcut| shortcut.mac_text()
     }
 
     fn set_window_remember(&mut self, window: WindowId, remember: bool) {

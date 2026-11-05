@@ -264,6 +264,17 @@ pub enum Request {
     /// The plugin's tab bar's place, a column's width as the user's drag
     /// of its edge left it, as its view lays its tabs out across or down.
     TabBarPlace,
+    /// The keys that run `command` with `args`, one key that no later
+    /// binding takes, as a menu's item would show them, written as the
+    /// platform writes them, as `⌘1`: none without a binding, as a tab bar
+    /// shows each tab's keys; [`Event::KeysChanged`] tells as the bindings
+    /// change.
+    KeysOf {
+        /// The command.
+        command: String,
+        /// Its arguments.
+        args: Args,
+    },
     /// Asks the user for a text, in an alert of `message` and `detail` on
     /// `window`, or on the focused window without one, in a field that
     /// holds `text` as it opens: the host answers with the question's id,
@@ -457,6 +468,7 @@ impl Request {
             | Self::AskText { .. }
             | Self::SetTabBarPlace(_)
             | Self::TabBarPlace
+            | Self::KeysOf { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -498,7 +510,8 @@ impl Request {
             | Self::Layout(_)
             | Self::Config
             | Self::State
-            | Self::TabBarPlace => Effect::Read,
+            | Self::TabBarPlace
+            | Self::KeysOf { .. } => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
@@ -595,6 +608,9 @@ pub enum Response {
 /// The name of [`Event::Pointer`], as plugins subscribe to it.
 pub const POINTER: &str = "pointer";
 
+/// The name of [`Event::KeysChanged`], as a plugin subscribes to it.
+pub const KEYS_CHANGED: &str = "keys-changed";
+
 /// The modifiers held.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mods {
@@ -648,6 +664,9 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
+    /// The keymap's bindings changed, as the config's `[keys]` or a
+    /// plugin's: the keys of [`Request::KeysOf`] may be others.
+    KeysChanged,
     /// The user's drag of the edge of the plugin's tab bar's column ended,
     /// to it alone: the column's width, in points, in force since, which
     /// the plugin keeps, as for its next start.
@@ -688,6 +707,7 @@ impl Event {
             Self::PanelClosed(_) => "panel-closed",
             Self::Answered { .. } => "answered",
             Self::TabBarResized { .. } => "tab-bar-resized",
+            Self::KeysChanged => KEYS_CHANGED,
             Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }

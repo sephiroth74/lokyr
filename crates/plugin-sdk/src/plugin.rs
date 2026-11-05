@@ -576,6 +576,15 @@ impl<'a> Cx<'a> {
         self.done(Request::SetTabColor { tab, color })
     }
 
+    /// The keys that run `command` with `args`, as the platform writes
+    /// them, as `⌘1`; none without a binding.
+    pub fn keys_of(&mut self, command: &str, args: Args) -> Result<Option<String>, Error> {
+        self.text(Request::KeysOf {
+            command: command.to_owned(),
+            args,
+        })
+    }
+
     /// Puts the plugin's tab bar at `place` in the windows that show it, as
     /// this call returns.
     pub fn set_tab_bar_place(&mut self, place: BarPlace) -> Result<(), Error> {

@@ -11,18 +11,21 @@ use super::*;
 type Answers = Rc<RefCell<Vec<(u64, Option<String>)>>>;
 
 /// A plugin that opens a tab, closes the focused tab or pane asking
-/// first, names the focused tab, and asks for a text, keeping the answers
-/// that it hears and its questions' ids.
-struct Parts(Answers, Rc<RefCell<Vec<u64>>>);
+/// first, names the focused tab, asks for a text, and reads the tabs'
+/// titles and the first tab's keys, keeping the answers that it hears, its
+/// questions' ids, and what it read and heard.
+struct Parts(Answers, Rc<RefCell<Vec<u64>>>, Rc<RefCell<Vec<String>>>);
 
 impl plugins::Plugin for Parts {
     fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&["keys-changed"])?;
         for name in [
             "parts.tab",
             "parts.close-tab",
             "parts.close-pane",
             "parts.name",
             "parts.ask",
+            "parts.read",
         ] {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -47,6 +50,18 @@ impl plugins::Plugin for Parts {
             "parts.close-tab" => cx.close_tab(tab.id, true),
             "parts.close-pane" => cx.close_pane(tab.focused, true),
             "parts.name" => cx.set_tab_title(tab.id, Some("named")),
+            "parts.read" => {
+                let titles = cx.tabs(window)?.into_iter().map(|tab| tab.title);
+                let first = Args::from([(
+                    "index".to_owned(),
+                    lokyr_kernel::commands::Value::Integer(1),
+                )]);
+                let keys = cx.keys_of("tabs.goto", first)?.unwrap_or_default();
+                let mut read = self.2.borrow_mut();
+                read.extend(titles);
+                read.push(keys);
+                Ok(())
+            }
             _ => {
                 let id = cx.ask_text(None, "The tab's title", "", "old")?;
                 self.1.borrow_mut().push(id);
@@ -61,8 +76,12 @@ impl plugins::Plugin for Parts {
         events: &[plugins::Event],
     ) -> Result<(), Error> {
         for event in events {
-            if let plugins::Event::Answered { id, text } = event {
-                self.0.borrow_mut().push((*id, text.clone()));
+            match event {
+                plugins::Event::Answered { id, text } => {
+                    self.0.borrow_mut().push((*id, text.clone()));
+                }
+                plugins::Event::KeysChanged => self.2.borrow_mut().push("keys-changed".to_owned()),
+                _ => {}
             }
         }
         Ok(())
@@ -73,16 +92,33 @@ impl plugins::Plugin for Parts {
 /// focused once it shows `ready`; the answers that the plugin hears, and
 /// its questions' ids.
 fn with_parts(program: Program) -> (Fake, App, WindowId, Answers, Rc<RefCell<Vec<u64>>>) {
+    let (fake, app, window, answers, asked, _) = with_parts_reading(program);
+    (fake, app, window, answers, asked)
+}
+
+/// [`with_parts`], and what the plugin read and heard.
+#[allow(clippy::type_complexity)]
+fn with_parts_reading(
+    program: Program,
+) -> (
+    Fake,
+    App,
+    WindowId,
+    Answers,
+    Rc<RefCell<Vec<u64>>>,
+    Rc<RefCell<Vec<String>>>,
+) {
     let answers = Answers::default();
     let asked = Rc::new(RefCell::new(Vec::new()));
+    let read = Rc::new(RefCell::new(Vec::new()));
     let mut fake = Fake::default();
-    let plugin = Parts(Rc::clone(&answers), Rc::clone(&asked));
+    let plugin = Parts(Rc::clone(&answers), Rc::clone(&asked), Rc::clone(&read));
     let mut app = app(unpadded(), program).with_plugin("parts", Box::new(plugin));
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::Focused(true));
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
-    (fake, app, window, answers, asked)
+    (fake, app, window, answers, asked, read)
 }
 
 /// Runs `command` of the plugin's.
@@ -221,4 +257,46 @@ fn the_tabs_keys_open_select_move_and_close_tabs() {
     press(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
     press(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
     assert_eq!(fake.windows().count(), 0);
+}
+
+#[test]
+fn a_tab_s_title_is_its_folder_and_its_program_and_a_plugin_reads_its_keys() {
+    let (mut fake, mut app, window, _, _, read) =
+        with_parts_reading(shell("echo ready; exec sleep 30"));
+    let pane = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).as_deref() == Some("sleep")
+    });
+    // As the titles look again: its folder and its program.
+    app.look_at_place(window);
+    let tab = app.workspace.tab_of(pane).unwrap();
+    assert!(
+        app.workspace
+            .tab(tab)
+            .unwrap()
+            .label()
+            .ends_with(" — sleep"),
+        "{}",
+        app.workspace.tab(tab).unwrap().label()
+    );
+    read.borrow_mut().clear();
+    run(&mut fake, &mut app, "parts.read");
+    let shown = read.borrow().clone();
+    assert_eq!(shown.len(), 2, "{shown:?}");
+    assert!(shown[0].ends_with(" — sleep"), "{shown:?}");
+    // The first tab's keys, of the keymap, as the platform writes them.
+    assert_eq!(shown[1], "⌘1");
+    // A change of the keys, as the config binds others, is told.
+    read.borrow_mut().clear();
+    let config = Config::parse(
+        "[keys]\n\"ctrl+1\" = { command = \"tabs.goto\", args = { index = 1 } }\n\"cmd+1\" = false\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    app.apply(&mut fake, config);
+    run_until(&mut fake, &mut app, |_, _| !read.borrow().is_empty());
+    assert_eq!(read.borrow()[0], "keys-changed");
+    read.borrow_mut().clear();
+    run(&mut fake, &mut app, "parts.read");
+    assert_eq!(read.borrow().last().map(String::as_str), Some("⌃1"));
 }

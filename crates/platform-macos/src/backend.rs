@@ -759,8 +759,8 @@ impl Platform for Backend {
         }
     }
 
-    fn shortcut_text(&self, shortcut: Shortcut) -> String {
-        shortcut.mac_text()
+    fn shortcut_writer(&self) -> fn(Shortcut) -> String {
+        |shortcut| shortcut.mac_text()
     }
 
     fn set_titlebar(&mut self, window: WindowId, titlebar: Titlebar) {

@@ -274,6 +274,24 @@ fn tabs(world: &World) -> Scenario {
                 posts: vec![Event::TabBarResized { width: 240.0 }],
                 heard: vec![Event::TabBarResized { width: 240.0 }],
             },
+            // The keys of a command of its arguments, as the platform writes
+            // them, and none of others.
+            ask(vec![
+                (
+                    Request::KeysOf {
+                        command: "tabs.goto".to_owned(),
+                        args: Args::from([("index".to_owned(), Value::Integer(1))]),
+                    },
+                    Response::Text(Some("⌘1".to_owned())),
+                ),
+                (
+                    Request::KeysOf {
+                        command: "tabs.goto".to_owned(),
+                        args: Args::from([("index".to_owned(), Value::Integer(2))]),
+                    },
+                    Response::Text(None),
+                ),
+            ]),
         ],
     }
 }

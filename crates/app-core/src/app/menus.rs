@@ -325,8 +325,10 @@ impl<B: Backend> App<B> {
     /// pane settles them.
     pub(super) fn set_menu(&mut self, platform: &mut dyn Platform) {
         platform.set_main_menu(&main_menu(&self.commands, &self.keymap, &self.texts));
-        // The windows' keys follow the keymap's too.
+        // The windows' keys follow the keymap's too, and the plugins learn
+        // that the keys may be others.
         self.window_keys(platform);
+        self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
         for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
             if !enabled {
                 platform.set_command_enabled(&command, true);

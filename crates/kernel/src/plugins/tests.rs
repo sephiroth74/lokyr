@@ -158,6 +158,7 @@ impl App {
             focused: self.focused,
             font_size: 13.0,
             confirm_paste: crate::config::ConfirmPaste::Auto,
+            keys: &|_, _| None,
         }
     }
 }
@@ -1055,6 +1056,50 @@ fn a_read_or_a_write_of_a_pane_that_closed_is_not_found() {
         *log.borrow(),
         [Ok(None), Ok(None), Err(Code::NotFound), Err(Code::NotFound)]
     );
+}
+
+#[test]
+fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
+    let mut app = App::default();
+    window(&mut app, "sleep 10");
+    let shown = app.focused.unwrap();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    assert!(
+        app.workspace
+            .set_tab_place(tab, Some("src — vim".to_owned()))
+    );
+    let mut plugins = Plugins::new();
+    let titles = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [("acme/blind", ""), ("acme/seeing", "process-read = true\n")] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let namespace = name.rsplit('/').next().unwrap().to_owned();
+        let seen = Rc::clone(&titles);
+        let read = format!("{namespace}.read");
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&read)),
+                    move |cx, _, _| {
+                        let window = cx.focused_window().unwrap();
+                        let tabs = cx.tabs(window)?;
+                        seen.borrow_mut().push(tabs[0].title.clone());
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in ["blind.read", "seeing.read"] {
+        plugins
+            .run(command, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    assert_eq!(*titles.borrow(), ["", "src — vim"]);
 }
 
 #[test]

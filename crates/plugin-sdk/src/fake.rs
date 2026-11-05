@@ -189,6 +189,8 @@ pub struct FakeHost {
     /// The windows' numbers and the keys that select them, as the test
     /// gave them.
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
+    /// The keys of commands of their arguments, as the test gave them.
+    keys: Vec<(String, Args, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
     /// The window that has the focus.
@@ -233,6 +235,7 @@ impl FakeHost {
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
+            keys: Vec::new(),
             bar_place: BarPlace::default(),
             focused: None,
             given_focus: None,
@@ -294,6 +297,17 @@ impl FakeHost {
     /// the pane after the tab's others, side by side.
     pub fn pane(&mut self, id: PaneId) -> &mut FakePane {
         self.panes.entry(id).or_default()
+    }
+
+    /// Gives `command` of `args` the `keys` that run it, as the platform
+    /// writes them, which a read of its keys tells; none takes them away.
+    pub fn set_keys(&mut self, command: &str, args: Args, keys: Option<&str>) -> &mut Self {
+        self.keys
+            .retain(|(bound, bound_args, _)| !(bound == command && *bound_args == args));
+        if let Some(keys) = keys {
+            self.keys.push((command.to_owned(), args, keys.to_owned()));
+        }
+        self
     }
 
     /// Gives `window` its `number` and the `keys` that select it, as the
@@ -687,15 +701,21 @@ impl FakeHost {
             // which a test reads among the requests done.
             Request::CloseTab { tab, .. } => self.close_tab(*tab),
             Request::ClosePane { pane, .. } => self.close_pane(*pane),
-            Request::SetTabTitle { tab, title } => {
-                if let Some(tab) = self.tabs.get_mut(tab) {
+            Request::SetTabTitle { tab: id, title } => {
+                if let Some(tab) = self.tabs.get_mut(id)
+                    && tab.title != *title
+                {
                     tab.title.clone_from(title);
+                    self.changed(WorkspaceEvent::TabChanged { tab: *id });
                 }
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
-            Request::SetTabColor { tab, color } => {
-                if let Some(tab) = self.tabs.get_mut(tab) {
+            Request::SetTabColor { tab: id, color } => {
+                if let Some(tab) = self.tabs.get_mut(id)
+                    && tab.color != *color
+                {
                     tab.color = *color;
+                    self.changed(WorkspaceEvent::TabChanged { tab: *id });
                 }
             }
             Request::ActivateTab(tab) => self.activate_tab(*tab),
@@ -1493,6 +1513,12 @@ impl Calling<'_> {
             }
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
+            Request::KeysOf { command, args } => Response::Text(
+                host.keys
+                    .iter()
+                    .find(|(bound, bound_args, _)| bound == command && bound_args == args)
+                    .map(|(_, _, keys)| keys.clone()),
+            ),
             Request::Windows => Response::Windows(host.windows()),
             Request::Tabs(window) => {
                 let Some(found) = host.windows.get(window) else {
@@ -1878,6 +1904,7 @@ impl Calling<'_> {
                 if let Some(name) = names.iter().find(|name| {
                     !WorkspaceEvent::NAMES.contains(&name.as_str())
                         && name.as_str() != POINTER
+                        && name.as_str() != crate::message::KEYS_CHANGED
                         && !is_name(name)
                 }) {
                     return Err(Error::new(

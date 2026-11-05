@@ -2209,6 +2209,15 @@ impl<B: Backend> App<B> {
             waker: platform.waker(),
             wakes: &mut self.pane_wakes,
         };
+        // The keys of a command, of the keymap, as the platform writes them.
+        let writer = platform.shortcut_writer();
+        let keymap = &self.keymap;
+        let keys = move |command: &str, args: &Args| {
+            keymap
+                .shortcut_with(command, args)
+                .and_then(menus::shortcut)
+                .map(writer)
+        };
         let mut clipboard = PlatformClipboard(platform);
         let mut context = plugins::Context {
             registry: &mut self.commands,
@@ -2218,6 +2227,7 @@ impl<B: Backend> App<B> {
             focused,
             font_size,
             confirm_paste,
+            keys: &keys,
         };
         call(&mut self.plugins, &mut context)
     }
@@ -2373,6 +2383,10 @@ impl<B: Backend> App<B> {
     /// that wait still.
     fn collect(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
         let due = self.workspace.collect(panes, Instant::now());
+        // The tabs of the panes whose output came take their places anew.
+        for &pane in panes {
+            self.look_at_tab_place(pane);
+        }
         self.events(platform);
         if let Some(due) = due
             && self.told_timer.is_none_or(|(_, at)| at > due)
@@ -2525,6 +2539,8 @@ impl<B: Backend> App<B> {
             WorkspaceEvent::PaneCreated { tab, .. }
             | WorkspaceEvent::PaneFocused { tab, .. }
             | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
+            // A tab's label and color, which the plugins' views show.
+            WorkspaceEvent::TabChanged { .. } => return,
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 vec![of_tab(self, from), of_tab(self, tab)]
             }
@@ -2735,7 +2751,45 @@ impl<B: Backend> App<B> {
             state.directory = Some(directory);
         }
         state.place.1 = pane.foreground_program().unwrap_or_default();
+        let (id, place) = (pane.id(), place_label(&state.place.0, &state.place.1));
+        if let Some(tab) = self.workspace.tab_of(id)
+            && self
+                .workspace
+                .tab(tab)
+                .is_some_and(|tab| tab.active_pane() == id)
+        {
+            self.workspace.set_tab_place(tab, Some(place));
+        }
         true
+    }
+
+    /// Gives `pane`'s tab, while the pane has its keyboard, its folder and
+    /// its program in the foreground, which the tab's label takes without
+    /// a title: a look at the terminal's foreground group and its first
+    /// process's path and directory, some microseconds, as the pane's
+    /// output comes.
+    fn look_at_tab_place(&mut self, pane: PaneId) {
+        let Some(tab) = self.workspace.tab_of(pane) else {
+            return;
+        };
+        if self
+            .workspace
+            .tab(tab)
+            .is_none_or(|tab| tab.active_pane() != pane)
+        {
+            return;
+        }
+        let Some(shown) = self.workspace.pane(pane).filter(|shown| !shown.is_kept()) else {
+            return;
+        };
+        let home = std::env::home_dir();
+        let Some(directory) = shown.working_directory() else {
+            return;
+        };
+        let name = directory_name(&directory, home.as_deref());
+        let program = shown.foreground_program().unwrap_or_default();
+        self.workspace
+            .set_tab_place(tab, Some(place_label(&name, &program)));
     }
 
     /// The titles' timer fired: the windows whose last frame of output came
@@ -3265,6 +3319,17 @@ impl<B: Backend> Handler for App<B> {
     fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
         self.take_window_event(platform, window, event);
         self.end_turn(platform);
+    }
+}
+
+/// A tab's place of its folder's `name` and its `program`, as a window's
+/// title has them: `src — vim`, the folder's alone of no program or of
+/// one of its name.
+fn place_label(name: &str, program: &str) -> String {
+    if program.is_empty() || program == name {
+        name.to_owned()
+    } else {
+        format!("{name}{TITLE_DASH}{program}")
     }
 }
 

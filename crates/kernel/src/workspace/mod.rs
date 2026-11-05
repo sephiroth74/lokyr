@@ -172,6 +172,9 @@ pub struct Tab {
     /// program's.
     own_title: Option<String>,
     own_color: Option<Rgb>,
+    /// Its active pane's folder and program in the foreground, as the app
+    /// writes them, as `src — vim`, which its label takes without a title.
+    place: Option<String>,
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
@@ -198,6 +201,24 @@ impl Tab {
     /// program's, if either is set.
     pub fn color(&self) -> Option<Rgb> {
         self.own_color.or(self.color)
+    }
+
+    /// Its label, as a tab bar shows it: its title, as [`Tab::title`] gives
+    /// it, or, without one, its active pane's folder and program, as the
+    /// app gave them; empty for none.
+    pub fn label(&self) -> &str {
+        let title = self.title();
+        if title.is_empty() {
+            self.place.as_deref().unwrap_or_default()
+        } else {
+            title
+        }
+    }
+
+    /// What a read of the tabs tells of it that a `tab-changed` tells the
+    /// change of: its label and its color.
+    fn look(&self) -> (String, Option<Rgb>) {
+        (self.label().to_owned(), self.color())
     }
 
     /// The layout of its panes.
@@ -456,11 +477,13 @@ impl Workspace {
             }
             // The tab that takes the pane's title and color, as its active
             // pane.
-            let mut tab = self
+            let active = self
                 .tab_of
                 .get(&id)
-                .and_then(|tab| self.tabs.get_mut(tab))
-                .filter(|tab| tab.active == id);
+                .copied()
+                .filter(|tab| self.tabs.get(tab).is_some_and(|shown| shown.active == id));
+            let before = active.and_then(|tab| self.tabs.get(&tab)).map(Tab::look);
+            let mut tab = active.and_then(|tab| self.tabs.get_mut(&tab));
             for event in happened.events {
                 let event = match event {
                     terminal::Event::TitleChanged => {
@@ -486,6 +509,9 @@ impl Workspace {
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
+            }
+            if let (Some(tab), Some(before)) = (active, before) {
+                self.tab_looked(tab, &before);
             }
             if happened.bell {
                 self.events.push(Event::Bell(id));
@@ -579,6 +605,7 @@ impl Workspace {
                 color: None,
                 own_title: None,
                 own_color: None,
+                place: None,
                 layout: Layout::Leaf(pane),
                 active: pane,
                 zoomed: None,
@@ -594,10 +621,14 @@ impl Workspace {
         let Some(shown) = self.tabs.get_mut(&tab) else {
             return;
         };
+        let before = shown.look();
         if let Some(pane) = self.panes.get(&shown.active) {
             shown.title.clone_from(&pane.title);
             shown.color = pane.tab_color;
         }
+        // Its place is the new pane's, which the app gives it anew.
+        shown.place = None;
+        self.tab_looked(tab, &before);
     }
 
     /// Opens a window whose one tab, which it shows, is `tab`, and returns
@@ -702,11 +733,39 @@ impl Workspace {
             return false;
         };
         if shown.own_title != title {
+            let before = shown.look();
             shown.own_title = title;
             // Its window takes it, as of its active pane's title.
             self.events.push(Event::TitleChanged(shown.active));
+            self.tab_looked(tab, &before);
         }
         true
+    }
+
+    /// Gives `tab` its active pane's folder and program, as the app writes
+    /// them, which its label takes without a title; whether it is open.
+    pub fn set_tab_place(&mut self, tab: TabId, place: Option<String>) -> bool {
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        if shown.place != place {
+            let before = shown.look();
+            shown.place = place;
+            self.tab_looked(tab, &before);
+        }
+        true
+    }
+
+    /// Tells `tab-changed` of `tab` if its look, of [`Tab::look`], is
+    /// another than `before`.
+    fn tab_looked(&mut self, tab: TabId, before: &(String, Option<Rgb>)) {
+        if self
+            .tabs
+            .get(&tab)
+            .is_some_and(|shown| shown.look() != *before)
+        {
+            self.changed(WorkspaceEvent::TabChanged { tab: tab.into() });
+        }
     }
 
     /// Gives `tab` a color of its own, in place of its program's, or with
@@ -715,7 +774,9 @@ impl Workspace {
         let Some(shown) = self.tabs.get_mut(&tab) else {
             return false;
         };
+        let before = shown.look();
         shown.own_color = color;
+        self.tab_looked(tab, &before);
         true
     }
 

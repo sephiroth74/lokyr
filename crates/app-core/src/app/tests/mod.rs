@@ -2989,8 +2989,15 @@ impl plugins::Plugin for Arranger {
         _: &mut plugins::Cx<'_>,
         events: &[plugins::Event],
     ) -> Result<(), Error> {
-        let names: Vec<&str> = events.iter().map(plugins::Event::name).collect();
-        self.1.borrow_mut().push(names.join(" "));
+        // The workspace's shape, of no tab's label.
+        let names: Vec<&str> = events
+            .iter()
+            .map(plugins::Event::name)
+            .filter(|&name| name != "tab-changed")
+            .collect();
+        if !names.is_empty() {
+            self.1.borrow_mut().push(names.join(" "));
+        }
         Ok(())
     }
 }

@@ -51,8 +51,10 @@ pub struct TabInfo {
     pub id: TabId,
     /// Its window.
     pub window: WindowId,
-    /// Its title, its own as a plugin gave it, or its active pane's
-    /// program's; empty for none.
+    /// Its title: its own, as a plugin gave it, or its active pane's
+    /// program's, or, to a plugin of `process-read`, its active pane's
+    /// folder and program in the foreground, as `src — vim`; empty for
+    /// none.
     pub title: String,
     /// Its color, its own as a plugin gave it, or its active pane's
     /// program's, an RGB one; `None` for none.

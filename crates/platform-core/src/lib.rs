@@ -357,9 +357,16 @@ pub trait Platform {
     /// is the system's, of its title; nothing with `None`.
     fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>);
 
-    /// `shortcut` as the platform writes it, as its menus show it: on the
-    /// Mac, `⌥⌘1`.
-    fn shortcut_text(&self, shortcut: Shortcut) -> String;
+    /// How the platform writes a shortcut, as its menus show it: on the
+    /// Mac, `⌥⌘1`; a function that holds nothing of the platform, as the
+    /// plugins' reads take it.
+    fn shortcut_writer(&self) -> fn(Shortcut) -> String;
+
+    /// `shortcut` as the platform writes it, as [`Platform::shortcut_writer`]
+    /// does.
+    fn shortcut_text(&self, shortcut: Shortcut) -> String {
+        (self.shortcut_writer())(shortcut)
+    }
 
     /// The size of a window's content.
     fn window_size(&self, window: WindowId) -> Option<WindowSize>;

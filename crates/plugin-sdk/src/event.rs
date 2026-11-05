@@ -91,11 +91,19 @@ pub enum WorkspaceEvent {
         /// The tab.
         tab: TabId,
     },
+    /// A tab's title or color changed, as a read of its window's tabs gives
+    /// them: its own, its program's, or its active pane's folder and
+    /// program, as its pane's output changes them, or as another pane takes
+    /// its keyboard.
+    TabChanged {
+        /// The tab.
+        tab: TabId,
+    },
 }
 
 impl WorkspaceEvent {
     /// The names of the workspace's events, as plugins subscribe to them.
-    pub const NAMES: [&'static str; 11] = [
+    pub const NAMES: [&'static str; 12] = [
         "window-opened",
         "window-closed",
         "tab-created",
@@ -107,6 +115,7 @@ impl WorkspaceEvent {
         "pane-focused",
         "pane-moved",
         "layout-changed",
+        "tab-changed",
     ];
 
     /// The event's name, as a plugin subscribes to it.
@@ -123,6 +132,7 @@ impl WorkspaceEvent {
             Self::PaneFocused { .. } => "pane-focused",
             Self::PaneMoved { .. } => "pane-moved",
             Self::LayoutChanged { .. } => "layout-changed",
+            Self::TabChanged { .. } => "tab-changed",
         }
     }
 }

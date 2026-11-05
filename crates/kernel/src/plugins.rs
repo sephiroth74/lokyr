@@ -33,7 +33,7 @@ pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 pub use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::message::{Call, Effect, Request as Asked, Response, within_depth};
-pub use lokyr_plugin_sdk::message::{Data, Mods, POINTER};
+pub use lokyr_plugin_sdk::message::{Data, KEYS_CHANGED, Mods, POINTER};
 pub use lokyr_plugin_sdk::plugin::{Cx, Plugin, Registration};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Slot, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{Key, Kind, Node};
@@ -198,6 +198,9 @@ pub struct Context<'a> {
     pub font_size: f32,
     /// When a paste with line breaks asks the user first.
     pub confirm_paste: ConfirmPaste,
+    /// The keys that run a command with its arguments, as the platform
+    /// writes them, as `⌘1`; none without a binding.
+    pub keys: &'a dyn Fn(&str, &Args) -> Option<String>,
 }
 
 /// Where a plugin is in its life.
@@ -2583,10 +2586,22 @@ impl Host<'_, '_> {
             .workspace
             .window(tab.window())
             .is_some_and(|window| window.active_tab() == tab.id());
+        // The folder and the program of its pane, to a plugin that reads
+        // the processes' alone.
+        let process_read = self
+            .state
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::ProcessRead));
+        let title = if process_read {
+            tab.label()
+        } else {
+            tab.title()
+        };
         host::TabInfo {
             id: tab.id().into(),
             window: tab.window().into(),
-            title: tab.title().to_owned(),
+            title: title.to_owned(),
             color: tab
                 .color()
                 .map(|color| host::Color::Rgb(color.r, color.g, color.b)),
@@ -2706,6 +2721,7 @@ impl Host<'_, '_> {
             }
             Asked::Opens(target) => Response::Boolean(opens(&target)),
             Asked::FontSize => Response::FontSize(self.context.font_size),
+            Asked::KeysOf { command, args } => Response::Text((self.context.keys)(&command, &args)),
             Asked::TabBarPlace => Response::TabBarPlace(self.state.bar_place),
             Asked::Windows => Response::Windows(
                 self.context
@@ -3134,6 +3150,7 @@ impl Host<'_, '_> {
                 if let Some(name) = names.iter().find(|name| {
                     !WorkspaceEvent::NAMES.contains(&name.as_str())
                         && name.as_str() != POINTER
+                        && name.as_str() != KEYS_CHANGED
                         && !commands::is_name(name)
                 }) {
                     return Err(Error::new(
