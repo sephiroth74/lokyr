@@ -1138,7 +1138,7 @@ impl<B: Backend> App<B> {
             for error in self.with_plugins(platform, Plugins::activate) {
                 eprintln!("lokyr: {error}");
             }
-            self.after_plugins(platform, 0);
+            self.after_plugins(platform);
         }
         if term_changed {
             self.tell_term(platform);
@@ -1913,9 +1913,9 @@ impl<B: Backend> App<B> {
             Ok(args) if self.plugins.owns(name) => {
                 let owner = self.plugins.owner_of(name).map(str::to_owned);
                 let ran = self.with_plugins(platform, |plugins, context| {
-                    plugins.run(name, args, context)
+                    plugins.run_deep(name, args, depth, context)
                 });
-                self.after_plugins(platform, depth);
+                self.after_plugins(platform);
                 // A fault that stopped its plugin shows as the plugins that
                 // stopped do, once.
                 let stopped = owner.is_some_and(|owner| {
@@ -2020,7 +2020,7 @@ impl<B: Backend> App<B> {
         // A plugin whose activation failed is disabled, which the notice of
         // the plugins that stopped tells.
         let _failed = self.with_plugins(platform, Plugins::activate);
-        self.after_plugins(platform, 0);
+        self.after_plugins(platform);
     }
 
     /// Calls `call` with the plugins and what their host reaches of the
@@ -2070,20 +2070,23 @@ impl<B: Backend> App<B> {
     }
 
     /// Takes what the plugins' calls changed and asked, once they
-    /// returned: their bindings into the keymap, and their requests, of
-    /// which a command runs `depth` deep; the windows draw again, as a
-    /// call can change what a pane shows.
-    fn after_plugins(&mut self, platform: &mut dyn Platform, depth: usize) {
-        if self.plugins.take_bindings_changed() {
+    /// returned: their commands into the registry, titled from their
+    /// catalogs, and their bindings into the keymap, which the menu
+    /// shows; and their requests, of which a command runs one deeper than
+    /// the command whose call asked it; the windows draw again, as a call
+    /// can change what a pane shows.
+    fn after_plugins(&mut self, platform: &mut dyn Platform) {
+        if self.plugins.take_declarations_changed() {
+            self.commands = commands(&self.texts, &self.plugins);
             self.keymap = Keymap::with_config(bindings(&self.plugins), &self.config.keys);
             self.set_menu(platform);
         }
         for request in self.plugins.take_requests() {
             match request {
-                Request::Run(invocation) if depth < COMMANDS_DEEP => {
+                Request::Run { invocation, depth } if depth < COMMANDS_DEEP => {
                     self.run_deep(platform, &invocation.command, invocation.args, depth + 1);
                 }
-                Request::Run(invocation) => eprintln!(
+                Request::Run { invocation, .. } => eprintln!(
                     "lokyr: `{}` does not run, as commands that ran commands took it {COMMANDS_DEEP} deep",
                     invocation.command
                 ),
@@ -2245,7 +2248,7 @@ impl<B: Backend> App<B> {
                 eprintln!("lokyr: {error}");
             }
         }
-        self.after_plugins(platform, 0);
+        self.after_plugins(platform);
         // What the calls' writes changed of the workspace shows now, and
         // waits for the next delivery, which a turn of its own brings, as
         // no event of the platform's may come soon.
@@ -2673,10 +2676,9 @@ impl<B: Backend> App<B> {
         self.preferred = platform.locales();
         self.texts = texts(&self.config.app.language, &self.preferred);
         self.commands = commands(&self.texts, &self.plugins);
+        // The plugins' commands, registered in English, take their
+        // catalogs' titles in the language shown as their activations end.
         self.activate_plugins(platform);
-        // The plugins' commands registered in English, which their catalogs
-        // title in the language shown.
-        self.commands = commands(&self.texts, &self.plugins);
         self.set_menu(platform);
         self.show_appearance(platform);
         self.show_performance(platform);

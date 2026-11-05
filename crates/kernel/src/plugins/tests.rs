@@ -145,7 +145,7 @@ pub(super) struct App {
     pub(super) workspace: Workspace,
     panes: Spawner,
     clipboard: Board,
-    focused: Option<WindowId>,
+    pub(super) focused: Option<WindowId>,
 }
 
 impl App {
@@ -234,8 +234,8 @@ fn a_plugin_registers_a_command_and_a_binding_through_the_sdk() {
             .collect::<Vec<_>>(),
         ["greeter.hello"]
     );
-    assert!(plugins.take_bindings_changed());
-    assert!(!plugins.take_bindings_changed());
+    assert!(plugins.take_declarations_changed());
+    assert!(!plugins.take_declarations_changed());
     // A second activation leaves an active plugin as it is.
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(plugins.bindings().count(), 1);
@@ -310,7 +310,7 @@ fn a_plugin_that_panics_is_disabled_with_its_commands_and_bindings() {
         )
         .unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
-    plugins.take_bindings_changed();
+    plugins.take_declarations_changed();
     let error = plugins
         .run("boom.go", Args::new(), &mut app.context())
         .unwrap_err();
@@ -324,7 +324,7 @@ fn a_plugin_that_panics_is_disabled_with_its_commands_and_bindings() {
     assert!(app.registry.get("boom.go").is_none());
     assert!(!plugins.owns("boom.go"));
     assert_eq!(plugins.bindings().count(), 0);
-    assert!(plugins.take_bindings_changed());
+    assert!(plugins.take_declarations_changed());
     assert!(plugins.take_requests().is_empty());
     assert_eq!(
         plugins
@@ -557,7 +557,7 @@ fn a_binding_that_is_not_one_fails_with_108() {
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(*errors.borrow(), [Code::InvalidBinding; 3]);
     assert_eq!(plugins.bindings().count(), 0);
-    assert!(!plugins.take_bindings_changed());
+    assert!(!plugins.take_declarations_changed());
 }
 
 #[test]
@@ -631,10 +631,13 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
             Request::FontSize(Some(20.0)),
             Request::FontSize(None),
             Request::CloseWindow(window),
-            Request::Run(Invocation {
-                command: "app.other".to_owned(),
-                args: Args::from([("n".to_owned(), Value::Number(2.0))]),
-            }),
+            Request::Run {
+                invocation: Invocation {
+                    command: "app.other".to_owned(),
+                    args: Args::from([("n".to_owned(), Value::Number(2.0))]),
+                },
+                depth: 0,
+            },
         ]
     );
     assert!(plugins.take_requests().is_empty());
@@ -1139,7 +1142,7 @@ fn a_call_is_its_own_plugin_s() {
         context: &mut context,
         out: &mut out,
         writes: &mut writes,
-        bindings_changed: &mut changed,
+        declarations_changed: &mut changed,
     };
     let call = |caller: &str| Call {
         caller: caller.to_owned(),

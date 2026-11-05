@@ -62,7 +62,14 @@ use worker::{Called, Done, FromWorker, Job, Worker};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Request {
     /// Run a command, whose call the registry checked.
-    Run(Invocation),
+    Run {
+        /// The command and its arguments.
+        invocation: Invocation,
+        /// How deep the command whose call asked it ran, as commands ran
+        /// commands: 0 for a call of no command's, an event's or a
+        /// render's, and for a command that the user ran.
+        depth: usize,
+    },
     /// Open a window.
     OpenWindow,
     /// Close a window.
@@ -276,8 +283,9 @@ pub struct Plugins {
     entries: Vec<Entry>,
     /// What the calls asked and emitted.
     out: Outbox,
-    /// Whether the plugins' bindings changed since the last look.
-    bindings_changed: bool,
+    /// Whether the plugins' commands or bindings changed since the last
+    /// look.
+    declarations_changed: bool,
     /// The plugins disabled that [`Plugins::take_disabled`] told.
     told_disabled: std::collections::BTreeSet<String>,
     /// What wakes the main thread as the plugins' threads send it
@@ -775,7 +783,12 @@ impl Plugins {
             // on again starts, a new one of it if it ran.
             if !entry.state.wanted && entry.state.status != Status::Off {
                 if matches!(entry.state.status, Status::Active | Status::Disabled) {
-                    stop(entry, context, &mut self.out, &mut self.bindings_changed);
+                    stop(
+                        entry,
+                        context,
+                        &mut self.out,
+                        &mut self.declarations_changed,
+                    );
                 }
                 entry.state.status = Status::Off;
                 self.out.written = true;
@@ -826,13 +839,13 @@ impl Plugins {
                     let wake = self.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
                     match Worker::start(&state.name, plugin, wake) {
                         Ok(mut worker) => {
-                            worker.ask(Job::Activate);
+                            worker.ask(Job::Activate, context.focused);
                             *runner = Runner::Worker(Box::new(worker));
                         }
                         Err(error) => errors.push(failed_start(
                             state,
                             context.registry,
-                            &mut self.bindings_changed,
+                            &mut self.declarations_changed,
                             &Error::new(
                                 Code::Unavailable,
                                 format!("its thread did not start: {error}"),
@@ -847,7 +860,7 @@ impl Plugins {
                 (plugin.as_mut(), state),
                 context,
                 &mut self.out,
-                &mut self.bindings_changed,
+                &mut self.declarations_changed,
                 "activate",
                 |plugin, cx| plugin.activate(cx),
             );
@@ -856,7 +869,7 @@ impl Plugins {
                     errors.push(failed_start(
                         state,
                         context.registry,
-                        &mut self.bindings_changed,
+                        &mut self.declarations_changed,
                         &error,
                     ));
                 } else {
@@ -888,6 +901,19 @@ impl Plugins {
         args: Args,
         context: &mut Context<'_>,
     ) -> Result<(), Error> {
+        self.run_deep(command, args, 0, context)
+    }
+
+    /// Runs `command` as [`Plugins::run`] does, which commands ran `depth`
+    /// deep: the commands that its call runs, whenever it ends, are
+    /// [`Request::Run`]s of that depth.
+    pub fn run_deep(
+        &mut self,
+        command: &str,
+        args: Args,
+        depth: usize,
+        context: &mut Context<'_>,
+    ) -> Result<(), Error> {
         let Some(at) = self.owner(command) else {
             return Err(Error::new(
                 Code::NotFound,
@@ -896,17 +922,25 @@ impl Plugins {
         };
         let Entry { runner, state, .. } = &mut self.entries[at];
         match runner {
-            Runner::Main(plugin) => call(
-                (plugin.as_mut(), state),
-                context,
-                &mut self.out,
-                &mut self.bindings_changed,
-                "on_command",
-                |plugin, cx| plugin.on_command(cx, command, args),
-            ),
+            Runner::Main(plugin) => {
+                let before = self.out.requests.len();
+                let ran = call(
+                    (plugin.as_mut(), state),
+                    context,
+                    &mut self.out,
+                    &mut self.declarations_changed,
+                    "on_command",
+                    |plugin, cx| plugin.on_command(cx, command, args),
+                );
+                deepen(&mut self.out.requests[before..], depth);
+                ran
+            }
             // Its failure comes as its call ends.
             Runner::Worker(worker) => {
-                worker.ask(Job::Command(command.to_owned(), args));
+                worker.ask(
+                    Job::Command(command.to_owned(), args, depth),
+                    context.focused,
+                );
                 Ok(())
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -937,7 +971,7 @@ impl Plugins {
         look(
             (plugin.as_mut(), state),
             context,
-            &mut self.bindings_changed,
+            &mut self.declarations_changed,
             "applies",
             |plugin, cx| Ok(plugin.applies(cx, command, args)),
         )
@@ -1101,13 +1135,13 @@ impl Plugins {
                     (plugin.as_mut(), state),
                     context,
                     &mut self.out,
-                    &mut self.bindings_changed,
+                    &mut self.declarations_changed,
                     "render",
                     |plugin, cx| Ok(plugin.render(cx, view)),
                 )?;
                 state.views.insert(view.clone(), (new_id(), tree));
             }
-            Runner::Worker(worker) => worker.ask(Job::Render(view.clone())),
+            Runner::Worker(worker) => worker.ask(Job::Render(view.clone()), context.focused),
             Runner::Unstarted(_) | Runner::Stopped => {}
         }
         Ok(())
@@ -1198,12 +1232,12 @@ impl Plugins {
                 (plugin.as_mut(), state),
                 context,
                 &mut self.out,
-                &mut self.bindings_changed,
+                &mut self.declarations_changed,
                 "on_ui_event",
                 |plugin, cx| plugin.on_ui_event(cx, event),
             ),
             Runner::Worker(worker) => {
-                worker.ask(Job::Ui(event.clone()));
+                worker.ask(Job::Ui(event.clone()), context.focused);
                 Ok(())
             }
             Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -1268,6 +1302,20 @@ impl Plugins {
                 continue;
             }
             let (name, subscribed) = (&entry.state.name, &entry.state.subscribed);
+            // A plugin of a thread of its own that activates subscribes as
+            // its requests come, after the activation began: it holds the
+            // events that may be its own until its subscriptions are known.
+            if let Runner::Worker(worker) = &mut entry.runner
+                && worker.activating()
+            {
+                worker.hold(
+                    events
+                        .iter()
+                        .filter(|(to, _)| to.as_ref().is_none_or(|to| to == name))
+                        .cloned(),
+                );
+                continue;
+            }
             let batch: Vec<Event> = events
                 .iter()
                 .filter(|(to, event)| match to {
@@ -1285,12 +1333,12 @@ impl Plugins {
                     (plugin.as_mut(), state),
                     context,
                     &mut self.out,
-                    &mut self.bindings_changed,
+                    &mut self.declarations_changed,
                     "on_event",
                     |plugin, cx| plugin.on_event(cx, &batch),
                 ),
                 Runner::Worker(worker) => {
-                    worker.ask(Job::Events(batch));
+                    worker.ask(Job::Events(batch), context.focused);
                     Ok(())
                 }
                 Runner::Unstarted(_) | Runner::Stopped => Ok(()),
@@ -1341,13 +1389,24 @@ impl Plugins {
         let reads = self.out.reads.len();
         self.take_reads();
         served.any = self.out.reads.len() < reads;
+        self.serve_messages(context, &mut served);
+        // A read that a call began and that ended before the call did woke
+        // the main thread before the call's end brought it here: it comes
+        // now, as no wake is left to bring it.
+        self.take_reads();
+        served
+    }
+
+    /// Takes the messages of the plugins' threads, as [`Plugins::serve`]
+    /// tells.
+    fn serve_messages(&mut self, context: &mut Context<'_>, served: &mut Served) {
         let (start, most) = (Instant::now(), self.serve_for.unwrap_or(SERVE_FOR));
         let count = self.entries.len();
         loop {
             let mut took = false;
             for step in 0..count {
                 let at = (self.serve_from + step) % count;
-                if self.serve_one(at, context, &mut served) {
+                if self.serve_one(at, context, served) {
                     took = true;
                     served.any = true;
                     if start.elapsed() >= most {
@@ -1358,12 +1417,12 @@ impl Plugins {
                         if let Some(wake) = &self.wake {
                             wake();
                         }
-                        return served;
+                        return;
                     }
                 }
             }
             if !took {
-                return served;
+                return;
             }
         }
     }
@@ -1374,7 +1433,7 @@ impl Plugins {
         let Plugins {
             entries,
             out,
-            bindings_changed,
+            declarations_changed,
             ..
         } = self;
         let Entry { runner, state, .. } = &mut entries[at];
@@ -1393,14 +1452,20 @@ impl Plugins {
             Ok(FromWorker::Request(asked)) => {
                 let response = match worker.busy_mut() {
                     Some(busy) => {
+                        // The call reads the focus of the time that it was
+                        // asked, as it would have run then on the main
+                        // thread.
+                        let now = std::mem::replace(&mut context.focused, busy.focused);
                         let mut host = Host {
                             state,
-                            context,
+                            context: &mut *context,
                             out: &mut busy.out,
                             writes: &mut busy.writes,
-                            bindings_changed,
+                            declarations_changed,
                         };
-                        host::Host::handle(&mut host, asked)
+                        let response = host::Host::handle(&mut host, asked);
+                        context.focused = now;
+                        response
                     }
                     None => {
                         Response::Failed(Error::new(Code::Fault, "a request came outside a call"))
@@ -1418,10 +1483,12 @@ impl Plugins {
             called,
             writes,
             out: mut sent,
+            depth,
+            ..
         } = busy;
         let result = match done {
             Done::Panicked(message) => {
-                disable(state, context.registry, bindings_changed);
+                disable(state, context.registry, declarations_changed);
                 let fault = format!(
                     "the plugin `{}` panicked{message}; it is disabled",
                     state.name
@@ -1444,14 +1511,16 @@ impl Plugins {
             }
         };
         apply(writes, context, &mut sent, state);
+        deepen(&mut sent.requests, depth);
         out.merge(sent);
+        let activated = called == Called::Activate && result.is_ok();
         match (called, result) {
             (_, Ok(())) => {}
             (Called::Activate, Err(error)) => {
                 served.errors.push(failed_start(
                     state,
                     context.registry,
-                    bindings_changed,
+                    declarations_changed,
                     &error,
                 ));
                 *runner = Runner::Stopped;
@@ -1459,6 +1528,9 @@ impl Plugins {
             }
             (Called::Command, Err(error)) => served.commands.push(error),
             (_, Err(error)) => served.errors.push(error),
+        }
+        if activated {
+            worker.activated(&state.subscribed, context.focused);
         }
         worker.next();
         true
@@ -1479,10 +1551,12 @@ impl Plugins {
         slow
     }
 
-    /// Whether the plugins' bindings changed since the last call, as a
-    /// plugin bound keys or was disabled.
-    pub fn take_bindings_changed(&mut self) -> bool {
-        std::mem::take(&mut self.bindings_changed)
+    /// Whether the plugins' commands or bindings changed since the last
+    /// call, as a plugin registered a command, bound keys or was disabled:
+    /// a plugin of a thread of its own registers its commands after the
+    /// app built its menu.
+    pub fn take_declarations_changed(&mut self) -> bool {
+        std::mem::take(&mut self.declarations_changed)
     }
 
     /// Whether the plugins' calls wrote to the kernel's state since the
@@ -1611,7 +1685,7 @@ fn call<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     out: &mut Outbox,
-    bindings_changed: &mut bool,
+    declarations_changed: &mut bool,
     callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
@@ -1621,7 +1695,7 @@ fn call<T>(
         (plugin, state),
         context,
         (&mut *out, &mut writes),
-        (bindings_changed, callback),
+        (declarations_changed, callback),
         call,
     );
     match outcome {
@@ -1642,7 +1716,7 @@ fn call<T>(
 fn look<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
-    bindings_changed: &mut bool,
+    declarations_changed: &mut bool,
     callback: &'static str,
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
@@ -1652,7 +1726,7 @@ fn look<T>(
         (plugin, state),
         context,
         (&mut out, &mut writes),
-        (bindings_changed, callback),
+        (declarations_changed, callback),
         call,
     );
     state.panels = panels;
@@ -1668,7 +1742,7 @@ fn within<T>(
     (plugin, state): (&mut dyn Plugin, &mut State),
     context: &mut Context<'_>,
     (out, writes): (&mut Outbox, &mut Vec<Write>),
-    (bindings_changed, callback): (&mut bool, &'static str),
+    (declarations_changed, callback): (&mut bool, &'static str),
     call: impl FnOnce(&mut dyn Plugin, &mut Cx<'_>) -> Result<T, Error>,
 ) -> Result<Result<T, Error>, Result<T, Error>> {
     let name = state.name.clone();
@@ -1679,7 +1753,7 @@ fn within<T>(
             context: &mut *context,
             out: &mut *out,
             writes: &mut *writes,
-            bindings_changed: &mut *bindings_changed,
+            declarations_changed: &mut *declarations_changed,
         };
         call(plugin, &mut Cx::new(&mut host, &name))
     }));
@@ -1688,7 +1762,7 @@ fn within<T>(
         state.slow.push((callback, took));
     }
     outcome.map_err(|payload| {
-        disable(state, context.registry, bindings_changed);
+        disable(state, context.registry, declarations_changed);
         let fault = format!(
             "the plugin `{}` panicked{}; it is disabled",
             state.name,
@@ -1711,11 +1785,11 @@ fn stop(
     entry: &mut Entry,
     context: &mut Context<'_>,
     out: &mut Outbox,
-    bindings_changed: &mut bool,
+    declarations_changed: &mut bool,
 ) {
     let state = &mut entry.state;
-    disable(state, context.registry, bindings_changed);
-    *bindings_changed = true;
+    disable(state, context.registry, declarations_changed);
+    *declarations_changed = true;
     for (id, pane) in std::mem::take(&mut state.decorations) {
         if let Some(pane) = context.workspace.pane(PaneId::of(pane.0)) {
             pane.undecorate(id);
@@ -1751,10 +1825,10 @@ fn shows(state: &State, view: &ViewId, workspace: &Workspace) -> bool {
 fn failed_start(
     state: &mut State,
     registry: &mut Registry,
-    bindings_changed: &mut bool,
+    declarations_changed: &mut bool,
     error: &Error,
 ) -> Error {
-    disable(state, registry, bindings_changed);
+    disable(state, registry, declarations_changed);
     let message = format!(
         "the plugin `{}` did not start, and is disabled: {}",
         state.name, error.message
@@ -2156,14 +2230,24 @@ fn message(payload: &(dyn Any + Send)) -> String {
 
 /// Disables the plugin of `state`: its commands leave `registry`, and its
 /// bindings go.
-fn disable(state: &mut State, registry: &mut Registry, bindings_changed: &mut bool) {
+fn disable(state: &mut State, registry: &mut Registry, declarations_changed: &mut bool) {
     state.status = Status::Disabled;
+    if !state.commands.is_empty() || !state.bindings.is_empty() {
+        *declarations_changed = true;
+    }
     for command in state.commands.drain(..) {
         registry.unregister(&command.name);
     }
-    if !state.bindings.is_empty() {
-        state.bindings.clear();
-        *bindings_changed = true;
+    state.bindings.clear();
+}
+
+/// Gives the commands that `requests` run the depth `depth`, of the
+/// command whose call asked them.
+fn deepen(requests: &mut [Request], depth: usize) {
+    for request in requests {
+        if let Request::Run { depth: asked, .. } = request {
+            *asked = depth;
+        }
     }
 }
 
@@ -2219,7 +2303,7 @@ struct Host<'h, 'c> {
     out: &'h mut Outbox,
     /// The call's writes, which it applies as the call returns.
     writes: &'h mut Vec<Write>,
-    bindings_changed: &'h mut bool,
+    declarations_changed: &'h mut bool,
 }
 
 impl Host<'_, '_> {
@@ -2731,10 +2815,13 @@ impl Host<'_, '_> {
                     )?,
                     _ => registry.check(&name, args)?,
                 };
-                Request::Run(Invocation {
-                    command: name,
-                    args,
-                })
+                Request::Run {
+                    invocation: Invocation {
+                        command: name,
+                        args,
+                    },
+                    depth: 0,
+                }
             }
             Asked::Open(target) => Request::Open(
                 opening(&target).map_err(|message| Error::new(Code::Failed, message))?,
@@ -2861,6 +2948,7 @@ impl Host<'_, '_> {
                 }
                 self.context.registry.register(command.clone())?;
                 self.state.commands.push(command);
+                *self.declarations_changed = true;
             }
             Asked::Bind(binding) => {
                 let invalid = |message: String| Error::new(Code::InvalidBinding, message);
@@ -2885,7 +2973,7 @@ impl Host<'_, '_> {
                     },
                     when,
                 });
-                *self.bindings_changed = true;
+                *self.declarations_changed = true;
             }
             Asked::Subscribe(names) => {
                 if let Some(name) = names.iter().find(|name| {

@@ -130,3 +130,80 @@ fn a_worker_s_status_bar_shows_once_its_render_comes_and_its_failure_tells_the_u
     let shown = app.diagnostics.shown().unwrap();
     assert!(shown.text.contains("nothing to do"), "{shown:?}");
 }
+
+/// A plugin of a thread of its own whose command, `again.go`, runs itself,
+/// as `runs` counts.
+struct Again {
+    runs: Arc<AtomicUsize>,
+}
+
+impl Plugin for Again {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "again.go".to_owned(),
+            title: "Again".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn catalogs(&self) -> &'static [(&'static str, &'static str)] {
+        &[
+            ("en", "command-again-go = Again\n"),
+            ("it", "command-again-go = Ancora\n"),
+        ]
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        self.runs.fetch_add(1, Ordering::Relaxed);
+        cx.run_command("again.go", Args::new())
+    }
+}
+
+/// The app of a plugin of a thread of its own, `again`, started, in
+/// `language`.
+fn with_again(language: &str) -> (Fake, App, Arc<AtomicUsize>) {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let manifest = MANIFEST.replace("lokyr/threaded", "lokyr/again");
+    let mut fake = Fake::default();
+    let mut config = unpadded();
+    config.app.language = language.to_owned();
+    let mut app = App::new(None, config, None)
+        .with_program(idle())
+        .with_builtin_send(
+            &manifest,
+            Box::new(Again {
+                runs: Arc::clone(&runs),
+            }),
+        );
+    fake.start(&mut app);
+    (fake, app, runs)
+}
+
+#[test]
+fn a_worker_s_commands_show_in_the_menu_once_its_activation_is_served() {
+    // Titled from its catalogs, as a main thread's command is.
+    let (mut fake, mut app, _) = with_again("it");
+    run_until(&mut fake, &mut app, |fake, _| {
+        menu_items(fake, 3).iter().any(|item| item == "Ancora")
+    });
+    assert_eq!(app.commands.get("again.go").unwrap().title, "Ancora");
+}
+
+#[test]
+fn a_worker_s_command_that_runs_itself_stops_as_deep_as_a_main_thread_s() {
+    let (mut fake, mut app, runs) = with_again("en");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.commands.get("again.go").is_some()
+    });
+    fake.send_app(&mut app, AppEvent::Command("again.go".to_owned()));
+    run_until(&mut fake, &mut app, |_, _| {
+        runs.load(Ordering::Relaxed) > COMMANDS_DEEP
+    });
+    // The turns that more runs would take, which none takes.
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert_eq!(runs.load(Ordering::Relaxed), COMMANDS_DEEP + 1);
+}

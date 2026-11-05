@@ -16,9 +16,10 @@ use lokyr_plugin_sdk::ui::ViewId;
 use lokyr_plugin_sdk::view::Node;
 
 use super::super::tests::{App, binding, command, text_once, window};
-use super::super::{Plugins, Served, Status};
+use super::super::{Plugins, Request, Runner, Served, Status};
 use crate::commands::{Args, Code, Error};
-use crate::workspace::{PaneId, WindowId};
+use crate::keymap::Invocation;
+use crate::workspace::{PaneId, TabId, WindowId};
 
 /// The manifest of the tests' plugin of a thread of its own, of the status
 /// bar.
@@ -142,7 +143,7 @@ fn a_worker_s_calls_run_on_its_thread_and_the_main_thread_answers_them_as_it_tur
     // answered them.
     assert!(app.registry.get("busy.go").is_some());
     assert!(plugins.owns("busy.go"));
-    assert!(plugins.take_bindings_changed());
+    assert!(plugins.take_declarations_changed());
     assert_eq!(plugins.bindings().count(), 1);
     let woken = wakes.load(Ordering::Relaxed);
     assert!(woken >= 3, "{woken} wakes");
@@ -557,4 +558,182 @@ fn a_plugin_that_cannot_go_to_a_thread_does_not_take_a_worker_s_manifest() {
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert!(!plugins.waiting());
     assert!(app.registry.get("busy.go").is_some());
+}
+
+/// The reads of rows of the worker's call under way, if one is.
+fn reads_of_the_call(plugins: &mut Plugins) -> Option<usize> {
+    plugins
+        .entries
+        .iter_mut()
+        .find_map(|entry| match &mut entry.runner {
+            Runner::Worker(worker) => worker.busy_mut().map(|busy| busy.out.reads.len()),
+            _ => None,
+        })
+}
+
+/// Waits for the reads of rows of the worker's call under way to end, and
+/// keeps their rows for the host, as though they ended before the call.
+fn end_the_call_s_reads(plugins: &mut Plugins) {
+    for entry in &mut plugins.entries {
+        if let Runner::Worker(worker) = &mut entry.runner
+            && let Some(busy) = worker.busy_mut()
+        {
+            for read in &mut busy.out.reads {
+                let rows = read.rows.recv_timeout(Duration::from_secs(10)).unwrap();
+                let (sender, receiver) = mpsc::channel();
+                sender.send(rows).unwrap();
+                read.rows = receiver;
+            }
+        }
+    }
+}
+
+#[test]
+fn a_worker_hears_the_events_of_its_subscriptions_posted_as_it_activates() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let heard = Arc::clone(&log);
+    let mut plugins = Plugins::new();
+    plugins
+        .add_builtin_send(
+            MANIFEST,
+            Box::new(Threaded {
+                activate: Box::new(|cx| {
+                    cx.register_command(command("busy.go"))?;
+                    cx.subscribe(&["tab-created"])
+                }),
+                on_event: Box::new(move |_, events| {
+                    let names = events.iter().map(|event| event.name().to_owned());
+                    heard.lock().unwrap().extend(names);
+                    Ok(())
+                }),
+                ..Threaded::default()
+            }),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // The first window's events, delivered before the activation's
+    // requests are served, as the app's start delivers them.
+    let window = host::WindowId(window.get());
+    plugins.post(Event::Workspace(WorkspaceEvent::TabCreated {
+        tab: host::TabId(TabId::of(1).get()),
+        window,
+        index: 0,
+    }));
+    plugins.post(Event::Workspace(WorkspaceEvent::WindowOpened { window }));
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    assert_eq!(*log.lock().unwrap(), ["tab-created"]);
+    // Those after its activation come as they did.
+    plugins.post(Event::Workspace(WorkspaceEvent::TabCreated {
+        tab: host::TabId(TabId::of(2).get()),
+        window,
+        index: 1,
+    }));
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    assert_eq!(*log.lock().unwrap(), ["tab-created", "tab-created"]);
+}
+
+#[test]
+fn a_read_that_ends_before_its_worker_s_call_comes_in_the_turn_that_ends_the_call() {
+    let mut app = App::default();
+    let window = window(&mut app, "seq 1 100; sleep 30");
+    let (handle, pane) = focused(&app, window);
+    text_once(&app, pane, "100");
+    let (go, gate) = mpsc::channel::<()>();
+    let plugin = Threaded {
+        on_command: Box::new(move |cx, _| {
+            cx.read_lines(handle, 0, 100)?;
+            // The call goes on after its read ended.
+            gate.recv_timeout(Duration::from_secs(10)).unwrap();
+            Ok(())
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    let start = Instant::now();
+    while reads_of_the_call(&mut plugins) != Some(1) {
+        plugins.serve(&mut app.context());
+        assert!(start.elapsed() < Duration::from_secs(10), "no read began");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    end_the_call_s_reads(&mut plugins);
+    go.send(()).unwrap();
+    while reads_of_the_call(&mut plugins).is_some() {
+        plugins.serve(&mut app.context());
+        assert!(start.elapsed() < Duration::from_secs(10), "a call hangs");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // No wake is left to bring the read: the turn that ended the call
+    // took it.
+    assert!(plugins.has_events());
+    assert!(!plugins.waiting());
+}
+
+#[test]
+fn a_worker_s_call_reads_the_focus_of_the_time_that_it_was_asked() {
+    let mut app = App::default();
+    let first = window(&mut app, "sleep 30");
+    let second = window(&mut app, "sleep 30");
+    let (told, heard) = mpsc::channel();
+    let plugin = Threaded {
+        on_command: Box::new(move |cx, _| {
+            told.send((cx.focused_window(), cx.focused_pane())).unwrap();
+            Ok(())
+        }),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    // A context menu's command in the window that has not the focus.
+    app.focused = Some(first);
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    app.focused = Some(second);
+    served(&mut plugins, &mut app);
+    let (pane, _) = focused(&app, first);
+    assert_eq!(
+        heard.recv_timeout(Duration::from_secs(10)).unwrap(),
+        (Some(WindowHandle(first.get())), Some(pane))
+    );
+}
+
+#[test]
+fn the_commands_that_a_worker_s_command_runs_are_one_deeper_whenever_its_call_ends() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let plugin = Threaded {
+        on_command: Box::new(|cx, _| cx.run_command("busy.go", Args::new())),
+        ..Threaded::default()
+    };
+    let (mut plugins, _) = started(&mut app, plugin);
+    plugins
+        .run_deep("busy.go", Args::new(), 3, &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert_eq!(
+        plugins.take_requests(),
+        [Request::Run {
+            invocation: Invocation {
+                command: "busy.go".to_owned(),
+                args: Args::new(),
+            },
+            depth: 3,
+        }]
+    );
+    // Those of an event's call, or of a command that the user ran, start
+    // from the top.
+    plugins
+        .run("busy.go", Args::new(), &mut app.context())
+        .unwrap();
+    served(&mut plugins, &mut app);
+    assert!(matches!(
+        &plugins.take_requests()[..],
+        [Request::Run { depth: 0, .. }]
+    ));
 }

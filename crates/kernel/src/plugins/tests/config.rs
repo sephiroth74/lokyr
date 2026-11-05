@@ -462,7 +462,7 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
     assert_eq!(made(), 1);
     assert!(app.registry.get("toggled.go").is_some());
-    assert!(plugins.take_bindings_changed());
+    assert!(plugins.take_declarations_changed());
     // Active, with a decoration, a panel and a view.
     plugins
         .run("toggled.go", Args::new(), &mut app.context())
@@ -486,7 +486,7 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(plugins.status("acme/toggled"), Some(Status::Off));
     assert!(app.registry.get("toggled.go").is_none());
-    assert!(plugins.take_bindings_changed());
+    assert!(plugins.take_declarations_changed());
     assert_eq!(plugins.bindings().count(), 0);
     assert!(plugins.take_written());
     assert_eq!(

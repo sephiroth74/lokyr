@@ -19,6 +19,7 @@ use lokyr_plugin_sdk::view::Node;
 
 use super::{Outbox, Write, message};
 use crate::commands::{Args, Code, Error};
+use crate::workspace::WindowId;
 
 /// What wakes the main thread, as a message of a plugin's thread waits for
 /// it.
@@ -28,8 +29,9 @@ pub(super) type Wake = Arc<dyn Fn() + Send + Sync>;
 pub(super) enum Job {
     /// Its activation.
     Activate,
-    /// A command of its, with its arguments.
-    Command(String, Args),
+    /// A command of its, with its arguments, which commands ran as deep
+    /// as the number tells.
+    Command(String, Args, usize),
     /// A batch of events.
     Events(Vec<Event>),
     /// A render of one of its views.
@@ -55,11 +57,15 @@ pub(super) enum Called {
 
 /// What the main thread keeps of the call under way: which call, its
 /// writes, and what it asks of the app and emits, which come as it
-/// returns.
+/// returns; how deep commands ran the command that it is, and the window
+/// that had the focus as it was asked, which its reads of the focus read,
+/// as a call of the main thread would have.
 pub(super) struct Busy {
     pub(super) called: Called,
     pub(super) writes: Vec<Write>,
     pub(super) out: Outbox,
+    pub(super) depth: usize,
+    pub(super) focused: Option<WindowId>,
 }
 
 /// How a call ended on the plugin's thread.
@@ -89,12 +95,15 @@ pub(super) enum FromWorker {
 }
 
 /// A plugin's thread, as the main thread reaches it: the call under way,
-/// and those that wait for it to end.
+/// and those that wait for it to end, each with the window that had the
+/// focus as it was asked; and the events posted while it activates, before
+/// its subscriptions are known.
 pub(super) struct Worker {
     to: mpsc::Sender<ToWorker>,
     from: mpsc::Receiver<FromWorker>,
     busy: Option<Busy>,
-    waiting: VecDeque<Job>,
+    waiting: VecDeque<(Job, Option<WindowId>)>,
+    held: Vec<(Option<String>, Event)>,
 }
 
 impl Worker {
@@ -117,46 +126,51 @@ impl Worker {
             from,
             busy: None,
             waiting: VecDeque::new(),
+            held: Vec::new(),
         })
     }
 
-    /// Asks for `job`: now, if no call is under way, or after those that
-    /// wait. Events join the batch that waits last, if it is the last call
-    /// that waits; a render of a view whose render is under way or waits
-    /// is not asked again, as that one renders it: a render that the
-    /// plugin asks for within its render comes as the render returns, once
-    /// it is no longer under way.
-    pub(super) fn ask(&mut self, job: Job) {
+    /// Asks for `job`, as `focused` had the focus: now, if no call is
+    /// under way, or after those that wait. Events join the batch that
+    /// waits last, if it is the last call that waits, which then reads the
+    /// focus of the latest; a render of a view whose render is under way
+    /// or waits is not asked again, as that one renders it: a render that
+    /// the plugin asks for within its render comes as the render returns,
+    /// once it is no longer under way.
+    pub(super) fn ask(&mut self, job: Job, focused: Option<WindowId>) {
         let Some(busy) = &self.busy else {
-            self.begin(job);
+            self.begin(job, focused);
             return;
         };
         match job {
             Job::Events(events) => match self.waiting.back_mut() {
-                Some(Job::Events(batch)) => batch.extend(events),
-                _ => self.waiting.push_back(Job::Events(events)),
+                Some((Job::Events(batch), was)) => {
+                    batch.extend(events);
+                    *was = focused;
+                }
+                _ => self.waiting.push_back((Job::Events(events), focused)),
             },
             Job::Render(view) => {
                 let asked = busy.called == Called::Render(view.clone())
                     || self
                         .waiting
                         .iter()
-                        .any(|job| matches!(job, Job::Render(waiting) if *waiting == view));
+                        .any(|(job, _)| matches!(job, Job::Render(waiting) if *waiting == view));
                 if !asked {
-                    self.waiting.push_back(Job::Render(view));
+                    self.waiting.push_back((Job::Render(view), focused));
                 }
             }
-            job => self.waiting.push_back(job),
+            job => self.waiting.push_back((job, focused)),
         }
     }
 
-    fn begin(&mut self, job: Job) {
-        let called = match &job {
-            Job::Activate => Called::Activate,
-            Job::Command(..) => Called::Command,
-            Job::Events(_) => Called::Events,
-            Job::Render(view) => Called::Render(view.clone()),
-            Job::Ui(_) => Called::Ui,
+    fn begin(&mut self, job: Job, focused: Option<WindowId>) {
+        let (called, depth) = match &job {
+            Job::Activate => (Called::Activate, 0),
+            Job::Command(_, _, depth) => (Called::Command, *depth),
+            Job::Events(_) => (Called::Events, 0),
+            Job::Render(view) => (Called::Render(view.clone()), 0),
+            Job::Ui(_) => (Called::Ui, 0),
         };
         // A thread that ended takes nothing, which its next message tells.
         let _ = self.to.send(ToWorker::Call(job));
@@ -164,7 +178,39 @@ impl Worker {
             called,
             writes: Vec::new(),
             out: Outbox::default(),
+            depth,
+            focused,
         });
+    }
+
+    /// Whether its activation is under way, whose subscriptions its
+    /// requests are still making.
+    pub(super) fn activating(&self) -> bool {
+        self.busy
+            .as_ref()
+            .is_some_and(|busy| busy.called == Called::Activate)
+    }
+
+    /// Holds `events`, posted while it activates, each with the plugin it
+    /// is for, if it is for one, until its activation ends.
+    pub(super) fn hold(&mut self, events: impl IntoIterator<Item = (Option<String>, Event)>) {
+        self.held.extend(events);
+    }
+
+    /// Asks for the events held while it activated, as its activation
+    /// ended, as `focused` has the focus: those for it and those of the
+    /// names of `subscribed`, before the calls that wait.
+    pub(super) fn activated(&mut self, subscribed: &[String], focused: Option<WindowId>) {
+        let batch: Vec<Event> = std::mem::take(&mut self.held)
+            .into_iter()
+            .filter(|(to, event)| {
+                to.is_some() || subscribed.iter().any(|name| name == event.name())
+            })
+            .map(|(_, event)| event)
+            .collect();
+        if !batch.is_empty() {
+            self.waiting.push_front((Job::Events(batch), focused));
+        }
     }
 
     /// Whether a call is under way.
@@ -196,9 +242,9 @@ impl Worker {
     /// Begins the next call that waits, if one does and none is under way.
     pub(super) fn next(&mut self) {
         if self.busy.is_none()
-            && let Some(job) = self.waiting.pop_front()
+            && let Some((job, focused)) = self.waiting.pop_front()
         {
-            self.begin(job);
+            self.begin(job, focused);
         }
     }
 }
@@ -227,7 +273,7 @@ fn run(
             let mut cx = Cx::new(&mut proxy, name);
             match job {
                 Job::Activate => Done::Returned(plugin.activate(&mut cx)),
-                Job::Command(command, args) => {
+                Job::Command(command, args, _) => {
                     Done::Returned(plugin.on_command(&mut cx, &command, args))
                 }
                 Job::Events(events) => Done::Returned(plugin.on_event(&mut cx, &events)),
