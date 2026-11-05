@@ -102,7 +102,19 @@ fn a_worker_s_status_bar_shows_once_its_render_comes_and_its_failure_tells_the_u
         "the main thread waited for the render"
     );
     assert_eq!(status_bar(&app, window), None);
+    // The render's end wakes the main thread, which nothing else does once
+    // the shell is ready.
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    std::thread::sleep(Duration::from_millis(20));
+    while fake.deliver_wake(&mut app) {}
     gate.send(()).unwrap();
+    let rendering = Instant::now();
+    while renders.load(Ordering::Relaxed) == 0 {
+        assert!(rendering.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(fake.deliver_wake(&mut app), "the render's end woke nothing");
     run_until(&mut fake, &mut app, |_, app| {
         status_bar(app, window).is_some()
     });

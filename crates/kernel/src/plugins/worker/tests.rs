@@ -398,49 +398,64 @@ fn a_turn_takes_the_workers_messages_for_its_time_at_most_each_in_turn() {
     }
     assert!(plugins.activate(&mut app.context()).is_empty());
     served(&mut plugins, &mut app);
-    // A turn of no time takes one message, the next turn the next
-    // plugin's first.
+    let busy = |plugins: &Plugins, at: usize| matches!(&plugins.entries[at].runner, super::super::Runner::Worker(worker) if worker.is_busy());
+    // A turn of no time takes one message, and wakes the main thread for
+    // those left.
     plugins.serve_for = Some(Duration::ZERO);
-    for name in ["one", "two"] {
+    for name in ["one", "one", "two"] {
         plugins
             .run(&format!("{name}.go"), Args::new(), &mut app.context())
             .unwrap();
     }
-    for gate in &gates {
-        gate.send(()).unwrap();
+    for at in [0, 0, 1] {
+        gates[at].send(()).unwrap();
     }
-    let ends: Vec<&str> = ended.iter().take(2).collect();
-    assert_eq!(ends.len(), 2);
-    // Both calls ended: their ends wait for the main thread, which a turn
-    // out of time wakes again for those left.
+    let mut ends: Vec<&str> = ended.iter().take(2).collect();
+    ends.sort_unstable();
+    assert_eq!(ends, ["one", "two"]);
+    // The first commands ended: their ends wait for the main thread.
     std::thread::sleep(Duration::from_millis(50));
     let woken = wakes.load(Ordering::Relaxed);
     let first = plugins.serve(&mut app.context());
     assert!(first.any && first.more);
-    assert!(plugins.waiting());
     assert_eq!(wakes.load(Ordering::Relaxed), woken + 1);
+    // The first plugin's end, whose second command began, and ended.
+    assert!(busy(&plugins, 0) && busy(&plugins, 1));
+    assert_eq!(ended.recv_timeout(Duration::from_secs(10)), Ok("one"));
+    std::thread::sleep(Duration::from_millis(50));
+    // The next turn takes the next plugin's first, though the first
+    // plugin's waits too.
     let second = plugins.serve(&mut app.context());
     assert!(second.any && second.more);
-    assert!(!plugins.waiting());
+    assert!(busy(&plugins, 0) && !busy(&plugins, 1));
     let third = plugins.serve(&mut app.context());
-    assert!(!third.any && !third.more);
-    // The first turn took the first plugin's, the second the second's,
-    // and so on in turn.
-    for name in ["two", "one"] {
-        plugins
-            .run(&format!("{name}.go"), Args::new(), &mut app.context())
-            .unwrap();
+    assert!(third.any);
+    assert!(!plugins.waiting());
+    let fourth = plugins.serve(&mut app.context());
+    assert!(!fourth.any && !fourth.more);
+}
+
+#[test]
+fn a_menu_does_not_ask_a_worker_whether_its_command_applies() {
+    /// A plugin whose commands would never apply, were it asked.
+    struct Never;
+    impl Plugin for Never {
+        fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+            cx.register_command(command("busy.go"))
+        }
+
+        fn applies(&mut self, _: &mut Cx<'_>, _: &str, _: &Args) -> bool {
+            false
+        }
     }
-    for gate in &gates {
-        gate.send(()).unwrap();
-    }
-    let _ = ended.iter().take(2).count();
-    std::thread::sleep(Duration::from_millis(50));
-    plugins.serve(&mut app.context());
-    assert!(plugins.waiting());
-    let busy = |plugins: &Plugins, at: usize| matches!(&plugins.entries[at].runner, super::super::Runner::Worker(worker) if worker.is_busy());
-    // The turn after the second's took the first plugin's.
-    assert!(!busy(&plugins, 0) && busy(&plugins, 1));
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins.add_builtin_send(MANIFEST, Box::new(Never)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    served(&mut plugins, &mut app);
+    let applies = plugins.applies("busy.go", &Args::new(), &mut app.context());
+    assert_eq!(applies, Ok(true));
+    assert!(!plugins.waiting());
 }
 
 #[test]
