@@ -1,9 +1,13 @@
-"""Tables of the A/B of F3-40, from the session's reports: each measure of
+"""Tables of the A/B of F3-40, from a session's reports, of the first
+session's directory or of the one given, as the second's: each measure of
 each bundle, and the latency's means by bundle and by place in a round, as
-the place moves the tail more than a bundle does."""
-import json, os, statistics as st
+the place moves the tail more than a bundle does.
 
-OUT = "/tmp/lokyr/bench-F3-40"
+    python3 analyze.py [<reports' directory>]
+"""
+import json, os, statistics as st, sys
+
+OUT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/lokyr/bench-F3-40"
 BUNDLES = ("v040", "v050")
 
 
@@ -17,7 +21,7 @@ def order(round_):
 
 
 print("## Startup, warm, first frame (ms): median, spread; floor's first window; gap")
-for r in (1, 2):
+for r in (1, 2, 3, 4):
     floor = load(f"startup-floor-{r}.json")
     fm = floor["summary"]["from_start_ms"]["median"] if floor else None
     for v in order(r):
@@ -51,6 +55,15 @@ for v, values in by_bundle.items():
 for p, values in by_place.items():
     if values["p50"]:
         print(f"place {p}: p50 mean {st.mean(values['p50']):.2f}, p99 mean {st.mean(values['p99']):.2f}")
+for v in BUNDLES:
+    tail = total = 0
+    for r in range(1, 9):
+        d = load(f"latency-{v}-{r}.json")
+        if d:
+            total += sum(d["histogram"].values())
+            tail += sum(n for k, n in d["histogram"].items() if int(k) >= 4)
+    if total:
+        print(f"{v}: {tail} of {total} samples in the fourth refresh or later")
 
 print("## Idle (per s) and memory (MB)")
 for r in (1, 2):
