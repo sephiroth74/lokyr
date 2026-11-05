@@ -531,9 +531,6 @@ pub struct App<B: Backend> {
     /// indices that their presses tell, with the commands that they run,
     /// those that another app holds too.
     global_keys: Vec<(keymap::Combo, Invocation)>,
-    /// Whether the system gave the app one of the global keys at least,
-    /// which keeps the app open without windows.
-    global_held: bool,
     /// The measure of the startup, with `--bench startup`: when the first
     /// window's first frame showed, once it did, which the app prints
     /// before it quits.
@@ -678,7 +675,6 @@ impl<B: Backend> App<B> {
             budget,
             quick: None,
             global_keys: Vec::new(),
-            global_held: false,
             startup_bench: None,
             latency_bench: None,
             output_bench: None,
@@ -1460,7 +1456,7 @@ impl<B: Backend> App<B> {
             Ok(window) => self.run_in(platform, window, (program, page), &environment),
             Err(error) => {
                 eprintln!("lokyr: {error}");
-                if self.windows.is_empty() && !self.global_held {
+                if self.windows.is_empty() && self.quits_without_windows() {
                     platform.quit();
                 }
             }
@@ -1639,7 +1635,6 @@ impl<B: Backend> App<B> {
             }
         }
         let refused_keys = platform.set_global_keys(&keys);
-        self.global_held = refused_keys.len() < keys.len();
         for index in refused_keys {
             if let Some(&(combo, _)) = self.global_keys.get(index) {
                 refused.push(combo);
@@ -1739,7 +1734,16 @@ impl<B: Backend> App<B> {
         platform.quit();
     }
 
-    /// Closes `window`, and quits with the last one.
+    /// Whether the app quits as its last window closes: as the config
+    /// says, and always for a bench, whose measure ends with the app.
+    fn quits_without_windows(&self) -> bool {
+        self.config.app.quit_after_last_window_closed
+            || self.startup_bench.is_some()
+            || self.latency_bench.is_some()
+            || self.output_bench.is_some()
+    }
+
+    /// Closes `window`, and quits with the last one, if the config says so.
     fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
         self.keep_directory(window);
         if self.front == Some(window) {
@@ -1764,10 +1768,11 @@ impl<B: Backend> App<B> {
         // The secure entry goes with the window that had the focus, whose
         // loss of it the platform tells no more, unless another takes it.
         self.settle_secure_input(platform);
-        // A global key goes on showing the quick terminal, which needs the
-        // app. Without one, the last window quits, the hidden quick
+        // The app stays open without windows, its icon in the Dock or a
+        // command opening one, and a global key showing the quick terminal;
+        // unless the config quits with the last window, the hidden quick
         // terminal with it, after the question for a program in it.
-        if self.global_held {
+        if !self.quits_without_windows() {
             return;
         }
         if self.windows.is_empty() {

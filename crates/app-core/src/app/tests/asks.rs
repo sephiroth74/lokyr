@@ -67,12 +67,12 @@ fn closing_a_window_whose_program_runs_asks_first() {
     let id = open.id;
     fake.answer_alert(&mut app, id, 1);
     assert_eq!(fake.windows().count(), 1);
-    // Confirmed, it closes, and the app quits with its last window.
+    // Confirmed, it closes, the app staying open without windows.
     fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
     let id = fake.alerts()[0].id;
     fake.answer_alert(&mut app, id, 0);
     assert_eq!(fake.windows().count(), 0);
-    assert!(fake.has_quit());
+    assert!(!fake.has_quit());
 }
 
 #[test]

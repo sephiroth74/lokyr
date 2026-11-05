@@ -708,8 +708,27 @@ fn a_window_s_state_follows_it_from_its_opening_to_its_closing() {
 }
 
 #[test]
-fn closing_the_last_window_quits() {
+fn closing_the_last_window_leaves_the_app_open_unless_the_config_quits() {
     let (mut fake, mut app, window) = started_running(idle());
+    fake.send(&mut app, window, WindowEvent::CloseRequested);
+    assert_eq!(fake.windows().count(), 0);
+    assert!(!fake.has_quit());
+    // The Dock's icon opens a window, as a command does.
+    fake.send_app(&mut app, AppEvent::Reopen);
+    assert_eq!(fake.windows().count(), 1);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::CloseRequested);
+    fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+    assert_eq!(fake.windows().count(), 1);
+    assert!(!fake.has_quit());
+    // The config's quit, as it reloads.
+    let quitting = Config::parse(
+        "[app]\nquit-after-last-window-closed = true\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    app.apply(&mut fake, quitting);
+    let window = fake.windows().next().unwrap();
     fake.send(&mut app, window, WindowEvent::CloseRequested);
     assert_eq!(fake.windows().count(), 0);
     assert!(fake.has_quit());
@@ -2351,7 +2370,7 @@ fn a_reloaded_config_binds_its_keys_anew() {
 fn a_clean_exit_closes_the_window_and_another_keeps_it_until_a_key() {
     let (fake, _, _) = ended(CloseOnExit::Clean, "exit 0");
     assert_eq!(fake.windows().count(), 0);
-    assert!(fake.has_quit());
+    assert!(!fake.has_quit());
 
     let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "printf 'oops'; exit 3");
     assert_eq!(fake.windows().count(), 1);
@@ -2361,7 +2380,7 @@ fn a_clean_exit_closes_the_window_and_another_keeps_it_until_a_key() {
     assert_eq!(row(&app, window, 0), "oops");
     fake.send(&mut app, window, key());
     assert_eq!(fake.windows().count(), 0);
-    assert!(fake.has_quit());
+    assert!(!fake.has_quit());
 }
 
 #[test]
@@ -2679,7 +2698,7 @@ fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
     fake.send_app(&mut app, AppEvent::Reopen);
     assert_eq!(fake.windows().count(), 1);
     // A key that another app takes is told too; once the config takes
-    // it away, the notice goes, and the last window quits again.
+    // it away, the notice goes.
     fake.take_global_key(key);
     app.apply(
         &mut fake,
@@ -2698,13 +2717,14 @@ fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
     app.apply(&mut fake, Config::default());
     assert!(app.diagnostics.shown().is_none());
     assert!(fake.global_keys().is_empty());
-    // A key that the system refused keeps nothing open.
-    let refused = Config::parse(
-        "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n",
+    // The config's quit with the last window quits, though the system
+    // gave the key.
+    let quitting = Config::parse(
+        "[app]\nquit-after-last-window-closed = true\n[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n",
         std::path::Path::new("config.toml"),
     )
     .unwrap();
-    app.apply(&mut fake, refused);
+    app.apply(&mut fake, quitting);
     assert_eq!(fake.global_keys(), [key]);
     let window = fake.windows().next().unwrap();
     app.close(&mut fake, window);
@@ -2712,9 +2732,10 @@ fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
 }
 
 #[test]
-fn without_a_global_key_the_last_window_quits_with_the_hidden_quick_terminal() {
+fn the_config_s_quit_takes_the_hidden_quick_terminal_with_the_last_window() {
     // Its program asked about first.
     let (mut fake, mut app) = started();
+    app.config.app.quit_after_last_window_closed = true;
     let window = fake.windows().next().unwrap();
     toggle(&mut fake, &mut app);
     let quick = quick_window(&fake).unwrap();
@@ -2738,6 +2759,7 @@ fn without_a_global_key_the_last_window_quits_with_the_hidden_quick_terminal() {
     // A shell at its prompt quits at once; a quick terminal that shows
     // keeps the app.
     let (mut fake, mut app, window) = started_running(idle());
+    app.config.app.quit_after_last_window_closed = true;
     toggle(&mut fake, &mut app);
     let quick = quick_window(&fake).unwrap();
     run_until(&mut fake, &mut app, |_, app| {
@@ -2751,6 +2773,18 @@ fn without_a_global_key_the_last_window_quits_with_the_hidden_quick_terminal() {
     let window = fake.windows().find(|&opened| opened != quick).unwrap();
     app.close(&mut fake, window);
     assert!(fake.has_quit());
+    // By default, the app stays with the hidden quick terminal, and asks
+    // nothing.
+    let (mut fake, mut app) = started();
+    let window = fake.windows().next().unwrap();
+    toggle(&mut fake, &mut app);
+    let quick = quick_window(&fake).unwrap();
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    toggle(&mut fake, &mut app);
+    app.close(&mut fake, window);
+    assert!(!fake.has_quit());
+    assert!(fake.alerts().is_empty());
+    assert_eq!(fake.windows().collect::<Vec<_>>(), [quick]);
 }
 
 /// The app without padding, of the config file `text`, its window

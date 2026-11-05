@@ -56,6 +56,7 @@
 //! [app]
 //! icon = "jormungandr"      # the icon's variant
 //! appearance = "system"     # system | light | dark
+//! quit-after-last-window-closed = false  # stays open without windows
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -208,7 +209,8 @@ pub enum ArgValue {
     String(String),
 }
 
-/// The `[app]` section: the application's own looks and language.
+/// The `[app]` section: the application's own looks and language, and
+/// whether it quits as its last window closes.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct AppConfig {
@@ -222,6 +224,10 @@ pub struct AppConfig {
     /// The appearance of the app and of its theme: the system's, or light
     /// or dark, whatever the system's is.
     pub appearance: AppearanceMode,
+    /// Whether the app quits as its last window closes, the hidden quick
+    /// terminal's aside, which goes with it: otherwise it stays open
+    /// without windows, until its icon in the Dock or a command opens one.
+    pub quit_after_last_window_closed: bool,
 }
 
 /// The appearance that the app takes.
@@ -260,6 +266,7 @@ impl Default for AppConfig {
             icon: Self::DEFAULT_ICON.to_owned(),
             language: "system".to_owned(),
             appearance: AppearanceMode::System,
+            quit_after_last_window_closed: false,
         }
     }
 }
@@ -1947,6 +1954,7 @@ mod tests {
             icon = "laguz"
             language = "it"
             appearance = "dark"
+            quit-after-last-window-closed = true
             "#,
         )
         .unwrap();
@@ -2000,6 +2008,8 @@ mod tests {
         assert_eq!(Config::default().app.language, "system");
         assert_eq!(config.app.appearance, AppearanceMode::Dark);
         assert_eq!(Config::default().app.appearance, AppearanceMode::System);
+        assert!(config.app.quit_after_last_window_closed);
+        assert!(!Config::default().app.quit_after_last_window_closed);
         for mode in [
             AppearanceMode::System,
             AppearanceMode::Light,
@@ -2603,7 +2613,15 @@ mod tests {
             ["sound", "flash", "bounce", "mark-title"]
         );
         assert_eq!(keys::<KeyboardConfig>(), ["option-as-meta"]);
-        assert_eq!(keys::<AppConfig>(), ["icon", "language", "appearance"]);
+        assert_eq!(
+            keys::<AppConfig>(),
+            [
+                "icon",
+                "language",
+                "appearance",
+                "quit-after-last-window-closed"
+            ]
+        );
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
         assert_eq!(OptionAsMeta::Both.sides(), (true, true));
         assert_eq!(

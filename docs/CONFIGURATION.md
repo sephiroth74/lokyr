@@ -142,6 +142,7 @@ mark-title = false                   # true | false: 🔔 in its title until it 
 icon = "laguz"                       # jormungandr | laguz
 language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
+quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
 
 [updates]
 check = false                        # true | false: a check for a newer version, once a day at most
@@ -565,7 +566,7 @@ What a window does when its program ends, such as the shell after `exit`.
 
 The login shell's status is its own: on macOS, `login`, which starts it, hides it, and the shell tells it to Lokyr as it ends. A status past 128 tells the signal that ended it, as shells give it.
 
-Closing the last window quits Lokyr.
+Closing the last window leaves Lokyr open, unless [`quit-after-last-window-closed`](#quit-after-last-window-closed) says otherwise.
 
 ### `start-directory`
 
@@ -1109,6 +1110,20 @@ Whether Lokyr is light or dark: the theme's colors, and Lokyr's own titlebar, me
 - The View menu's Appearance sets it too: Automatic, Light or Dark, the one in force ticked. The choice goes into your config file, keeping the rest of the file and its comments, in the file that a link points to; a config file with an error is left as it is, and the choice lasts until Lokyr quits, or until you change the key.
 - It applies at once, as you save the file.
 
+### `quit-after-last-window-closed`
+
+<sub>Platforms: macOS</sub>
+
+Whether Lokyr quits as you close its last window.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- With `false`, Lokyr stays open without windows, as macOS's apps do, its menus and a [global key](#bindings) at hand: its icon in the Dock opens a window, and so do ⌘N and Shell › New Window, and the quick terminal, hidden, keeps its shell.
+- With `true`, closing the last window quits Lokyr, the hidden quick terminal and its shell with it, asking you first while a program runs there, a global key's quick terminal too.
+- It applies at once, as you save the file.
+
 ## `[updates]`
 
 Lokyr's own updates: it checks for a newer version, which it shows in a window with what is new, to install now or as Lokyr quits, or to skip.
@@ -1189,7 +1204,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - It goes by its place on the keyboard, the US layout's, whatever your layout types there: `` ` `` is the key left of 1, or right of the left Shift on some keyboards. A character is the one that its key types without Shift: `~` is ``shift+` ``; a character that the US layout types with Shift, or has no key for, as `è`, is an error.
   - Its value is a command, or a table without `when`, which holds everywhere; a global key has no default, nor a `false`.
   - A key that another app holds as its own alone, or that the Mac's keyboards lack, as `f24`, shows in the bar across the windows' top, until the config takes it away. An app that took the key without holding it alone cannot be told, and the key then reaches one of the two.
-  - While Lokyr holds a global key, it stays open as its last window closes, so that the key still works: its icon in the Dock opens a window. Without one, or when the system refused it, closing the last window quits Lokyr, the hidden quick terminal and its shell with it, asking first while a program runs there.
+  - Lokyr stays open as its last window closes, as [`quit-after-last-window-closed`](#quit-after-last-window-closed) has it by default, so that the key still works. With `true`, Lokyr quits all the same, and the key with it.
 - **The value**:
   - a command, as `"window.new"`;
   - a table with the `command`, its `args`, as `{ command = "tabs.goto", args = { index = 1 } }`, and its context, `when`;
