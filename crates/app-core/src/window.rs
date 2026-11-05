@@ -45,6 +45,17 @@ pub(crate) enum NativeMenu {
     Closed,
 }
 
+/// A drag of the edge of a window's tab bar's column: the bar's plugin,
+/// whether the column is on the left, and where the drag started, in
+/// points across the window, of the column's width then.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ColumnDrag {
+    pub(crate) plugin: String,
+    pub(crate) left: bool,
+    pub(crate) from: f64,
+    pub(crate) width: f32,
+}
+
 /// A layer of a window, over its grid, which the window server blinks.
 #[derive(Debug)]
 pub(crate) struct WindowLayer<B: Backend> {
@@ -142,6 +153,8 @@ pub(crate) struct Window<B: Backend> {
     /// The selection that the mouse makes, or made last, which Shift's click
     /// extends.
     pub(crate) selecting: Option<Selecting>,
+    /// The drag of the tab bar's column's edge under way, if one is.
+    pub(crate) column_drag: Option<ColumnDrag>,
     /// The title of the man page that it shows, as `man ls`, when it shows
     /// one: it takes the man page's colors, and keeps the page once `man`
     /// has ended.
@@ -312,6 +325,7 @@ impl<B: Backend> Window<B> {
             held_back: Vec::new(),
             taken: Vec::new(),
             selecting: None,
+            column_drag: None,
             page: None,
             place: (String::new(), String::new()),
             directory: None,

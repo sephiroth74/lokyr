@@ -1049,6 +1049,34 @@ impl Plugins {
             .unwrap_or_default()
     }
 
+    /// Gives the column of `plugin`'s tab bar `width` points, within its
+    /// limits, as the user drags its edge; a bar of no column stays as it
+    /// is.
+    pub fn set_tab_bar_width(&mut self, plugin: &str, width: f32) {
+        let (narrowest, widest) = host::COLUMN_WIDTHS;
+        let width = width.clamp(narrowest, widest);
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.state.name == plugin)
+        {
+            match &mut entry.state.bar_place {
+                host::BarPlace::Left { width: kept } | host::BarPlace::Right { width: kept } => {
+                    *kept = width;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Tells `plugin`, to it alone, that the user's drag of its column's
+    /// edge left it `width` points wide.
+    pub fn tab_bar_resized(&mut self, plugin: &str, width: f32) {
+        self.out
+            .events
+            .push((Some(plugin.to_owned()), Event::TabBarResized { width }));
+    }
+
     /// The text of `text`, a message of `plugin`'s catalogs, in
     /// `language`'s or English's, or `text` itself where they lack it, as a
     /// plugin's question shows it.

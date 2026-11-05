@@ -632,6 +632,39 @@ pub(super) fn has_tab_bar(chrome: &[SlotView]) -> bool {
         .any(|view| view.view.slot() == Some(Slot::TabBar) && view.shows())
 }
 
+/// The room either side of the inner edge of a tab bar's column, in
+/// points, that takes the edge's drag.
+const EDGE: f64 = 3.0;
+
+/// The inner edge of `chrome`'s tab bar's column, as its frame and its
+/// plugin's place, of `plugins`, have it: its plugin, whether the column
+/// is on the left, and the room around the edge, in pixels of `scale`,
+/// that takes its drag; `None` but for a column that shows.
+pub(super) fn column_edge(
+    chrome: &[SlotView],
+    plugins: &Plugins,
+    scale: f64,
+) -> Option<(String, bool, Frame)> {
+    let view = chrome
+        .iter()
+        .find(|view| view.view.slot() == Some(Slot::TabBar) && view.shows())?;
+    let frame = view.frame?;
+    let left = match plugins.tab_bar_place(&view.plugin) {
+        BarPlace::Left { .. } => true,
+        BarPlace::Right { .. } => false,
+        _ => return None,
+    };
+    let edge = if left { frame.x + frame.width } else { frame.x };
+    let half = (EDGE * scale) as f32;
+    let zone = Frame {
+        x: edge - half,
+        y: frame.y,
+        width: 2.0 * half,
+        height: frame.height,
+    };
+    Some((view.plugin.clone(), left, zone))
+}
+
 /// Where `chrome`'s tab bar goes, as its plugin, of `plugins`, gives it; in
 /// the titlebar without one.
 pub(super) fn tab_bar_place(chrome: &[SlotView], plugins: &Plugins) -> BarPlace {

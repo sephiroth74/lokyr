@@ -469,6 +469,7 @@ impl FakeHost {
                         | Event::PanelClosed(_)
                         | Event::ConfigChanged
                         | Event::Answered { .. }
+                        | Event::TabBarResized { .. }
                 ) || self.subscribed.iter().any(|name| name == event.name())
             })
             .collect();

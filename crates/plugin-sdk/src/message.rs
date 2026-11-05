@@ -648,6 +648,13 @@ pub enum Event {
     /// app or the plugin closed it, or a menu shown as the platform's own
     /// closed with a choice or without one, to it alone.
     PanelClosed(PanelId),
+    /// The user's drag of the edge of the plugin's tab bar's column ended,
+    /// to it alone: the column's width, in points, in force since, which
+    /// the plugin keeps, as for its next start.
+    TabBarResized {
+        /// The column's width.
+        width: f32,
+    },
     /// The user's answer to a question that the plugin asked, to it alone:
     /// the text given, or none as the user cancelled, or the question's
     /// window closed.
@@ -680,6 +687,7 @@ impl Event {
             Self::Lines { .. } => "lines",
             Self::PanelClosed(_) => "panel-closed",
             Self::Answered { .. } => "answered",
+            Self::TabBarResized { .. } => "tab-bar-resized",
             Self::ConfigChanged => "config-changed",
             Self::Custom { name, .. } => name,
         }

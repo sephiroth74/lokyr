@@ -691,6 +691,7 @@ define_class!(
                     PointerShape::Arrow => NSCursor::arrowCursor(),
                     PointerShape::Text => NSCursor::IBeamCursor(),
                     PointerShape::PointingHand => NSCursor::pointingHandCursor(),
+                    PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
                 };
                 self.addCursorRect_cursor(rect, &cursor);
             }

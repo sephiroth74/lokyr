@@ -345,6 +345,9 @@ type Event =
     | { kind: "panel-closed", id: string }
     -- The user's answer to a question of `ask_text`, to it alone: the text, or none as the user cancelled.
     | { kind: "answered", id: number, text: string? }
+    -- The user's drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
+    -- which the plugin keeps, as for its next start.
+    | { kind: "tab-bar-resized", width: number }
     -- The plugin's section of the config changed, to it alone, which `config` reads.
     | { kind: "config-changed" }
     -- An event that a plugin emitted, of its namespace; a value nests 64 levels at most.

@@ -847,8 +847,11 @@ impl<B: Backend> App<B> {
                 ]
             })
             .collect();
-        // The slots' views, under the notice and over the panes, the
-        // topmost first.
+        // A column's edge, which its drag resizes, then the slots' views,
+        // under the notice and over the panes, the topmost first.
+        if let Some((_, _, zone)) = chrome::column_edge(&state.chrome, &self.plugins, size.scale) {
+            areas.push(points(&chrome::rect_of(zone), PointerShape::ResizeColumn));
+        }
         areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
         // The hand over the decorations that ask for it, as a link's that
         // Command underlines, of every pane, under the bar.

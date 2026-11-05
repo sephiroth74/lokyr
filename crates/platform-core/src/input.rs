@@ -412,6 +412,8 @@ pub enum PointerShape {
     Text,
     /// The pointing hand, as over a button.
     PointingHand,
+    /// A column's resize, left and right, as over a column's edge.
+    ResizeColumn,
 }
 
 /// An area of a window's content whose pointer is its own, over the shape

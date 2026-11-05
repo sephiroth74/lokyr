@@ -21,10 +21,10 @@ use lokyr_vt_core::terminal::{
     MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit,
 };
 
-use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, context};
+use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
 use crate::drawing::Backend;
 use crate::mouse::{Pointer, Spot};
-use crate::window::Selecting;
+use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
 
 impl<B: Backend> App<B> {
@@ -348,6 +348,10 @@ impl<B: Backend> App<B> {
             }
             _ => {}
         }
+        // A press at a column's edge drags it, which takes its release.
+        if self.column_button(platform, window, (platform_button, pressed), position) {
+            return;
+        }
         // A slot's view under the press takes it, and keeps the pointer
         // until the button goes up.
         if self.surface_button(
@@ -432,6 +436,60 @@ impl<B: Backend> App<B> {
             state.mouse.moved(target, pointer, true);
             pane.mouse(&mouse_event(MouseAction::Release(button), mods, pointer));
         }
+    }
+
+    /// The left button's press at the edge of `window`'s tab bar's column,
+    /// at `position`, which starts the edge's drag, or a release that ends
+    /// one, as the bar's plugin learns of the column's width then: whether
+    /// it was one.
+    fn column_button(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (button, pressed): (lokyr_platform_core::MouseButton, bool),
+        position: Point,
+    ) -> bool {
+        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+            return false;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        if !pressed {
+            let Some(drag) = state.column_drag.take() else {
+                return false;
+            };
+            let width = self
+                .plugins
+                .tab_bar_place(&drag.plugin)
+                .width()
+                .unwrap_or(drag.width);
+            self.plugins.tab_bar_resized(&drag.plugin, width);
+            return true;
+        }
+        if button != lokyr_platform_core::MouseButton::Left {
+            return false;
+        }
+        let Some((plugin, left, zone)) = chrome::column_edge(&state.chrome, &self.plugins, scale)
+        else {
+            return false;
+        };
+        let (x, y) = ((position.x * scale) as f32, (position.y * scale) as f32);
+        let within = (zone.x..zone.x + zone.width).contains(&x)
+            && (zone.y..zone.y + zone.height).contains(&y);
+        let Some(width) = self.plugins.tab_bar_place(&plugin).width() else {
+            return false;
+        };
+        if !within {
+            return false;
+        }
+        state.column_drag = Some(ColumnDrag {
+            plugin,
+            left,
+            from: position.x,
+            width,
+        });
+        true
     }
 
     /// Runs the command that the keymap binds the left button's click with
@@ -677,6 +735,19 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
+        // A column's edge that a drag holds follows the pointer.
+        if let Some(drag) = self
+            .windows
+            .get(&window)
+            .and_then(|state| state.column_drag.clone())
+        {
+            let moved = position.x - drag.from;
+            let moved = if drag.left { moved } else { -moved };
+            self.plugins
+                .set_tab_bar_width(&drag.plugin, drag.width + moved as f32);
+            platform.request_frame(window);
+            return;
+        }
         let dragging = self
             .windows
             .get(&window)

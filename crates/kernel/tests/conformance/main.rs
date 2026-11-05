@@ -551,6 +551,7 @@ fn on_kernel(scenario: &Scenario, kernel: &mut Kernel, state: &std::path::Path) 
             // An answer goes to its plugin alone.
             match event {
                 Event::Answered { id, text } => plugins.answer(name(scenario), *id, text.clone()),
+                Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 event => plugins.post(event.clone()),
             }
         }

@@ -268,6 +268,12 @@ fn tabs(world: &World) -> Scenario {
                 ),
                 (Request::SetTabBarPlace(BarPlace::Titlebar), Response::Done),
             ]),
+            // A drag of its column's edge, told to it alone.
+            Step {
+                asks: Vec::new(),
+                posts: vec![Event::TabBarResized { width: 240.0 }],
+                heard: vec![Event::TabBarResized { width: 240.0 }],
+            },
         ],
     }
 }

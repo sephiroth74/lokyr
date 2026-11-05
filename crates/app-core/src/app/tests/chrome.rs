@@ -29,6 +29,8 @@ struct Bars {
     closed: Rc<Cell<usize>>,
     /// The place that `bars.place` gives its tab bar.
     place: Rc<Cell<plugins::host::BarPlace>>,
+    /// The width that the last drag of its column's edge left it.
+    resized: Rc<Cell<Option<f32>>>,
 }
 
 impl plugins::Plugin for Bars {
@@ -67,6 +69,7 @@ impl plugins::Plugin for Bars {
         for event in events {
             match event {
                 plugins::Event::PanelClosed(_) => self.closed.set(self.closed.get() + 1),
+                plugins::Event::TabBarResized { width } => self.resized.set(Some(*width)),
                 plugins::Event::Custom { .. } => {
                     let window = cx.focused_window().expect("a window");
                     cx.open_panel(
@@ -133,6 +136,7 @@ fn a_plugin_s_views_fill_their_slots_which_the_panes_give_their_room() {
         views: Vec::new(),
         closed: Rc::new(Cell::new(0)),
         place: Rc::new(Cell::new(plugins::host::BarPlace::default())),
+        resized: Rc::new(Cell::new(None)),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -234,6 +238,7 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
         views: Vec::new(),
         closed: Rc::clone(&closed),
         place: Rc::new(Cell::new(plugins::host::BarPlace::default())),
+        resized: Rc::new(Cell::new(None)),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -276,6 +281,7 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
         views: Vec::new(),
         closed: Rc::new(Cell::new(0)),
         place: Rc::clone(&place),
+        resized: Rc::new(Cell::new(None)),
     };
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
@@ -354,4 +360,91 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     place.set(BarPlace::Left { width: 2000.0 });
     app.run(&mut fake, "bars.place", Args::new());
     assert_eq!(app.plugins.tab_bar_place("lokyr/bars"), BarPlace::Titlebar);
+}
+
+#[test]
+fn a_drag_of_a_column_s_edge_resizes_it_and_its_plugin_learns_of_it() {
+    use lokyr_platform_core::PointerShape;
+    use plugins::host::BarPlace;
+    let resized = Rc::new(Cell::new(None));
+    let place = Rc::new(Cell::new(BarPlace::Left { width: 100.0 }));
+    let bars = Bars {
+        empty: Rc::new(RefCell::new(Vec::new())),
+        panics: Rc::new(Cell::new(false)),
+        views: Vec::new(),
+        closed: Rc::new(Cell::new(0)),
+        place: Rc::clone(&place),
+        resized: Rc::clone(&resized),
+    };
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/bars\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"tab-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(manifest, Box::new(bars));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+    };
+    app.run(&mut fake, "bars.place", Args::new());
+    app.run(&mut fake, "bars.again", Args::new());
+    frames(&mut fake, &mut app);
+    let width = |app: &App| app.plugins.tab_bar_place("lokyr/bars").width();
+    // The resize's pointer over the column's edge.
+    let edge = fake
+        .window(window)
+        .unwrap()
+        .pointer_areas
+        .iter()
+        .find(|area| area.shape == PointerShape::ResizeColumn)
+        .copied()
+        .expect("the edge's pointer");
+    assert!((edge.origin.x - 97.0).abs() < 0.5, "{edge:?}");
+    assert!((edge.size.width - 6.0).abs() < 0.5, "{edge:?}");
+    // A drag of 50 points to the right, then its release.
+    let at = |x| Point { x, y: 100.0 };
+    let none = Modifiers::NONE;
+    fake.send(&mut app, window, click(true, at(100.0), none, 1));
+    fake.send(&mut app, window, moved(at(150.0), none));
+    frames(&mut fake, &mut app);
+    assert_eq!(width(&app), Some(150.0));
+    let size = fake.window(window).unwrap().size;
+    let column = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view.slot() == Some(Slot::TabBar))
+        .and_then(|view| view.frame)
+        .unwrap();
+    assert!((f64::from(column.width) - 150.0 * size.scale).abs() < 1.0);
+    assert_eq!(resized.get(), None);
+    fake.send(&mut app, window, click(false, at(150.0), none, 1));
+    run_until(&mut fake, &mut app, |_, _| resized.get().is_some());
+    assert_eq!(resized.get(), Some(150.0));
+    // A drag past the widest stops there; on the right, the edge is the
+    // column's left.
+    fake.send(&mut app, window, click(true, at(150.0), none, 1));
+    fake.send(&mut app, window, moved(at(2000.0), none));
+    fake.send(&mut app, window, click(false, at(2000.0), none, 1));
+    assert_eq!(width(&app), Some(600.0));
+    place.set(BarPlace::Right { width: 100.0 });
+    app.run(&mut fake, "bars.place", Args::new());
+    frames(&mut fake, &mut app);
+    let left = size.points.width - 100.0;
+    fake.send(&mut app, window, click(true, at(left), none, 1));
+    fake.send(&mut app, window, moved(at(left - 40.0), none));
+    fake.send(&mut app, window, click(false, at(left - 40.0), none, 1));
+    assert_eq!(width(&app), Some(140.0));
+    // A press elsewhere drags nothing.
+    fake.send(&mut app, window, click(true, at(left - 200.0), none, 1));
+    fake.send(&mut app, window, moved(at(left - 260.0), none));
+    fake.send(&mut app, window, click(false, at(left - 260.0), none, 1));
+    assert_eq!(width(&app), Some(140.0));
 }
