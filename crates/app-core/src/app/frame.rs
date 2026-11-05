@@ -33,7 +33,7 @@ use super::access;
 use super::chrome;
 use super::menus::menu_context;
 use super::surfaces;
-use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, UNDRAWN_CELL};
+use super::{App, FLASH_OPACITY, GLYPHS_BUDGET, PointerTold, UNDRAWN_CELL};
 use crate::drawing::{Backend, Drawing};
 use crate::output_bench::Phases;
 use crate::window::{PaneView, Shown, WindowLayer};
@@ -409,10 +409,20 @@ impl<B: Backend> App<B> {
         self.label_timer = Some((platform.start_timer(at), at));
     }
 
+    /// Draws `window`, of `size`, as [`App::draw_frame`] does; the plugins
+    /// learn of the pointer again where the frame changed the text under
+    /// it, still.
+    pub(super) fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
+        self.draw_frame(platform, window, size);
+        if std::mem::take(&mut self.pointer_text_changed) {
+            self.tell_pointer_over_changed_text(platform, window);
+        }
+    }
+
     /// Draws `window`, of `size`: its program's screen, brought up to date,
     /// in the grid that fits its content within the padding, with the
     /// cursor.
-    pub(super) fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
+    fn draw_frame(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         // The frame's time, which the performance's panel tells, the wait
         // for the display's drawable apart from the CPU's.
         let started =
@@ -471,7 +481,10 @@ impl<B: Backend> App<B> {
                 (due, told) => due.or(told),
             };
             if view.pane != active {
-                others |= pane.update();
+                let updated = pane.update();
+                others |= updated;
+                self.pointer_text_changed |=
+                    updated && text_changed_under(self.pointer_told, view.pane, pane);
                 if asked {
                     cursors.push(access::tree_cursor(pane));
                 }
@@ -490,6 +503,7 @@ impl<B: Backend> App<B> {
         }
         // Output starts the cursor blinking again, on, as a key does.
         let output = pane.update();
+        self.pointer_text_changed |= output && text_changed_under(self.pointer_told, active, pane);
         let copied = started.map(|_| Instant::now());
         if output {
             state.blink.restart(now);
@@ -1373,4 +1387,23 @@ fn blink_of(pattern: cursor::Pattern, start: Instant) -> PlatformBlink {
         fade_in: pattern.fade_in,
         fade_in_curve: easing(pattern.fade_in_curve),
     }
+}
+
+/// Whether the last update of `pane`, of the id `id`, changed the text
+/// under the pointer that the plugins were told of, `told`: its row, or
+/// the rows that scrolled under it.
+fn text_changed_under(told: Option<PointerTold>, id: PaneId, pane: &Pane) -> bool {
+    let Some((over, Some((_, row)), _)) = told else {
+        return false;
+    };
+    let snapshot = pane.snapshot();
+    if over != id {
+        return false;
+    }
+    if snapshot.scrolled() != 0 {
+        return true;
+    }
+    snapshot.origin().is_some_and(|origin| {
+        u16::try_from(row - origin.top).is_ok_and(|y| y < snapshot.rows() && snapshot.changed(y))
+    })
 }

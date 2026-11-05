@@ -733,8 +733,34 @@ impl<B: Backend> App<B> {
         position: Option<Point>,
         mods: Modifiers,
     ) {
+        self.tell_pointer_again(platform, window, position, mods, false);
+    }
+
+    /// Tells the plugins of the pointer again, still at its cell over
+    /// `window`, as its frame changed the text under it, its row or its
+    /// pane's rows that scrolled under it: a link there may have gone.
+    pub(super) fn tell_pointer_over_changed_text(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+    ) {
+        let position = platform.pointer_position(window);
+        self.tell_pointer_again(platform, window, position, self.pointer_mods, true);
+    }
+
+    /// Tells the plugins where the pointer is, as [`App::tell_pointer`],
+    /// even at the cell that they were told of with `again`.
+    fn tell_pointer_again(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Option<Point>,
+        mods: Modifiers,
+        again: bool,
+    ) {
         // The modifiers of a pointer's event are those held now.
         self.command_held = mods.super_key;
+        self.pointer_mods = mods;
         if !self.plugins.subscribes(plugins::POINTER) {
             return;
         }
@@ -752,7 +778,7 @@ impl<B: Backend> App<B> {
         });
         // Out of the panes, the pane that it left learns so.
         let told = over.or_else(|| self.pointer_told.map(|(pane, _, _)| (pane, None, command)));
-        if told.is_none() || told == self.pointer_told {
+        if told.is_none() || (told == self.pointer_told && !again) {
             return;
         }
         self.pointer_told = told;

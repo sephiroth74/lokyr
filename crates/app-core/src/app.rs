@@ -429,8 +429,14 @@ pub struct App<B: Backend> {
     /// Whether Command is held, as the last key told, while which the
     /// pointer's moves go to the plugins that subscribed to them.
     command_held: bool,
-    /// What the plugins were told last of the pointer.
+    /// What the plugins were told last of the pointer, and the modifiers
+    /// held then.
     pointer_told: Option<PointerTold>,
+    pointer_mods: lokyr_platform_core::Modifiers,
+    /// Whether the frame drawn changed the text under the pointer that the
+    /// plugins were told of, as its row changed or its pane scrolled under
+    /// it, of which they are told again.
+    pointer_text_changed: bool,
     /// Whether a window opened since the app started, after which none
     /// restores the frame that a window kept, nor starts in the first
     /// window's directory.
@@ -627,6 +633,8 @@ impl<B: Backend> App<B> {
             scroll_timer: None,
             command_held: false,
             pointer_told: None,
+            pointer_mods: lokyr_platform_core::Modifiers::NONE,
+            pointer_text_changed: false,
             title_timer: None,
             title_look: Some(TITLE_LOOK),
             opened_one: false,

@@ -716,6 +716,83 @@ fn command_underlines_the_link_under_the_pointer_still_until_it_goes_up() {
     assert!(!tracks(&fake));
 }
 
+/// The app of a window that shows 100 lines and a link below them, a
+/// keymap's ⌘E that sends `e` to its program, which `then` runs after it
+/// reads a byte, with Command held and the pointer still over the link,
+/// underlined; and the link's row.
+fn underlined_still(test: &str, then: &str) -> (Fake, App, WindowId, u16) {
+    let program = format!(
+        "seq 1 100; stty raw -echo; printf 'see https://lokyr.dev/x here\\r\\n'; echo ready; head -c 1 >/dev/null; {then}; cat -v"
+    );
+    let keys = "[keys]\n\"cmd+e\" = { command = \"pane.send-text\", args = { text = \"e\" } }\n";
+    let (mut fake, mut app, window, _) = pasting(test, keys, shell(&program));
+    let row = screen(&app, window)
+        .iter()
+        .position(|line| line.contains("https"))
+        .unwrap();
+    let row = u16::try_from(row).unwrap();
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::NONE));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::SuperLeft, "", CMD, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        decorated(app, window) == [(row, 4, 22)]
+    });
+    (fake, app, window, row)
+}
+
+/// The decorations' spans that `window` shows, each of its row and its
+/// first and last columns.
+fn decorated(app: &App, window: WindowId) -> Vec<(u16, u16, u16)> {
+    app.pane(window)
+        .snapshot()
+        .decorations()
+        .iter()
+        .map(|span| (span.row, span.first, span.last))
+        .collect()
+}
+
+#[test]
+fn the_underline_goes_as_the_program_erases_the_link_under_a_still_pointer() {
+    // Up to the link's line, which goes, as a shell's ⌘⌫ takes the line.
+    let (mut fake, mut app, window, row) =
+        underlined_still("erased", "printf '\\033[2A\\033[2K'; echo erased");
+    fake.send(&mut app, window, key_event(KeyCode::KeyE, "e", CMD, true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "erased"));
+    run_until(&mut fake, &mut app, |_, app| {
+        decorated(app, window).is_empty()
+    });
+    assert!(!screen(&app, window)[usize::from(row)].contains("https"));
+    // Command is still held.
+    assert!(app.command_held);
+}
+
+#[test]
+fn the_underline_goes_as_the_view_scrolls_the_link_from_under_a_still_pointer() {
+    let (mut fake, mut app, window, row) = underlined_still("scrolled", "true");
+    // A line up, with Command held: the pointer is over the line before
+    // the link's.
+    fake.send(&mut app, window, key_event(KeyCode::ArrowUp, "", CMD, true));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.pane(window).snapshot().offset() == 1
+    });
+    run_until(&mut fake, &mut app, |_, app| {
+        decorated(app, window).is_empty()
+    });
+    assert!(screen(&app, window)[usize::from(row) + 1].contains("https"));
+    // Back down, the link is under it again, and underlined.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowDown, "", CMD, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        decorated(app, window) == [(row, 4, 22)]
+    });
+}
+
 #[test]
 fn the_pointer_is_a_hand_over_the_link_that_command_underlines() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();

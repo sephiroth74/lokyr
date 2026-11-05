@@ -542,11 +542,13 @@ pub enum Event {
     /// A change of the workspace's windows, tabs, layouts or panes.
     Workspace(WorkspaceEvent),
     /// The pointer went over another cell of a pane, or out of it, or the
-    /// modifiers held changed over it: the cell, by its column and its
-    /// row's number, or none out of the pane's cells. The host tells it
-    /// as the pointer moves, and as a modifier goes down or up, with the
-    /// pointer still; while Command is up, it tells moves only as the
-    /// system gives them, as a program that tracks the mouse asks.
+    /// modifiers held changed over it, or the text under it changed: the
+    /// cell, by its column and its row's number, or none out of the pane's
+    /// cells. The host tells it as the pointer moves, as a modifier goes
+    /// down or up with the pointer still, and again at its cell as a frame
+    /// changes the text of its row or scrolls its pane's rows under it;
+    /// while Command is up, it tells moves only as the system gives them,
+    /// as a program that tracks the mouse asks.
     Pointer {
         /// The pane.
         pane: PaneId,

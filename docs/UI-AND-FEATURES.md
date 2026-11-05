@@ -373,6 +373,8 @@ The actions come with the features that they belong to, as the user asked on 29 
 | Plugins, from F4 | the selection as pretty-printed JSON, Base64 decoded or encoded, the colors that it names (i) |
 | Tools, later | reset the terminal, the inspector, the terminal's modes (G, i) |
 
+Its items show no keys, as macOS's context menus and Terminal's, the menu bar telling them, as the user chose on 5 November 2026.
+
 Left out: downloads with scp (i), as the app has no networking code ([ADR 0008](adr/0008-separate-package-manager.md)), and editing the session (i), as the settings are the config's.
 
 ## Agents

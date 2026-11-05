@@ -325,7 +325,8 @@ type Event =
     | { kind: "pane-focused", pane: PaneId, tab: TabId }
     | { kind: "pane-moved", pane: PaneId, from: TabId, tab: TabId }
     | { kind: "layout-changed", tab: TabId }
-    -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it; while Command is up, its
+    -- The pointer over another cell of a pane, or out of it, or the modifiers changed over it, or a frame changed the text
+    -- of its row or scrolled its pane's rows under it, at the same cell; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
     -- A read of rows that the plugin asked for, to it alone; incomplete if a resize renumbered the rows.
