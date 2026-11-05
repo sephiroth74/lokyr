@@ -410,7 +410,9 @@ fn a_turn_takes_the_workers_messages_for_its_time_at_most_each_in_turn() {
             .run(&format!("{name}.go"), Args::new(), &mut app.context())
             .unwrap();
     }
-    for at in [0, 0, 1] {
+    // The first plugin's second command waits for its gate, so that its
+    // end wakes nothing until the turn below is counted.
+    for at in [0, 1] {
         gates[at].send(()).unwrap();
     }
     let mut ends: Vec<&str> = ended.iter().take(2).collect();
@@ -422,8 +424,9 @@ fn a_turn_takes_the_workers_messages_for_its_time_at_most_each_in_turn() {
     let first = plugins.serve(&mut app.context());
     assert!(first.any && first.more);
     assert_eq!(wakes.load(Ordering::Relaxed), woken + 1);
-    // The first plugin's end, whose second command began, and ended.
+    // The first plugin's end, whose second command began, and ends.
     assert!(busy(&plugins, 0) && busy(&plugins, 1));
+    gates[0].send(()).unwrap();
     assert_eq!(ended.recv_timeout(Duration::from_secs(10)), Ok("one"));
     std::thread::sleep(Duration::from_millis(50));
     // The next turn takes the next plugin's first, though the first
