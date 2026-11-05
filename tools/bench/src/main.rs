@@ -62,7 +62,7 @@ fn print_help() {
     println!(
         "Usage: lokyr-bench <probe> [options]\n\n\
          Probes (macOS):\n  \
-         motion --pid <pid> --kind drag|resize [--seconds <s>] [--rate <hz>] [--amplitude <points>]\n      \
+         motion --pid <pid> --kind drag|resize|move [--seconds <s>] [--rate <hz>] [--amplitude <points>] [--to <x>,<y>]\n      \
          drag a process's window by its titlebar, or resize it by its corner,\n      \
          along the same path each run, with the mouse's synthetic events, for\n      \
          10 s at 120 Hz by default; takes the Accessibility permission; prints JSON\n  \

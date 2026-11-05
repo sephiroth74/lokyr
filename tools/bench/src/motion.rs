@@ -1,6 +1,6 @@
 //! A window's motion, the same each run: a drag of its titlebar, or a
 //! resize from its bottom-right corner, along a sine of a period of two
-//! seconds, which the mouse's synthetic events give, as a hand would, so
+//! seconds, or a move to a place, as onto another display, which the mouse's synthetic events give, as a hand would, so
 //! that what the window server and the app do meanwhile can be measured,
 //! as Instruments records it, one terminal against another.
 //!
@@ -30,6 +30,9 @@ enum Kind {
     Drag,
     /// The window's size, by its bottom-right corner.
     Resize,
+    /// The window, by its titlebar, to a place, in a straight line, as
+    /// onto another display before a motion there.
+    Move,
 }
 
 /// What a run did.
@@ -56,8 +59,8 @@ struct Report {
 const PERIOD: f64 = 2.0;
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
-    let (mut pid, mut kind, mut seconds, mut rate, mut amplitude) =
-        (None, None, 10.0, 120.0, 200.0);
+    let (mut pid, mut kind, mut seconds, mut rate, mut amplitude, mut to) =
+        (None, None, 10.0, 120.0, 200.0, None);
     while let Some(arg) = args.next() {
         let mut value = || {
             args.next()
@@ -69,17 +72,28 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
                 kind = Some(match value()?.as_str() {
                     "drag" => Kind::Drag,
                     "resize" => Kind::Resize,
-                    other => bail!("`--kind` is `drag` or `resize`, not `{other}`"),
+                    "move" => Kind::Move,
+                    other => bail!("`--kind` is `drag`, `resize` or `move`, not `{other}`"),
                 });
             }
             "--seconds" => seconds = value()?.parse()?,
             "--rate" => rate = value()?.parse()?,
             "--amplitude" => amplitude = value()?.parse()?,
+            "--to" => {
+                let text = value()?;
+                let (x, y) = text
+                    .split_once(',')
+                    .with_context(|| format!("`--to` is `x,y`, not `{text}`"))?;
+                to = Some((x.trim().parse::<f64>()?, y.trim().parse::<f64>()?));
+            }
             other => bail!("unknown option `{other}`"),
         }
     }
     let pid = pid.context("`--pid` names the process whose window moves")?;
-    let kind = kind.context("`--kind` is `drag` or `resize`")?;
+    let kind = kind.context("`--kind` is `drag`, `resize` or `move`")?;
+    if kind == Kind::Move && to.is_none() {
+        bail!("`--kind move` takes `--to x,y`, the window's top left corner to come");
+    }
     if !CGPreflightPostEventAccess() {
         CGRequestPostEventAccess();
         bail!(
@@ -91,7 +105,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .with_context(|| format!("the process {pid} has no window on screen"))?;
     // Within the titlebar, past its buttons; or just inside the corner.
     let start = match kind {
-        Kind::Drag => CGPoint::new(before.x + before.width / 2.0, before.y + 12.0),
+        Kind::Drag | Kind::Move => CGPoint::new(before.x + before.width / 2.0, before.y + 12.0),
         Kind::Resize => CGPoint::new(
             before.x + before.width - 2.0,
             before.y + before.height - 2.0,
@@ -124,16 +138,23 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     for step in 1..=steps {
         let time = step as f64 / rate;
         let offset = amplitude * (std::f64::consts::TAU * time / PERIOD).sin();
-        at = match kind {
-            Kind::Drag => CGPoint::new(start.x + offset, start.y + offset / 4.0),
-            Kind::Resize => CGPoint::new(start.x + offset / 2.0, start.y + offset / 4.0),
+        at = match (kind, to) {
+            (Kind::Move, Some((x, y))) => {
+                let done = (step as f64 / steps as f64).min(1.0);
+                CGPoint::new(
+                    start.x + (x - before.x) * done,
+                    start.y + (y - before.y) * done,
+                )
+            }
+            (Kind::Drag | Kind::Move, _) => CGPoint::new(start.x + offset, start.y + offset / 4.0),
+            (Kind::Resize, _) => CGPoint::new(start.x + offset / 2.0, start.y + offset / 4.0),
         };
         post(CGEventType::LeftMouseDragged, at)?;
         if step % 10 == 0
             && let Some(now) = windows::frames(pid).first()
         {
             let (dx, dy) = match kind {
-                Kind::Drag => (now.x - before.x, now.y - before.y),
+                Kind::Drag | Kind::Move => (now.x - before.x, now.y - before.y),
                 Kind::Resize => (now.width - before.width, now.height - before.height),
             };
             farthest = farthest.max(dx.hypot(dy));

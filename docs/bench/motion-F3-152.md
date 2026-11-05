@@ -47,3 +47,20 @@ The means of the two rounds; 9.4 s of motion a run.
 ## The prompt's flicker
 
 A slow-motion recording of the user's, 240 frames a second, showed the powerline prompt's line gone for about 190 ms at a time through a resize in Lokyr, and never in Ghostty. zsh draws the prompt again in one write within a millisecond of each signal, 40 of 40 sizes told in a second. A log of the pane's steps through a resize of the user's shell found the cause: the screen waited for output from the first size that the program had not answered, so that the program's answer to one size, which no frame had copied yet, ended the wait of the next, whose step had cleared the prompt; 30 of 71 copies of the screen showed it cleared. Each size now waits for output after its own signal, 1e55431; of the next resize, no copy showed it cleared, 45 of 45, and the user found the flicker gone.
+
+## After F3-153, and at 120 Hz
+
+F3-153 had a step of a live resize draw in its own transaction past a frame within half a refresh. Of a resize of 10 s on the Dell P2721Q at 60 Hz, the window of the session's: Lokyr's frames 56.7 a second, the window server's 59.2, 3 missed, where 29.8, 56.6 and 28.5 before.
+
+Measured on 2026-11-05, between 11:09 and 11:16, of [promotion/run.sh](motion-F3-152/promotion/run.sh) and its reports: the built-in display the main one, in ProMotion at 120 Hz, every window on it; of 9.4 s of motion a run, and of each display's swaps apart, as the table names both displays alike.
+
+| Run | The app's frames a second | The window server's frames a second | Missed |
+|---|---|---|---|
+| Lokyr, a resize, opaque | 106.7 | 113.9 | 42 |
+| Ghostty, a resize, opaque | 192.1 | 119.9 | 1 |
+| Lokyr, a drag, blurred, of the fades | 0 | 119.6 | 4 |
+| Ghostty, a drag, blurred | 2.6 | 118.4 | 16 |
+
+- **A drag at 120 Hz loses no more frames in Lokyr than in Ghostty**, of the blur and the cursor's fades: 4 against 16.
+- **A resize at 120 Hz draws Lokyr's frames at 107 a second**, where Ghostty draws 192, more than the display shows: the window server misses 42 of Lokyr's, in 24 gaps of 2 to 5 refreshes, 3.7 % of the frames, and 1 of Ghostty's.
+- An earlier run at 120 Hz, of Lokyr's window across both displays, the built-in and the Dell, and Ghostty's on the Dell, compared nothing: the window server drew Lokyr's on both.
