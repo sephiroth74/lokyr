@@ -479,8 +479,9 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
         found.snapshot().decorations().len()
     };
     assert_eq!(decorations(&mut app), 1);
+    let _ = plugins.take_written();
     // Turned off, it stops: its command, its keys, its subscription, its
-    // view, its panel and its decoration go.
+    // view, its panel and its decoration go, which the windows show.
     assert!(plugins.configure(&off.plugins).is_empty());
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(plugins.status("acme/toggled"), Some(Status::Off));
@@ -643,4 +644,39 @@ fn a_plugin_of_a_thread_of_its_own_that_its_section_turns_off_ends_its_thread() 
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert!(matches!(plugins.entries[0].runner, Runner::Stopped));
     assert!(app.registry.get("toggled.go").is_none());
+}
+
+/// Whether a `Fickle` activated yet.
+static FICKLE_RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A plugin that subscribes to `tab-created` as it first activates alone.
+struct Fickle;
+
+impl Plugin for Fickle {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if !FICKLE_RAN.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            cx.subscribe(&["tab-created"])?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_turned_on_again_takes_none_of_the_subscriptions_of_the_one_before() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: "[plugin]\nname = \"acme/fickle\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+            make: || Box::new(Fickle),
+        })
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert!(plugins.subscribes("tab-created"));
+    for text in ["[plugins.fickle]\nenabled = false\n", ""] {
+        assert!(plugins.configure(&config(text).plugins).is_empty());
+        assert!(plugins.activate(&mut app.context()).is_empty());
+    }
+    assert_eq!(plugins.status("acme/fickle"), Some(Status::Active));
+    assert!(!plugins.subscribes("tab-created"));
 }
