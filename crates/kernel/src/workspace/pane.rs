@@ -160,8 +160,9 @@ pub struct Pane {
     held: Option<Grid>,
     /// The slices of output that the session had parsed as the program last
     /// learnt of a new size, and when the screen stops waiting for more: the
-    /// screen shows the terminal once a slice comes, or then; `None` once it
-    /// does.
+    /// screen shows the terminal once a slice comes, or then, which is
+    /// [`ANSWER_WAIT`] after the first of the sizes that the program has
+    /// not answered; `None` once it does.
     answer: Option<(u64, Instant)>,
     /// Whether the terminal's grid changed since the program was told,
     /// though it may be back at the grid told: a resize there and back
@@ -475,11 +476,17 @@ impl Pane {
         let Some(session) = &self.session else {
             return None;
         };
-        // The screen waits for the program's drawing, from the first size
-        // that it has not answered.
-        if self.answer.is_none() {
-            self.answer = Some((session.slices(), now + ANSWER_WAIT));
-        }
+        // The screen waits for the program's drawing at this size, as its
+        // answer to a size before, which a frame may not have shown yet,
+        // drew another, whose prompt this size cleared: until output comes
+        // after this signal. A program that has not answered the size
+        // before waits no longer than from that size's signal.
+        let slices = session.slices();
+        let until = match self.answer {
+            Some((before, until)) if slices == before => until,
+            _ => now + ANSWER_WAIT,
+        };
+        self.answer = Some((slices, until));
         let told = if told == self.grid {
             session.signal_resize()
         } else {
@@ -1078,6 +1085,11 @@ mod tests {
 
     /// Waits until `pane`'s screen has `count` rows of `text`, for a few
     /// seconds at most.
+    /// The slices of output that `pane`'s session parsed.
+    fn pane_slices(pane: &Pane) -> u64 {
+        pane.session.as_ref().map_or(0, Session::slices)
+    }
+
     fn wait_for(pane: &mut Pane, text: &str, count: usize) {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -1207,16 +1219,66 @@ mod tests {
         wait_for(&mut answering, "W", 1);
         assert_eq!(answering.snapshot().cols(), 90);
         assert_eq!(answering.answer_due(), None);
-        // One that draws nothing: the screen shows once the wait ends.
+        // One that draws nothing: the screen shows once the wait ends, which
+        // a size after, unanswered too, does not put off.
         let mut quiet = spawned("echo ready; sleep 30");
         wait_for(&mut quiet, "ready", 1);
         let start = Instant::now();
         assert_eq!(quiet.resize(grid(90), start), None);
         assert_eq!(quiet.answer_due(), Some(start + ANSWER_WAIT));
+        assert_eq!(quiet.resize(grid(95), start + RESIZE_PACE), None);
+        assert_eq!(quiet.grid().columns, 95);
+        assert_eq!(quiet.answer_due(), Some(start + ANSWER_WAIT));
         assert!(!quiet.update());
         std::thread::sleep(ANSWER_WAIT);
         assert!(quiet.update());
-        assert_eq!(quiet.snapshot().cols(), 90);
+        assert_eq!(quiet.snapshot().cols(), 95);
+    }
+
+    #[test]
+    fn a_new_size_waits_for_its_own_drawing_not_for_the_answer_to_the_size_before() {
+        let grid = |columns| Grid {
+            columns,
+            rows: 24,
+            cell_width: 8,
+            cell_height: 16,
+        };
+        // A shell that draws its prompt again a while after each signal.
+        let mut pane = Pane::spawn(
+            &Program::command(
+                "/bin/sh",
+                [
+                    "-c",
+                    "trap 'sleep 0.05; echo W' WINCH; echo ready; while :; do sleep 0.01; done",
+                ],
+            ),
+            &Environment::default(),
+            &Settings::default(),
+            grid(80),
+            &Colors::default(),
+            &Texts::new("en", &KERNEL),
+            || {},
+        );
+        wait_for(&mut pane, "ready", 1);
+        let start = Instant::now();
+        assert_eq!(pane.resize(grid(90), start), None);
+        // Its answer to 90 comes before any frame copies the screen.
+        let before = pane_slices(&pane);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while pane_slices(&pane) == before {
+            assert!(Instant::now() < deadline, "no answer");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // The next size, as a live resize's step, takes the grid, which
+        // clears the prompt, and tells the program: the screen waits for
+        // the drawing at that size, as the one before is another's.
+        let now = Instant::now();
+        assert_eq!(pane.resize(grid(100), now), None);
+        assert_eq!(pane.answer_due(), Some(now + ANSWER_WAIT));
+        assert!(!pane.update());
+        assert_eq!(pane.snapshot().cols(), 80);
+        wait_for(&mut pane, "W", 2);
+        assert_eq!(pane.snapshot().cols(), 100);
     }
 
     #[test]

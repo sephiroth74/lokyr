@@ -5,7 +5,8 @@ the report of `lokyr-bench motion`, which places it in the recording:
 
     python3 tools/bench/motion_extract.py <trace> <motion.json> <pid>
 
-Prints JSON, over the motion less its first and its last 0.3 s: of the
+Prints JSON, over the motion less its first and its last 0.3 s, within
+the recording: of the
 display that showed the most frames, its frames a second, the period of
 its refresh, the frames that it missed, as the gaps between two longer
 than a refresh and a half count them, and the compositor's delay of each
@@ -27,7 +28,9 @@ def main():
     trace, report, pid = sys.argv[1], sys.argv[2], sys.argv[3]
     motion = json.load(open(report))
     origin = xctrace_tables.start(trace)
-    first = (motion["began"] - origin + TRIM) * 1e9
+    # A motion that began before the recording did is measured from the
+    # recording's start.
+    first = max(motion["began"] - origin, 0.0) * 1e9 + TRIM * 1e9
     last = (motion["ended"] - origin - TRIM) * 1e9
     seconds = (last - first) / 1e9
     swaps = {}
