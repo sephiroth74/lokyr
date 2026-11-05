@@ -2051,8 +2051,9 @@ fn a_binding_of_the_config_sends_its_text_as_it_is() {
         "\"alt+backspace\" = { command = \"pane.send-text\", args = { text = \"\\u0017\" } }\n",
         "\"cmd+left\" = { command = \"pane.send-text\", args = { text = \"\\u0001\" } }\n",
     );
-    // More lines than the window's rows, for a scrollback.
-    let program = shell("seq 1 200; echo ready; stty raw -echo; cat -v");
+    // More lines than the window's rows, for a scrollback; `ready` once
+    // the terminal is raw, so that no key meets the line's editing.
+    let program = shell("seq 1 200; stty raw -echo; echo ready; cat -v");
     let (mut fake, mut app, window) = bound(keys, program);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     // A view up the scrollback comes back down, as typing brings it.

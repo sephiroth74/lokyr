@@ -401,8 +401,10 @@ fn a_turn_takes_the_workers_messages_for_its_time_at_most_each_in_turn() {
     served(&mut plugins, &mut app);
     let busy = |plugins: &Plugins, at: usize| matches!(&plugins.entries[at].runner, super::super::Runner::Worker(worker) if worker.is_busy());
     // A turn of no time takes one message, and wakes the main thread for
-    // those left.
+    // those left, from the first plugin's, whichever a slow turn of the
+    // activations' left first.
     plugins.serve_for = Some(Duration::ZERO);
+    plugins.serve_from = 0;
     for name in ["one", "one", "two"] {
         plugins
             .run(&format!("{name}.go"), Args::new(), &mut app.context())

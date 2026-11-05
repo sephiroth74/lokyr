@@ -153,10 +153,10 @@ pub struct Pane {
     /// The grid that the program was told last, through the PTY, and when,
     /// unless it was told only as it started.
     told: (Grid, Option<Instant>),
-    /// The grid that a live resize gave last, which the terminal takes as
-    /// the program learns of it, at [`RESIZE_PACE`], and at once as the
-    /// resize ends; `None` out of a live resize, or once the terminal took
-    /// it.
+    /// The grid that a resize gave last and that the program cannot be told
+    /// yet, within [`RESIZE_PACE`] of the last signal, of a live resize's
+    /// steps, its end and the others alike, which the terminal takes with
+    /// the program's signal; `None` once it took it.
     held: Option<Grid>,
     /// The slices of output that the session had parsed as the program last
     /// learnt of a new size, and when the screen stops waiting for more: the
@@ -1083,13 +1083,13 @@ mod tests {
             .collect()
     }
 
-    /// Waits until `pane`'s screen has `count` rows of `text`, for a few
-    /// seconds at most.
     /// The slices of output that `pane`'s session parsed.
     fn pane_slices(pane: &Pane) -> u64 {
         pane.session.as_ref().map_or(0, Session::slices)
     }
 
+    /// Waits until `pane`'s screen has `count` rows of `text`, for a few
+    /// seconds at most.
     fn wait_for(pane: &mut Pane, text: &str, count: usize) {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {

@@ -2923,8 +2923,9 @@ impl<B: Backend> App<B> {
     ) {
         match event {
             // A step of a live resize draws at once, so that the content
-            // follows the edge, but once a refresh, as the display's frames
-            // do: see `drew_within`.
+            // follows the edge, but not within half a refresh of the last
+            // frame, the display's frames not within a whole one: see
+            // `drew_within`.
             WindowEvent::Resized(size) | WindowEvent::ScaleChanged(size) => {
                 if self.drew_within(platform, window, STEP_SHARE) {
                     platform.request_frame(window);
@@ -2936,8 +2937,8 @@ impl<B: Backend> App<B> {
             // transaction, which moves the window's edge; its label of the
             // grid's size stays a moment after it ends.
             WindowEvent::LiveResize(resizing) => {
-                // Its end tells the programs their grids at once, which they
-                // learnt of only as it paused.
+                // Its end tells the programs their last grids, within the
+                // pace of their last signals, as its steps do.
                 if !resizing {
                     let shown = self.windows.get(&window).map(|state| state.window);
                     let now = Instant::now();
