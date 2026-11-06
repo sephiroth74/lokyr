@@ -2,15 +2,15 @@
 //! and a frame drawn from a display list.
 
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::time::{Duration, Instant};
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, Rect,
-    Renderer, Shape, Texture, TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, PictureId,
+    Rect, Renderer, Shape, Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -93,6 +93,14 @@ struct ShapeInstance {
     arc: [f32; 4],
 }
 
+/// A picture's rectangle, as the shaders take it.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PictureInstance {
+    position: [f32; 2],
+    size: [f32; 2],
+}
+
 /// A grid, as the shaders take it.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -116,8 +124,13 @@ pub struct MetalRenderer {
     lines: Pipeline,
     glyphs: Pipeline,
     shapes: Pipeline,
+    pictures: Pipeline,
     coverage: MetalTexture,
     color: MetalTexture,
+    /// The pictures that it holds, by their ids, and the last id that it
+    /// gave.
+    held: HashMap<u64, MetalTexture>,
+    last_picture: u64,
     /// The commands of the frames that the GPU may still draw, by their
     /// lists' frames, from the oldest.
     drawing: VecDeque<Drawing>,
@@ -173,8 +186,11 @@ impl MetalRenderer {
             lines: pipeline("line_vertex", "line_fragment")?,
             glyphs: pipeline("glyph_vertex", "glyph_fragment")?,
             shapes: pipeline("shape_vertex", "shape_fragment")?,
+            pictures: pipeline("picture_vertex", "picture_fragment")?,
             coverage: make_texture(&device, Texture::Coverage, coverage)?,
             color: make_texture(&device, Texture::Color, color)?,
+            held: HashMap::new(),
+            last_picture: 0,
             queue: gpu.queue.clone(),
             device,
             drawing: VecDeque::new(),
@@ -382,6 +398,54 @@ impl Renderer for MetalRenderer {
 
     fn forget_next_presented(&mut self) {
         self.on_presented = None;
+    }
+
+    /// Draws `list` into a texture of its own, of its smaller copies, each
+    /// half the one before, which the GPU makes after it, so that a picture
+    /// drawn much smaller keeps its text's strokes whole.
+    fn make_picture(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Error> {
+        let (width, height) = (width.max(1) as usize, height.max(1) as usize);
+        // SAFETY: a two-dimensional texture of a valid format and size.
+        let descriptor = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                MTLPixelFormat::BGRA8Unorm,
+                width,
+                height,
+                true,
+            )
+        };
+        descriptor.setUsage(MTLTextureUsage::RenderTarget | MTLTextureUsage::ShaderRead);
+        descriptor.setStorageMode(MTLStorageMode::Private);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&descriptor)
+            .ok_or(Error::Device("texture"))?;
+        let (commands, buffers) = self.encode(&texture, list)?;
+        let blit = commands
+            .blitCommandEncoder()
+            .ok_or(Error::Device("blit command encoder"))?;
+        blit.generateMipmapsForTexture(&texture);
+        blit.endEncoding();
+        commands.commit();
+        self.drawing.push_back(Drawing {
+            frame: list.frame,
+            commands,
+            buffers,
+            timed: false,
+        });
+        self.last_picture += 1;
+        self.held.insert(self.last_picture, texture);
+        Ok(Some(PictureId(self.last_picture)))
+    }
+
+    /// The frames that draw it keep its texture until the GPU is done.
+    fn drop_picture(&mut self, picture: PictureId) {
+        self.held.remove(&picture.0);
     }
 }
 
@@ -768,6 +832,7 @@ impl Frame<'_> {
                 self.glyphs(&instances);
             }
             Item::Cells(batch) => self.cells(batch),
+            Item::Picture { rect, picture } => self.picture(rect, *picture),
             Item::Shapes(shapes) => {
                 let instances: Vec<ShapeInstance> =
                     shapes.iter().flat_map(shape_instances).collect();
@@ -804,6 +869,35 @@ impl Frame<'_> {
                     QUAD,
                     rects.len(),
                 );
+        }
+    }
+
+    /// Draws `picture` into `rect`, sampled of its smaller copies as it
+    /// shrinks; nothing of one that the renderer does not hold.
+    fn picture(&self, rect: &Rect, picture: PictureId) {
+        let Some(texture) = self.renderer.held.get(&picture.0) else {
+            return;
+        };
+        let instance = PictureInstance {
+            position: [rect.x as f32, rect.y as f32],
+            size: [rect.width as f32, rect.height as f32],
+        };
+        self.encoder.setRenderPipelineState(&self.renderer.pictures);
+        // SAFETY: the bytes and the texture that the picture's shaders take,
+        // at their indices.
+        unsafe {
+            self.encoder.setVertexBytes_length_atIndex(
+                NonNull::from(&instance).cast(),
+                size_of::<PictureInstance>(),
+                0,
+            );
+            self.set_viewport();
+            self.encoder.setFragmentTexture_atIndex(Some(texture), 0);
+            self.encoder.drawPrimitives_vertexStart_vertexCount(
+                MTLPrimitiveType::TriangleStrip,
+                0,
+                QUAD,
+            );
         }
     }
 
@@ -1646,6 +1740,60 @@ mod tests {
         assert_eq!(times.frames, 2);
         assert!(times.longest > Duration::ZERO && times.total >= times.longest);
         assert_eq!(renderer.take_gpu_times(), GpuTimes::default());
+    }
+
+    #[test]
+    fn a_picture_shrinks_of_its_smaller_copies_and_goes_once_dropped() {
+        let Some((_, mut renderer)) = renderer() else {
+            return;
+        };
+        // White and black rows a pixel high, 64 by 64: drawn a quarter of
+        // its size, each pixel the mean of its rows, a gray, where a sample
+        // of the whole picture would take a row's white or black.
+        let rows: Vec<Item> = (0..32)
+            .map(|row| Item::Rect {
+                rect: Rect {
+                    x: 0,
+                    y: row * 2,
+                    width: 64,
+                    height: 1,
+                },
+                color: Color::WHITE,
+            })
+            .collect();
+        let striped = DisplayList {
+            frame: 1,
+            background: Color::from_rgb8(0, 0, 0),
+            items: rows,
+        };
+        let picture = renderer
+            .make_picture(&striped, 64, 64)
+            .unwrap()
+            .expect("a picture of Metal's");
+        let shown = DisplayList {
+            frame: 2,
+            background: Color::from_rgb8(255, 0, 0),
+            items: vec![Item::Picture {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 16,
+                    height: 16,
+                },
+                picture,
+            }],
+        };
+        let pixels = renderer.draw_offscreen(&shown, 16, 16).unwrap();
+        for pixel in pixels.chunks(4) {
+            assert!(
+                (100..=155).contains(&pixel[0]) && pixel[0] == pixel[1] && pixel[1] == pixel[2],
+                "{pixel:?}"
+            );
+        }
+        // Dropped, it draws nothing, the background alone.
+        renderer.drop_picture(picture);
+        let pixels = renderer.draw_offscreen(&shown, 16, 16).unwrap();
+        assert_eq!(&pixels[..4], [255, 0, 0, 255]);
     }
 
     #[test]

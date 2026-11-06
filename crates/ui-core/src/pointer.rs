@@ -450,6 +450,15 @@ impl Pointer {
         self.drag.as_ref().is_some_and(|drag| drag.started)
     }
 
+    /// Where the button of the drag under way went down, in pixels from
+    /// the tree's corner, as the node dragged was grabbed.
+    pub fn drag_start(&self) -> Option<(f32, f32)> {
+        self.drag
+            .as_ref()
+            .filter(|drag| drag.started)
+            .map(|drag| drag.start)
+    }
+
     /// The pointer at `at`: the hover's events.
     fn hover_at(&mut self, tree: &Tree, layout: &Layout, at: (f32, f32)) -> Vec<NodeEvent> {
         self.at = Some(at);

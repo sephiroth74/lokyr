@@ -23,7 +23,7 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, MOST_STATE,
-    PaneId, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
+    PaneId, ScreenPoint, Scroll, Side, TabId, TabInfo, Underline, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{Data, Event, Mods, Request, Response};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, ViewId};
@@ -1134,7 +1134,13 @@ fn workspace(world: &World) -> Scenario {
                         },
                         Response::Done,
                     ),
-                    (Request::TabToNewWindow(tab(0)), Response::Done),
+                    (
+                        Request::TabToNewWindow {
+                            tab: tab(0),
+                            at: Some(ScreenPoint { x: 40.0, y: 60.0 }),
+                        },
+                        Response::Done,
+                    ),
                 ],
                 posts: Vec::new(),
                 heard: vec![

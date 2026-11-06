@@ -403,12 +403,25 @@ pub enum Item {
     Glyphs(Vec<PlacedGlyph>),
     /// Shapes, each over those before it, its shadow under itself alone.
     Shapes(Vec<Shape>),
+    /// A picture that the renderer holds, filling the rectangle, scaled to
+    /// it smoothly, of its smaller copies where it shrinks.
+    Picture {
+        /// Where.
+        rect: Rect,
+        /// The picture.
+        picture: PictureId,
+    },
     /// The drawings that follow, up to the matching [`Item::PopClip`], keep
     /// within the rectangle, and within the clips that hold it.
     PushClip(Rect),
     /// The end of the latest clip.
     PopClip,
 }
+
+/// A picture that a renderer holds, which [`Renderer::make_picture`] drew
+/// once of a display list, and which lists draw as [`Item::Picture`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PictureId(pub u64);
 
 /// A window's frame: its background, and what is drawn over it, in order.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -500,6 +513,26 @@ pub trait Renderer {
     /// Forgets the call that [`Renderer::on_next_presented`] left, as a
     /// frame that drew nothing leaves it to no other target.
     fn forget_next_presented(&mut self) {}
+
+    /// Draws `list` once into a picture of its own, `width` by `height`
+    /// pixels, which lists then draw, scaled, as [`Item::Picture`], until
+    /// [`Renderer::drop_picture`] lets it go, as a drag's image draws a
+    /// tab's panes as they showed; `None` for a backend that keeps none,
+    /// whose lists then draw nothing of it.
+    fn make_picture(
+        &mut self,
+        list: &DisplayList,
+        width: u32,
+        height: u32,
+    ) -> Result<Option<PictureId>, Self::Error> {
+        let _ = (list, width, height);
+        Ok(None)
+    }
+
+    /// Lets `picture` go, once the frames that draw it are drawn.
+    fn drop_picture(&mut self, picture: PictureId) {
+        let _ = picture;
+    }
 }
 
 /// What a renderer draws a window's frames into, or a layer's of it.

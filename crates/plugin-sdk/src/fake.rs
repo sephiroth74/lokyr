@@ -44,7 +44,7 @@ use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     self, BarPlace, Binding, Color, DecorationLook, Direction, Layout, LineText, MOST_STATE,
-    PaneId, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{Call, Data, Effect, Event, Request, Response};
@@ -191,6 +191,9 @@ pub struct FakeHost {
     numbers: BTreeMap<WindowId, (Option<u32>, Option<String>)>,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
+    /// Where the plugin's moves of tabs to windows of their own put those
+    /// windows on the screens.
+    places: BTreeMap<WindowId, ScreenPoint>,
     /// The texts of the plugin's messages, of their arguments, as the
     /// host's catalogs would give them.
     messages: Vec<(String, BTreeMap<String, Data>, String)>,
@@ -238,6 +241,7 @@ impl FakeHost {
             windows: BTreeMap::new(),
             tabs: BTreeMap::new(),
             numbers: BTreeMap::new(),
+            places: BTreeMap::new(),
             keys: Vec::new(),
             messages: Vec::new(),
             bar_place: BarPlace::default(),
@@ -363,6 +367,12 @@ impl FakeHost {
     pub fn set_clipboard(&mut self, text: Option<&str>) -> &mut Self {
         self.clipboard = text.map(str::to_owned);
         self
+    }
+
+    /// Where a move of a tab to a window of its own put `window` on the
+    /// screens, the window of a tab that was alone too.
+    pub fn place(&self, window: WindowId) -> Option<ScreenPoint> {
+        self.places.get(&window).copied()
     }
 
     /// The clipboard's text.
@@ -754,7 +764,7 @@ impl FakeHost {
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
             Request::MoveTab { tab, window, index } => self.move_tab(*tab, *window, *index),
-            Request::TabToNewWindow(tab) => self.tab_to_new_window(*tab),
+            Request::TabToNewWindow { tab, at } => self.tab_to_new_window(*tab, *at),
             Request::PaneToNewTab {
                 pane,
                 window,
@@ -1034,19 +1044,24 @@ impl FakeHost {
     }
 
     /// Moves `tab` to a window of its own; a tab alone in its window stays.
-    fn tab_to_new_window(&mut self, tab: TabId) {
+    fn tab_to_new_window(&mut self, tab: TabId, at: Option<ScreenPoint>) {
         let Some(from) = self.tabs.get(&tab).map(|tab| tab.window) else {
             return;
         };
-        if self
-            .windows
-            .get(&from)
-            .is_none_or(|shown| shown.tabs.len() == 1)
-        {
+        let Some(shown) = self.windows.get(&from) else {
+            return;
+        };
+        if shown.tabs.len() == 1 {
+            if let Some(at) = at {
+                self.places.insert(from, at);
+            }
             return;
         }
         let left = self.detach_tab(tab);
         let window = self.window_for(tab);
+        if let Some(at) = at {
+            self.places.insert(window, at);
+        }
         self.changed(WorkspaceEvent::TabMoved {
             tab,
             from,
@@ -1122,7 +1137,7 @@ impl FakeHost {
             .get(&tab)
             .is_some_and(|tab| leaves(&tab.layout).len() == 1)
         {
-            self.tab_to_new_window(tab);
+            self.tab_to_new_window(tab, None);
             return;
         }
         self.detach_pane(pane, tab);
@@ -1660,7 +1675,7 @@ impl Calling<'_> {
             }
             Request::CloseTab { tab, .. }
             | Request::ActivateTab(tab)
-            | Request::TabToNewWindow(tab)
+            | Request::TabToNewWindow { tab, .. }
             | Request::Equalize(tab) => {
                 self.known_tab(*tab)?;
                 Response::Done
@@ -2119,6 +2134,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
     }
     if node.reorderable {
         out.push_str(" reorderable");
+    }
+    if let Some(tab) = node.carries {
+        let _ = write!(out, " carries=tab-{}", tab.0);
     }
     out.push('\n');
     if let Kind::List(list) = &node.kind {

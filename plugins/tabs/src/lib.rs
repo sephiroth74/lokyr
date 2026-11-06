@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{BarPlace, Color, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::host::{BarPlace, Color, ScreenPoint, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role, UiEvent, ViewId};
@@ -239,6 +239,16 @@ impl Plugin for Tabs {
             // A tab dragged to another place in its bar, which the bar's
             // next render shows.
             (UiEventKind::Reorder { index }, Some(tab)) => cx.move_tab(tab, window, *index),
+            // A tab dragged out of its bar, into another window's, which
+            // shows it, or out of every window, into one of its own under
+            // the pointer, its window moving there of a tab alone.
+            (UiEventKind::DropOnBar { window, index }, Some(tab)) => {
+                cx.move_tab(tab, *window, *index)?;
+                cx.activate_tab(tab)
+            }
+            (UiEventKind::DropOutside { x, y }, Some(tab)) => {
+                cx.tab_to_new_window_at(tab, ScreenPoint { x: *x, y: *y })
+            }
             (UiEventKind::DoubleClick, Some(tab)) => {
                 match cx.tabs(window)?.into_iter().find(|shown| shown.id == tab) {
                     Some(shown) => self.rename(cx, window, &shown, &Args::new()),

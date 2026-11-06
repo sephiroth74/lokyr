@@ -12,6 +12,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem::{Discriminant, discriminant};
 
+use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{Key, Kind, Layout, Length, Node, Role, Style};
 
 /// A node of the arena: its slot, and the slot's generation, which a node
@@ -101,6 +102,7 @@ struct Entry {
     style: Style,
     focusable: bool,
     reorderable: bool,
+    carries: Option<TabId>,
     tooltip: Option<String>,
     label: Option<String>,
     role: Option<Role>,
@@ -201,6 +203,14 @@ impl Tree {
         self.entry(id).is_some_and(|entry| entry.reorderable)
     }
 
+    /// The tab that `id`, a reorderable node, carries out of its bar as it
+    /// is dragged out, if it carries one.
+    pub fn carries(&self, id: NodeId) -> Option<TabId> {
+        self.entry(id)
+            .filter(|entry| entry.reorderable)
+            .and_then(|entry| entry.carries)
+    }
+
     /// The tooltip of `id`, if it has one.
     pub fn tooltip(&self, id: NodeId) -> Option<&str> {
         self.entry(id).and_then(|entry| entry.tooltip.as_deref())
@@ -282,6 +292,7 @@ impl Tree {
         if entry.style != new.style
             || entry.focusable != new.focusable
             || entry.reorderable != new.reorderable
+            || entry.carries != new.carries
             || entry.tooltip != new.tooltip
             || entry.label != new.label
             || entry.role != new.role
@@ -289,6 +300,7 @@ impl Tree {
             entry.style = new.style.clone();
             entry.focusable = new.focusable;
             entry.reorderable = new.reorderable;
+            entry.carries = new.carries;
             entry.tooltip.clone_from(&new.tooltip);
             entry.label.clone_from(&new.label);
             entry.role = new.role;
@@ -355,6 +367,7 @@ impl Tree {
             style: node.style.clone(),
             focusable: node.focusable,
             reorderable: node.reorderable,
+            carries: node.carries,
             tooltip: node.tooltip.clone(),
             label: node.label.clone(),
             role: node.role,
@@ -523,7 +536,13 @@ fn template(row: &Node, depth: usize) -> Result<(), Invalid> {
         row.kind,
         Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Spacer | Kind::Separator
     );
-    if !plain || row.key.is_some() || row.focusable || row.reorderable || row.tooltip.is_some() {
+    if !plain
+        || row.key.is_some()
+        || row.focusable
+        || row.reorderable
+        || row.carries.is_some()
+        || row.tooltip.is_some()
+    {
         return Err(Invalid::Template);
     }
     if !row.kind.has_children() && !row.children.is_empty() {
@@ -923,6 +942,7 @@ mod tests {
             Node::container(vec![Node::text("a").key("a")]),
             Node::container(vec![Node::text("a").tooltip("tip")]),
             Node::container(vec![]).focusable(),
+            Node::container(vec![Node::text("a")]).carries(TabId(1)),
         ] {
             assert_eq!(tree.update(&list(row, 3, None)), Err(Invalid::Template));
         }
@@ -1180,5 +1200,30 @@ mod tests {
         tree.update(&Node::container(vec![])).unwrap();
         assert_eq!(tree.by_key(&Key::from("a.close")), None);
         assert_eq!(tree.by_key(&Key::from("a")), None);
+    }
+
+    #[test]
+    fn a_node_carries_its_tab_out_of_its_bar_reorderable_alone() {
+        let mut tree = Tree::new();
+        let mut plain = Node::container(vec![]).key("plain");
+        plain.carries = Some(TabId(2));
+        let root = Node::container(vec![
+            Node::container(vec![]).key("tab").carries(TabId(1)),
+            plain,
+        ]);
+        tree.update(&root).expect("a valid tree");
+        let by = |tree: &Tree, key: &str| tree.by_key(&Key::from(key)).expect("the node");
+        let tab = by(&tree, "tab");
+        assert_eq!(tree.carries(tab), Some(TabId(1)));
+        assert!(tree.reorderable(tab));
+        assert_eq!(tree.carries(by(&tree, "plain")), None);
+        // A render of another tab restyles it.
+        let changes = tree
+            .update(&Node::container(vec![
+                Node::container(vec![]).key("tab").carries(TabId(3)),
+            ]))
+            .expect("a valid tree");
+        assert_eq!(tree.carries(tab), Some(TabId(3)));
+        assert!(changes.restyled.contains(&tab));
     }
 }

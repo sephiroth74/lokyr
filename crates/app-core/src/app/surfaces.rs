@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
+use lokyr_kernel::plugins::ui::{Slot, UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{Key as NodeKey, Kind};
 use lokyr_kernel::workspace::Workspace;
 use lokyr_platform_core::{
@@ -25,6 +25,7 @@ use lokyr_vt_core::input::{self as vt, KeyAction, Mods};
 
 use super::App;
 use super::chrome::{SlotView, ui_event};
+use super::tab_drag::{self, Dropping};
 use crate::drawing::Backend;
 use crate::keys;
 use crate::window::Window;
@@ -75,11 +76,13 @@ impl<B: Backend> App<B> {
         }
         let view = target.and_then(|id| view_mut(&mut state.chrome, id));
         let taken = view.is_some();
+        let mut carrying = false;
         if let Some(view) = view {
             let shown = view.surface.tooltip.shown(&view.surface.tree).is_some();
             let (moved, _) = view.surface.moved(local(view, at), &mut drawing.font, now);
             changed |= shown != view.surface.tooltip.shown(&view.surface.tree).is_some();
             events.extend(told(view, moved));
+            carrying = view.view.slot() == Some(Slot::TabBar) && view.surface.carried().is_some();
         }
         changed |= !events.is_empty();
         self.ui_events.extend(events);
@@ -87,6 +90,10 @@ impl<B: Backend> App<B> {
             platform.request_frame(window);
         }
         self.wake_for_tooltips(platform);
+        // A tab dragged out of its bar, or back.
+        if carrying || self.tab_dragged_of(window) {
+            self.drag_tab(platform, window, position);
+        }
         taken
     }
 
@@ -187,6 +194,17 @@ impl<B: Backend> App<B> {
             _ => return true,
         };
         let before = state.focus.target();
+        // A tab dragged out of its bar drops where the pointer goes up.
+        let dropping = if pressed {
+            None
+        } else {
+            self.tab_drop(platform, window, position)
+        };
+        let back = matches!(dropping, Some(Dropping::Back));
+        let forward = match dropping {
+            Some(Dropping::Event(_, forward)) => forward,
+            _ => None,
+        };
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return true;
@@ -224,12 +242,29 @@ impl<B: Backend> App<B> {
             let Some(view) = view_mut(&mut state.chrome, id) else {
                 return true;
             };
-            let released = view
-                .surface
-                .released(local(view, at), (button, clicks), Instant::now());
+            let now = Instant::now();
+            let released = match dropping {
+                Some(Dropping::Back) => view.surface.cancel(now),
+                Some(Dropping::Event(kind, _)) => {
+                    let mut released =
+                        view.surface
+                            .released(local(view, at), (button, clicks), now);
+                    tab_drag::before_end(&mut released, kind);
+                    released
+                }
+                None => view
+                    .surface
+                    .released(local(view, at), (button, clicks), now),
+            };
             events.extend(told(view, released));
         }
         self.ui_events.extend(events);
+        if !pressed && self.tab_dragged_of(window) {
+            self.end_tab_drag(platform, !back);
+        }
+        if let Some(forward) = forward {
+            platform.focus_window(forward);
+        }
         if ended {
             platform.end_composition(window);
         }
@@ -313,6 +348,9 @@ impl<B: Backend> App<B> {
                 if let Some(events) = cancelled {
                     self.ui_events.extend(events);
                     platform.request_frame(window);
+                    if self.tab_dragged_of(window) {
+                        self.end_tab_drag(platform, false);
+                    }
                     continue;
                 }
             }
@@ -363,6 +401,9 @@ impl<B: Backend> App<B> {
                         view.surface.fields.select_all(&view.surface.tree, node);
                     }
                     self.ui_events.extend(events);
+                    if self.tab_dragged_of(window) {
+                        self.end_tab_drag(platform, false);
+                    }
                     self.focus_moved(platform, window, before);
                     // Escape in a panel that asks so closes it, its focus
                     // gone back to where it took it from.
@@ -512,11 +553,15 @@ impl<B: Backend> App<B> {
             view.surface.tooltip.dismiss();
         }
         state.captured = None;
-        // A node dragged among its siblings slides back.
+        // A node dragged among its siblings slides back, and a tab dragged
+        // out of its bar.
         if !events.is_empty() {
             platform.request_frame(window);
         }
         self.ui_events.extend(events);
+        if self.tab_dragged_of(window) {
+            self.end_tab_drag(platform, false);
+        }
         self.wake_for_tooltips(platform);
     }
 

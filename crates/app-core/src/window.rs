@@ -213,6 +213,10 @@ pub(crate) struct Window<B: Backend> {
     /// The top of the room that its panes share, in pixels, below its
     /// titlebar and its tab bar, as its last layout placed it.
     pub(crate) panes_top: u32,
+    /// Where its panes lie, within the padding, as its last frame laid
+    /// them out, in pixels from the content's corner, which a hidden tab's
+    /// panes take too.
+    pub(crate) panes_room: Option<lokyr_render_core::Rect>,
     /// The indeterminate progresses of its slots' views that the platform
     /// moves, and the moment from which their sweeps run.
     pub(crate) sweeps: (Vec<Sweep>, Instant),
@@ -354,6 +358,7 @@ impl<B: Backend> Window<B> {
             titlebar: Titlebar::default(),
             accessory: None,
             panes_top: 0,
+            panes_room: None,
             sweeps: (Vec::new(), now),
             focus: Focus::new(),
             keyboard: None,

@@ -24,6 +24,16 @@ pub struct TabId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PaneId(pub u64);
 
+/// A point on the screens, in points, from the top left corner of the menu
+/// bar's screen, rightwards and downwards, as the screens lie on one plane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScreenPoint {
+    /// From the left, rightwards.
+    pub x: f64,
+    /// From the top, downwards.
+    pub y: f64,
+}
+
 /// A window, as a read of the windows gives it: its tabs, in their order,
 /// the one that it shows, and its number with the keys that select it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

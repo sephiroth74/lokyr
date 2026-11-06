@@ -700,7 +700,7 @@ fn kind(request: &Request) -> usize {
         Request::ActivateTab(_) => 37,
         Request::FocusPane(_) => 38,
         Request::MoveTab { .. } => 39,
-        Request::TabToNewWindow(_) => 40,
+        Request::TabToNewWindow { .. } => 40,
         Request::PaneToNewTab { .. } => 41,
         Request::PaneToNewWindow(_) => 42,
         Request::ResizePane { .. } => 43,

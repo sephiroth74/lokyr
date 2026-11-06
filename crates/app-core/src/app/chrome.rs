@@ -100,7 +100,7 @@ impl SlotView {
     }
 
     /// Whether it has a tree to show.
-    fn shows(&self) -> bool {
+    pub(crate) fn shows(&self) -> bool {
         self.surface.tree.root().is_some()
     }
 

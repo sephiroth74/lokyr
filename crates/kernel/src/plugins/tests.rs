@@ -2880,3 +2880,63 @@ fn a_look_leaves_the_panels_as_they_were() {
         .unwrap();
     assert!(plugins.views().is_empty(), "{:?}", plugins.views());
 }
+
+#[test]
+fn a_tab_moved_to_a_window_of_its_own_at_a_place_asks_the_app_to_put_the_window_there() {
+    use lokyr_plugin_sdk::host::{ScreenPoint, TabId as Tab};
+
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let first = app.workspace.window(window).unwrap().active_tab();
+    let mut plugins = Plugins::new();
+    let at = ScreenPoint { x: 300.0, y: 120.0 };
+    plugins
+        .add(
+            "ws",
+            scripted(
+                |cx| cx.register_command(command("ws.out")),
+                move |cx, _, args| {
+                    let tab = match args.get("tab") {
+                        Some(lokyr_plugin_sdk::command::Value::Integer(tab)) => Tab(*tab as u64),
+                        _ => {
+                            let window = cx.focused_window().unwrap();
+                            cx.new_tab(window, None)?.0
+                        }
+                    };
+                    cx.tab_to_new_window_at(tab, at)
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // A new tab of the window, out to a window of its own.
+    plugins
+        .run("ws.out", Args::new(), &mut app.context())
+        .unwrap();
+    let requests = plugins.take_requests();
+    let [
+        Request::PlaceWindow {
+            window: placed,
+            at: there,
+        },
+    ] = requests[..]
+    else {
+        panic!("a place: {requests:?}");
+    };
+    assert_ne!(placed, window);
+    assert_eq!(there, at);
+    assert_eq!(app.workspace.window(placed).unwrap().tabs().len(), 1);
+    // The first, alone in its window now, stays, its window put there.
+    let mut args = Args::new();
+    args.insert(
+        "tab".to_owned(),
+        lokyr_plugin_sdk::command::Value::Integer(first.get() as i64),
+    );
+    plugins.run("ws.out", args, &mut app.context()).unwrap();
+    let requests = plugins.take_requests();
+    assert!(
+        matches!(requests[..], [Request::PlaceWindow { window: placed, .. }] if placed == window),
+        "{requests:?}"
+    );
+    assert_eq!(app.workspace.tab(first).unwrap().window(), window);
+}

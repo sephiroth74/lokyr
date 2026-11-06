@@ -272,7 +272,10 @@ fn a_tab_moves_out_to_a_window_of_its_own_but_a_window_s_last() {
     let (mut host, mut plugin) = host(&[1, 1], 2);
     assert_eq!(
         run(&mut host, &mut plugin, DETACH, Args::new()),
-        [Request::TabToNewWindow(TabId(2))]
+        [Request::TabToNewWindow {
+            tab: TabId(2),
+            at: None
+        }]
     );
     let (mut host, mut plugin) = self::host(&[1], 1);
     assert_eq!(run(&mut host, &mut plugin, DETACH, Args::new()), []);
@@ -494,6 +497,9 @@ fn a_tab_dropped_at_another_place_of_its_bar_moves_there() {
             while let Some(node) = walk.pop() {
                 if node.reorderable {
                     reorderable.extend(node.key.as_ref().map(|key| key.0.clone()));
+                    // Each carries its tab out of the bar.
+                    let carried = node.carries.map(|tab| format!("tab-{}", tab.0));
+                    assert_eq!(carried, node.key.as_ref().map(|key| key.0.clone()));
                 }
                 walk.extend(node.children.iter().rev());
             }
@@ -520,6 +526,62 @@ fn a_tab_dropped_at_another_place_of_its_bar_moves_there() {
             tab: TabId(3),
             window: WINDOW,
             index: 0
+        }]
+    );
+}
+
+#[test]
+fn a_tab_dropped_out_of_its_bar_moves_to_another_window_or_to_one_of_its_own() {
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    // Another window, of a tab of its own.
+    let other = WindowId(7);
+    let pane = host.pane(PaneId(9));
+    pane.window = other;
+    pane.tab = TabId(9);
+    let view = ViewId::TabBar(WINDOW);
+    host.render(&mut plugin, &view)
+        .expect("a bar of three tabs");
+    host.take_done();
+    let drop = |host: &mut FakeHost, plugin: &mut Tabs, kind| {
+        host.ui_event(
+            plugin,
+            &UiEvent {
+                view: view.clone(),
+                key: "tab-2".into(),
+                kind,
+            },
+        )
+        .unwrap();
+        host.take_done()
+    };
+    assert_eq!(
+        drop(
+            &mut host,
+            &mut plugin,
+            UiEventKind::DropOnBar {
+                window: other,
+                index: 1
+            }
+        ),
+        [
+            Request::MoveTab {
+                tab: TabId(2),
+                window: other,
+                index: 1
+            },
+            Request::ActivateTab(TabId(2))
+        ]
+    );
+    let at = ScreenPoint { x: 300.0, y: 140.0 };
+    assert_eq!(
+        drop(
+            &mut host,
+            &mut plugin,
+            UiEventKind::DropOutside { x: at.x, y: at.y }
+        ),
+        [Request::TabToNewWindow {
+            tab: TabId(2),
+            at: Some(at)
         }]
     );
 }

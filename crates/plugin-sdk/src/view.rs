@@ -20,6 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::host::{TabId, WindowId};
+
 /// A node's key, unique in its whole tree: what keeps the node, and the
 /// state that the host keeps of it, from one render to the next, and what
 /// its events tell it by.
@@ -72,6 +74,17 @@ pub struct Node {
     /// key alone, as the host follows the drag by it.
     #[serde(default)]
     pub reorderable: bool,
+    /// The tab that it carries, a reorderable node's, as a tab bar's tab:
+    /// dragged across its parent past a margin, or out of its window, it
+    /// leaves its siblings, which close its room, and the host shows the
+    /// tab's panes as they showed under the pointer, its window showing
+    /// another of its tabs meanwhile; over the bar of another window, the
+    /// nodes that carry tabs there open a room for it. A drop there gives
+    /// it a `drop-on-bar`, outside every window of the app a
+    /// `drop-outside`, before its drag's end, of which its plugin makes the
+    /// tab's move; Escape, or a drop elsewhere, puts it back.
+    #[serde(default)]
+    pub carries: Option<TabId>,
     /// What a tooltip tells of it, as the pointer rests over it: a node of
     /// a key alone, as the host follows the pointer by it.
     #[serde(default)]
@@ -630,6 +643,27 @@ pub enum UiEventKind {
         /// Its index among its reorderable siblings, itself among them.
         index: usize,
     },
+    /// A node that carries a tab was dragged out of its bar and dropped on
+    /// another window's, before its drag's end: the window, and the tab's
+    /// index among the nodes that carry tabs there, from 0, where the room
+    /// that they opened for it was, which the tab's move takes.
+    DropOnBar {
+        /// The window.
+        window: WindowId,
+        /// The tab's index among the window's.
+        index: usize,
+    },
+    /// A node that carries a tab was dragged out of its bar and dropped
+    /// outside every window of the app, before its drag's end: where a
+    /// window of the tab alone puts its content's top left corner on the
+    /// screens, in points from the menu bar's screen's top left corner, so
+    /// that the tab shows under the pointer, which the tab's move takes.
+    DropOutside {
+        /// From the left, rightwards.
+        x: f64,
+        /// From the top, downwards.
+        y: f64,
+    },
     /// A wheel or a trackpad scrolled over it, `x` and `y` in points, a
     /// positive `y` towards the content above, as the system's natural
     /// scrolling has it.
@@ -848,6 +882,7 @@ impl Node {
             style: Style::default(),
             focusable: false,
             reorderable: false,
+            carries: None,
             tooltip: None,
             label: None,
             role: None,
@@ -995,6 +1030,15 @@ impl Node {
     #[must_use]
     pub fn reorderable(mut self) -> Self {
         self.reorderable = true;
+        self
+    }
+
+    /// The node, reorderable, carrying `tab` out of its bar as it is
+    /// dragged out.
+    #[must_use]
+    pub fn carries(mut self, tab: TabId) -> Self {
+        self.reorderable = true;
+        self.carries = Some(tab);
         self
     }
 
@@ -1238,6 +1282,11 @@ mod tests {
             UiEventKind::DoubleClick,
             UiEventKind::DragMove { x: 12.0, y: -1.5 },
             UiEventKind::Reorder { index: 2 },
+            UiEventKind::DropOnBar {
+                window: WindowId(3),
+                index: 1,
+            },
+            UiEventKind::DropOutside { x: 640.0, y: -20.5 },
             UiEventKind::SetValue {
                 value: "main".to_owned(),
             },
@@ -1262,6 +1311,8 @@ mod tests {
             concat!(
                 r#"[{"kind":"double-click"},{"kind":"drag-move","x":12.0,"y":-1.5},"#,
                 r#"{"kind":"reorder","index":2},"#,
+                r#"{"kind":"drop-on-bar","window":3,"index":1},"#,
+                r#"{"kind":"drop-outside","x":640.0,"y":-20.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main"},{"kind":"toggle","on":true},"#,
                 r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
@@ -1272,5 +1323,18 @@ mod tests {
             serde_json::from_str::<Vec<UiEventKind>>(&json).unwrap(),
             events
         );
+    }
+
+    #[test]
+    fn a_node_that_carries_a_tab_is_reorderable_and_crosses_of_the_tab_s_id() {
+        let tab = Node::container(vec![]).key("tab-4").carries(TabId(4));
+        assert!(tab.reorderable);
+        let json = serde_json::to_value(&tab).unwrap();
+        assert_eq!(json["carries"], serde_json::json!(4));
+        assert_eq!(serde_json::from_value::<Node>(json).unwrap(), tab);
+        // A node of no `carries` carries none.
+        let mut plain = serde_json::to_value(Node::container(vec![]).key("x")).unwrap();
+        plain.as_object_mut().unwrap().remove("carries");
+        assert_eq!(serde_json::from_value::<Node>(plain).unwrap().carries, None);
     }
 }

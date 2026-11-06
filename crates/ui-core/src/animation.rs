@@ -307,6 +307,10 @@ impl Animations {
     /// The opacity that the node of `key` shows at `now`, as it fades; its
     /// style's, `own`, without a fade.
     pub fn opacity(&self, key: &Key, own: f32, now: Instant) -> f32 {
+        // A node dragged out of its parent's room shows nowhere.
+        if self.reorder.hidden(key) {
+            return 0.0;
+        }
         self.nodes
             .get(key)
             .map_or(own, |animated| animated.shown_opacity(now))

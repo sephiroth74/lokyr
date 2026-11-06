@@ -27,7 +27,7 @@ use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, Line, LineText, PaneId,
-    Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    ScreenPoint, Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -318,8 +318,18 @@ pub enum Request {
         /// Its place among the window's tabs, from the first.
         index: usize,
     },
-    /// Moves a tab out of its window into a window of its own.
-    TabToNewWindow(TabId),
+    /// Moves a tab out of its window into a window of its own, whose
+    /// content's top left corner goes at `at` on the screens, as a tab
+    /// dropped outside every window, or where the platform places a new
+    /// window without it; a tab alone in its window stays there, its
+    /// window moving to `at`.
+    TabToNewWindow {
+        /// The tab.
+        tab: TabId,
+        /// Where its window goes.
+        #[serde(default)]
+        at: Option<ScreenPoint>,
+    },
     /// Moves a pane out of its tab into a tab of its own, at `index` of a
     /// window's tabs, or at their end past them; a pane alone in its tab
     /// moves with it.
@@ -494,7 +504,7 @@ impl Request {
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
-            | Self::TabToNewWindow(_)
+            | Self::TabToNewWindow { .. }
             | Self::PaneToNewTab { .. }
             | Self::PaneToNewWindow(_)
             | Self::ResizePane { .. }
@@ -556,7 +566,7 @@ impl Request {
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
-            | Self::TabToNewWindow(_)
+            | Self::TabToNewWindow { .. }
             | Self::PaneToNewTab { .. }
             | Self::PaneToNewWindow(_)
             | Self::ResizePane { .. }

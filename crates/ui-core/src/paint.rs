@@ -1039,7 +1039,7 @@ fn moved(item: &mut Item, (dx, dy): (i32, i32), opacity: f32) {
                 moved_shape(shape, (dx, dy), opacity);
             }
         }
-        Item::PushClip(rect) => {
+        Item::PushClip(rect) | Item::Picture { rect, .. } => {
             rect.x = rect.x.saturating_add(dx);
             rect.y = rect.y.saturating_add(dy);
         }

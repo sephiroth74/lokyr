@@ -7,6 +7,12 @@
 //! the new order, whose layout puts them there; a render that keeps the
 //! order, or none within a moment, slides them back, as Escape does at
 //! once.
+//!
+//! A node that carries a tab leaves its siblings as it is dragged out of
+//! its bar, which close its room, and comes back as the pointer does; the
+//! nodes that carry tabs in another surface, as the bar of another window,
+//! open a room for it under the pointer, which a drop keeps until their
+//! plugin's render of the tab among them.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -47,6 +53,28 @@ pub struct Reorder {
     /// The node of the last drag, which shows over its siblings until its
     /// slide to its place ends.
     last: Option<Key>,
+    /// The room that the nodes that carry tabs open for one dragged in
+    /// from another surface.
+    room: Option<Room>,
+}
+
+/// A room that a parent's nodes that carry tabs open for a node dragged in
+/// from another surface, sliding aside from `index` on; or that a drop
+/// keeps until their plugin's render.
+#[derive(Debug)]
+struct Room {
+    parent: NodeId,
+    /// Their places, of the last layout.
+    slots: Vec<Slot>,
+    /// Where the node would drop.
+    index: usize,
+    /// How far they slide, a node's size and the gap after it, in points.
+    size: f32,
+    /// Its drop, when and of which revision of the tree, waiting for the
+    /// plugin's render.
+    dropped: Option<(Instant, u64)>,
+    /// The tree's revision whose layout `slots` are of.
+    revision: u64,
 }
 
 /// A drag under way, or dropped and waiting for its plugin's render.
@@ -79,6 +107,10 @@ struct Lift {
     dropped: Option<(Instant, u64)>,
     /// The tree's revision whose layout `slots` are of.
     revision: u64,
+    /// Whether it left its parent's room, as a node that carries a tab
+    /// dragged out of its bar: it shows nowhere, and its siblings after it
+    /// close its room.
+    out: bool,
 }
 
 /// A reorderable node's place along the axis, in points.
@@ -164,6 +196,7 @@ impl Reorder {
             tick: None,
             dropped: None,
             revision: tree.revision(),
+            out: false,
         });
         true
     }
@@ -176,7 +209,185 @@ impl Reorder {
             return;
         };
         lift.moved = if across { x } else { y };
-        self.follow(layout, now);
+        if !lift.out {
+            self.follow(layout, now);
+        }
+    }
+
+    /// The node dragged left its parent's room, `out`, as a node that
+    /// carries a tab dragged out of its bar, or came back into it, at
+    /// `now`: out, it shows nowhere, and its siblings after it slide into
+    /// its room; back, it follows the pointer among them again. Whether it
+    /// changed.
+    pub fn carry_out(&mut self, out: bool, layout: &Layout, now: Instant) -> bool {
+        let Some(lift) = self
+            .lift
+            .as_mut()
+            .filter(|lift| lift.dropped.is_none() && lift.out != out)
+        else {
+            return false;
+        };
+        lift.out = out;
+        if out {
+            lift.shown = 0.0;
+            lift.tick = None;
+            self.close_lift(now);
+        } else {
+            self.follow(layout, now);
+        }
+        true
+    }
+
+    /// Whether the node dragged left its parent's room, its drag under way,
+    /// or dropped there and waiting for its plugin's render.
+    pub fn out(&self) -> bool {
+        self.lift.as_ref().is_some_and(|lift| lift.out)
+    }
+
+    /// Whether the node of `key` shows nowhere, dragged out of its
+    /// parent's room.
+    pub fn hidden(&self, key: &Key) -> bool {
+        self.lift
+            .as_ref()
+            .is_some_and(|lift| lift.out && &lift.key == key)
+    }
+
+    /// The siblings after the node dragged out slide into its room, at
+    /// `now`.
+    fn close_lift(&mut self, now: Instant) {
+        let Some(lift) = &self.lift else {
+            return;
+        };
+        let from = lift.from;
+        let step = step(&lift.slots, from);
+        let wanted: Vec<(Key, f32)> = lift
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|&(at, _)| at != from)
+            .map(|(at, slot)| (slot.key.clone(), if at > from { -step } else { 0.0 }))
+            .collect();
+        self.slide_to(wanted, now);
+    }
+
+    /// The nodes that carry tabs open a room under the pointer, at `at`, in
+    /// pixels from the tree's corner, for one dragged in from another
+    /// surface, at `now`, sliding aside from its place on: its index among
+    /// them; `None` where the tree has none, or while a drop waits.
+    pub fn open_room(
+        &mut self,
+        tree: &Tree,
+        layout: &Layout,
+        at: (f32, f32),
+        now: Instant,
+    ) -> Option<usize> {
+        if self
+            .room
+            .as_ref()
+            .is_some_and(|room| room.dropped.is_some())
+        {
+            return None;
+        }
+        let parent = carrying(tree)?;
+        let across = tree
+            .layout(parent)
+            .is_none_or(|layout| layout.direction == Direction::Row);
+        let slots = slots(tree, layout, parent, across);
+        let first = slots.first()?;
+        let size = first.size + slots.get(1).map_or(0.0, |next| next.start - first.end());
+        let along = if across { at.0 } else { at.1 };
+        let index = slots
+            .iter()
+            .filter(|slot| {
+                tree.by_key(&slot.key)
+                    .and_then(|id| layout.frame(tree, id))
+                    .is_some_and(|frame| {
+                        let (start, length) = if across {
+                            (frame.x, frame.width)
+                        } else {
+                            (frame.y, frame.height)
+                        };
+                        start + length / 2.0 < along
+                    })
+            })
+            .count();
+        if self
+            .room
+            .as_ref()
+            .is_some_and(|room| room.parent == parent && room.index == index)
+        {
+            return Some(index);
+        }
+        self.across = across;
+        let wanted: Vec<(Key, f32)> = slots
+            .iter()
+            .enumerate()
+            .map(|(at, slot)| (slot.key.clone(), if at >= index { size } else { 0.0 }))
+            .collect();
+        self.room = Some(Room {
+            parent,
+            slots,
+            index,
+            size,
+            dropped: None,
+            revision: tree.revision(),
+        });
+        self.slide_to(wanted, now);
+        Some(index)
+    }
+
+    /// The room for a node dragged in closes, at `now`, as the pointer
+    /// leaves, its nodes sliding back; whether one was open.
+    pub fn close_room(&mut self, now: Instant) -> bool {
+        let Some(room) = self.room.take_if(|room| room.dropped.is_none()) else {
+            return false;
+        };
+        let wanted: Vec<(Key, f32)> = room
+            .slots
+            .iter()
+            .map(|slot| (slot.key.clone(), 0.0))
+            .collect();
+        self.slide_to(wanted, now);
+        true
+    }
+
+    /// The node dragged in dropped in the room, at `now`, of `tree`'s
+    /// revision: the room stays until the plugin's render of the node
+    /// among the others, or none within a moment; its index among them.
+    pub fn drop_room(&mut self, revision: u64, now: Instant) -> Option<usize> {
+        let room = self.room.as_mut().filter(|room| room.dropped.is_none())?;
+        room.dropped = Some((now, revision));
+        Some(room.index)
+    }
+
+    /// The index of the room for a node dragged in, while it is open.
+    pub fn room(&self) -> Option<usize> {
+        self.room
+            .as_ref()
+            .filter(|room| room.dropped.is_none())
+            .map(|room| room.index)
+    }
+
+    /// Slides each node of `wanted`'s keys to its place there, at `now`,
+    /// from where it shows, at once where the system reduces motion.
+    fn slide_to(&mut self, wanted: Vec<(Key, f32)>, now: Instant) {
+        for (key, wanted) in wanted {
+            let shown = self.slides.get(&key).map_or(0.0, |slide| slide.at(now));
+            match self.slides.get(&key) {
+                Some(slide) if slide.to == wanted => {}
+                None if wanted == 0.0 => {}
+                _ => {
+                    self.slides.insert(
+                        key,
+                        Slide {
+                            from: if self.reduced { wanted } else { shown },
+                            to: wanted,
+                            start: now,
+                        },
+                    );
+                }
+            }
+        }
     }
 
     /// The node dropped where it is, at `now`, of `tree`'s revision: it
@@ -185,6 +396,12 @@ impl Reorder {
     pub fn drop(&mut self, revision: u64, now: Instant) -> Option<usize> {
         let reduced = self.reduced;
         let lift = self.lift.as_mut().filter(|lift| lift.dropped.is_none())?;
+        // Out of its parent's room, it waits for its plugin's render of its
+        // move, its siblings closing its room meanwhile.
+        if lift.out {
+            lift.dropped = Some((now, revision));
+            return None;
+        }
         let (from, to) = (lift.from, lift.to);
         // At its own place, it slides back, of no render to wait for.
         if to == from {
@@ -283,6 +500,10 @@ impl Reorder {
                 .lift
                 .as_ref()
                 .is_some_and(|lift| lift.tick.is_some() || lift.dropped.is_some())
+            || self
+                .room
+                .as_ref()
+                .is_some_and(|room| room.dropped.is_some())
     }
 
     /// At each frame, at `now`, of the last layout: the scroll area around
@@ -293,6 +514,10 @@ impl Reorder {
         let Some(lift) = self.lift.as_mut().filter(|lift| lift.dropped.is_none()) else {
             return;
         };
+        if lift.out {
+            lift.tick = None;
+            return;
+        }
         let parent = lift.parent;
         let scale = layout.scale();
         let (Some(area), true) = (
@@ -342,6 +567,65 @@ impl Reorder {
         self.reduced = reduced;
         self.slides
             .retain(|_, slide| !slide.ended(now) || slide.to != 0.0);
+        let mut folded = self.room_laid_out(tree, layout, now);
+        folded.extend(self.lift_laid_out(tree, layout, now));
+        folded
+    }
+
+    /// The room for a node dragged in takes the places of a new render; a
+    /// drop takes the plugin's render of the node among the others, or
+    /// none within a moment, the others sliding from where they showed to
+    /// their places: their keys.
+    fn room_laid_out(&mut self, tree: &Tree, layout: &Layout, now: Instant) -> Vec<Key> {
+        let Some(room) = &self.room else {
+            return Vec::new();
+        };
+        if tree.revision() == room.revision && room.dropped.is_none() {
+            return Vec::new();
+        }
+        let across = self.across;
+        let rendered = if tree.kind(room.parent).is_some() {
+            slots(tree, layout, room.parent, across)
+        } else {
+            Vec::new()
+        };
+        match room.dropped {
+            None => {
+                // A new render of the bar under the room: its places anew.
+                let (index, size) = (room.index, room.size);
+                let wanted: Vec<(Key, f32)> = rendered
+                    .iter()
+                    .enumerate()
+                    .map(|(at, slot)| (slot.key.clone(), if at >= index { size } else { 0.0 }))
+                    .collect();
+                if let Some(room) = self.room.as_mut() {
+                    room.slots = rendered;
+                    room.revision = tree.revision();
+                }
+                self.slide_to(wanted, now);
+                Vec::new()
+            }
+            Some((since, revision)) => {
+                let joined = revision != tree.revision()
+                    && rendered
+                        .iter()
+                        .map(|slot| &slot.key)
+                        .ne(room.slots.iter().map(|slot| &slot.key));
+                if !joined && now.saturating_duration_since(since) < WAIT {
+                    return Vec::new();
+                }
+                let Some(room) = self.room.take() else {
+                    return Vec::new();
+                };
+                self.fold_slots(&room.slots, &rendered, now)
+            }
+        }
+    }
+
+    /// The drag under way takes the places of a new render; a drop takes
+    /// its plugin's render of a new order, or none within a moment: the
+    /// keys of the nodes that slide from where they showed.
+    fn lift_laid_out(&mut self, tree: &Tree, layout: &Layout, now: Instant) -> Vec<Key> {
         let Some(lift) = &self.lift else {
             return Vec::new();
         };
@@ -362,7 +646,11 @@ impl Reorder {
                     Some(from) => {
                         lift.slots = slots;
                         lift.from = from;
-                        self.follow(layout, now);
+                        if lift.out {
+                            self.close_lift(now);
+                        } else {
+                            self.follow(layout, now);
+                        }
                     }
                     None => self.lift = None,
                 }
@@ -390,8 +678,15 @@ impl Reorder {
             return Vec::new();
         };
         let rendered = slots(tree, layout, lift.parent, self.across);
+        self.fold_slots(&lift.slots, &rendered, now)
+    }
+
+    /// The nodes of `slots`, of an earlier layout, slide from where they
+    /// show at `now` to their places of `rendered`, of the last: their
+    /// keys; those of no place there go.
+    fn fold_slots(&mut self, slots: &[Slot], rendered: &[Slot], now: Instant) -> Vec<Key> {
         let mut folded = Vec::new();
-        for slot in &lift.slots {
+        for slot in slots {
             let shown = slot.start
                 + self
                     .slides
@@ -422,7 +717,6 @@ impl Reorder {
     /// The node dragged under the pointer, within its siblings' room, at
     /// `now`: where it would drop, and its siblings' slides out of its way.
     fn follow(&mut self, layout: &Layout, now: Instant) {
-        let reduced = self.reduced;
         let Some(lift) = self.lift.as_mut() else {
             return;
         };
@@ -462,33 +756,48 @@ impl Reorder {
         };
         let step = size + gap;
         let to = lift.to;
-        for (at, slot) in lift.slots.iter().enumerate() {
-            let wanted = match at {
-                _ if at == from => continue,
-                _ if from < at && at <= to => -step,
-                _ if to <= at && at < from => step,
-                _ => 0.0,
-            };
-            let shown = self
-                .slides
-                .get(&slot.key)
-                .map_or(0.0, |slide| slide.at(now));
-            match self.slides.get(&slot.key) {
-                Some(slide) if slide.to == wanted => {}
-                None if wanted == 0.0 => {}
-                _ => {
-                    self.slides.insert(
-                        slot.key.clone(),
-                        Slide {
-                            from: if reduced { wanted } else { shown },
-                            to: wanted,
-                            start: now,
-                        },
-                    );
-                }
-            }
-        }
+        let wanted: Vec<(Key, f32)> = lift
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|&(at, _)| at != from)
+            .map(|(at, slot)| {
+                let wanted = match at {
+                    _ if from < at && at <= to => -step,
+                    _ if to <= at && at < from => step,
+                    _ => 0.0,
+                };
+                (slot.key.clone(), wanted)
+            })
+            .collect();
+        self.slide_to(wanted, now);
     }
+}
+
+/// How far the siblings after the node at `from` of `slots` slide to take
+/// its room: its size and the gap after it, or before it at the end.
+fn step(slots: &[Slot], from: usize) -> f32 {
+    let size = slots.get(from).map_or(0.0, |slot| slot.size);
+    let gap = match (slots.get(from + 1), from.checked_sub(1)) {
+        (Some(next), _) => next.start - slots[from].end(),
+        (None, Some(before)) => slots[from].start - slots[before].end(),
+        (None, None) => 0.0,
+    };
+    size + gap
+}
+
+/// The first node of `tree`, from its root in its order, whose children
+/// carry tabs, as a tab bar's row of tabs.
+fn carrying(tree: &Tree) -> Option<NodeId> {
+    let mut left: Vec<NodeId> = tree.root().into_iter().collect();
+    while let Some(id) = left.pop() {
+        let children = tree.children(id);
+        if children.iter().any(|&child| tree.carries(child).is_some()) {
+            return Some(id);
+        }
+        left.extend(children.iter().rev().copied());
+    }
+    None
 }
 
 /// The reorderable children of `parent` of a key, in their order, at their
@@ -519,6 +828,7 @@ fn slots(tree: &Tree, layout: &Layout, parent: NodeId, across: bool) -> Vec<Slot
 mod tests {
     use std::rc::Rc;
 
+    use lokyr_plugin_sdk::host::TabId;
     use lokyr_plugin_sdk::view::{self, Length, Node, Transition, UiEventKind};
 
     use super::*;
@@ -809,5 +1119,187 @@ mod tests {
         let after = tenth + Duration::from_millis(100);
         surface.animate(after, false);
         assert!((surface.layout.scrolled(track) - 40.0).abs() < 0.01);
+    }
+
+    /// A bar of the tabs of `order`, as [`bar`]'s, each carrying the tab of
+    /// its place in `order`, from 1.
+    fn carrying_bar(order: &[&str]) -> Node {
+        let mut root = bar(order, Direction::Row);
+        for (at, tab) in root.children.iter_mut().take(order.len()).enumerate() {
+            tab.carries = Some(TabId(at as u64 + 1));
+        }
+        root
+    }
+
+    fn opacity(surface: &Surface, key: &str, now: Instant) -> f32 {
+        surface.animations.opacity(&Key::from(key), 1.0, now)
+    }
+
+    #[test]
+    fn a_node_that_carries_a_tab_leaves_its_bar_and_its_siblings_close_its_room() {
+        let start = Instant::now();
+        let later = start + LATER;
+        let mut surface = shown(&carrying_bar(&["a", "b", "c"]), start);
+        surface.pressed((50.0, 10.0), (Button::Primary, 1, false), &mut Fixed);
+        surface.moved((60.0, 80.0), &mut Fixed, start);
+        assert_eq!(
+            surface.carried(),
+            Some((Key::from("a"), TabId(1))),
+            "the tab that it carries"
+        );
+        assert!(surface.carry_out(true, start));
+        assert!(!surface.carry_out(true, start), "out already");
+        assert!(surface.carried_out());
+        // Hidden, the others sliding into its room, by its width and the
+        // gap after it.
+        assert_eq!(opacity(&surface, "a", later), 0.0);
+        assert_eq!(offset(&surface, "b", later), (-110.0, 0.0));
+        assert_eq!(offset(&surface, "c", later), (-110.0, 0.0));
+        // Its moves out of the bar move nothing.
+        surface.moved((300.0, 90.0), &mut Fixed, later);
+        assert_eq!(offset(&surface, "b", later), (-110.0, 0.0));
+        // Back, it follows the pointer among them again, past the second's
+        // middle, which goes back to its place before it.
+        assert!(surface.carry_out(false, later));
+        surface.moved((170.0, 10.0), &mut Fixed, later);
+        let back = later + LATER;
+        assert_eq!(opacity(&surface, "a", back), 1.0);
+        assert_eq!(offset(&surface, "a", back), (120.0, 0.0));
+        assert_eq!(offset(&surface, "b", back), (-110.0, 0.0));
+        assert_eq!(offset(&surface, "c", back), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_node_dropped_out_of_its_bar_waits_for_its_plugin_s_render_without_it() {
+        let start = Instant::now();
+        let later = start + LATER;
+        let mut surface = shown(&carrying_bar(&["a", "b", "c"]), start);
+        surface.pressed((50.0, 10.0), (Button::Primary, 1, false), &mut Fixed);
+        surface.moved((60.0, 80.0), &mut Fixed, start);
+        surface.carry_out(true, start);
+        let events = surface.released((60.0, 80.0), (Button::Primary, 1), later);
+        // No reorder, its end alone, which the host's drop comes before.
+        assert_eq!(
+            dragged(&events, "a"),
+            [UiEventKind::DragEnd { x: 10.0, y: 70.0 }]
+        );
+        assert!(surface.carried_out());
+        assert_eq!(surface.carried(), None, "no drag under way");
+        assert_eq!(opacity(&surface, "a", later), 0.0);
+        assert!(surface.animating(later), "a drop waits for its render");
+        // Its plugin's render of its move: the others where they slid, of
+        // no slide of their own transitions.
+        surface
+            .update(&carrying_bar(&["b", "c"]))
+            .expect("a valid tree");
+        surface.lay_out((Some(600.0), Some(400.0)), &mut Fixed);
+        surface.animate(later, false);
+        assert_eq!(offset(&surface, "b", later), (0.0, 0.0));
+        assert_eq!(offset(&surface, "c", later), (0.0, 0.0));
+        assert!(!surface.carried_out());
+        assert!(!surface.animating(later + SLIDE));
+    }
+
+    #[test]
+    fn a_node_dropped_out_of_its_bar_comes_back_without_its_plugin_s_render() {
+        let start = Instant::now();
+        let mut surface = shown(&carrying_bar(&["a", "b", "c"]), start);
+        surface.pressed((50.0, 10.0), (Button::Primary, 1, false), &mut Fixed);
+        surface.moved((60.0, 80.0), &mut Fixed, start);
+        surface.carry_out(true, start);
+        let later = start + LATER;
+        surface.released((60.0, 80.0), (Button::Primary, 1), later);
+        // No render within the wait: the others slide back, and it shows
+        // at its place.
+        let waited = later + WAIT;
+        surface.animate(waited, false);
+        assert!(!surface.carried_out());
+        assert_eq!(opacity(&surface, "a", waited), 1.0);
+        assert_eq!(offset(&surface, "b", waited), (-110.0, 0.0));
+        assert_eq!(offset(&surface, "b", waited + SLIDE), (0.0, 0.0));
+    }
+
+    #[test]
+    fn escape_puts_a_node_dragged_out_of_its_bar_back() {
+        let start = Instant::now();
+        let mut surface = shown(&carrying_bar(&["a", "b", "c"]), start);
+        surface.pressed((50.0, 10.0), (Button::Primary, 1, false), &mut Fixed);
+        surface.moved((60.0, 80.0), &mut Fixed, start);
+        surface.carry_out(true, start);
+        let later = start + LATER;
+        let events = surface.escape(later).expect("a drag to cancel");
+        assert_eq!(dragged(&events, "a"), [UiEventKind::DragCancel]);
+        assert!(!surface.carried_out());
+        assert_eq!(opacity(&surface, "a", later), 1.0);
+        assert_eq!(offset(&surface, "b", later + SLIDE), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_node_that_carries_no_tab_stays_in_its_bar() {
+        let start = Instant::now();
+        let mut surface = shown(&bar(&["a", "b", "c"], Direction::Row), start);
+        surface.pressed((50.0, 10.0), (Button::Primary, 1, false), &mut Fixed);
+        surface.moved((60.0, 80.0), &mut Fixed, start);
+        assert_eq!(surface.carried(), None);
+        assert!(!surface.carry_out(true, start));
+        assert!(!surface.carried_out());
+    }
+
+    #[test]
+    fn the_nodes_that_carry_tabs_open_a_room_under_the_pointer_for_one_dragged_in() {
+        let start = Instant::now();
+        let later = start + LATER;
+        let mut surface = shown(&carrying_bar(&["a", "b", "c"]), start);
+        // Past the first's middle, before the second's: the room after the
+        // first, of a tab's width and the gap.
+        assert_eq!(surface.open_room((80.0, 10.0), start), Some(1));
+        assert_eq!(offset(&surface, "a", later), (0.0, 0.0));
+        assert_eq!(offset(&surface, "b", later), (110.0, 0.0));
+        assert_eq!(offset(&surface, "c", later), (110.0, 0.0));
+        // On past the second's middle; then before the first's.
+        assert_eq!(surface.open_room((200.0, 10.0), later), Some(2));
+        let after = later + LATER;
+        assert_eq!(offset(&surface, "b", after), (0.0, 0.0));
+        assert_eq!(offset(&surface, "c", after), (110.0, 0.0));
+        assert_eq!(surface.open_room((10.0, 10.0), after), Some(0));
+        let first = after + LATER;
+        assert_eq!(offset(&surface, "a", first), (110.0, 0.0));
+        // Out again, they slide back.
+        assert!(surface.close_room(first));
+        assert!(!surface.close_room(first), "closed already");
+        assert_eq!(offset(&surface, "a", first + SLIDE), (0.0, 0.0));
+        // A bar of no tab that carries one opens none.
+        let mut plain = shown(&bar(&["a", "b"], Direction::Row), start);
+        assert_eq!(plain.open_room((80.0, 10.0), start), None);
+    }
+
+    #[test]
+    fn a_tab_dropped_in_a_room_keeps_it_until_its_plugin_s_render_of_it_there() {
+        let start = Instant::now();
+        let later = start + LATER;
+        let mut surface = shown(&carrying_bar(&["a", "b"]), start);
+        surface.open_room((80.0, 10.0), start);
+        assert_eq!(surface.drop_room(later), Some(1));
+        assert_eq!(surface.drop_room(later), None, "dropped already");
+        assert!(surface.animating(later), "a drop waits for its render");
+        assert_eq!(offset(&surface, "b", later), (110.0, 0.0));
+        // The render of the tab between them: the second at its place, of
+        // no slide of its own transition.
+        surface
+            .update(&carrying_bar(&["a", "x", "b"]))
+            .expect("a valid tree");
+        surface.lay_out((Some(600.0), Some(400.0)), &mut Fixed);
+        surface.animate(later, false);
+        assert_eq!(offset(&surface, "b", later), (0.0, 0.0));
+        assert_eq!(offset(&surface, "x", later), (0.0, 0.0));
+        assert!(!surface.animating(later + SLIDE));
+        // Without a render, the room closes after the wait.
+        let mut waiting = shown(&carrying_bar(&["a", "b"]), start);
+        waiting.open_room((80.0, 10.0), start);
+        waiting.drop_room(later);
+        let waited = later + WAIT;
+        waiting.animate(waited, false);
+        assert!(!waiting.animating(waited + SLIDE));
+        assert_eq!(offset(&waiting, "b", waited + SLIDE), (0.0, 0.0));
     }
 }

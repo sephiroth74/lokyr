@@ -146,6 +146,15 @@ pub enum Request {
     /// Close a tab or a pane once the user confirms it, as the app asks
     /// for a window while a program other than a shell runs there.
     CloseAsked(Closing),
+    /// Put a window's content's top left corner at `at` on the screens, a
+    /// window that a plugin's move of a tab opened, as it shows, or the
+    /// window of a tab that was alone in it.
+    PlaceWindow {
+        /// The window.
+        window: WindowId,
+        /// Where its content's top left corner goes.
+        at: host::ScreenPoint,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -2185,8 +2194,11 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     .workspace
                     .move_tab(TabId::of(tab.0), WindowId::of(window.0), index);
             }
-            Asked::TabToNewWindow(tab) => {
-                context.workspace.tab_to_new_window(TabId::of(tab.0));
+            Asked::TabToNewWindow { tab, at } => {
+                let window = context.workspace.tab_to_new_window(TabId::of(tab.0));
+                if let (Some(window), Some(at)) = (window, at) {
+                    requests.push(Request::PlaceWindow { window, at });
+                }
             }
             Asked::PaneToNewTab {
                 pane,
@@ -2954,7 +2966,7 @@ impl Host<'_, '_> {
             Asked::CloseTab { tab, .. }
             | Asked::SetTabTitle { tab, .. }
             | Asked::ActivateTab(tab)
-            | Asked::TabToNewWindow(tab)
+            | Asked::TabToNewWindow { tab, .. }
             | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }

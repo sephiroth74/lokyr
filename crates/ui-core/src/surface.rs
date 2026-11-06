@@ -7,6 +7,7 @@
 
 use std::time::Instant;
 
+use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{Key, Kind, Node, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
@@ -191,6 +192,60 @@ impl Surface {
             .dragging()
             .then(|| reorder.raised().cloned())
             .flatten()
+    }
+
+    /// The node dragged that carries a tab, its key and the tab, while its
+    /// drag is under way.
+    pub fn carried(&self) -> Option<(Key, TabId)> {
+        let key = self.lifted()?;
+        let tab = self.tree.carries(self.tree.by_key(&key)?)?;
+        Some((key, tab))
+    }
+
+    /// The node dragged that carries a tab left its parent's room, `out`,
+    /// or came back into it, at `now`, as the host finds the pointer out of
+    /// its bar or back: out, it shows nowhere, its siblings closing its
+    /// room; whether it changed.
+    pub fn carry_out(&mut self, out: bool, now: Instant) -> bool {
+        if self.carried().is_none() {
+            return false;
+        }
+        let changed = self.animations.reorder.carry_out(out, &self.layout, now);
+        self.show_pointer(now);
+        changed
+    }
+
+    /// Whether the node dragged left its parent's room, its drag under way
+    /// or dropped.
+    pub fn carried_out(&self) -> bool {
+        self.animations.reorder.out()
+    }
+
+    /// The nodes that carry tabs open a room under the pointer, at `at`, in
+    /// pixels from the tree's corner, for a tab dragged in from another
+    /// surface, at `now`: its index among them, or `None` without them.
+    pub fn open_room(&mut self, at: (f32, f32), now: Instant) -> Option<usize> {
+        self.animations
+            .reorder
+            .open_room(&self.tree, &self.layout, at, now)
+    }
+
+    /// The index of the room that its nodes opened for a tab dragged in,
+    /// while it is open.
+    pub fn room(&self) -> Option<usize> {
+        self.animations.reorder.room()
+    }
+
+    /// The room for a tab dragged in closes, at `now`, its nodes sliding
+    /// back; whether one was open.
+    pub fn close_room(&mut self, now: Instant) -> bool {
+        self.animations.reorder.close_room(now)
+    }
+
+    /// The tab dragged in dropped in its room, at `now`, which stays until
+    /// its plugin's render of the tab there: its index among the others.
+    pub fn drop_room(&mut self, now: Instant) -> Option<usize> {
+        self.animations.reorder.drop_room(self.tree.revision(), now)
     }
 
     /// The pointer left the surface, at `now`, over another or out of the

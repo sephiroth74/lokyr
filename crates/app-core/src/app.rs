@@ -28,7 +28,8 @@ use lokyr_kernel::workspace::{
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler,
-    Platform, Size, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    Platform, ScreenPoint, Size, TargetKind, TimerId, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
@@ -60,6 +61,7 @@ mod notices;
 mod panels;
 mod spawn;
 mod surfaces;
+mod tab_drag;
 #[cfg(test)]
 mod tests;
 
@@ -516,6 +518,15 @@ pub struct App<B: Backend> {
     /// The texts that plugins ask the user for, on their windows, with the
     /// plugin and the question's id, by their alerts.
     text_asks: BTreeMap<AlertId, (WindowId, String, u64)>,
+    /// Where the windows of the workspace that a plugin's move of a tab
+    /// opened go on the screens, until they show in the platform's.
+    placing: BTreeMap<workspace::WindowId, ScreenPoint>,
+    /// The size of the content of the window that a tab dropped out of
+    /// every window opens, as its window's was, below the titlebar, until
+    /// the window shows.
+    placing_size: Option<(workspace::TabId, Size)>,
+    /// A tab dragged out of its bar, or back in it, until its drop.
+    tab_drag: Option<tab_drag::TabDrag<B>>,
     /// The question before quitting, while it waits for its answer.
     quit_ask: Option<AlertId>,
     /// Whether the config in force is the defaults, as the start's file did
@@ -668,6 +679,9 @@ impl<B: Backend> App<B> {
             title_asks: BTreeMap::new(),
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
+            placing: BTreeMap::new(),
+            placing_size: None,
+            tab_drag: None,
             quit_ask: None,
             config_fell_back: false,
             update_checks: false,
@@ -1653,15 +1667,25 @@ impl<B: Backend> App<B> {
             return;
         };
         let cells = (u32::from(grid.columns), u32::from(grid.rows));
+        // A tab dropped out of every window takes its window's size.
+        let dropped = self
+            .workspace
+            .window(shown)
+            .map(workspace::Window::active_tab)
+            .and_then(|tab| self.placing_size.take_if(|(placed, _)| *placed == tab))
+            .map(|(_, size)| size);
         let attributes = WindowAttributes {
             title: TITLE.to_owned(),
-            size: self.size_of(platform.screen_scale(), cells),
+            size: dropped.unwrap_or_else(|| self.size_of(platform.screen_scale(), cells)),
             remember: false,
             restore: false,
             restore_size: false,
         };
         match platform.create_window(&attributes) {
             Ok(window) => {
+                if let Some(at) = self.placing.remove(&shown) {
+                    platform.set_window_origin(window, at);
+                }
                 self.attach(platform, window, shown, None);
                 self.show_title(platform, window);
             }
@@ -1671,6 +1695,29 @@ impl<B: Backend> App<B> {
                 self.forget_panes(&panes);
                 self.workspace.close_window(shown);
             }
+        }
+    }
+
+    /// Puts the content's top left corner of the platform's window of
+    /// `shown` at `at` on the screens, or, of a window of the workspace
+    /// that has yet to show, as it shows.
+    fn place_window(
+        &mut self,
+        platform: &mut dyn Platform,
+        shown: workspace::WindowId,
+        at: ScreenPoint,
+    ) {
+        let window = self
+            .windows
+            .iter()
+            .find(|(_, state)| state.window == shown)
+            .map(|(&window, _)| window);
+        match window {
+            Some(window) => platform.set_window_origin(window, at),
+            None if self.workspace.window(shown).is_some() => {
+                self.placing.insert(shown, at);
+            }
+            None => {}
         }
     }
 
@@ -1878,6 +1925,10 @@ impl<B: Backend> App<B> {
 
     /// Closes `window`, and quits with the last one, if the config says so.
     fn close(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        // A tab dragged out of its bar ends its drag with its window.
+        if self.tab_dragged_of(window) {
+            self.end_tab_drag(platform, true);
+        }
         self.keep_directory(window);
         if self.front == Some(window) {
             self.front = None;
@@ -2353,6 +2404,9 @@ impl<B: Backend> App<B> {
                 Request::Reveal { plugin, view, key } => {
                     self.reveal_node(platform, (&plugin, &view), key);
                 }
+                Request::PlaceWindow { window, at } => {
+                    self.place_window(platform, window, ScreenPoint { x: at.x, y: at.y });
+                }
             }
         }
         // The views whose renders the calls asked for, and their panels'
@@ -2558,7 +2612,9 @@ impl<B: Backend> App<B> {
                 return;
             }
             WorkspaceEvent::WindowClosed { window } => {
-                if let Some(window) = showing(self, workspace::WindowId::of(window.0)) {
+                let shown = workspace::WindowId::of(window.0);
+                self.placing.remove(&shown);
+                if let Some(window) = showing(self, shown) {
                     self.close(platform, window);
                 }
                 return;

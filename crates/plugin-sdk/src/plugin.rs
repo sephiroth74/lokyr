@@ -48,7 +48,7 @@
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, DecorationLook, Direction, Edge, Host, Layout, LineText, PaneId,
-    Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    ScreenPoint, Scroll, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -652,7 +652,14 @@ impl<'a> Cx<'a> {
 
     /// Moves `tab` into a window of its own, as this call returns.
     pub fn tab_to_new_window(&mut self, tab: TabId) -> Result<(), Error> {
-        self.done(Request::TabToNewWindow(tab))
+        self.done(Request::TabToNewWindow { tab, at: None })
+    }
+
+    /// Moves `tab` into a window of its own whose content's top left
+    /// corner goes at `at` on the screens, or, alone in its window, moves
+    /// its window there, as this call returns.
+    pub fn tab_to_new_window_at(&mut self, tab: TabId, at: ScreenPoint) -> Result<(), Error> {
+        self.done(Request::TabToNewWindow { tab, at: Some(at) })
     }
 
     /// Moves `pane` into a tab of its own, at `index` of `window`'s tabs,

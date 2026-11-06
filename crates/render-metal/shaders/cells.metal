@@ -2,7 +2,8 @@
 // glyphs, of coverage or of their own colors, read from the atlas a pixel a
 // pixel, the lines that decorate text, of their patterns, and the
 // interface's shapes, of rounded corners, borders and shadows. Every shape is an instance of a quad, whose four corners come from
-// the vertex's index, drawn as a strip.
+// the vertex's index, drawn as a strip; and pictures, of textures of their
+// own, drawn once and then scaled.
 //
 // Colors are sRGB's encoded components, premultiplied by their opacity, and
 // the drawable's format keeps them encoded: blending mixes them as they are.
@@ -345,4 +346,34 @@ fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     }
     float ring = outer - inner;
     return in.border_color * ring + in.fill * (outer - in.border_color.a * ring);
+}
+
+// A picture that fills a rectangle, in pixels, of a texture of its own,
+// sampled of its mipmaps as it shrinks, its colors premultiplied as the
+// frame's.
+struct Picture {
+    float2 position;
+    float2 size;
+};
+
+struct PictureFragment {
+    float4 position [[position]];
+    // Where in the picture, from 0 to 1.
+    float2 at;
+};
+
+vertex PictureFragment picture_vertex(uint vertex_id [[vertex_id]],
+                                      constant Picture &picture [[buffer(0)]],
+                                      constant Viewport &viewport [[buffer(1)]]) {
+    float2 at = corner(vertex_id);
+    PictureFragment out;
+    out.position = clip_space(picture.position + at * picture.size, viewport.size);
+    out.at = at;
+    return out;
+}
+
+fragment float4 picture_fragment(PictureFragment in [[stage_in]],
+                                 texture2d<float> picture [[texture(0)]]) {
+    constexpr sampler smooth(filter::linear, mip_filter::linear, address::clamp_to_edge);
+    return picture.sample(smooth, in.at);
 }

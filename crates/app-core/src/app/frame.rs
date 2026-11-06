@@ -12,13 +12,13 @@ use lokyr_kernel::commands::ErrorCategory;
 use lokyr_kernel::diagnostics::About;
 use lokyr_kernel::plugins;
 use lokyr_kernel::plugins::host::BarPlace;
-use lokyr_kernel::workspace::{Direction, Grid, Layout, Pane, PaneId};
+use lokyr_kernel::workspace::{self, Direction, Grid, Layout, Pane, PaneId};
 use lokyr_platform_core::{
     Appearance, Backdrop, Blink as PlatformBlink, Easing, Layer, LayerPlace, Platform, Point,
     PointerArea, PointerShape, Size, Titlebar, WindowId, WindowSize,
 };
 use lokyr_render_core::{
-    CellBatch, Color, CursorShape, DisplayList, Item, Rect, Renderer, Surface as _,
+    CellBatch, Color, CursorShape, DisplayList, Item, PictureId, Rect, Renderer, Surface as _,
 };
 use lokyr_text_core::{CellMetrics, FontBackend};
 use lokyr_ui_core::focus::Target;
@@ -175,9 +175,10 @@ impl<B: Backend> App<B> {
             None => self.content(size),
         };
         let (width, height) = self.cell_pixels(size.scale);
-        let Some(state) = self.windows.get(&window) else {
+        let Some(state) = self.windows.get_mut(&window) else {
             return Vec::new();
         };
+        state.panes_room = Some(content);
         let tab = self
             .workspace
             .window(state.window)
@@ -408,6 +409,78 @@ impl<B: Backend> App<B> {
             platform.cancel_timer(timer);
         }
         self.label_timer = Some((platform.start_timer(at), at));
+    }
+
+    /// Draws the panes of `tab`, of `window`, a hidden tab's too, as the
+    /// window would show them now, steady and of no focus, into a picture
+    /// that the renderer holds, of the room that the window's panes share,
+    /// its corner the picture's: the picture, its size in pixels and the
+    /// background of the tab's pane with the keyboard; `None` where the app
+    /// draws nothing, or before the window laid its panes out.
+    pub(super) fn tab_picture(
+        &mut self,
+        platform: &dyn Platform,
+        window: WindowId,
+        tab: workspace::TabId,
+    ) -> Option<(PictureId, (u32, u32), Color)> {
+        let size = platform.window_size(window)?;
+        let room = self.windows.get(&window)?.panes_room?;
+        let (width, height) = self.cell_pixels(size.scale);
+        let divider = (DIVIDER * size.scale).round() as u32;
+        let selection_colors = self.variant(platform, window).selection;
+        let text = self.config.text;
+        let thickness = self.config.cursor;
+        let shown = self.workspace.tab(tab)?;
+        let rooms = pane_rects(
+            shown.layout(),
+            shown.zoomed(),
+            room,
+            (width, height),
+            divider,
+        );
+        let background = cells::background(self.workspace.pane(shown.active_pane())?.snapshot());
+        let drawing = self.drawing.as_mut()?;
+        let oldest = drawing.renderer.drawing_from();
+        drawing.font.set_drawing(oldest);
+        drawing.font.begin_frame();
+        drawing.font.set_text(text);
+        let cell = *drawing.font.cell();
+        let hollow = CursorLook {
+            shape: CursorShape::Hollow,
+            thickness: thickness.thickness(&cell, size.scale as f32),
+        };
+        // Each pane at its room's corner, of the picture's.
+        let panes: Vec<(&Pane, (i32, i32))> = rooms
+            .iter()
+            .filter_map(|(pane, rect)| {
+                let corner = (rect.x.saturating_sub(room.x), rect.y.saturating_sub(room.y));
+                Some((self.workspace.pane(*pane)?, corner))
+            })
+            .collect();
+        let font = &mut drawing.font;
+        font.collect_missing(GLYPHS_BUDGET.0, GLYPHS_BUDGET.1);
+        let mut batches = other_cells(&panes, &cell, selection_colors, hollow, text, font);
+        if font.draw_pending() {
+            batches = other_cells(&panes, &cell, selection_colors, hollow, text, font);
+        }
+        let list = DisplayList {
+            background,
+            items: batches.into_iter().map(Item::Cells).collect(),
+            frame: drawing.font.atlas_frame(),
+        };
+        let updates = drawing.font.texture_updates();
+        let made = drawing.renderer.update_textures(&updates).and_then(|()| {
+            drawing
+                .renderer
+                .make_picture(&list, room.width, room.height)
+        });
+        match made {
+            Ok(picture) => picture.map(|picture| (picture, (room.width, room.height), background)),
+            Err(error) => {
+                eprintln!("lokyr: {error}");
+                None
+            }
+        }
     }
 
     /// Draws `window`, of `size`, as [`App::draw_frame`] does; the plugins
