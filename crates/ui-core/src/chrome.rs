@@ -13,6 +13,8 @@
 //! the floating panels anchor in. A slot whose view is empty takes no
 //! room.
 
+use lokyr_plugin_sdk::view::Kind;
+
 use crate::layout::{Frame, Layout};
 use crate::tree::{NodeId, Tree};
 
@@ -235,10 +237,14 @@ pub fn pane_regions(pane: Frame, header: f32) -> PaneRegions {
 }
 
 /// The parts of a tab bar's view in the titlebar that are its own, from
-/// its corner: the boxes of the outermost nodes of a key under its root,
-/// within the root's, where a press goes to the view. The rest of the bar,
-/// its root's own box too, is the window's, which a drag there moves and a
-/// double click zooms.
+/// its corner: the boxes of the outermost nodes under its root that take a
+/// press, each within the clips around it, the root's too, where a press
+/// goes to the view. A node takes a press of its key, and of its kind, a
+/// button, a toggle, a field, a list or a view of tabs, or of a pointer, a
+/// hover or a press of its own style, as a tab: a node of a key that takes
+/// none, as a group of tabs that a transition needs, gives its children's
+/// parts. The rest of the bar, its root's own box too, is the window's,
+/// which a drag there moves and a double click zooms.
 pub fn titlebar_areas(tree: &Tree, layout: &Layout) -> Vec<Frame> {
     let mut areas = Vec::new();
     let Some(root) = tree.root() else {
@@ -248,39 +254,70 @@ pub fn titlebar_areas(tree: &Tree, layout: &Layout) -> Vec<Frame> {
         return areas;
     };
     for &child in tree.children(root) {
-        keyed(tree, layout, child, bounds, &mut areas);
+        pressed(tree, layout, child, bounds, &mut areas);
     }
     areas
 }
 
-/// Adds the box of `id` within `bounds` to `areas`, if it has a key;
-/// otherwise its children's.
-fn keyed(tree: &Tree, layout: &Layout, id: NodeId, bounds: Frame, areas: &mut Vec<Frame>) {
-    if tree.key(id).is_none() {
-        for &child in tree.children(id) {
-            keyed(tree, layout, child, bounds, areas);
-        }
-        return;
-    }
+/// Adds the box of `id` within `bounds` to `areas`, if it takes a press;
+/// otherwise its children's, within its own box too if it clips them, as
+/// a scroll area does.
+fn pressed(tree: &Tree, layout: &Layout, id: NodeId, bounds: Frame, areas: &mut Vec<Frame>) {
     let Some(frame) = layout.frame(tree, id) else {
         return;
     };
+    if takes_press(tree, id) {
+        areas.extend(within(frame, bounds));
+        return;
+    }
+    let clips = matches!(tree.kind(id), Some(Kind::Scroll))
+        || tree.style(id).is_some_and(|style| style.clip);
+    let bounds = if clips {
+        match within(frame, bounds) {
+            Some(bounds) => bounds,
+            None => return,
+        }
+    } else {
+        bounds
+    };
+    for &child in tree.children(id) {
+        pressed(tree, layout, child, bounds, areas);
+    }
+}
+
+/// Whether the node `id` takes a press: of a key, and of a kind that takes
+/// one, or of a pointer, a hover or a press of its own style.
+fn takes_press(tree: &Tree, id: NodeId) -> bool {
+    if tree.key(id).is_none() {
+        return false;
+    }
+    let kind = matches!(
+        tree.kind(id),
+        Some(Kind::Button(_) | Kind::Toggle(_) | Kind::Field(_) | Kind::List(_) | Kind::Tabs(_))
+    );
+    kind || tree.style(id).is_some_and(|style| {
+        style.pointer.is_some() || style.hover.is_some() || style.pressed.is_some()
+    })
+}
+
+/// The part of `frame` within `bounds`, if they overlap.
+fn within(frame: Frame, bounds: Frame) -> Option<Frame> {
     let (left, top) = (frame.x.max(bounds.x), frame.y.max(bounds.y));
     let right = (frame.x + frame.width).min(bounds.x + bounds.width);
     let bottom = (frame.y + frame.height).min(bounds.y + bounds.height);
-    if right > left && bottom > top {
-        areas.push(Frame {
-            x: left,
-            y: top,
-            width: right - left,
-            height: bottom - top,
-        });
-    }
+    (right > left && bottom > top).then_some(Frame {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use lokyr_plugin_sdk::view::{Direction, Edges, Layout as NodeLayout, Length, Node};
+    use lokyr_plugin_sdk::view::{
+        Direction, Edges, Hover, Layout as NodeLayout, Length, Node, PointerShape, Style,
+    };
 
     use super::*;
     use crate::layout::Measure;
@@ -507,41 +544,86 @@ mod tests {
         assert_eq!(pane_regions(pane, 500.0).grid.height, 0.0);
     }
 
-    #[test]
-    fn the_titlebar_s_areas_are_the_outermost_nodes_of_a_key_under_the_root() {
-        let tab = |key: &str, title: &str| {
-            Node::container(vec![Node::text(title).key(format!("{key}.title").as_str())])
-                .key(key)
-                .layout(NodeLayout {
-                    padding: Edges::all(5.0),
-                    ..NodeLayout::default()
-                })
-        };
-        let root = Node::container(vec![
-            Node::container(vec![tab("tab-1", "one"), tab("tab-2", "two")]),
-            Node::spacer(),
-            Node::text("plain"),
-        ])
-        .key("bar")
-        .layout(NodeLayout {
-            width: Length::Points(200.0),
-            height: Length::Points(40.0),
-            ..NodeLayout::default()
-        });
+    /// The areas of the titlebar of `root`'s tree, laid out.
+    fn areas_of(root: &Node) -> Vec<Frame> {
         let mut tree = Tree::new();
-        let changes = tree.update(&root).unwrap();
+        let changes = tree.update(root).unwrap();
         let mut layout = Layout::new(1.0);
         layout.update(&tree, &changes);
         layout.compute(&tree, None, None, &mut Fixed);
+        titlebar_areas(&tree, &layout)
+    }
+
+    /// A tab of `key`, 40 points wide of its title and padding, of a hover
+    /// and a pointer, as the bar's.
+    fn tab(key: &str, title: &str) -> Node {
+        Node::container(vec![Node::text(title).key(format!("{key}.title").as_str())])
+            .key(key)
+            .layout(NodeLayout {
+                padding: Edges::all(5.0),
+                ..NodeLayout::default()
+            })
+            .style(Style {
+                pointer: Some(PointerShape::Arrow),
+                hover: Some(Hover::default()),
+                ..Style::default()
+            })
+    }
+
+    /// A bar of `children`, 200 points by 40.
+    fn bar(children: Vec<Node>) -> Node {
+        Node::container(children).key("bar").layout(NodeLayout {
+            width: Length::Points(200.0),
+            height: Length::Points(40.0),
+            ..NodeLayout::default()
+        })
+    }
+
+    #[test]
+    fn the_titlebar_s_areas_are_the_outermost_nodes_that_take_a_press() {
         // The root's own key gives it none, a text of no key none, a
         // tab's title none past its tab's.
-        assert_eq!(
-            titlebar_areas(&tree, &layout),
-            [frame(0.0, 0.0, 40.0, 40.0), frame(40.0, 0.0, 40.0, 40.0)]
-        );
+        let root = bar(vec![
+            Node::container(vec![tab("tab-1", "one"), tab("tab-2", "two")]),
+            Node::spacer(),
+            Node::text("plain"),
+        ]);
+        let tabs = [frame(0.0, 0.0, 40.0, 40.0), frame(40.0, 0.0, 40.0, 40.0)];
+        assert_eq!(areas_of(&root), tabs);
+        // A group of the tabs of a key, as a transition needs, which takes
+        // no press, leaves the window its room: its tabs alone are the
+        // bar's; a node of a key that takes none, none.
+        let root = bar(vec![
+            Node::container(vec![tab("tab-1", "one"), tab("tab-2", "two")]).key("tabs"),
+            Node::container(vec![Node::text("⌥⌘1")]).key("keys"),
+        ]);
+        assert_eq!(areas_of(&root), tabs);
+        // A button takes a press of its kind.
+        let root = bar(vec![Node::icon_button("add").key("new")]);
+        assert_eq!(areas_of(&root).len(), 1);
+        // Within the clips around them: a tab past a box that clips, or
+        // past a scroll area, has the part of it within the box.
+        for clip in [
+            Node::container(vec![tab("tab-1", "one"), tab("tab-2", "two")]).style(Style {
+                clip: true,
+                ..Style::default()
+            }),
+            Node::scroll(vec![tab("tab-1", "one"), tab("tab-2", "two")]).key("strip"),
+        ] {
+            let clip = clip.layout(NodeLayout {
+                width: Length::Points(60.0),
+                height: Length::Points(40.0),
+                ..NodeLayout::default()
+            });
+            assert_eq!(
+                areas_of(&bar(vec![clip])),
+                [frame(0.0, 0.0, 40.0, 40.0), frame(40.0, 0.0, 20.0, 40.0)]
+            );
+        }
         // A tab wider than the bar, its part within it.
         let wide = Node::container(vec![tab("tab-1", "one").layout(NodeLayout {
             width: Length::Points(150.0),
+            padding: Edges::all(5.0),
             ..NodeLayout::default()
         })])
         .layout(NodeLayout {
@@ -549,13 +631,8 @@ mod tests {
             width: Length::Points(100.0),
             ..NodeLayout::default()
         });
-        let changes = tree.update(&wide).unwrap();
-        layout.update(&tree, &changes);
-        layout.compute(&tree, None, None, &mut Fixed);
-        assert_eq!(
-            titlebar_areas(&tree, &layout),
-            [frame(0.0, 0.0, 100.0, 14.0)]
-        );
+        assert_eq!(areas_of(&wide), [frame(0.0, 0.0, 100.0, 24.0)]);
+        let layout = Layout::new(1.0);
         assert!(titlebar_areas(&Tree::new(), &layout).is_empty());
     }
 }

@@ -1051,6 +1051,13 @@ fn check_tab_bar((name, style, position, (width, height)): Bar, (dark, scale): (
         &mut drawing.font,
     );
     let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
+    // In the titlebar, the tabs and the button of a new tab take its
+    // presses, the window's keys and the room around them the window's.
+    if place == lokyr_plugin_sdk::host::BarPlace::Titlebar {
+        let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
+        assert_eq!(areas.len(), 4, "{name}: {areas:?}");
+        assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");
+    }
     let (width, height) = (frame.width as u32, frame.height as u32);
     // The pointer over the third tab, its hover shown whole.
     let now = Instant::now();
