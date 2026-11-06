@@ -10,6 +10,12 @@ use crate::fakes;
 /// The app of a window of three tabs, the last one active, its bar of the
 /// `style` at `position`, drawn.
 fn three_tabs(style: &str, position: &str) -> (Fake, App, WindowId) {
+    tabs_of(style, position, 3)
+}
+
+/// The app of a window of `count` tabs, the last one active, its bar of
+/// the `style` at `position`, drawn.
+fn tabs_of(style: &str, position: &str, count: usize) -> (Fake, App, WindowId) {
     let config = Config::parse(
         &format!("[plugins.tabs]\nstyle = \"{style}\"\nposition = \"{position}\"\n"),
         std::path::Path::new("config.toml"),
@@ -22,11 +28,11 @@ fn three_tabs(style: &str, position: &str) -> (Fake, App, WindowId) {
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
     fake.send(&mut app, window, WindowEvent::Focused(true));
-    for _ in 0..2 {
+    for _ in 1..count {
         app.run(&mut fake, "tabs.new", Args::new());
     }
     run_until(&mut fake, &mut app, |_, app| {
-        shown_order(app, window).len() == 3
+        shown_order(app, window).len() == count
             && bar(app, window).is_some_and(|view| view.frame.is_some())
     });
     (fake, app, window)
@@ -158,4 +164,25 @@ fn escape_puts_a_tab_dragged_back_and_its_release_selects_nothing() {
     assert_eq!(active(&app, window), ids[2]);
     // The pane's program had no Escape.
     assert!(app.windows[&window].pane_has_focus());
+}
+
+#[test]
+fn a_click_selects_the_tab_under_it_of_a_bar_scrolled_across() {
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = tabs_of("unified", "top", 14);
+    let ids = order(&app, window);
+    // The last tab, active, revealed at the bar's end, past the room of
+    // the others.
+    let view = bar(&app, window).expect("the bar");
+    let track = view
+        .surface
+        .tree
+        .by_key(&"track".into())
+        .expect("the track");
+    assert!(view.surface.layout.scrolled(track) > 0.0);
+    let shown = ids[ids.len() - 3];
+    let at = middle_of(&fake, &app, window, &tab_key(shown));
+    fake.send(&mut app, window, click(true, at, none, 1));
+    fake.send(&mut app, window, click(false, at, none, 1));
+    run_until(&mut fake, &mut app, |_, app| active(app, window) == shown);
 }

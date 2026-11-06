@@ -106,8 +106,7 @@ fn hit_node(
     } else {
         clip
     };
-    // A scroll area's children, moved up by its scroll.
-    let within = (frame.x, frame.y - layout.scrolled(id));
+    let within = scrolled_within(tree, layout, id, frame);
     for &child in tree.children(id).iter().rev() {
         if hit_node(tree, layout, child, within, inner, at, path) {
             path.push(id);
@@ -200,9 +199,21 @@ fn areas_of(
     } else {
         clip
     };
-    let within = (frame.x, frame.y - layout.scrolled(id));
+    let within = scrolled_within(tree, layout, id, frame);
     for &child in tree.children(id) {
         areas_of(tree, layout, child, within, inner, (shape, behind), areas);
+    }
+}
+
+/// The origin of `id`'s children, `id` at `frame`: a scroll area's moved
+/// back by its scroll, along its direction, leftwards across a row and up
+/// a column.
+fn scrolled_within(tree: &Tree, layout: &Layout, id: NodeId, frame: Frame) -> (f32, f32) {
+    let scrolled = layout.scrolled(id);
+    if crate::layout::across(tree, id) {
+        (frame.x - scrolled, frame.y)
+    } else {
+        (frame.x, frame.y - scrolled)
     }
 }
 
@@ -944,6 +955,43 @@ mod tests {
             .into_iter()
             .filter(|area| area.shape == PointerShape::PointingHand)
             .map(|area| (area.rect.y, area.rect.height))
+            .collect();
+        assert_eq!(hands, [(15, 15), (0, 15)]);
+        // Across a row alike, as a bar's tabs: scrolled 25 rightwards.
+        let boxes: Vec<Node> = (0..4)
+            .map(|index| {
+                sized(
+                    Node::container(vec![])
+                        .key(format!("tab-{index}").as_str())
+                        .style(view::Style {
+                            pointer: Some(PointerShape::PointingHand),
+                            ..view::Style::default()
+                        }),
+                    Length::Points(20.0),
+                    Length::Points(40.0),
+                )
+            })
+            .collect();
+        let track = Node::scroll(boxes).key("track").layout(view::Layout {
+            width: Length::Points(30.0),
+            height: Length::Points(40.0),
+            ..view::Layout::default()
+        });
+        let root = sized(
+            Node::container(vec![track]),
+            Length::Points(60.0),
+            Length::Points(40.0),
+        );
+        let (tree, mut layout) = laid(&root, 1.0);
+        let node = find(&tree, "track");
+        layout.scroll_by(&tree, node, 25.0);
+        assert_eq!(keys(&tree, &layout, (10.0, 5.0)), ["-", "track", "tab-1"]);
+        assert_eq!(keys(&tree, &layout, (25.0, 5.0)), ["-", "track", "tab-2"]);
+        assert_eq!(keys(&tree, &layout, (45.0, 5.0)), ["-"]);
+        let hands: Vec<(i32, u32)> = areas(&tree, &layout)
+            .into_iter()
+            .filter(|area| area.shape == PointerShape::PointingHand)
+            .map(|area| (area.rect.x, area.rect.width))
             .collect();
         assert_eq!(hands, [(15, 15), (0, 15)]);
     }
