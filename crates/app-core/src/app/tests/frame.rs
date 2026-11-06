@@ -320,12 +320,18 @@ fn the_grid_starts_below_the_titlebar() {
     assert_eq!(selected_text(&app, window).as_deref(), Some("world"));
     // An opaque bar covers the bar's pixels, of the background.
     let background = Color::from_rgb8(1, 2, 3);
-    let Some(Item::Rect { rect, color }) = bar_item(size, background) else {
+    let Some(Item::Rect { rect, color }) = bar_item(size, background, 0) else {
         panic!("a bar");
     };
     assert_eq!((rect.x, rect.y, rect.width, rect.height), (0, 0, 1600, 28));
     assert_eq!(color, background.with_alpha(1.0));
-    assert!(bar_item(points(400.0, 300.0), background).is_none());
+    assert!(bar_item(points(400.0, 300.0), background, 0).is_none());
+    // Past a sidebar, which runs through it, the rest of it.
+    let Some(Item::Rect { rect, .. }) = bar_item(size, background, 400) else {
+        panic!("a bar past the sidebar");
+    };
+    assert_eq!((rect.x, rect.width), (400, 1200));
+    assert!(bar_item(size, background, 1600).is_none());
 }
 
 #[test]

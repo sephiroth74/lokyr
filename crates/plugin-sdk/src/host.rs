@@ -206,7 +206,7 @@ pub enum BarPlace {
     /// column's top, which leaves them its room of
     /// [`Length::Titlebar`](crate::view::Length::Titlebar) and
     /// [`Length::Buttons`](crate::view::Length::Buttons), and the panes
-    /// beside it up to the window's top, the window's title hidden.
+    /// beside it below the titlebar, the window's title hidden.
     Sidebar {
         /// The column's width, in points.
         width: f32,

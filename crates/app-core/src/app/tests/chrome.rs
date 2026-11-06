@@ -357,8 +357,8 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     assert_eq!(bar, Titlebar::Tabs);
     assert_eq!(tab_bar.y, 0);
     // A sidebar, through the titlebar, of a titlebar of tabs, the panes
-    // beside it up to the window's top, their part of the titlebar the
-    // content's, whose presses come to the app, from the column's edge.
+    // beside it below the titlebar, which is the window's, whose drag moves
+    // it, but the bar's own parts.
     let (bar, tab_bar, status, pane) =
         placed(&mut fake, &mut app, BarPlace::Sidebar { width: 100.0 });
     assert_eq!(bar, Titlebar::Tabs);
@@ -371,31 +371,11 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
         ),
         (0, 0, pixels(100.0), height)
     );
-    assert_eq!((pane.x, pane.y), (pixels(100.0), 0));
+    let below = fake.window(window).unwrap().size.bar_pixels() as i32;
+    assert_eq!((pane.x, pane.y), (pixels(100.0), below));
     assert_eq!(status.x, pixels(100.0));
     let areas = &fake.window(window).unwrap().titlebar_areas;
-    let beside = areas
-        .iter()
-        .find(|area| area.origin.y == 0.0 && area.origin.x > 0.0)
-        .expect("the panes' part of the titlebar");
-    let near = |a: f64, b: f64| (a - b).abs() < 0.01;
-    assert!(
-        beside.origin.x > 90.0 && beside.origin.x < 100.0,
-        "{beside:?}"
-    );
-    assert!(near(beside.origin.x + beside.size.width, size.points.width));
-    assert!(near(
-        beside.size.height,
-        f64::from(titlebar as u32) / size.scale
-    ));
-    // The panes' pointer there, under the column's edge's.
-    let shown = fake.window(window).unwrap();
-    let pointed = shown
-        .pointer_areas
-        .iter()
-        .find(|area| area.origin == beside.origin && area.size == beside.size)
-        .expect("the panes' pointer over their part of the titlebar");
-    assert_eq!(pointed.shape, shown.pointer);
+    assert!(areas.iter().all(|area| area.origin.x < 100.0), "{areas:?}");
     // A column too wide is refused, the place staying.
     place.set(BarPlace::Left { width: 2000.0 });
     app.run(&mut fake, "bars.place", Args::new());

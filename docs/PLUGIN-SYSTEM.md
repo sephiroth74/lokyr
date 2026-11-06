@@ -227,7 +227,7 @@ type BarPlace =
     | { kind: "bottom" }
     | { kind: "left", width: number }
     | { kind: "right", width: number }
-    | { kind: "sidebar", width: number } -- down the left from the window's top, through the titlebar, the window's buttons over its top, the panes beside it up to the top
+    | { kind: "sidebar", width: number } -- down the left from the window's top, through the titlebar, the window's buttons over its top, the panes beside it below the titlebar
 
 type TabInfo = {
     id: TabId,

@@ -777,9 +777,8 @@ impl<B: Backend> App<B> {
                 cells::blinking_cells(snapshot, &cell, selection.as_ref(), text, preedit, font)
             });
         // Over a backdrop, what the cells leave shows it, and the titlebar
-        // too, unless the config keeps it opaque; a sidebar's window shows
-        // no titlebar but its buttons, over the sidebar, and the panes
-        // beside it, up to its top.
+        // too, unless the config keeps it opaque: past a sidebar, which runs
+        // through it, its view's own.
         let laid_out = started.map(|_| Instant::now());
         let opacity = if backdrop.is_some() { 0.0 } else { 1.0 };
         let sidebar = chrome::has_tab_bar(&state.chrome)
@@ -787,9 +786,14 @@ impl<B: Backend> App<B> {
                 chrome::tab_bar_place(&state.chrome, &self.plugins),
                 BarPlace::Sidebar { .. }
             );
-        let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar && !sidebar;
+        let past = chrome::column_edge(&state.chrome, &self.plugins, size.scale)
+            .filter(|_| sidebar)
+            .map_or(0, |(_, _, zone)| {
+                (zone.x + zone.width / 2.0).max(0.0) as u32
+            });
+        let opaque_bar = backdrop.is_some() && self.config.window.opaque_titlebar;
         let mut items: Vec<Item> = opaque_bar
-            .then(|| bar_item(size, background))
+            .then(|| bar_item(size, background, past))
             .flatten()
             .into_iter()
             .collect();
@@ -883,18 +887,6 @@ impl<B: Backend> App<B> {
                 areas.push(points(&rect, PointerShape::PointingHand));
             }
         }
-        // The panes' pointer over their part of a sidebar's titlebar, the
-        // content's, under every other area.
-        let band = (size.pixels.width as f32, size.bar_pixels() as f32);
-        if let Some(part) =
-            surfaces::sidebar_titlebar_area(&state.chrome, &self.plugins, band, size.scale)
-        {
-            areas.push(PointerArea {
-                origin: part.origin,
-                size: part.size,
-                shape: state.pointer,
-            });
-        }
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;
@@ -930,12 +922,6 @@ impl<B: Backend> App<B> {
             Vec::new()
         };
         let band = (size.pixels.width as f32, size.bar_pixels() as f32);
-        own.extend(surfaces::sidebar_titlebar_area(
-            &state.chrome,
-            &self.plugins,
-            band,
-            size.scale,
-        ));
         own.extend(surfaces::panel_titlebar_areas(state, band, size.scale));
         if own != state.titlebar_areas {
             platform.set_titlebar_areas(window, &own);
@@ -1314,14 +1300,16 @@ fn split_rooms(
 }
 
 /// The titlebar of a window of `size`, over its content's top, opaque in
-/// `background`'s color; `None` without one.
-pub(super) fn bar_item(size: WindowSize, background: Color) -> Option<Item> {
+/// `background`'s color, from `left` pixels across, as a sidebar leaves
+/// it; `None` without one.
+pub(super) fn bar_item(size: WindowSize, background: Color, left: u32) -> Option<Item> {
     let height = size.bar_pixels();
-    (height > 0).then_some(Item::Rect {
+    let left = left.min(size.pixels.width);
+    (height > 0 && left < size.pixels.width).then_some(Item::Rect {
         rect: Rect {
-            x: 0,
+            x: i32::try_from(left).unwrap_or(i32::MAX),
             y: 0,
-            width: size.pixels.width,
+            width: size.pixels.width - left,
             height,
         },
         color: background.with_alpha(1.0),

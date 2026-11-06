@@ -66,11 +66,10 @@ mod probe {
             .expect("the window");
         let content = window.contentView().expect("the content view");
         let subviews = content.subviews();
-        // The view of the titlebar's presses, the sweeps' view, then the
-        // layers'.
-        assert_eq!(subviews.count(), 4, "the layers' views");
-        let text = subviews.objectAtIndex(2);
-        let cursor = subviews.objectAtIndex(3);
+        // The sweeps' view first, under the layers'.
+        assert_eq!(subviews.count(), 3, "the layers' views");
+        let text = subviews.objectAtIndex(1);
+        let cursor = subviews.objectAtIndex(2);
         (content, text, cursor)
     }
 
@@ -218,7 +217,7 @@ mod probe {
                 }],
             );
             let sweep_from_top = |content: &NSView| {
-                let sweeps = content.subviews().objectAtIndex(1);
+                let sweeps = content.subviews().objectAtIndex(0);
                 let layer = sweeps.layer().expect("the sweeps' layer");
                 // SAFETY: the layer's sublayers, its sweeps'.
                 let within = unsafe { layer.sublayers() }

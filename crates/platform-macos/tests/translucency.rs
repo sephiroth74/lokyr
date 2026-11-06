@@ -1,7 +1,6 @@
 //! A window made translucent, then opaque again: the window, its content
 //! view and the view's layer turn non-opaque together, over the backdrop's
-//! color, and back; the view never lets AppKit drag the window, which it
-//! drags itself.
+//! color, and back.
 
 #[cfg(target_os = "macos")]
 mod common;
@@ -22,9 +21,9 @@ mod probe {
     use crate::common;
 
     /// Whether the window, its view and the view's layer are opaque, the
-    /// opacity of the window's background, whether its titlebar is
-    /// transparent, and whether a press on the view can move the window.
-    type Look = (bool, bool, bool, f64, bool, bool);
+    /// opacity of the window's background, and whether its titlebar is
+    /// transparent.
+    type Look = (bool, bool, bool, f64, bool);
 
     fn look(platform: &dyn Platform, window: WindowId) -> Look {
         let handle = platform.window_handle(window).expect("a handle");
@@ -43,7 +42,6 @@ mod probe {
             layer.isOpaque(),
             background.alphaComponent(),
             ns_window.titlebarAppearsTransparent(),
-            view.mouseDownCanMoveWindow(),
         )
     }
 
@@ -103,16 +101,12 @@ mod probe {
         assert!(opaque.4, "{seen:?}");
         // Translucent, blurred or not, over the backdrop's color.
         for translucent in &seen[1..3] {
-            let (window, view, layer, alpha, titlebar, _) = *translucent;
+            let (window, view, layer, alpha, titlebar) = *translucent;
             assert_eq!((window, view, layer), (false, false, false), "{seen:?}");
             assert!((alpha - 0.8).abs() < 1e-6, "{seen:?}");
             assert!(titlebar, "the titlebar shows the backdrop: {seen:?}");
         }
         assert_eq!(seen[3], opaque, "back as it opened");
-        // AppKit drags no window from its view, translucent or not, so that
-        // a drag over the titlebar's parts that are the content's is the
-        // content's.
-        assert!(seen.iter().all(|look| !look.5), "{seen:?}");
         println!("translucency: ok");
     }
 }

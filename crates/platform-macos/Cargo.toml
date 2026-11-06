@@ -249,7 +249,3 @@ harness = false
 
 [lints]
 workspace = true
-
-[[test]]
-name = "titlebar_drag"
-harness = false

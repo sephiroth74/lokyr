@@ -7,8 +7,6 @@
 
 use std::time::Instant;
 
-use lokyr_kernel::plugins::Plugins;
-use lokyr_kernel::plugins::host::BarPlace;
 use lokyr_kernel::plugins::ui::{UiEvent, ViewId};
 use lokyr_kernel::plugins::view::{Key as NodeKey, Kind};
 use lokyr_kernel::workspace::Workspace;
@@ -736,38 +734,6 @@ pub(super) fn titlebar_areas(chrome: &[SlotView], scale: f64) -> Vec<ContentRect
             )
         })
         .collect()
-}
-
-/// The part of the titlebar, `bar` pixels tall in a window `width` pixels
-/// wide, that runs over the panes beside `chrome`'s sidebar, and over its
-/// edge, which its drag resizes, as the content's, whose presses come to
-/// the app, in points of a display of `scale`; none but beside a sidebar
-/// that shows, as its plugin of `plugins` places it.
-pub(super) fn sidebar_titlebar_area(
-    chrome: &[SlotView],
-    plugins: &Plugins,
-    (width, bar): (f32, f32),
-    scale: f64,
-) -> Option<ContentRect> {
-    if bar <= 0.0
-        || !matches!(
-            super::chrome::tab_bar_place(chrome, plugins),
-            BarPlace::Sidebar { .. }
-        )
-    {
-        return None;
-    }
-    let (_, _, edge) = super::chrome::column_edge(chrome, plugins, scale)?;
-    let x = edge.x.max(0.0);
-    Some(content_rect(
-        Frame {
-            x,
-            y: 0.0,
-            width: (width - x).max(0.0),
-            height: bar,
-        },
-        scale,
-    ))
 }
 
 /// The parts of the titlebar of `state`'s window, `bar` pixels tall in a

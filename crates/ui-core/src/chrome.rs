@@ -36,7 +36,7 @@ pub enum TabBarPlace {
     Right(f32),
     /// Down a column at the window's left, of this width in pixels, from
     /// the window's top, through the titlebar, under the window's buttons,
-    /// the panes beside it up to the window's top too.
+    /// the panes beside it below the titlebar.
     Sidebar(f32),
 }
 
@@ -85,7 +85,7 @@ pub struct Regions {
     pub status_bar: Option<Frame>,
     /// The room that the panes share: below the titlebar and a tab bar
     /// across the top, beside a column's, above the status bar and a tab
-    /// bar across the bottom; from the window's top beside a sidebar.
+    /// bar across the bottom.
     pub panes: Frame,
     /// The window's overlays', as a palette's: the panes' room and the
     /// status bar's, which the tab bar leaves.
@@ -148,7 +148,6 @@ pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions
         TabBarPlace::Sidebar(column) => {
             let column = column.clamp(0.0, width);
             left = column;
-            top = 0.0;
             Frame {
                 x: 0.0,
                 y: 0.0,
@@ -453,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sidebar_runs_through_the_titlebar_and_the_panes_beside_it_up_to_the_top() {
+    fn a_sidebar_runs_through_the_titlebar_and_the_panes_beside_it_below_it() {
         let heights = Heights {
             tab_bar: 1.0,
             window_strip: 2.0,
@@ -461,10 +460,10 @@ mod tests {
         };
         let side = regions(&WINDOW, TabBarPlace::Sidebar(200.0), heights);
         assert_eq!(side.tab_bar, Some(frame(0.0, 0.0, 200.0, 600.0)));
-        assert_eq!(side.panes, frame(200.0, 0.0, 600.0, 578.0));
-        assert_eq!(side.window_strip, Some(frame(200.0, 0.0, 600.0, 2.0)));
+        assert_eq!(side.panes, frame(200.0, 40.0, 600.0, 538.0));
+        assert_eq!(side.window_strip, Some(frame(200.0, 40.0, 600.0, 2.0)));
         assert_eq!(side.status_bar, Some(frame(200.0, 578.0, 600.0, 22.0)));
-        assert_eq!(side.window_overlay, frame(200.0, 0.0, 600.0, 600.0));
+        assert_eq!(side.window_overlay, frame(200.0, 40.0, 600.0, 560.0));
         assert!(TabBarPlace::Sidebar(1.0).is_column());
         // Of no view, the titlebar's room is the panes'.
         let bare = regions(&WINDOW, TabBarPlace::Sidebar(200.0), Heights::default());

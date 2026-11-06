@@ -688,7 +688,7 @@ Whether the titlebar stays opaque over a translucent window, in the default back
 | `true`, `false` | `false` |
 
 - The terminal's background runs under the titlebar: with `false`, the titlebar is as translucent as the background, as `background-opacity` makes it; with `true`, it is opaque, and what is behind the window shows through the background below it alone.
-- A tab bar on the left that runs up through the titlebar, as [`position`](#position-1) and [`style`](#style-1) put it, leaves the window no titlebar to keep opaque: the panes beside it go up to the window's top.
+- A tab bar on the left that runs up through the titlebar, as [`position`](#position-1) and [`style`](#style-1) put it, keeps its own colors there: the titlebar is opaque beside it, over the panes.
 - The title's color reads over the background: a light background in the dark appearance, or a dark one in the light appearance, gives the window the appearance of its background.
 - It applies at once, as you save the file.
 
@@ -1361,7 +1361,7 @@ Where the bar goes.
 | `"top"`, `"bottom"`, `"left"`, `"right"` | `"top"` |
 
 - At the top, as [`style`](#style-1) puts it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below the titlebar to the window's bottom, its tabs one below another, as wide as [`column-width`](#column-width) says, or as you drag its edge.
-- On the left, in the `"unified"` and `"seamless"` looks, the column runs up through the titlebar, as macOS's sidebars do: the window's buttons stand over its top, the keys that bring the window forward after them, and the panes beside it go up to the window's top, with no title. You drag the window by the column's top, beside the window's buttons.
+- On the left, in the `"unified"` and `"seamless"` looks, the column runs up through the titlebar, as macOS's sidebars do: the window's buttons stand over its top, the keys that bring the window forward after them, and the panes beside it start below the titlebar, with no title. You drag the window by the column's top, beside the window's buttons, and by the titlebar over the panes.
 - It applies at once, as you save the file.
 
 ### `style`
