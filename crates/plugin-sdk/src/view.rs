@@ -252,8 +252,8 @@ pub struct Progress {
     /// ring's turn or of an outline's length, from 0 to 1.
     pub segment: f32,
     /// How long an indeterminate one's sweep across, turn round or run
-    /// along takes, in seconds: 1.5 for a bar, 1 for a ring, 2 for an
-    /// outline, without it.
+    /// along takes, in seconds, or its dots' round: 1.5 for a bar, 1 for a
+    /// ring, 2 for an outline, 1.2 for dots, without it.
     pub period: Option<f32>,
 }
 
@@ -301,6 +301,12 @@ pub enum ProgressShape {
     /// program's progress. It takes its parent's whole box, over the
     /// children before it, and none of their room.
     Outline,
+    /// Three dots in a triangle, one over two, in the middle of its box,
+    /// as a small spinner: an indeterminate one lights them in turn,
+    /// clockwise from the top, each fading as the next lights; one of a
+    /// value, as many as its thirds, from the top. Its track's color is
+    /// the dots' that are not lit.
+    Dots,
 }
 
 /// A list's own properties.

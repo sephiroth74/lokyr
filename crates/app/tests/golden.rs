@@ -658,6 +658,30 @@ fn progress_tree() -> Node {
         ..Box::default()
     });
     bars.push(rings);
+    // Dots of the states' values, and an indeterminate one's track.
+    let dots: Vec<Node> = states
+        .into_iter()
+        .chain([(ProgressState::Indeterminate, 0.0)])
+        .zip([10.0, 16.0, 24.0, 16.0])
+        .map(|((state, value), side)| {
+            Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                shape: ProgressShape::Dots,
+                ..Progress::default()
+            }))
+            .layout(Box {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Box::default()
+            })
+        })
+        .collect();
+    bars.push(Node::container(dots).layout(Box {
+        gap: 16.0,
+        align: Align::Center,
+        ..Box::default()
+    }));
     Node::container(bars).layout(Box {
         direction: Direction::Column,
         gap: 12.0,

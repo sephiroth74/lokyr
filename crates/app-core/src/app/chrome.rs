@@ -649,6 +649,10 @@ pub(super) fn sweeps(
                                     thickness: points(thickness),
                                 }
                             }
+                            progress::SweepShape::Dots { diameter, centers } => SweepShape::Dots {
+                                diameter: points(diameter),
+                                centers: centers.map(|(x, y)| (points(x), points(y))),
+                            },
                         },
                         color: [
                             f64::from(area.color.red),

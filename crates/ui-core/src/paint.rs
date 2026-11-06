@@ -567,8 +567,10 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// draws it; a bar's from its left, of its corners' radius, a ring's
     /// clockwise from its top, of its line's thickness, an outline's from
     /// its left along its top and its bottom at once, of its line's
-    /// thickness and its parent's corners' radius. An indeterminate one's
-    /// track alone, as the window server moves its part over it.
+    /// thickness and its parent's corners' radius; the dots' lit as far as
+    /// its value's thirds, of the window server's drawing none. An
+    /// indeterminate one's track alone, as the window server moves its
+    /// part over it.
     fn progress(&mut self, id: NodeId, progress: &view::Progress, frame: Frame, style: &Style) {
         let scale = self.layout.scale();
         let token = |token: Option<&view::Token>, fallback: &str| {
@@ -645,6 +647,37 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     self.items.push(Item::PushClip(Rect { width, ..outline }));
                     self.push_shape(fill);
                     self.items.push(Item::PopClip);
+                }
+            }
+            view::ProgressShape::Dots => {
+                let square = crate::progress::ring_square(frame);
+                let (centers, diameter) = crate::progress::dots(square.width);
+                // Of a value, as many lit as its thirds, from the top; the
+                // window server lights an indeterminate one's in turn.
+                let lit = if progress.state == view::ProgressState::Indeterminate {
+                    0
+                } else {
+                    (value * 3.0).ceil() as usize
+                };
+                for (at, (x, y)) in centers.into_iter().enumerate() {
+                    let color = if at < lit {
+                        fill
+                    } else {
+                        track.filter(|track| track.alpha > 0.0)
+                    };
+                    let Some(color) = color else {
+                        continue;
+                    };
+                    let dot = rect(Frame {
+                        x: square.x + x - diameter / 2.0,
+                        y: square.y + y - diameter / 2.0,
+                        width: diameter,
+                        height: diameter,
+                    });
+                    self.push_shape(Shape {
+                        radius: dot.width.min(dot.height) as f32 / 2.0,
+                        ..Shape::filled(dot, color)
+                    });
                 }
             }
         }
@@ -2804,6 +2837,57 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn the_dots_paint_their_track_and_as_many_lit_as_their_value_s_thirds() {
+        use lokyr_plugin_sdk::view::{Kind, Progress, ProgressShape, ProgressState};
+        // Dots of their natural side, 10 points, at a scale of 2.
+        let dots = |state, value| {
+            Node::container(vec![Node::new(Kind::Progress(Progress {
+                state,
+                value,
+                shape: ProgressShape::Dots,
+                ..Progress::default()
+            }))])
+            .layout(view::Layout {
+                direction: view::Direction::Column,
+                align: view::Align::Start,
+                ..view::Layout::default()
+            })
+        };
+        let shapes = |root: Node| -> Vec<Shape> {
+            let (_, _, items) = painted(&root, 2.0, 200.0, (0.0, 0.0));
+            items
+                .into_iter()
+                .flat_map(|item| match item {
+                    Item::Shapes(shapes) => shapes,
+                    _ => Vec::new(),
+                })
+                .collect()
+        };
+        let (track, lit) = (token("progress.track"), token("progress.normal"));
+        // Indeterminate, the track's three dots, round, of 6 pixels, the
+        // top one in the middle; the window server lights them.
+        let spinning = shapes(dots(ProgressState::Indeterminate, 0.0));
+        assert_eq!(spinning.len(), 3, "{spinning:?}");
+        assert!(spinning.iter().all(|dot| dot.fill == track
+            && (dot.rect.width, dot.rect.height) == (6, 6)
+            && dot.radius == 3.0));
+        assert_eq!(spinning[0].rect.x, 7);
+        assert!(spinning[1].rect.x > spinning[2].rect.x);
+        assert_eq!(spinning[1].rect.y, spinning[2].rect.y);
+        assert!(spinning[0].rect.y < spinning[1].rect.y);
+        // Of half, the top one and the next lit; of none, none.
+        let colors = |value| -> Vec<Color> {
+            shapes(dots(ProgressState::Normal, value))
+                .iter()
+                .map(|dot| dot.fill)
+                .collect()
+        };
+        assert_eq!(colors(0.5), [lit, lit, track]);
+        assert_eq!(colors(0.0), [track, track, track]);
+        assert_eq!(colors(1.0), [lit, lit, lit]);
     }
 
     #[test]

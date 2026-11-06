@@ -59,7 +59,15 @@ mod probe {
         filled: Option<f64>,
         refilled: Option<(bool, f64, bool)>,
         replaced: usize,
+        /// The dots of a sweep: their centers from its square's top left
+        /// corner, how many of them light of an animation of their own, and
+        /// whether their group pulses.
+        dots: Option<Dots>,
     }
+
+    /// The dots' centers, how many light of their own, and whether their
+    /// group pulses.
+    type Dots = (Vec<(f64, f64)>, usize, bool);
 
     struct Probe(Rc<RefCell<Seen>>);
 
@@ -242,6 +250,58 @@ mod probe {
                 seen.resized.push(from_top(&content, &cursor));
                 seen.swept.push(sweep_from_top(&content));
             }
+            // Three dots in a square of 10 points, 60 from the top.
+            let square = (
+                Point { x: 20.0, y: 60.0 },
+                Size {
+                    width: 10.0,
+                    height: 10.0,
+                },
+            );
+            platform.set_sweeps(
+                window,
+                &[Sweep {
+                    origin: square.0,
+                    size: square.1,
+                    within: square,
+                    radius: 0.0,
+                    shape: SweepShape::Dots {
+                        diameter: 3.0,
+                        centers: [(5.0, 2.0), (8.5, 8.0), (1.5, 8.0)],
+                    },
+                    color: [0.5, 0.5, 0.5, 1.0],
+                    period: Duration::from_millis(1200),
+                    start: Instant::now(),
+                }],
+            );
+            {
+                let (content, _, _) = views();
+                let sweeps = content.subviews().objectAtIndex(1);
+                let layer = sweeps.layer().expect("the sweeps' layer");
+                let under = |layer: &objc2_quartz_core::CALayer| {
+                    // SAFETY: the layer's sublayers, of the sweep's parts.
+                    unsafe { layer.sublayers() }
+                        .expect("a part")
+                        .objectAtIndex(0)
+                };
+                // The part of the window, the square, the dots' group.
+                let group = under(&under(&under(&layer)));
+                // SAFETY: the group's sublayers, its dots.
+                let dots = unsafe { group.sublayers() }.expect("the dots");
+                let key = NSString::from_str("sweep");
+                let mut centers = Vec::new();
+                let mut lit = 0;
+                for at in 0..dots.count() {
+                    let dot = dots.objectAtIndex(at);
+                    let position = dot.position();
+                    centers.push((position.x, 10.0 - position.y));
+                    // SAFETY: the key that the backend gives its sweeps.
+                    lit += usize::from(unsafe { dot.animationForKey(&key) }.is_some());
+                }
+                // SAFETY: as of the dots.
+                let pulses = unsafe { group.animationForKey(&key) }.is_some();
+                seen.dots = Some((centers, lit, pulses));
+            }
             platform.place_layer(window, Layer::Cursor, None);
             look(&mut seen);
             // A bar's fill, a quarter of 100 points; then a half, of the
@@ -377,6 +437,14 @@ mod probe {
         assert_eq!(seen.filled, Some(25.0), "{seen:?}");
         assert_eq!(seen.refilled, Some((true, 50.0, !reduced)), "{seen:?}");
         assert_eq!(seen.replaced, 1, "{seen:?}");
+        // The dots at their centers, each lit of its own animation, or all
+        // pulsing together where the system reduces motion.
+        let lit = if reduced { 0 } else { 3 };
+        assert_eq!(
+            seen.dots,
+            Some((vec![(5.0, 2.0), (8.5, 8.0), (1.5, 8.0)], lit, reduced)),
+            "{seen:?}"
+        );
         println!("layers: ok");
     }
 }

@@ -211,7 +211,7 @@ fn animation(blink: &Blink, reduced: bool) -> Option<Retained<CAKeyframeAnimatio
 }
 
 /// The keyframes' values of `opacities`, as objects.
-fn opacities(opacities: &[f64]) -> Retained<NSArray> {
+pub(crate) fn opacities(opacities: &[f64]) -> Retained<NSArray> {
     let values: Vec<Retained<AnyObject>> = opacities
         .iter()
         .map(|&opacity| {

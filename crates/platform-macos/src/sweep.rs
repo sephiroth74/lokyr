@@ -1,10 +1,10 @@
 //! The sweeps of a window: the parts of its indeterminate progresses that
 //! the window server moves without the app's frames, on layers of a view
 //! over the content's, under the layers of the text that blinks and of the
-//! cursor: a segment across a bar, an arc round a ring, each within the
-//! part of the window where its progress shows. Where the system reduces
-//! motion, the segment holds in the bar's middle and the arc at the ring's
-//! top, their opacity pulsing.
+//! cursor: a segment across a bar, an arc round a ring, three dots lit in
+//! turn, each within the part of the window where its progress shows. Where
+//! the system reduces motion, the segment holds in the bar's middle, the
+//! arc at the ring's top and the dots lit alike, their opacity pulsing.
 
 use std::cell::RefCell;
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -18,11 +18,11 @@ use objc2_core_foundation::{CFRetained, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{NSArray, NSNumber, NSObject, NSPoint, NSSize, NSString};
 use objc2_quartz_core::{
-    CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CAShapeLayer, CATransaction,
-    kCALineCapButt,
+    CABasicAnimation, CACurrentMediaTime, CAKeyframeAnimation, CALayer, CAMediaTiming,
+    CAShapeLayer, CATransaction, kCALineCapButt,
 };
 
-use crate::layer::timing;
+use crate::layer::{opacities, timing};
 
 /// The key of a sweep's animation on its layer.
 const SWEEP: &str = "sweep";
@@ -30,6 +30,11 @@ const SWEEP: &str = "sweep";
 /// The opacities between which a sweep pulses where the system reduces
 /// motion.
 const PULSE: (f64, f64) = (1.0, 0.35);
+
+/// A dot's opacities as it lights and fades, a round of the dots: from its
+/// least, lit within a tenth of the round, faded by seven tenths, and held
+/// least to the round's end, as the next dots light.
+const DOT_LIGHT: ([f64; 4], [f64; 4]) = ([0.25, 1.0, 0.25, 0.25], [0.0, 0.1, 0.7, 1.0]);
 
 pub(crate) struct SweepsViewIvars {
     /// The sweeps that its layers show, of the view's height and of the
@@ -245,6 +250,26 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
                 (0.0, -length),
             )
         }
+        SweepShape::Dots { diameter, centers } => {
+            let group = CALayer::new();
+            group.setFrame(CGRect::new(CGPoint::ZERO, CGSize::new(width, tall)));
+            let dots = centers.map(|(x, y)| {
+                let dot = CALayer::new();
+                dot.setBounds(CGRect::new(CGPoint::ZERO, CGSize::new(diameter, diameter)));
+                dot.setCornerRadius(diameter / 2.0);
+                dot.setBackgroundColor(Some(&color));
+                // From the square's top, as the layer's y goes up.
+                dot.setPosition(CGPoint::new(x, tall - y));
+                group.addSublayer(&dot);
+                dot
+            });
+            track.addSublayer(&group);
+            if !reduced {
+                light(&dots, sweep, now);
+                return within;
+            }
+            (group, "opacity", PULSE)
+        }
     };
     let (moving, key, (from, to)) = animation;
     let pulse = CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str(if reduced {
@@ -267,7 +292,7 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
         pulse.setAutoreverses(true);
     }
     pulse.setTimingFunction(Some(&timing(match sweep.shape {
-        SweepShape::Bar { .. } => lokyr_platform_core::Easing::EaseInOut,
+        SweepShape::Bar { .. } | SweepShape::Dots { .. } => lokyr_platform_core::Easing::EaseInOut,
         SweepShape::Ring { .. } | SweepShape::Outline { .. } => lokyr_platform_core::Easing::Linear,
     })));
     // From the sweeps' start, as the app counts it, so that a sweep placed
@@ -276,6 +301,32 @@ fn sweep_layer(sweep: &Sweep, height: f64, (reduced, now): (bool, f64)) -> Retai
     pulse.setBeginTime(now - since.as_secs_f64());
     moving.addAnimation_forKey(&pulse, Some(&NSString::from_str(SWEEP)));
     within
+}
+
+/// Lights `dots` in turn, of `sweep`'s period, whose layers' time is `now`:
+/// each fades as the next lights, a third of the round after it, from the
+/// sweeps' start, so that dots placed again go on where they were.
+fn light(dots: &[Retained<CALayer>; 3], sweep: &Sweep, now: f64) {
+    let period = sweep.period.as_secs_f64().max(0.05);
+    let since = Instant::now().saturating_duration_since(sweep.start);
+    // A round earlier, which changes nothing of their phases, so that every
+    // dot's light began before now, however late it comes.
+    let first = now - since.as_secs_f64() - period;
+    let (values, times) = DOT_LIGHT;
+    for (at, dot) in dots.iter().enumerate() {
+        let animation =
+            CAKeyframeAnimation::animationWithKeyPath(Some(&NSString::from_str("opacity")));
+        // SAFETY: numbers, as an animation of the opacity takes.
+        unsafe { animation.setValues(Some(&opacities(&values))) };
+        animation.setKeyTimes(Some(&NSArray::from_retained_slice(
+            &times.map(NSNumber::new_f64),
+        )));
+        animation.setDuration(period);
+        animation.setRepeatCount(f32::INFINITY);
+        animation.setRemovedOnCompletion(false);
+        animation.setBeginTime(first + period * at as f64 / 3.0);
+        dot.addAnimation_forKey(&animation, Some(&NSString::from_str(SWEEP)));
+    }
 }
 
 /// The path of an outline of a box `width` by `height` points, of corners

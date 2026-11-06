@@ -1,8 +1,8 @@
-//! The progress bars and rings: their natural sizes, the room where a ring
-//! goes in its box, and the sweeps of the indeterminate ones, which the host
-//! hands the platform, whose window server moves them without the app's
-//! frames: a segment across a bar, an arc round a ring, each within the
-//! clips of the nodes around it.
+//! The progress bars, rings and dots: their natural sizes, the room where a
+//! ring or the dots go in their box, and the sweeps of the indeterminate
+//! ones, which the host hands the platform, whose window server moves them
+//! without the app's frames: a segment across a bar, an arc round a ring,
+//! the dots lit in turn, each within the clips of the nodes around it.
 
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,12 @@ pub const BAR: (f32, f32) = (160.0, 4.0);
 /// A ring's natural side, in points.
 pub const RING: f32 = 16.0;
 
+/// The dots' natural side, in points.
+pub const DOTS: f32 = 10.0;
+
+/// The part of the dots' side that a dot's diameter takes.
+const DOT: f32 = 0.3;
+
 /// How long an indeterminate bar's sweep takes, a ring's turn, and an
 /// outline's run along it, of a progress that gives none.
 pub const PERIODS: (Duration, Duration, Duration) = (
@@ -28,6 +34,10 @@ pub const PERIODS: (Duration, Duration, Duration) = (
     Duration::from_secs(1),
     Duration::from_secs(2),
 );
+
+/// How long the dots' round takes, each lit once, of a progress that gives
+/// none.
+pub const DOTS_PERIOD: Duration = Duration::from_millis(1200);
 
 /// The part of an indeterminate progress that the window server moves: its
 /// box, in pixels from the tree's corner, the part of it within its clips,
@@ -114,6 +124,15 @@ pub enum SweepShape {
         /// The line's thickness.
         thickness: f32,
     },
+    /// Three dots, lit in turn, clockwise from the top, of their diameter
+    /// and their centers in pixels from the square's corner, as [`dots`]
+    /// places them.
+    Dots {
+        /// A dot's diameter.
+        diameter: f32,
+        /// The dots' centers, the top one first, then clockwise.
+        centers: [(f32, f32); 3],
+    },
 }
 
 /// The natural size of a progress of `shape`, in points.
@@ -121,6 +140,7 @@ pub fn natural(shape: ProgressShape) -> (f32, f32) {
     match shape {
         ProgressShape::Bar => BAR,
         ProgressShape::Ring => (RING, RING),
+        ProgressShape::Dots => (DOTS, DOTS),
         // Its parent's box, which its place gives it.
         ProgressShape::Outline => (0.0, 0.0),
     }
@@ -136,6 +156,22 @@ pub fn ring_square(frame: Frame) -> Frame {
         width: side,
         height: side,
     }
+}
+
+/// The dots in a square of `side`: their centers from its corner, the top
+/// one first, then clockwise, the bottom right and the bottom left, in a
+/// triangle of equal sides as wide as the square less a dot, in its
+/// middle; and a dot's diameter.
+pub fn dots(side: f32) -> ([(f32, f32); 3], f32) {
+    let diameter = side * DOT;
+    let wide = side - diameter;
+    let high = wide * 3.0_f32.sqrt() / 2.0;
+    let (top, bottom) = ((side - high) / 2.0, (side + high) / 2.0);
+    let half = diameter / 2.0;
+    (
+        [(side / 2.0, top), (side - half, bottom), (half, bottom)],
+        diameter,
+    )
 }
 
 /// The radius of the corners of a bar of `progress`, `height` pixels high,
@@ -272,28 +308,33 @@ fn walk(
             .as_ref()
             .and_then(|token| tokens.get(&token.0))
             .or_else(|| tokens.get(state));
-        let (boxed, shape, radius) = match progress.shape {
-            ProgressShape::Bar => (frame, FillShape::Bar, radius(progress, frame.height, scale)),
-            ProgressShape::Ring => (
+        let filled = match progress.shape {
+            ProgressShape::Bar => {
+                Some((frame, FillShape::Bar, radius(progress, frame.height, scale)))
+            }
+            ProgressShape::Ring => Some((
                 ring_square(frame),
                 FillShape::Ring {
                     thickness: progress.thickness * scale,
                 },
                 0.0,
-            ),
-            ProgressShape::Outline => (
+            )),
+            ProgressShape::Outline => Some((
                 frame,
                 FillShape::Outline {
                     thickness: progress.thickness * scale,
                 },
                 outline_radius(tree, id, progress, scale),
-            ),
+            )),
+            // The dots of a value are the host's to draw.
+            ProgressShape::Dots => None,
         };
-        let pixels = rect(boxed);
-        let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
-        if let Some(color) = color
-            && !is_empty(visible)
+        if let Some((boxed, shape, radius)) = filled
+            && let Some(color) = color
+            && !is_empty(clip.map_or(rect(boxed), |clip| intersection(clip, rect(boxed))))
         {
+            let pixels = rect(boxed);
+            let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
             parts.fills.push(FillArea {
                 node: id,
                 rect: pixels,
@@ -337,6 +378,11 @@ fn walk(
                     thickness: progress.thickness * scale,
                 },
             ),
+            ProgressShape::Dots => {
+                let square = ring_square(frame);
+                let (centers, diameter) = dots(square.width);
+                (square, SweepShape::Dots { diameter, centers })
+            }
         };
         let pixels = rect(boxed);
         let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
@@ -348,11 +394,13 @@ fn walk(
                     ProgressShape::Bar => PERIODS.0,
                     ProgressShape::Ring => PERIODS.1,
                     ProgressShape::Outline => PERIODS.2,
+                    ProgressShape::Dots => DOTS_PERIOD,
                 },
                 Duration::from_secs_f32,
             );
             let radius = match progress.shape {
                 ProgressShape::Outline => outline_radius(tree, id, progress, scale),
+                ProgressShape::Dots => 0.0,
                 _ => radius(progress, frame.height, scale),
             };
             parts.sweeps.push(SweepArea {
@@ -748,6 +796,68 @@ mod tests {
             2.0,
         );
         assert_eq!(sweeps(&tree, &layout, &tokens, None)[0].radius, 4.0);
+        assert!(fills(&tree, &layout, &tokens, None).is_empty());
+    }
+
+    #[test]
+    fn the_dots_lie_in_a_triangle_in_their_square_and_light_in_turn() {
+        // Of a side of 20: dots of 6, a triangle of sides of 14 in its
+        // middle, the top one first, then clockwise.
+        let (centers, diameter) = dots(20.0);
+        assert!((diameter - 6.0).abs() < 1e-5);
+        let high = 14.0 * 3.0_f32.sqrt() / 2.0;
+        let wanted = [
+            (10.0, (20.0 - high) / 2.0),
+            (17.0, (20.0 + high) / 2.0),
+            (3.0, (20.0 + high) / 2.0),
+        ];
+        for (center, wanted) in centers.iter().zip(wanted) {
+            assert!(
+                (center.0 - wanted.0).abs() < 1e-4 && (center.1 - wanted.1).abs() < 1e-4,
+                "{centers:?}"
+            );
+        }
+        // Every dot within the square.
+        assert!(centers.iter().all(|&(x, y)| {
+            x - diameter / 2.0 >= 0.0
+                && x + diameter / 2.0 <= 20.0
+                && y - diameter / 2.0 >= 0.0
+                && y + diameter / 2.0 <= 20.0
+        }));
+        assert_eq!(natural(ProgressShape::Dots), (DOTS, DOTS));
+        // An indeterminate one's sweep, of its square in its box's middle,
+        // of the dots' period; one of a value has no fill of the window
+        // server's.
+        let spinning = of(Progress {
+            state: ProgressState::Indeterminate,
+            shape: ProgressShape::Dots,
+            ..Progress::default()
+        });
+        let valued = of(Progress {
+            value: 0.5,
+            shape: ProgressShape::Dots,
+            ..Progress::default()
+        });
+        let (tree, layout) = laid(vec![spinning, valued], 2.0);
+        let tokens = Theme::builtin().dark.tokens;
+        let swept = sweeps(&tree, &layout, &tokens, None);
+        let [sweep] = swept[..] else {
+            panic!("one sweep: {swept:?}");
+        };
+        // A column of 400 pixels: the square of the box's 20 in its middle.
+        assert_eq!(
+            sweep.rect,
+            Rect {
+                x: 190,
+                y: 0,
+                width: 20,
+                height: 20
+            }
+        );
+        assert_eq!(sweep.shape, SweepShape::Dots { diameter, centers });
+        assert_eq!(sweep.period, DOTS_PERIOD);
+        assert_eq!(sweep.radius, 0.0);
+        assert_eq!(sweep.color, token("progress.normal"));
         assert!(fills(&tree, &layout, &tokens, None).is_empty());
     }
 

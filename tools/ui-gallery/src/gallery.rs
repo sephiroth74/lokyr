@@ -961,6 +961,66 @@ impl Gallery {
             align: Align::Center,
             ..Layout::default()
         });
+        // Dots: a spinner before a tab's title, of the secondary text's
+        // color over the disabled one's, as a running program's; larger,
+        // of the accent; and of the value, a third each.
+        let dotted = |state, side: f32, colors: Option<(&str, &str)>| {
+            of(Progress {
+                state,
+                value,
+                shape: ProgressShape::Dots,
+                ..Progress::default()
+            })
+            .layout(Layout {
+                width: Length::Points(side),
+                height: Length::Points(side),
+                ..Layout::default()
+            })
+            .style(Style {
+                color: colors.map(|(lit, _)| Token::from(lit)),
+                background: colors.map(|(_, track)| Token::from(track)),
+                ..Style::default()
+            })
+        };
+        let running = Node::container(vec![
+            dotted(
+                ProgressState::Indeterminate,
+                10.0,
+                Some(("text.secondary", "text.disabled")),
+            ),
+            Node::text("java"),
+        ])
+        .layout(Layout {
+            width: Length::Points(140.0),
+            height: Length::Points(28.0),
+            gap: 6.0,
+            align: Align::Center,
+            justify: view::Justify::Center,
+            ..Layout::default()
+        })
+        .style(Style {
+            radius: 8.0,
+            background: Some(Token::from("tab.active.bg")),
+            ..Style::default()
+        });
+        let dots = Node::container(vec![
+            running,
+            dotted(ProgressState::Indeterminate, 16.0, None),
+            dotted(
+                if self.spinning {
+                    ProgressState::Indeterminate
+                } else {
+                    ProgressState::Normal
+                },
+                16.0,
+                None,
+            ),
+        ])
+        .layout(Layout {
+            gap: 12.0,
+            align: Align::Center,
+            ..Layout::default()
+        });
         let controls = Node::container(vec![
             Node::button("−10%").key("less"),
             Node::button("+10%").key("more"),
@@ -995,6 +1055,7 @@ impl Gallery {
                 labelled("1 px at 2x", hairline(0.5)),
                 rings,
                 outlines,
+                dots,
                 controls,
             ],
         )

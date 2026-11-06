@@ -146,10 +146,10 @@ pub struct Blink {
 
 /// The part of an indeterminate progress that the window server moves
 /// without the app's frames: a segment across a bar, from out of its left
-/// edge to out of its right one, or an arc round a ring, clockwise, round
-/// again, within the bar or the ring and the part of the window where it
-/// shows; where the system reduces motion, held still, its opacity
-/// pulsing.
+/// edge to out of its right one, an arc round a ring, clockwise, round
+/// again, or three dots lit in turn, within the bar, the ring or the dots'
+/// square and the part of the window where it shows; where the system
+/// reduces motion, held still, its opacity pulsing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sweep {
     /// The bar's top left corner, or the ring's square's, in points from
@@ -196,6 +196,15 @@ pub enum SweepShape {
         span: f64,
         /// Its line's thickness, in points.
         thickness: f64,
+    },
+    /// Three dots of its color, each lit in turn and fading as the next
+    /// lights, a third of the period apart, the first first.
+    Dots {
+        /// A dot's diameter, in points.
+        diameter: f64,
+        /// The dots' centers, in points from the square's top left corner,
+        /// in the order in which they light.
+        centers: [(f64, f64); 3],
     },
 }
 
