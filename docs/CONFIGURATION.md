@@ -1430,5 +1430,5 @@ The width of the bar's column, on the left or the right, in points.
 |---|---|
 | from `60` to `600` | `200` |
 
-- A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place.
+- A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place, at once or at the next start, as the file changes while Lokyr is closed too.
 - It applies at once, as you save the file.

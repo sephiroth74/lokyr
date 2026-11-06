@@ -117,25 +117,35 @@ pub fn tab_bar(
 
 /// The plugin of the tabs: the tabs whose titles it asked the user for, by
 /// their questions; its bar's config, the width that the user's drag left
-/// its column, and the views that it rendered, each of its last tree, which
-/// it renders again as their trees change.
+/// its column, and the config's width that the drag took the place of; and
+/// the views that it rendered, each of its last tree, which it renders
+/// again as their trees change.
 #[derive(Debug, Default)]
 pub struct Tabs {
     renaming: BTreeMap<u64, TabId>,
     settings: Settings,
     width: Option<f32>,
+    dragged_over: Option<f32>,
     views: Vec<(ViewId, Option<Node>)>,
 }
 
+/// The keys of the plugin's state: the column's width of the user's last
+/// drag, and the config's width that it took the place of.
+const DRAGGED: &str = "column-width";
+const DRAGGED_OVER: &str = "config-width";
+
 impl Plugin for Tabs {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        // The column's width of the user's last drag, as its state keeps it.
+        // The column's width of the user's last drag, as its state keeps it,
+        // and the config's width that it took the place of.
         if let Ok(Data::Map(state)) = cx.state() {
-            self.width = match state.get("column-width") {
+            let width = |key: &str| match state.get(key) {
                 Some(Data::Number(width)) => Some(*width as f32),
                 Some(Data::Integer(width)) => Some(*width as f32),
                 _ => None,
             };
+            self.width = width(DRAGGED);
+            self.dragged_over = width(DRAGGED_OVER);
         }
         self.configure(cx)?;
         let mut names: Vec<&str> = WorkspaceEvent::NAMES.to_vec();
@@ -225,8 +235,9 @@ impl Plugin for Tabs {
             PREV => cx.activate_tab(tabs[(at + tabs.len() - 1) % tabs.len()].id),
             GOTO => {
                 let index = integer(&args, "index");
-                match usize::try_from(index - 1)
-                    .ok()
+                match index
+                    .checked_sub(1)
+                    .and_then(|index| usize::try_from(index).ok())
                     .and_then(|index| tabs.get(index))
                 {
                     Some(shown) => cx.activate_tab(shown.id),
@@ -281,15 +292,25 @@ impl Plugin for Tabs {
                     again = true;
                 }
                 // The user's drag of the column's edge, which the state
-                // keeps for the next start.
+                // keeps for the next start, with the config's width that it
+                // takes the place of.
                 Event::TabBarResized { width } => {
                     self.width = Some(*width);
-                    let state = Data::Map(BTreeMap::from([(
-                        "column-width".to_owned(),
-                        Data::Number(f64::from(*width)),
-                    )]));
+                    self.dragged_over = Some(self.settings.column_width);
+                    let state = Data::Map(BTreeMap::from([
+                        (DRAGGED.to_owned(), Data::Number(f64::from(*width))),
+                        (
+                            DRAGGED_OVER.to_owned(),
+                            Data::Number(f64::from(self.settings.column_width)),
+                        ),
+                    ]));
                     // Without a state directory, the width stays for this run.
                     let _ = cx.set_state(state);
+                }
+                // A closed window's view goes.
+                Event::Workspace(WorkspaceEvent::WindowClosed { window }) => {
+                    let closed = ViewId::TabBar(*window);
+                    self.views.retain(|(view, _)| *view != closed);
                 }
                 Event::Workspace(_) | Event::KeysChanged => again = true,
                 _ => {}
@@ -303,13 +324,23 @@ impl Plugin for Tabs {
 }
 
 impl Tabs {
-    /// Takes its section of the config, and puts its bar at its place: a
-    /// column's width that the config changes takes the place of the
-    /// user's drag's.
+    /// Takes its section of the config, and puts its bar at its place: the
+    /// user's drag's width stands while the config's is the one that the
+    /// drag took the place of, at a start too, as the file may change while
+    /// Lokyr is closed; a new one takes the drag's place, which the state
+    /// forgets.
     fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let settings = Settings::of(&cx.config()?);
-        if settings.column_width != self.settings.column_width && !self.views.is_empty() {
-            self.width = None;
+        if self.width.is_some() {
+            // A state of a drag, from before its config's width was kept,
+            // was of the config of now.
+            let over = *self.dragged_over.get_or_insert(settings.column_width);
+            if over != settings.column_width {
+                self.width = None;
+                self.dragged_over = None;
+                // Without a state directory, nothing was kept.
+                let _ = cx.set_state(Data::Map(BTreeMap::new()));
+            }
         }
         self.settings = settings;
         cx.set_tab_bar_place(self.settings.place(self.width))

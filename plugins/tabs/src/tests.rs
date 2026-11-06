@@ -377,6 +377,60 @@ fn the_config_puts_the_bar_at_its_place_and_keeps_a_drag_s_width() {
         placed(next.take_done()),
         Some(BarPlace::Sidebar { width: 300.0 })
     );
+    // The file's new width takes the drag's place at once, and at the
+    // next start too, which the state forgets.
+    let wider = |width: i64| {
+        Data::Map(BTreeMap::from([
+            ("position".to_owned(), Data::Text("left".to_owned())),
+            ("column-width".to_owned(), Data::Integer(width)),
+        ]))
+    };
+    next.set_config(wider(150));
+    next.deliver(&mut again).unwrap();
+    assert_eq!(
+        placed(next.take_done()),
+        Some(BarPlace::Sidebar { width: 150.0 })
+    );
+    let mut third = FakeHost::new(NAME);
+    third.pane(PaneId(1)).tab = TabId(1);
+    third.set_config(wider(150));
+    third.set_state(next.state().clone());
+    let mut plugin = Tabs::default();
+    third.activate(&mut plugin).unwrap();
+    assert_eq!(
+        placed(third.take_done()),
+        Some(BarPlace::Sidebar { width: 150.0 })
+    );
+    // A drag, then the file changed while Lokyr is closed: the file's.
+    third.post(Event::TabBarResized { width: 320.0 });
+    third.deliver(&mut plugin).unwrap();
+    let mut fourth = FakeHost::new(NAME);
+    fourth.pane(PaneId(1)).tab = TabId(1);
+    fourth.set_config(wider(350));
+    fourth.set_state(third.state().clone());
+    let mut plugin = Tabs::default();
+    fourth.activate(&mut plugin).unwrap();
+    assert_eq!(
+        placed(fourth.take_done()),
+        Some(BarPlace::Sidebar { width: 350.0 })
+    );
+}
+
+#[test]
+fn a_closed_window_s_view_goes_and_a_tab_s_index_takes_any_number() {
+    use lokyr_plugin_sdk::event::WorkspaceEvent;
+    let (mut host, mut plugin) = self::host(&[1], 1);
+    let view = ViewId::TabBar(WINDOW);
+    let _ = host.render(&mut plugin, &view);
+    assert_eq!(plugin.views.len(), 1);
+    host.post(Event::Workspace(WorkspaceEvent::WindowClosed {
+        window: WINDOW,
+    }));
+    host.deliver(&mut plugin).unwrap();
+    assert!(plugin.views.is_empty(), "{:?}", plugin.views);
+    // The smallest index selects no tab, of no overflow.
+    let (mut host, mut plugin) = self::host(&[1, 1], 1);
+    assert!(run(&mut host, &mut plugin, GOTO, number("index", i64::MIN)).is_empty());
 }
 
 #[test]
