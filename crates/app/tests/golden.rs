@@ -994,24 +994,202 @@ fn bar_tabs() -> Vec<TabInfo> {
 /// the width of the window's buttons, in points.
 const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
 
-/// A tab bar's image: its name, its config's `style` and `position`, and
-/// the room that a window gives it, its width and its height, in points,
-/// its height its own without one.
-type Bar = (&'static str, &'static str, &'static str, (f32, Option<f32>));
+/// The tabs of a bar's image: the three of [`bar_tabs`], of the keys of
+/// the default bindings; one alone, which the config shows a bar for;
+/// twelve, more than the keys' nine; or the three, of keys of the user's
+/// bindings, one of none.
+#[derive(Clone, Copy)]
+enum BarTabs {
+    Three,
+    One,
+    Many,
+    Bound,
+}
+
+/// A bar's tabs, the keys of each, and the config's keys past the look's.
+type ShownTabs = (Vec<TabInfo>, Vec<Option<String>>, Vec<(&'static str, Data)>);
+
+impl BarTabs {
+    /// The tabs, the keys of each, and the config's keys past the look's.
+    fn shown(self) -> ShownTabs {
+        let keys = |keys: &[&str]| keys.iter().map(|keys| Some((*keys).to_owned())).collect();
+        match self {
+            Self::Three => (bar_tabs(), keys(&["⌘1", "⌘2", "⌘3"]), Vec::new()),
+            Self::One => {
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                (
+                    vec![tab],
+                    keys(&["⌘1"]),
+                    vec![("hide-when-single", Data::Boolean(false))],
+                )
+            }
+            Self::Many => {
+                let titles = [
+                    "-zsh",
+                    "vim",
+                    "htop",
+                    "lokyr — cargo test",
+                    "ssh pi",
+                    "-zsh",
+                    "man ls",
+                    "git log",
+                    "~/Downloads",
+                    "python3",
+                    "-zsh",
+                    "tail -f lokyr.log",
+                ];
+                let tabs = titles
+                    .iter()
+                    .enumerate()
+                    .map(|(at, title)| {
+                        let id = at as u64 + 1;
+                        TabInfo {
+                            id: TabId(id),
+                            window: WindowId(1),
+                            title: (*title).to_owned(),
+                            color: (id == 2).then_some(Color::Rgb(0xd9, 0x4a, 0x38)),
+                            active: id == 5,
+                            panes: vec![PaneId(id)],
+                            focused: PaneId(id),
+                            zoomed: None,
+                        }
+                    })
+                    .collect();
+                let keys = (1..=titles.len())
+                    .map(|at| (at <= 9).then(|| format!("⌘{at}")))
+                    .collect();
+                (tabs, keys, Vec::new())
+            }
+            Self::Bound => {
+                let keys = vec![Some("⌃1".to_owned()), Some("⌥⌘2".to_owned()), None];
+                (bar_tabs(), keys, Vec::new())
+            }
+        }
+    }
+}
+
+/// A tab bar's image: its name, its config's `style` and `position`, the
+/// room that a window gives it, its width and its height, in points, its
+/// height its own without one, and its tabs.
+type Bar = (
+    &'static str,
+    &'static str,
+    &'static str,
+    (f32, Option<f32>),
+    BarTabs,
+);
 
 /// The images of the tab bar: each of its looks at each of its places, as
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
-/// tab.
-const BARS: [Bar; 8] = [
-    ("standard-top", "standard", "top", (640.0, None)),
-    ("standard-bottom", "standard", "bottom", (640.0, None)),
-    ("unified", "unified", "top", (640.0, Some(40.0))),
-    ("seamless-top", "seamless", "top", (640.0, Some(40.0))),
-    ("seamless-bottom", "seamless", "bottom", (640.0, None)),
-    ("standard-left", "standard", "left", (200.0, Some(180.0))),
-    ("unified-left", "unified", "left", (200.0, Some(180.0))),
-    ("seamless-left", "seamless", "left", (200.0, Some(180.0))),
+/// tab; a single tab, many, and the keys of the user's bindings.
+const BARS: [Bar; 15] = [
+    (
+        "standard-top",
+        "standard",
+        "top",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "standard-bottom",
+        "standard",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "unified",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-top",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-bottom",
+        "seamless",
+        "bottom",
+        (640.0, None),
+        BarTabs::Three,
+    ),
+    (
+        "standard-left",
+        "standard",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "unified-left",
+        "unified",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "seamless-left",
+        "seamless",
+        "left",
+        (200.0, Some(180.0)),
+        BarTabs::Three,
+    ),
+    (
+        "unified-single",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::One,
+    ),
+    (
+        "seamless-left-single",
+        "seamless",
+        "left",
+        (200.0, Some(120.0)),
+        BarTabs::One,
+    ),
+    (
+        "unified-many",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Many,
+    ),
+    (
+        "seamless-many",
+        "seamless",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Many,
+    ),
+    (
+        "standard-many",
+        "standard",
+        "top",
+        (640.0, None),
+        BarTabs::Many,
+    ),
+    (
+        "unified-left-many",
+        "unified",
+        "left",
+        (200.0, Some(420.0)),
+        BarTabs::Many,
+    ),
+    (
+        "unified-bound",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Bound,
+    ),
 ];
 
 /// Draws the tab bar of `style` at `position`, laid out as a window lays
@@ -1019,17 +1197,19 @@ const BARS: [Bar; 8] = [
 /// `scale`, in the dark variant or the light one, the pointer over the
 /// third tab, which shows its close button, and compares the image with
 /// its golden one, `tabs-{name}-{appearance}-{scale}x`.
-fn check_tab_bar((name, style, position, (width, height)): Bar, (dark, scale): (bool, u32)) {
+fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, scale): (bool, u32)) {
     let Some(mut drawing) = Drawing::new(scale as f32) else {
         return;
     };
     let variant = Theme::builtin().variant(dark).clone();
-    let config = Data::Map(BTreeMap::from([
+    let (tabs, keys, more) = shown.shown();
+    let mut config = BTreeMap::from([
         ("style".to_owned(), Data::Text(style.to_owned())),
         ("position".to_owned(), Data::Text(position.to_owned())),
-    ]));
-    let keys = ["⌘1", "⌘2", "⌘3"].map(|keys| Some(keys.to_owned()));
-    let (root, place) = lokyr_tabs::tab_bar(&bar_tabs(), &keys, Some("⌥⌘1"), &config);
+    ]);
+    config.extend(more.into_iter().map(|(key, value)| (key.to_owned(), value)));
+    let config = Data::Map(config);
+    let (root, place) = lokyr_tabs::tab_bar(&tabs, &keys, Some("⌥⌘1"), &config);
     let mut tree = Tree::new();
     let changes = tree.update(&root.unwrap()).unwrap();
     let pixels = scale as f32;
@@ -1055,7 +1235,7 @@ fn check_tab_bar((name, style, position, (width, height)): Bar, (dark, scale): (
     // presses, the window's keys and the room around them the window's.
     if place == lokyr_plugin_sdk::host::BarPlace::Titlebar {
         let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
-        assert_eq!(areas.len(), 4, "{name}: {areas:?}");
+        assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
         assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");
     }
     let (width, height) = (frame.width as u32, frame.height as u32);
