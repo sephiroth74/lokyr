@@ -9,7 +9,7 @@ use objc2::runtime::{Bool, ProtocolObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
-    NSApplicationTerminateReply, NSWindow,
+    NSApplicationTerminateReply, NSEvent, NSWindow,
 };
 use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol};
 
@@ -50,9 +50,14 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     let appearance = AppearanceObserver::start(mtm, Rc::downgrade(&shared));
+    let bar_presses = crate::window::watch_bar_presses(mtm);
 
     app.run();
 
+    if let Some(monitor) = bar_presses {
+        // SAFETY: the monitor that `watch_bar_presses` added.
+        unsafe { NSEvent::removeMonitor(&monitor) };
+    }
     appearance.stop();
     app.setDelegate(None);
     drop(wake);

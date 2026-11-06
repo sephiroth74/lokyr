@@ -15,6 +15,7 @@ mod alert;
 mod app;
 mod appearance;
 mod backend;
+mod bar_view;
 mod definition;
 mod frame;
 mod global_keys;

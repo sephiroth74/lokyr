@@ -3,8 +3,8 @@
 //! does over the title, and a single click tells the content nothing. A
 //! titlebar of tabs is taller, of no title, its buttons' room told; a press
 //! over its parts that are the content's comes to the content, as the
-//! pointer's moves over it do, and the first click there of a window that
-//! is not key too; the title's titlebar again is as before. The parts of the
+//! pointer's moves over it do, and the first click on the bar of a window
+//! that is not key acts too; the title's titlebar again is as before. The parts of the
 //! content where the moves come are tracking areas at their places from
 //! the view's top, as its height changes too, and the pointer's leaving
 //! them comes.
@@ -253,7 +253,10 @@ mod probe {
         // The press over the tab's part of the bar alone, and the move.
         assert_eq!((seen.buttons, seen.moves), (1, 1), "{seen:?}");
         assert!(!seen.title_shown, "{seen:?}");
-        assert_eq!(seen.first_mouse, [true, false, false], "{seen:?}");
+        // The first click of a window that is not key acts over the whole
+        // bar, as a tab's and as the window's drag, and below it makes the
+        // window key alone.
+        assert_eq!(seen.first_mouse, [true, true, false], "{seen:?}");
         let tabs = seen.tabs.as_ref().expect("the tabs' titlebar's size");
         let titled = seen.sizes.last().expect("the title's titlebar's size");
         // A compact toolbar's titlebar, taller than the title's alone, its

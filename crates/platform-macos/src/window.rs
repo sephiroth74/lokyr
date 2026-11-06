@@ -13,17 +13,19 @@ use lokyr_platform_core::{
 };
 use std::path::PathBuf;
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, ProtocolObject, Sel};
 use objc2::{ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSCursor, NSDragOperation,
-    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventPhase, NSEventType, NSPasteboard,
-    NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey,
-    NSResponder, NSScreen, NSTextInputClient, NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSViewLayerContentsPlacement, NSWindow, NSWindowButton,
-    NSWindowDelegate, NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode,
-    NSWindowTitleVisibility, NSWindowToolbarStyle,
+    NSDraggingDestination, NSDraggingInfo, NSEvent, NSEventMask, NSEventPhase, NSEventType,
+    NSPasteboard, NSPasteboardTypeFileURL, NSPasteboardTypeString,
+    NSPasteboardURLReadingFileURLsOnlyKey, NSResponder, NSScreen, NSTextInputClient,
+    NSTitlebarSeparatorStyle, NSToolbar, NSTrackingArea, NSTrackingAreaOptions, NSView,
+    NSViewLayerContentsPlacement, NSWindow, NSWindowButton, NSWindowDelegate,
+    NSWindowOcclusionState, NSWindowStyleMask, NSWindowTabbingMode, NSWindowTitleVisibility,
+    NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSNotFound, NSNotification,
@@ -35,6 +37,7 @@ use objc2_quartz_core::{CALayer, CAMetalLayer};
 
 use crate::access::Access;
 use crate::accessory::TitleAccessory;
+use crate::bar_view::BarView;
 use crate::frame::Pacer;
 use crate::keys;
 use crate::layer::LayerView;
@@ -654,6 +657,8 @@ pub(crate) struct ContentViewIvars {
     /// content's, in points from the view's top left corner.
     titlebar: Cell<Titlebar>,
     titlebar_areas: RefCell<Vec<ContentRect>>,
+    /// The view that takes the presses over the titlebar for the view.
+    bar_view: RefCell<Option<Retained<BarView>>>,
     /// The parts of the content where the pointer's moves come, in points
     /// from the view's top left corner, and their tracking areas, made
     /// anew as the view's size changes, as its own coordinates go up from
@@ -726,13 +731,14 @@ define_class!(
             self.post_key(event);
         }
 
-        // SAFETY: AppKit's signature. The first click on a part of the
-        // titlebar that is the content's, as a tab's, acts in a window that
-        // was not key too, as the system's toolbars do; elsewhere it makes
-        // the window key alone.
+        // SAFETY: AppKit's signature. The first click on the titlebar acts in
+        // a window that was not key too: on a part that is the content's, as
+        // a tab's, as the system's toolbars do, and on the window's, which it
+        // drags, as the system's titlebar does; elsewhere it makes the window
+        // key alone.
         #[unsafe(method(acceptsFirstMouse:))]
         fn accepts_first_mouse(&self, event: Option<&NSEvent>) -> bool {
-            event.is_some_and(|event| self.is_over_bar(event) && self.is_over_titlebar_area(event))
+            event.is_some_and(|event| self.is_over_bar(event))
         }
 
         // SAFETY: AppKit's signatures, of `NSAccessibility`: the view's
@@ -886,14 +892,38 @@ define_class!(
             self.ivars().opaque.get()
         }
 
-        // SAFETY: AppKit's signature. The view drags the window itself, from
-        // the titlebar's parts that are the window's alone; AppKit would
-        // drag it from anywhere over the titlebar of a view that is not
-        // opaque, as a translucent window's, the drags of the content's
-        // parts there too, as a selection's.
+        // SAFETY: AppKit's signature. AppKit never drags the window of
+        // itself, from the titlebar of a view that is not opaque, as a
+        // translucent window's, which would drag it from the content's
+        // parts of the titlebar too: the view drags it from the window's
+        // parts.
         #[unsafe(method(mouseDownCanMoveWindow))]
         fn mouse_down_can_move_window(&self) -> bool {
             false
+        }
+
+        // SAFETY: AppKit's signature. Over the titlebar, the view that takes
+        // the presses for this one: the system's titlebar would take those
+        // that hit this view itself, which would never come.
+        #[unsafe(method_id(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> Option<Retained<NSView>> {
+            // SAFETY: `NSView`'s method, of this signature.
+            let hit: Option<Retained<NSView>> = unsafe { msg_send![super(self), hitTest: point] };
+            // The point, of the superview's coordinates, in the view's.
+            let over_bar = hit.as_deref().is_some_and(|hit| std::ptr::eq(hit, &**self)) && {
+                // SAFETY: the view's superview, the window's frame, while it
+                // is in one.
+                let local = match unsafe { self.superview() } {
+                    Some(superview) => self.convertPoint_fromView(point, Some(&superview)),
+                    None => point,
+                };
+                let below = self.below_bar();
+                local.y >= below.origin.y + below.size.height
+            };
+            match (over_bar, self.ivars().bar_view.borrow().as_ref()) {
+                (true, Some(bar)) => Some(Retained::into_super(Retained::clone(bar))),
+                _ => hit,
+            }
         }
     }
 
@@ -1057,12 +1087,14 @@ impl ContentView {
             over_bar: Cell::new(false),
             titlebar: Cell::new(Titlebar::Titled),
             titlebar_areas: RefCell::new(Vec::new()),
+            bar_view: RefCell::new(None),
             move_areas: RefCell::new((Vec::new(), Vec::new())),
             access: RefCell::new(None),
         });
         // SAFETY: `NSView`'s `initWithFrame:` has this signature.
         let view: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
         view.setWantsLayer(true);
+        *view.ivars().bar_view.borrow_mut() = Some(BarView::new(mtm, &view));
         // A frame of another size than the view's, as a step of a live
         // resize's until the frame of its size comes, stays at the top left
         // corner, as the grid's cells are, rather than stretched to the
@@ -1183,6 +1215,49 @@ impl ContentView {
             .any(|area| area.contains(at))
     }
 
+    /// The left button went down over the titlebar's parts that are the
+    /// window's: the window's frame does neither for the content that runs
+    /// under its bar, so it drags the window, as the system does, and a
+    /// double click does what the system's settings say.
+    fn drag_or_zoom(&self, event: &NSEvent) {
+        let Some(window) = self.window() else {
+            return;
+        };
+        if event.clickCount() == 2 {
+            match bar_double_click() {
+                BarDoubleClick::Zoom => window.performZoom(None),
+                BarDoubleClick::Minimize => window.performMiniaturize(None),
+                BarDoubleClick::Nothing => {}
+            }
+        } else {
+            window.performWindowDragWithEvent(event);
+        }
+    }
+
+    /// The left button went down, as the app's events come, before AppKit
+    /// hands it on: over the titlebar's parts that are the window's, it
+    /// drags the window or zooms it, which takes the press, as the system's
+    /// title there, past the window's buttons, would take it and do
+    /// neither, the view not letting AppKit drag the window; whether it
+    /// took it. A window that was not key becomes key, as its press would
+    /// have made it.
+    pub(crate) fn take_bar_press(&self, event: &NSEvent) -> bool {
+        if event.r#type() != NSEventType::LeftMouseDown
+            || !self.is_over_bar(event)
+            || self.is_over_titlebar_area(event)
+        {
+            return false;
+        }
+        if let Some(window) = self.window()
+            && !window.isKeyWindow()
+        {
+            window.makeKeyAndOrderFront(None);
+        }
+        self.ivars().over_bar.set(true);
+        self.drag_or_zoom(event);
+        true
+    }
+
     /// A button went down: over the titlebar, but over its parts that are
     /// the content's, the window's, which the content learns nothing of,
     /// with the drags and the releases that follow; otherwise the content's.
@@ -1194,21 +1269,8 @@ impl ContentView {
             self.post_button(event, true);
             return;
         }
-        // The window's frame does neither for the content that runs under
-        // its bar: the left button drags the window, as the system does,
-        // and a double click does what the system's settings say.
-        if event.r#type() == NSEventType::LeftMouseDown
-            && let Some(window) = self.window()
-        {
-            if event.clickCount() == 2 {
-                match bar_double_click() {
-                    BarDoubleClick::Zoom => window.performZoom(None),
-                    BarDoubleClick::Minimize => window.performMiniaturize(None),
-                    BarDoubleClick::Nothing => {}
-                }
-            } else {
-                window.performWindowDragWithEvent(event);
-            }
+        if event.r#type() == NSEventType::LeftMouseDown {
+            self.drag_or_zoom(event);
         }
     }
 
@@ -1602,6 +1664,31 @@ fn restore_size(window: &NSWindow) {
         size.height = size.height.min(visible.height);
     }
     window.setFrame_display(NSRect::new(before.origin, size), false);
+}
+
+/// Watches the app's presses of the left button before AppKit hands them
+/// on, for each window's view to take those over its titlebar's parts that
+/// are the window's: the monitor, which [`NSEvent::removeMonitor`] ends.
+pub(crate) fn watch_bar_presses(mtm: MainThreadMarker) -> Option<Retained<AnyObject>> {
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        // SAFETY: AppKit hands the monitor an event that lives for the call.
+        let shown = unsafe { event.as_ref() };
+        let taken = shown
+            .window(mtm)
+            .and_then(|window| window.contentView())
+            .and_then(|view| view.downcast::<ContentView>().ok())
+            .is_some_and(|view| view.take_bar_press(shown));
+        if taken {
+            std::ptr::null_mut()
+        } else {
+            event.as_ptr()
+        }
+    });
+    // SAFETY: the handler returns the event that it was given, or null for
+    // one that it took.
+    unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::LeftMouseDown, &handler)
+    }
 }
 
 /// The cursor's rectangles of a view of `height` points, of its content

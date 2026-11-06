@@ -1361,7 +1361,7 @@ Where the bar goes.
 | `"top"`, `"bottom"`, `"left"`, `"right"` | `"top"` |
 
 - At the top, as [`style`](#style-1) puts it; at the bottom, across the window's bottom, below the status bar, under a titlebar of the window's title; on the left or the right, a column from below the titlebar to the window's bottom, its tabs one below another, as wide as [`column-width`](#column-width) says, or as you drag its edge.
-- On the left, in the `"unified"` and `"seamless"` looks, the column runs up through the titlebar, as macOS's sidebars do: the window's buttons stand over its top, the keys that bring the window forward after them, and the panes beside it go up to the window's top, with no title. You drag the window by the column's room around the window's buttons and below its last tab.
+- On the left, in the `"unified"` and `"seamless"` looks, the column runs up through the titlebar, as macOS's sidebars do: the window's buttons stand over its top, the keys that bring the window forward after them, and the panes beside it go up to the window's top, with no title. You drag the window by the column's top, beside the window's buttons.
 - It applies at once, as you save the file.
 
 ### `style`
