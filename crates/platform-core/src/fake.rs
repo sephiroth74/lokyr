@@ -98,6 +98,8 @@ pub struct FakeWindow {
     /// The areas of its content of their own pointers, as the app gave
     /// them.
     pub pointer_areas: Vec<PointerArea>,
+    /// The shape that the app holds the pointer at, while it holds it.
+    pub held_pointer: Option<PointerShape>,
     /// Its own appearance, if the app gave it one.
     pub appearance: Option<Appearance>,
     /// Whether it is a quick window, and its place while it shows.
@@ -809,6 +811,7 @@ impl Platform for Fake {
                 pointer: PointerShape::Arrow,
                 pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
+                held_pointer: None,
                 appearance: None,
                 quick: None,
                 titlebar: Titlebar::default(),
@@ -850,6 +853,7 @@ impl Platform for Fake {
                 pointer: PointerShape::Arrow,
                 pointer_at: Point::default(),
                 pointer_areas: Vec::new(),
+                held_pointer: None,
                 appearance: None,
                 quick: Some(None),
                 titlebar: Titlebar::default(),
@@ -1150,6 +1154,12 @@ impl Platform for Fake {
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(state) = self.windows.get_mut(&window) {
             state.mouse_moves = track;
+        }
+    }
+
+    fn hold_pointer(&mut self, window: WindowId, shape: Option<PointerShape>) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.held_pointer = shape;
         }
     }
 

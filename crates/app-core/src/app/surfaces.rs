@@ -94,7 +94,39 @@ impl<B: Backend> App<B> {
         if carrying || self.tab_dragged_of(window) {
             self.drag_tab(platform, window, position);
         }
+        self.hold_pointer_while_dragging(platform, window);
         taken
+    }
+
+    /// Holds `window`'s pointer at the shape that a drag of a node of a
+    /// slot's view started of, while it is under way, wherever the pointer
+    /// goes, as the areas under it would change it; lets it go as the drag
+    /// ends.
+    pub(super) fn hold_pointer_while_dragging(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+    ) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let dragged = state
+            .captured
+            .and_then(|id| state.chrome.iter().find(|view| view.id == id))
+            .filter(|view| view.surface.pointer.dragging())
+            .map(|view| match view.surface.pointer.shape() {
+                lokyr_kernel::plugins::view::PointerShape::Arrow => PointerShape::Arrow,
+                lokyr_kernel::plugins::view::PointerShape::Text => PointerShape::Text,
+                lokyr_kernel::plugins::view::PointerShape::PointingHand => {
+                    PointerShape::PointingHand
+                }
+            });
+        // The shape of the drag's start, held until its end.
+        let wanted = dragged.map(|shape| state.pointer_held.unwrap_or(shape));
+        if wanted != state.pointer_held {
+            platform.hold_pointer(window, wanted);
+            state.pointer_held = wanted;
+        }
     }
 
     /// The pointer left the parts of `window` where its moves come: the
@@ -265,6 +297,7 @@ impl<B: Backend> App<B> {
         if let Some(forward) = forward {
             platform.focus_window(forward);
         }
+        self.hold_pointer_while_dragging(platform, window);
         if ended {
             platform.end_composition(window);
         }
@@ -351,6 +384,7 @@ impl<B: Backend> App<B> {
                     if self.tab_dragged_of(window) {
                         self.end_tab_drag(platform, false);
                     }
+                    self.hold_pointer_while_dragging(platform, window);
                     continue;
                 }
             }
@@ -404,6 +438,7 @@ impl<B: Backend> App<B> {
                     if self.tab_dragged_of(window) {
                         self.end_tab_drag(platform, false);
                     }
+                    self.hold_pointer_while_dragging(platform, window);
                     self.focus_moved(platform, window, before);
                     // Escape in a panel that asks so closes it, its focus
                     // gone back to where it took it from.
@@ -562,6 +597,7 @@ impl<B: Backend> App<B> {
         if self.tab_dragged_of(window) {
             self.end_tab_drag(platform, false);
         }
+        self.hold_pointer_while_dragging(platform, window);
         self.wake_for_tooltips(platform);
     }
 

@@ -215,6 +215,7 @@ fn absent_window(platform: &mut dyn Platform) -> Vec<String> {
     platform.set_pointer_shape(window, PointerShape::Text);
     platform.track_mouse_moves(window, true);
     platform.set_pointer_areas(window, &[]);
+    platform.hold_pointer(window, Some(PointerShape::Arrow));
     platform.place_layer(window, Layer::Cursor, None);
     platform.set_translucent(window, None);
     platform.set_window_appearance(window, None);

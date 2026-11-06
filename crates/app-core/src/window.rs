@@ -147,6 +147,9 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) mouse_moves: bool,
     /// How the pointer looks over it, as the platform has it.
     pub(crate) pointer: PointerShape,
+    /// The shape that the platform holds the pointer at, as a drag of a
+    /// slot's view's node started of, while it is under way.
+    pub(crate) pointer_held: Option<PointerShape>,
     /// The sequence of keys under way, as the keymap resolves it.
     pub(crate) resolver: Resolver,
     /// The keys of the sequence under way, which go to the program if the
@@ -336,6 +339,7 @@ impl<B: Backend> Window<B> {
             mouse: Mouse::default(),
             mouse_moves: false,
             pointer: PointerShape::Arrow,
+            pointer_held: None,
             resolver: Resolver::new(),
             held_back: Vec::new(),
             taken: Vec::new(),

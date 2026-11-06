@@ -498,3 +498,43 @@ fn a_hidden_tab_s_output_marks_it_on_the_bar_until_it_shows() {
             && !labels_of(app, window, ids[0]).contains(&"New Output".to_owned())
     });
 }
+
+#[test]
+fn the_pointer_keeps_its_shape_while_a_tab_is_dragged() {
+    use lokyr_platform_core::PointerShape;
+
+    let none = Modifiers::NONE;
+    let (mut fake, mut app, window) = three_tabs("unified", "top");
+    let ids = order(&app, window);
+    let held = |fake: &Fake| fake.window(window).unwrap().held_pointer;
+    let first = middle_of(&fake, &app, window, &tab_key(ids[0]));
+    fake.send(&mut app, window, click(true, first, none, 1));
+    assert_eq!(held(&fake), None, "a press holds nothing");
+    // Along the bar, then over the panes, then out of the window: the
+    // tab's arrow, held.
+    let along = Point {
+        x: first.x + 40.0,
+        ..first
+    };
+    fake.send(&mut app, window, moved(along, none));
+    assert_eq!(held(&fake), Some(PointerShape::Arrow));
+    for at in [Point { y: 300.0, ..first }, Point { x: -50.0, y: -50.0 }] {
+        fake.send(&mut app, window, moved(at, none));
+        assert_eq!(held(&fake), Some(PointerShape::Arrow));
+    }
+    // Back and dropped: let go.
+    fake.send(&mut app, window, moved(first, none));
+    fake.send(&mut app, window, click(false, first, none, 1));
+    assert_eq!(held(&fake), None);
+    // Escape lets it go too.
+    fake.send(&mut app, window, click(true, first, none, 1));
+    fake.send(&mut app, window, moved(along, none));
+    assert_eq!(held(&fake), Some(PointerShape::Arrow));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    assert_eq!(held(&fake), None);
+    fake.send(&mut app, window, click(false, along, none, 1));
+}

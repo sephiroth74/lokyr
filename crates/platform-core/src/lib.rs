@@ -635,6 +635,12 @@ pub trait Platform {
     /// The pointer changes as it moves, without waking the app.
     fn set_pointer_areas(&mut self, window: WindowId, areas: &[PointerArea]);
 
+    /// Holds the pointer over `window` at `shape`, wherever it goes over
+    /// the window and whatever its areas, as a drag under way keeps the
+    /// shape that it started of; `None` gives the areas and the content's
+    /// shape the pointer back.
+    fn hold_pointer(&mut self, window: WindowId, shape: Option<PointerShape>);
+
     /// Gives `window` the titlebar `titlebar`, of the system's title by
     /// default: its content's size then comes anew as
     /// [`WindowEvent::Resized`], of the titlebar's height and of the room

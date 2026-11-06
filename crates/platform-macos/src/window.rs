@@ -569,6 +569,18 @@ impl Window {
         self.view.access(|access| access.update(update));
     }
 
+    /// Holds the pointer over the view at `shape`, at once, whatever its
+    /// areas; `None` gives them the pointer back.
+    pub(crate) fn hold_pointer(&self, shape: Option<PointerShape>) {
+        if self.view.ivars().held.replace(shape) == shape {
+            return;
+        }
+        if let Some(shape) = shape {
+            ns_cursor(shape).set();
+        }
+        self.ns_window.invalidateCursorRectsForView(&self.view);
+    }
+
     /// Gives the areas of `areas` their own pointers, over the rest's.
     pub(crate) fn set_pointer_areas(&self, areas: &[PointerArea]) {
         if *self.view.ivars().areas.borrow() != areas {
@@ -706,6 +718,9 @@ pub(crate) struct ContentViewIvars {
     /// their own.
     pointer: Cell<PointerShape>,
     areas: RefCell<Vec<PointerArea>>,
+    /// The shape that the app holds the pointer at over the whole view, as
+    /// a drag under way, while it holds it.
+    held: Cell<Option<PointerShape>>,
     /// Whether the buttons held went down over the titlebar, whose drags
     /// and releases are the window's, not the content's.
     over_bar: Cell<bool>,
@@ -741,6 +756,11 @@ define_class!(
         // rectangle that the pointer is in, in the key window.
         #[unsafe(method(resetCursorRects))]
         fn reset_cursor_rects(&self) {
+            // A shape that the app holds, over the whole view.
+            if let Some(held) = self.ivars().held.get() {
+                self.addCursorRect_cursor(self.bounds(), &ns_cursor(held));
+                return;
+            }
             // Below the titlebar, and over its parts that are the content's,
             // whose pointer is the arrow but over the content's areas.
             let height = self.bounds().size.height;
@@ -751,13 +771,7 @@ define_class!(
                 self.ivars().pointer.get(),
             );
             for (rect, shape) in rects {
-                let cursor = match shape {
-                    PointerShape::Arrow => NSCursor::arrowCursor(),
-                    PointerShape::Text => NSCursor::IBeamCursor(),
-                    PointerShape::PointingHand => NSCursor::pointingHandCursor(),
-                    PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
-                };
-                self.addCursorRect_cursor(rect, &cursor);
+                self.addCursorRect_cursor(rect, &ns_cursor(shape));
             }
         }
 
@@ -1112,6 +1126,7 @@ impl ContentView {
             option_as_meta,
             opaque: Cell::new(true),
             pointer: Cell::new(PointerShape::Arrow),
+            held: Cell::new(None),
             areas: RefCell::new(Vec::new()),
             over_bar: Cell::new(false),
             titlebar: Cell::new(Titlebar::Titled),
@@ -1895,6 +1910,16 @@ fn double_click_of(action: Option<&str>, minimize: bool) -> BarDoubleClick {
 /// The window that a window's notification is about.
 fn window_of(notification: &NSNotification) -> Option<Retained<NSWindow>> {
     notification.object()?.downcast::<NSWindow>().ok()
+}
+
+/// AppKit's cursor of `shape`.
+fn ns_cursor(shape: PointerShape) -> Retained<NSCursor> {
+    match shape {
+        PointerShape::Arrow => NSCursor::arrowCursor(),
+        PointerShape::Text => NSCursor::IBeamCursor(),
+        PointerShape::PointingHand => NSCursor::pointingHandCursor(),
+        PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
+    }
 }
 
 #[cfg(test)]

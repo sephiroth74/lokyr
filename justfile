@@ -47,6 +47,19 @@ build:
 test:
     cargo test --locked --workspace --no-fail-fast
 
+# Clean the workspace's own packages out of target/, the external dependencies kept built, once target/debug/deps holds more than 100 000 files: each rebuild leaves its object files there, and the macOS probes hang over a directory of hundreds of thousands, which AppKit reads as the app starts.
+clean-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    count=$(ls -f target/debug/deps 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${count:-0}" -gt 100000 ]; then
+        cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json, sys; [print("-p\n" + p["name"]) for p in json.load(sys.stdin)["packages"]]' \
+            | xargs cargo clean
+    else
+        echo "clean-deps: target/debug/deps holds ${count:-0} files"
+    fi
+
 # Format the codebase.
 fmt:
     cargo fmt --all

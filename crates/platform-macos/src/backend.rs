@@ -828,6 +828,12 @@ impl Platform for Backend {
         }
     }
 
+    fn hold_pointer(&mut self, window: WindowId, shape: Option<PointerShape>) {
+        if let Some(window) = self.windows.get(&window) {
+            window.hold_pointer(shape);
+        }
+    }
+
     fn set_title_accessory(&mut self, window: WindowId, text: Option<&str>) {
         if let Some(window) = self.windows.get(&window) {
             window.set_title_accessory(text);
