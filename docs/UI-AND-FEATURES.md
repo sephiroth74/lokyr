@@ -178,7 +178,7 @@ max-width = 260
 
 ## The programs' progress
 
-The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Ghostty: a program's progress, of OSC 9;4, as Gradle's, which the VT core reads.
+The `progress` plugin, as the user asked on 1 November 2026, after iTerm2 and Ghostty: a program's progress, of OSC 9;4, as Gradle's, which the VT core reads. Some programs, Gradle, cargo and Claude Code among them, send it only to the terminals that they recognize by their environment's variables, which Lokyr is not among yet: the README's [Programs' progress](../README.md#programs-progress) tells how to turn each on.
 - **Where**: a thin bar in the `window-strip` slot, across the window's top under the titlebar, and on the tab of its pane with the `tabs` plugin, as the user asked on 4 November 2026, after iTerm2's: the tab's outline, of its corners' radius, filled from its left end along its top and its bottom at once as far as the percentage, as the strip fills.
 - **Motion**: a change of the percentage slides the fill from where it was, eased, of about 0.2 s, in the strip and on the tab; the slides and the indeterminate sweeps go on layers that the window server animates, so that a program's percentage, of many changes a second, costs the app no frames.
 - **States**: normal, in the accent's color, with its percentage; error, red; paused, yellow; indeterminate, which moves without frames of the app's; and none, which takes the bar away.
